@@ -154,6 +154,20 @@ export function summarizeWithoutContent(
  * prompt. `mayCarryInstruction` is the only thing that can tell them apart, and
  * it fails closed.
  */
+/**
+ * Every string leaf of the payload, in traversal order.
+ *
+ * Joining these with a real newline gives the rules the line structure they are
+ * written against, and drops the JSON punctuation they never wanted to read.
+ */
+function payloadTextLeaves(value: unknown, out: string[] = []): string[] {
+    if (typeof value === 'string') out.push(value);
+    else if (Array.isArray(value)) for (const v of value) payloadTextLeaves(v, out);
+    else if (value && typeof value === 'object')
+        for (const v of Object.values(value)) payloadTextLeaves(v, out);
+    return out;
+}
+
 export function guardAgentProposal(
     input: GuardAgentProposalInput,
 ): AgentProposalGuardResult {
@@ -163,7 +177,17 @@ export function guardAgentProposal(
     // The guarded text: the rationale the agent wrote plus the payload it
     // proposes. Serialised the same way every time so the digest is stable.
     const guarded = { kind: input.kind, payload: input.payload, rationale };
-    const text = [rationale ?? '', JSON.stringify(input.payload ?? null)].join('\n');
+    // Scanned as the payload's string LEAVES joined by real newlines — NOT as
+    // `JSON.stringify(payload)`, which was the other half of the same bug.
+    // Serialising rewrites a real newline inside a field as the two characters
+    // `\` and `n`, so a line-anchored rule could never see a line boundary
+    // anywhere except the very start of the text — i.e. only in the rationale.
+    // The identical `System:` string quarantined as a rationale and passed as a
+    // description.
+    //
+    // The DIGEST still uses `JSON.stringify` below: identity and meaning are
+    // different questions, and the digest has to stay stable.
+    const text = [rationale ?? '', ...payloadTextLeaves(input.payload ?? null)].join('\n');
 
     const injection = scanInjection(text);
     const egress = scanEgress(guarded);

@@ -274,9 +274,20 @@ async function executeFrom(
     // not a reset: `openSealedContext` has no path that returns a context it
     // could not verify, and this function has no path that continues without
     // one.
+    //
+    // The lower bound comes from the APPEND-ONLY step ledger, not from the run
+    // row. Restoring an earlier `(contextJson, contextHash)` pair rolls the
+    // memory back and the chain still verifies — the link is recomputed from the
+    // very envelope being replayed, so it agrees with itself. The ledger is a
+    // different table and the same restore does not move it, so it still
+    // remembers how far this run actually got. `undefined` when the ledger has
+    // nothing to say (a fresh run, or steps recorded before the column existed),
+    // which leaves the pre-existing checks exactly as they were.
+    const minSeq = await highestRecordedContextSeq(ctx, runId);
+
     let opened: OpenedContext;
     try {
-        opened = openRunContext(ctx, runId, initial);
+        opened = openRunContext(ctx, runId, initial, minSeq);
     } catch (err) {
         if (err instanceof ContextIntegrityError) return haltRun(ctx, runId, err);
         throw err;
@@ -329,7 +340,11 @@ async function executeFrom(
         // happened in it. The row is already being fetched for the abort check,
         // so this costs no extra query.
         try {
-            const reopened = openRunContext(ctx, runId, live);
+            // `chainSeq` is the position this run has already committed, so a
+            // re-read below it is a ROLLBACK, not a legitimate advance. A pause
+            // may legitimately move the context FORWARD (a checkpoint approval
+            // commits), never backward.
+            const reopened = openRunContext(ctx, runId, live, chainSeq);
             context = reopened.context;
             chainSeq = reopened.seq;
             chainHash = reopened.hash;
@@ -343,7 +358,7 @@ async function executeFrom(
             if (step.kind === 'HUMAN_CHECKPOINT') {
                 await recordStep(ctx, runId, seq, 'HUMAN_CHECKPOINT', {
                     status: 'PENDING', label: step.label,
-                });
+                }, chainSeq);
                 await commitContext(ctx, runId, context, chainSeq + 1, chainHash, {
                     status: 'AWAITING_APPROVAL',
                     stepCount: seq + 1,
@@ -357,24 +372,24 @@ async function executeFrom(
                 const output = parseToolResult(result);
                 context.outputs[step.label] = output;
                 costTokens += estimateTokens(output);
-                await recordStep(ctx, runId, seq, 'READ', { toolCalled: step.tool, input: args, output, status: 'DONE', label: step.label });
+                await recordStep(ctx, runId, seq, 'READ', { toolCalled: step.tool, input: args, output, status: 'DONE', label: step.label }, chainSeq);
             } else if (step.kind === 'PROPOSE') {
                 const items = step.buildItems(context);
                 if (items.length === 0) {
-                    await recordStep(ctx, runId, seq, 'PROPOSE', { toolCalled: step.tool, status: 'SKIPPED', label: step.label });
+                    await recordStep(ctx, runId, seq, 'PROPOSE', { toolCalled: step.tool, status: 'SKIPPED', label: step.label }, chainSeq);
                 } else {
                     const rationale = step.rationale ? step.rationale(context) : undefined;
                     const result = await runProposeTool(invocation, step.tool, { items, rationale });
                     const output = parseToolResult(result);
                     context.outputs[step.label] = output;
                     costTokens += estimateTokens(output);
-                    await recordStep(ctx, runId, seq, 'PROPOSE', { toolCalled: step.tool, input: { count: items.length }, output, status: 'DONE', label: step.label });
+                    await recordStep(ctx, runId, seq, 'PROPOSE', { toolCalled: step.tool, input: { count: items.length }, output, status: 'DONE', label: step.label }, chainSeq);
                 }
             } else if (step.kind === 'SYNTHESIS') {
                 const syn = step.synthesize(context);
                 context.outputs[step.label] = syn;
                 costTokens += estimateTokens(syn);
-                await recordStep(ctx, runId, seq, 'SYNTHESIS', { output: syn, status: 'DONE', label: step.label });
+                await recordStep(ctx, runId, seq, 'SYNTHESIS', { output: syn, status: 'DONE', label: step.label }, chainSeq);
             }
 
             stepCount = seq + 1;
@@ -392,7 +407,7 @@ async function executeFrom(
             // memory. Checked first, for both reasons.
             if (err instanceof ContextIntegrityError) return haltRun(ctx, runId, err);
             const message = err instanceof Error ? err.message : String(err);
-            await recordStep(ctx, runId, seq, step.kind, { status: 'FAILED', label: step.label, output: { error: message } });
+            await recordStep(ctx, runId, seq, step.kind, { status: 'FAILED', label: step.label, output: { error: message } }, chainSeq);
             return failRun(ctx, runId, `step ${seq} (${step.kind}) failed: ${message}`);
         }
     }
@@ -429,17 +444,39 @@ interface StepRecord {
     actorUserId?: string;
 }
 
+/**
+ * The highest context-chain position this run's append-only ledger has seen.
+ *
+ * `undefined` means the ledger cannot say — a run with no steps yet, or one
+ * whose steps predate the column. An absent bound must read as "no constraint",
+ * never as zero, or every resumed legacy run would halt.
+ */
+async function highestRecordedContextSeq(
+    ctx: RequestContext,
+    runId: string,
+): Promise<number | undefined> {
+    const top = await runInTenantContext(ctx, (db) =>
+        db.workflowStep.aggregate({
+            where: { runId, tenantId: ctx.tenantId },
+            _max: { contextSeq: true },
+        }),
+    );
+    return top._max.contextSeq ?? undefined;
+}
+
 async function recordStep(
     ctx: RequestContext,
     runId: string,
     seq: number,
     kind: 'READ' | 'PROPOSE' | 'HUMAN_CHECKPOINT' | 'SYNTHESIS',
     rec: StepRecord,
+    contextSeq?: number,
 ): Promise<void> {
     await runInTenantContext(ctx, (db) =>
         db.workflowStep.create({
             data: {
                 runId, tenantId: ctx.tenantId, seq, kind,
+                contextSeq: contextSeq ?? null,
                 toolCalled: rec.toolCalled ?? null,
                 inputJson: rec.input !== undefined ? JSON.stringify(rec.input) : null,
                 outputJson: rec.output !== undefined ? JSON.stringify(rec.output) : null,
@@ -574,12 +611,14 @@ function openRunContext(
     ctx: RequestContext,
     runId: string,
     row: { contextJson: string | null; contextHash: string | null },
+    minSeq?: number,
 ): OpenedContext {
     return openSealedContext({
         tenantId: ctx.tenantId,
         runId,
         storedJson: row.contextJson,
         storedHash: row.contextHash,
+        minSeq,
     });
 }
 

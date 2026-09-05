@@ -123,6 +123,16 @@ function makeDb() {
             },
         },
         workflowStep: {
+            // The replay anchor: the highest chain position this run's
+            // APPEND-ONLY ledger has seen. Modelled here because restoring the
+            // run row must NOT move it — that separation is the whole point.
+            aggregate: async ({ where }: any) => {
+                const seqs = store.steps
+                    .filter((s) => s.runId === where.runId && s.tenantId === where.tenantId)
+                    .map((s) => s.contextSeq)
+                    .filter((n) => typeof n === 'number');
+                return { _max: { contextSeq: seqs.length ? Math.max(...seqs) : null } };
+            },
             create: async ({ data }: any) => {
                 const row = { id: `step-${store.steps.length}`, ...data };
                 store.steps.push(row);
@@ -160,6 +170,7 @@ beforeEach(() => {
 
 const PAUSED_WF = `ctx-int-paused-${randomUUID().slice(0, 8)}`;
 const GROWTH_WF = `ctx-int-growth-${randomUUID().slice(0, 8)}`;
+const TWO_PAUSE_WF = `ctx-int-twopause-${randomUUID().slice(0, 8)}`;
 
 registerWorkflow({
     key: PAUSED_WF,
@@ -169,6 +180,21 @@ registerWorkflow({
         { kind: 'READ', label: 'before', tool: 'get_compliance_posture' },
         { kind: 'HUMAN_CHECKPOINT', label: 'review' },
         { kind: 'READ', label: 'after', tool: 'get_compliance_posture' },
+    ],
+});
+
+registerWorkflow({
+    key: TWO_PAUSE_WF,
+    name: 'read → checkpoint → read → checkpoint → read',
+    description:
+        'TWO pauses, so the run can advance past a snapshot and still be resumable — ' +
+        'which is what a replay needs in order to be observable at all.',
+    steps: [
+        { kind: 'READ', label: 'first', tool: 'get_compliance_posture' },
+        { kind: 'HUMAN_CHECKPOINT', label: 'review one' },
+        { kind: 'READ', label: 'second', tool: 'get_compliance_posture' },
+        { kind: 'HUMAN_CHECKPOINT', label: 'review two' },
+        { kind: 'READ', label: 'third', tool: 'get_compliance_posture' },
     ],
 });
 
@@ -357,19 +383,37 @@ describe('a context tampered with between steps', () => {
         expect(halt.detailsJson.expectedHash).not.toBe(halt.detailsJson.observedHash);
     });
 
-    it('rejects a REPLAYED earlier context — genuinely sealed, wrong position', async () => {
-        const started = await startWorkflowRun(ctx(), PAUSED_WF, {});
-        const row = store.runs.get(started.runId)!;
-        const envelope = JSON.parse(row.contextJson);
-        // An honest, engine-written envelope from earlier in this same run.
-        // Every byte of it was once valid; it is stale, and staleness is the
-        // failure the `seq` in the link payload exists to catch.
-        row.contextJson = JSON.stringify({ ...envelope, seq: envelope.seq - 1 });
+    it('rejects a REPLAYED earlier context — a genuine PAIR, restored together', async () => {
+        // This test used to edit `seq` inside the envelope and leave the head,
+        // which is a field-tamper — the same thing the test above it does — and
+        // it passed for that reason while the actual replay went through. What
+        // an attacker restores is BOTH COLUMNS as they honestly stood earlier:
+        // read off a replica, a backup or a snapshot, no forgery needed. The
+        // link then verifies perfectly, because it is recomputed from the very
+        // envelope being replayed.
+        const started = await startWorkflowRun(ctx(), TWO_PAUSE_WF, {});
+        expect(started.status).toBe('AWAITING_APPROVAL');
+        const snapshot = {
+            contextJson: store.runs.get(started.runId)!.contextJson,
+            contextHash: store.runs.get(started.runId)!.contextHash,
+        };
+
+        // Advance to the SECOND pause, so the snapshot is genuinely stale and
+        // the run is still resumable — a replay is only observable if there is
+        // a later step left to observe it from.
+        await resumeWorkflowRun(ctx(), started.runId);
+        const advanced = store.runs.get(started.runId)!;
+        expect(advanced.status).toBe('AWAITING_APPROVAL');
+        expect(advanced.contextHash).not.toBe(snapshot.contextHash);
+
+        // Restore the honest earlier pair, both columns together.
+        advanced.contextJson = snapshot.contextJson;
+        advanced.contextHash = snapshot.contextHash;
 
         const result = await resumeWorkflowRun(ctx(), started.runId);
 
         expect(result.status).toBe('FAILED');
-        expect(store.runs.get(started.runId)!.errorMessage).toContain('CONTEXT_CHAIN_BROKEN');
+        expect(store.runs.get(started.runId)!.errorMessage).toContain('CONTEXT_REPLAYED');
     });
 });
 

@@ -54,11 +54,19 @@ ALTER TABLE "AgentProposal"
     -- as tenant-authored.
     ADD COLUMN "guardProvenance"  "AgentContentProvenance" NOT NULL DEFAULT 'THIRD_PARTY_INGESTED';
 
--- A quarantined row is only ever read by the triage surface, so the index is
--- the verdict, not the status. Tenant-leading like every other index on this
--- table — RLS still filters, but the planner should not have to.
-CREATE INDEX "AgentProposal_tenantId_guardVerdict_createdAt_idx"
-    ON "AgentProposal" ("tenantId", "guardVerdict", "createdAt");
+-- NO INDEX ON `guardVerdict`, deliberately.
+--
+-- One was written here, on the reasoning that "a quarantined row is only ever
+-- read by the triage surface, so the index is the verdict, not the status".
+-- That was wrong twice. `listQuarantinedAgentProposals` filters on
+-- `status = 'QUARANTINED'` — quarantine IS a status, not a separate axis — so
+-- the index backed no query in the codebase, and the existing
+-- ("tenantId", "status", "createdAt") index already serves that listing
+-- exactly. An index nothing reads is write amplification on every proposal.
+--
+-- If a future surface lists FLAGGED-but-queued rows (status PENDING, verdict
+-- FLAGGED), that is the query that would justify one — add it with the query,
+-- not before it.
 
 -- No RLS work: `AgentProposal` already carries the canonical policy triple
 -- (`tenant_isolation`, `tenant_isolation_insert`, `superuser_bypass`) under

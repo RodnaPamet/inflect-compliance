@@ -43,6 +43,7 @@ import {
     rejectAgentProposal,
 } from '@/app-layer/usecases/agent-proposals';
 import { makeRequestContext } from '../helpers/make-context';
+import { getExecutiveDashboard } from '@/app-layer/usecases/dashboard';
 import {
     CLEAN_PROPOSAL,
     INJECTION_CASES,
@@ -372,6 +373,55 @@ describeFn('prompt-injection corpus — an obeyed injection never reaches the re
             // The point of the corpus: the injected sentence IS reachable. What
             // is guarded is what the agent does next, not whether it can read.
             expect(content[0].text).toContain('inj-007');
+        }, 60_000);
+
+        it('the ONE tool trusted to instruct returns no tenant free text at all', async () => {
+            // `get_compliance_posture` is the only entry in `MCP_TOOL_CORPUS`
+            // with provenance SYSTEM, which is the only value for which
+            // `mayCarryInstruction` is true. That privilege rests entirely on
+            // the claim that its payload is aggregates — so the claim needs a
+            // test that would NOTICE if it stopped being true.
+            //
+            // Asserting the classification (as the unit test does) only checks
+            // the first half of that sentence. Adding `topRisks: [{ title }]`
+            // to `getExecutiveDashboard` would keep the classification correct
+            // and silently route tenant free text into the one channel the
+            // agent is allowed to read as instruction. This suite has already
+            // planted injected sentences across risks, policies, evidence and
+            // tasks in THIS tenant, so they are exactly the markers that would
+            // surface.
+            // Read through the usecase the tool returns VERBATIM
+            // (`get-compliance-posture.ts` is a thin wrapper over it), rather
+            // than over MCP — the suite's key is scoped `risks:read` and the
+            // tool additionally needs `controls:read`, and widening the key
+            // would weaken every other assertion in this file.
+            const payload = JSON.stringify(await getExecutiveDashboard(humanCtx()));
+
+            // Not one planted string reaches it.
+            for (const c of INJECTION_CASES) {
+                expect(payload).not.toContain(c.id);
+                expect(payload.toLowerCase()).not.toContain(
+                    c.payload.slice(0, 40).toLowerCase(),
+                );
+            }
+
+            // And positively: every string LEAF is a timestamp or an enum-ish
+            // token — never prose. A free-text field would fail here even if it
+            // happened to carry no planted marker on this run.
+            const leaves: string[] = [];
+            const walk = (v: unknown): void => {
+                if (typeof v === 'string') leaves.push(v);
+                else if (Array.isArray(v)) v.forEach(walk);
+                else if (v && typeof v === 'object') Object.values(v).forEach(walk);
+            };
+            walk(JSON.parse(payload));
+            const ISO = /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/;
+            const TOKEN = /^[A-Za-z][A-Za-z0-9 _-]{0,39}$/;
+            const prose = leaves.filter((l) => !ISO.test(l) && !TOKEN.test(l));
+            expect(prose).toStrictEqual([]);
+            // The walk must actually have reached something, or an empty
+            // payload would pass this vacuously.
+            expect(leaves.length).toBeGreaterThan(0);
         }, 60_000);
     });
 });

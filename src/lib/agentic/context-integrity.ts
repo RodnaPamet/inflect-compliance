@@ -49,10 +49,25 @@
  * and which is stated here rather than implied.
  *
  * `runId` and `tenantId` are IN the payload, so a context lifted from another
- * run — or another tenant's run — fails at `seq` and at the ids rather than
- * being accepted as a well-formed link. `seq` is in the payload so REPLAYING an
- * earlier, genuinely-sealed context from this same run is caught too: it was a
- * valid link at seq 3 and is not one at seq 7.
+ * run — or another tenant's run — fails at the ids rather than being accepted
+ * as a well-formed link.
+ *
+ * REPLAY IS A DIFFERENT PROBLEM AND THE CHAIN DOES NOT SOLVE IT. This comment
+ * used to claim `seq` in the payload caught an earlier, genuinely-sealed context
+ * from this same run — "it was a valid link at seq 3 and is not one at seq 7".
+ * That is false, and the reasoning is worth keeping because it is an easy
+ * mistake to make twice: the link is recomputed FROM the envelope being
+ * verified, so a replayed pair is checked against its own `seq` and agrees with
+ * itself perfectly. The chain can say "this is a real context from this run at
+ * position n"; it cannot say whether the run has since moved past n. Only
+ * something outside the replayed bytes can.
+ *
+ * That something is `WorkflowStep.contextSeq` — an APPEND-ONLY ledger in a
+ * different table, which restoring the run row does not move. `openSealedContext`
+ * takes `minSeq` from it and refuses `CONTEXT_REPLAYED` below the bound. This
+ * matters more than the forgery residual above, because replay needs only two
+ * column values an attacker can READ (a replica, a backup, a snapshot), whereas
+ * forging a link needs this module's own canonical hashing.
  *
  * ─────────────────────────────────────────────────────────────────────────
  * EVERY FAILURE HALTS. NONE OF THEM REPAIRS.
@@ -130,7 +145,14 @@ export type ContextIntegrityCode =
     /** The blob's recomputed link does not equal the stored head. */
     | 'CONTEXT_CHAIN_BROKEN'
     /** The blob is over `MAX_CONTEXT_BYTES`. Reported, never trimmed. */
-    | 'CONTEXT_SIZE_CAP_EXCEEDED';
+    | 'CONTEXT_SIZE_CAP_EXCEEDED'
+    /**
+     * The seal verifies, but it seals an EARLIER position than the caller has
+     * already committed. A genuinely-sealed `(contextJson, contextHash)` pair
+     * restored from a replica, a backup or a snapshot — the run's memory rolled
+     * back to a state it had truly been in.
+     */
+    | 'CONTEXT_REPLAYED';
 
 /**
  * Detail carried alongside a halt. Deliberately a closed shape of numbers,
@@ -140,6 +162,8 @@ export type ContextIntegrityCode =
 export interface ContextIntegrityDetail {
     /** Chain position the failure was observed at, when known. */
     seq?: number;
+    /** The lowest position the caller would have accepted. */
+    minSeq?: number;
     /** Observed size of the offending blob, in bytes. */
     bytes?: number;
     /** The cap it was measured against. */
@@ -351,6 +375,21 @@ export function openSealedContext(params: {
     runId: string;
     storedJson: string | null;
     storedHash: string | null;
+    /**
+     * The lowest chain position the caller will accept, when it has one.
+     *
+     * REQUIRED to close replay, and the reason is that the seal alone cannot.
+     * `seq` lives inside the envelope and the link is recomputed FROM that
+     * envelope, so an earlier genuinely-sealed pair verifies perfectly against
+     * itself — the chain says "this is a real context from this run at position
+     * n" and is silent on whether the run has since moved past n. Only the
+     * caller knows where it got to.
+     *
+     * Forging a link needs the app's own canonical hashing. Replaying one needs
+     * two column values an attacker only has to READ. Replay is the cheaper
+     * attack, so it is the one worth an explicit check.
+     */
+    minSeq?: number;
 }): OpenedContext {
     if (!params.storedHash || !params.storedJson) {
         // No seal to check against. Fail closed: a run whose context cannot be
@@ -406,6 +445,15 @@ export function openSealedContext(params: {
         });
     }
 
+    if (params.minSeq !== undefined && parsed.data.seq < params.minSeq) {
+        throw new ContextIntegrityError('CONTEXT_REPLAYED', {
+            seq: parsed.data.seq,
+            minSeq: params.minSeq,
+            bytes,
+            blobDigest: sha256(params.storedJson),
+        });
+    }
+
     return { context, seq: parsed.data.seq, hash: params.storedHash };
 }
 
@@ -417,6 +465,7 @@ export function openSealedContext(params: {
 export function describeContextHalt(err: ContextIntegrityError): string {
     const parts: string[] = [`context integrity halt: ${err.code}`];
     if (err.detail.seq !== undefined) parts.push(`seq=${err.detail.seq}`);
+    if (err.detail.minSeq !== undefined) parts.push(`minSeq=${err.detail.minSeq}`);
     if (err.detail.bytes !== undefined) parts.push(`bytes=${err.detail.bytes}`);
     if (err.detail.cap !== undefined) parts.push(`cap=${err.detail.cap}`);
     if (err.detail.issueCount !== undefined) parts.push(`issues=${err.detail.issueCount}`);

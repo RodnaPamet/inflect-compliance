@@ -79,9 +79,6 @@ model AgentProposal {
 
   @@index([tenantId, status, createdAt])
   @@index([tenantId, agentId])
-  /// The quarantine-triage listing: the operator surface that shows what the
-  /// guard refused. Tenant-leading, like every other index here.
-  @@index([tenantId, guardVerdict, createdAt])
 }
 
 /// Epic Agentic 1A — a durable, audited, human-gated agentic workflow run. The
@@ -160,6 +157,18 @@ model WorkflowStep {
   runId       String
   tenantId    String
   seq         Int
+  /// The CONTEXT-CHAIN position in force when this step was recorded.
+  ///
+  /// The replay anchor, and it lives HERE rather than on `WorkflowRun` for one
+  /// reason: restoring an earlier `(contextJson, contextHash)` pair onto the run
+  /// row rolls the run's memory back, and the chain verifies, because the link
+  /// is recomputed from the very envelope being replayed. This ledger is
+  /// append-only and a different table, so the same restore does not move it —
+  /// which is what lets the next step notice that the memory went backwards.
+  ///
+  /// Nullable: added to a populated table, and a step recorded before this
+  /// column existed genuinely does not know its position.
+  contextSeq  Int?
   kind        WorkflowStepKind
   toolCalled  String?
   inputJson   String?
