@@ -447,6 +447,11 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // @@index([tenantId, status, createdAt]). Bounded take ≤100.
     AgentProposal:
         'listAgentProposals filters by tenantId (+status), orders by createdAt — covered by @@index([tenantId, status, createdAt]); bounded take ≤100.',
+    // Policy cards — read by the review-quality report to resolve which CARD a
+    // proposal's pinned version belongs to. Filters by (tenantId, agentId IN …)
+    // with no sort, over at most one row per agent.
+    AgentPolicyCard:
+        'computeAgentReviewQuality filters by tenantId + agentId IN (…) and does not sort — covered by the tenantId-leading @@unique([tenantId, agentId]); at most one row per agent and bounded take ≤5000.',
     // Agent-action receipts — listReceipts filters by tenantId (+ optional
     // verified / toolName), orders by occurredAt desc; covered by
     // @@index([tenantId, occurredAt]) (tenantId is RLS-bound; verified/toolName

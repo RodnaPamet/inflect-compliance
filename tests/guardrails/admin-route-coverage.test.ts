@@ -80,6 +80,13 @@ const ADMIN_ONLY_ROUTES = [
     'admin/agents/[agentId]/risk-assessment/route.ts',
     'admin/agents/[agentId]/risk-assessment/complete/route.ts',
     'admin/agents/[agentId]/coverage/route.ts',
+    // Review quality (ASI09) — whether the human gate on what agents propose
+    // is real: time-to-decision, approval rate with its denominator, and
+    // bulk-approval bursts, all read from columns AgentProposal already keeps.
+    // Same `admin.agent_registry` key, matched by the subtree rule: judging the
+    // gate and deciding which agents may pass it are one authority, and the
+    // surface names people rather than tools.
+    'admin/agents/review-quality/route.ts',
     'admin/device-tokens/route.ts',
     'admin/device-tokens/[tokenId]/route.ts',
     'admin/dsar-requests/route.ts',
