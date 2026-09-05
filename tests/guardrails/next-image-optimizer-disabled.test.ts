@@ -79,13 +79,25 @@ describe('the Next image optimizer is disabled', () => {
         // Grounds the whole file. If Next ever drops or replaces its vendored
         // image-size, this fails and the rationale above needs rewriting —
         // possibly the flag is no longer needed at all.
-        const vendored = path.join(
-            REPO_ROOT,
-            'node_modules/next/dist/compiled/image-size/index.js',
-        );
-        if (!fs.existsSync(vendored)) {
+        // Resolve the way Node does rather than assuming `node_modules` sits at
+        // REPO_ROOT. A git worktree has no `node_modules` of its own — it
+        // resolves upward to the primary clone — so joining REPO_ROOT produced a
+        // path that exists only outside a worktree, and this guard false-failed
+        // for anyone working in one while passing in CI's single checkout.
+        // Same family as the `.claude/worktrees` population trap CLAUDE.md
+        // records: a path built from an assumed root, not a resolved one.
+        let vendored: string;
+        try {
+            vendored = require.resolve('next/dist/compiled/image-size/index.js', {
+                paths: [REPO_ROOT],
+            });
+        } catch {
+            // `require.resolve` THROWS when the module is gone, so the explanatory
+            // message this guard exists to deliver has to live here rather than
+            // behind an existsSync that can no longer be reached.
             throw new Error(
-                `next no longer vendors image-size at ${vendored} — re-assess whether images.unoptimized is still required`,
+                'next no longer vendors image-size (resolved from ' +
+                    `${REPO_ROOT}) — re-assess whether images.unoptimized is still required`,
             );
         }
         const src = fs.readFileSync(vendored, 'utf8').toLowerCase();

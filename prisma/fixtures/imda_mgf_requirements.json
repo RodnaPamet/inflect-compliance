@@ -1,0 +1,116 @@
+[
+  {
+    "key": "MGF-1.1",
+    "section": "D1 Bound risks upfront",
+    "sortOrder": 0,
+    "title": "Risk taxonomy and tolerances defined before deployment"
+  },
+  {
+    "key": "MGF-1.2",
+    "section": "D1 Bound risks upfront",
+    "sortOrder": 1,
+    "title": "Internal governance structure with named accountable owners"
+  },
+  {
+    "key": "MGF-1.3",
+    "section": "D1 Bound risks upfront",
+    "sortOrder": 2,
+    "title": "Agent scope and authority limits are declared and enforced"
+  },
+  {
+    "key": "MGF-1.4",
+    "section": "D1 Bound risks upfront",
+    "sortOrder": 3,
+    "title": "Multi-agent system risk assessment"
+  },
+  {
+    "key": "MGF-1.5",
+    "section": "D1 Bound risks upfront",
+    "sortOrder": 4,
+    "title": "Third-party agent due diligence before adoption"
+  },
+  {
+    "key": "MGF-2.1",
+    "section": "D2 Meaningful human accountability",
+    "sortOrder": 5,
+    "title": "Human involvement model chosen per decision class"
+  },
+  {
+    "key": "MGF-2.2",
+    "section": "D2 Meaningful human accountability",
+    "sortOrder": 6,
+    "title": "Every deployed agent has an accountable human owner"
+  },
+  {
+    "key": "MGF-2.3",
+    "section": "D2 Meaningful human accountability",
+    "sortOrder": 7,
+    "title": "Intervention, escalation and stop authority"
+  },
+  {
+    "key": "MGF-2.4",
+    "section": "D2 Meaningful human accountability",
+    "sortOrder": 8,
+    "title": "Automation bias mitigated in human review"
+  },
+  {
+    "key": "MGF-3.1",
+    "section": "D3 Technical controls and processes",
+    "sortOrder": 9,
+    "title": "Data governance and provenance for inputs and memory"
+  },
+  {
+    "key": "MGF-3.2",
+    "section": "D3 Technical controls and processes",
+    "sortOrder": 10,
+    "title": "Pre-release and ongoing testing, evaluation and red-teaming"
+  },
+  {
+    "key": "MGF-3.3",
+    "section": "D3 Technical controls and processes",
+    "sortOrder": 11,
+    "title": "Traceability of decisions, tool calls and actions"
+  },
+  {
+    "key": "MGF-3.4",
+    "section": "D3 Technical controls and processes",
+    "sortOrder": 12,
+    "title": "Least-privilege identity and credential handling for agents"
+  },
+  {
+    "key": "MGF-3.5",
+    "section": "D3 Technical controls and processes",
+    "sortOrder": 13,
+    "title": "Incident detection, response and post-incident review"
+  },
+  {
+    "key": "MGF-3.6",
+    "section": "D3 Technical controls and processes",
+    "sortOrder": 14,
+    "title": "Controls on inter-agent communication and delegation"
+  },
+  {
+    "key": "MGF-4.1",
+    "section": "D4 End-user responsibility",
+    "sortOrder": 15,
+    "title": "Disclosure that an AI agent is in use"
+  },
+  {
+    "key": "MGF-4.2",
+    "section": "D4 End-user responsibility",
+    "sortOrder": 16,
+    "title": "Capabilities, limits and failure modes explained"
+  },
+  {
+    "key": "MGF-4.3",
+    "section": "D4 End-user responsibility",
+    "sortOrder": 17,
+    "title": "User control, consent and redress channels"
+  },
+  {
+    "key": "MGF-4.4",
+    "section": "D4 End-user responsibility",
+    "sortOrder": 18,
+    "title": "Guidance for safe operation and against over-reliance"
+  }
+]

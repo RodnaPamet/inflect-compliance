@@ -73,6 +73,7 @@ const ADMIN_ONLY_ROUTES = [
     // authority, so this IS the authority to set an agent's authority.
     'admin/agents/[agentId]/risk-assessment/route.ts',
     'admin/agents/[agentId]/risk-assessment/complete/route.ts',
+    'admin/agents/[agentId]/coverage/route.ts',
     'admin/device-tokens/route.ts',
     'admin/device-tokens/[tokenId]/route.ts',
     'admin/dsar-requests/route.ts',

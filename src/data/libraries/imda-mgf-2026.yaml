@@ -1,0 +1,326 @@
+# IMDA Model AI Governance Framework (MGF) — May 2026 revision — Framework Library
+#
+# WHY THIS FRAMEWORK EXISTS IN INFLECT: together with the OWASP Agentic AI
+# Top 10 it is one of the two authoritative sources that govern AI as an ACTOR
+# rather than as a content producer. OWASP supplies the threat model; the MGF
+# supplies the governance and accountability structure around it.
+#
+# PROVENANCE — READ THIS BEFORE EDITING. The four DIMENSIONS below are the
+# framework's own structure: bound risks upfront; meaningful human
+# accountability; technical controls and processes; end-user responsibility.
+# The decomposition of each dimension into numbered requirements is
+# INFLECT-AUTHORED: the MGF is published as narrative guidance, not as a
+# numbered clause list, so there is no upstream clause identifier to mirror.
+# The `MGF-<dimension>.<n>` keys are therefore Inflect-assigned and stable —
+# they are the assessment contract, and they are NOT citations of an IMDA
+# clause number. Requirements marked "May 2026 revision" cover the three
+# additions that revision makes: multi-agent systems, third-party agents, and
+# automation bias. See docs/implementation-notes/2026-09-05-agentic-frameworks.md
+# for what is faithful structure and what is Inflect's authored detail.
+#
+# LICENSE: published by IMDA / PDPC (Singapore). Inflect stores its own
+# governance summaries and dimension titles with attribution — never verbatim
+# publication prose.
+
+urn: urn:inflect:library:imda-mgf-2026
+locale: en
+ref_id: IMDA-MGF-2026
+name: IMDA Model AI Governance Framework (May 2026)
+description: >
+  The IMDA Model AI Governance Framework organises AI governance into four
+  dimensions — bound risks upfront, meaningful human accountability, technical
+  controls and processes, and end-user responsibility. The May 2026 revision
+  extends each dimension to agentic deployments: multi-agent systems,
+  third-party agents, and automation bias in human oversight. Inflect models
+  the four dimensions faithfully and authors the assessable requirement
+  decomposition beneath them.
+copyright: >
+  Model AI Governance Framework, (c) Infocomm Media Development Authority /
+  Personal Data Protection Commission, Singapore. Source:
+  https://www.imda.gov.sg/. Inflect stores dimension titles and its OWN
+  governance summaries with attribution to IMDA — not the verbatim publication
+  prose. Requirement identifiers (MGF-<dimension>.<n>) are Inflect-assigned;
+  they are not IMDA clause numbers. Not legal advice.
+version: 1
+publication_date: "2026-05"
+provider: IMDA Singapore
+packager: inflect
+kind: INDUSTRY_STANDARD
+
+objects:
+  framework:
+    urn: urn:inflect:framework:imda-mgf-2026
+    ref_id: IMDA-MGF-2026
+    name: IMDA Model AI Governance Framework (May 2026)
+    description: >
+      Four governance dimensions with Inflect-authored assessable requirements,
+      extended for agentic deployments by the May 2026 revision.
+    requirement_nodes:
+      # ─── D1 Bound risks upfront ───
+      - urn: urn:inflect:req:imda-mgf-2026:d1
+        ref_id: "MGF-D1"
+        name: "Bound risks upfront"
+        description: >
+          Decide, before deployment, which risks the organisation is willing to
+          carry and where the hard boundaries of the system's authority lie.
+        depth: 1
+        assessable: false
+        category: "D1 Bound risks upfront"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-1.1
+        ref_id: "MGF-1.1"
+        name: "Risk taxonomy and tolerances defined before deployment"
+        description: >
+          Maintain a documented taxonomy of the harms the AI system could cause,
+          with the tolerance the organisation accepts for each, agreed before the
+          system is put into service rather than after an incident.
+        parent_urn: urn:inflect:req:imda-mgf-2026:d1
+        depth: 2
+        assessable: true
+        category: "D1 Bound risks upfront"
+        section: "D1 Bound risks upfront"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-1.2
+        ref_id: "MGF-1.2"
+        name: "Internal governance structure with named accountable owners"
+        description: >
+          Assign AI governance to identified roles with decision rights,
+          reporting lines and a standing forum, so that every deployed system
+          has a named owner accountable for it.
+        parent_urn: urn:inflect:req:imda-mgf-2026:d1
+        depth: 2
+        assessable: true
+        category: "D1 Bound risks upfront"
+        section: "D1 Bound risks upfront"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-1.3
+        ref_id: "MGF-1.3"
+        name: "Agent scope and authority limits are declared and enforced"
+        description: >
+          Declare for each agent what it may act on, which tools and data it may
+          reach, what it may spend or change, and enforce those limits in the
+          runtime rather than in documentation alone.
+        parent_urn: urn:inflect:req:imda-mgf-2026:d1
+        depth: 2
+        assessable: true
+        category: "D1 Bound risks upfront"
+        section: "D1 Bound risks upfront"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-1.4
+        ref_id: "MGF-1.4"
+        name: "Multi-agent system risk assessment"
+        description: >
+          Assess risk at the level of the agent SYSTEM, not only the individual
+          agent: emergent behaviour, delegation chains, shared memory, and the
+          failure modes that only appear when agents compose. (May 2026 revision.)
+        parent_urn: urn:inflect:req:imda-mgf-2026:d1
+        depth: 2
+        assessable: true
+        category: "D1 Bound risks upfront"
+        section: "D1 Bound risks upfront"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-1.5
+        ref_id: "MGF-1.5"
+        name: "Third-party agent due diligence before adoption"
+        description: >
+          Evaluate externally supplied agents, tool servers and agent
+          marketplaces before adoption — provenance, update channel, data
+          handling, and the authority the third party gains inside your
+          environment. (May 2026 revision.)
+        parent_urn: urn:inflect:req:imda-mgf-2026:d1
+        depth: 2
+        assessable: true
+        category: "D1 Bound risks upfront"
+        section: "D1 Bound risks upfront"
+      # ─── D2 Meaningful human accountability ───
+      - urn: urn:inflect:req:imda-mgf-2026:d2
+        ref_id: "MGF-D2"
+        name: "Meaningful human accountability"
+        description: >
+          Keep a human answerable for what the system does, with the authority
+          and the information to intervene before harm lands.
+        depth: 1
+        assessable: false
+        category: "D2 Meaningful human accountability"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-2.1
+        ref_id: "MGF-2.1"
+        name: "Human involvement model chosen per decision class"
+        description: >
+          Decide and record, for each class of decision the system makes,
+          whether a human is in the loop, over the loop, or out of the loop, and
+          justify the choice against the assessed harm.
+        parent_urn: urn:inflect:req:imda-mgf-2026:d2
+        depth: 2
+        assessable: true
+        category: "D2 Meaningful human accountability"
+        section: "D2 Meaningful human accountability"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-2.2
+        ref_id: "MGF-2.2"
+        name: "Every deployed agent has an accountable human owner"
+        description: >
+          Each agent in the inventory carries a named owner who remains
+          accountable for its actions, and ownership is reassigned — not left
+          orphaned — when that person changes role or leaves.
+        parent_urn: urn:inflect:req:imda-mgf-2026:d2
+        depth: 2
+        assessable: true
+        category: "D2 Meaningful human accountability"
+        section: "D2 Meaningful human accountability"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-2.3
+        ref_id: "MGF-2.3"
+        name: "Intervention, escalation and stop authority"
+        description: >
+          Provide a tested way to pause, constrain or stop an agent mid-task,
+          state who holds that authority, and ensure it can be exercised faster
+          than the agent can act.
+        parent_urn: urn:inflect:req:imda-mgf-2026:d2
+        depth: 2
+        assessable: true
+        category: "D2 Meaningful human accountability"
+        section: "D2 Meaningful human accountability"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-2.4
+        ref_id: "MGF-2.4"
+        name: "Automation bias mitigated in human review"
+        description: >
+          Design approval steps so the reviewer can actually dissent: surface the
+          evidence and the uncertainty, avoid pre-ticked defaults, and monitor
+          approval rates for rubber-stamping. (May 2026 revision.)
+        parent_urn: urn:inflect:req:imda-mgf-2026:d2
+        depth: 2
+        assessable: true
+        category: "D2 Meaningful human accountability"
+        section: "D2 Meaningful human accountability"
+      # ─── D3 Technical controls and processes ───
+      - urn: urn:inflect:req:imda-mgf-2026:d3
+        ref_id: "MGF-D3"
+        name: "Technical controls and processes"
+        description: >
+          The engineering and operational controls that make the declared
+          boundaries real and the system's behaviour reconstructable.
+        depth: 1
+        assessable: false
+        category: "D3 Technical controls and processes"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-3.1
+        ref_id: "MGF-3.1"
+        name: "Data governance and provenance for inputs and memory"
+        description: >
+          Know where the agent's inputs, retrieved context and persistent memory
+          come from, control what may be written to them, and be able to expire
+          or quarantine poisoned content.
+        parent_urn: urn:inflect:req:imda-mgf-2026:d3
+        depth: 2
+        assessable: true
+        category: "D3 Technical controls and processes"
+        section: "D3 Technical controls and processes"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-3.2
+        ref_id: "MGF-3.2"
+        name: "Pre-release and ongoing testing, evaluation and red-teaming"
+        description: >
+          Test the system against its declared boundaries before release and on a
+          recurring basis after it, including adversarial testing of prompt
+          injection, tool misuse and goal drift.
+        parent_urn: urn:inflect:req:imda-mgf-2026:d3
+        depth: 2
+        assessable: true
+        category: "D3 Technical controls and processes"
+        section: "D3 Technical controls and processes"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-3.3
+        ref_id: "MGF-3.3"
+        name: "Traceability of decisions, tool calls and actions"
+        description: >
+          Log what the agent decided, which tools it called with which
+          parameters, and what changed as a result, in a form that supports
+          after-the-fact reconstruction by someone who was not present.
+        parent_urn: urn:inflect:req:imda-mgf-2026:d3
+        depth: 2
+        assessable: true
+        category: "D3 Technical controls and processes"
+        section: "D3 Technical controls and processes"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-3.4
+        ref_id: "MGF-3.4"
+        name: "Least-privilege identity and credential handling for agents"
+        description: >
+          Give each agent its own identity scoped to the task, hold its
+          credentials in a managed store, rotate them, and remove the standing
+          privilege it does not need between tasks.
+        parent_urn: urn:inflect:req:imda-mgf-2026:d3
+        depth: 2
+        assessable: true
+        category: "D3 Technical controls and processes"
+        section: "D3 Technical controls and processes"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-3.5
+        ref_id: "MGF-3.5"
+        name: "Incident detection, response and post-incident review"
+        description: >
+          Detect agent misbehaviour in operation, respond under a defined
+          procedure that includes containment of an autonomous actor, and feed
+          the review back into the risk boundaries of D1.
+        parent_urn: urn:inflect:req:imda-mgf-2026:d3
+        depth: 2
+        assessable: true
+        category: "D3 Technical controls and processes"
+        section: "D3 Technical controls and processes"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-3.6
+        ref_id: "MGF-3.6"
+        name: "Controls on inter-agent communication and delegation"
+        description: >
+          Authenticate and authorise agent-to-agent messages, bound how far
+          authority may be delegated down a chain, and log the delegation so a
+          transferred privilege is visible. (May 2026 revision.)
+        parent_urn: urn:inflect:req:imda-mgf-2026:d3
+        depth: 2
+        assessable: true
+        category: "D3 Technical controls and processes"
+        section: "D3 Technical controls and processes"
+      # ─── D4 End-user responsibility ───
+      - urn: urn:inflect:req:imda-mgf-2026:d4
+        ref_id: "MGF-D4"
+        name: "End-user responsibility"
+        description: >
+          What the people who use or are affected by the system are told, are
+          able to control, and are expected to do.
+        depth: 1
+        assessable: false
+        category: "D4 End-user responsibility"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-4.1
+        ref_id: "MGF-4.1"
+        name: "Disclosure that an AI agent is in use"
+        description: >
+          Tell the people interacting with the system that they are dealing with
+          an AI agent, and say on whose behalf it is acting.
+        parent_urn: urn:inflect:req:imda-mgf-2026:d4
+        depth: 2
+        assessable: true
+        category: "D4 End-user responsibility"
+        section: "D4 End-user responsibility"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-4.2
+        ref_id: "MGF-4.2"
+        name: "Capabilities, limits and failure modes explained"
+        description: >
+          Describe in user-facing terms what the agent can and cannot do, how it
+          fails, and which of its outputs should not be relied on without
+          independent checking.
+        parent_urn: urn:inflect:req:imda-mgf-2026:d4
+        depth: 2
+        assessable: true
+        category: "D4 End-user responsibility"
+        section: "D4 End-user responsibility"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-4.3
+        ref_id: "MGF-4.3"
+        name: "User control, consent and redress channels"
+        description: >
+          Give affected people a way to decline agentic handling where that is
+          meaningful, to reach a human, and to contest or seek correction of an
+          outcome.
+        parent_urn: urn:inflect:req:imda-mgf-2026:d4
+        depth: 2
+        assessable: true
+        category: "D4 End-user responsibility"
+        section: "D4 End-user responsibility"
+      - urn: urn:inflect:req:imda-mgf-2026:mgf-4.4
+        ref_id: "MGF-4.4"
+        name: "Guidance for safe operation and against over-reliance"
+        description: >
+          Publish operating guidance for the people who direct the agent,
+          including where independent verification is expected, so that
+          end-user trust is calibrated rather than assumed.
+        parent_urn: urn:inflect:req:imda-mgf-2026:d4
+        depth: 2
+        assessable: true
+        category: "D4 End-user responsibility"
+        section: "D4 End-user responsibility"

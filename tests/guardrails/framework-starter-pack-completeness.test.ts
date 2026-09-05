@@ -47,6 +47,8 @@ const STARTER_PACKS: Record<string, { frameworkKey: string; packKey: string }> =
     'CIS-CONTROLS-V8': { frameworkKey: 'CIS-V8', packKey: 'CIS_V8_IG1_PACK' },
     'OWASP-ASVS-4.0.3': { frameworkKey: 'OWASP-ASVS', packKey: 'ASVS_L1_PACK' },
     'SOC2-2017': { frameworkKey: 'SOC2', packKey: 'SOC2_STARTER_PACK' },
+    'OWASP-ASI-TOP10': { frameworkKey: 'OWASP-ASI', packKey: 'OWASP_ASI_BASELINE' },
+    'IMDA-MGF-2026': { frameworkKey: 'IMDA-MGF', packKey: 'IMDA_MGF_BASELINE' },
 };
 
 /** Library frameworks intentionally shipped WITHOUT a starter pack. */

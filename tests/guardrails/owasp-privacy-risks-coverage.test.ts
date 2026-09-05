@@ -15,7 +15,7 @@ import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { LINDDUN_CODES } from '@/lib/privacy/linddun';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
@@ -51,10 +51,14 @@ describe('OWASP Top 10 Privacy Risks — seeded templates', () => {
             expect(prose.length).toBeLessThanOrEqual(200);
             expect(prose.split(/\s+/).length).toBeLessThanOrEqual(30);
         }
-        // The seed block documents the OWASP CC-BY-SA license + paraphrase.
-        expect(seed).toMatch(/OWASP/);
-        expect(seed).toMatch(/CC-BY-SA/i);
-        expect(seed).toMatch(/PARAPHRASED|paraphrased/);
+        // The license guard is the DATA above, not a text search over the whole
+        // seed. `seed` is comment-masked, so the three whole-file greps that
+        // used to sit here (/OWASP/, /CC-BY-SA/i, /paraphrased/) were satisfied
+        // by an unrelated framework's metadata strings — they would have stayed
+        // green with this entire privacy-risk block deleted. Bind to the
+        // declaration that actually holds the seeded entries.
+        const block = declarationOf(seed, 'privacyRiskTemplates');
+        expect(block).toContain('[OWASP Top 10 Privacy Risks]');
     });
 
     it('each carries a valid LINDDUN tag', () => {

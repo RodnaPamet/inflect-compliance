@@ -100,13 +100,29 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
 // alone; it now names the DataTable value import. table-platform-drift's
 // `createColumns` (5x) / `DataTable` (17x) mentions in GUIDE.md collapsed into
 // one assertion on the canonical import line, which occurs exactly once.
-// Re-seated 2026-09-05 (Agentic 2/10): −1. `mcp-server-coverage`'s
-// `/enforceApiKeyScope\(/` needle over `src/lib/mcp/resources.ts` was satisfied
-// by either of that file's two call sites; the audience/liveness work collapsed
-// both into one `assertFrameworkScope` helper, so the needle now names exactly
-// one thing. A source refactor moving this number is the ordinary case, not a
-// surprise — the count is a property of the pair, not of the test.
-const AMBIGUOUS_NEEDLE_BASELINE = 1466;
+// Re-seated 2026-09-05 twice, by two branches that landed together — both
+// reductions are real and they compose, so the number below is MEASURED on the
+// merged tree rather than taken from either side.
+//
+// Agentic 2/10 (−1): `mcp-server-coverage`'s `/enforceApiKeyScope\(/` needle over
+// `src/lib/mcp/resources.ts` was satisfied by either of that file's two call
+// sites; the audience/liveness work collapsed both into one
+// `assertFrameworkScope` helper, so the needle now names exactly one thing.
+//
+// Agentic 4/10 (−4): seeding the OWASP Agentic AI Top 10 gave prisma/seed.ts a
+// SECOND `provider: 'OWASP'` and two more `CC-BY-SA-4.0` strings, so the AISVS
+// seed guard's needles stopped naming AISVS's metadata; it now binds to
+// `declarationOf(seed, 'aisvsMeta')`. The OWASP-privacy guard's three whole-seed
+// greps went the same way — they were satisfied by an unrelated framework's
+// metadata and would have stayed green with the privacy block deleted; replaced
+// by one assertion bound to `declarationOf(seed, 'privacyRiskTemplates')`.
+//
+// A source refactor moving this number is the ordinary case, not a surprise —
+// the count is a property of the pair, not of the test. Note 4/10's reduction is
+// itself an instance of the defect this ratchet exists to catch: adding a second
+// framework to a file made three existing guards stop naming the thing they were
+// written for, with no test edited.
+const AMBIGUOUS_NEEDLE_BASELINE = 1462;
 
 /** At or above this many satisfying positions, the needle names nothing. */
 const HIGH_MULTIPLICITY = 5;
@@ -130,8 +146,11 @@ const HIGH_MULTIPLICITY = 5;
  *     This end of the distribution moves fastest under comment masking: a
  *     needle reaching five-plus positions is usually a short identifier that
  *     a file's own header and section comments repeat.
+ *   • 251 (2026-09-05): the whole-seed `/OWASP/` needle (54 positions) retired
+ *     with the OWASP-privacy guard's rebinding; the two `CC-BY-SA` needles that
+ *     the second OWASP framework pushed to five went with it.
  */
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 252;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 251;
 
 /**
  * Sites this detector could NOT analyse, having established they read a file.

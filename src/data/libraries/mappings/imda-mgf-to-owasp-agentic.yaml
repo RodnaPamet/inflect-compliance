@@ -1,0 +1,147 @@
+# Cross-Framework Mapping Set: IMDA Model AI Governance Framework (May 2026) → OWASP Agentic AI Top 10
+# Data-driven mapping file for the RequirementMapping ingestion pipeline.
+#
+# REVERSE DIRECTION. This file is the machine-checked transpose of
+# `owasp-agentic-to-imda-mgf.yaml` — author new entries THERE and let the test tell you
+# this half is stale. The rationales are written from that file's
+# direction on purpose: each states a claim about the RELATIONSHIP
+# between two requirements, which reads the same whichever end you
+# start from, and re-wording them here would be a second copy of the
+# same judgement that could drift from it silently.
+#
+# The two agentic sources mapped to each other: OWASP states the RISKS, the MGF states
+# the GOVERNANCE EXPECTATIONS. A customer assessing against one should not have to
+# start the other from zero.
+#
+# Every entry is [curated] — Inflect's judgement of conceptual alignment, NOT
+# part of either publication. Mappings are STRUCTURAL GUIDANCE, never a
+# compliance guarantee: the gap-analysis layer treats SUBSET / INTERSECT /
+# RELATED as "partially covered" or "review needed" and never as covered.
+#
+# SYMMETRY: this pair ships in BOTH directions. `owasp-agentic-to-imda-mgf.yaml` is the exact
+# transpose of this file with each strength inverted (SUBSET ⇄ SUPERSET;
+# EQUAL / INTERSECT / RELATED are self-inverse). Edit one side and
+# tests/unit/agentic-framework-mappings.test.ts fails until the other matches.
+#
+# Refs are YAML-library ref_ids resolved against Framework.key and
+# FrameworkRequirement.code by mapping-set-importer.ts.
+
+urn: urn:inflect:mappingset:imda-mgf-to-owasp-agentic
+name: "IMDA Model AI Governance Framework (May 2026) → OWASP Agentic AI Top 10"
+description: >
+  Cross-framework traceability between IMDA Model AI Governance Framework (May 2026) and OWASP Agentic AI Top 10.
+  Curated alignment for gap analysis and inherited coverage — structural
+  guidance, not a compliance guarantee.
+version: 1
+source_framework_ref: IMDA-MGF-2026
+target_framework_ref: OWASP-ASI-TOP10
+
+mapping_entries:
+  - source_ref: "MGF-1.3"
+    target_ref: "ASI01"
+    strength: INTERSECT
+    rationale: "[curated] Declared and enforced authority limits are what a hijacked objective has to break through."
+  - source_ref: "MGF-3.2"
+    target_ref: "ASI01"
+    strength: INTERSECT
+    rationale: "[curated] Red-teaming and ongoing evaluation is where goal-hijack resistance is demonstrated."
+  - source_ref: "MGF-3.1"
+    target_ref: "ASI01"
+    strength: RELATED
+    rationale: "[curated] Provenance for inputs and memory governs the channels a hijack instruction arrives on."
+  - source_ref: "MGF-1.3"
+    target_ref: "ASI02"
+    strength: INTERSECT
+    rationale: "[curated] Which tools and data an agent may reach is exactly the boundary tool misuse crosses."
+  - source_ref: "MGF-3.4"
+    target_ref: "ASI02"
+    strength: INTERSECT
+    rationale: "[curated] Least-privilege identity for agents limits what an exploited tool call achieves."
+  - source_ref: "MGF-3.3"
+    target_ref: "ASI02"
+    strength: INTERSECT
+    rationale: "[curated] Traceability of tool calls is how misuse is detected after the fact."
+  - source_ref: "MGF-3.4"
+    target_ref: "ASI03"
+    strength: SUBSET
+    rationale: "[curated] Least-privilege identity and credential handling is a control this risk fully contains, which also covers impersonation and attribution."
+  - source_ref: "MGF-3.3"
+    target_ref: "ASI03"
+    strength: INTERSECT
+    rationale: "[curated] Traceability of actions is the attribution half of identity abuse."
+  - source_ref: "MGF-2.2"
+    target_ref: "ASI03"
+    strength: RELATED
+    rationale: "[curated] A named accountable owner is the human a delegated agent identity ultimately answers for."
+  - source_ref: "MGF-1.5"
+    target_ref: "ASI04"
+    strength: SUBSET
+    rationale: "[curated] Third-party agent due diligence is one channel of a supply-chain surface that also spans base models, prompt packs, plugin registries and update channels."
+  - source_ref: "MGF-3.1"
+    target_ref: "ASI04"
+    strength: RELATED
+    rationale: "[curated] Provenance for inputs covers one component class among many."
+  - source_ref: "MGF-3.2"
+    target_ref: "ASI05"
+    strength: INTERSECT
+    rationale: "[curated] Pre-release and ongoing testing is where unsafe execution paths are found."
+  - source_ref: "MGF-1.3"
+    target_ref: "ASI05"
+    strength: RELATED
+    rationale: "[curated] Enforced authority limits bound what escaped execution can reach."
+  - source_ref: "MGF-3.1"
+    target_ref: "ASI06"
+    strength: INTERSECT
+    rationale: "[curated] Data governance and provenance for inputs AND memory is the MGF requirement written for this risk."
+  - source_ref: "MGF-3.3"
+    target_ref: "ASI06"
+    strength: RELATED
+    rationale: "[curated] Traceability lets a poisoned memory write be attributed to the session that made it."
+  - source_ref: "MGF-3.6"
+    target_ref: "ASI07"
+    strength: SUBSET
+    rationale: "[curated] Controls on inter-agent communication and delegation are the control set for this risk; the risk also spans replay and unbounded delegation chains."
+  - source_ref: "MGF-1.4"
+    target_ref: "ASI07"
+    strength: INTERSECT
+    rationale: "[curated] Multi-agent system risk assessment is where delegation chains are examined."
+  - source_ref: "MGF-2.3"
+    target_ref: "ASI08"
+    strength: INTERSECT
+    rationale: "[curated] Intervention, escalation and stop authority is what a cascade outruns."
+  - source_ref: "MGF-1.4"
+    target_ref: "ASI08"
+    strength: INTERSECT
+    rationale: "[curated] Multi-agent risk assessment is where amplification through chained agents is assessed."
+  - source_ref: "MGF-3.5"
+    target_ref: "ASI08"
+    strength: INTERSECT
+    rationale: "[curated] Incident detection and response is how an in-progress cascade is halted."
+  - source_ref: "MGF-2.4"
+    target_ref: "ASI09"
+    strength: SUBSET
+    rationale: "[curated] Automation bias in human review is the named mechanism inside a broader trust-exploitation risk that also spans persona and apparent authority."
+  - source_ref: "MGF-4.1"
+    target_ref: "ASI09"
+    strength: INTERSECT
+    rationale: "[curated] Disclosure that an AI agent is in use is the first defence against misplaced trust."
+  - source_ref: "MGF-4.2"
+    target_ref: "ASI09"
+    strength: INTERSECT
+    rationale: "[curated] Explaining capabilities, limits and failure modes calibrates how much a person should defer."
+  - source_ref: "MGF-4.4"
+    target_ref: "ASI09"
+    strength: INTERSECT
+    rationale: "[curated] Guidance against over-reliance is the end-user half of this risk."
+  - source_ref: "MGF-1.2"
+    target_ref: "ASI10"
+    strength: INTERSECT
+    rationale: "[curated] A governance structure with named owners is what an unregistered or orphaned agent sits outside of."
+  - source_ref: "MGF-2.2"
+    target_ref: "ASI10"
+    strength: INTERSECT
+    rationale: "[curated] Every deployed agent having an accountable human owner is the direct answer to orphaned agents."
+  - source_ref: "MGF-1.3"
+    target_ref: "ASI10"
+    strength: INTERSECT
+    rationale: "[curated] Declared scope and authority is what a rogue agent operates beyond."

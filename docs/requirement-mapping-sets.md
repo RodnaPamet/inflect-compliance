@@ -224,31 +224,88 @@ Raw mapping strengths are interpreted through a conservative business lens:
 
 ### Supported Mapping Sets
 
-| Source Framework | Target Framework | File | Entries | Status |
-|-----------------|-----------------|------|---------|--------|
-| ISO 27001:2022 | NIST CSF 2.0 | `iso27001-to-nist-csf.yaml` | 14 | ✅ Shipped |
-| ISO 27001:2022 | SOC 2 (2017) | `iso27001-to-soc2.yaml` | 26 | ✅ Shipped |
-| NIST CSF 2.0 | SOC 2 (2017) | `nist-csf-to-soc2.yaml` | 16 | ✅ Shipped |
-| NIS2 (2022) | ISO 27001:2022 | `nis2-to-iso27001.yaml` | 22 | ✅ Shipped |
+Refs are YAML-library `ref_id`s, resolved by `mapping-set-importer.ts` against
+`Framework.key` and `FrameworkRequirement.code`. Regenerate this table from the
+directory rather than editing rows by hand.
 
-**Total: 78 mapping entries across 4 framework pairs.**
+| Source (`Framework.key`) | Target (`Framework.key`) | File | Entries |
+|---|---|---|---|
+| `AISVS-1.0` | `EU-AI-ACT-2024` | `aisvs-to-eu-ai-act.yaml` | 13 |
+| `AISVS-1.0` | `ISO27001-2022` | `aisvs-to-iso27001.yaml` | 16 |
+| `AISVS-1.0` | `ISO42001-2023` | `aisvs-to-iso-42001.yaml` | 14 |
+| `AISVS-1.0` | `NIST-CSF-2.0` | `aisvs-to-nist-csf.yaml` | 13 |
+| `CIS-CONTROLS-V8` | `ISO27001-2022` | `cis-v8-to-iso27001.yaml` | 65 |
+| `CIS-CONTROLS-V8` | `NIST-CSF-2.0` | `cis-v8-to-nist-csf.yaml` | 36 |
+| `DORA-2022` | `ISO27001-2022` | `dora-to-iso27001.yaml` | 20 |
+| `DORA-2022` | `NIS2-2022` | `dora-to-nis2.yaml` | 16 |
+| `IMDA-MGF-2026` | `ISO42001-2023` | `imda-mgf-to-iso-42001.yaml` | 47 |
+| `IMDA-MGF-2026` | `OWASP-ASI-TOP10` | `imda-mgf-to-owasp-agentic.yaml` | 27 |
+| `ISO27001-2022` | `ISO27701-2019` | `iso27001-to-iso27701.yaml` | 14 |
+| `ISO27001-2022` | `NIST-CSF-2.0` | `iso27001-to-nist-csf.yaml` | 14 |
+| `ISO27001-2022` | `OWASP-ASI-TOP10` | `iso27001-to-owasp-agentic.yaml` | 39 |
+| `ISO27001-2022` | `SOC2-2017` | `iso27001-to-soc2.yaml` | 26 |
+| `ISO27701-2019` | `GDPR` | `iso27701-to-gdpr.yaml` | 43 |
+| `ISO42001-2023` | `EU-AI-ACT-2024` | `iso-42001-to-eu-ai-act.yaml` | 15 |
+| `ISO42001-2023` | `IMDA-MGF-2026` | `iso-42001-to-imda-mgf.yaml` | 47 |
+| `ISO42001-2023` | `OWASP-ASI-TOP10` | `iso-42001-to-owasp-agentic.yaml` | 38 |
+| `NIS2-2022` | `ISO27001-2022` | `nis2-to-iso27001.yaml` | 22 |
+| `NIST-CSF-2.0` | `SOC2-2017` | `nist-csf-to-soc2.yaml` | 15 |
+| `NIST-PF-1.0` | `ISO27001-2022` | `nist-privacy-framework-to-iso27001.yaml` | 16 |
+| `NIST-PF-1.0` | `NIST-CSF-2.0` | `nist-privacy-framework-to-nist-csf.yaml` | 17 |
+| `NIST-SSDF-800-218` | `ISO27001-2022` | `ssdf-to-iso27001.yaml` | 15 |
+| `NIST-SSDF-800-218` | `NIST-CSF-2.0` | `ssdf-to-nist-csf.yaml` | 15 |
+| `NIST-SSDF-800-218` | `SOC2-2017` | `ssdf-to-soc2.yaml` | 13 |
+| `OWASP-ASI-TOP10` | `IMDA-MGF-2026` | `owasp-agentic-to-imda-mgf.yaml` | 27 |
+| `OWASP-ASI-TOP10` | `ISO27001-2022` | `owasp-agentic-to-iso27001.yaml` | 39 |
+| `OWASP-ASI-TOP10` | `ISO42001-2023` | `owasp-agentic-to-iso-42001.yaml` | 38 |
+| `OWASP-ASVS-4.0.3` | `ISO27001-2022` | `asvs-to-iso27001.yaml` | 128 |
+| `OWASP-ASVS-4.0.3` | `NIST-SSDF-800-218` | `asvs-to-ssdf.yaml` | 128 |
+
+**Total: 976 mapping entries across 30 framework pairs.**
+
+### Agentic pairs ship in BOTH directions
+
+The four pairs with an agentic framework on either side — OWASP Agentic AI
+Top 10 and the IMDA MGF, against ISO/IEC 42001, ISO/IEC 27001 and each other
+— are the only ones that ship a reverse file. The reverse is the EXACT
+transpose of the forward file with each strength inverted (`SUBSET` ⇄
+`SUPERSET`; `EQUAL` / `INTERSECT` / `RELATED` are self-inverse), and
+`tests/unit/agentic-framework-mappings.test.ts` fails if one side is edited
+alone.
+
+Both directions are authored because both questions get asked of a new
+framework: "what agentic coverage does my ISMS already give me" and "what does
+my agentic control set give me toward the standard I certify against". For the
+older pairs the second question is not asked, which is why they stay
+one-directional.
 
 ### Transitive Traceability Chains
 
-With all 4 mapping sets loaded, the resolution engine supports transitive paths:
+With every mapping set loaded, the resolution engine walks transitive paths up
+to `maxDepth` (default 3):
 
 ```
-NIS2 ──→ ISO 27001 ──→ NIST CSF ──→ SOC 2      (3-hop)
-NIS2 ──→ ISO 27001 ──→ SOC 2                    (2-hop)
-ISO 27001 ──→ NIST CSF ──→ SOC 2                (2-hop)
+NIS2 ──→ ISO 27001 ──→ NIST CSF ──→ SOC 2                    (3-hop)
+NIS2 ──→ ISO 27001 ──→ SOC 2                                  (2-hop)
+ISO 27001 ──→ NIST CSF ──→ SOC 2                              (2-hop)
+ISO 27001 ──→ OWASP ASI ──→ IMDA MGF                          (2-hop)
+NIS2 ──→ ISO 27001 ──→ OWASP ASI                              (2-hop)
 ```
+
+The last two chains are the reason the ISO 27001 → OWASP ASI map is worth its
+length: it is the only edge reaching an agentic framework from the ISMS side of
+the graph, so without it every ISO 27001 / NIS2 / CIS posture stops one hop
+short of an agentic readout.
 
 ### Planned Mapping Sets
 
 | Source Framework | Target Framework | Priority |
 |-----------------|-----------------|----------|
-| SOC 2 | ISO 27001:2022 | Low — reverse direction of primary mapping |
+| SOC 2 | ISO 27001:2022 | Low — reverse direction of a primary mapping |
 | NIST CSF 2.0 | ISO 27001:2022 | Low — reverse direction |
+
+Reverse directions for the AGENTIC pairs are not on this list: they are
+shipped, and the symmetry check above holds them to their forward files.
 
 ### Support Boundaries
 
@@ -256,7 +313,7 @@ ISO 27001 ──→ NIST CSF ──→ SOC 2                (2-hop)
 - ✅ YAML ingestion pipeline (fully operational)
 - ✅ Resolution engine with BFS, cycles, depth limiting (fully operational)
 - ✅ Traceability and gap analysis with conservative semantics (fully operational)
-- ✅ Mapping data population (4 of 4 high-priority pairs shipped)
+- ✅ Mapping data population (30 ordered framework pairs shipped)
 - ✅ Product-facing gap-analysis usecase layer (fully operational)
 - ✅ Lifecycle wiring into library-sync (fully operational)
 
@@ -304,11 +361,8 @@ src/app-layer/usecases/
 ├── gap-analysis.ts                     # Product-facing gap analysis entrypoints
 └── library-sync.ts                     # Lifecycle orchestration (fw + mappings)
 
-src/data/libraries/mappings/
-├── iso27001-to-nist-csf.yaml           # ISO 27001 → NIST CSF (14 entries)
-├── iso27001-to-soc2.yaml               # ISO 27001 → SOC 2 (26 entries)
-├── nist-csf-to-soc2.yaml               # NIST CSF → SOC 2 (16 entries)
-└── nis2-to-iso27001.yaml               # NIS2 → ISO 27001 (22 entries)
+src/data/libraries/mappings/          # one file per ORDERED framework pair —
+                                     # see the Supported Mapping Sets table
 
 tests/unit/
 ├── requirement-mapping-repository.test.ts   # 27 tests
