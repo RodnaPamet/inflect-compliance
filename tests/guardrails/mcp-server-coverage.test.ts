@@ -15,7 +15,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 import { VALID_SCOPES } from '@/lib/auth/api-key-auth';
 
@@ -44,11 +44,22 @@ function mcpSourceFiles(): string[] {
     return out;
 }
 
-/** Tool/resource implementation files (exclude protocol/types/auth/registry plumbing). */
+/**
+ * Files that DECLARE a tool, recognised by the type they declare it as.
+ *
+ * This used to be "everything under tools/ except two known filenames", which
+ * is a hand-maintained denominator: a new non-tool module in that directory —
+ * the per-domain redaction table, say — silently joined the population and was
+ * asked to import a usecase it has no business importing. A positive test
+ * cannot make that mistake in either direction: a real tool is always declared
+ * as one of these two types, and nothing else is.
+ */
 function toolImplFiles(): string[] {
     return mcpSourceFiles().filter((f) => {
         const rel = path.relative(MCP_DIR, f);
-        return rel.startsWith('tools/') && !rel.endsWith('types.ts') && !rel.endsWith('registry.ts');
+        if (!rel.startsWith('tools/')) return false;
+        const src = codeOf(fs.readFileSync(f, 'utf8'));
+        return /:\s*McpReadTool</.test(src) || /McpProposeTool\[\]/.test(src);
     });
 }
 
@@ -116,18 +127,34 @@ describe('MCP server — authentication inherits the TenantApiKey chain', () => 
 describe('MCP server — every read tool is usecase-backed, scope-gated, audited', () => {
     it('every tool implementation calls exactly an existing usecase (no direct data access)', () => {
         const files = toolImplFiles();
-        expect(files.length).toBeGreaterThanOrEqual(1);
+        // Anti-vacuity: a population that silently emptied would make the loop
+        // below pass while checking nothing. Eight tool files exist today.
+        expect(files.length).toBeGreaterThanOrEqual(8);
         for (const file of files) {
             const src = codeOf(fs.readFileSync(file, 'utf8'));
             expect(src).toMatch(/from ['"]@\/app-layer\/usecases/);
         }
     });
 
-    it('the execution funnel enforces the resource scope AND audits every call', () => {
+    it('the execution funnel authorizes every call through the shared gate, and audits it', () => {
+        // The scope check used to be spelled inline here. It now lives in
+        // `authorizeToolCall` alongside the exposure allowlist and the SAME
+        // `assertPermission` the equivalent human route runs — one gate, in one
+        // order, so a tool cannot be reached by a path that skips half of it.
+        // Both halves are asserted, bounded to the function that owns each: a
+        // funnel that stopped calling the gate, or a gate that stopped
+        // enforcing, would each pass an assertion about the other.
         const registry = read('src/lib/mcp/tools/registry.ts');
-        expect(registry).toMatch(/enforceApiKeyScope\(/);
-        expect(registry).toMatch(/appendAuditEntry\(/);
-        expect(registry).toMatch(/actorType:\s*['"]API_KEY['"]/);
+        expect(functionBodyOf(registry, 'runReadTool')).toMatch(/authorizeToolCall\(/);
+
+        const gate = functionBodyOf(read('src/lib/mcp/authorize.ts'), 'authorizeToolCall');
+        expect(gate).toMatch(/isToolExposed\(/);
+        expect(gate).toMatch(/enforceApiKeyScope\(/);
+        expect(gate).toMatch(/assertPermission\(/);
+
+        const audit = functionBodyOf(registry, 'auditToolCall');
+        expect(audit).toMatch(/appendAuditEntry\(/);
+        expect(audit).toMatch(/actorType:\s*['"]API_KEY['"]/);
     });
 
     it('resource reads are scope-gated + usecase-backed too', () => {

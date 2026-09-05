@@ -138,6 +138,34 @@ async function auditPermissionDenied(
     }
 }
 
+/**
+ * The permission decision itself — check, audit the denial, throw.
+ *
+ * EXTRACTED FROM `requirePermission` so a caller that is not an HTTP route can
+ * reach the SAME gate. `requirePermission` is a route wrapper: it resolves a
+ * context from `params` + `req` and then makes this decision. The MCP tool
+ * funnel already holds a resolved context and has no `params`, so before this
+ * existed the only way to gate a tool was to re-implement the decision — a
+ * second authorization path over the same `PermissionSet`, free to drift from
+ * the one the equivalent human route uses. There is now one.
+ *
+ * Denials write exactly ONE hash-chained `AUTHZ_DENIED` row and throw the
+ * generic `forbidden('Permission denied')`; the key never reaches the caller.
+ */
+export async function assertPermission(
+    ctx: RequestContext,
+    required:
+        | PermissionKey
+        | readonly PermissionKey[]
+        | { keys: readonly PermissionKey[]; mode?: PermissionMode },
+    reqMeta: { method: string; path: string },
+): Promise<void> {
+    const { keys, mode } = normaliseRequirement(required);
+    if (checkPermissions(ctx.appPermissions, keys, mode)) return;
+    await auditPermissionDenied(ctx, keys, reqMeta);
+    throw forbidden('Permission denied');
+}
+
 function safePath(req: NextRequest): string {
     try {
         return req.nextUrl.pathname;
@@ -206,14 +234,14 @@ export function requirePermission<
         const resolvedParams = await routeArgs.params;
         const ctx = await getTenantCtx(resolvedParams, req);
 
-        const granted = checkPermissions(ctx.appPermissions, keys, mode);
-        if (!granted) {
-            await auditPermissionDenied(ctx, keys, {
-                method: req.method,
-                path: safePath(req),
-            });
-            throw forbidden('Permission denied');
-        }
+        // The decision itself lives in `assertPermission` so the MCP tool
+        // funnel can make the SAME one. Do not inline it back — a second
+        // caller re-implementing this check is exactly the drift the
+        // extraction prevents.
+        await assertPermission(ctx, { keys, mode }, {
+            method: req.method,
+            path: safePath(req),
+        });
 
         return handler(req, { ...routeArgs, params: resolvedParams }, ctx) as Promise<TResponse>;
     };

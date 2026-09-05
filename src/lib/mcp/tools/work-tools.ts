@@ -34,6 +34,19 @@ export const listFindingsTool: McpReadTool<z.infer<typeof findingsArgs>> = {
     },
     argsSchema: findingsArgs,
     resourceScope: { resource: 'audits', action: 'read' },
+    // `GET /api/t/:slug/findings` carries no permission key — `PermissionSet`
+    // has no `findings` domain, and findings are audit-domain artefacts (which
+    // is why the resource scope above is `audits:read`). So the gate is the
+    // domain key that DOES exist plus the shared policy the route's usecase
+    // actually applies. Adding a `findings.*` domain is the right fix and is
+    // deliberately not smuggled in here: it would change what every existing
+    // custom role resolves to.
+    authorize: {
+        keys: ['audits.view'],
+        policy: 'read',
+        basis: 'effective',
+        mirrors: 'GET /api/t/:slug/findings (getTenantCtx + assertCanRead)',
+    },
     run: async (ctx: RequestContext, args) => {
         return listFindings(ctx, { take: args.limit ?? 50 });
     },
@@ -76,6 +89,12 @@ export const listTasksTool: McpReadTool<z.infer<typeof tasksArgs>> = {
     },
     argsSchema: tasksArgs,
     resourceScope: { resource: 'tasks', action: 'read' },
+    // `GET /api/t/:slug/tasks` is `requirePermission('tasks.view')`.
+    authorize: {
+        keys: ['tasks.view'],
+        basis: 'effective',
+        mirrors: 'GET /api/t/:slug/tasks',
+    },
     run: async (ctx: RequestContext, args) => {
         const { limit, ...filters } = args;
         return listTasks(ctx, filters as Parameters<typeof listTasks>[1], { take: limit ?? 50 });

@@ -175,3 +175,21 @@ export const RegisterAgentSchema = z
         });
     });
 export type RegisterAgentInput = z.infer<typeof RegisterAgentSchema>;
+
+/**
+ * Granting one MCP tool to a registered agent.
+ *
+ * The tool name is a plain bounded string here rather than a `z.enum` over the
+ * catalogue: the catalogue is code that ships with a deploy, and the usecase
+ * checks membership against the live list so the error message can name the tool
+ * the caller asked for. A schema enum would give a less useful message and would
+ * still need the usecase check for the case where the two lists disagree.
+ */
+export const AgentToolGrantSchema = z.object({
+    toolName: z
+        .string()
+        .min(1, 'A tool name is required')
+        .max(100)
+        .trim(),
+});
+export type AgentToolGrantInput = z.infer<typeof AgentToolGrantSchema>;

@@ -31,8 +31,13 @@ const TENANT_A = `ta-${SUITE}`;
 const TENANT_B = `tb-${SUITE}`;
 
 // Minted below in beforeAll.
-let keyFull = ''; // tenant A: [mcp:read, controls:read] — the working key
-let keyB = ''; // tenant B: [mcp:read, controls:read]
+// `risks:read` alongside `controls:read` because the posture payload spans
+// domains and Epic Agentic 2 redacts the sections the CREDENTIAL is not scoped
+// for as well as the ones the principal cannot see. This suite's subject is RLS
+// isolation on the risk counts, so the key has to be scoped to read them; the
+// redaction itself is proved in mcp-tool-authz-per-invocation.test.ts.
+let keyFull = ''; // tenant A: [mcp:read, controls:read, risks:read]
+let keyB = ''; // tenant B: [mcp:read, controls:read, risks:read]
 let keyNoMcp = ''; // tenant A: [controls:read] only (no mcp gate)
 let keyNoResource = ''; // tenant A: [mcp:read] only (no controls:read)
 
@@ -74,6 +79,19 @@ async function seedTenant(tenantId: string, slug: string, riskCount: number): Pr
         where: { id: userId }, update: {},
         create: { id: userId, email, emailHash: hashForLookup(email) },
     });
+    // The key's PRINCIPAL must be a live member of the tenant. `verifyApiKey`
+    // derives the credential's role from its SCOPES, but as of Epic Agentic 2
+    // `/api/mcp` also resolves `TenantApiKey.createdById` through the same
+    // `resolveTenantContext` a signed-in human goes through and intersects the
+    // two — a credential cannot exceed the person it speaks for, and a creator
+    // who is not a member has no authority to lend. These fixtures minted keys
+    // for a user with no membership at all, which used to work; the membership
+    // is what the fixture was always implying.
+    await prisma.tenantMembership.upsert({
+        where: { tenantId_userId: { tenantId, userId } },
+        update: { role: 'OWNER', status: 'ACTIVE' },
+        create: { tenantId, userId, role: 'OWNER', status: 'ACTIVE' },
+    });
     // The agent-registration gate defaults to ENFORCING for a tenant with no
     // security-settings row, so a suite that mints a bare API key and calls
     // /api/mcp would now be refused. These fixtures predate the register and
@@ -104,8 +122,8 @@ describeFn('MCP server (real route, real key, real RLS)', () => {
         // tenant-scoped (no global bleed) → a clean cross-tenant assertion.
         const userA = await seedTenant(TENANT_A, TENANT_A, 2);
         const userB = await seedTenant(TENANT_B, TENANT_B, 0);
-        keyFull = await mintKey(TENANT_A, userA, ['mcp:read', 'controls:read']);
-        keyB = await mintKey(TENANT_B, userB, ['mcp:read', 'controls:read']);
+        keyFull = await mintKey(TENANT_A, userA, ['mcp:read', 'controls:read', 'risks:read']);
+        keyB = await mintKey(TENANT_B, userB, ['mcp:read', 'controls:read', 'risks:read']);
         keyNoMcp = await mintKey(TENANT_A, userA, ['controls:read']);
         keyNoResource = await mintKey(TENANT_A, userA, ['mcp:read']);
     });

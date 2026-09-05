@@ -104,6 +104,7 @@ describe('PermissionSet admin capabilities', () => {
             compliance_dsar_view: true,
             compliance_dsar_manage: true,
             agent_registry: true,
+            agent_tool_exposure: true,
         });
     });
 
@@ -120,6 +121,7 @@ describe('PermissionSet admin capabilities', () => {
             compliance_dsar_view: true,
             compliance_dsar_manage: true,
             agent_registry: true,
+            agent_tool_exposure: true,
         });
     });
 
@@ -136,6 +138,7 @@ describe('PermissionSet admin capabilities', () => {
             compliance_dsar_view: false,
             compliance_dsar_manage: false,
             agent_registry: false,
+            agent_tool_exposure: false,
         });
     });
 
@@ -152,6 +155,7 @@ describe('PermissionSet admin capabilities', () => {
             compliance_dsar_view: true,
             compliance_dsar_manage: false,
             agent_registry: false,
+            agent_tool_exposure: false,
         });
     });
 
@@ -168,6 +172,7 @@ describe('PermissionSet admin capabilities', () => {
             compliance_dsar_view: false,
             compliance_dsar_manage: false,
             agent_registry: false,
+            agent_tool_exposure: false,
         });
     });
 });

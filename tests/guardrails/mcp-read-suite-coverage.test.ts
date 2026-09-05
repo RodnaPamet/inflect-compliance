@@ -22,11 +22,19 @@ const ROOT = path.resolve(__dirname, '../..');
 const TOOLS_DIR = path.join(ROOT, 'src/lib/mcp/tools');
 
 /** READ-tool implementation files (exclude plumbing + the propose write surface). */
+/**
+ * The READ-tool files, recognised by the type they declare rather than by
+ * excluding three filenames. A name-exclusion list is a hand-maintained
+ * denominator, and it had never heard of a non-tool module living beside the
+ * tools — the per-domain redaction table joined the population silently and was
+ * asked to import a usecase it has no business importing.
+ */
 function toolImplFiles(): string[] {
     return fs
         .readdirSync(TOOLS_DIR)
-        .filter((n) => n.endsWith('.ts') && n !== 'types.ts' && n !== 'registry.ts' && n !== 'propose-tools.ts')
-        .map((n) => path.join(TOOLS_DIR, n));
+        .filter((n) => n.endsWith('.ts'))
+        .map((n) => path.join(TOOLS_DIR, n))
+        .filter((f) => /:\s*McpReadTool</.test(fs.readFileSync(f, 'utf8')));
 }
 
 const EXPECTED_TOOLS = [
@@ -91,6 +99,12 @@ describe('MCP read suite — every tool is scope-gated, validated, bounded', () 
 
 describe('MCP read suite — leak lock + read-only lock (per tool file)', () => {
     const files = toolImplFiles();
+
+    it('the population is real — seven read-tool files declare a tool today', () => {
+        // A filter that silently emptied would make every loop below pass while
+        // checking nothing.
+        expect(files.length).toBeGreaterThanOrEqual(7);
+    });
 
     it('every tool file goes through a usecase (no direct Prisma / repository)', () => {
         for (const file of files) {

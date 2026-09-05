@@ -417,6 +417,10 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // status), soft-delete rail on deletedAt, orders by createdAt desc.
     RegisteredAgent:
         'listRegisteredAgents filters by (tenantId, deletedAt IS NULL, +status) and orders by createdAt desc — covered by @@index([tenantId, status]) + @@index([tenantId, deletedAt]) + @@index([tenantId, createdAt]); bounded take ≤200.',
+    // Tool exposure — read per (tenantId, agentId) on every MCP invocation and
+    // by the admin surface; there is no other shape.
+    RegisteredAgentTool:
+        'listGrantedToolNames and listAgentTools both filter by (tenantId, agentId) and nothing else — covered by @@index([tenantId, agentId]) with the tenantId-leading @@unique([tenantId, agentId, toolName]) behind it; bounded take ≤200.',
     // MCP agent proposals — listAgentProposals filters by tenantId (+ optional
     // status), orders by createdAt desc; fully covered by
     // @@index([tenantId, status, createdAt]). Bounded take ≤100.

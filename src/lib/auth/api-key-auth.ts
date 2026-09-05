@@ -34,6 +34,11 @@ import { getPermissionsForRole, type PermissionSet } from '@/lib/permissions';
 import { computePermissions } from '@/lib/tenant-context';
 import { forbidden } from '@/lib/errors/types';
 import type { RequestContext } from '@/app-layer/types';
+import {
+    PrincipalUnresolvedError,
+    resolveAgentAuthority,
+    auditPrincipalUnresolved,
+} from '@/lib/agentic/agent-authority';
 import type { TenantApiKey, Tenant } from '@prisma/client';
 
 // ─── Constants ───
@@ -85,26 +90,36 @@ const KEY_PREFIX_DISPLAY_LENGTH = 8;
  * silently change what an already-issued `audits:write` key resolves
  * to, which is a behaviour break, not a tidy-up.
  *
- * Some ACTIONS are deliberately unreachable by any scope:
+ * Some ACTIONS are deliberately unreachable by any NAMED scope:
  * `admin.tenant_lifecycle`, `admin.owner_management`,
+ * `admin.agent_registry`, `admin.agent_tool_exposure`,
  * `admin.compliance_dsar_*` and `reports.schedule_external`. Deleting
- * the tenant, rotating the DEK, managing OWNERs, moving DSARs, and
- * aiming a standing report feed off-tenant are not things a bearer
- * token should be able to do.
+ * the tenant, rotating the DEK, managing OWNERs, deciding which agents
+ * may act and what they may reach, moving DSARs, and aiming a standing
+ * report feed off-tenant are not things a bearer token should be able
+ * to do.
  *
- * NOT EVEN `*`. This paragraph used to end "a `*` key still reaches
- * them, and that is the one grant an operator has to make
- * consciously", which is false: `*` returns
- * `getPermissionsForRole('ADMIN')` below, and ADMIN denies
- * `tenant_lifecycle` and `owner_management` explicitly
- * (`permissions.ts` — OWNER is the only role that carries them). The
- * error was safe in direction — it overstated what a key grants — but
- * it described the security model wrongly, and automation planned
- * against it earns a 403. There is NO bearer token for these actions;
- * they need a real OWNER session. Pinned by the `*` case in
- * `tests/unit/api-key-management.test.ts`, which now asserts the
- * denial rather than only that `*` equals ADMIN — a shape assertion
- * that stayed green all the while this comment said the opposite.
+ * NOT EVEN `*`, for FOUR of those six. This paragraph used to end "a
+ * `*` key still reaches them, and that is the one grant an operator
+ * has to make consciously", which is false: `*` resolves below to
+ * ADMIN, and ADMIN denies `tenant_lifecycle` and `owner_management`
+ * explicitly (`permissions.ts` — OWNER is the only role that carries
+ * them). The error was safe in direction — it overstated what a key
+ * grants — but it described the security model wrongly, and automation
+ * planned against it earns a 403.
+ *
+ * The two agent-governance flags are denied to `*` EXPLICITLY, at the
+ * branch below, because ADMIN does hold them: a `*` key carried by an
+ * agent could otherwise activate its own registration and grant itself
+ * every MCP tool, and an allowlist its subject can widen is not an
+ * allowlist. `compliance_dsar_*` and `reports.schedule_external` are
+ * the remaining two, and `*` DOES reach them — they are privileged
+ * operations on data, not authority over which principals may act.
+ *
+ * Pinned by the `*` cases in `tests/unit/api-key-management.test.ts`,
+ * which assert the denials rather than only that `*` equals ADMIN — a
+ * shape assertion that stayed green all the while this comment said
+ * the opposite.
  */
 const SCOPE_ACTION_MAP: Record<string, Record<string, string[]>> = {
     controls:   { read: ['view'], write: ['create', 'edit'] },
@@ -187,9 +202,38 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
         }
     }
 
-    // Full access shortcut
+    // Full access shortcut — ADMIN, MINUS the agent-governance flags.
+    //
+    // The two subtractions are the point of the branch, not a detail of it.
+    // `admin.agent_registry` decides which autonomous agents may act at all;
+    // `admin.agent_tool_exposure` decides what each of them may reach, and it is
+    // the list `/api/mcp` refuses a tool against. A `*` key held BY an agent
+    // that could set either would make both self-modifiable: the credential
+    // could activate its own registration and grant itself every tool, and a
+    // deny-by-default allowlist a caller can widen is not an allowlist. So they
+    // join `tenant_lifecycle` and `owner_management` — actions that need a real
+    // session and that no bearer token, however scoped, performs.
+    //
+    // Asymmetric with `compliance_dsar_manage` and `reports.schedule_external`,
+    // which `*` DOES grant, and deliberately: those are ordinary privileged
+    // operations on data. These two are authority over the principals
+    // themselves, which is a different kind of thing to hand a token.
     if (scopes.includes('*')) {
-        return getPermissionsForRole('ADMIN');
+        // Resolved ONCE, rather than calling the role resolver a second time
+        // for the nested spread. Two calls built two identical objects for no
+        // reason, and the duplicated call site also made
+        // `enterprise-identity-epic.test.ts`'s whole-file assertion about this
+        // branch satisfiable by either of them — a Class D ambiguity that a
+        // source diff touching no test had introduced.
+        const adminPermissions = getPermissionsForRole('ADMIN');
+        return {
+            ...adminPermissions,
+            admin: {
+                ...adminPermissions.admin,
+                agent_registry: false,
+                agent_tool_exposure: false,
+            },
+        };
     }
 
     for (const scope of scopes) {
@@ -298,7 +342,20 @@ export interface ApiKeyAuthResult {
 
 export interface ApiKeyAuthError {
     valid: false;
-    reason: 'not_found' | 'expired' | 'revoked' | 'invalid_format' | 'tenant_deleted';
+    reason:
+        | 'not_found'
+        | 'expired'
+        | 'revoked'
+        | 'invalid_format'
+        | 'tenant_deleted'
+        /**
+         * An agent-bound key whose human principal no longer resolves — removed
+         * from the tenant, deactivated, or their role withdrawn. Distinct from
+         * `revoked`, which is about the credential; this is about the person it
+         * speaks for. Fails closed rather than falling back to the key's own
+         * scopes, which is exactly the authority the narrowing exists to remove.
+         */
+        | 'principal_unresolved';
 }
 
 export type ApiKeyVerifyResult = ApiKeyAuthResult | ApiKeyAuthError;
@@ -327,6 +384,39 @@ export async function verifyApiKey(
         include: { tenant: true },
     });
 
+    return finaliseApiKeyAuth(apiKey, clientIp);
+}
+
+/**
+ * Resolve a key by its ID and run the IDENTICAL liveness checks + context build
+ * `verifyApiKey` runs.
+ *
+ * Exists for the RFC 8693 exchanged token, which names its issuing key by id
+ * rather than carrying it: the token is proof that the key was presented ONCE,
+ * at exchange time, and this re-establishes what that key is authorised for now
+ * — revocation, expiry, tenant liveness and scopes all re-read.
+ *
+ * Deliberately the same `finaliseApiKeyAuth` body rather than a second copy.
+ * A parallel resolver here would be a second authentication path over the same
+ * credential, free to drift from the first, which is the shape this whole epic
+ * exists to remove.
+ */
+export async function resolveApiKeyById(
+    apiKeyId: string,
+    clientIp?: string | null,
+): Promise<ApiKeyVerifyResult> {
+    const apiKey = await prisma.tenantApiKey.findUnique({
+        where: { id: apiKeyId },
+        include: { tenant: true },
+    });
+    return finaliseApiKeyAuth(apiKey, clientIp);
+}
+
+/** The shared tail of both resolvers: liveness, tracking, context. */
+async function finaliseApiKeyAuth(
+    apiKey: (TenantApiKey & { tenant: Tenant }) | null,
+    clientIp?: string | null,
+): Promise<ApiKeyVerifyResult> {
     if (!apiKey) {
         return { valid: false, reason: 'not_found' };
     }
@@ -390,7 +480,59 @@ export async function verifyApiKey(
         // consumer that forgets to handle it gets `undefined` and not a value
         // that looks deliberate.
         ...(apiKey.agentId ? { agentId: apiKey.agentId } : {}),
+        // The key's own autonomy narrowing. Carried as `null` when the column is
+        // null — unlike `agentId` above, because here the null has a MEANING
+        // ("no key-level narrowing") that a consumer should see rather than have
+        // to infer from an absent property.
+        apiKeyMaxAutonomy: apiKey.maxAutonomyLevel ?? null,
     };
+
+    // ── Narrow an AGENT-BOUND credential to its principal, HERE ──────────
+    //
+    // Everything above derives authority from the KEY'S SCOPES alone. For an
+    // agent-bound key that is the confused deputy in its textbook form: the
+    // credential carries ambient authority the human who created it does not
+    // have, so the agent acts beyond its principal.
+    //
+    // This was closed at the MCP door only. `resolveAgentAuthority` had exactly
+    // one caller — `buildMcpInvocation` — while `iflk_` bearers are admitted at
+    // `/api/t/**` too (#2224). Measured on this branch before the fix: one key,
+    // created by a READER and bound to an ACTIVE agent, was refused
+    // `propose_risks` at `/api/mcp` and simultaneously accepted at
+    // `POST /api/t/<slug>/risks`, creating a real Risk row — strictly WORSE
+    // than the path that was blocked, because it commits outright instead of
+    // entering the propose-not-commit queue. A `*`-scoped key from the same
+    // principal issued an ADMIN invite.
+    //
+    // So the narrowing belongs where the credential's context is MINTED, not at
+    // each consumer. Every caller of `verifyApiKey` — REST and MCP alike —
+    // inherits it, and the PR's own rule ("no parallel agent-authz path that
+    // can drift") is satisfied by there being one path.
+    //
+    // Scoped to agent-bound keys deliberately. A key with no `agentId` keeps
+    // today's scope-derived authority: that broader question — should ANY key
+    // exceed its creator? — is a real one, but it is pre-existing, affects every
+    // existing integration, and is not this change's to decide silently.
+    if (apiKey.agentId) {
+        try {
+            const { ctx: narrowed } = await resolveAgentAuthority(ctx);
+            return { valid: true, apiKey, ctx: narrowed };
+        } catch (err) {
+            // The principal no longer resolves — the member was removed,
+            // deactivated, or their role was withdrawn. A credential whose
+            // human is gone must not keep acting on their behalf, so this
+            // fails CLOSED rather than falling back to the key's own scopes.
+            if (err instanceof PrincipalUnresolvedError) {
+                // Write the denial before returning. An agent refusal that
+                // leaves no audit row is invisible, and this refusal moved here
+                // from the MCP funnel — which no longer sees it, because the
+                // credential now fails verification before reaching that gate.
+                await auditPrincipalUnresolved(ctx, err.reason);
+                return { valid: false, reason: 'principal_unresolved' };
+            }
+            throw err;
+        }
+    }
 
     return { valid: true, apiKey, ctx };
 }

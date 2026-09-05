@@ -107,10 +107,41 @@ describe('API Key Scopes — Validation', () => {
 // ─── Scope to Permission Mapping ───
 
 describe('API Key Scopes — scopesToPermissions', () => {
-    it('full access (*) returns ADMIN permissions', () => {
+    it('full access (*) returns ADMIN permissions apart from the agent-governance flags', () => {
         const perms = scopesToPermissions(['*']);
         const adminPerms = getPermissionsForRole('ADMIN');
-        expect(perms).toEqual(adminPerms);
+        // Every domain but `admin` is ADMIN exactly.
+        const { admin: starAdmin, ...starRest } = perms;
+        const { admin: adminAdmin, ...adminRest } = adminPerms;
+        expect(starRest).toEqual(adminRest);
+        // And `admin` differs in exactly two places — asserted as a whole
+        // object, so a THIRD divergence appearing later fails here rather than
+        // slipping past two named checks.
+        expect(starAdmin).toEqual({
+            ...adminAdmin,
+            agent_registry: false,
+            agent_tool_exposure: false,
+        });
+    });
+
+    it('full access (*) cannot decide which agents may act, or what they may reach', () => {
+        // ADMIN holds both of these, so unlike the two OWNER-only actions below
+        // they are denied to `*` explicitly. The reason is a composition: a `*`
+        // key CARRIED BY an agent could otherwise activate its own registration
+        // and grant itself every MCP tool, and a deny-by-default allowlist its
+        // own subject can widen is not an allowlist.
+        const star = scopesToPermissions(['*']);
+        expect(star.admin.agent_registry).toBe(false);
+        expect(star.admin.agent_tool_exposure).toBe(false);
+        // The contrast that makes it a decision rather than an omission: a human
+        // ADMIN session holds both.
+        expect(getPermissionsForRole('ADMIN').admin.agent_registry).toBe(true);
+        expect(getPermissionsForRole('ADMIN').admin.agent_tool_exposure).toBe(true);
+        // And the asymmetry is deliberate — `*` still reaches the privileged
+        // DATA operations. Without this the assertions above would also pass on
+        // a `*` that had quietly stopped granting anything at all.
+        expect(star.admin.compliance_dsar_manage).toBe(true);
+        expect(star.reports.schedule_external).toBe(true);
     });
 
     it('full access (*) still does NOT reach the two OWNER-only actions', () => {

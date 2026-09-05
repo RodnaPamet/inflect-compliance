@@ -107,6 +107,12 @@ const config = [
             // cannot ask for it — this does. It demands the field be NAMED, not
             // non-null: `agentId: null` is a correct value, silence is not.
             'local/require-agent-attribution': 'error',
+
+            // An MCP tool DECLARES the authorization its human equivalent
+            // applies and never performs its own. The funnel is the one gate;
+            // a tool that can check is a tool that can skip.
+            // See eslint-rules/rules/require-mcp-tool-authorization.js.
+            'local/require-mcp-tool-authorization': 'error',
             '@typescript-eslint/no-explicit-any': 'warn',
             '@typescript-eslint/ban-ts-comment': [
                 'warn',
@@ -236,6 +242,17 @@ const config = [
         files: ['tests/**/*.ts', 'tests/**/*.tsx'],
         rules: {
             'local/require-agent-attribution': 'off',
+            // Same reasoning, same shape. `require-mcp-tool-authorization`'s
+            // companion guard is `tests/guards/mcp-tools-use-shared-authz.test.ts`,
+            // whose population is `repoFiles({ under: 'src' })` — it runs the
+            // rule itself over exactly the files under `src/` that mention
+            // `inputSchema`. Leaving the lint side repo-wide would make the two
+            // populations disagree, and the disagreement is where the trouble
+            // lives: a test that needs to BUILD a descriptor with no
+            // `authorize` — to prove the funnel refuses one — would be
+            // unwritable, which is the same trap the sibling rule above fell
+            // into with the legacy-backfill fixture.
+            'local/require-mcp-tool-authorization': 'off',
         },
     },
 ];

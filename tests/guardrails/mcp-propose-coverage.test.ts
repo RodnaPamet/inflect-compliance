@@ -24,7 +24,7 @@ import * as path from 'node:path';
 import { VALID_SCOPES } from '@/lib/auth/api-key-auth';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 // SOURCE reads are comment-masked at the seam: neither the propose-not-commit
@@ -68,7 +68,18 @@ describe('MCP propose — the propose-not-commit lock', () => {
 
 describe('MCP propose — scope model', () => {
     it('propose tools require the mcp:propose capability (strictly more privileged than read)', () => {
-        expect(proposeTools).toMatch(/enforceMcpCapability\(\s*ctx\s*,\s*['"]propose['"]\s*\)/);
+        // The capability moved from an inline call in the runner into the one
+        // gate, where it sits beside the exposure allowlist, the resource scope
+        // and the principal's create permission — so a refusal at any of them
+        // writes exactly one audit row, in one place. The runner DECLARES the
+        // capability and the gate ENFORCES it; both halves are asserted, each
+        // bounded to the function that owns it, because either alone would pass
+        // while the other was gone.
+        expect(functionBodyOf(proposeTools, 'runProposeTool')).toMatch(
+            /capability:\s*['"]propose['"]/,
+        );
+        const gate = functionBodyOf(read('src/lib/mcp/authorize.ts'), 'authorizeToolCall');
+        expect(gate).toMatch(/enforceMcpCapability\(/);
     });
 
     it('mcp:propose is a valid scope; there is NO write-direct scope', () => {

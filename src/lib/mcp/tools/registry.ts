@@ -3,24 +3,36 @@
  *
  * `runReadTool` is the ONE path every MCP tool call takes. It:
  *   1. resolves the tool by name;
- *   2. enforces the tool's RESOURCE scope on the API key
- *      (`enforceApiKeyScope`) — on top of the `mcp:read` capability gate the
- *      route already applied;
+ *   2. AUTHORIZES the invocation through `authorizeToolCall` — deny-by-default
+ *      tool exposure, then the credential's resource scope, then the SAME
+ *      `assertPermission` / `assertCan*` gate the equivalent human route uses,
+ *      against the principal-narrowed context. Every refusal writes exactly one
+ *      hash-chained `AUTHZ_DENIED` row;
  *   3. validates the agent's arguments against the tool's Zod schema;
  *   4. runs the tool — which calls exactly one existing read usecase with the
  *      tenant ctx (the usecase owns RLS + its own permission check);
- *   5. audits the successful invocation as an `API_KEY` actor (who / which key
+ *   5. REDACTS the domains the acting principal may not see, for the tools whose
+ *      payload spans more domains than their gate covers;
+ *   6. audits the successful invocation as an `API_KEY` actor (who / which key
  *      / which tool / when).
  *
- * Because scope-enforcement + audit live HERE (not in each tool), the
- * `mcp-server-coverage` ratchet can assert the whole surface is gated by
- * checking this one funnel + that no tool imports Prisma directly.
+ * Because exposure, authorization, scope-enforcement, redaction and audit all
+ * live HERE (not in each tool), a tool CANNOT self-authorize — there is nowhere
+ * for it to do so — and the `mcp-server-coverage` ratchet can assert the whole
+ * surface is gated by checking this one funnel plus that every tool declares an
+ * `authorize` block.
  */
-import { enforceApiKeyScope } from '@/lib/auth/api-key-auth';
 import { appendAuditEntry } from '@/lib/audit';
 import { badRequest } from '@/lib/errors/types';
 import type { RequestContext } from '@/app-layer/types';
 
+import {
+    applyRedaction,
+    applyRowRedaction,
+    authorizeToolCall,
+    isToolExposed,
+    type McpInvocation,
+} from '../authorize';
 import { RpcErrorCode, type McpToolDescriptor, type McpToolResult } from '../protocol';
 import type { McpReadTool } from './types';
 import { getCompliancePostureTool } from './get-compliance-posture';
@@ -52,13 +64,43 @@ export const READ_TOOLS = [
     listTasksTool,
 ] as unknown as ReadonlyArray<McpReadTool<unknown>>;
 
-/** MCP `tools/list` descriptors. */
-export function listReadToolDescriptors(): McpToolDescriptor[] {
-    return READ_TOOLS.map((t) => ({
-        name: t.name,
-        description: t.description,
-        inputSchema: t.inputSchema,
-    }));
+/**
+ * MCP `tools/list` descriptors, filtered to what THIS invocation could actually
+ * call: the agent's granted tools, and only those whose permission keys the
+ * acting context holds.
+ *
+ * Advertising a tool an agent cannot call is not a security hole — the funnel
+ * refuses it — but it is a correctness one: an agent plans against `tools/list`,
+ * and a catalogue full of tools that 403 turns every plan into a sequence of
+ * denials, each of which writes an `AUTHZ_DENIED` row. That row is the primary
+ * rogue-agent signal (ASI10); a design that manufactures thousands of them from
+ * ordinary planning is a design that trains operators to ignore it.
+ */
+export function listReadToolDescriptors(inv: McpInvocation): McpToolDescriptor[] {
+    return READ_TOOLS.filter((t) => isToolExposed(inv, t.name))
+        .filter((t) => canSee(inv, t.authorize.keys))
+        .map((t) => ({
+            name: t.name,
+            description: t.description,
+            inputSchema: t.inputSchema,
+        }));
+}
+
+/**
+ * Advertising-time permission probe. Deliberately NOT the enforcement — it
+ * writes no audit row and throws nothing, because a tool being absent from a
+ * catalogue is not a denied access attempt. `authorizeToolCall` is the decision.
+ */
+function canSee(inv: McpInvocation, keys: readonly string[] | undefined): boolean {
+    if (!keys || keys.length === 0) return true;
+    const perms = inv.ctx.appPermissions as unknown as Record<
+        string,
+        Record<string, boolean> | undefined
+    >;
+    return keys.every((k) => {
+        const [domain, action] = k.split('.');
+        return perms[domain]?.[action] === true;
+    });
 }
 
 export class McpToolNotFoundError extends Error {
@@ -70,24 +112,38 @@ export class McpToolNotFoundError extends Error {
 }
 
 /**
- * Execute a read tool through the full scope → validate → usecase → audit
- * chain. `ctx` is the authenticated, RLS-carrying RequestContext from the
- * TenantApiKey. Throws:
+ * Execute a read tool through the full authorize → validate → usecase → redact
+ * → audit chain. `inv` carries the EFFECTIVE, principal-narrowed context, the
+ * principal's own authority, the agent, and that agent's tool allowlist —
+ * assembled once per request by `buildMcpInvocation` so a tool cannot construct
+ * its own. Throws:
  *   - `McpToolNotFoundError` for an unknown tool,
- *   - `forbidden` (via `enforceApiKeyScope`) if the key lacks the resource scope,
+ *   - `forbidden` (via `authorizeToolCall`, after exactly one `AUTHZ_DENIED`
+ *     row) for an ungranted tool, a missing capability or resource scope, or a
+ *     principal who may not do this,
  *   - `badRequest` if the arguments fail validation,
- *   - whatever the underlying usecase throws (e.g. `forbidden` on permission).
+ *   - whatever the underlying usecase throws.
  */
 export async function runReadTool(
-    ctx: RequestContext,
+    inv: McpInvocation,
     name: string,
     rawArgs: unknown,
 ): Promise<McpToolResult> {
     const tool = READ_TOOLS.find((t) => t.name === name);
     if (!tool) throw new McpToolNotFoundError(name);
 
-    // 1. Resource-scope gate (in addition to the mcp:read capability gate).
-    enforceApiKeyScope(ctx, tool.resourceScope.resource, tool.resourceScope.action);
+    const ctx = inv.ctx;
+
+    // 1. The one gate: token audience → credential liveness → deny-by-default
+    //    exposure → the autonomy ceiling → credential scope → the human route's
+    //    own permission check. Audits exactly one row on whichever step refuses.
+    //
+    //    `capabilityClass: 'read'` is the AUTONOMY class, not a credential
+    //    check: read tools deliberately carry no `capability`, because the
+    //    endpoint gate already accepted `mcp:read` OR `mcp:propose` and
+    //    re-checking here would newly refuse propose-only keys the read tools
+    //    they can call today.
+    await authorizeToolCall(inv, { ...tool, capabilityClass: 'read' });
 
     // 2. Validate arguments.
     const parsed = tool.argsSchema.safeParse(rawArgs ?? {});
@@ -98,11 +154,16 @@ export async function runReadTool(
     // 3. Run the usecase (RLS + permission enforced inside the usecase).
     const data = await tool.run(ctx, parsed.data);
 
-    // 4. Audit the invocation as an API_KEY actor.
+    // 4. Redact what the principal may not see. Sections first, then rows —
+    //    both operate on a structural copy, so a tool can declare either or
+    //    both without them fighting over the same object.
+    const visible = applyRowRedaction(inv, tool.redactRows, applyRedaction(inv, tool.redact, data));
+
+    // 5. Audit the invocation as an API_KEY actor.
     await auditToolCall(ctx, name);
 
     return {
-        content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+        content: [{ type: 'text', text: JSON.stringify(visible, null, 2) }],
     };
 }
 
@@ -121,7 +182,7 @@ async function auditToolCall(ctx: RequestContext, tool: string): Promise<void> {
         entityId: tool,
         action: 'MCP_TOOL_INVOKED',
         requestId: ctx.requestId,
-        detailsJson: { category: 'access', tool },
+        detailsJson: { category: 'access', tool, agentId: ctx.agentId ?? null },
         metadataJson: { apiKeyId: ctx.apiKeyId ?? null, scopes: ctx.apiKeyScopes ?? [] },
     }).catch(() => undefined);
 }

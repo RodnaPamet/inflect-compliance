@@ -31,6 +31,15 @@ export const listEvidenceExpiringTool: McpReadTool<z.infer<typeof args>> = {
     },
     argsSchema: args,
     resourceScope: { resource: 'evidence', action: 'read' },
+    // `GET /api/t/:slug/evidence` resolves `getTenantCtx` and lets the usecase
+    // assert `assertCanRead`; there IS an `evidence.view` key and every role
+    // that passes `assertCanRead` on that route holds it, so naming the key is
+    // the same decision stated in the vocabulary a custom role can narrow.
+    authorize: {
+        keys: ['evidence.view'],
+        basis: 'effective',
+        mirrors: 'GET /api/t/:slug/evidence',
+    },
     run: async (ctx: RequestContext, a) => {
         return listExpiringEvidence(ctx, a.days ?? 30);
     },

@@ -3,9 +3,15 @@
  *
  * A THIN ADAPTER: it speaks the MCP JSON-RPC wire protocol over HTTP and
  * routes every tool/resource call through IC's EXISTING secured chain —
- *   Bearer TenantApiKey → verifyApiKey → RequestContext →
- *   (per tool) enforceApiKeyScope → usecase (runInTenantContext RLS +
- *   assertCanRead permission) → appendAuditEntry.
+ *   Bearer TenantApiKey (or an RFC 8693 exchanged token, which resolves to
+ *   one) → verifyApiKey → registration gate → principal
+ *   resolution (the SAME resolveTenantContext a human goes through) →
+ *   EFFECTIVE RequestContext (principal ∧ credential) →
+ *   (per tool) token audience → live-credential re-check → deny-by-default
+ *   exposure → autonomy ceiling → assertPermission / assertCan* — the
+ *   SAME gate the equivalent human route uses → enforceApiKeyScope → usecase
+ *   (runInTenantContext RLS + its own permission check) → per-domain redaction
+ *   → appendAuditEntry.
  * It NEVER queries Prisma directly and NEVER invents an auth path. A second
  * tenant's key sees only its own data because RLS binds `app.tenant_id` from
  * the key's tenant on every usecase transaction.
@@ -51,7 +57,15 @@ export const runtime = 'nodejs';
  */
 export const POST = withApiErrorHandling(async (req: NextRequest) => {
     // Transport-level auth — throws unauthorized/forbidden → HTTP 401/403.
-    const { ctx } = await authenticateMcpRequest(req);
+    //
+    // `invocation` carries everything one tool call is authorized against: the
+    // EFFECTIVE context (the principal's authority intersected with the
+    // credential's scopes), the principal's own permissions, the registered
+    // agent, and that agent's deny-by-default tool allowlist. It is built once
+    // per HTTP request and passed down, so a tool cannot construct its own —
+    // which is what makes "no tool self-authorizes" a structural property
+    // rather than a convention.
+    const { invocation } = await authenticateMcpRequest(req);
 
     let payload: unknown;
     try {
@@ -64,15 +78,23 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
     }
 
     const handlers: McpHandlers = {
-        listTools: () => [...listReadToolDescriptors(), ...listProposeToolDescriptors()],
+        listTools: () => [
+            ...listReadToolDescriptors(invocation),
+            ...listProposeToolDescriptors(invocation),
+        ],
         // Read tools and propose (write-proposal) tools share the endpoint. Read
         // tools require the resource scope; propose tools additionally require
         // the mcp:propose capability. A propose tool NEVER creates a record — it
         // queues a human-approved proposal.
         callTool: (name, args) =>
-            isProposeTool(name) ? runProposeTool(ctx, name, args) : runReadTool(ctx, name, args),
-        listResources: () => listMcpResources(ctx),
-        readResource: (uri) => readMcpResource(ctx, uri),
+            isProposeTool(name)
+                ? runProposeTool(invocation, name, args)
+                : runReadTool(invocation, name, args),
+        // Resources take the INVOCATION, not a bare ctx. Until this change they
+        // were the one door into `/api/mcp` that skipped the shared gate: scope
+        // enforcement only, no audit row on refusal, no audience, no ceiling.
+        listResources: () => listMcpResources(invocation),
+        readResource: (uri) => readMcpResource(invocation, uri),
     };
 
     // JSON-RPC allows a single request or a batch (array).

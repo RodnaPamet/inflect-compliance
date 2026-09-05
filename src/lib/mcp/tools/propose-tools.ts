@@ -6,24 +6,45 @@
  * create-schema and sanitises it (inside `createAgentProposal`), then queues an
  * `AgentProposal`. A human approves it before the real create-usecase runs.
  *
- * Gating: the `mcp:propose` capability scope (strictly more privileged than
- * `mcp:read`) PLUS the domain read scope. A read-only key cannot propose. No
- * propose tool imports a create/update/delete ENTITY usecase — it only calls
+ * Gating, and there are now three independent terms:
+ *
+ *   • the `mcp:propose` capability scope (strictly more privileged than
+ *     `mcp:read`) PLUS the domain read scope — the CREDENTIAL's authority to
+ *     propose. A read-only key cannot propose;
+ *   • deny-by-default tool exposure — the AGENT must be granted this tool;
+ *   • the create permission the equivalent human route demands, evaluated
+ *     against the PRINCIPAL. `propose_risks` needs `risks.create`, the same key
+ *     `POST /api/t/:slug/risks` requires.
+ *
+ * The third term is the one that was missing, and its absence was the confused
+ * deputy in the write direction: `createAgentProposal` makes no policy
+ * assertion at all, so a key minted by a READER with `mcp:propose` + `risks:read`
+ * could queue a risk its principal could not create — and a human approver, who
+ * sees a legitimate-looking pending proposal, then creates it for them.
+ * Propose-not-commit means the agent cannot commit; it never meant the agent
+ * could propose anything it liked.
+ *
+ * Why the PRINCIPAL and not the intersected context: a propose key carries no
+ * `<domain>:write` scope by design, so `scopesToPermissions` gives it
+ * `risks.create: false` and the intersection would deny every propose call ever
+ * made. The credential axis for proposing is `mcp:propose`; the human axis is
+ * `risks.create`. See `src/lib/agentic/agent-authority.ts`.
+ *
+ * No propose tool imports a create/update/delete ENTITY usecase — it only calls
  * `createAgentProposal` (the queue). This is what the `mcp-propose-coverage`
  * ratchet locks.
  */
 import { z } from 'zod';
 
-import { enforceApiKeyScope } from '@/lib/auth/api-key-auth';
 import { badRequest } from '@/lib/errors/types';
 import {
     createAgentProposal,
     type AgentProposalKind,
 } from '@/app-layer/usecases/agent-proposals';
-import type { RequestContext } from '@/app-layer/types';
 
-import { enforceMcpCapability } from '../auth';
+import { authorizeToolCall, isToolExposed, type McpInvocation } from '../authorize';
 import { RpcErrorCode, type McpToolDescriptor, type McpToolResult } from '../protocol';
+import type { McpToolAuthorization } from './types';
 
 export interface McpProposeTool {
     name: string;
@@ -32,6 +53,13 @@ export interface McpProposeTool {
     kind: AgentProposalKind;
     /** Domain read scope required in addition to the `mcp:propose` capability. */
     resourceScope: { resource: string; action: 'read' };
+    /**
+     * The create authorization the equivalent human route demands, evaluated
+     * against the PRINCIPAL. Same `assertPermission` the human route's
+     * `requirePermission` calls — see the header for why the basis differs from
+     * a read tool's.
+     */
+    authorize: McpToolAuthorization;
 }
 
 /** Args every propose tool accepts: 1–20 candidate items + an optional rationale. */
@@ -71,6 +99,11 @@ export const PROPOSE_TOOLS: McpProposeTool[] = [
         inputSchema: proposeInputSchema('risk'),
         kind: 'RISK',
         resourceScope: { resource: 'risks', action: 'read' },
+        authorize: {
+            keys: ['risks.create'],
+            basis: 'principal',
+            mirrors: 'POST /api/t/:slug/risks',
+        },
     },
     {
         name: 'propose_controls',
@@ -81,6 +114,11 @@ export const PROPOSE_TOOLS: McpProposeTool[] = [
         inputSchema: proposeInputSchema('control'),
         kind: 'CONTROL',
         resourceScope: { resource: 'controls', action: 'read' },
+        authorize: {
+            keys: ['controls.create'],
+            basis: 'principal',
+            mirrors: 'POST /api/t/:slug/controls',
+        },
     },
     {
         name: 'draft_policy',
@@ -91,6 +129,11 @@ export const PROPOSE_TOOLS: McpProposeTool[] = [
         inputSchema: proposeInputSchema('policy'),
         kind: 'POLICY',
         resourceScope: { resource: 'policies', action: 'read' },
+        authorize: {
+            keys: ['policies.create'],
+            basis: 'principal',
+            mirrors: 'POST /api/t/:slug/policies',
+        },
     },
     {
         name: 'propose_finding',
@@ -101,11 +144,46 @@ export const PROPOSE_TOOLS: McpProposeTool[] = [
         inputSchema: proposeInputSchema('finding'),
         kind: 'FINDING',
         resourceScope: { resource: 'audits', action: 'read' },
+        // `POST /api/t/:slug/findings` carries no permission key —
+        // `PermissionSet` has no `findings` domain — so its real gate is
+        // `assertCanWrite` inside `createFinding`. Naming `audits.manage`
+        // instead would be stricter but WRONG: an EDITOR holds
+        // `audits.manage: false` and can create a finding through the human
+        // API, so the tool would refuse a proposal its principal could commit.
+        authorize: {
+            keys: ['audits.view'],
+            policy: 'write',
+            basis: 'principal',
+            mirrors: 'POST /api/t/:slug/findings (getTenantCtx + assertCanWrite)',
+        },
     },
 ];
 
-export function listProposeToolDescriptors(): McpToolDescriptor[] {
-    return PROPOSE_TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }));
+/**
+ * `tools/list` descriptors for the propose surface, filtered to what this
+ * invocation could actually call — the agent's granted tools, and only when the
+ * credential carries `mcp:propose`. Same reasoning as the read registry's
+ * filter: a catalogue of tools that will 403 turns ordinary planning into a
+ * stream of `AUTHZ_DENIED` rows and buries the signal they exist for.
+ *
+ * The PERMISSION is not probed here, only the capability and the exposure. A
+ * propose tool's key is checked against the principal, and an agent whose
+ * principal cannot create risks should still be told the tool exists — the
+ * refusal, when it comes, is the interesting event and belongs in the trail.
+ */
+export function listProposeToolDescriptors(inv: McpInvocation): McpToolDescriptor[] {
+    const scopes = inv.ctx.apiKeyScopes;
+    const mayPropose =
+        !scopes ||
+        scopes.includes('*') ||
+        scopes.includes('mcp:*') ||
+        scopes.includes('mcp:propose');
+    if (!mayPropose) return [];
+    return PROPOSE_TOOLS.filter((t) => isToolExposed(inv, t.name)).map((t) => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+    }));
 }
 
 export class McpProposeToolNotFoundError extends Error {
@@ -127,16 +205,19 @@ export function isProposeTool(name: string): boolean {
  * sanitises). NEVER creates the real entity. Returns the pending proposal ids.
  */
 export async function runProposeTool(
-    ctx: RequestContext,
+    inv: McpInvocation,
     name: string,
     rawArgs: unknown,
 ): Promise<McpToolResult> {
     const tool = PROPOSE_TOOLS.find((t) => t.name === name);
     if (!tool) throw new McpProposeToolNotFoundError(name);
 
-    // 1. Capability gate (strictly > mcp:read) + domain scope.
-    enforceMcpCapability(ctx, 'propose');
-    enforceApiKeyScope(ctx, tool.resourceScope.resource, tool.resourceScope.action);
+    const ctx = inv.ctx;
+
+    // 1. The one gate: exposure → the `mcp:propose` capability → the domain
+    //    scope → the PRINCIPAL's create permission (the same `assertPermission`
+    //    the human create route runs). Exactly one audit row on refusal.
+    await authorizeToolCall(inv, { ...tool, capability: 'propose', capabilityClass: 'propose' });
 
     // 2. Validate the envelope.
     const parsed = proposeArgs.safeParse(rawArgs ?? {});

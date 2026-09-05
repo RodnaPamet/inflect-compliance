@@ -64,6 +64,19 @@ export interface RequestContext {
      * unattributed. Nothing may read this as "some agent".
      */
     agentId?: string;
+
+    /**
+     * `TenantApiKey.maxAutonomyLevel` — the highest rung on the 0-6 agent
+     * ladder this CREDENTIAL may drive its agent to.
+     *
+     * ABSENT MEANS NO KEY-LEVEL NARROWING, not "deny" and not "unlimited": the
+     * effective ceiling is the minimum of this and the agent's own registered
+     * `autonomyLevel`, so an absent term still leaves the agent's own bound in
+     * force. See `src/lib/agentic/autonomy-ceiling.ts`, which states this
+     * beside the OPPOSITE convention for an unscored `riskTier` — the two nulls
+     * mean different things and reading either like the other is the hazard.
+     */
+    apiKeyMaxAutonomy?: number | null;
 }
 
 export interface PaginatedResult<T> {

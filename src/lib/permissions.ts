@@ -121,6 +121,24 @@ export type PermissionSet = {
          * indistinguishable from one nobody needed.
          */
         agent_registry: boolean;
+        /**
+         * TOOL EXPOSURE: grant or revoke an individual MCP tool for a
+         * registered agent.
+         *
+         * Its own key, separate from `agent_registry`, because the two decide
+         * different things and the blast radius of getting them wrong is not
+         * the same. `agent_registry` says WHETHER an agent may act — a binary
+         * an operator sets once and reviews at audit time. This says WHAT it
+         * may reach, tool by tool, and it is the flag that moves whenever
+         * somebody wires up a new automation. Folding them together would mean
+         * every routine "let the reporting agent read tasks too" grant carried
+         * the authority to activate an agent nobody had scored.
+         *
+         * The narrower key is also the one that can be delegated: a platform
+         * team can be trusted to widen an already-approved agent's tool list
+         * without also holding the switch that admits new agents.
+         */
+        agent_tool_exposure: boolean;
     };
 };
 
@@ -179,7 +197,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
         'view', 'manage', 'members', 'sso', 'scim',
         'tenant_lifecycle', 'owner_management',
         'compliance_dsar_view', 'compliance_dsar_manage',
-        'agent_registry',
+        'agent_registry', 'agent_tool_exposure',
     ],
 };
 
@@ -217,7 +235,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     view: true, manage: true, members: true, sso: true, scim: true,
                     tenant_lifecycle: true, owner_management: true,
                     compliance_dsar_view: true, compliance_dsar_manage: true,
-                    agent_registry: true,
+                    agent_registry: true, agent_tool_exposure: true,
                 },
             };
         case 'ADMIN':
@@ -249,6 +267,9 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     // existence and its owners, and an agent register is
                     // neither.
                     agent_registry: true,
+                    // Same reasoning, one notch narrower: deciding which tools
+                    // an approved agent may reach is operational administration.
+                    agent_tool_exposure: true,
                 },
             };
         case 'EDITOR':
@@ -270,7 +291,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false },
             };
         case 'AUDITOR':
             return {
@@ -292,7 +313,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
                 audits: { view: true, manage: false, freeze: false, share: true },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false },
             };
         case 'READER':
         default:
@@ -312,7 +333,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: false, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false },
             };
     }
 }

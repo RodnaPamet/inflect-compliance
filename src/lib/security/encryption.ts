@@ -179,6 +179,33 @@ function getPreviousEncryptionKey(): Buffer | null {
 }
 
 /**
+ * Derive a 256-bit subkey from the master KEK for a NAMED purpose.
+ *
+ * Key separation is the whole contract: HKDF's `info` string is what makes the
+ * field-encryption key, the lookup-hash key and any subkey minted here
+ * cryptographically independent, so a subkey that leaks says nothing about the
+ * others and a value signed under one purpose cannot be replayed under another.
+ * Callers pass a stable, versioned string (`inflect-<purpose>-v1`); changing it
+ * invalidates every value derived under the old one, which is the intended way
+ * to retire a purpose.
+ *
+ * Not cached, unlike the two hot-path keys above: subkeys are minted on
+ * credential-lifecycle paths rather than per row, and a cache keyed on an
+ * arbitrary caller-supplied string is an unbounded map fed by whatever the
+ * caller passes.
+ *
+ * The material never leaves this module's derivation — the raw
+ * `DATA_ENCRYPTION_KEY` is not exposed, and a subkey is one HKDF expansion away
+ * from it in the one direction that matters.
+ */
+export function deriveSubkey(purpose: string): Buffer {
+    if (!purpose || purpose.length < 8) {
+        throw new Error('deriveSubkey: purpose must be a stable, descriptive string');
+    }
+    return deriveKey(getRawKeyMaterial(), purpose);
+}
+
+/**
  * Gets the HMAC key for deterministic lookup hashes.
  */
 function getHmacKey(): Buffer {

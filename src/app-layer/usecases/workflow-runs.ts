@@ -13,6 +13,22 @@
  * `resumeWorkflowRun`. Every step is an append-only `WorkflowStep` record + a
  * hash-chained audit entry. All tool calls run in the SAME tenant/RLS/permission
  * context as the MCP tools (inherited, not reinvented).
+ *
+ * "Inherited, not reinvented" is enforced rather than asserted: each execution
+ * resolves an `McpInvocation` through `resolveMcpInvocation` — the same builder
+ * `/api/mcp` uses — and every step runs on it, so an engine step gets the
+ * principal-narrowed context, the per-tool permission check and the
+ * deny-by-default tool allowlist that a direct tool call gets. Without that,
+ * orchestration would be a way around the allowlist, which is the one thing this
+ * engine promises it is not. (A resume re-enters `executeFrom` and therefore
+ * re-resolves, so every settled term is re-read across a human checkpoint.)
+ *
+ * REVOCATION IS CHECKED AT THE TOOL BOUNDARY, NOT AT DISPATCH. `authorizeToolCall`
+ * re-reads the credential's live state before EVERY step's tool call, so revoking
+ * a key stops a run already in flight at its next step. A status code cannot tell
+ * that design from one that checks only at dispatch — both refuse the next
+ * request — so the property is tested as "no further tool executed after the
+ * revoke", with a spy on the tool itself.
  */
 import { WorkflowRunStatus } from '@prisma/client';
 
@@ -21,7 +37,7 @@ import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { badRequest, notFound, forbidden } from '@/lib/errors/types';
 import { appendAuditEntry } from '@/lib/audit';
-import { enforceMcpCapability } from '@/lib/mcp/auth';
+import { enforceMcpCapability, resolveMcpInvocation } from '@/lib/mcp/auth';
 import { runReadTool } from '@/lib/mcp/tools/registry';
 import { runProposeTool } from '@/lib/mcp/tools/propose-tools';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
@@ -211,6 +227,21 @@ async function executeFrom(
     let stepCount = fromSeq;
     let costTokens = await currentCost(ctx, runId);
 
+    // Resolved ONCE per execution, and that is now safe in a way it was not.
+    //
+    // The invocation carries the SETTLED terms — the principal's membership, the
+    // agent's tool grants, the autonomy ceiling — which are read here and reused
+    // for every step. The term that can change mid-run, CREDENTIAL REVOCATION,
+    // is deliberately not one of them: `authorizeToolCall` re-reads it at every
+    // tool boundary, uncached. So a key revoked while this loop is running stops
+    // the very next step rather than riding out the run.
+    //
+    // The comment this replaces said a revoke "lands on the next run, which is
+    // the same freshness a direct tool call gets between requests". That was the
+    // defect stated as a design: a run is exactly where the two differ, because
+    // a run keeps executing after the operator has acted.
+    const invocation = await resolveMcpInvocation(ctx);
+
     for (let seq = fromSeq; seq < def.steps.length; seq++) {
         // ── Guardrails ──
         if (seq >= ENGINE_CAPS.MAX_STEPS) {
@@ -238,7 +269,7 @@ async function executeFrom(
 
             if (step.kind === 'READ') {
                 const args = step.args ? step.args(context) : {};
-                const result = await runReadTool(ctx, step.tool, args);
+                const result = await runReadTool(invocation, step.tool, args);
                 const output = parseToolResult(result);
                 context.outputs[step.label] = output;
                 costTokens += estimateTokens(output);
@@ -249,7 +280,7 @@ async function executeFrom(
                     await recordStep(ctx, runId, seq, 'PROPOSE', { toolCalled: step.tool, status: 'SKIPPED', label: step.label });
                 } else {
                     const rationale = step.rationale ? step.rationale(context) : undefined;
-                    const result = await runProposeTool(ctx, step.tool, { items, rationale });
+                    const result = await runProposeTool(invocation, step.tool, { items, rationale });
                     const output = parseToolResult(result);
                     context.outputs[step.label] = output;
                     costTokens += estimateTokens(output);

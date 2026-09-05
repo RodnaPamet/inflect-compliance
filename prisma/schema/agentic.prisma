@@ -217,6 +217,9 @@ model RegisteredAgent {
   /// a new key before revoking the old, and an agent must not become
   /// unregistered for the width of that window.
   apiKeys   TenantApiKey[]
+  /// The tools this agent is allowed to reach. EMPTY MEANS NONE — the list is
+  /// an allowlist, and an agent nobody has granted anything to can call nothing.
+  tools     RegisteredAgentTool[]
 
   /// Composite parent key so the child tables that attribute work to an agent
   /// can never point cross-tenant. Mirrors AiSystem's own shape.
@@ -237,4 +240,66 @@ model RegisteredAgent {
   @@index([tenantId, createdAt])
   @@index([tenantId, ownerUserId])
   @@index([tenantId, vendorId])
+}
+
+/// Epic Agentic 2 — DENY-BY-DEFAULT tool exposure. One row per (agent, MCP
+/// tool) the tenant has deliberately granted. An agent reaches a tool only if a
+/// row here names it; the server offering the tool is not permission to call it.
+///
+/// ## Why a join table rather than a column on RegisteredAgent
+///
+/// A `grantedTools String[]` (or a JSON blob) would have been shorter and is
+/// wrong for three reasons that all cost something later:
+///
+///   • WHO granted it and WHEN are the questions an incident review asks first,
+///     and an array has nowhere to put them. Granting a tool is a privileged
+///     act; the record of it belongs beside the grant, not only in the audit
+///     trail, because the trail answers "what happened" and the register has to
+///     answer "what is true now".
+///   • Revoking one tool from an array is a read-modify-write of the whole set,
+///     so two concurrent revokes silently lose one. A row delete is a row
+///     delete.
+///   • The composite FK below cannot be expressed from inside an array, and it
+///     is what makes a cross-tenant grant unrepresentable rather than merely
+///     unlikely.
+///
+/// ## `toolName` is a plain String, deliberately
+///
+/// The tool catalogue lives in `src/lib/mcp/tools/registry.ts` and moves with
+/// the code; an enum would put a deploy-ordering hazard between adding a tool
+/// and being able to grant it (the same `ALTER TYPE` mid-rolling-deploy problem
+/// the `@@map("WorkItem*")` pins record). The usecase validates the name against
+/// the live catalogue on write, so an unknown tool is refused at the seam
+/// instead — and a grant for a tool that is later REMOVED from the catalogue is
+/// inert rather than a foreign-key error, which is the right direction: the
+/// tool is gone, so nothing can call it.
+model RegisteredAgentTool {
+  id       String @id @default(cuid())
+  tenantId String
+  agentId  String
+
+  /// The MCP tool name exactly as `tools/list` advertises it, e.g. `list_risks`.
+  toolName String
+
+  /// The human who granted it. A plain String with no FK, matching
+  /// `RegisteredAgent.createdByUserId`: the grant record must survive the
+  /// grantor's account being deleted, and a `RESTRICT` FK would block that
+  /// deletion while a `SET NULL` one would erase the accountability this column
+  /// exists for.
+  grantedByUserId String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Composite FK to the agent's (id, tenantId) parent key — a grant can never
+  /// point at another tenant's agent. CASCADE, unlike the RESTRICT on
+  /// AgentProposal: a grant is authority, not history, and authority for an
+  /// agent that no longer exists must not outlive it.
+  agent  RegisteredAgent @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// One grant per (agent, tool). Tenant-leading so it doubles as the
+  /// tenant-scoped lookup index.
+  @@unique([tenantId, agentId, toolName])
+  @@index([tenantId, agentId])
 }

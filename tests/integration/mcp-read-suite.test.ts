@@ -32,6 +32,7 @@ let keyRisksA = '';
 let keyRisksB = '';
 let keyControlsOnly = ''; // tenant A: mcp:read + controls:read (NO risks:read)
 let keyFrameworksA = ''; // tenant A: mcp:read + frameworks:read
+let keyEveryDomainA = ''; // tenant A: mcp:read + every domain read scope
 
 async function mintKey(tenantId: string, userId: string, scopes: string[]): Promise<string> {
     const { plaintext, keyHash, keyPrefix } = generateApiKey();
@@ -63,6 +64,19 @@ async function seedTenant(tenantId: string, slug: string, riskCount: number): Pr
     const userId = `u-${slug}`;
     const email = `${slug}@example.test`;
     await prisma.user.upsert({ where: { id: userId }, update: {}, create: { id: userId, email, emailHash: hashForLookup(email) } });
+    // The key's PRINCIPAL must be a live member of the tenant. `verifyApiKey`
+    // derives the credential's role from its SCOPES, but as of Epic Agentic 2
+    // `/api/mcp` also resolves `TenantApiKey.createdById` through the same
+    // `resolveTenantContext` a signed-in human goes through and intersects the
+    // two — a credential cannot exceed the person it speaks for, and a creator
+    // who is not a member has no authority to lend. These fixtures minted keys
+    // for a user with no membership at all, which used to work; the membership
+    // is what the fixture was always implying.
+    await prisma.tenantMembership.upsert({
+        where: { tenantId_userId: { tenantId, userId } },
+        update: { role: 'OWNER', status: 'ACTIVE' },
+        create: { tenantId, userId, role: 'OWNER', status: 'ACTIVE' },
+    });
     // The agent-registration gate defaults to ENFORCING for a tenant with no
     // security-settings row, so a suite that mints a bare API key and calls
     // /api/mcp would now be refused. These fixtures predate the register and
@@ -107,6 +121,15 @@ describeFn('MCP read suite (real route, real key, real RLS)', () => {
         // which reads `appPermissions.frameworks.view` — derived from this
         // key's scopes by `scopesToPermissions`.
         keyFrameworksA = await mintKey(TENANT_A, userA, ['mcp:read', 'frameworks:read']);
+        // Every domain, so `tools/list` can advertise the whole suite. As of
+        // Epic Agentic 2 the catalogue is filtered to what THIS caller could
+        // actually call — an agent plans against tools/list, and advertising
+        // tools that will 403 turns ordinary planning into a stream of
+        // AUTHZ_DENIED rows and buries the signal they exist for.
+        keyEveryDomainA = await mintKey(TENANT_A, userA, [
+            'mcp:read', 'risks:read', 'controls:read', 'frameworks:read',
+            'evidence:read', 'audits:read', 'tasks:read',
+        ]);
 
         const fw = await prisma.framework.create({
             data: { key: FW_KEY, version: '1', name: 'MCP RS Test Framework', kind: 'NIST_FRAMEWORK', description: 'x' },
@@ -135,10 +158,22 @@ describeFn('MCP read suite (real route, real key, real RLS)', () => {
     });
 
     it('tools/list advertises the full tenant-inspection suite', async () => {
-        const { json } = await rpc(keyRisksA, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+        const { json } = await rpc(keyEveryDomainA, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
         const names = (json as { result: { tools: Array<{ name: string }> } }).result.tools.map((t) => t.name);
         for (const n of ['list_risks', 'list_controls', 'find_coverage_gaps', 'list_evidence_expiring', 'get_framework_status', 'list_findings', 'list_tasks', 'get_tenant_context', 'search_controls']) {
             expect(names).toContain(n);
+        }
+    });
+
+    it('tools/list advertises only what THIS caller could call', async () => {
+        // The paired negative for the assertion above: a risks-only key sees
+        // the risks tool and nothing from the domains it is not scoped for. A
+        // filter nobody proves narrows is indistinguishable from no filter.
+        const { json } = await rpc(keyRisksA, { jsonrpc: '2.0', id: 11, method: 'tools/list' });
+        const names = (json as { result: { tools: Array<{ name: string }> } }).result.tools.map((t) => t.name);
+        expect(names).toContain('list_risks');
+        for (const n of ['list_controls', 'list_tasks', 'get_framework_status', 'list_evidence_expiring']) {
+            expect(names).not.toContain(n);
         }
     });
 

@@ -55,5 +55,6 @@ module.exports = {
         'no-request-derived-public-url': require('./rules/no-request-derived-public-url'),
         'no-fail-open-teardown-filter': noFailOpenTeardownFilter,
         'require-agent-attribution': require('./rules/require-agent-attribution'),
+        'require-mcp-tool-authorization': require('./rules/require-mcp-tool-authorization'),
     },
 };
