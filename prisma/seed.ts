@@ -1217,7 +1217,7 @@ Reviewed at least annually.` },
                 data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of t.requirements) {
                 if (nis2ReqMap[rk]) {
@@ -1241,7 +1241,7 @@ Reviewed at least annually.` },
                 data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of t.requirements) {
                 if (doraReqMap[rk]) {
@@ -1261,7 +1261,7 @@ Reviewed at least annually.` },
                 data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of t.requirements) {
                 if (iso9001ReqMap[rk]) {
@@ -1281,7 +1281,7 @@ Reviewed at least annually.` },
                 data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of t.requirements) {
                 if (iso28000ReqMap[rk]) {
@@ -1301,7 +1301,7 @@ Reviewed at least annually.` },
                 data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of t.requirements) {
                 if (iso39001ReqMap[rk]) {
@@ -1407,7 +1407,7 @@ Reviewed at least annually.` },
                 data: { code, title: info.title, category: 'OWASP AISVS', defaultFrequency: 'QUARTERLY' },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of info.reqs) {
                 if (aisvsReqMap[rk]) {
@@ -1478,7 +1478,7 @@ Reviewed at least annually.` },
                 data: { code, title: info.title, category: 'ISO 42001', defaultFrequency: 'ANNUALLY' },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of info.reqs) {
                 if (iso42001ReqMap[rk]) {
@@ -1549,7 +1549,7 @@ Reviewed at least annually.` },
                 data: { code, title: info.title, category: 'EU AI Act', defaultFrequency: 'ANNUALLY' },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of info.reqs) {
                 if (euAiActReqMap[rk]) {
@@ -1617,7 +1617,7 @@ Reviewed at least annually.` },
                 data: { code, title: req.title, category: 'OWASP Agentic AI Top 10', defaultFrequency: 'QUARTERLY' },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             if (asiReqMap[req.key]) {
                 await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: asiReqMap[req.key] } }).catch(() => { });
@@ -1694,7 +1694,7 @@ Reviewed at least annually.` },
                 data: { code, title: info.title, category: 'IMDA MGF', defaultFrequency: 'ANNUALLY' },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of info.reqs) {
                 if (mgfReqMap[rk]) {
@@ -1763,7 +1763,7 @@ Reviewed at least annually.` },
                 data: { code, title: info.title, category: 'NIST Privacy', defaultFrequency: 'ANNUALLY' },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of info.reqs) {
                 if (nistPrivacyReqMap[rk]) {
@@ -1835,7 +1835,7 @@ Reviewed at least annually.` },
                 data: { code, title: info.title, category: 'Secure Development', defaultFrequency: 'ANNUALLY' },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
             }
             for (const rk of info.reqs) {
                 if (nistSsdfReqMap[rk]) {
