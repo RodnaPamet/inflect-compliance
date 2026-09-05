@@ -1217,7 +1217,7 @@ Reviewed at least annually.` },
                 data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
             for (const rk of t.requirements) {
                 if (nis2ReqMap[rk]) {
@@ -1241,7 +1241,7 @@ Reviewed at least annually.` },
                 data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
             for (const rk of t.requirements) {
                 if (doraReqMap[rk]) {
@@ -1261,7 +1261,7 @@ Reviewed at least annually.` },
                 data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
             for (const rk of t.requirements) {
                 if (iso9001ReqMap[rk]) {
@@ -1281,7 +1281,7 @@ Reviewed at least annually.` },
                 data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
             for (const rk of t.requirements) {
                 if (iso28000ReqMap[rk]) {
@@ -1301,7 +1301,7 @@ Reviewed at least annually.` },
                 data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
             for (const rk of t.requirements) {
                 if (iso39001ReqMap[rk]) {
@@ -1407,7 +1407,7 @@ Reviewed at least annually.` },
                 data: { code, title: info.title, category: 'OWASP AISVS', defaultFrequency: 'QUARTERLY' },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
             for (const rk of info.reqs) {
                 if (aisvsReqMap[rk]) {
@@ -1478,7 +1478,7 @@ Reviewed at least annually.` },
                 data: { code, title: info.title, category: 'ISO 42001', defaultFrequency: 'ANNUALLY' },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
             for (const rk of info.reqs) {
                 if (iso42001ReqMap[rk]) {
@@ -1549,7 +1549,7 @@ Reviewed at least annually.` },
                 data: { code, title: info.title, category: 'EU AI Act', defaultFrequency: 'ANNUALLY' },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
             for (const rk of info.reqs) {
                 if (euAiActReqMap[rk]) {
@@ -1617,7 +1617,7 @@ Reviewed at least annually.` },
                 data: { code, title: req.title, category: 'OWASP Agentic AI Top 10', defaultFrequency: 'QUARTERLY' },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
             if (asiReqMap[req.key]) {
                 await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: asiReqMap[req.key] } }).catch(() => { });
@@ -1694,7 +1694,7 @@ Reviewed at least annually.` },
                 data: { code, title: info.title, category: 'IMDA MGF', defaultFrequency: 'ANNUALLY' },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
             for (const rk of info.reqs) {
                 if (mgfReqMap[rk]) {
@@ -1763,7 +1763,7 @@ Reviewed at least annually.` },
                 data: { code, title: info.title, category: 'NIST Privacy', defaultFrequency: 'ANNUALLY' },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
             for (const rk of info.reqs) {
                 if (nistPrivacyReqMap[rk]) {
@@ -1835,7 +1835,7 @@ Reviewed at least annually.` },
                 data: { code, title: info.title, category: 'Secure Development', defaultFrequency: 'ANNUALLY' },
             });
             for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
             for (const rk of info.reqs) {
                 if (nistSsdfReqMap[rk]) {
@@ -1866,9 +1866,16 @@ Reviewed at least annually.` },
     // to the specific SSDF task requirement(s) it satisfies (via nistSsdfReqMap
     // from the framework block above), so installing the pack produces mapped
     // coverage, not bare 0%.
-    const ssdfStarterControls = require('./fixtures/ssdf-control-templates.json') as Array<{
-        code: string; title: string; description: string; defaultFrequency: string; requirements: string[]; tasks: Array<{ title: string; description: string }>;
-    }>;
+        // CatalogFile shape — see the SOC 2 block above and
+        // scripts/seed-framework-catalogs.ts. Read via `.templates`, NOT an
+        // `as Array<...>` cast over the whole file: that cast compiled after the
+        // fixture became an object and `for...of` threw at runtime, taking the
+        // whole seed down.
+    const ssdfStarterControls = (require('./fixtures/ssdf-control-templates.json') as {
+        templates: Array<{
+        code: string; title: string; description: string; defaultFrequency: string; requirementCodes: string[]; tasks: Array<{ title: { en: string }; description: { en: string } }>;
+        }>;
+    }).templates;
     for (const c of ssdfStarterControls) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
         if (!existing) {
@@ -1882,9 +1889,9 @@ Reviewed at least annually.` },
                 },
             });
             for (const task of c.tasks) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
-            for (const rk of c.requirements) {
+            for (const rk of c.requirementCodes) {
                 if (nistSsdfReqMap[rk]) {
                     await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: nistSsdfReqMap[rk] } }).catch(() => { });
                 }
@@ -1945,9 +1952,16 @@ Reviewed at least annually.` },
     // (the essential cyber-hygiene baseline) — so a CIS adopter gets mapped
     // coverage on day one, not a bare 0%. Distinct 'CIS-' code prefix. Each
     // control links to the specific IG1 safeguard requirement(s) it satisfies.
-    const cisIg1Controls = require('./fixtures/cis-v8-ig1-control-templates.json') as Array<{
-        code: string; title: string; description: string; defaultFrequency: string; requirements: string[]; tasks: Array<{ title: string; description: string }>;
-    }>;
+        // CatalogFile shape — see the SOC 2 block above and
+        // scripts/seed-framework-catalogs.ts. Read via `.templates`, NOT an
+        // `as Array<...>` cast over the whole file: that cast compiled after the
+        // fixture became an object and `for...of` threw at runtime, taking the
+        // whole seed down.
+    const cisIg1Controls = (require('./fixtures/cis-v8-ig1-control-templates.json') as {
+        templates: Array<{
+        code: string; title: string; description: string; defaultFrequency: string; requirementCodes: string[]; tasks: Array<{ title: { en: string }; description: { en: string } }>;
+        }>;
+    }).templates;
     for (const c of cisIg1Controls) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
         if (!existing) {
@@ -1961,9 +1975,9 @@ Reviewed at least annually.` },
                 },
             });
             for (const task of c.tasks) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
-            for (const rk of c.requirements) {
+            for (const rk of c.requirementCodes) {
                 if (cisReqMap[rk]) {
                     await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: cisReqMap[rk] } }).catch(() => { });
                 }
@@ -2025,9 +2039,16 @@ Reviewed at least annually.` },
     // (the Level 1 verification baseline) — so an ASVS adopter gets mapped coverage
     // on day one, not a bare 0%. Distinct 'ASVS-' code prefix. Each control links to
     // the specific L1 requirement(s) it satisfies.
-    const asvsL1Controls = require('./fixtures/asvs-l1-control-templates.json') as Array<{
-        code: string; title: string; description: string; defaultFrequency: string; requirements: string[]; tasks: Array<{ title: string; description: string }>;
-    }>;
+        // CatalogFile shape — see the SOC 2 block above and
+        // scripts/seed-framework-catalogs.ts. Read via `.templates`, NOT an
+        // `as Array<...>` cast over the whole file: that cast compiled after the
+        // fixture became an object and `for...of` threw at runtime, taking the
+        // whole seed down.
+    const asvsL1Controls = (require('./fixtures/asvs-l1-control-templates.json') as {
+        templates: Array<{
+        code: string; title: string; description: string; defaultFrequency: string; requirementCodes: string[]; tasks: Array<{ title: { en: string }; description: { en: string } }>;
+        }>;
+    }).templates;
     for (const c of asvsL1Controls) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
         if (!existing) {
@@ -2041,9 +2062,9 @@ Reviewed at least annually.` },
                 },
             });
             for (const task of c.tasks) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
-            for (const rk of c.requirements) {
+            for (const rk of c.requirementCodes) {
                 if (asvsReqMap[rk]) {
                     await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: asvsReqMap[rk] } }).catch(() => { });
                 }
@@ -2094,9 +2115,16 @@ Reviewed at least annually.` },
         iso27701ReqMap[req.key] = r.id;
     }
     // Curated privacy starter-pack controls (PIMS-NN) with tasks + requirement links.
-    const iso27701Controls = require('./fixtures/iso27701-control-templates.json') as Array<{
-        code: string; title: string; description: string; defaultFrequency: string; requirements: string[]; tasks: Array<{ title: string; description: string }>;
-    }>;
+        // CatalogFile shape — see the SOC 2 block above and
+        // scripts/seed-framework-catalogs.ts. Read via `.templates`, NOT an
+        // `as Array<...>` cast over the whole file: that cast compiled after the
+        // fixture became an object and `for...of` threw at runtime, taking the
+        // whole seed down.
+    const iso27701Controls = (require('./fixtures/iso27701-control-templates.json') as {
+        templates: Array<{
+        code: string; title: string; description: string; defaultFrequency: string; requirementCodes: string[]; tasks: Array<{ title: { en: string }; description: { en: string } }>;
+        }>;
+    }).templates;
     for (const c of iso27701Controls) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
         if (!existing) {
@@ -2104,9 +2132,9 @@ Reviewed at least annually.` },
                 data: { code: c.code, title: c.title, description: c.description, category: 'Privacy', defaultFrequency: c.defaultFrequency as ControlFrequency },
             });
             for (const task of c.tasks) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
-            for (const rk of c.requirements) {
+            for (const rk of c.requirementCodes) {
                 if (iso27701ReqMap[rk]) {
                     await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: iso27701ReqMap[rk] } }).catch(() => { });
                 }

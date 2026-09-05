@@ -56,7 +56,13 @@ const prisma = new PrismaClient({
  * `tests/guardrails/catalog-fixtures-are-delivered.test.ts` stops failing for
  * it; forget to, and it fails until you do.
  */
-const CATALOG_FIXTURES = ['prisma/fixtures/soc2-control-templates.json'];
+const CATALOG_FIXTURES = [
+    'prisma/fixtures/soc2-control-templates.json',
+    'prisma/fixtures/ssdf-control-templates.json',
+    'prisma/fixtures/cis-v8-ig1-control-templates.json',
+    'prisma/fixtures/asvs-l1-control-templates.json',
+    'prisma/fixtures/iso27701-control-templates.json',
+];
 
 const DRY_RUN = process.argv.includes('--dry-run');
 

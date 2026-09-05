@@ -1,343 +1,2095 @@
-[
-  {
-    "code": "CIS-01",
-    "title": "Inventory and Control of Enterprise Assets (IG1)",
-    "description": "Implements the IG1 safeguards of CIS Control 1 — Inventory and Control of Enterprise Assets. Establishes the essential cyber-hygiene baseline for this control area.",
-    "defaultFrequency": "MONTHLY",
-    "defaultOwnerHint": "IT Operations",
-    "requirements": [
-      "1.1",
-      "1.2"
-    ],
-    "tasks": [
-      {
-        "title": "Implement IG1 safeguards for Control 1",
-        "description": "Put in place the IG1 safeguards for Inventory and Control of Enterprise Assets (1.1, 1.2)."
-      },
-      {
-        "title": "Review Control 1 coverage",
-        "description": "Periodically verify that the IG1 safeguards for Inventory and Control of Enterprise Assets remain effective and update as the environment changes."
-      }
-    ]
+{
+  "_meta": {
+    "purpose": "CIS Critical Security Controls v8 control catalogue in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
+    "why": "The templates carried authored task sets that reached no database: the fixture was a bare array that only prisma/seed.ts read, and prod does not run it. Reshaped so scripts/seed-framework-catalogs.ts can deliver them.",
+    "grounding": "Requirement titles and summaries come from src/data/libraries/cis-controls-v8.yaml so the two cannot drift. Task content is grounded in each template's own description.",
+    "deliveredBy": "scripts/seed-framework-catalogs.ts"
   },
-  {
-    "code": "CIS-02",
-    "title": "Inventory and Control of Software Assets (IG1)",
-    "description": "Implements the IG1 safeguards of CIS Control 2 — Inventory and Control of Software Assets. Establishes the essential cyber-hygiene baseline for this control area.",
-    "defaultFrequency": "MONTHLY",
-    "defaultOwnerHint": "IT Operations",
-    "requirements": [
-      "2.1",
-      "2.2",
-      "2.3"
-    ],
-    "tasks": [
-      {
-        "title": "Implement IG1 safeguards for Control 2",
-        "description": "Put in place the IG1 safeguards for Inventory and Control of Software Assets (2.1, 2.2, 2.3)."
-      },
-      {
-        "title": "Review Control 2 coverage",
-        "description": "Periodically verify that the IG1 safeguards for Inventory and Control of Software Assets remain effective and update as the environment changes."
-      }
-    ]
+  "framework": {
+    "key": "CIS-V8",
+    "name": "CIS Critical Security Controls v8",
+    "version": "8",
+    "kind": "INDUSTRY_STANDARD",
+    "description": "CIS Critical Security Controls v8, Implementation Group 1 — the essential cyber hygiene baseline."
   },
-  {
-    "code": "CIS-03",
-    "title": "Data Protection (IG1)",
-    "description": "Implements the IG1 safeguards of CIS Control 3 — Data Protection. Establishes the essential cyber-hygiene baseline for this control area.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Data Protection Officer",
-    "requirements": [
-      "3.1",
-      "3.2",
-      "3.3",
-      "3.4",
-      "3.5",
-      "3.6"
-    ],
-    "tasks": [
-      {
-        "title": "Implement IG1 safeguards for Control 3",
-        "description": "Put in place the IG1 safeguards for Data Protection (3.1, 3.2, 3.3, 3.4, 3.5, 3.6)."
-      },
-      {
-        "title": "Review Control 3 coverage",
-        "description": "Periodically verify that the IG1 safeguards for Data Protection remain effective and update as the environment changes."
-      }
-    ]
-  },
-  {
-    "code": "CIS-04",
-    "title": "Secure Configuration of Enterprise Assets and Software (IG1)",
-    "description": "Implements the IG1 safeguards of CIS Control 4 — Secure Configuration of Enterprise Assets and Software. Establishes the essential cyber-hygiene baseline for this control area.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "IT Operations / Security Engineering",
-    "requirements": [
-      "4.1",
-      "4.2",
-      "4.3",
-      "4.4",
-      "4.5",
-      "4.6",
-      "4.7"
-    ],
-    "tasks": [
-      {
-        "title": "Implement IG1 safeguards for Control 4",
-        "description": "Put in place the IG1 safeguards for Secure Configuration of Enterprise Assets and Software (4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7)."
-      },
-      {
-        "title": "Review Control 4 coverage",
-        "description": "Periodically verify that the IG1 safeguards for Secure Configuration of Enterprise Assets and Software remain effective and update as the environment changes."
-      }
-    ]
-  },
-  {
-    "code": "CIS-05",
-    "title": "Account Management (IG1)",
-    "description": "Implements the IG1 safeguards of CIS Control 5 — Account Management. Establishes the essential cyber-hygiene baseline for this control area.",
-    "defaultFrequency": "MONTHLY",
-    "defaultOwnerHint": "Identity & Access Management",
-    "requirements": [
-      "5.1",
-      "5.2",
-      "5.3",
-      "5.4"
-    ],
-    "tasks": [
-      {
-        "title": "Implement IG1 safeguards for Control 5",
-        "description": "Put in place the IG1 safeguards for Account Management (5.1, 5.2, 5.3, 5.4)."
-      },
-      {
-        "title": "Review Control 5 coverage",
-        "description": "Periodically verify that the IG1 safeguards for Account Management remain effective and update as the environment changes."
-      }
-    ]
-  },
-  {
-    "code": "CIS-06",
-    "title": "Access Control Management (IG1)",
-    "description": "Implements the IG1 safeguards of CIS Control 6 — Access Control Management. Establishes the essential cyber-hygiene baseline for this control area.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Identity & Access Management",
-    "requirements": [
-      "6.1",
-      "6.2",
-      "6.3",
-      "6.4",
-      "6.5"
-    ],
-    "tasks": [
-      {
-        "title": "Implement IG1 safeguards for Control 6",
-        "description": "Put in place the IG1 safeguards for Access Control Management (6.1, 6.2, 6.3, 6.4, 6.5)."
-      },
-      {
-        "title": "Review Control 6 coverage",
-        "description": "Periodically verify that the IG1 safeguards for Access Control Management remain effective and update as the environment changes."
-      }
-    ]
-  },
-  {
-    "code": "CIS-07",
-    "title": "Continuous Vulnerability Management (IG1)",
-    "description": "Implements the IG1 safeguards of CIS Control 7 — Continuous Vulnerability Management. Establishes the essential cyber-hygiene baseline for this control area.",
-    "defaultFrequency": "MONTHLY",
-    "defaultOwnerHint": "Vulnerability Management",
-    "requirements": [
-      "7.1",
-      "7.2",
-      "7.3",
-      "7.4"
-    ],
-    "tasks": [
-      {
-        "title": "Implement IG1 safeguards for Control 7",
-        "description": "Put in place the IG1 safeguards for Continuous Vulnerability Management (7.1, 7.2, 7.3, 7.4)."
-      },
-      {
-        "title": "Review Control 7 coverage",
-        "description": "Periodically verify that the IG1 safeguards for Continuous Vulnerability Management remain effective and update as the environment changes."
-      }
-    ]
-  },
-  {
-    "code": "CIS-08",
-    "title": "Audit Log Management (IG1)",
-    "description": "Implements the IG1 safeguards of CIS Control 8 — Audit Log Management. Establishes the essential cyber-hygiene baseline for this control area.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Security Operations",
-    "requirements": [
-      "8.1",
-      "8.2",
-      "8.3"
-    ],
-    "tasks": [
-      {
-        "title": "Implement IG1 safeguards for Control 8",
-        "description": "Put in place the IG1 safeguards for Audit Log Management (8.1, 8.2, 8.3)."
-      },
-      {
-        "title": "Review Control 8 coverage",
-        "description": "Periodically verify that the IG1 safeguards for Audit Log Management remain effective and update as the environment changes."
-      }
-    ]
-  },
-  {
-    "code": "CIS-09",
-    "title": "Email and Web Browser Protections (IG1)",
-    "description": "Implements the IG1 safeguards of CIS Control 9 — Email and Web Browser Protections. Establishes the essential cyber-hygiene baseline for this control area.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Security Operations",
-    "requirements": [
-      "9.1",
-      "9.2"
-    ],
-    "tasks": [
-      {
-        "title": "Implement IG1 safeguards for Control 9",
-        "description": "Put in place the IG1 safeguards for Email and Web Browser Protections (9.1, 9.2)."
-      },
-      {
-        "title": "Review Control 9 coverage",
-        "description": "Periodically verify that the IG1 safeguards for Email and Web Browser Protections remain effective and update as the environment changes."
-      }
-    ]
-  },
-  {
-    "code": "CIS-10",
-    "title": "Malware Defenses (IG1)",
-    "description": "Implements the IG1 safeguards of CIS Control 10 — Malware Defenses. Establishes the essential cyber-hygiene baseline for this control area.",
-    "defaultFrequency": "MONTHLY",
-    "defaultOwnerHint": "Security Operations",
-    "requirements": [
-      "10.1",
-      "10.2",
-      "10.3"
-    ],
-    "tasks": [
-      {
-        "title": "Implement IG1 safeguards for Control 10",
-        "description": "Put in place the IG1 safeguards for Malware Defenses (10.1, 10.2, 10.3)."
-      },
-      {
-        "title": "Review Control 10 coverage",
-        "description": "Periodically verify that the IG1 safeguards for Malware Defenses remain effective and update as the environment changes."
-      }
-    ]
-  },
-  {
-    "code": "CIS-11",
-    "title": "Data Recovery (IG1)",
-    "description": "Implements the IG1 safeguards of CIS Control 11 — Data Recovery. Establishes the essential cyber-hygiene baseline for this control area.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "IT Operations / Backup Admin",
-    "requirements": [
-      "11.1",
-      "11.2",
-      "11.3",
-      "11.4"
-    ],
-    "tasks": [
-      {
-        "title": "Implement IG1 safeguards for Control 11",
-        "description": "Put in place the IG1 safeguards for Data Recovery (11.1, 11.2, 11.3, 11.4)."
-      },
-      {
-        "title": "Review Control 11 coverage",
-        "description": "Periodically verify that the IG1 safeguards for Data Recovery remain effective and update as the environment changes."
-      }
-    ]
-  },
-  {
-    "code": "CIS-12",
-    "title": "Network Infrastructure Management (IG1)",
-    "description": "Implements the IG1 safeguards of CIS Control 12 — Network Infrastructure Management. Establishes the essential cyber-hygiene baseline for this control area.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Network Engineering",
-    "requirements": [
-      "12.1"
-    ],
-    "tasks": [
-      {
-        "title": "Implement IG1 safeguards for Control 12",
-        "description": "Put in place the IG1 safeguards for Network Infrastructure Management (12.1)."
-      },
-      {
-        "title": "Review Control 12 coverage",
-        "description": "Periodically verify that the IG1 safeguards for Network Infrastructure Management remain effective and update as the environment changes."
-      }
-    ]
-  },
-  {
-    "code": "CIS-14",
-    "title": "Security Awareness and Skills Training (IG1)",
-    "description": "Implements the IG1 safeguards of CIS Control 14 — Security Awareness and Skills Training. Establishes the essential cyber-hygiene baseline for this control area.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Security Awareness Lead",
-    "requirements": [
-      "14.1",
-      "14.2",
-      "14.3",
-      "14.4",
-      "14.5",
-      "14.6",
-      "14.7",
-      "14.8"
-    ],
-    "tasks": [
-      {
-        "title": "Implement IG1 safeguards for Control 14",
-        "description": "Put in place the IG1 safeguards for Security Awareness and Skills Training (14.1, 14.2, 14.3, 14.4, 14.5, 14.6, 14.7, 14.8)."
-      },
-      {
-        "title": "Review Control 14 coverage",
-        "description": "Periodically verify that the IG1 safeguards for Security Awareness and Skills Training remain effective and update as the environment changes."
-      }
-    ]
-  },
-  {
-    "code": "CIS-15",
-    "title": "Service Provider Management (IG1)",
-    "description": "Implements the IG1 safeguards of CIS Control 15 — Service Provider Management. Establishes the essential cyber-hygiene baseline for this control area.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Vendor Risk Management",
-    "requirements": [
-      "15.1"
-    ],
-    "tasks": [
-      {
-        "title": "Implement IG1 safeguards for Control 15",
-        "description": "Put in place the IG1 safeguards for Service Provider Management (15.1)."
-      },
-      {
-        "title": "Review Control 15 coverage",
-        "description": "Periodically verify that the IG1 safeguards for Service Provider Management remain effective and update as the environment changes."
-      }
-    ]
-  },
-  {
-    "code": "CIS-17",
-    "title": "Incident Response Management (IG1)",
-    "description": "Implements the IG1 safeguards of CIS Control 17 — Incident Response Management. Establishes the essential cyber-hygiene baseline for this control area.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Incident Response Lead",
-    "requirements": [
-      "17.1",
-      "17.2",
-      "17.3"
-    ],
-    "tasks": [
-      {
-        "title": "Implement IG1 safeguards for Control 17",
-        "description": "Put in place the IG1 safeguards for Incident Response Management (17.1, 17.2, 17.3)."
-      },
-      {
-        "title": "Review Control 17 coverage",
-        "description": "Periodically verify that the IG1 safeguards for Incident Response Management remain effective and update as the environment changes."
-      }
+  "requirements": [
+    {
+      "code": "1.1",
+      "title": "Establish and Maintain Detailed Enterprise Asset Inventory",
+      "summary": "Keep an accurate, regularly refreshed record of every enterprise asset with enough detail to identify and locate it. parent_urn: urn:inflect:req:cis-controls-v8:1 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 1
+    },
+    {
+      "code": "1.2",
+      "title": "Address Unauthorized Assets",
+      "summary": "Define and follow a process to investigate and handle any asset discovered on the network that is not on the approved inventory. parent_urn: urn:inflect:req:cis-controls-v8:1 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 2
+    },
+    {
+      "code": "2.1",
+      "title": "Establish and Maintain a Software Inventory",
+      "summary": "Maintain a current, detailed list of all software titles authorized to run on enterprise assets. parent_urn: urn:inflect:req:cis-controls-v8:2 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 3
+    },
+    {
+      "code": "2.2",
+      "title": "Ensure Authorized Software is Currently Supported",
+      "summary": "Confirm that software in use is still supported by its vendor and remove or plan for anything past end of life. parent_urn: urn:inflect:req:cis-controls-v8:2 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 4
+    },
+    {
+      "code": "2.3",
+      "title": "Address Unauthorized Software",
+      "summary": "Establish a process to detect software that is not authorized and remove or formally approve it. parent_urn: urn:inflect:req:cis-controls-v8:2 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 5
+    },
+    {
+      "code": "3.1",
+      "title": "Establish and Maintain a Data Management Process",
+      "summary": "Document how the enterprise handles data across its life cycle, covering sensitivity, ownership, retention, and disposal. parent_urn: urn:inflect:req:cis-controls-v8:3 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 6
+    },
+    {
+      "code": "3.2",
+      "title": "Establish and Maintain a Data Inventory",
+      "summary": "Keep a record of the sensitive data the enterprise holds, including where it lives and who owns it. parent_urn: urn:inflect:req:cis-controls-v8:3 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 7
+    },
+    {
+      "code": "3.3",
+      "title": "Configure Data Access Control Lists",
+      "summary": "Apply access controls so that only authorized users and services can reach specific data stores. parent_urn: urn:inflect:req:cis-controls-v8:3 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 8
+    },
+    {
+      "code": "3.4",
+      "title": "Enforce Data Retention",
+      "summary": "Retain data only for the period defined by policy and remove it once that period ends. parent_urn: urn:inflect:req:cis-controls-v8:3 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 9
+    },
+    {
+      "code": "3.5",
+      "title": "Securely Dispose of Data",
+      "summary": "Destroy or sanitize data and media so that discarded information cannot be recovered. parent_urn: urn:inflect:req:cis-controls-v8:3 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 10
+    },
+    {
+      "code": "3.6",
+      "title": "Encrypt Data on End-User Devices",
+      "summary": "Apply encryption to information stored on laptops, phones, and other end-user devices. parent_urn: urn:inflect:req:cis-controls-v8:3 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 11
+    },
+    {
+      "code": "4.1",
+      "title": "Establish and Maintain a Secure Configuration Process",
+      "summary": "Document and keep current a process for applying secure baseline settings to assets and software. parent_urn: urn:inflect:req:cis-controls-v8:4 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 12
+    },
+    {
+      "code": "4.2",
+      "title": "Establish and Maintain a Secure Configuration Process for Network Infrastructure",
+      "summary": "Maintain a defined process for securely configuring routers, switches, firewalls, and similar devices. parent_urn: urn:inflect:req:cis-controls-v8:4 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 13
+    },
+    {
+      "code": "4.3",
+      "title": "Configure Automatic Session Locking on Enterprise Assets",
+      "summary": "Set devices to lock automatically after a period of inactivity to limit unattended access. parent_urn: urn:inflect:req:cis-controls-v8:4 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 14
+    },
+    {
+      "code": "4.4",
+      "title": "Implement and Manage a Firewall on Servers",
+      "summary": "Run and maintain host-based or network firewalls that protect server assets. parent_urn: urn:inflect:req:cis-controls-v8:4 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 15
+    },
+    {
+      "code": "4.5",
+      "title": "Implement and Manage a Firewall on End-User Devices",
+      "summary": "Enable and manage a firewall on laptops, desktops, and similar end-user devices. parent_urn: urn:inflect:req:cis-controls-v8:4 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 16
+    },
+    {
+      "code": "4.6",
+      "title": "Securely Manage Enterprise Assets and Software",
+      "summary": "Administer assets and software through secure channels and vetted management tooling. parent_urn: urn:inflect:req:cis-controls-v8:4 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 17
+    },
+    {
+      "code": "4.7",
+      "title": "Manage Default Accounts on Enterprise Assets and Software",
+      "summary": "Disable or change built-in default accounts and credentials before assets enter use. parent_urn: urn:inflect:req:cis-controls-v8:4 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 18
+    },
+    {
+      "code": "5.1",
+      "title": "Establish and Maintain an Inventory of Accounts",
+      "summary": "Maintain a record of all user and administrator accounts, including owner and status. parent_urn: urn:inflect:req:cis-controls-v8:5 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 19
+    },
+    {
+      "code": "5.2",
+      "title": "Use Unique Passwords",
+      "summary": "Require a distinct, sufficiently strong password for every account. parent_urn: urn:inflect:req:cis-controls-v8:5 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 20
+    },
+    {
+      "code": "5.3",
+      "title": "Disable Dormant Accounts",
+      "summary": "Identify and disable accounts that have gone unused beyond a defined period. parent_urn: urn:inflect:req:cis-controls-v8:5 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 21
+    },
+    {
+      "code": "5.4",
+      "title": "Restrict Administrator Privileges to Dedicated Administrator Accounts",
+      "summary": "Perform privileged work only with separate administrator accounts, not everyday user accounts. parent_urn: urn:inflect:req:cis-controls-v8:5 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 22
+    },
+    {
+      "code": "6.1",
+      "title": "Establish an Access Granting Process",
+      "summary": "Follow a defined procedure to provision access rights when someone joins or changes role. parent_urn: urn:inflect:req:cis-controls-v8:6 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 23
+    },
+    {
+      "code": "6.2",
+      "title": "Establish an Access Revoking Process",
+      "summary": "Follow a defined procedure to remove access promptly when it is no longer needed. parent_urn: urn:inflect:req:cis-controls-v8:6 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 24
+    },
+    {
+      "code": "6.3",
+      "title": "Require MFA for Externally-Exposed Applications",
+      "summary": "Require multi-factor authentication for applications reachable from outside the enterprise. parent_urn: urn:inflect:req:cis-controls-v8:6 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 25
+    },
+    {
+      "code": "6.4",
+      "title": "Require MFA for Remote Network Access",
+      "summary": "Require multi-factor authentication for connections into the network from remote locations. parent_urn: urn:inflect:req:cis-controls-v8:6 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 26
+    },
+    {
+      "code": "6.5",
+      "title": "Require MFA for Administrative Access",
+      "summary": "Require multi-factor authentication whenever administrative privileges are used. parent_urn: urn:inflect:req:cis-controls-v8:6 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 27
+    },
+    {
+      "code": "7.1",
+      "title": "Establish and Maintain a Vulnerability Management Process",
+      "summary": "Document a repeatable process for finding and tracking vulnerabilities in enterprise assets. parent_urn: urn:inflect:req:cis-controls-v8:7 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 28
+    },
+    {
+      "code": "7.2",
+      "title": "Establish and Maintain a Remediation Process",
+      "summary": "Define how identified vulnerabilities are prioritized and driven to closure. parent_urn: urn:inflect:req:cis-controls-v8:7 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 29
+    },
+    {
+      "code": "7.3",
+      "title": "Perform Automated Operating System Patch Management",
+      "summary": "Automate the delivery of operating-system security updates on a regular cadence. parent_urn: urn:inflect:req:cis-controls-v8:7 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 30
+    },
+    {
+      "code": "7.4",
+      "title": "Perform Automated Application Patch Management",
+      "summary": "Automate the delivery of application security updates on a regular cadence. parent_urn: urn:inflect:req:cis-controls-v8:7 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 31
+    },
+    {
+      "code": "8.1",
+      "title": "Establish and Maintain an Audit Log Management Process",
+      "summary": "Document what events are logged, how logs are handled, and how long they are kept. parent_urn: urn:inflect:req:cis-controls-v8:8 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 32
+    },
+    {
+      "code": "8.2",
+      "title": "Collect Audit Logs",
+      "summary": "Ensure logging is enabled and events are collected across enterprise assets. parent_urn: urn:inflect:req:cis-controls-v8:8 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 33
+    },
+    {
+      "code": "8.3",
+      "title": "Ensure Adequate Audit Log Storage",
+      "summary": "Provide enough storage so that logs are retained for the period the process requires. parent_urn: urn:inflect:req:cis-controls-v8:8 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 34
+    },
+    {
+      "code": "9.1",
+      "title": "Ensure Use of Only Fully Supported Browsers and Email Clients",
+      "summary": "Permit only vendor-supported, up-to-date browsers and email clients on enterprise assets. parent_urn: urn:inflect:req:cis-controls-v8:9 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 35
+    },
+    {
+      "code": "9.2",
+      "title": "Use DNS Filtering Services",
+      "summary": "Use DNS filtering to block resolution of known malicious domains. parent_urn: urn:inflect:req:cis-controls-v8:9 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 36
+    },
+    {
+      "code": "10.1",
+      "title": "Deploy and Maintain Anti-Malware Software",
+      "summary": "Install and keep running anti-malware protection on enterprise assets. parent_urn: urn:inflect:req:cis-controls-v8:10 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 37
+    },
+    {
+      "code": "10.2",
+      "title": "Configure Automatic Anti-Malware Signature Updates",
+      "summary": "Configure anti-malware tools to update their detection data automatically. parent_urn: urn:inflect:req:cis-controls-v8:10 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 38
+    },
+    {
+      "code": "10.3",
+      "title": "Disable Autorun and Autoplay for Removable Media",
+      "summary": "Turn off automatic execution of content from removable media. parent_urn: urn:inflect:req:cis-controls-v8:10 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 39
+    },
+    {
+      "code": "11.1",
+      "title": "Establish and Maintain a Data Recovery Process",
+      "summary": "Document how the enterprise backs up and restores data after loss or compromise. parent_urn: urn:inflect:req:cis-controls-v8:11 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 40
+    },
+    {
+      "code": "11.2",
+      "title": "Perform Automated Backups",
+      "summary": "Run backups automatically on a defined schedule for in-scope assets. parent_urn: urn:inflect:req:cis-controls-v8:11 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 41
+    },
+    {
+      "code": "11.3",
+      "title": "Protect Recovery Data",
+      "summary": "Secure backup data against unauthorized access and tampering, including via encryption. parent_urn: urn:inflect:req:cis-controls-v8:11 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 42
+    },
+    {
+      "code": "11.4",
+      "title": "Establish and Maintain an Isolated Instance of Recovery Data",
+      "summary": "Keep at least one backup copy isolated so it survives an attack on production systems. parent_urn: urn:inflect:req:cis-controls-v8:11 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 43
+    },
+    {
+      "code": "12.1",
+      "title": "Ensure Network Infrastructure is Up-to-Date",
+      "summary": "Keep networking equipment firmware and software current with security updates. parent_urn: urn:inflect:req:cis-controls-v8:12 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 44
+    },
+    {
+      "code": "14.1",
+      "title": "Establish and Maintain a Security Awareness Program",
+      "summary": "Run an ongoing program that keeps the workforce aware of security responsibilities. parent_urn: urn:inflect:req:cis-controls-v8:14 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 45
+    },
+    {
+      "code": "14.2",
+      "title": "Train Workforce Members to Recognize Social Engineering Attacks",
+      "summary": "Teach staff to spot phishing and other social-engineering attempts. parent_urn: urn:inflect:req:cis-controls-v8:14 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 46
+    },
+    {
+      "code": "14.3",
+      "title": "Train Workforce Members on Authentication Best Practices",
+      "summary": "Train staff on strong password use and multi-factor authentication. parent_urn: urn:inflect:req:cis-controls-v8:14 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 47
+    },
+    {
+      "code": "14.4",
+      "title": "Train Workforce on Data Handling Best Practices",
+      "summary": "Train staff to store, share, and dispose of data according to its sensitivity. parent_urn: urn:inflect:req:cis-controls-v8:14 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 48
+    },
+    {
+      "code": "14.5",
+      "title": "Train Workforce Members on Causes of Unintentional Data Exposure",
+      "summary": "Help staff understand common mistakes that lead to accidental data exposure. parent_urn: urn:inflect:req:cis-controls-v8:14 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 49
+    },
+    {
+      "code": "14.6",
+      "title": "Train Workforce Members on Recognizing and Reporting Security Incidents",
+      "summary": "Teach staff how to recognize and promptly report potential incidents. parent_urn: urn:inflect:req:cis-controls-v8:14 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 50
+    },
+    {
+      "code": "14.7",
+      "title": "Train Workforce on How to Identify and Report if Their Enterprise Assets are Missing Security Updates",
+      "summary": "Show staff how to notice and report devices that are missing security updates. parent_urn: urn:inflect:req:cis-controls-v8:14 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 51
+    },
+    {
+      "code": "14.8",
+      "title": "Train Workforce on the Dangers of Connecting to and Transmitting Enterprise Data Over Insecure Networks",
+      "summary": "Warn staff about the risks of untrusted networks and how to use enterprise data safely on them. parent_urn: urn:inflect:req:cis-controls-v8:14 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 52
+    },
+    {
+      "code": "15.1",
+      "title": "Establish and Maintain an Inventory of Service Providers",
+      "summary": "Maintain a record of third parties that hold enterprise data or run critical processes. parent_urn: urn:inflect:req:cis-controls-v8:15 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 53
+    },
+    {
+      "code": "17.1",
+      "title": "Designate Personnel to Manage Incident Handling",
+      "summary": "Assign responsibility for coordinating incident handling. parent_urn: urn:inflect:req:cis-controls-v8:17 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 54
+    },
+    {
+      "code": "17.2",
+      "title": "Establish and Maintain Contact Information for Reporting Security Incidents",
+      "summary": "Maintain current contacts, internal and external, for reporting incidents. parent_urn: urn:inflect:req:cis-controls-v8:17 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 55
+    },
+    {
+      "code": "17.3",
+      "title": "Establish and Maintain an Enterprise Process for Reporting Incidents",
+      "summary": "Provide staff with a clear process for reporting suspected incidents. parent_urn: urn:inflect:req:cis-controls-v8:17 depth: 2 assessable: true",
+      "category": "IG1",
+      "sortOrder": 56
+    }
+  ],
+  "templates": [
+    {
+      "code": "CIS-01",
+      "title": "Inventory and Control of Enterprise Assets (IG1)",
+      "description": "Implements the IG1 safeguards of CIS Control 1 — Inventory and Control of Enterprise Assets. Establishes the essential cyber-hygiene baseline for this control area.",
+      "category": "Security",
+      "defaultFrequency": "MONTHLY",
+      "defaultOwnerHint": "IT Operations",
+      "requirementCodes": [
+        "1.1",
+        "1.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Define what counts as an enterprise asset and name the source each class is drawn from"
+          },
+          "description": {
+            "en": "Write down which device classes are in scope — laptops and desktops, servers, virtual machines, mobile devices, network-attached equipment — and, for each class, the system of record the inventory will be built from: the endpoint management tool, the directory, the hypervisor, the cloud console. Without that decision the inventory has no denominator and nobody can argue about whether it is complete. Attach the scoping note listing each asset class against its source."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Scoping note listing every in-scope asset class against the system of record it is drawn from"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "List the device classes present in the environment."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the system of record for each class listed."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the classes no single system currently covers."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who exports each source and how often."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Build the enterprise asset inventory with enough detail to locate each device"
+          },
+          "description": {
+            "en": "From each source named in the scope, populate one row per asset carrying the fields that let somebody find the machine and hold somebody to it: a unique identifier, the asset type, its network address, machine name, the department or person it belongs to and whether it is approved to be on the network. Merge the sources into one list rather than keeping a list per tool, so an asset that two tools both see appears once. Attach the inventory export with the date it was taken."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Enterprise asset inventory export, one row per asset with identifier, network address, owner and approval status"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Export each source system named in the scope."
+              }
+            },
+            {
+              "text": {
+                "en": "Normalise identifiers so duplicates can be matched."
+              }
+            },
+            {
+              "text": {
+                "en": "Merge the exports into a single asset list."
+              }
+            },
+            {
+              "text": {
+                "en": "Fill the owner and approval status on every row."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the export and store it as this period's inventory."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Write the procedure for an asset found on the network that the inventory does not hold"
+          },
+          "description": {
+            "en": "State what happens when an unrecognised device turns up: who investigates it, what they must establish before deciding — owner, purpose, whether anybody authorised it — and the outcomes open to them, which are to add it to the inventory, take it off the network, or hold it in quarantine while ownership is traced. Name the outcome every finding has to end in, because a discovery left with no decision is how a rogue device becomes a permanent fixture. Attach the procedure."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Unauthorised asset procedure naming the investigator, what they must establish and the outcomes a finding can end in"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Record every unrecognised asset found and the decision taken on it"
+          },
+          "description": {
+            "en": "For each device seen on the network that the inventory does not hold, log when it was found, how it was spotted, who investigated and which of the procedure's outcomes it ended in. A period with no findings is a valid result, but only if the record says the check ran and found nothing — an empty log is otherwise indistinguishable from a check nobody performed. Attach the unauthorised-asset log for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Unauthorised asset log for the period: discovery date, how it was found, investigator and the outcome recorded against each"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Reconcile the asset inventory against its source systems and record every difference"
+          },
+          "description": {
+            "en": "Re-pull every source named in the scope and compare it with the inventory in three directions: assets a source can see that the inventory does not hold, inventory rows no source has seen since the last run, and rows whose owner or address has moved. Record each difference and the correction applied to it. The second group matters most, because a stale row makes the inventory look more complete than it is. Attach the reconciliation."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Reconciliation between the inventory and its source systems, listing each difference and the correction made"
+          },
+          "suggestedRole": "IT Operations"
+        }
+      ]
+    },
+    {
+      "code": "CIS-02",
+      "title": "Inventory and Control of Software Assets (IG1)",
+      "description": "Implements the IG1 safeguards of CIS Control 2 — Inventory and Control of Software Assets. Establishes the essential cyber-hygiene baseline for this control area.",
+      "category": "Security",
+      "defaultFrequency": "MONTHLY",
+      "defaultOwnerHint": "IT Operations",
+      "requirementCodes": [
+        "2.1",
+        "2.2",
+        "2.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Compile the installed-software listing from every enterprise asset"
+          },
+          "description": {
+            "en": "Pull the installed application list from each asset class using the tooling already managing it — the endpoint management agent for laptops, package manifests or images for servers, the app catalogue for mobile. De-duplicate by publisher and title so the result is a list of titles rather than a list of installations, and carry the install count against each so the removal work later can be sized. Attach the listing with its extraction date."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Dated installed-software listing by publisher and title, with the number of assets carrying each title"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Mark each installed title as authorised or not and record who authorised it"
+          },
+          "description": {
+            "en": "Work down the listing and record, per title, whether it is authorised to run on enterprise assets, who authorised it and what business purpose it serves. The authorised subset is the software inventory this control requires, so keep it as a list in its own right that the people who build and provision assets can be given. Titles nobody can account for are where the removal work starts. Attach the authorised software inventory."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Authorised software inventory: publisher, title, version, business purpose and who authorised it"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Record the vendor support status and end-of-support date for every authorised title"
+          },
+          "description": {
+            "en": "For each title on the authorised inventory, establish whether the version in use is still supported by its publisher and record the support status together with the end-of-support date where the publisher states one. Titles already past that date carry the decision taken against them — upgrade, replace, or retire — and the name of whoever holds it. Unsupported software sitting on the inventory with no decision beside it is the finding this task exists to surface. Attach the inventory with the support columns filled in."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Software inventory carrying support status and end-of-support date per title, with the recorded decision against each unsupported title"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Check each title's version against the publisher's supported releases."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the publisher's stated end-of-support date, or that none is published."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag the titles already past that date."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the upgrade, replacement or retirement decision for each."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the owner of every decision recorded."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Remove or authorise each unauthorised title found installed and record which"
+          },
+          "description": {
+            "en": "Every title the review marked unauthorised gets one of two actions: it is removed from the assets carrying it, or it is authorised and added to the inventory. Record which action was taken, on which assets, by whom and when. A title left in neither state is how unauthorised software survives one sweep after another while the count of unauthorised titles keeps being reported as falling. Attach the removal and authorisation record."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Record of unauthorised titles found, the action taken on each, the assets affected and the date"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Re-run the installed-software extraction and record the titles that came back"
+          },
+          "description": {
+            "en": "Extract the listing again and compare it with the previous run in three groups: titles removed that have reappeared, titles that are newly present, and authorised titles that have vanished. A title that returns after removal is almost never a user reinstalling it once — it usually points at a build image, a deployment script or an account with local administrator rights, so record the suspected route alongside it. Attach the comparison."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Period-on-period comparison of installed titles listing reappearances, new arrivals and the suspected route for each reappearance"
+          },
+          "suggestedRole": "IT Operations"
+        }
+      ]
+    },
+    {
+      "code": "CIS-03",
+      "title": "Data Protection (IG1)",
+      "description": "Implements the IG1 safeguards of CIS Control 3 — Data Protection. Establishes the essential cyber-hygiene baseline for this control area.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Data Protection Officer",
+      "requirementCodes": [
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4",
+        "3.5",
+        "3.6"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Record the sensitive data the enterprise holds, where it lives and who owns it"
+          },
+          "description": {
+            "en": "Build one row per data set: what it is, how sensitive it is, the systems and stores it sits in, and the named person accountable for it. Include the copies as well as the originals — the export somebody keeps in a spreadsheet, the backup, the analytics copy — because the retention and disposal work later is only as complete as this list. Attach the data inventory with the date it was compiled."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Sensitive data inventory: data set, sensitivity, every storage location it occupies and the named owner"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Write the data management process covering sensitivity, ownership, retention and disposal"
+          },
+          "description": {
+            "en": "Produce the single document that says how data is classified, who owns each class, how long each class is kept and how it is destroyed once that period ends. State retention as a period per class rather than as a principle, because the deletion task below is measured against this document and a principle cannot be measured against. Attach the process with its version and date."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Data management process stating the classification scheme, the owner, the retention period and the disposal method per data class"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Define the sensitivity classes the enterprise uses."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the accountable owner for each class."
+              }
+            },
+            {
+              "text": {
+                "en": "State a retention period for every class defined."
+              }
+            },
+            {
+              "text": {
+                "en": "State the disposal method that ends each retention period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the version and date on the finished process."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Enable disk encryption on end-user devices and record the state reported by the console"
+          },
+          "description": {
+            "en": "Turn on the platform's full-disk encryption for laptops, desktops and mobile devices, then take the encryption state per device from the management console rather than from asking users or from the build standard. Devices that cannot be encrypted — an unsupported model, a machine that must dual-boot — get a recorded reason and a named owner rather than being quietly excluded from the report. Attach the encryption status report covering every end-user device."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Encryption status report per end-user device taken from the management console, with a recorded reason against every unencrypted device"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Delete the data that has passed its retention period and record what was removed"
+          },
+          "description": {
+            "en": "Work through the stores named in the data inventory and remove the records whose retention period, as set in the data management process, has ended. Record the store, the rule applied, the volume removed and the date. Where data is deliberately held beyond its period — a legal hold, an open investigation — record that reason against the store instead, so the exception is visible rather than looking like a store the run missed. Attach the retention run record."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Retention run record: store, retention rule applied, volume removed or the reason it was retained, and the date"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Record the sanitisation method used on each device and medium taken out of service"
+          },
+          "description": {
+            "en": "For every device or storage medium retired, reassigned or returned, record the method that made its data unrecoverable — a wipe, a cryptographic erase, physical destruction — with the date, who performed it and the console record or certificate that proves it. Items leaving through a disposal supplier carry that supplier's destruction record on the same row. Attach the disposal register for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Disposal register: asset identifier, sanitisation method, date, who performed it and the destruction record or certificate"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Check who can reach each store in the data inventory and record the access removed"
+          },
+          "description": {
+            "en": "For every location the data inventory names, export the list of users, groups, service accounts and integrations that can currently reach it and put that list in front of the data owner. Service accounts and integrations are the ones to look hardest at, because they were granted once for a project and nothing ever takes them away. Record the access removed and the date. Attach the per-store access list with the removals marked."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Access list per sensitive data store showing everything that can reach it, the entries removed and the date"
+          },
+          "suggestedRole": "IT Operations"
+        }
+      ]
+    },
+    {
+      "code": "CIS-04",
+      "title": "Secure Configuration of Enterprise Assets and Software (IG1)",
+      "description": "Implements the IG1 safeguards of CIS Control 4 — Secure Configuration of Enterprise Assets and Software. Establishes the essential cyber-hygiene baseline for this control area.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "IT Operations / Security Engineering",
+      "requirementCodes": [
+        "4.1",
+        "4.2",
+        "4.3",
+        "4.4",
+        "4.5",
+        "4.6",
+        "4.7"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Write the secure configuration baseline for each enterprise asset class"
+          },
+          "description": {
+            "en": "Produce one baseline per platform in the asset inventory — the laptop build, each server build, the mobile profile — naming the settings that must be set and the value each must hold. Record where the baseline came from, whether that is a vendor hardening guide or the enterprise's own decisions, so a reviewer can tell a deliberate setting from an inherited default. Attach the baselines with a version and date."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Secure configuration baseline per asset class, versioned and dated, giving the required value for each setting"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Write the configuration standard for network devices and state who may change it"
+          },
+          "description": {
+            "en": "Routers, switches, firewalls and wireless controllers are configured by hand far more often than endpoints are, so record what a correct configuration looks like for each device class: the settings that must be set, the value each has to hold, who may change them and how a change is recorded. The change record is the part that keeps the standard true — without it the written standard and the running device diverge and nothing says when it happened. This task covers the settings on the device; the firmware running underneath them belongs to the network infrastructure control. Attach the standard."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Network device configuration standard per device class, giving the required settings, who may change them and how each change is recorded"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Set automatic session locking on each asset class and record the interval configured"
+          },
+          "description": {
+            "en": "Push the idle-lock setting through the management tooling for each asset class rather than leaving it to the user's own settings, then record the interval actually in force per class as exported from the tool. Where a class is exempt — a screen in an operations room, a kiosk — record the exemption and what protects the machine instead. Attach the policy export showing the interval per class."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Session lock policy export per asset class showing the configured idle interval and any recorded exemption"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Turn on the host firewall on servers and end-user devices and record the ruleset applied"
+          },
+          "description": {
+            "en": "Enable the host-based firewall on both asset groups and record, per class, the ruleset in force: what is allowed inbound, what is allowed outbound and where the default deny sits. Take the record from the enforcement point rather than the intended policy, since a policy assigned to a group proves nothing about a machine that never applied it. Attach the firewall configuration per class with the count of assets reporting it applied."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Host firewall configuration per asset class with the ruleset in force and the number of assets confirmed as applying it"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Disable or rename the built-in default accounts on each asset before it enters service"
+          },
+          "description": {
+            "en": "Every operating system, appliance and application arrives with vendor accounts and default credentials. Handle them as part of the build: disable the account where the platform allows it, rename and re-credential it where it cannot be disabled, and record which was done per asset. Record the appliances where a default account must remain usable and what restricts access to it instead. Attach the build record showing the default accounts handled for each asset commissioned in the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Build record per asset commissioned, showing each default account disabled or re-credentialed and by whom"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "List the default accounts each platform ships with."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide per account whether it can be disabled outright."
+              }
+            },
+            {
+              "text": {
+                "en": "Disable or re-credential each account during the build."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the action against the asset identifier."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what restricts the accounts that must stay usable."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Check the remote administration paths open on enterprise assets and close the unapproved ones"
+          },
+          "description": {
+            "en": "List the tools and channels through which assets can actually be administered — the management agent, remote desktop, SSH, a vendor's support tunnel, a forgotten remote-access utility — and compare that against the tooling the enterprise has approved for the job. Close the paths that are not on the approved list and record each closure. This is the check that finds the support tool a supplier installed for one incident three years ago. Attach the comparison with the closures marked."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Comparison of the administration paths open on enterprise assets against the approved management tooling, with each closure recorded"
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
+    },
+    {
+      "code": "CIS-05",
+      "title": "Account Management (IG1)",
+      "description": "Implements the IG1 safeguards of CIS Control 5 — Account Management. Establishes the essential cyber-hygiene baseline for this control area.",
+      "category": "Security",
+      "defaultFrequency": "MONTHLY",
+      "defaultOwnerHint": "Identity & Access Management",
+      "requirementCodes": [
+        "5.1",
+        "5.2",
+        "5.3",
+        "5.4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Compile the account inventory across every directory and application that holds accounts"
+          },
+          "description": {
+            "en": "Record each user, service and administrator account with the system it lives in, the person or team accountable for it, its current status and the date it was last used. The hard part is the systems with their own local accounts — network devices, databases, appliances, applications bought outside IT — because no directory export will show them and they are where the forgotten accounts are. Attach the account inventory with its extraction date."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Account inventory: system, account name, account type, named owner, status and last-used date"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "List every system that authenticates users of its own."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the account list from each of those systems."
+              }
+            },
+            {
+              "text": {
+                "en": "Record account type and status against every row."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach a named owner to each account listed."
+              }
+            },
+            {
+              "text": {
+                "en": "Carry the last-used date through from the source export."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Configure the password requirements in each authentication system and record the setting in force"
+          },
+          "description": {
+            "en": "Set the password policy in every system that authenticates, then record the setting as exported from that system rather than the requirement as written in a policy document. Where a system cannot enforce the requirement, record what it can enforce and what limits the damage instead. Separately, identify the accounts sharing a single password across systems or people and record the replacement made, since a distinct password per account is the point of the safeguard. Attach the policy exports and the shared-credential record."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Password policy export per authentication system, plus the record of shared credentials found and what replaced them"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Split administrator work onto dedicated privileged accounts and record the pairing per person"
+          },
+          "description": {
+            "en": "For everyone who performs privileged work, record their everyday account and the separate administrator account they use for it, then remove the administrative rights from the everyday account. Where one account still carries both, record the plan to split it and who owns that plan. The pairing is what makes the removal checkable: an administrator with no everyday account listed has simply not been split yet. Attach the mapping."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Mapping of each administrator's everyday account to their dedicated privileged account, with the rights removed from the everyday account"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Disable the accounts idle beyond the defined dormancy period and record each one"
+          },
+          "description": {
+            "en": "Take the last-used dates from the account inventory, apply the inactivity period the enterprise has defined — and record that period alongside the run if it is not already written down anywhere — then disable every account past it. Record the account, its owner, the last-used date and the date it was disabled. Accounts deliberately left enabled despite being dormant carry a recorded reason, such as a service account that only runs at year end. Attach the dormant-account run record."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Dormant account run record: account, owner, last-used date, and the action taken or the reason it stays enabled"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Re-export each system's account list and record the accounts the inventory does not hold"
+          },
+          "description": {
+            "en": "Pull the account list from every system again and compare it with the inventory: accounts a system has that the inventory does not, inventory rows the system no longer has, and accounts whose type or owner has changed. Accounts created directly on a system, outside whatever the normal process is, only ever show up in this comparison. Record each difference and the correction. Attach the reconciliation."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Account reconciliation listing every difference between the system exports and the inventory, with the correction applied to each"
+          },
+          "suggestedRole": "IT Operations"
+        }
+      ]
+    },
+    {
+      "code": "CIS-06",
+      "title": "Access Control Management (IG1)",
+      "description": "Implements the IG1 safeguards of CIS Control 6 — Access Control Management. Establishes the essential cyber-hygiene baseline for this control area.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Identity & Access Management",
+      "requirementCodes": [
+        "6.1",
+        "6.2",
+        "6.3",
+        "6.4",
+        "6.5"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Write the access granting procedure and name the request, approval and record it produces"
+          },
+          "description": {
+            "en": "Set down how access is actually provisioned when somebody joins or changes role: where the request is raised, who is entitled to raise it, who is entitled to approve it in this enterprise, and what record survives the grant. Write the enterprise's own answers rather than a generic flow — the value is that somebody joining next month is provisioned the same way as somebody who joined last month, and that both grants can be found afterwards. Attach the procedure."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Access granting procedure naming the request route, who approves, and the record retained for each grant"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Write the access revoking procedure covering leavers and role changes"
+          },
+          "description": {
+            "en": "State what triggers a revocation and where that trigger comes from, which systems have to be covered, and what record each revocation leaves. Give particular attention to the access that central de-provisioning does not touch: applications with their own logins, shared mailboxes, VPN profiles, API tokens, building access. Those are what survive a leaver, and they survive precisely because the procedure named only the directory. Attach the procedure with its system coverage list."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Access revoking procedure with the trigger, the list of systems it covers and the record kept per revocation"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Name the trigger that starts a revocation and its source."
+              }
+            },
+            {
+              "text": {
+                "en": "List every system the revocation has to reach."
+              }
+            },
+            {
+              "text": {
+                "en": "Call out the systems central de-provisioning misses."
+              }
+            },
+            {
+              "text": {
+                "en": "State what record each revocation must leave behind."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who confirms the revocation is complete."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Turn on multi-factor authentication for externally reachable applications and remote access routes"
+          },
+          "description": {
+            "en": "Enumerate what can be reached from outside the enterprise — the applications published to the internet, and the routes into the internal network such as VPN, remote desktop gateways, jump hosts and third-party support tooling — and enforce multi-factor authentication on each. Record the enforcement state exported from the application or identity provider rather than asserted, and identify anything that still reaches inside without passing through one of the enforced routes. Attach the enforcement export."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Multi-factor enforcement state per externally reachable application and remote access route, exported from the application or identity provider"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Enforce multi-factor authentication on administrative accounts and record the exceptions"
+          },
+          "description": {
+            "en": "Apply multi-factor authentication wherever administrative privilege is used, including the local and appliance accounts that sit outside the identity provider and therefore outside its enforcement report. Record the accounts where it cannot be enforced, what they administer and what stands in its place. An enforcement report that covers only the directory will read as complete while the appliance consoles remain single-factor. Attach the enforcement report covering every administrative account."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Multi-factor enforcement report covering every administrative account, with each exception and what compensates for it"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record each access grant and revocation carried out in the period"
+          },
+          "description": {
+            "en": "Keep one row per change: the person, the access granted or removed, the trigger behind it, who approved it, the date it was requested and the date it took effect. Record both dates rather than one — the gap between somebody leaving and their access ending is what the log has to be able to show, and one holding only the completion date cannot produce it. Attach the access change log for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Access change log for the period: person, access changed, trigger, approver, request date and effective date"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Match every leaver and role change in the period to its revocation record"
+          },
+          "description": {
+            "en": "Take the list of people who left or changed role during the period and look for the revocation record for each. List those with none, those where the revocation covered some systems and not others, and those where the gap between the two dates was long enough to matter. Record what caused each miss, since the cause is almost always the trigger failing to arrive rather than the revocation failing to run. Attach the reconciliation."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Leaver-to-revocation reconciliation: each person, their leaving or change date, the revocation date, and the cause of every miss"
+          },
+          "suggestedRole": "IT Operations"
+        }
+      ]
+    },
+    {
+      "code": "CIS-07",
+      "title": "Continuous Vulnerability Management (IG1)",
+      "description": "Implements the IG1 safeguards of CIS Control 7 — Continuous Vulnerability Management. Establishes the essential cyber-hygiene baseline for this control area.",
+      "category": "Security",
+      "defaultFrequency": "MONTHLY",
+      "defaultOwnerHint": "Vulnerability Management",
+      "requirementCodes": [
+        "7.1",
+        "7.2",
+        "7.3",
+        "7.4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Write the vulnerability management process and record which sources cover which asset classes"
+          },
+          "description": {
+            "en": "Record how vulnerabilities reach the enterprise's attention — the scanner and the range it covers, vendor advisories, reports arriving from outside — and set each source against the asset classes it can actually see. The coverage table is the part worth writing: an asset class no source looks at is invisible to every other task in this control, and that invisibility never shows up as a finding. Attach the process with its coverage table."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Vulnerability management process with a table of detection sources against the asset classes each one covers"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Write the remediation process defining how findings are prioritised and driven to closure"
+          },
+          "description": {
+            "en": "State how a finding is assigned a severity, who it goes to, the states it moves through, and what closing it requires as proof. Record the enterprise's own remediation timeframes per severity where it has set them, rather than importing a default from elsewhere. Include how a finding that will not be fixed is recorded, because unrecorded decisions not to fix are indistinguishable from findings nobody looked at. Attach the process."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Remediation process stating the severity scheme, assignment, states, closure proof and how a finding that will not be fixed is recorded"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Configure automated operating-system patch delivery and record the patch groups and schedule"
+          },
+          "description": {
+            "en": "Set the patching tool to deliver operating-system security updates to each asset class automatically, then record the configured schedule, the reboot behaviour and which assets sit in each patch group. The important output is the set of assets in no patch group at all: they are patched by nobody, they never appear in a failure report, and they need a named owner who patches them by hand. Attach the patch tool configuration export."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Patch tool configuration export: patch groups, configured schedule, reboot behaviour, and the assets in no group with their named owner"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Configure automated application patch delivery and list the titles that update only by hand"
+          },
+          "description": {
+            "en": "For the applications that carry their own updater or are packaged through the endpoint tool, enable automatic delivery of security updates and record what is covered. Then record separately the titles that can only be updated by hand, because those are where the delay between a vendor advisory and a patched fleet stretches from hours into weeks, and they need naming rather than averaging into a coverage percentage. Attach the application patching coverage list."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Application patching coverage list separating automatically updated titles from those that update only by hand"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Record the vulnerabilities found in the period and the state each one reached"
+          },
+          "description": {
+            "en": "Produce the period's finding list from the sources named in the process: the identifier, the assets affected, the severity assigned, the owner it went to, its current state and, for closed findings, what closed it. Findings still open at the end of the period carry the reason they are open. Attach the finding list."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Vulnerability finding list for the period with severity, affected assets, owner, state and the closure evidence or the reason it remains open"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Compare the patch cycle results against the asset inventory and list the assets it never reached"
+          },
+          "description": {
+            "en": "Take the patching tool's per-asset result for the period and put it beside the asset inventory. Three groups come out: assets that patched successfully, assets that reported a failure, and assets the tool never saw. The third group is the one that matters, because it is invisible in the tool's own success rate — a fleet can report 99% while the missing 1% has not been patched in a year. Record each and the action taken. Attach the comparison."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Patch cycle comparison listing successful, failed and unreported assets against the inventory, with the action taken on each"
+          },
+          "suggestedRole": "IT Operations"
+        }
+      ]
+    },
+    {
+      "code": "CIS-08",
+      "title": "Audit Log Management (IG1)",
+      "description": "Implements the IG1 safeguards of CIS Control 8 — Audit Log Management. Establishes the essential cyber-hygiene baseline for this control area.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Security Operations",
+      "requirementCodes": [
+        "8.1",
+        "8.2",
+        "8.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List the systems in scope for logging and the events each one must record"
+          },
+          "description": {
+            "en": "Go through the asset inventory and name, per system, the events that have to be captured — authentication attempts, privilege changes, configuration changes, and the application-specific events that would matter when reconstructing what happened. This list is what log collection is measured against; without it, coverage is simply whatever the tools happened to be sending on the day somebody looked. Attach the logging scope table."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Logging scope table: system, the event types it must record and the destination those events go to"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Write the audit log management process and state the retention period it commits to"
+          },
+          "description": {
+            "en": "Record what is logged, who may read the logs, how they are protected from alteration, how long they are kept and what happens when a source stops sending. State retention as a number of days rather than as a principle, because the storage task below is measured against it and there is no measuring against a principle. Attach the process with its version and date."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Audit log management process stating the events logged, access rules, tamper protection and the retention period in days"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Turn on log collection for each system in scope and confirm its events arrive at the destination"
+          },
+          "description": {
+            "en": "Enable logging at the source, then confirm the events actually land by querying for them at the destination — a source configured to forward is not the same thing as a destination receiving, and the difference is usually a firewall rule or a full disk. Record, per system, the collection method, the destination and the date its events were last seen arriving. Attach the collection status table."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Collection status table: system, collection method, destination and the date its events were last observed arriving"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Enable event logging at each in-scope source."
+              }
+            },
+            {
+              "text": {
+                "en": "Configure forwarding to the named destination."
+              }
+            },
+            {
+              "text": {
+                "en": "Query the destination for events from that source."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare what arrived against the events the scope requires."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise the sources whose events never appeared."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Measure log storage against the retention period and record the action taken"
+          },
+          "description": {
+            "en": "Measure the volume being ingested and work out how many days of events the current allocation actually holds at that rate, then set that figure beside the retention period the process commits to. Where the two disagree, record which action was taken: more storage, tighter filtering at the source, or an honest reduction of the recorded retention period. The failure mode here is silent — the oldest events simply stop being there. Attach the storage measurement."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Storage measurement showing ingest volume, the days of retention actually held and the action taken where it falls short of the committed period"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Query the destination for each source's latest event and list the systems that went quiet"
+          },
+          "description": {
+            "en": "Ask the log destination for the most recent event from every system named in the scope, and list those that have gone silent alongside any source sending events that the scope never named. A system that stops sending looks exactly like a system with nothing to report, so the only way to tell them apart is to ask rather than wait. Record the cause and the fix for each. Attach the reconciliation."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Log source reconciliation listing every scoped system that stopped sending, every unexpected source, and the cause and fix recorded for each"
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
+    },
+    {
+      "code": "CIS-09",
+      "title": "Email and Web Browser Protections (IG1)",
+      "description": "Implements the IG1 safeguards of CIS Control 9 — Email and Web Browser Protections. Establishes the essential cyber-hygiene baseline for this control area.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Security Operations",
+      "requirementCodes": [
+        "9.1",
+        "9.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List the browsers and email clients installed on enterprise assets with the version of each"
+          },
+          "description": {
+            "en": "Narrow the installed-software data down to the two product classes this control names and record, per asset, which browser and email client are present and which build of each. Record the version, not just the product name: an asset running a three-year-old build of a supported browser is exposed in exactly the way an unsupported product is, and a product-name-only list hides that entirely. Attach the listing with its extraction date."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Browser and email client listing by asset, giving the product and the installed version of each"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Record which browser and email client products are permitted and remove the rest"
+          },
+          "description": {
+            "en": "Decide which products are permitted, on the basis of whether the vendor still supports and updates them, and record that decision as a list. Then remove or replace the products that are not on it from the assets carrying them, recording the asset and the date for each removal. Attach the permitted-product list together with the removal record."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Permitted browser and email client list, with the record of each removal carried out and the asset it was removed from"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Point enterprise assets at the DNS filtering service and record the enforcement per network"
+          },
+          "description": {
+            "en": "Configure the filtering service as the resolver for enterprise networks and for devices working away from them, record which categories are being blocked, and check that a device cannot simply use a different resolver — hardcoded public resolvers in an application or a user's network settings are the usual way filtering is bypassed without anyone intending to. Record the configuration per network and per device class. Attach the DNS filtering configuration."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "DNS filtering configuration showing the resolver enforced per network and device class, the categories blocked, and how alternative resolvers are prevented"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record the DNS filter's blocked requests for the period and the assets investigated"
+          },
+          "description": {
+            "en": "Export the filter's block report for the period and record the volume, the categories hit, and the assets that appear repeatedly. A device generating the same block over and over is usually not somebody browsing — it is software calling home — so record what was found when each repeat source was investigated, rather than only the count. Attach the block report with the investigation notes."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "DNS filter block report for the period, with the repeat source assets investigated and what each investigation found"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Compare the deployed browser and email client versions against vendor-supported releases"
+          },
+          "description": {
+            "en": "Take the listing again and set each installed version against the releases the vendor currently supports, listing every asset running something the vendor no longer updates. Record why each one is behind — an update blocked by policy, a device that has not connected for months, a user deferring the restart — because the reason decides the fix and the three fixes are entirely different. Attach the comparison."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Comparison of deployed browser and email client versions against currently supported releases, listing each lagging asset and the reason it is behind"
+          },
+          "suggestedRole": "IT Operations"
+        }
+      ]
+    },
+    {
+      "code": "CIS-10",
+      "title": "Malware Defenses (IG1)",
+      "description": "Implements the IG1 safeguards of CIS Control 10 — Malware Defenses. Establishes the essential cyber-hygiene baseline for this control area.",
+      "category": "Security",
+      "defaultFrequency": "MONTHLY",
+      "defaultOwnerHint": "Security Operations",
+      "requirementCodes": [
+        "10.1",
+        "10.2",
+        "10.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Deploy anti-malware software to every asset class and record the assets it does not cover"
+          },
+          "description": {
+            "en": "Install the agent across each platform and produce a coverage list from the management console showing installed and running state per asset. The number that matters is not the console's own coverage percentage but the difference between the console's asset count and the enterprise asset inventory — those machines are protected by nothing and appear in no report the tool produces. Record each with an owner and the reason. Attach the coverage list."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Anti-malware coverage list per asset showing installed and running state, and the assets absent from the console with a named owner"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Set the anti-malware tool to update its detection data automatically and record the policy in force"
+          },
+          "description": {
+            "en": "Configure automatic updating of signatures or detection content in the tool's policy and record the setting as exported from the console, together with the interval it is set to. Then record separately the assets whose detection data is older than that interval, because a correctly configured policy proves nothing about a machine that has not checked in to receive it. Attach the policy export and the stale-detection list."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Anti-malware policy export showing the automatic update setting and interval, with the list of assets whose detection data is stale"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Disable autorun and autoplay for removable media on every asset class"
+          },
+          "description": {
+            "en": "Push the platform policy that stops removable media executing content automatically to each asset class, then verify it on a sample device by inserting media rather than trusting the policy's assignment count — assignment and application are different things, and the gap between them is where this setting quietly fails. Record the policy name, the setting applied and the classes it reaches. Attach the policy configuration with the verification note."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Autorun and autoplay policy configuration per asset class, with the note of the verification carried out on a sample device"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Record the malware detections for the period and how each one was resolved"
+          },
+          "description": {
+            "en": "Export the detections seen during the period and record, per detection, the asset, what was found, what the tool did about it and what a person did afterwards where the tool did not resolve it on its own. Group detections that recur on the same asset, so the underlying cause surfaces rather than inflating the count. Attach the detection report."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Malware detection report for the period: asset, what was detected, the tool's action and the resolution recorded against each"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Compare anti-malware agent check-ins against the asset inventory and list the silent agents"
+          },
+          "description": {
+            "en": "Installed is not the same as working. Take the last check-in date for every asset the console knows about and list those that have stopped reporting, then find out why — decommissioned, permanently off the network, agent broken — and record the outcome for each. These assets count as covered in the deployment list produced earlier, which is exactly why they need their own check. Attach the check-in comparison."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Agent check-in comparison listing every asset with the agent installed but not reporting, its last check-in date and the outcome"
+          },
+          "suggestedRole": "IT Operations"
+        }
+      ]
+    },
+    {
+      "code": "CIS-11",
+      "title": "Data Recovery (IG1)",
+      "description": "Implements the IG1 safeguards of CIS Control 11 — Data Recovery. Establishes the essential cyber-hygiene baseline for this control area.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "IT Operations / Backup Admin",
+      "requirementCodes": [
+        "11.1",
+        "11.2",
+        "11.3",
+        "11.4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List the systems and data sets in scope for backup and where each is backed up to"
+          },
+          "description": {
+            "en": "Work from the asset and data inventories and record, per system or data set, whether it is backed up, to which repository, and who depends on it being recoverable. The rows worth arguing about are the ones where the answer is 'not backed up' — a decision somebody made deliberately looks identical to one nobody ever made, until this list forces the difference into the open. Attach the backup scope list."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Backup scope list: system or data set, whether it is backed up, the repository it goes to and the dependent team"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Write the data recovery process covering backup scope, schedule, storage and the restore steps"
+          },
+          "description": {
+            "en": "Set down how the enterprise backs up and how it restores: what is backed up, on what schedule, where copies are held, how long each is kept, and the steps somebody follows to get data back. The restore half is the half usually missing, and it is the half that is read under pressure by whoever happens to be available. Write it so that person can follow it. Attach the process with its version and date."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Data recovery process covering backup scope, schedule, retention, storage locations and the step-by-step restore procedure"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "State what is backed up and on what schedule."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where each copy is held and for how long."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the restore steps in the order they are done."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who can authorise and perform a restore."
+              }
+            },
+            {
+              "text": {
+                "en": "Version and date the finished process."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Configure the automated backup jobs and record which in-scope asset each job covers"
+          },
+          "description": {
+            "en": "Set the jobs to run on their own on the defined schedule and map each one to the assets and data sets from the scope list it actually covers. The mapping is what makes the scope list checkable: without it, a job that quietly stopped covering a database looks the same as one that never did. Attach the job configuration export with the asset mapping."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Backup job configuration export with each job mapped to the in-scope assets and data sets it covers"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Restrict and encrypt access to the backup repositories and record who retains access"
+          },
+          "description": {
+            "en": "Backups hold the same data as production and are usually protected far less. Apply encryption to the repositories, cut the access list down to the accounts that genuinely need it, and record who and what is left on it — including the backup software's own service accounts, which are the credentials an attacker looks for first. Attach the repository access list and the encryption settings."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Backup repository access list naming every account that retains access, alongside the encryption settings applied to the repository"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Copy the current backup to the isolated location and record its date and mechanism"
+          },
+          "description": {
+            "en": "Produce the copy that is kept apart from production — offline, on separate credentials, or held by a provider that production cannot reach — and record when it was written, where it is and how the isolation is enforced. This is the copy that survives an attacker who reaches the production estate and the backup console with it, so the record of what enforces the separation matters as much as the copy. Attach the isolated copy record for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Isolated copy record for the period: what was written, the date, its location and the mechanism enforcing the isolation"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Reconcile the backup results against the scope list and record every asset without a good backup"
+          },
+          "description": {
+            "en": "Put the period's job results beside the scope list and produce the three groups: assets with a successful backup, assets whose job failed, and assets in scope that no job result mentions at all. The last group is the one a job-failure report cannot show you. Record each and the action taken. Attach the reconciliation."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Reconciliation of backup job results against the scope list, listing failed and unmentioned assets with the action taken on each"
+          },
+          "suggestedRole": "IT Operations"
+        }
+      ]
+    },
+    {
+      "code": "CIS-12",
+      "title": "Network Infrastructure Management (IG1)",
+      "description": "Implements the IG1 safeguards of CIS Control 12 — Network Infrastructure Management. Establishes the essential cyber-hygiene baseline for this control area.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Network Engineering",
+      "requirementCodes": [
+        "12.1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Record the network devices in service and the firmware version running on each"
+          },
+          "description": {
+            "en": "Cover routers, switches, wireless controllers and access points, firewalls and VPN concentrators — including the ones in branch offices and small sites, which is where a switch installed years ago goes on running untouched. Record model, location, the firmware version currently running and whether the vendor still supports that model. This list is the denominator for every update decision that follows. Attach the network device list."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Network device list: model, location, the firmware version running and the vendor support status of the model"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Map each device model to the vendor channel that publishes its security advisories"
+          },
+          "description": {
+            "en": "For every model on the list, record where its vendor announces security fixes — a mailing list, a feed, a support portal — and the named person or team subscribed to it. A model whose advisories nobody receives falls behind silently, and it will not appear in any patch report because nothing knows an update exists. An unwatched model is therefore a finding in its own right, not just a gap in paperwork. Attach the advisory source table."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Advisory source table mapping each device model to its vendor security channel and the person or team subscribed to it"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Write the firmware update method for each device class and the route back from a failed update"
+          },
+          "description": {
+            "en": "Network equipment cannot be updated the way endpoints are: record, per class, how the update is applied, what configuration is backed up before it starts, who must be told, and how the device is recovered if the update leaves it unreachable. The recovery route is the reason firmware updates get deferred indefinitely, so writing it down is what makes the deferral unnecessary. Attach the update method note."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Firmware update method per device class, naming the pre-update configuration backup and the recovery route if the device does not come back"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Apply the outstanding firmware updates and record the version before and after on each device"
+          },
+          "description": {
+            "en": "Work down the device list applying the updates the vendor has published for each model, and record the device, the version it was on, the version it moved to and the date. Devices deliberately left on an older version carry the reason and the name of whoever holds that decision, so a deferral stays visible instead of becoming the status quo. Attach the firmware update record."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Firmware update record: device, previous version, new version, date, and the recorded reason and owner for any device left behind"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Compare running firmware versions against the vendor's current releases and list the devices behind"
+          },
+          "description": {
+            "en": "Set the version column on the device list against what each vendor currently publishes for that model, and record every device that is behind, by how much and why. Separate out the models the vendor has stopped publishing updates for altogether: those cannot be patched at all and need replacing, which is a different decision with a different budget and a different timescale. Attach the version comparison."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Firmware version comparison listing each device behind its vendor's current release, and separately the models no longer receiving updates"
+          },
+          "suggestedRole": "IT Operations"
+        }
+      ]
+    },
+    {
+      "code": "CIS-14",
+      "title": "Security Awareness and Skills Training (IG1)",
+      "description": "Implements the IG1 safeguards of CIS Control 14 — Security Awareness and Skills Training. Establishes the essential cyber-hygiene baseline for this control area.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Security Awareness Lead",
+      "requirementCodes": [
+        "14.1",
+        "14.2",
+        "14.3",
+        "14.4",
+        "14.5",
+        "14.6",
+        "14.7",
+        "14.8"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Compile the workforce list that must complete security awareness training"
+          },
+          "description": {
+            "en": "Draw the population from the HR system and from wherever contractors and temporary staff are recorded — those are usually separate systems, and contractors are the group a completion percentage quietly omits. Record name, start date, employment type and role, since role decides which parts of the curriculum apply. This list is the denominator every completion figure in this control is measured against. Attach the dated population list."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Dated training population list covering employees and contractors, with start date, employment type and role per person"
+          },
+          "suggestedRole": "HR"
+        },
+        {
+          "title": {
+            "en": "Build the awareness curriculum and map each required topic to the module that covers it"
+          },
+          "description": {
+            "en": "Produce the module list and record which module covers which of the subjects this control names: recognising social engineering, authentication practice including multi-factor use, handling data according to its sensitivity, the mistakes that cause accidental data exposure, recognising and reporting a suspected incident, noticing and reporting a device that is missing security updates, and the risks of working over untrusted networks. A subject with no module against it is the gap the mapping exists to expose. Attach the curriculum with the topic-to-module mapping."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Curriculum document mapping every required awareness topic to the module that covers it, with the gaps listed"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List the modules the curriculum currently contains."
+              }
+            },
+            {
+              "text": {
+                "en": "Set each required topic against a covering module."
+              }
+            },
+            {
+              "text": {
+                "en": "List the topics no existing module covers."
+              }
+            },
+            {
+              "text": {
+                "en": "Write or source a module for each gap found."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the mapping alongside the finished curriculum."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Write the programme rules covering who takes which modules and where completion is recorded"
+          },
+          "description": {
+            "en": "Record which parts of the curriculum apply to everybody and which apply only to particular roles, the point in the joining process at which a new starter takes the training, how often the workforce repeats it, and the system that holds the completion record. Write the enterprise's own answers here — the value of the document is that it makes the completion register interpretable by somebody who was not involved in running the programme. Attach the programme description."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Programme description stating module assignment by role, the point in joining at which training is taken, the repeat cycle and the system holding completions"
+          },
+          "suggestedRole": "HR"
+        },
+        {
+          "title": {
+            "en": "Deliver the training and record completion for each person on the population list"
+          },
+          "description": {
+            "en": "Run the delivery, then record per person which modules were completed and on what date, and chase the outstanding names until the register and the population list agree. People who never complete carry a recorded reason rather than being dropped from the denominator, because dropping them is how a completion rate reaches 100% without anybody lying. Attach the completion register."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Training completion register: person, modules completed, completion date, and a recorded reason against every non-completion"
+          },
+          "suggestedRole": "HR"
+        },
+        {
+          "title": {
+            "en": "Reconcile completions against the population list and record the curriculum changes agreed"
+          },
+          "description": {
+            "en": "Compare the register with the population: people with no completion, joiners who arrived after the population was compiled, leavers who can be struck off. Alongside that, note which topics the period's reports and near-misses suggest are not landing, and record what changes for the next run. A programme that runs unchanged year after year is being administered rather than taught. Attach the reconciliation with the agreed changes."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Reconciliation of completions against the population list, with non-completions, late joiners and the curriculum changes agreed for the next run"
+          },
+          "suggestedRole": "HR"
+        }
+      ]
+    },
+    {
+      "code": "CIS-15",
+      "title": "Service Provider Management (IG1)",
+      "description": "Implements the IG1 safeguards of CIS Control 15 — Service Provider Management. Establishes the essential cyber-hygiene baseline for this control area.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Vendor Risk Management",
+      "requirementCodes": [
+        "15.1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Write the test that decides which providers belong on the service provider inventory"
+          },
+          "description": {
+            "en": "This control covers third parties that hold enterprise data or run a process the enterprise depends on, which is a much narrower set than every supplier that sends an invoice. Record the inclusion test in words somebody else can apply — what kinds of data, what kinds of process — and give worked examples sitting on both sides of the line, because the line is where every future argument about the inventory will happen. Attach the scoping note."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Scoping note stating the inclusion test for service providers, with worked examples on both sides of the line"
+          },
+          "suggestedRole": "Procurement"
+        },
+        {
+          "title": {
+            "en": "Build the service provider inventory recording the data held and the internal owner"
+          },
+          "description": {
+            "en": "One row per provider: the service delivered, the enterprise data they hold or process, the internal team that depends on them, the named internal owner and the contract reference. The internal owner is the field that keeps the rest of the row true over time — a provider with no owner belongs to nobody and its row is never updated again. Attach the inventory."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Service provider inventory: provider, service delivered, enterprise data held, dependent team, named internal owner and contract reference"
+          },
+          "suggestedRole": "Procurement",
+          "steps": [
+            {
+              "text": {
+                "en": "Apply the inclusion test to each known third party."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the service and the data held for each provider."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the internal owner accountable for the relationship."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the contract reference to every row."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the dependent team for each provider listed."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record each provider added or ended, with the date and the disposition of their data"
+          },
+          "description": {
+            "en": "Add a provider's row when the contract is signed rather than at the next review, so the inventory reflects reality between reviews. When a relationship ends, record the termination date and what became of the enterprise data the provider held — returned, deleted with confirmation, or still with them pending something specific. That last state is the one worth writing down, because it is the one that gets forgotten. Attach the change record for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Provider change record for the period: additions with their start date, and terminations with the data disposition recorded against each"
+          },
+          "suggestedRole": "Procurement"
+        },
+        {
+          "title": {
+            "en": "Reconcile the provider inventory against contract and payment records and list what is missing"
+          },
+          "description": {
+            "en": "Third parties get engaged without passing through procurement, and where that shows up is where money moves. Compare the inventory against the records the enterprise already keeps of supplier contracts and payments, and list the parties appearing there but not in the inventory. Put each through the inclusion test and either add it or record why it falls outside. Attach the reconciliation with the decision against each."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Reconciliation listing every third party found in contract or payment records but absent from the inventory, with the inclusion decision recorded against each"
+          },
+          "suggestedRole": "Procurement"
+        }
+      ]
+    },
+    {
+      "code": "CIS-17",
+      "title": "Incident Response Management (IG1)",
+      "description": "Implements the IG1 safeguards of CIS Control 17 — Incident Response Management. Establishes the essential cyber-hygiene baseline for this control area.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Incident Response Lead",
+      "requirementCodes": [
+        "17.1",
+        "17.2",
+        "17.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Name the person accountable for coordinating incident handling and record what they decide"
+          },
+          "description": {
+            "en": "Record who holds the coordination role, what they are entitled to decide while an incident is running — declaring that an incident is under way, engaging outside help, deciding when it is closed — and the arrangement that covers the role when that person is unavailable. Coordination is the first thing to fail when an incident starts outside working hours, so write down the cover the enterprise actually has rather than assuming the role is always staffed; if there is none, that is the finding. Attach the record."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Record naming the incident handling coordinator, the decisions the role carries, and the arrangement covering it when that person is unavailable"
+          },
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Compile the incident contact list covering internal and external parties"
+          },
+          "description": {
+            "en": "Record the internal contacts an incident needs — the coordinator and whoever covers for them, whoever can authorise taking a system offline, whoever speaks to customers — and the external ones the enterprise would rely on or is required to notify, such as the support routes of its critical providers. Give every entry a second contact route as well as an email address, because the incident may well be in the mail system. Attach the contact list with the date it was last confirmed."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Incident contact list of internal and external parties, each with a second contact route and the date the entry was last confirmed"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Publish the reporting route staff use to raise a suspected incident"
+          },
+          "description": {
+            "en": "Record the single route people use — an address, a form, a chat channel — what they are asked to include, who acknowledges it and what happens next. Put it somewhere findable by somebody who suspects something at an inconvenient moment and does not already know where to look; a process published only in the security policy will not be found at that moment. Attach the published process and note where it is published."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Published incident reporting process showing the route, what a reporter should include, who acknowledges it, and where it is published"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Choose the single route reports are sent to."
+              }
+            },
+            {
+              "text": {
+                "en": "State what a reporter is asked to include."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who acknowledges a report and what follows."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish it where staff will find it under pressure."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where it was published and on what date."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record every incident report received and what the coordinator did with it"
+          },
+          "description": {
+            "en": "Keep one row per report: when it arrived, who raised it, what was reported, who picked it up, what it turned out to be and how it ended. Keep the reports that turned out to be nothing as well — they are the evidence that the route works and that people are using it, and a log holding only real incidents cannot show either. Attach the incident report log for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Incident report log for the period: date received, reporter, what was reported, who handled it, the finding and the outcome"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Confirm each incident contact is still reachable and record the date checked"
+          },
+          "description": {
+            "en": "Go through the list and confirm that each named person still holds the role and that every address and number still reaches them, including the external entries where a support contract or account manager may have changed. Record the date checked and the corrections made. A contact list nobody has confirmed is found to be wrong during the incident it was written for, which is the one moment there is no time to fix it. Attach the confirmed list with its check date."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Confirmed incident contact list showing the date each entry was checked and the corrections made"
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
+    }
+  ],
+  "pack": {
+    "key": "CIS_V8_IG1",
+    "name": "CIS Controls v8 IG1 Pack",
+    "version": "8",
+    "description": "CIS Critical Security Controls v8, Implementation Group 1 — the essential cyber hygiene baseline.",
+    "templateCodes": [
+      "CIS-01",
+      "CIS-02",
+      "CIS-03",
+      "CIS-04",
+      "CIS-05",
+      "CIS-06",
+      "CIS-07",
+      "CIS-08",
+      "CIS-09",
+      "CIS-10",
+      "CIS-11",
+      "CIS-12",
+      "CIS-14",
+      "CIS-15",
+      "CIS-17"
     ]
   }
-]
+}

@@ -29,7 +29,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
-import { declarationOf } from '../helpers/source-blocks';
+import { declarationOf, braceBlockAfter } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -160,23 +160,41 @@ describe('the seed consumes the fixture in the shape it actually has', () => {
      * every test that reads the fixture — this file included, which was green
      * throughout. So the assertion has to be about the CONSUMER.
      */
-    const seedBlock = read('prisma/seed.ts');
+    const seedSource = read('prisma/seed.ts');
+
+    /**
+     * Bound to the SOC 2 block, not the whole file.
+     *
+     * The first version of this guard asserted `toContain('c.requirementCodes')`
+     * against all of seed.ts. That was unique while SOC 2 was the only fixture
+     * in CatalogFile shape — and stopped being unique the moment four more were
+     * converted, at which point it matched five times and would have passed with
+     * the SOC 2 block reverted to the very cast it exists to forbid. The Class D
+     * ratchet caught it, which is precisely the failure that ratchet names.
+     *
+     * `braceBlockAfter` scopes the read to the loop that consumes the fixture,
+     * so every assertion below can only be satisfied by THIS block.
+     */
+    const soc2Decl = declarationOf(seedSource, 'soc2Catalog');
+    const soc2Controls = declarationOf(seedSource, 'soc2StarterControls');
+    // The anchor is a REGEX, so the parentheses need escaping — passing the
+    // literal silently matches nothing and throws "block anchor not found".
+    const soc2Loop = braceBlockAfter(seedSource, 'for \\(const c of soc2StarterControls\\)');
 
     it('reads .templates rather than treating the file as an array', () => {
-        expect(seedBlock).toContain('soc2Catalog.templates');
-        // The old shape, which compiled and threw. If this ever comes back the
-        // seed dies again and the failures point somewhere else entirely.
-        expect(seedBlock).not.toMatch(
-            /soc2-control-templates\.json'\) as Array</,
-        );
+        expect(soc2Decl).toContain('templates:');
+        expect(soc2Controls).toContain('soc2Catalog.templates');
+        // The old shape, which compiled and threw. If this comes back the seed
+        // dies again and the failures point somewhere else entirely.
+        expect(soc2Decl).not.toMatch(/as Array</);
     });
 
     it('reads the renamed and re-typed fields', () => {
         // `requirements` -> `requirementCodes`, and task strings -> locale
         // objects. Both renames are silent under a cast.
-        expect(seedBlock).toContain('c.requirementCodes');
-        expect(seedBlock).toContain('task.title.en');
-        expect(seedBlock).toContain('task.description.en');
+        expect(soc2Loop).toContain('c.requirementCodes');
+        expect(soc2Loop).toContain('task.title.en');
+        expect(soc2Loop).toContain('task.description.en');
     });
 });
 

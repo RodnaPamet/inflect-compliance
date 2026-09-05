@@ -123,13 +123,19 @@ describe('ASVS 4.0.3 — L1 Starter Pack fixture', () => {
         description: string;
         defaultFrequency: string;
         defaultOwnerHint: string;
-        requirements: string[];
-        tasks: Array<{ title: string; description: string }>;
+        requirementCodes: string[];
+        tasks: Array<{ title: { en: string }; description: { en: string } }>;
     }
     const FREQUENCIES = new Set(['AD_HOC', 'DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUALLY']);
-    const controlsFixture = JSON.parse(
+    /**
+     * The fixture is a CatalogFile — `{ framework, requirements, templates,
+     * pack }` — since its templates gained authored task sets and a delivery
+     * path through `applyCatalogFile`. Only the reader moved; every assertion
+     * below is unchanged, because they were always about RESOLUTION, not shape.
+     */
+    const controlsFixture = (JSON.parse(
         readRaw('prisma/fixtures/asvs-l1-control-templates.json'),
-    ) as StarterControl[];
+    ) as { templates: StarterControl[] }).templates;
     const L1_REFS = new Set(requirements.filter((r) => r.category === 'L1').map((r) => r.refId));
     const REQ_REFS = new Set(requirements.map((r) => r.refId));
 
@@ -148,8 +154,8 @@ describe('ASVS 4.0.3 — L1 Starter Pack fixture', () => {
             expect(c.defaultOwnerHint).toBeTruthy();
             expect(c.tasks.length).toBeGreaterThanOrEqual(1);
             for (const t of c.tasks) {
-                expect(t.title).toBeTruthy();
-                expect(t.description).toBeTruthy();
+                expect(t.title.en).toBeTruthy();
+                expect(t.description.en).toBeTruthy();
             }
         }
     });
@@ -157,8 +163,8 @@ describe('ASVS 4.0.3 — L1 Starter Pack fixture', () => {
     it('every requirement link resolves to a real ASVS requirement (no dangling refs)', () => {
         const dangling: string[] = [];
         for (const c of controlsFixture) {
-            expect(c.requirements.length).toBeGreaterThanOrEqual(1);
-            for (const r of c.requirements) {
+            expect(c.requirementCodes.length).toBeGreaterThanOrEqual(1);
+            for (const r of c.requirementCodes) {
                 if (!REQ_REFS.has(r)) dangling.push(`${c.code} → ${r}`);
             }
         }
@@ -166,7 +172,7 @@ describe('ASVS 4.0.3 — L1 Starter Pack fixture', () => {
     });
 
     it('the pack covers every L1 requirement', () => {
-        const covered = new Set(controlsFixture.flatMap((c) => c.requirements));
+        const covered = new Set(controlsFixture.flatMap((c) => c.requirementCodes));
         const missing = [...L1_REFS].filter((r) => !covered.has(r));
         expect(missing).toEqual([]);
     });

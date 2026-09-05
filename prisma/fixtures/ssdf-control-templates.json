@@ -1,234 +1,2828 @@
-[
-  {
-    "code": "SDLC-PO1",
-    "title": "Secure-SDLC security requirements",
-    "description": "Define, document, and maintain security requirements for both the software development infrastructure and the software being built, and communicate third-party component requirements. Implements SSDF PO.1.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Head of Engineering / AppSec Lead",
-    "requirements": ["PO.1.1", "PO.1.2", "PO.1.3"],
-    "tasks": [
-      { "title": "Document infrastructure & software security requirements", "description": "Capture security requirements for the development infrastructure and for the software, and store them where the team can reference them." },
-      { "title": "Track third-party component requirements", "description": "Record provenance and security expectations for reused commercial/open-source components." },
-      { "title": "Review requirements at least annually", "description": "Revisit and update the requirements as regulations, threats, and the tech stack change." }
-    ]
+{
+  "_meta": {
+    "purpose": "NIST SSDF (SP 800-218) v1.1 control catalogue in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
+    "why": "The templates carried authored task sets that reached no database: the fixture was a bare array that only prisma/seed.ts read, and prod does not run it. Reshaped so scripts/seed-framework-catalogs.ts can deliver them.",
+    "grounding": "Requirement titles and summaries come from src/data/libraries/nist-ssdf-800-218.yaml so the two cannot drift. Task content is grounded in each template's own description.",
+    "deliveredBy": "scripts/seed-framework-catalogs.ts"
   },
-  {
-    "code": "SDLC-PO2",
-    "title": "Secure development roles, responsibilities, and training",
-    "description": "Assign SDLC security roles, provide role-based secure-development training, and obtain leadership commitment to secure development. Implements SSDF PO.2.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Engineering Management / People Ops",
-    "requirements": ["PO.2.1", "PO.2.2", "PO.2.3"],
-    "tasks": [
-      { "title": "Define SDLC security roles", "description": "Document who is responsible for each security-relevant activity across the SDLC." },
-      { "title": "Deliver role-based secure-development training", "description": "Train developers, reviewers, and operators on the practices relevant to their role; refresh periodically." },
-      { "title": "Secure leadership commitment", "description": "Obtain and communicate management sponsorship for the secure-development program." }
-    ]
+  "framework": {
+    "key": "NIST-SSDF",
+    "name": "NIST SSDF (SP 800-218) v1.1",
+    "version": "1.1",
+    "kind": "NIST_FRAMEWORK",
+    "description": "NIST Secure Software Development Framework — practices for producing software with fewer vulnerabilities."
   },
-  {
-    "code": "SDLC-PO3",
-    "title": "Security toolchain (SAST / DAST / SCA)",
-    "description": "Specify, integrate, and securely operate the security tooling in the toolchain, and configure it to produce evidence artifacts. Implements SSDF PO.3.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "DevSecOps / Platform Engineering",
-    "requirements": ["PO.3.1", "PO.3.2", "PO.3.3"],
-    "tasks": [
-      { "title": "Select mandatory security tools", "description": "Decide which SAST, DAST, SCA, and secrets-scanning tools are required and how they integrate into CI." },
-      { "title": "Operate the toolchain securely", "description": "Deploy, patch, and access-control the tooling following recommended practices." },
-      { "title": "Configure evidence artifact generation", "description": "Ensure tools emit machine-readable results that can be retained as compliance evidence." }
-    ]
-  },
-  {
-    "code": "SDLC-PO4",
-    "title": "Software security check criteria and release gates",
-    "description": "Define the criteria that software must meet before release and gather the information needed to make informed go/no-go decisions. Implements SSDF PO.4.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "AppSec Lead / Release Manager",
-    "requirements": ["PO.4.1", "PO.4.2"],
-    "tasks": [
-      { "title": "Define security check / release gate criteria", "description": "Set the pass/fail criteria (e.g. no unresolved criticals) for each stage of the SDLC." },
-      { "title": "Gather and safeguard decision evidence", "description": "Collect scan results, review sign-offs, and test evidence and provide them to release approvers." }
-    ]
-  },
-  {
-    "code": "SDLC-PO5",
-    "title": "Hardened, separated development environments",
-    "description": "Separate and protect each development environment and harden development, build, and test endpoints using a risk-based approach. Implements SSDF PO.5.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Platform / IT Security",
-    "requirements": ["PO.5.1", "PO.5.2"],
-    "tasks": [
-      { "title": "Separate development, build, and production environments", "description": "Isolate environments with distinct credentials and network boundaries to limit blast radius." },
-      { "title": "Harden development endpoints", "description": "Apply baseline hardening, endpoint protection, and least-privilege access to developer and build systems." }
-    ]
-  },
-  {
-    "code": "SDLC-PS1",
-    "title": "Source-code integrity and access control",
-    "description": "Store all forms of code under least privilege with branch protection and signed commits to prevent unauthorized access and tampering. Implements SSDF PS.1.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Engineering / SCM Admin",
-    "requirements": ["PS.1.1"],
-    "tasks": [
-      { "title": "Enforce least-privilege repository access", "description": "Grant repository and pipeline access only to those who need it; review membership regularly." },
-      { "title": "Enable branch protection and signed commits", "description": "Require protected branches, mandatory reviews, and commit signing to prevent tampering." }
-    ]
-  },
-  {
-    "code": "SDLC-PS2",
-    "title": "Release-artifact signing and integrity verification",
-    "description": "Provide cryptographic integrity-verification information (hashes, digital signatures) for each software release so acquirers can verify authenticity. Implements SSDF PS.2.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Release Engineering",
-    "requirements": ["PS.2.1"],
-    "tasks": [
-      { "title": "Sign release artifacts", "description": "Digitally sign build artifacts and publish the signing certificate/public key." },
-      { "title": "Publish integrity verification information", "description": "Make hashes and signatures available to acquirers alongside each release." }
-    ]
-  },
-  {
-    "code": "SDLC-PS3",
-    "title": "Release provenance and archival (SBOM)",
-    "description": "Securely archive each release and its supporting data, and collect and share provenance data such as a software bill of materials. Implements SSDF PS.3.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Release Engineering / Supply-Chain Security",
-    "requirements": ["PS.3.1", "PS.3.2"],
-    "tasks": [
-      { "title": "Archive each release with supporting data", "description": "Retain release files, integrity information, and provenance for the required retention period." },
-      { "title": "Generate and maintain an SBOM", "description": "Produce a software bill of materials per release and keep it available for vulnerability response." }
-    ]
-  },
-  {
-    "code": "SDLC-PW1",
-    "title": "Threat modeling and secure design",
-    "description": "Use threat modeling and attack-surface analysis to inform design, prefer standardized security features, and record security-relevant design decisions. Implements SSDF PW.1.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "AppSec / Engineering Leads",
-    "requirements": ["PW.1.1", "PW.1.2", "PW.1.3"],
-    "tasks": [
-      { "title": "Threat model significant features", "description": "Run threat modeling or attack-surface mapping for new services and material design changes." },
-      { "title": "Prefer standardized security services", "description": "Reuse vetted auth, logging, and crypto services instead of building proprietary equivalents." },
-      { "title": "Record design decisions and risk responses", "description": "Document the security-relevant design choices and how identified risks are addressed." }
-    ]
-  },
-  {
-    "code": "SDLC-PW2",
-    "title": "Independent secure design review",
-    "description": "Have a qualified reviewer or automated process independently confirm the design meets security requirements and addresses identified risks. Implements SSDF PW.2.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Security Architect",
-    "requirements": ["PW.2.1"],
-    "tasks": [
-      { "title": "Conduct independent design review", "description": "Have someone not involved in the design (or tooling) verify it satisfies the security requirements before build." }
-    ]
-  },
-  {
-    "code": "SDLC-PW4",
-    "title": "Approved-component allowlist and SCA gate",
-    "description": "Acquire and maintain well-secured components, reuse vetted internal modules, and verify all third-party components against requirements throughout their life. Implements SSDF PW.4.",
-    "defaultFrequency": "MONTHLY",
-    "defaultOwnerHint": "AppSec / DevSecOps",
-    "requirements": ["PW.4.1", "PW.4.2", "PW.4.4"],
-    "tasks": [
-      { "title": "Maintain an approved-component allowlist", "description": "Curate the components teams may use and the source they must come from." },
-      { "title": "Gate builds on software composition analysis", "description": "Run SCA in CI and fail builds that introduce disallowed or vulnerable dependencies." },
-      { "title": "Continuously verify acquired components", "description": "Re-check third-party components against requirements over their lifecycle, not just at adoption." }
-    ]
-  },
-  {
-    "code": "SDLC-PW5",
-    "title": "Secure coding standards",
-    "description": "Adopt and follow secure coding practices appropriate to the languages and environments in use. Implements SSDF PW.5.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Engineering / AppSec",
-    "requirements": ["PW.5.1"],
-    "tasks": [
-      { "title": "Publish language-appropriate secure coding standards", "description": "Document secure coding guidance for each primary language/framework used." },
-      { "title": "Enforce standards via linters and review", "description": "Wire the standards into linters and the code-review checklist so they are applied consistently." }
-    ]
-  },
-  {
-    "code": "SDLC-PW6",
-    "title": "Build hardening flags",
-    "description": "Use compiler, interpreter, and build-tool features that improve executable security, and configure the approved hardening settings. Implements SSDF PW.6.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Build / Platform Engineering",
-    "requirements": ["PW.6.1", "PW.6.2"],
-    "tasks": [
-      { "title": "Select build tools with hardening features", "description": "Prefer toolchains offering stack protection, ASLR, fortified functions, and similar mitigations." },
-      { "title": "Enable and verify hardening flags", "description": "Turn on the approved hardening settings and verify builds actually carry them." }
-    ]
-  },
-  {
-    "code": "SDLC-PW7",
-    "title": "Mandatory peer code review",
-    "description": "Determine where code review and/or analysis apply, then perform them against the secure coding standard and triage findings. Implements SSDF PW.7.",
-    "defaultFrequency": "WEEKLY",
-    "defaultOwnerHint": "Engineering Teams",
-    "requirements": ["PW.7.1", "PW.7.2"],
-    "tasks": [
-      { "title": "Require peer review before merge", "description": "Mandate at least one qualified reviewer per change on protected branches." },
-      { "title": "Triage review and analysis findings", "description": "Record and prioritize issues from review/analysis in the team's issue tracker and drive them to closure." }
-    ]
-  },
-  {
-    "code": "SDLC-PW8",
-    "title": "SAST and DAST in CI",
-    "description": "Determine and perform executable-code testing (SAST/DAST, fuzzing, pen testing) and triage the results. Implements SSDF PW.8.",
-    "defaultFrequency": "WEEKLY",
-    "defaultOwnerHint": "DevSecOps / QA",
-    "requirements": ["PW.8.1", "PW.8.2"],
-    "tasks": [
-      { "title": "Run SAST and DAST in the pipeline", "description": "Integrate static and dynamic analysis into CI with defined failure thresholds." },
-      { "title": "Scope and triage test results", "description": "Design the tests, run them, and record/triage discovered issues with recommended remediations." }
-    ]
-  },
-  {
-    "code": "SDLC-PW9",
-    "title": "Secure-by-default configuration",
-    "description": "Define a secure configuration baseline and ship the software with those defaults, documented for administrators. Implements SSDF PW.9.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Product / Engineering",
-    "requirements": ["PW.9.1", "PW.9.2"],
-    "tasks": [
-      { "title": "Define the secure default baseline", "description": "Determine the secure value for every security-relevant setting." },
-      { "title": "Ship and document secure defaults", "description": "Implement the defaults and document each setting for administrators." }
-    ]
-  },
-  {
-    "code": "SDLC-RV1",
-    "title": "Vulnerability monitoring and disclosure policy",
-    "description": "Continuously gather vulnerability information, confirm vulnerabilities, and maintain a vulnerability-disclosure and remediation policy. Implements SSDF RV.1.",
-    "defaultFrequency": "MONTHLY",
-    "defaultOwnerHint": "Security Operations / PSIRT",
-    "requirements": ["RV.1.1", "RV.1.2", "RV.1.3"],
-    "tasks": [
-      { "title": "Monitor internal and external vulnerability sources", "description": "Track advisories, SCA alerts, and reports for the software and its third-party components." },
-      { "title": "Maintain a coordinated disclosure policy", "description": "Publish how to report vulnerabilities and define the roles and process to handle them." }
-    ]
-  },
-  {
-    "code": "SDLC-RV2",
-    "title": "Vulnerability response and patch SLA",
-    "description": "Assess and prioritize each vulnerability by risk and plan and implement remediations within defined SLAs. Implements SSDF RV.2.",
-    "defaultFrequency": "MONTHLY",
-    "defaultOwnerHint": "Security Operations / Engineering",
-    "requirements": ["RV.2.1", "RV.2.2"],
-    "tasks": [
-      { "title": "Assess and prioritize vulnerabilities", "description": "Analyze each vulnerability's risk to plan its remediation or other response." },
-      { "title": "Remediate within SLA and notify", "description": "Patch or mitigate within severity-based SLAs and notify affected parties per the disclosure process." }
-    ]
-  },
-  {
-    "code": "SDLC-RV3",
-    "title": "Root-cause analysis and SDLC improvement",
-    "description": "Analyze vulnerability root causes, look for patterns and similar defects, and update the SDLC to prevent recurrence. Implements SSDF RV.3.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "AppSec / Engineering Leads",
-    "requirements": ["RV.3.1", "RV.3.2", "RV.3.3", "RV.3.4"],
-    "tasks": [
-      { "title": "Perform root-cause analysis", "description": "Determine the underlying cause of each significant vulnerability and look for the same class elsewhere." },
-      { "title": "Feed lessons back into the SDLC", "description": "Update secure-development practices and processes to prevent the root cause from recurring." }
+  "requirements": [
+    {
+      "code": "PO.1.1",
+      "title": "PO.1.1",
+      "summary": "Identify and document all security requirements for the organization’s software development infrastructure and processes, and maintain the requirements over time. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.1 depth: 3 assessable: true",
+      "category": "Prepare the Organization",
+      "sortOrder": 1
+    },
+    {
+      "code": "PO.1.2",
+      "title": "PO.1.2",
+      "summary": "Identify and document all security requirements for organization-developed software, and maintain the requirements over time. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.1 depth: 3 assessable: true",
+      "category": "Prepare the Organization",
+      "sortOrder": 2
+    },
+    {
+      "code": "PO.1.3",
+      "title": "PO.1.3",
+      "summary": "Communicate requirements to all third parties who provide commercial software components for reuse, and collect and maintain provenance data for those components. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.1 depth: 3 assessable: true",
+      "category": "Prepare the Organization",
+      "sortOrder": 3
+    },
+    {
+      "code": "PO.2.1",
+      "title": "PO.2.1",
+      "summary": "Create new roles and alter responsibilities for existing roles as needed to encompass all parts of the SDLC, and periodically review and maintain the defined roles and responsibilities. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.2 depth: 3 assessable: true",
+      "category": "Prepare the Organization",
+      "sortOrder": 4
+    },
+    {
+      "code": "PO.2.2",
+      "title": "PO.2.2",
+      "summary": "Provide role-based training for all personnel with responsibilities that contribute to secure development, and periodically review and update the training. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.2 depth: 3 assessable: true",
+      "category": "Prepare the Organization",
+      "sortOrder": 5
+    },
+    {
+      "code": "PO.2.3",
+      "title": "PO.2.3",
+      "summary": "Obtain upper management or authorizing official commitment to secure development, and convey that commitment to all with development-related roles and responsibilities. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.2 depth: 3 assessable: true",
+      "category": "Prepare the Organization",
+      "sortOrder": 6
+    },
+    {
+      "code": "PO.3.1",
+      "title": "PO.3.1",
+      "summary": "Specify which tools or tool types must or should be included in each toolchain to mitigate identified risks, as well as how the toolchain components are to be integrated. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.3 depth: 3 assessable: true",
+      "category": "Prepare the Organization",
+      "sortOrder": 7
+    },
+    {
+      "code": "PO.3.2",
+      "title": "PO.3.2",
+      "summary": "Follow recommended security practices to deploy, operate, and maintain tools and toolchains. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.3 depth: 3 assessable: true",
+      "category": "Prepare the Organization",
+      "sortOrder": 8
+    },
+    {
+      "code": "PO.3.3",
+      "title": "PO.3.3",
+      "summary": "Configure tools to generate artifacts of their support of secure software development practices as defined by the organization. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.3 depth: 3 assessable: true",
+      "category": "Prepare the Organization",
+      "sortOrder": 9
+    },
+    {
+      "code": "PO.4.1",
+      "title": "PO.4.1",
+      "summary": "Define criteria for software security checks and track throughout the SDLC. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.4 depth: 3 assessable: true",
+      "category": "Prepare the Organization",
+      "sortOrder": 10
+    },
+    {
+      "code": "PO.4.2",
+      "title": "PO.4.2",
+      "summary": "Implement processes, mechanisms, etc. to gather and safeguard the necessary information and provide it to the personnel who need it to make informed decisions. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.4 depth: 3 assessable: true",
+      "category": "Prepare the Organization",
+      "sortOrder": 11
+    },
+    {
+      "code": "PO.5.1",
+      "title": "PO.5.1",
+      "summary": "Separate and protect each environment involved in software development. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.5 depth: 3 assessable: true",
+      "category": "Prepare the Organization",
+      "sortOrder": 12
+    },
+    {
+      "code": "PO.5.2",
+      "title": "PO.5.2",
+      "summary": "Secure and harden development endpoints, including software development, build, and test systems, to perform development-related tasks using a risk-based approach. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.5 depth: 3 assessable: true category: Prepare the Organization",
+      "category": "Prepare the Organization",
+      "sortOrder": 13
+    },
+    {
+      "code": "PS.1.1",
+      "title": "PS.1.1",
+      "summary": "Store all forms of code — including source code, executable code, and configuration-as-code — based on the principle of least privilege so that only authorized personnel, tools, services, etc. have access. parent_urn: urn:inflect:req:nist-ssdf-800-218:ps.1 depth: 3 assessable: true",
+      "category": "Protect the Software",
+      "sortOrder": 14
+    },
+    {
+      "code": "PS.2.1",
+      "title": "PS.2.1",
+      "summary": "Make software integrity verification information available to software acquirers, such as cryptographic hashes and digital signatures for release files. parent_urn: urn:inflect:req:nist-ssdf-800-218:ps.2 depth: 3 assessable: true",
+      "category": "Protect the Software",
+      "sortOrder": 15
+    },
+    {
+      "code": "PS.3.1",
+      "title": "PS.3.1",
+      "summary": "Securely archive the necessary files and supporting data (e.g., integrity verification information, provenance data) to be retained for each software release. parent_urn: urn:inflect:req:nist-ssdf-800-218:ps.3 depth: 3 assessable: true",
+      "category": "Protect the Software",
+      "sortOrder": 16
+    },
+    {
+      "code": "PS.3.2",
+      "title": "PS.3.2",
+      "summary": "Collect, safeguard, maintain, and share provenance data for all components of each software release (e.g., in a software bill of materials). parent_urn: urn:inflect:req:nist-ssdf-800-218:ps.3 depth: 3 assessable: true category: Protect the Software",
+      "category": "Protect the Software",
+      "sortOrder": 17
+    },
+    {
+      "code": "PW.1.1",
+      "title": "PW.1.1",
+      "summary": "Use forms of risk modeling — such as threat modeling, attack modeling, or attack surface mapping — to help assess the security risk for the software. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.1 depth: 3 assessable: true",
+      "category": "Produce Well-Secured Software",
+      "sortOrder": 18
+    },
+    {
+      "code": "PW.1.2",
+      "title": "PW.1.2",
+      "summary": "Track and maintain the software’s security requirements, risks, and design decisions. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.1 depth: 3 assessable: true",
+      "category": "Produce Well-Secured Software",
+      "sortOrder": 19
+    },
+    {
+      "code": "PW.1.3",
+      "title": "PW.1.3",
+      "summary": "Where appropriate, build in support for using standardized security features and services (e.g., enabling log integration and single sign-on) rather than creating proprietary implementations of security features and services. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.1 depth: 3 assessable: true",
+      "category": "Produce Well-Secured Software",
+      "sortOrder": 20
+    },
+    {
+      "code": "PW.2.1",
+      "title": "PW.2.1",
+      "summary": "Have a qualified person (or people) who were not involved with the design and/or a set of automated processes review the software design to confirm and enforce that it meets all of the security requirements and satisfactorily addresses the identified risk information. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.2 depth: 3 assessable: true",
+      "category": "Produce Well-Secured Software",
+      "sortOrder": 21
+    },
+    {
+      "code": "PW.4.1",
+      "title": "PW.4.1",
+      "summary": "Acquire and maintain well-secured software components (e.g., software libraries, modules, middleware, frameworks) from commercial, open-source, and other third-party developers for use by the organization’s software. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.4 depth: 3 assessable: true",
+      "category": "Produce Well-Secured Software",
+      "sortOrder": 22
+    },
+    {
+      "code": "PW.4.2",
+      "title": "PW.4.2",
+      "summary": "Create and maintain well-secured software components in-house following SDLC processes to meet common internal software development needs that cannot be better met by third-party software components. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.4 depth: 3 assessable: true",
+      "category": "Produce Well-Secured Software",
+      "sortOrder": 23
+    },
+    {
+      "code": "PW.4.4",
+      "title": "PW.4.4",
+      "summary": "Verify that acquired commercial, open-source, and all other third-party software components comply with the requirements, as defined by the organization, throughout their life cycles. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.4 depth: 3 assessable: true",
+      "category": "Produce Well-Secured Software",
+      "sortOrder": 24
+    },
+    {
+      "code": "PW.5.1",
+      "title": "PW.5.1",
+      "summary": "Follow all secure coding practices that are appropriate to the development languages and environment to meet the organization’s requirements. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.5 depth: 3 assessable: true",
+      "category": "Produce Well-Secured Software",
+      "sortOrder": 25
+    },
+    {
+      "code": "PW.6.1",
+      "title": "PW.6.1",
+      "summary": "Use compiler, interpreter, and build tools that offer features to improve executable security. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.6 depth: 3 assessable: true",
+      "category": "Produce Well-Secured Software",
+      "sortOrder": 26
+    },
+    {
+      "code": "PW.6.2",
+      "title": "PW.6.2",
+      "summary": "Determine which compiler, interpreter, and build tool features should be used and how each should be configured, then implement and use the approved configurations. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.6 depth: 3 assessable: true",
+      "category": "Produce Well-Secured Software",
+      "sortOrder": 27
+    },
+    {
+      "code": "PW.7.1",
+      "title": "PW.7.1",
+      "summary": "Determine whether code review (a person directly looks at the code to find issues) and/or code analysis (tools are used to find issues in code, either in a fully automated way or in conjunction with a person) should be used, as defined by the organization. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.7 depth: 3 assessable: true",
+      "category": "Produce Well-Secured Software",
+      "sortOrder": 28
+    },
+    {
+      "code": "PW.7.2",
+      "title": "PW.7.2",
+      "summary": "Perform the code review and/or code analysis based on the organization’s secure coding standards, and record and triage all discovered issues and recommended remediations in the development team’s workflow or issue tracking system. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.7 depth: 3 assessable: true",
+      "category": "Produce Well-Secured Software",
+      "sortOrder": 29
+    },
+    {
+      "code": "PW.8.1",
+      "title": "PW.8.1",
+      "summary": "Determine whether executable code testing should be performed to find vulnerabilities not identified by previous reviews, analysis, or testing and, if so, which types of testing should be used. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.8 depth: 3 assessable: true",
+      "category": "Produce Well-Secured Software",
+      "sortOrder": 30
+    },
+    {
+      "code": "PW.8.2",
+      "title": "PW.8.2",
+      "summary": "Scope the testing, design the tests, perform the testing, and document the results, including recording and triaging all discovered issues and recommended remediations in the development team’s workflow or issue tracking system. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.8 depth: 3 assessable: true",
+      "category": "Produce Well-Secured Software",
+      "sortOrder": 31
+    },
+    {
+      "code": "PW.9.1",
+      "title": "PW.9.1",
+      "summary": "Define a secure baseline by determining how to configure each setting that has an effect on security or a security-related setting so that the default settings are secure and do not weaken the security functions provided by the platform, network infrastructure, or services. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.9 depth: 3 assessable: true",
+      "category": "Produce Well-Secured Software",
+      "sortOrder": 32
+    },
+    {
+      "code": "PW.9.2",
+      "title": "PW.9.2",
+      "summary": "Implement the default settings (or groups of default settings, if applicable), and document each setting for software administrators. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.9 depth: 3 assessable: true category: Produce Well-Secured Software",
+      "category": "Produce Well-Secured Software",
+      "sortOrder": 33
+    },
+    {
+      "code": "RV.1.1",
+      "title": "RV.1.1",
+      "summary": "Gather information from software acquirers, users, and public sources on potential vulnerabilities in the software and third-party components that the software uses, and investigate all credible reports. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.1 depth: 3 assessable: true",
+      "category": "Respond to Vulnerabilities",
+      "sortOrder": 34
+    },
+    {
+      "code": "RV.1.2",
+      "title": "RV.1.2",
+      "summary": "Review, analyze, and/or test the software’s code to identify or confirm the presence of previously undetected vulnerabilities. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.1 depth: 3 assessable: true",
+      "category": "Respond to Vulnerabilities",
+      "sortOrder": 35
+    },
+    {
+      "code": "RV.1.3",
+      "title": "RV.1.3",
+      "summary": "Have a policy that addresses vulnerability disclosure and remediation, and implement the roles, responsibilities, and processes needed to support that policy. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.1 depth: 3 assessable: true",
+      "category": "Respond to Vulnerabilities",
+      "sortOrder": 36
+    },
+    {
+      "code": "RV.2.1",
+      "title": "RV.2.1",
+      "summary": "Analyze each vulnerability to gather sufficient information about risk to plan its remediation or other risk response. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.2 depth: 3 assessable: true",
+      "category": "Respond to Vulnerabilities",
+      "sortOrder": 37
+    },
+    {
+      "code": "RV.2.2",
+      "title": "RV.2.2",
+      "summary": "Plan and implement risk responses for vulnerabilities. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.2 depth: 3 assessable: true",
+      "category": "Respond to Vulnerabilities",
+      "sortOrder": 38
+    },
+    {
+      "code": "RV.3.1",
+      "title": "RV.3.1",
+      "summary": "Analyze identified vulnerabilities to determine their root causes. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.3 depth: 3 assessable: true",
+      "category": "Respond to Vulnerabilities",
+      "sortOrder": 39
+    },
+    {
+      "code": "RV.3.2",
+      "title": "RV.3.2",
+      "summary": "Analyze the root causes over time to identify patterns, such as a particular secure coding practice not being followed consistently. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.3 depth: 3 assessable: true",
+      "category": "Respond to Vulnerabilities",
+      "sortOrder": 40
+    },
+    {
+      "code": "RV.3.3",
+      "title": "RV.3.3",
+      "summary": "Review the software for similar vulnerabilities to eradicate a class of vulnerabilities, and proactively fix them rather than waiting for external reports. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.3 depth: 3 assessable: true",
+      "category": "Respond to Vulnerabilities",
+      "sortOrder": 41
+    },
+    {
+      "code": "RV.3.4",
+      "title": "RV.3.4",
+      "summary": "Review the SDLC process, and update it if appropriate to prevent (or reduce the likelihood of) the root cause recurring in updates to the software or in new software that is created. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.3 depth: 3 assessable: true category: Respond to Vulnerabilities",
+      "category": "Respond to Vulnerabilities",
+      "sortOrder": 42
+    }
+  ],
+  "templates": [
+    {
+      "code": "SDLC-PO1",
+      "title": "Secure-SDLC security requirements",
+      "description": "Define, document, and maintain security requirements for both the software development infrastructure and the software being built, and communicate third-party component requirements. Implements SSDF PO.1.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Head of Engineering / AppSec Lead",
+      "requirementCodes": [
+        "PO.1.1",
+        "PO.1.2",
+        "PO.1.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List the development infrastructure and the software products the requirements must cover"
+          },
+          "description": {
+            "en": "Two populations need security requirements and they are routinely confused: the infrastructure the team develops on — source repositories, CI runners, artifact registries, build and test environments, developer workstations — and the software products the organisation ships. Write both lists, name an owner against every entry, and record anything deliberately out of scope with the reason it was excluded. The registers that follow are measured against this list, so a system missing here is a system with no requirements at all. Attach the scoping list, dated at the point it was compiled."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Dated scoping list naming each development infrastructure component and each software product, with an owner against every entry"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "List the repositories, pipelines, registries and build environments in use."
+              }
+            },
+            {
+              "text": {
+                "en": "List the software products the organisation develops and ships."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the owner accountable for each entry on both lists."
+              }
+            },
+            {
+              "text": {
+                "en": "Record anything excluded from scope together with the reason for excluding it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record the security requirements the development infrastructure must meet, naming the source of each"
+          },
+          "description": {
+            "en": "Work through the infrastructure list and write down what each component is required to do — authentication, access control, logging, isolation, patch currency — as one row per requirement rather than one paragraph per system, because a requirement can only be tested and evidenced individually. Against each row record where it comes from: an internal policy, a customer commitment, a regulation or a contract. A requirement with no recorded source is the first one dropped when somebody argues it is inconvenient. Attach the infrastructure requirements register."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Infrastructure security requirements register: one row per requirement, the component it applies to and the source it derives from"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record the security requirements the software being built must meet, naming the source of each"
+          },
+          "description": {
+            "en": "Do the same for the products themselves: authentication and session handling, the authorisation model, protection of data in transit and at rest, logging and audit, and anything promised to a customer or a regulator. Keep this register separate from the infrastructure one — the two are satisfied by different people at different points in the lifecycle, and merging them is how a product requirement quietly becomes a platform team's problem. Record the source against each row so it can be defended later. Attach the software requirements register."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Software security requirements register: one row per requirement, the product it applies to and the source it derives from"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Draft the requirements from policy, customer commitments and regulation."
+              }
+            },
+            {
+              "text": {
+                "en": "Write one row per requirement rather than a paragraph per product."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the originating source against every row in the register."
+              }
+            },
+            {
+              "text": {
+                "en": "Have the product's engineering owner confirm each row is testable as written."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Publish the component security requirements issued to third-party providers"
+          },
+          "description": {
+            "en": "Write the statement of what a commercial or open-source component must satisfy before it is used here: support and patching expectations, disclosure of known vulnerabilities, licensing, and the provenance data the provider is expected to supply with each version. Then record how that statement reached every provider currently supplying a component, and when. A requirement the provider has never been shown is not a requirement, and this half of the task is the half most often skipped. Attach the published statement together with the record of who received it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "The issued component security requirements, with a distribution record naming each provider and the date it was sent"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Collect the provenance data for each reused commercial and open-source component"
+          },
+          "description": {
+            "en": "For every third-party component in use, record where it actually came from — the registry or repository, the version, the publisher, the integrity digest and the date it was brought in — and hold that record alongside the component rather than in somebody's memory of the decision. Back-fill components that predate this task from lock files and registry metadata rather than skipping them, since those are the ones with the weakest provenance. Record any component whose origin cannot be established, because that gap is the finding this task exists to surface. Attach the provenance records held at the end of the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Component provenance records: source registry, version, publisher, integrity digest and intake date for each reused component"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List each third-party component in use with the version currently brought in."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the registry, publisher and integrity digest behind each entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Back-fill the components that were adopted before this record existed."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag every component whose origin cannot be established from any source."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Re-read the requirements registers against current regulation, threats and the technology stack"
+          },
+          "description": {
+            "en": "Take both registers and test each row against the present: the regulation it cites is still in force, the threat it answers is still credible, and the technology it names is still in use. Add rows for anything that entered the stack since the last pass, and mark rows that no longer apply as withdrawn rather than deleting them, so the reason a requirement went away survives the person who withdrew it. Record what changed and the date the review happened. Attach the reviewed registers together with the change list."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Requirements review record listing every row added, amended or withdrawn, and the date the review was carried out"
+          },
+          "suggestedRole": "Engineering lead"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PO2",
+      "title": "Secure development roles, responsibilities, and training",
+      "description": "Assign SDLC security roles, provide role-based secure-development training, and obtain leadership commitment to secure development. Implements SSDF PO.2.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Engineering Management / People Ops",
+      "requirementCodes": [
+        "PO.2.1",
+        "PO.2.2",
+        "PO.2.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List the SDLC activities that carry a security responsibility"
+          },
+          "description": {
+            "en": "Before roles can be assigned, the activities have to be named: threat modelling, dependency approval, code review, pipeline configuration, release approval, vulnerability triage, secrets handling, environment access. Walk the lifecycle from design to release to response and write down each activity where a security decision is actually taken, including the ones currently taken by whoever happens to be nearest. Mark any activity that no named person performs today — that gap is the reason this control exists. Attach the activity list."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "SDLC security activity list covering design through release and response, marking every activity with no named performer"
+          },
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Name the role accountable for each security-relevant SDLC activity"
+          },
+          "description": {
+            "en": "Turn the activity list into a responsibility matrix: for each activity, the role accountable for it, the roles consulted, and what that role is expected to produce. Assign roles rather than individuals so the matrix survives a departure, and where an activity has genuinely never been assigned, record it as unassigned rather than attaching it to the nearest willing person. Record the date the matrix was issued and to whom. Attach the responsibility matrix."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "SDLC responsibility matrix: each security-relevant activity, the accountable role, the roles consulted and the expected output"
+          },
+          "suggestedRole": "Management",
+          "steps": [
+            {
+              "text": {
+                "en": "Map every activity on the list to an accountable role."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the output each role is expected to produce for that activity."
+              }
+            },
+            {
+              "text": {
+                "en": "Leave genuinely unassigned activities marked as unassigned."
+              }
+            },
+            {
+              "text": {
+                "en": "Issue the matrix to the teams it names and record the issue date."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Build the role-based training curriculum, mapping each role to the modules it must complete"
+          },
+          "description": {
+            "en": "Role-based means the developer, the reviewer, the pipeline owner and the person on vulnerability triage are not sent the same deck. For each role in the responsibility matrix, record the modules it must complete and what each module is meant to leave the person able to do. Note where a module has to be refreshed because the practice, the stack or the threat behind it moved. Attach the curriculum with its role-to-module mapping."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Training curriculum showing each SDLC role, the modules assigned to it and the capability each module is meant to produce"
+          },
+          "suggestedRole": "HR"
+        },
+        {
+          "title": {
+            "en": "Deliver the secure-development training and record completion for each person in scope"
+          },
+          "description": {
+            "en": "Run the modules the curriculum assigns and evidence delivery rather than intent: what was delivered, to which role, on what dates, and a completion record per person. Take the population from the responsibility matrix so contractors and newly moved staff are counted, then chase the outstanding names and record a reason against anyone who never completed. Engineering management supplies the population; People Ops runs delivery and chasing. Attach the completion register for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Training completion register: one row per person with the modules assigned, the completion date and the follow-up for anyone outstanding"
+          },
+          "suggestedRole": "HR",
+          "steps": [
+            {
+              "text": {
+                "en": "Take the training population from the responsibility matrix."
+              }
+            },
+            {
+              "text": {
+                "en": "Deliver each module to the roles the curriculum assigns it to."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the completion date per person against the module taken."
+              }
+            },
+            {
+              "text": {
+                "en": "Chase the outstanding names and record a reason for each non-completion."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record management's commitment to secure development and how it reached the development teams"
+          },
+          "description": {
+            "en": "The control asks for two things and the second is the one that is normally missing: a statement of commitment from upper management or the authorising official, and evidence that it was conveyed to the people holding development responsibilities. Capture the statement as issued, then record the channel it went out through, the audience it reached and the date. Record the approval it was issued under; do not assert who ought to have signed it. Attach the statement together with the communication record."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "The management commitment statement as issued, with the record of the channel, audience and date on which it was communicated"
+          },
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Compare the responsibility matrix against the people actually performing each activity"
+          },
+          "description": {
+            "en": "Matrices decay silently: people move teams, activities get absorbed into tooling, and a role listed as accountable turns out to have been vacant for months. Take a sample of activities and establish who genuinely performed them in the period, then set that against the matrix. Record every mismatch, every vacant accountable role and every activity being performed by someone with no assigned training, and amend the matrix in the same pass. Attach the comparison with the amendments made."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Comparison record listing each mismatch between the matrix and the actual performer, with the amendment made to the matrix"
+          },
+          "suggestedRole": "Management"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PO3",
+      "title": "Security toolchain (SAST / DAST / SCA)",
+      "description": "Specify, integrate, and securely operate the security tooling in the toolchain, and configure it to produce evidence artifacts. Implements SSDF PO.3.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "DevSecOps / Platform Engineering",
+      "requirementCodes": [
+        "PO.3.1",
+        "PO.3.2",
+        "PO.3.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Map each SDLC stage to the tool type required there and the risk it mitigates"
+          },
+          "description": {
+            "en": "Toolchains accumulate rather than get designed. Write out the stages — commit, build, test, package, deploy — and for each one the tool type that must be present — static analysis, dynamic analysis, software composition analysis, secrets scanning — and the specific risk it is there to reduce, so a tool nobody can attach a risk to becomes visible as spend rather than control. Record the stages where the required tool type is absent as gaps rather than leaving them blank. Attach the stage-to-tool-type map."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Stage-to-tool-type map naming the tool required at each SDLC stage, the risk it mitigates and every stage where none is present"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record the mandatory tool for each stage and how it integrates with the pipeline"
+          },
+          "description": {
+            "en": "Turn the map into a specification a pipeline can be built against: for each stage, the specific tool chosen, whether it is mandatory or advisory, how it is invoked, what it receives as input and what it returns to the pipeline. Integration is the half that decides whether a tool is enforcement or decoration, so record whether a failing tool blocks the stage or only reports. Attach the toolchain specification, version-marked."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Toolchain specification: the tool at each stage, how it is invoked and whether its failure blocks the stage or only reports"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Apply the deployment, patching and access-control baseline to each security tool"
+          },
+          "description": {
+            "en": "The security tooling holds credentials to source, artifacts and environments, which makes it a target in its own right. For each tool record how it is deployed, who administers it, how its own credentials and integration tokens are held, and how it is kept patched. Then apply that baseline and record the current state per tool, naming the ones not yet meeting it rather than describing an intended end state. Attach the per-tool baseline record."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Per-tool baseline record: deployment method, administrators, credential handling and patch state for each tool in the chain"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Record who administers each security tool and how access is granted."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how each tool's credentials and integration tokens are stored."
+              }
+            },
+            {
+              "text": {
+                "en": "Bring each tool to the current supported version and record the result."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the tools not yet meeting the baseline and what remains outstanding."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Configure each tool to emit a machine-readable results artifact on every run"
+          },
+          "description": {
+            "en": "A tool that only shows results in its own console evidences nothing once the run has scrolled away. Configure each tool to write a machine-readable artifact per run — the format it natively produces is fine — carrying the run identifier, the commit or build it examined, the findings and the timestamp, and route those artifacts to a store that outlives the pipeline run. Record the format and destination per tool. Attach the configuration and one sample artifact per tool."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Tool output configuration listing the artifact format and retention destination per tool, with a sample artifact from each"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Collect the results artifact from every tool run and record any run that produced none"
+          },
+          "description": {
+            "en": "Collect the artifacts produced across the period and check the set against the runs that actually happened, because a missing artifact and a clean result look identical from the outside. For every run with no artifact, record why — the tool was skipped, the step failed before it reported, the upload silently dropped — since a pipeline that stopped emitting evidence months ago will otherwise pass unnoticed. Attach the artifact index for the period with the unexplained gaps listed."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Artifact index for the period: one entry per tool run with its stored output, and a list of runs that produced no artifact"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Export the list of pipeline runs executed during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Match each run to the tool artifacts stored against it."
+              }
+            },
+            {
+              "text": {
+                "en": "List the runs that produced no artifact from a mandatory tool."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the cause of each missing artifact rather than closing the gap silently."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Compare the toolchain specification against the tools the pipeline actually invokes"
+          },
+          "description": {
+            "en": "Read the pipeline definitions and establish which tools genuinely run, on which branches and at which stages, then set that against the specification. Drift is the norm here: a stage disabled to unblock a release, a tool switched to advisory during an incident, a new pipeline copied from an old template that never had the tool. Record each difference, whether the specification or the pipeline is wrong, and what was changed. Attach the comparison with its resolutions."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Comparison of the specification against the pipeline definitions, listing each difference and how it was resolved"
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PO4",
+      "title": "Software security check criteria and release gates",
+      "description": "Define the criteria that software must meet before release and gather the information needed to make informed go/no-go decisions. Implements SSDF PO.4.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "AppSec Lead / Release Manager",
+      "requirementCodes": [
+        "PO.4.1",
+        "PO.4.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List the points in the SDLC where a security check applies and what each check examines"
+          },
+          "description": {
+            "en": "Name the decision points at which the software is checked before it moves on — pull request, build, pre-release, pre-deployment — and for each one what is being examined and by what. Keep the list to points where a real decision is taken; a check that nobody would act on is a report, not a gate. Mark the points that currently have no check as gaps. Attach the list of check points."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "List of SDLC check points, what each examines and the points currently carrying no check"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record the pass and fail criteria for every security check point"
+          },
+          "description": {
+            "en": "For each check point write the criteria in a form somebody can apply without asking: which finding severities block, which are permitted with a recorded exception, what coverage or completeness is required, and what happens when a tool fails to run at all — the last being the case most criteria forget. Express the criteria against the evidence the check produces so the decision is repeatable by two different people. Attach the criteria document, version-marked."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Security check criteria per check point, stating what blocks, what is permitted with an exception and how an absent result is treated"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Write the blocking condition for each check point in testable terms."
+              }
+            },
+            {
+              "text": {
+                "en": "State which findings may proceed with a recorded exception."
+              }
+            },
+            {
+              "text": {
+                "en": "Define how a check that did not run at all is treated."
+              }
+            },
+            {
+              "text": {
+                "en": "Version-mark the criteria and record the date they took effect."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Configure the pipeline to evaluate each check criterion and stop the stage on a failure"
+          },
+          "description": {
+            "en": "Criteria that live only in a document are advisory. Configure the pipeline so each criterion is evaluated where the check point sits and a failure actually halts the stage, then confirm by observing a deliberately failing build stop rather than by reading the configuration. Record which criteria are enforced automatically and which still depend on a person, because that split is what tells a reader how much of this control is real. Attach the pipeline configuration and the evidence of the blocking behaviour."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Pipeline configuration showing each criterion evaluated at its check point, with evidence of a failing build being stopped"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Assemble the release decision pack of check results for each candidate release"
+          },
+          "description": {
+            "en": "Bring the evidence into one place for the people deciding whether a release ships: the results from each check point, the criteria applied, what passed, what failed, and what remains open with its owner. Assemble it per candidate release rather than per period, and keep it retrievable afterwards so the decision can be reconstructed later. Give it to the people who make the call rather than filing it where only the author looks. Attach the decision pack as it was circulated."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Release decision pack per candidate release: the check results, the criteria applied and everything left open with its owner"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the results from every check point for the candidate build."
+              }
+            },
+            {
+              "text": {
+                "en": "Set each result against the criterion it was measured by."
+              }
+            },
+            {
+              "text": {
+                "en": "List the open items with an owner and current status against each."
+              }
+            },
+            {
+              "text": {
+                "en": "Circulate the pack to the people taking the release decision."
+              }
+            },
+            {
+              "text": {
+                "en": "Store the pack so the decision can be reconstructed after the fact."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Log every release that shipped with a check exception and the authority recorded for it"
+          },
+          "description": {
+            "en": "Exceptions are the part of a gate that decides whether it is a gate. For each release that proceeded with a criterion unmet, record what was unmet, the reason given, the authority under which it proceeded, the compensating action taken and the date the exception expires or is reviewed. Record the approval the exception was actually issued under rather than who ought to have given it. Attach the exception log for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Exception log: the criterion unmet, the reason, the authority recorded, the compensating action and the expiry of each exception"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Trace a sample of shipped releases back to the check results held for them"
+          },
+          "description": {
+            "en": "Pick releases that actually shipped in the period and work backwards: for each one, find the check results, the criteria applied and either a clean pass or a logged exception. A release you cannot trace evidence for is the finding — it means the pipeline let something through unrecorded, or the evidence was never retained. Record what was found for each sampled release and what the gaps were. Attach the traceability record."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Traceability record per sampled release: the check results located, the criteria applied and any release with no retrievable evidence"
+          },
+          "suggestedRole": "Engineering lead"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PO5",
+      "title": "Hardened, separated development environments",
+      "description": "Separate and protect each development environment and harden development, build, and test endpoints using a risk-based approach. Implements SSDF PO.5.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Platform / IT Security",
+      "requirementCodes": [
+        "PO.5.1",
+        "PO.5.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Inventory every development, build and test environment and the boundary it holds against production"
+          },
+          "description": {
+            "en": "List the environments the software passes through before production — local development, shared development, CI runners, staging, test — and for each one record what it holds, who reaches it, which credentials it carries and what separates it from production. Include the environments that grew informally, since those are the ones with a copy of production data and no boundary at all. Attach the environment inventory."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Environment inventory: each development, build and test environment, its contents, its users and the boundary between it and production"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "List every environment the software passes through before production."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who has access to each environment and by what route."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the credentials and data each environment actually holds."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe the boundary separating each environment from production."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Separate the environments so credentials and network reach do not cross between them"
+          },
+          "description": {
+            "en": "Act on the inventory: give each environment its own identities and secrets rather than sharing one set across the estate, and close the network paths that let a development host reach production or another environment's data. Where a shared component genuinely cannot be split, record it as an accepted crossing with the reason instead of leaving it undocumented. Record the state per environment after the work. Attach the segmentation record showing the identities and network paths per environment."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Segmentation record per environment: its own identities and secrets, the network paths permitted and any accepted crossing with its reason"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Record the hardening baseline required of developer, build and test endpoints"
+          },
+          "description": {
+            "en": "Write the baseline the endpoints used to build and test software must meet, sized to the risk each one carries — a build runner holding signing credentials is not a laptop. Cover disk encryption, patch currency, endpoint protection, administrative rights, and what may be installed. Say explicitly which endpoint classes each part of the baseline applies to, so nobody has to guess whether an ephemeral CI runner is in scope. Attach the baseline document."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Endpoint hardening baseline stating the required settings and which class of development, build or test endpoint each applies to"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Report each endpoint's compliance with the hardening baseline for the period"
+          },
+          "description": {
+            "en": "Measure the endpoints against the baseline and report the result per endpoint rather than as a percentage, because a single non-compliant build runner matters more than a compliance rate. Include the endpoints the management tooling cannot see, since an unmanaged endpoint is an unmeasured one and looks identical to a compliant one in an aggregate. Record the remediation owner for each failure. Attach the compliance report for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Endpoint compliance report for the period: each endpoint against each baseline setting, with unmanaged endpoints listed separately"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the endpoint state from the management tooling."
+              }
+            },
+            {
+              "text": {
+                "en": "Set each endpoint against every setting in the baseline."
+              }
+            },
+            {
+              "text": {
+                "en": "List the endpoints the tooling cannot see as unmeasured, not compliant."
+              }
+            },
+            {
+              "text": {
+                "en": "Record a remediation owner against each failing endpoint."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Test that credentials issued in one environment cannot authenticate to another"
+          },
+          "description": {
+            "en": "Take the separation recorded earlier and try it rather than reading it: attempt to use a development credential against staging and production endpoints, attempt to reach a production data store from a build runner, and record what actually happened in each case. A separation that has never been exercised is a diagram. Record every attempt that unexpectedly succeeded as a finding with an owner, and re-test after it is closed. Attach the test record with the attempts and their outcomes."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Separation test record: each attempted cross-environment authentication or connection, the outcome, and the finding raised where it succeeded"
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PS1",
+      "title": "Source-code integrity and access control",
+      "description": "Store all forms of code under least privilege with branch protection and signed commits to prevent unauthorized access and tampering. Implements SSDF PS.1.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Engineering / SCM Admin",
+      "requirementCodes": [
+        "PS.1.1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Inventory every repository and artifact store holding source, executable or configuration-as-code"
+          },
+          "description": {
+            "en": "The control covers all forms of code, and the forms that get missed are the ones not in the main source repository: infrastructure-as-code repositories, pipeline definitions, container registries, package feeds, and the scripts living in a shared drive or a wiki. List each store, what class of code it holds, which system it belongs to and who administers it. Mark anything holding code that is not under a managed store at all. Attach the code store inventory."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Inventory of every store holding source, executable or configuration-as-code, with the class of code, owning system and administrator"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record the write-access model for each repository, naming every person, tool and service account"
+          },
+          "description": {
+            "en": "Least privilege has to be written down before it can be enforced. For each store record who holds write access and why, and include the non-human holders — CI service accounts, bots, deployment identities, integrations — since those usually outnumber the people and are almost never reviewed. Note which grants are inherited from a team or group rather than held directly, because that is where surprise access lives. Attach the access model per store."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Write-access model per store: every person, tool and service account holding write, the reason for the grant and whether it is direct or inherited"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Export the current access list for each repository and artifact store."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the business reason behind every write grant."
+              }
+            },
+            {
+              "text": {
+                "en": "List the service accounts, bots and integrations holding write access."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark which grants come from group membership rather than a direct assignment."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Turn off direct pushes and history rewriting on every protected branch"
+          },
+          "description": {
+            "en": "Tampering protection is about what can reach the branch without passing through the process: configure the protected branches so direct pushes, force pushes and branch deletion are refused, and record whether administrators can still bypass those settings — an unrecorded admin bypass is the difference between a protected branch and one that looks protected. Apply it to every repository in the inventory, not only the flagship one. Attach the branch protection settings export per repository."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Branch protection settings export per repository, showing direct push, force push and deletion refused, and the administrator bypass state"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Enable commit signing and reject unsigned commits on the protected branches"
+          },
+          "description": {
+            "en": "Signing is what ties a change to an identity rather than to a configurable author field. Issue or register signing keys for the contributors and automation that commit, turn on the enforcement that rejects unsigned commits on protected branches, and record how a key is revoked when someone leaves. Confirm the enforcement by observing an unsigned commit being refused rather than by reading the setting. Attach the signing configuration together with the refusal evidence."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Commit signing configuration per repository with evidence that an unsigned commit to a protected branch is refused"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Export the repository and pipeline access lists and revoke the entries no longer needed"
+          },
+          "description": {
+            "en": "Run the access review the model exists to support: export the current holders for every store and pipeline, set them against the recorded model, and act on the differences in the same pass rather than filing them. Revoke leavers, role changers, expired integrations and service accounts whose pipeline no longer exists, and record each revocation with its date. Where a grant is kept despite looking wrong, record the reason. Attach the review with the list of revocations made."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Access review record per store and pipeline: the exported holder list, the differences against the model and every revocation made with its date"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Check every repository's protection and signing settings against the recorded access model"
+          },
+          "description": {
+            "en": "Settings drift one repository at a time — a new project created from a default template, a protection rule relaxed to land an urgent fix and never restored. Read the live settings for every store in the inventory and set them against the model and the two configuration tasks above, then list the repositories that differ and what was done about each. A repository absent from the inventory but found during this check is itself a finding. Attach the drift report."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Drift report listing every repository whose protection, signing or access settings differ from the recorded model, and the action taken"
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PS2",
+      "title": "Release-artifact signing and integrity verification",
+      "description": "Provide cryptographic integrity-verification information (hashes, digital signatures) for each software release so acquirers can verify authenticity. Implements SSDF PS.2.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Release Engineering",
+      "requirementCodes": [
+        "PS.2.1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List the release artifacts an acquirer downloads and must be able to verify"
+          },
+          "description": {
+            "en": "Verification only helps if it covers what people actually install. List the artifacts published for each release — installers, archives, container images, packages pushed to a public feed — and record where each is published and who consumes it. Include the channels that grew up outside the main release process, since an unsigned artifact on a side channel undoes the signing on the main one. Attach the artifact list per release channel."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "List of published release artifacts per channel, naming what each is, where it is published and who consumes it"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Sign each release artifact in the build and publish the certificate or public key"
+          },
+          "description": {
+            "en": "Move signing into the build so it happens for every artifact rather than for the ones somebody remembered, and have the pipeline sign from an identity the build owns rather than a developer's personal key. Publish the certificate or public key where an acquirer can find it independently of the artifact itself, and state which key signed which release so a key change does not read as a compromise. Attach the signing step configuration together with the published key or certificate."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Build signing configuration plus the published certificate or public key, with the record of which key signs which release"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Add the signing step to the release build for every artifact type."
+              }
+            },
+            {
+              "text": {
+                "en": "Sign from a build identity rather than an individual's personal key."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the certificate or public key where acquirers can retrieve it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which key signs which release channel and version range."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Publish the hash and signature for every release file alongside the release"
+          },
+          "description": {
+            "en": "For each release, publish the cryptographic hash and the signature for every file an acquirer can download, next to the download rather than on request. Record the hash algorithm used and keep the values with the release so a later integrity question can be answered against what was actually shipped. Where a release went out without them, record it — that release is unverifiable, and knowing which ones they are matters during an incident. Attach the published integrity information for the period's releases."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Published integrity information per release: the hash and signature for each downloadable file and the algorithm used"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Verify a published release using only what an acquirer is given, and record the result"
+          },
+          "description": {
+            "en": "Do what a customer would do: download the artifact and the published verification information from the public location, obtain the key by the published route, and verify. Nothing internal — no build server access, no key from a colleague — because the failure this catches is verification information that is correct internally and unusable externally, such as an expired certificate or a key nobody can reach. Record every step and where it failed. Attach the verification record naming the release and the outcome."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Verification record naming the release verified, the route the key and hashes were obtained by, and the outcome of the check"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Download the artifact and its integrity information as a public user would."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain the signing key or certificate through the published route only."
+              }
+            },
+            {
+              "text": {
+                "en": "Verify the hash and the signature and record each command run."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any step that could not be completed with public information alone."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PS3",
+      "title": "Release provenance and archival (SBOM)",
+      "description": "Securely archive each release and its supporting data, and collect and share provenance data such as a software bill of materials. Implements SSDF PS.3.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Release Engineering / Supply-Chain Security",
+      "requirementCodes": [
+        "PS.3.1",
+        "PS.3.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Define what each release archive must contain and the retention period held against it"
+          },
+          "description": {
+            "en": "Decide what has to survive a release so a vulnerability found later can be investigated against the exact thing that shipped: the release files, the integrity information, the build inputs and configuration, the provenance data, and the identifier tying them to a source revision. Record the retention period the organisation holds releases for and where that period comes from. Attach the archive contents definition with the retention period stated."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Archive contents definition listing every item retained per release, with the stated retention period and its source"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Configure the archive so a deposited release cannot be altered afterwards"
+          },
+          "description": {
+            "en": "An archive that can be edited answers no question later. Configure the store so deposits are write-once for the retention period, record who can delete or overwrite and under what circumstances, and check that the archive is not merely a directory on the build server that the next build can reach. Record how the archive itself is backed up and where it lives relative to the systems that produced it. Attach the archive configuration and its access model."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Archive store configuration showing write-once retention, the accounts able to delete or overwrite, and the archive's own backup arrangement"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Generate the software bill of materials as a step of every release build"
+          },
+          "description": {
+            "en": "Produce the bill of materials from the build rather than reconstructing it afterwards, so it reflects what was actually assembled rather than what the manifest intended. Emit it in a standard machine-readable format, include transitive dependencies and the version and supplier of each, and attach it to the release alongside the artifacts. Record the generator and the format version, because a consumer needs both to read it. Attach the build configuration and one generated bill of materials."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Release build configuration showing bill-of-materials generation, with a generated bill of materials naming its format and generator"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Store each release and its supporting data in the archive and record the deposit"
+          },
+          "description": {
+            "en": "For every release in the period, place the defined contents into the archive and record the deposit: the release identifier, the source revision, the contents deposited, the date and the person or pipeline that deposited it. Reconcile against the list of releases actually shipped, since a release that shipped but was never archived is exactly the one that will be asked about. Attach the deposit record for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Archive deposit record for the period: release identifier, source revision, contents deposited and deposit date, reconciled against releases shipped"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "List the releases that actually shipped during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Deposit the defined contents into the archive for each one."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the release identifier and source revision against each deposit."
+              }
+            },
+            {
+              "text": {
+                "en": "Reconcile the deposits against the shipped list and explain any absence."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Publish the bill of materials for each release and record where consumers obtain it"
+          },
+          "description": {
+            "en": "Sharing is the half of the provenance requirement that stops at the build output. Publish each release's bill of materials where the people who need it can get it, record the route they use, and note any consumer to whom it is supplied on request rather than published, with how that request is handled. Where a release shipped without a published bill of materials, record which one and why. Attach the publication record for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Publication record per release: where the bill of materials was published, the route consumers use and any release published without one"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Restore an archived release and confirm its files, integrity data and bill of materials are complete"
+          },
+          "description": {
+            "en": "Pull a release back out of the archive and check it against the contents definition: every file present, the integrity information usable, the bill of materials readable, and the source revision resolvable. Do the retrieval from the archive itself rather than from a convenient copy, since the failure this catches is an archive that has been accepting deposits nobody has ever read back. Record what was missing or unreadable and raise it. Attach the restore record naming the release tested."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Restore record naming the release retrieved, each item in the contents definition checked, and anything missing or unreadable"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Select a release from the archive and retrieve it from the archive itself."
+              }
+            },
+            {
+              "text": {
+                "en": "Check every item the contents definition requires is present."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the integrity information verifies against the restored files."
+              }
+            },
+            {
+              "text": {
+                "en": "Open the bill of materials and resolve the source revision it names."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a finding for anything missing, unreadable or unresolvable."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PW1",
+      "title": "Threat modeling and secure design",
+      "description": "Use threat modeling and attack-surface analysis to inform design, prefer standardized security features, and record security-relevant design decisions. Implements SSDF PW.1.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "AppSec / Engineering Leads",
+      "requirementCodes": [
+        "PW.1.1",
+        "PW.1.2",
+        "PW.1.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Set the trigger that decides which changes require threat modelling or attack-surface analysis"
+          },
+          "description": {
+            "en": "Threat modelling everything is how threat modelling stops happening. Write the rule that decides when a model is required — a new service, a new external interface, a change to authentication or authorisation, a new class of data handled — in terms someone can apply to their own change without asking. State which form of risk modelling each change type calls for — threat modelling, attack modelling or attack-surface mapping — and what a finished model must contain, so two teams produce comparable artifacts. Attach the trigger rule and the model template it points at."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "The risk-modelling trigger rule naming the change types that require a model, the form of modelling each one calls for, and the template setting out what a finished model contains"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Write the change types that require risk modelling before build."
+              }
+            },
+            {
+              "text": {
+                "en": "State which form of risk modelling each change type calls for."
+              }
+            },
+            {
+              "text": {
+                "en": "Define what a completed model must contain to be accepted."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the rule where engineers meet it while planning work."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record the standardised security services a design must reuse before building its own"
+          },
+          "description": {
+            "en": "List the vetted services a design is expected to use rather than reimplement — the authentication and single sign-on integration, the authorisation library, the logging and audit pipeline, the secrets store, the cryptographic library — and for each one say where it lives, how a team adopts it, and what it covers. Record what a team must show to build a proprietary equivalent instead, so the exception is a documented decision rather than a quiet default. Attach the standardised services list."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Standardised security services list: each service, how a design adopts it, what it covers and what a team must show to build its own instead"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Produce a threat model or attack-surface map for each change that meets the trigger"
+          },
+          "description": {
+            "en": "For every change that meets the trigger, produce the model the template requires: what is being protected, the trust boundaries crossed and the interfaces making up the attack surface, who the plausible attacker is, and the threats that follow from that — with a mitigation, an accepted risk or an open action recorded against each threat. Do it while the design can still change; a model produced after implementation documents rather than informs. Record the changes that met the trigger and were not modelled. Attach the threat models produced in the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Risk models produced in the period, each naming the assets, trust boundaries and attack surface, with a mitigation or accepted risk against every threat"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record the security design decisions taken and the response to each risk raised"
+          },
+          "description": {
+            "en": "Keep the security-relevant decisions with the design rather than in the chat thread where they were argued: what was decided, the options rejected, the risk it answers, and where a security requirement was relaxed or waived along with the reasoning. Link each risk the threat model raised to its response — mitigated here, accepted for this reason, deferred to this owner. A design whose decisions are unrecorded has to be re-argued at every later review. Attach the design decision record per change."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Design decision record per change: the decisions taken, the options rejected, any relaxed requirement with its reasoning and the response to each risk"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Check that every threat the models raised carries a recorded response"
+          },
+          "description": {
+            "en": "Risk models fail quietly by producing threats nobody ever answered. Work through the models from the period and confirm each threat carries a mitigation that exists, an acceptance with a named reason, or an open action with an owner and a date. List the threats with no response and the ones whose claimed mitigation cannot be located in the code or configuration. Attach the review with those two lists."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Threat response review listing every threat with no recorded response and every claimed mitigation that could not be located"
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PW2",
+      "title": "Independent secure design review",
+      "description": "Have a qualified reviewer or automated process independently confirm the design meets security requirements and addresses identified risks. Implements SSDF PW.2.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Security Architect",
+      "requirementCodes": [
+        "PW.2.1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List the designs requiring independent review and name a reviewer independent of each"
+          },
+          "description": {
+            "en": "Independence is the whole content of this control, so it has to be established before the review rather than asserted after it. List the designs in scope for review and against each name the reviewer — a person who did not work on that design, or the automated process performing the check — and state the basis of their independence and the qualification that makes them competent to do it. Where no independent reviewer is available, record that rather than assigning the designer's teammate. Attach the reviewer assignment list."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Reviewer assignment list: each design in scope, its assigned reviewer, the basis of that reviewer's independence and their qualification"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record what the independent reviewer must confirm and the outcomes a review can return"
+          },
+          "description": {
+            "en": "Give the reviewer something to work through rather than an invitation to form an impression: the security requirements the design must satisfy, the risk information it must address, and the specific questions to answer about each. Define the outcomes a review can return — satisfied, satisfied subject to conditions, not satisfied — and what each means for whether the design proceeds to build. Attach the review criteria document."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Design review criteria: what the reviewer must confirm against the security requirements and risk information, and the outcomes a review can return"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List the security requirements the reviewer checks the design against."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the risk information the design is expected to address."
+              }
+            },
+            {
+              "text": {
+                "en": "Define each outcome a review can return and what it means for build."
+              }
+            },
+            {
+              "text": {
+                "en": "State what a conditional outcome must record before build proceeds."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record each design review with its reviewer, outcome and the conditions raised"
+          },
+          "description": {
+            "en": "For every design reviewed, keep a record naming the design and its version, the reviewer and their independence, the criteria applied, the outcome, and every condition raised with an owner against it. Track the conditions through to closure and record what closed each one, because a conditional outcome that nobody returned to is indistinguishable from a failed review that shipped. Attach the review records for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Design review records for the period: design and version, reviewer and independence, outcome, and each condition raised with its closure"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Record the design version the reviewer actually examined."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reviewer and the basis of their independence from it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the outcome against the criteria and every condition raised."
+              }
+            },
+            {
+              "text": {
+                "en": "Follow each condition to closure and record what closed it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Check which designs reached build without the independent review they required"
+          },
+          "description": {
+            "en": "Take the designs that went into build during the period and set them against the review records. The finding here is the design that was in scope for review, was built, and has no review record — or has one dated after the build started, which is a review that could not have influenced anything. Record each case, how it happened, and what was done about the built software. Attach the coverage check."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Coverage check listing every design built without an independent review, or reviewed only after build began, with the action taken"
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PW4",
+      "title": "Approved-component allowlist and SCA gate",
+      "description": "Acquire and maintain well-secured components, reuse vetted internal modules, and verify all third-party components against requirements throughout their life. Implements SSDF PW.4.",
+      "category": "Security",
+      "defaultFrequency": "MONTHLY",
+      "defaultOwnerHint": "AppSec / DevSecOps",
+      "requirementCodes": [
+        "PW.4.1",
+        "PW.4.2",
+        "PW.4.4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Inventory the direct and transitive components each project resolves at build time"
+          },
+          "description": {
+            "en": "Resolve the actual dependency set from every project rather than reading the declared manifests, so transitive dependencies are counted. For each component record its version, whether it is third-party or an internal shared module, and the registry or repository it is pulled from — the source matters as much as the name, because two registries can serve the same package name. Mark the components pulled from somewhere other than the organisation's chosen registries. This resolved set is the denominator the approved list is measured against, so a component missing from it is a component nobody decided to allow. Attach the dependency inventory."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Dependency inventory: every direct and transitive component, its version, whether it is third-party or internal, and the registry it is pulled from"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Resolve the full dependency set from each project's lock file."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the registry or repository each component is fetched from."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark which entries are internal shared modules rather than third-party."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag components pulled from outside the organisation's chosen registries."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record the criteria a component must meet before it joins the approved list"
+          },
+          "description": {
+            "en": "Write what makes a component acceptable here: maintenance and release activity, how the maintainers handle vulnerability reports, licence, whether the version is the supported one, and the source it must be fetched from. Then record the components already assessed against those criteria, with the date and the outcome for each, so the approved list is a record of decisions rather than a list of what happened to be installed. Attach the criteria together with the approved component list."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Component approval criteria plus the approved list, showing the assessment date and outcome behind each entry"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Publish the internal shared modules teams reuse instead of writing their own"
+          },
+          "description": {
+            "en": "The control asks teams to reuse well-secured software rather than duplicate it, which only works if they can find it. Publish the internal modules built for common needs — the ones handling authentication, input validation, cryptography, data access — with what each does, how to adopt it, who maintains it and which version is current. Record the common needs that have no shared module, since those are where duplication and divergence start. Attach the internal module catalogue."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Internal shared module catalogue: each module, its purpose, maintainer and current version, plus the common needs with no module yet"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Configure the build to reject a dependency that is unapproved or carries a disallowed vulnerability"
+          },
+          "description": {
+            "en": "Put composition analysis in the pipeline and configure it to fail the build on the conditions the criteria set: a component absent from the approved list, one fetched from an unexpected registry, or one carrying a vulnerability at a severity the criteria do not permit. Confirm the rejection by observing a build fail on a deliberately introduced dependency rather than by reading the configuration. Record how an exception is requested and recorded. Attach the gate configuration with the evidence of a rejected build."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Composition analysis gate configuration with evidence of a build rejected for an unapproved or disallowed dependency"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Re-verify the approved components against the criteria and record those that no longer qualify"
+          },
+          "description": {
+            "en": "Approval ages: maintainers stop responding, a version leaves support, a licence changes, a vulnerability lands in a component that was clean when it was adopted. Work through the approved list each cycle, re-apply the criteria, and record the outcome per component with the date. For anything that no longer qualifies, record the affected projects and the replacement or upgrade path, so the finding arrives with the information needed to act on it. Attach the re-verification record for the cycle."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Re-verification record per cycle: each approved component re-assessed against the criteria, the outcome, and the affected projects for any that failed"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Re-apply the approval criteria to every component on the list."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the outcome and date against each component assessed."
+              }
+            },
+            {
+              "text": {
+                "en": "List the projects using any component that no longer qualifies."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the replacement or upgrade path for each failing component."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Reconcile the components built into the software against the approved list"
+          },
+          "description": {
+            "en": "Compare what the builds actually assembled during the period with the approved list. The differences are the interesting part: components in the build and not on the list, components on the list nobody uses any more, and components whose built version differs from the approved one. Record each difference and its resolution — approve, remove, or upgrade — and note any that reached the build despite the gate, since that is a gate failure rather than a component finding. Attach the reconciliation."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Reconciliation of built components against the approved list, listing each difference, its resolution and anything that bypassed the gate"
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PW5",
+      "title": "Secure coding standards",
+      "description": "Adopt and follow secure coding practices appropriate to the languages and environments in use. Implements SSDF PW.5.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Engineering / AppSec",
+      "requirementCodes": [
+        "PW.5.1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List the languages, frameworks and runtimes in use and mark those with no standard yet"
+          },
+          "description": {
+            "en": "Secure coding practice has to be appropriate to what is actually written, so start from the code rather than from the standards that already exist. List each language, framework and runtime in the codebase with the projects using it, and mark the ones with no secure coding guidance covering them. Include the small populations — the build scripts, the one service in a second language — because those are the ones that never get a standard. Attach the language inventory with the uncovered entries marked."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Language and framework inventory listing each one in use, the projects using it, and which have no secure coding guidance yet"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Write the secure coding standard for each language and runtime in use"
+          },
+          "description": {
+            "en": "Write rules a reviewer can apply, not principles: how input is validated, how queries are constructed, how output is encoded, how secrets are handled, how errors are returned, which library is used for cryptography and which language features are forbidden here. Where a rule comes from an external guide, cite the guide against the rule so its origin is traceable. Give each standard an owner and a version. Attach the standards, one per language or runtime in use."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Secure coding standards, one per language or runtime, each rule stated in applicable terms with its source cited and an owner and version recorded"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Draft the rules for each language from the practices already followed."
+              }
+            },
+            {
+              "text": {
+                "en": "Write each rule so a reviewer can decide whether code satisfies it."
+              }
+            },
+            {
+              "text": {
+                "en": "Cite the external guide behind any rule that comes from one."
+              }
+            },
+            {
+              "text": {
+                "en": "Record an owner and a version against each published standard."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Implement the standard's machine-decidable rules in the shared lint configuration"
+          },
+          "description": {
+            "en": "Split the standard in two: the rules a tool can decide and the rules only a person can. Encode the first set in the shared lint or analyser configuration so every project inherits them and they are applied consistently rather than at each reviewer's discretion. Mark the remaining rules explicitly as reviewer-judgement, which is what the code review checklist is then built from. Attach the shared configuration together with the marked-up standard showing which rules are automated."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Shared lint configuration implementing the machine-decidable rules, with the standard marked to show which rules remain reviewer judgement"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record every suppression of a standard rule together with the reason given"
+          },
+          "description": {
+            "en": "Suppressions are how a standard erodes without anyone deciding to weaken it. Collect the in-code suppressions and configuration overrides in force across the projects, and for each record the rule suppressed, the location, who added it and the reason. Suppressions with no reason are the finding; raise them for a decision rather than leaving them in place. Attach the suppression register for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Suppression register: each suppressed rule, its location, who added it and the reason, with unexplained suppressions listed for decision"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Compare the languages in use against the standards published and record what is uncovered"
+          },
+          "description": {
+            "en": "Languages arrive faster than standards do. Re-derive the language inventory from the current codebase, set it against the published standards, and record every language or framework now in use with no standard covering it, plus every standard covering something no longer written here. Record what was commissioned or retired as a result. Attach the coverage comparison."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Coverage comparison listing each language in use with no standard, each standard covering nothing in use, and the action taken on each"
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PW6",
+      "title": "Build hardening flags",
+      "description": "Use compiler, interpreter, and build-tool features that improve executable security, and configure the approved hardening settings. Implements SSDF PW.6.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Build / Platform Engineering",
+      "requirementCodes": [
+        "PW.6.1",
+        "PW.6.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List each build pipeline and the compiler, interpreter or bundler it invokes"
+          },
+          "description": {
+            "en": "Hardening settings are applied per toolchain, so the toolchains have to be enumerated first. For each build pipeline record the language toolchain it invokes, the version, and where its configuration lives — the build file, the container image, the pipeline definition. Include the pipelines that build supporting components and container images, since a hardened application on an unhardened base changes little. Attach the pipeline and toolchain list."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Pipeline and toolchain list: each build pipeline, the compiler, interpreter or bundler it invokes, its version and where its configuration lives"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record the hardening features approved for each toolchain and the setting that enables each"
+          },
+          "description": {
+            "en": "For each toolchain, write down which of its security features are to be used and the exact setting or flag that turns each on — stack protection, position independence, fortified library calls, relocation hardening, strict compilation warnings escalated to errors, whatever that toolchain offers. Record any feature deliberately not used and the reason, so the omission is a decision rather than an oversight. Attach the approved hardening configuration per toolchain."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Approved hardening configuration per toolchain: each feature to be used, the exact setting that enables it and the reason for any feature not used"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Apply the approved hardening settings to every build configuration"
+          },
+          "description": {
+            "en": "Put the settings into the build configurations themselves rather than into a document about them, and apply them to every pipeline on the list including the ones producing supporting components. Where a build cannot take a setting — an incompatible dependency, an unsupported target — record the pipeline, the setting and the reason instead of silently leaving it out. Attach the changed build configurations and the list of pipelines carrying a documented exception."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Build configurations carrying the approved hardening settings, with the pipelines unable to take a setting listed with the reason"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Inspect the produced binaries and record which hardening features they actually carry"
+          },
+          "description": {
+            "en": "A flag in a build file is not a hardened binary: it can be overridden downstream, dropped by a repackaging step or silently ignored by a toolchain version that does not support it. Inspect the produced artifacts and record, per artifact, which of the approved features are actually present. Anything missing that the configuration claims is a finding against the pipeline, not against the document. Attach the inspection report for the period's builds."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Binary hardening inspection report: each artifact examined and which approved features it actually carries, with every discrepancy listed"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Select the artifacts produced by each pipeline in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Inspect each artifact for the approved hardening features."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the features present and absent per artifact examined."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a finding against any pipeline whose output contradicts its configuration."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Identify the build pipelines whose toolchain offers no approved hardening feature"
+          },
+          "description": {
+            "en": "Some toolchains simply cannot do what is asked of them, and that is a selection decision rather than a configuration one. Go through the pipeline list and identify the toolchains offering none of the approved features, or a version too old to support them. For each, record whether the toolchain can be upgraded, replaced, or must be accepted with the reason. Attach the assessment with a decision recorded against each pipeline."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Toolchain assessment naming each pipeline whose toolchain offers no approved hardening feature, with the upgrade, replacement or acceptance decision"
+          },
+          "suggestedRole": "Engineering lead"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PW7",
+      "title": "Mandatory peer code review",
+      "description": "Determine where code review and/or analysis apply, then perform them against the secure coding standard and triage findings. Implements SSDF PW.7.",
+      "category": "Security",
+      "defaultFrequency": "WEEKLY",
+      "defaultOwnerHint": "Engineering Teams",
+      "requirementCodes": [
+        "PW.7.1",
+        "PW.7.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Record which change types require human review, automated analysis, or both"
+          },
+          "description": {
+            "en": "The control's first requirement is a decision, and leaving it implicit is what produces reviews that vary by reviewer. Write down which changes get a human review, which get automated analysis, and which get both — by area of the codebase, by risk, or by change type — and say what happens to changes falling outside all three. Record who counts as a qualified reviewer for the higher-risk areas. Attach the review policy."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Review policy stating which change types receive human review, automated analysis or both, and who counts as a qualified reviewer"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Publish the reviewer checklist drawn from the secure coding standard"
+          },
+          "description": {
+            "en": "Reviewers need the reviewer-judgement rules in front of them, which is what the standard's non-automated half becomes. Turn those rules into a checklist ordered by how often the issue actually occurs, keep it short enough to be used on every change, and say where the reviewer records that a point was considered. Where automated analysis already covers a rule, leave it off — a checklist duplicating the linter trains reviewers to skim. Attach the published checklist with its mapping back to the standard."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Published reviewer checklist mapped back to the secure coding standard, covering the rules automated analysis does not decide"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Restrict merge to changes carrying an approving review from a qualified reviewer"
+          },
+          "description": {
+            "en": "Configure the repositories so a change cannot merge to a protected branch without an approving review from someone qualified under the policy, and record whether self-approval and administrator override remain possible. Confirm by attempting a merge without an approval and observing the refusal rather than by reading the setting. Where a repository is exempt, record which and why. Attach the configuration together with the evidence of a refused merge."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Repository configuration requiring an approving review before merge, with evidence of a merge refused for want of one and any exempt repository listed"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record the review of each merged change and where its issues were filed"
+          },
+          "description": {
+            "en": "Keep the review record per merged change: who reviewed it, what the checklist and the automated analysis raised, and for anything not fixed in the change itself, the issue it was filed as and the priority it was given. Filing matters more than the comment — a concern raised in a review thread and not turned into a tracked issue disappears when the branch is deleted — so carry each filed issue through to closure and record where it stands at the end of the period. Record the changes that merged with no review despite the policy requiring one. Attach the review records for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Review records for the period: reviewer per merged change, the issues review and analysis raised, the tracker reference and priority for each not fixed in the change with its closure state, and any change merged unreviewed"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the merged changes for the period from the repositories."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reviewer and the issues review and analysis raised."
+              }
+            },
+            {
+              "text": {
+                "en": "File every unresolved issue in the tracker with a priority against it."
+              }
+            },
+            {
+              "text": {
+                "en": "Follow each filed issue through to closure and record where it stands."
+              }
+            },
+            {
+              "text": {
+                "en": "List the changes that merged without the review the policy required."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sample merged changes and check each received the review its type required"
+          },
+          "description": {
+            "en": "Take a sample of merged changes across the repositories and test the policy against reality: did the change type get the review or analysis it required, by a reviewer qualified for it, before the merge rather than after. Record what the sample showed, including approvals given by the change author and merges made under an administrator override. Attach the sample with its findings."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Review sampling record: each sampled change, the review it required, what it actually received, and the findings raised"
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PW8",
+      "title": "SAST and DAST in CI",
+      "description": "Determine and perform executable-code testing (SAST/DAST, fuzzing, pen testing) and triage the results. Implements SSDF PW.8.",
+      "category": "Security",
+      "defaultFrequency": "WEEKLY",
+      "defaultOwnerHint": "DevSecOps / QA",
+      "requirementCodes": [
+        "PW.8.1",
+        "PW.8.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Record which test types apply to each application and the weaknesses each is expected to find"
+          },
+          "description": {
+            "en": "Choosing the tests is the requirement, so record the choice and its reasoning rather than the tool inventory. For each application say which forms of executable-code testing apply — static analysis of the built code, dynamic scanning, fuzzing, penetration testing, or none — and what each is expected to find that review and analysis did not. Record the applications where a form of testing was considered and rejected, with the reason, so the absence is a decision. Attach the testing decision record per application."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Testing decision record per application: the test types selected, what each is expected to find, and the reasoning for anything rejected"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Design the test scope for each application: targets, credentials and what is out of bounds"
+          },
+          "description": {
+            "en": "A test whose scope was never designed finds whatever the tool defaults at. For each application record the targets and environments to be tested, the credentials and roles the test runs as — unauthenticated testing misses everything behind a login — the data it may use, and what is explicitly out of bounds. Include the coverage the test is meant to achieve, so a run that touched a fraction of the application is visible as such. Attach the test scope document per application."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Test scope per application: targets and environments, the credentials and roles used, the exclusions and the coverage the test is meant to achieve"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Record the targets and environments each test runs against."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the credentials and roles the test authenticates as."
+              }
+            },
+            {
+              "text": {
+                "en": "State what is explicitly out of bounds for the test."
+              }
+            },
+            {
+              "text": {
+                "en": "State the coverage the test is expected to achieve."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Run the designed tests in the pipeline against each build and file the report of every run"
+          },
+          "description": {
+            "en": "Execute the tests the scope calls for from the pipeline itself, so the static and dynamic analysis run against every build rather than when somebody remembers to start them, and keep the report of each run: what was tested, which build or version, when, under which credentials, what coverage was reached and what was found. Keep the reports of runs that found nothing as well, because a period with no findings and a period where the test never ran are otherwise the same absence. Attach the test reports for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Test reports for the period: the build tested, the date, the credentials used, the coverage reached and the findings, including runs that found nothing"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Triage each finding from a test run to a disposition and record the reason"
+          },
+          "description": {
+            "en": "Work through the findings and give each one a disposition rather than a backlog place: confirmed and filed for remediation, a duplicate of something already tracked, a false positive with the reason it was judged so, or accepted with the reasoning. File the confirmed ones in the development team's tracker with the recommended remediation attached, so the fix goes where the work is planned. Attach the triage log for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Triage log: each finding with its disposition, the reason recorded, and the tracker reference for every finding filed for remediation"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List the findings from each test run in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign each finding a disposition with the reason for it."
+              }
+            },
+            {
+              "text": {
+                "en": "File the confirmed findings in the development team's tracker."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the recommended remediation to each filed finding."
+              }
+            },
+            {
+              "text": {
+                "en": "Record why a finding was judged a false positive, not only that it was."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Check the tests that ran against the scope designed and record the areas never tested"
+          },
+          "description": {
+            "en": "Set the runs that happened against the scope that was designed: which applications were tested, which targets were reached, what coverage the runs achieved, and which parts of the scope no run has ever touched. Untested areas are the output of this check — an application in the decision record with no run at all, or a scope section that every run has quietly skipped. Record what was found and what is being done about it. Attach the coverage review."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Coverage review setting the runs performed against the designed scope, naming every application and scope area never tested"
+          },
+          "suggestedRole": "Engineering lead"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PW9",
+      "title": "Secure-by-default configuration",
+      "description": "Define a secure configuration baseline and ship the software with those defaults, documented for administrators. Implements SSDF PW.9.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Product / Engineering",
+      "requirementCodes": [
+        "PW.9.1",
+        "PW.9.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List every setting in the software that affects security"
+          },
+          "description": {
+            "en": "Enumerate the settings rather than assume the obvious ones: authentication and session settings, transport and certificate handling, authorisation defaults, logging and audit switches, exposed interfaces and ports, sample or demonstration accounts and data, and any debugging or diagnostic mode. Take them from the configuration surface as it exists in the code, since settings added since the last release are the ones with no considered default. Attach the security-relevant settings list."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Security-relevant settings list derived from the configuration surface, covering authentication, transport, authorisation, logging, exposed interfaces and diagnostic modes"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record the secure default for each security-relevant setting and why it is safe"
+          },
+          "description": {
+            "en": "For each setting record the value the software will ship with and the reasoning behind it, including the settings whose safe value is off or absent. State where a secure default would break a legitimate deployment and what is done instead, because that is the decision an administrator later has to understand. Check that no default weakens a protection the platform or network already provides. Attach the secure baseline with a value and a rationale against every setting."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Secure configuration baseline: every security-relevant setting with its shipped default value and the rationale for it"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Assign a default value to every setting on the list."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reasoning behind each value, including the ones set to off."
+              }
+            },
+            {
+              "text": {
+                "en": "Check no default weakens a protection the platform already provides."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the settings where a secure default is not viable and what is done instead."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Set the shipped defaults to the recorded secure values"
+          },
+          "description": {
+            "en": "Change the software so a fresh installation starts at the baseline: the defaults in the code, in the shipped configuration files, in the installer and in any container image or deployment template that carries its own copy. The copies are where this fails — an installer default that was never updated survives every change to the application's own default. Attach the changes made, listing each place a default was set."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Record of the default values as set in the code, shipped configuration, installer and deployment templates, one entry per place changed"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Write the administrator documentation entry for every security-relevant setting"
+          },
+          "description": {
+            "en": "Administrators can only preserve a secure default they understand. For each setting document what it does, its default value, what changing it exposes or prevents, and the values that are safe to use. Cover the settings whose default is deliberately restrictive too, since those are the ones an administrator loosens first when something does not work. Attach the administrator configuration reference."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Administrator configuration reference documenting every security-relevant setting, its default, and the effect of changing it"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Capture the setting values a clean installation actually starts with"
+          },
+          "description": {
+            "en": "Install a release the way a customer would, with no prior configuration and no internal deployment tooling, and read back the value of every setting on the list. Compare what the installation actually starts with against the baseline and record each difference, because the gap between the intended default and the shipped one is exactly what this control is for. Attach the fresh-installation configuration dump with the differences marked."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Fresh-installation configuration dump with each setting's actual starting value compared against the baseline and the differences marked"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Install a release with no prior configuration or internal tooling."
+              }
+            },
+            {
+              "text": {
+                "en": "Read back the actual value of every setting on the list."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each value against the recorded secure baseline."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every difference between the shipped and intended default."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Re-check the settings list against the current release and record any setting with no recorded default"
+          },
+          "description": {
+            "en": "Settings are added by feature work that has no reason to think about defaults. Re-derive the configuration surface from the current release, set it against the settings list, and record every new setting with no baseline value, no rationale and no administrator documentation. Record the settings removed since the last pass too, so the list does not accumulate entries for options that no longer exist. Attach the re-check with both lists."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Settings re-check listing every setting in the current release with no recorded default or documentation, and every listed setting no longer present"
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-RV1",
+      "title": "Vulnerability monitoring and disclosure policy",
+      "description": "Continuously gather vulnerability information, confirm vulnerabilities, and maintain a vulnerability-disclosure and remediation policy. Implements SSDF RV.1.",
+      "category": "Security",
+      "defaultFrequency": "MONTHLY",
+      "defaultOwnerHint": "Security Operations / PSIRT",
+      "requirementCodes": [
+        "RV.1.1",
+        "RV.1.2",
+        "RV.1.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List the channels through which a vulnerability report can reach the organisation"
+          },
+          "description": {
+            "en": "Reports arrive by more routes than the security team owns: a published security address, support tickets from acquirers and users, advisories for the components in use, automated dependency alerts, researcher contact through social channels, and the organisation's own findings. List each channel, who watches it, how often, and what happens to a report that lands there out of hours. Mark the channels nobody is currently watching. Attach the intake channel list."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Vulnerability intake channel list: each route a report can arrive by, who watches it, how often, and the channels currently unwatched"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List every route by which a vulnerability report can arrive."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person or team watching each channel and how often."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what happens to a report arriving outside working hours."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the channels with nobody currently watching them."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Publish the vulnerability disclosure policy with its reporting route and handling roles"
+          },
+          "description": {
+            "en": "Publish where a finder outside the organisation can see it before they need it: how to report, what information helps, what response they can expect, and what the organisation asks of them while a fix is prepared. Behind it, record the roles that handle a report from receipt through to disclosure and who performs each. A policy with no named handling roles produces a report that sits in a shared mailbox. Attach the published policy together with the internal handling process."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "The published vulnerability disclosure policy with the internal handling process naming the role responsible at each step"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Log every vulnerability report received and the triage decision taken on it"
+          },
+          "description": {
+            "en": "Record each report as it arrives: the source and channel, the date received, the software and version implicated, the claim made, and the initial decision — credible and taken forward, duplicate, or dismissed with the reason. Dismissals need the reason recorded most of all, since an unexplained dismissal is the one that turns up later attached to an incident. Include the reports from automated sources alongside the human ones. Attach the report log for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Vulnerability report log: source and channel, date received, software and version implicated, the claim and the triage decision with its reason"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Record each report with its source, channel and date received."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the software and version the report implicates."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the triage decision taken and who took it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reason behind every dismissal, not just the acceptances."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Confirm a reported vulnerability against the released version and record the finding"
+          },
+          "description": {
+            "en": "Take the credible reports forward by establishing whether the vulnerability is actually present: reproduce it against the released version, or review and test the code where reproduction is not possible, and record which versions are affected and which are not. Where the investigation finds nothing, record what was tried so the conclusion can be revisited if the reporter comes back with more. Use the same route to look for previously undetected issues the report suggests. Attach the confirmation records for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Confirmation records: the versions tested, what was reproduced or reviewed, the affected and unaffected versions, and the conclusion reached"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Reproduce the reported behaviour against the released version."
+              }
+            },
+            {
+              "text": {
+                "en": "Where reproduction is not possible, review or test the code path."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which versions are affected and which are not."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what was tried for reports that could not be confirmed."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Walk each handled report through the disclosure policy's steps and record where it departed"
+          },
+          "description": {
+            "en": "Take the reports handled during the period and follow each against the policy: was it acknowledged as the policy says, did the named role pick it up, was the reporter kept informed, was the disclosure handled as described. Departures are the point — they show whether the published policy describes what actually happens or what somebody hoped would. Record each departure and whether the policy or the practice is the thing to change. Attach the walkthrough record."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Policy walkthrough record: each handled report against the policy's steps, every departure found and whether the policy or the practice was changed"
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-RV2",
+      "title": "Vulnerability response and patch SLA",
+      "description": "Assess and prioritize each vulnerability by risk and plan and implement remediations within defined SLAs. Implements SSDF RV.2.",
+      "category": "Security",
+      "defaultFrequency": "MONTHLY",
+      "defaultOwnerHint": "Security Operations / Engineering",
+      "requirementCodes": [
+        "RV.2.1",
+        "RV.2.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Record the method used to assess a vulnerability's risk and the inputs it takes"
+          },
+          "description": {
+            "en": "Prioritisation only holds up if two people reach the same answer, so write down how a vulnerability is assessed: the scoring input taken from the advisory, and the local factors that modify it — whether the affected code is reachable in the product, whether the deployment exposes it, what data it touches, and whether a mitigation is already in place. State how the assessed result maps to a severity band. Attach the assessment method."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Vulnerability assessment method: the inputs taken, the local factors that modify them and how the result maps to a severity band"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record the remediation deadline set for each severity band"
+          },
+          "description": {
+            "en": "The control commits to defined remediation timescales, so define them: for each severity band, the time allowed from confirmation to a fix or mitigation being available, and separately to it reaching deployed installations, which is usually the longer and more often missed of the two. Record what happens when a deadline cannot be met and how that is escalated. Attach the remediation timescales with a deadline stated against each band."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Remediation timescales: the deadline for each severity band to fix and to reach deployed installations, and the escalation route when one cannot be met"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Assess each open vulnerability and record its severity, affected versions and planned response"
+          },
+          "description": {
+            "en": "Apply the method to every confirmed vulnerability and record the result: the severity reached, the local factors that moved it, the affected versions and components, the deadline that follows from the band, and the planned response — fix, mitigate, or accept with the reasoning. A vulnerability with no planned response is not assessed, only logged. Attach the assessment record for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Assessment record per vulnerability: the severity reached, the factors applied, the affected versions, the deadline and the planned response"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Apply the assessment method to each confirmed vulnerability."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the local factors that moved the score up or down."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the affected versions and components for each entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the planned response and the deadline it falls under."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Deploy the fix or mitigation and record the version that closed each vulnerability"
+          },
+          "description": {
+            "en": "Carry out the planned response and record what actually closed each vulnerability: the release version carrying the fix, or the mitigation applied and where. Link the entry back to the report and the assessment so the chain from receipt to closure is traceable in one place. Where a mitigation is standing in for a fix, record it as still open with the residual risk rather than closing the entry. Attach the remediation record for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Remediation record: each vulnerability with the release version or mitigation that closed it, linked back to the report and assessment"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Implement the planned fix or mitigation for each vulnerability."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the release version carrying the fix."
+              }
+            },
+            {
+              "text": {
+                "en": "Link the entry back to the original report and its assessment."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep entries closed by mitigation open with the residual risk recorded."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Notify the parties affected by a remediation through the route the disclosure process names"
+          },
+          "description": {
+            "en": "When a remediation ships, tell the people who need to act on it: the acquirers and users running affected versions, and the reporter who raised it. Record who was notified, by what route, on what date, and what they were told — the affected versions, what to do, and any interim mitigation. Where notification was deliberately withheld or delayed, record that and the reasoning. Attach the notification record for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Notification record: who was notified, the route and date, what they were told, and the reasoning behind any withheld or delayed notification"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Measure the remediations completed against the deadline for their severity band"
+          },
+          "description": {
+            "en": "Set the closures in the period against the deadlines their bands carry, and report both the ones met and the ones missed with the age of each. Include the vulnerabilities still open past their deadline, which are the ones an aggregate of completed work hides entirely. Record the reason behind each miss, since repeated misses in one band usually mean the deadline or the capacity is wrong rather than the individual case. Attach the performance report for the period."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Remediation performance report: closures against the deadline for their band, every miss with its reason, and every vulnerability still open past its deadline"
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-RV3",
+      "title": "Root-cause analysis and SDLC improvement",
+      "description": "Analyze vulnerability root causes, look for patterns and similar defects, and update the SDLC to prevent recurrence. Implements SSDF RV.3.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "AppSec / Engineering Leads",
+      "requirementCodes": [
+        "RV.3.1",
+        "RV.3.2",
+        "RV.3.3",
+        "RV.3.4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Record the criteria that decide which vulnerabilities receive a root-cause analysis"
+          },
+          "description": {
+            "en": "Analysing everything is unaffordable and analysing nothing is what happens instead, so write the criteria down: which vulnerabilities get a root-cause analysis, by severity, by whether they reached a release, or by whether the same shape has been seen before. Say what a completed analysis must record and where analyses are filed so they can be read together later. Attach the criteria with the analysis template."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Root-cause analysis criteria naming which vulnerabilities are analysed, with the template stating what a completed analysis must record"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record the root cause of each vulnerability that met the analysis trigger"
+          },
+          "description": {
+            "en": "For each vulnerability in scope, go past the defect to the cause: what was introduced, at which point in the lifecycle it entered, what allowed it in, and why review, analysis and testing did not catch it — the last question being the one that yields the improvement. Name a cause the organisation can act on rather than closing at human error. Attach the analysis record for each vulnerability analysed."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Root-cause analysis record per vulnerability: the defect, where in the lifecycle it entered, what allowed it and why it was not caught"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Establish the defect behind the vulnerability, not just its symptom."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify the lifecycle stage at which it was introduced."
+              }
+            },
+            {
+              "text": {
+                "en": "Record why review, analysis and testing did not catch it."
+              }
+            },
+            {
+              "text": {
+                "en": "Name a cause the organisation can act on rather than closing at human error."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Search the codebase for other instances of the defect class and record what was fixed"
+          },
+          "description": {
+            "en": "A confirmed vulnerability is a sample of a class. Search the codebase and the other products for the same shape — the same unsafe call, the same missing check, the same pattern in a different service — using a query derived from the analysis rather than reading by hand. Record what the search covered, what it found, what was fixed proactively and what was left with the reason. Attach the sweep record naming the class searched for."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Sweep record: the defect class searched for, the codebases covered, the instances found, and what was fixed or deliberately left with the reason"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Derive a search query from the analysis of the confirmed defect."
+              }
+            },
+            {
+              "text": {
+                "en": "Run it across every codebase and product in scope."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each instance found and where it sits."
+              }
+            },
+            {
+              "text": {
+                "en": "Fix the instances found proactively and record what was left, with the reason."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Group the recorded root causes and name the patterns they show over time"
+          },
+          "description": {
+            "en": "One analysis explains one vulnerability; the set explains the development process. Group the analyses gathered so far by cause — a coding practice not applied consistently, a lifecycle stage where defects repeatedly enter, a component or team carrying more than its share — and name the patterns with the evidence behind each. Say plainly where the sample is too small to support a pattern, rather than promoting a coincidence. Attach the pattern analysis."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Pattern analysis grouping the recorded root causes, naming each pattern with the analyses supporting it and stating where evidence is too thin"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Update the development practice each pattern points at and record what changed"
+          },
+          "description": {
+            "en": "Turn each pattern into a change somewhere in the way software is developed here — a coding standard rule, a reviewer checklist item, an automated check, a training module, a design guardrail — and record which was changed, by whom, and when it took effect. A pattern with no change recorded against it is where this control stops being a feedback loop. Where a pattern is accepted without change, record the reasoning. Attach the change record linking each pattern to what moved."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Change record linking each identified pattern to the practice, check or training that was changed, when it took effect, or the reasoning for accepting it"
+          },
+          "suggestedRole": "Engineering lead"
+        }
+      ]
+    }
+  ],
+  "pack": {
+    "key": "SSDF_CORE",
+    "name": "NIST SSDF Core Pack",
+    "version": "1.1",
+    "description": "NIST Secure Software Development Framework — practices for producing software with fewer vulnerabilities.",
+    "templateCodes": [
+      "SDLC-PO1",
+      "SDLC-PO2",
+      "SDLC-PO3",
+      "SDLC-PO4",
+      "SDLC-PO5",
+      "SDLC-PS1",
+      "SDLC-PS2",
+      "SDLC-PS3",
+      "SDLC-PW1",
+      "SDLC-PW2",
+      "SDLC-PW4",
+      "SDLC-PW5",
+      "SDLC-PW6",
+      "SDLC-PW7",
+      "SDLC-PW8",
+      "SDLC-PW9",
+      "SDLC-RV1",
+      "SDLC-RV2",
+      "SDLC-RV3"
     ]
   }
-]
+}
