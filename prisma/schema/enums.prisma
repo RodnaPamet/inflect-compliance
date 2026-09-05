@@ -701,6 +701,48 @@ enum SuggestionItemStatus {
   /// type is a rewrite, and `ALTER TYPE … ADD VALUE` is the additive half of
   /// the same hazard the `@@map("WorkItem*")` pins record.
   QUARANTINED
+
+  /// TERMINAL, and reachable only on `AgentProposal`. The proposal's review
+  /// window closed with nobody having approved it — see
+  /// `src/lib/agentic/proposal-expiry.ts` for why the queue has a deadline at
+  /// all (an unbounded queue is a driver of rubber-stamping, so its depth is
+  /// part of the threat model rather than a housekeeping matter).
+  ///
+  /// NOT the same fact as REJECTED, and the distinction is the whole reason
+  /// this value exists rather than reusing one. REJECTED is a human deciding
+  /// no; EXPIRED is a human never deciding. Collapsing them would manufacture a
+  /// record of a review that never happened — precisely the failure the
+  /// propose-not-commit queue exists to prevent.
+  ///
+  /// Nothing is deleted on the way here: the payload, the rationale, the guard
+  /// verdict, the agent attribution and the pinned policy-card version all
+  /// survive, because an expired proposal is the record of something an agent
+  /// asked for and nobody agreed to.
+  ///
+  /// Shared with `RiskSuggestionItem`, which never writes it — the same
+  /// widen-the-domain-not-the-behaviour trade QUARANTINED made above.
+  EXPIRED
+}
+
+/// A retrospective sample-audit's verdict on ONE already-approved agent
+/// proposal (OWASP ASI09 — automation bias). See
+/// `src/lib/agentic/proposal-sampling.ts`.
+///
+///   PENDING       — drawn by the sampler, not yet re-reviewed. The DEFAULT,
+///                   and deliberately the state a row is created in: a sample
+///                   nobody has looked at must not read as agreement.
+///   CONCURRED     — a second human would have approved it too.
+///   DISSENTED     — they would not have. `dissentCodes` says why.
+///   INDETERMINATE — they could not tell from the record. Its own value rather
+///                   than being folded into either side, because "the evidence
+///                   was insufficient to judge" is a finding about the queue,
+///                   not a vote about the proposal, and averaging it into
+///                   either bucket destroys the only signal it carries.
+enum AgentSampleAuditOutcome {
+  PENDING
+  CONCURRED
+  DISSENTED
+  INDETERMINATE
 }
 
 /// The agentic output guard's verdict on ONE agent proposal, persisted on the

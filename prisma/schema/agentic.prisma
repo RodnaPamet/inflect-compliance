@@ -72,13 +72,121 @@ model AgentProposal {
   /// that somehow arrives without a label must not read as tenant-authored.
   guardProvenance      AgentContentProvenance @default(THIRD_PARTY_INGESTED)
 
+  /// WHEN THE REVIEW WINDOW CLOSES. Past this instant the proposal cannot be
+  /// approved, and the `agent-proposal-expiry` sweep moves it to `EXPIRED`.
+  ///
+  /// Queue depth is a driver of rubber-stamping, so an unbounded queue is part
+  /// of the ASI09 threat model rather than a housekeeping matter — the deadline
+  /// is the bound. `src/lib/agentic/proposal-expiry.ts` owns the arithmetic and
+  /// the reasoning, including why the clock does NOT restart when a first
+  /// approver signs a proposal whose card requires a second.
+  ///
+  /// PINNED AT CREATION, not derived at read time, for the same reason
+  /// `policyCardVersion` is pinned: the window's LENGTH comes from the approval
+  /// rung of the card version in force, and a card edit must not silently move
+  /// the deadline of a proposal already in flight — in either direction.
+  ///
+  /// NULLABLE, and NULL means NO DEADLINE RECORDED rather than "expired". The
+  /// column was added to a populated table, and during a rolling deploy a
+  /// container running the previous build writes rows without it. Reading the
+  /// absence as "window closed" would retire every in-flight proposal at the
+  /// moment of deploy — an outage wearing the costume of a control. The sweep
+  /// stamps a deadline onto those rows instead.
+  expiresAt            DateTime?
+
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
   tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   agent                RegisteredAgent?     @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  sampleAudits         AgentProposalSampleAudit[]
 
+  /// Composite parent key, so a sample-audit row can never point at another
+  /// tenant's proposal — the same shape `AgentPolicyCard` carries for its
+  /// versions.
+  @@unique([id, tenantId])
   @@index([tenantId, status, createdAt])
   @@index([tenantId, agentId])
+  /// The expiry sweep's query, and the ONE index here that is deliberately not
+  /// tenant-leading: the sweep runs system-wide over every tenant at once
+  /// (`status = PENDING AND expiresAt <= now`), so a tenantId-leading composite
+  /// would be a prefix it never supplies. The tenant-leading index above still
+  /// exists and still serves every per-tenant read.
+  @@index([status, expiresAt])
+}
+
+/// OWASP ASI09 — the RETROSPECTIVE SAMPLE AUDIT of an approved proposal.
+///
+/// The propose-not-commit queue's safety claim is that a human approved every
+/// agent-authored write. Every signal the product emits about that queue
+/// measures its SHAPE — counts, latency, who clicked. None of them measures
+/// whether the approvals were RIGHT, and a queue rubber-stamped under volume is
+/// worse than no queue at all: it manufactures an auditable record of consent
+/// nobody actually gave, while every shape metric stays green.
+///
+/// This table is the only instrument that sees that. A sweep periodically draws
+/// a keyed random sample of ALREADY-APPROVED proposals and asks a second human
+/// whether they would have approved it too. The rate at which they would not is
+/// the number the whole subsystem is judged on.
+///
+/// One row per sampled proposal, ever — `@@unique([tenantId, proposalId])` is
+/// the durable idempotency key `schedules.ts` demands of any job that must not
+/// double-fire, and it also means a proposal cannot be re-drawn until somebody
+/// disagrees with the first answer.
+///
+/// NO FREE-TEXT COLUMN, deliberately. The subject under review is agent-
+/// authored content that lives in an ENCRYPTED column; a note field is the
+/// obvious place to quote it, and a quote in a plaintext operator surface is
+/// that content leaving the store it was put in. Dissent is recorded as stable
+/// CODES (`SAMPLE_AUDIT_DISSENT_CODES`), which carry no content and — unlike
+/// prose — aggregate into "which KIND of wrong", the question that actually
+/// changes an agent's policy card.
+model AgentProposalSampleAudit {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// The approved proposal under retrospective review.
+  proposalId String
+
+  /// When the sampler drew it, and under which epoch.
+  sampledAt     DateTime @default(now())
+  /// The sampling run's epoch — the UTC calendar day of the sweep. Stored so a
+  /// selection can be RE-DERIVED and checked later: with the epoch, the seed
+  /// and the candidate set, `selectSample` is deterministic. The seed itself is
+  /// never stored and never rendered; without it the epoch reveals nothing.
+  samplingEpoch String
+
+  /// Who was asked. NULLABLE: the sweep records the agent's registered owner
+  /// where there is one, and leaves it null otherwise rather than inventing an
+  /// assignee. Whoever actually answers is recorded separately below, because
+  /// "who was asked" and "who replied" are different facts and only the second
+  /// one is evidence.
+  assignedToUserId String?
+
+  /// The verdict. Defaults to PENDING — a drawn-but-unreviewed row must never
+  /// read as agreement, or the disagreement rate would improve every time the
+  /// sampler ran and nobody did the work.
+  outcome AgentSampleAuditOutcome @default(PENDING)
+
+  /// Why the reviewer did not concur, as stable codes from
+  /// `SAMPLE_AUDIT_DISSENT_CODES`. Empty on every non-DISSENTED outcome.
+  dissentCodes String[]
+
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  proposal AgentProposal @relation(fields: [proposalId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// One audit per proposal — the sweep's durable idempotency key, AND the
+  /// tenant-leading uniqueness construct that indexes the `proposalId` FK as
+  /// its second column. No separate `@@index([tenantId, proposalId])`: it would
+  /// be the same b-tree twice, i.e. write amplification on every audit row.
+  @@unique([tenantId, proposalId])
+  /// The reviewer's queue: open audits for this tenant, oldest first.
+  @@index([tenantId, outcome, sampledAt])
 }
 
 /// Epic Agentic 1A — a durable, audited, human-gated agentic workflow run. The

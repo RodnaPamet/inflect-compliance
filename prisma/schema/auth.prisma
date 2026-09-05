@@ -190,6 +190,7 @@ model Tenant {
   agentRiskAssessmentAnswers        AgentRiskAssessmentAnswer[]
   agentPolicyCards                  AgentPolicyCard[]
   agentPolicyCardVersions           AgentPolicyCardVersion[]
+  agentProposalSampleAudits         AgentProposalSampleAudit[]
   tenantFrameworkDeltas             TenantFrameworkDelta[]
   riskMatrixConfig                  RiskMatrixConfig?
   riskAppetiteConfig                RiskAppetiteConfig?

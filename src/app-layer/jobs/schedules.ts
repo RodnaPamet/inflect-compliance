@@ -308,6 +308,41 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'agent-proposal-expiry',
+        // 00:40 UTC daily. Off the hour and ahead of the 01:00 NVD sync, so it
+        // does not share a tick with anything; the work is two statements plus
+        // a bounded loop of audit appends, and the audit chain serialises on an
+        // advisory lock that other jobs also want.
+        //
+        // NO ORDERING RELATIONSHIP with `agent-proposal-sample-audit`, and that
+        // is worth stating because CLAUDE.md warns that declaration order here
+        // is not execution order. The two act on DISJOINT populations — this
+        // one on PENDING proposals, the sampler on already-approved ones — so
+        // neither reads what the other writes and they can run in either order.
+        pattern: '40 0 * * *',
+        description:
+            'OWASP ASI09 — close the review window on stale agent proposals. Moves PENDING proposals past their expiresAt to the terminal EXPIRED status and stamps a deadline onto rows written before the column existed. Deletes nothing: an expired proposal is the record of something an agent asked for and no human agreed to. Bookkeeping only — approveAgentProposal refuses a closed window by reading the clock, so a missed run cannot let a stale proposal be approved.',
+        defaultPayload: {},
+    },
+    {
+        name: 'agent-proposal-sample-audit',
+        // WEEKLY, Monday 09:30 UTC, and the cadence is the calibration rather
+        // than an arbitrary slot. A candidate is any approved proposal in the
+        // last 30 days that has NOT already been sampled, so a DAILY draw of
+        // ~10% of the remainder converges on re-reviewing nearly every
+        // approval within the month — which turns a sample into a second full
+        // review queue, i.e. reinvents the depth problem this whole subsystem
+        // exists to bound. Weekly keeps the retrospective review a sample.
+        //
+        // Monday morning because the output is a human queue, not a machine
+        // one: it wants to land at the start of a working week rather than in
+        // the small hours beside the other sweeps.
+        pattern: '30 9 * * 1',
+        description:
+            'OWASP ASI09 — draw a keyed random sample of already-APPROVED agent proposals and open a retrospective review on each, so the disagreement rate is measurable. Every other signal describes the SHAPE of the review behaviour; this one is the only measure of whether approvals were RIGHT. The draw is HMAC-keyed per tenant and rank-based over a population that includes later approvals, so it is reproducible from (seed, epoch, candidates) and unpredictable to a reviewer at approval time. Idempotent by the (tenantId, proposalId) unique index.',
+        defaultPayload: {},
+    },
+    {
         name: 'incident-notification-deadlines',
         pattern: '0 * * * *',     // hourly — a 24h Article 23 deadline needs sub-day granularity
         description:

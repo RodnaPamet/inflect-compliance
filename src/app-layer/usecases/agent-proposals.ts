@@ -22,7 +22,7 @@ import { SuggestionItemStatus } from '@prisma/client';
 
 import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
 
-import { runInTenantContext } from '@/lib/db/rls-middleware';
+import { runInTenantContext, type PrismaTx } from '@/lib/db/rls-middleware';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { badRequest, forbidden, notFound } from '@/lib/errors/types';
 import { appendAuditEntry } from '@/lib/audit';
@@ -34,6 +34,8 @@ import {
     type AgentProposalGuardResult,
 } from '@/app-layer/ai/guard/proposal-guard';
 import { logAiDecision } from '@/app-layer/ai/decision-log';
+import { narrowApprovalRung, type ApprovalRung } from '@/lib/agentic/policy-card';
+import { isProposalExpired, proposalExpiresAt } from '@/lib/agentic/proposal-expiry';
 import {
     CreateRiskSchema,
     CreateControlSchema,
@@ -146,6 +148,93 @@ async function refuseQuarantined(
 }
 
 /**
+ * The refusal every review path shares for a CLOSED WINDOW.
+ *
+ * A 403 + `AUTHZ_DENIED` rather than a 400, and that is a claim about what kind
+ * of thing an expired proposal is. `Proposal is already REJECTED` is a 400
+ * about sequencing — the caller asked for a transition that does not exist from
+ * here. This is about AUTHORITY: the interval in which a human's consent could
+ * bind has closed, so there is no authority left to exercise, and an attempt to
+ * exercise it anyway is exactly the automation-bias signal worth keeping. It
+ * writes a row for the same reason the quarantine refusal does.
+ *
+ * The 403 body names the CONDITION and nothing else — no permission key, no
+ * deadline, no fragment of the payload.
+ *
+ * REJECTION IS REFUSED TOO, not only approval. An expired proposal is the
+ * record of something nobody agreed to; letting a reviewer move it to REJECTED
+ * would overwrite "nobody decided" with "somebody decided no", which is a
+ * different and false fact, and it would do so in the one direction that makes
+ * the queue look better than it was. "Dispose of it" and "improve the record"
+ * must not be the same click.
+ */
+async function refuseExpired(
+    ctx: RequestContext,
+    proposal: { id: string; status: string; expiresAt: Date | null },
+    attemptedAction: 'approve' | 'reject',
+): Promise<never> {
+    await appendAuditEntry({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
+        entity: 'AgentProposal',
+        entityId: proposal.id,
+        action: 'AUTHZ_DENIED',
+        requestId: ctx.requestId,
+        detailsJson: {
+            category: 'access',
+            event: 'authz_denied',
+            reason: 'agent_proposal_expired',
+            attemptedAction,
+            // The deadline and the status the row was in — both structural
+            // facts about the queue, neither of them content.
+            storedStatus: proposal.status,
+            expiredAt: proposal.expiresAt ? proposal.expiresAt.toISOString() : null,
+        },
+        metadataJson: {
+            role: ctx.role,
+            apiKeyId: ctx.apiKeyId ?? null,
+            storedStatus: proposal.status,
+        },
+    }).catch(() => undefined);
+
+    throw forbidden('agent_proposal_expired');
+}
+
+/**
+ * The approval rung the PINNED policy-card version declared, or `null` when no
+ * card governed this proposal.
+ *
+ * Reads the version the caller pinned, NOT the version in force right now.
+ * `policy-card-pin.ts` states the distinction and it applies here for the same
+ * reason: the window's length is part of the terms the proposal was made under,
+ * so it must come from the same row every other pinned fact comes from. Reading
+ * the CURRENT card would make the deadline depend on a card edit that happened
+ * after the proposal was written.
+ *
+ * A version this build cannot find — a card deleted between authorization and
+ * this line, or a pin of `NO_POLICY_CARD` — resolves to `null`, which
+ * `proposalWindowDays` maps to the SHORTEST window. Fail-closed here means less
+ * time, never more.
+ */
+async function pinnedApprovalRung(
+    db: PrismaTx,
+    ctx: RequestContext,
+    policyCardVersion: number,
+): Promise<ApprovalRung | null> {
+    if (!ctx.agentId || policyCardVersion < 1) return null;
+    const row = await db.agentPolicyCardVersion.findFirst({
+        where: {
+            tenantId: ctx.tenantId,
+            version: policyCardVersion,
+            card: { agentId: ctx.agentId, tenantId: ctx.tenantId },
+        },
+        select: { approvalRung: true },
+    });
+    return row ? narrowApprovalRung(row.approvalRung) : null;
+}
+
+/**
  * Create a PENDING proposal from an agent. Validates the payload against the
  * kind's create-schema, sanitises all free text, and writes ONE AgentProposal
  * row. Does NOT create the real entity. Attributed to the API key.
@@ -210,6 +299,18 @@ export async function createAgentProposal(
     // 3. Persist the proposal (RLS-scoped). NOT the real entity — and, when the
     // guard quarantined it, not a queued one either.
     const proposal = await runInTenantContext(ctx, async (db) => {
+        // The REVIEW WINDOW, pinned now. Its LENGTH comes from the approval
+        // rung of the card version this call was authorized under — two humans
+        // to find is a longer window than one — and its START is this instant
+        // and nothing else. See `proposal-expiry.ts` for why the clock never
+        // restarts on partial progress: a window that can be extended by a
+        // first approver can be held open forever by one person, which turns
+        // the rung demanding the MOST scrutiny into the one with no deadline.
+        const expiresAt = proposalExpiresAt(
+            new Date(),
+            await pinnedApprovalRung(db, ctx, input.policyCardVersion),
+        );
+
         const row = await db.agentProposal.create({
             data: {
                 tenantId: ctx.tenantId,
@@ -217,6 +318,13 @@ export async function createAgentProposal(
                 status: guard.quarantined ? 'QUARANTINED' : 'PENDING',
                 payloadJson: JSON.stringify(sanitized),
                 rationale,
+                // Written on a QUARANTINED row too. That row is already
+                // terminal and can never be approved, so the deadline changes
+                // nothing about it — but a column that is populated only on the
+                // rows that reached the queue would make "no window recorded"
+                // mean two things again, which is the ambiguity the nullable
+                // column's own doc comment exists to remove.
+                expiresAt,
                 // The verdict is a fact about the ROW, not a re-derivable
                 // opinion: the rule table moves, and a refusal that has to be
                 // recomputed at review time is a refusal that can evaporate
@@ -319,7 +427,16 @@ export async function createAgentProposal(
  * remembers to hide is caught by `REVIEWABLE_STATUSES` being wrong in a way the
  * quarantine tests notice.
  */
-export const NON_REVIEWABLE_STATUSES: readonly SuggestionItemStatus[] = ['QUARANTINED'];
+export const NON_REVIEWABLE_STATUSES: readonly SuggestionItemStatus[] = [
+    'QUARANTINED',
+    // EXPIRED joins it for a different reason, and the difference is worth
+    // keeping straight. A quarantined row is hidden because a reviewer must
+    // never be handed an injected proposal; an expired row is hidden because
+    // its window has CLOSED, so listing it would add depth to the very queue
+    // whose depth is the thing being bounded. Same exclusion, opposite
+    // motivation — and both are terminal, so neither is an invisible backlog.
+    'EXPIRED',
+];
 
 const REVIEWABLE_STATUSES: SuggestionItemStatus[] = Object.values(SuggestionItemStatus).filter(
     (s) => !NON_REVIEWABLE_STATUSES.includes(s),
@@ -427,6 +544,22 @@ export async function approveAgentProposal(
     if (proposal.status === 'QUARANTINED' || proposal.guardVerdict === 'QUARANTINED') {
         await refuseQuarantined(ctx, proposal, 'approve');
     }
+    // ═══ THE WINDOW IS CHECKED AGAINST THE CLOCK, NOT AGAINST THE STATUS ═══
+    //
+    // The sweep that stamps EXPIRED runs nightly, so between the instant a
+    // window closes and the instant the sweep notices there is a gap of up to a
+    // day in which the row still reads PENDING. A check that only looked at the
+    // status would let every one of those be approved, which is to say the
+    // deadline would be enforced by a cron's punctuality rather than by the
+    // deadline. So the clock is read here, before the status, and the sweep is
+    // bookkeeping rather than enforcement.
+    //
+    // Ahead of the PENDING check for the same reason quarantine is: this is a
+    // 403 about authority that writes a row, not a 400 about sequencing, and it
+    // must not be reachable by any ordering of the checks below.
+    if (isProposalExpired(proposal.expiresAt, new Date())) {
+        await refuseExpired(ctx, proposal, 'approve');
+    }
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);
     }
@@ -468,9 +601,22 @@ export async function approveAgentProposal(
     // Claiming first makes the database the arbiter: exactly one caller can
     // move the row out of PENDING, and only that caller proceeds to create.
     // Same shape as `redeemInvite` — claim, then act.
+    // The window is in the CLAIM PREDICATE as well as in the read above, and
+    // for the same reason the status is: the read is advisory, the predicate is
+    // the arbiter. Between the `isProposalExpired` check and this statement the
+    // deadline can pass, or the sweep can stamp EXPIRED — and a claim that only
+    // named the status would take a row whose window had closed a millisecond
+    // earlier and go on to create the record. Expressed as an OR because NULL
+    // means NO DEADLINE RECORDED, which is not expired; `expiresAt: { gt: now }`
+    // alone would drop every pre-migration row and refuse it as a lost race.
     const claim = await runInTenantContext(ctx, (db) =>
         db.agentProposal.updateMany({
-            where: { id, tenantId: ctx.tenantId, status: 'PENDING' },
+            where: {
+                id,
+                tenantId: ctx.tenantId,
+                status: 'PENDING',
+                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            },
             data: { status, reviewedByUserId: ctx.userId, reviewedAt: new Date() },
         }),
     );
@@ -611,6 +757,14 @@ export async function rejectAgentProposal(ctx: RequestContext, id: string): Prom
     // clear a quarantined row leaves a trail rather than a gap.
     if (proposal.status === 'QUARANTINED' || proposal.guardVerdict === 'QUARANTINED') {
         await refuseQuarantined(ctx, proposal, 'reject');
+    }
+    // And an EXPIRED proposal cannot be rejected either — see `refuseExpired`.
+    // Not symmetry for its own sake: moving the row to REJECTED would overwrite
+    // "nobody decided" with "somebody decided no", improving the record of a
+    // queue that was too slow, which is the one direction the evidence must
+    // never move on its own.
+    if (isProposalExpired(proposal.expiresAt, new Date())) {
+        await refuseExpired(ctx, proposal, 'reject');
     }
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);
