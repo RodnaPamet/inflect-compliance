@@ -38,6 +38,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { fixtureObject } from '../prisma/fixture-io';
 import {
     seedInternalControls,
     seedAuthoredTemplateTasks,
@@ -51,10 +52,10 @@ const prisma = new PrismaClient({
 // esbuild inlines the fixture into the bundle at build time, so the runtime
 // image needs no fixture files present.
 const FIXTURE = require('../prisma/fixtures/internal-controls.json') as unknown;
-const POLICY_MAP = (
-    require('../prisma/fixtures/internal-controls-policy-framework-map.json') as {
-        policies: PolicyFrameworkMap;
-    }
+const POLICY_MAP = fixtureObject<{ policies: PolicyFrameworkMap }>(
+    'fixtures/internal-controls-policy-framework-map',
+    require('../prisma/fixtures/internal-controls-policy-framework-map.json'),
+    'policies',
 ).policies;
 
 /**

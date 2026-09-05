@@ -15,6 +15,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { fixtureObject } from '../prisma/fixture-io';
 
 const prisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }),
@@ -36,9 +37,30 @@ interface TemplateFixture {
 // esbuild inlines these JSON fixtures into the bundle at build time, so the
 // runtime image needs no fixture files present.
 const FIXTURES: Array<{ label: string; data: TemplateFixture }> = [
-    { label: 'ciso-toolkit', data: require('../prisma/fixtures/policy-templates-ciso-toolkit.json') as TemplateFixture },
-    { label: 'imported', data: require('../prisma/fixtures/policy-templates-imported.json') as TemplateFixture },
-    { label: 'original-gaps', data: require('../prisma/fixtures/policy-templates-original-gaps.json') as TemplateFixture },
+    {
+        label: 'ciso-toolkit',
+        data: fixtureObject<TemplateFixture>(
+            'fixtures/policy-templates-ciso-toolkit',
+            require('../prisma/fixtures/policy-templates-ciso-toolkit.json'),
+            'templates',
+        ),
+    },
+    {
+        label: 'imported',
+        data: fixtureObject<TemplateFixture>(
+            'fixtures/policy-templates-imported',
+            require('../prisma/fixtures/policy-templates-imported.json'),
+            'templates',
+        ),
+    },
+    {
+        label: 'original-gaps',
+        data: fixtureObject<TemplateFixture>(
+            'fixtures/policy-templates-original-gaps',
+            require('../prisma/fixtures/policy-templates-original-gaps.json'),
+            'templates',
+        ),
+    },
 ];
 
 async function main(): Promise<void> {

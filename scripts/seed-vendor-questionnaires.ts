@@ -23,6 +23,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { fixtureObject } from '../prisma/fixture-io';
 
 // Prisma 7 — adapter is required for PrismaClient construction.
 const prisma = new PrismaClient({
@@ -54,8 +55,16 @@ type Fixture = {
 
 // require() so esbuild inlines the fixture JSON into the bundled entrypoint.
 const FIXTURES: Fixture[] = [
-    require('../prisma/fixtures/vendor-questionnaire-supplier-due-diligence.json') as Fixture,
-    require('../prisma/fixtures/vendor-questionnaire-supplier-security-assessment.json') as Fixture,
+    fixtureObject<Fixture>(
+        'fixtures/vendor-questionnaire-supplier-due-diligence',
+        require('../prisma/fixtures/vendor-questionnaire-supplier-due-diligence.json'),
+        'sections',
+    ),
+    fixtureObject<Fixture>(
+        'fixtures/vendor-questionnaire-supplier-security-assessment',
+        require('../prisma/fixtures/vendor-questionnaire-supplier-security-assessment.json'),
+        'sections',
+    ),
 ];
 
 async function seedFixtureForTenant(tenantId: string, fixture: Fixture): Promise<boolean> {

@@ -60,12 +60,22 @@ const seederSource = [SEEDER, CATALOG_SEEDER]
  * Shrink this list. Do not grow it: a NEW fixture that gains authored tasks
  * must be wired, because nothing about it is hard.
  */
-const KNOWN_UNDELIVERED: Record<string, string> = {
-    'ssdf-control-templates.json': 'SDLC- (19 templates, 42 tasks). No SDLC- template exists in prod.',
-    'cis-v8-ig1-control-templates.json': 'CIS- (15 templates, 30 tasks). No CIS- template exists in prod.',
-    'asvs-l1-control-templates.json': 'ASVS- (13 templates, 26 tasks). No ASVS- template exists in prod.',
-    'iso27701-control-templates.json': 'PIMS- (10 templates, 20 tasks). No PIMS- template exists in prod.',
-};
+/**
+ * Fixtures whose authored tasks reach no production database.
+ *
+ * IT IS EMPTY, and that is the point of the ratchet rather than an accident.
+ * It held five entries and 205 undelivered tasks when this guard first ran —
+ * content nobody knew was going nowhere. Each was closed by giving its fixture
+ * a real delivery path, not by removing the entry: SOC 2, SSDF, CIS v8, ASVS
+ * and ISO 27701 were reshaped into CatalogFile form and wired into
+ * `scripts/seed-framework-catalogs.ts`.
+ *
+ * Kept as an empty record rather than deleted, because the assertions below are
+ * what stop a sixth appearing. A new fixture that gains authored tasks fails
+ * the wiring check until somebody delivers it — and adding an entry here to
+ * silence that is the one move this file exists to prevent.
+ */
+const KNOWN_UNDELIVERED: Record<string, string> = {};
 
 /** Every fixture that carries at least one authored task. */
 function fixturesWithAuthoredTasks(): Array<{ file: string; tasks: number }> {
@@ -153,11 +163,11 @@ describe('authored tasks have a delivery path', () => {
     });
 
     it('records how much authored content is undelivered, so it stays visible', () => {
-        // 205 tasks across five fixtures. This number only goes down.
+        // Zero. It was 205 across five fixtures when this guard first ran.
         const undelivered = authored
             .filter(({ file }) => KNOWN_UNDELIVERED[file])
             .reduce((n, a) => n + a.tasks, 0);
-        expect(Object.keys(KNOWN_UNDELIVERED)).toHaveLength(4);
-        expect(undelivered).toBe(118);
+        expect(Object.keys(KNOWN_UNDELIVERED)).toHaveLength(0);
+        expect(undelivered).toBe(0);
     });
 });

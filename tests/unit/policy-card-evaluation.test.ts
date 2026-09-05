@@ -26,7 +26,18 @@
 
 jest.mock('@/lib/prisma', () => {
     const tenantApiKey = { findFirst: jest.fn() };
-    return { __esModule: true, default: { tenantApiKey }, prisma: { tenantApiKey } };
+    // The tool-manifest pin the gate reads before the exposure allowlist.
+    // `null` — nothing pinned — is trust-on-first-use, so the manifest step
+    // contributes no term and these assertions stay about the policy card.
+    const mcpToolManifestPin = {
+        findUnique: jest.fn().mockResolvedValue(null),
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+    };
+    return {
+        __esModule: true,
+        default: { tenantApiKey, mcpToolManifestPin },
+        prisma: { tenantApiKey, mcpToolManifestPin },
+    };
 });
 
 jest.mock('@/lib/audit', () => ({
@@ -119,6 +130,10 @@ function invocationFor(
         },
         agentId: 'agent-1',
         grantedTools: new Set(['list_risks', 'get_framework_status']),
+        // The catalogue snapshot `buildMcpInvocation` takes. Everything this
+        // suite calls is on it, so the loader never refuses and every assertion
+        // below stays about the CARD.
+        offeredTools: [...MCP_TOOL_NAMES],
         audience: null,
         // Above every rung any tool here requires, so the SEPARATE autonomy
         // ceiling of 2/10 is never what refuses.

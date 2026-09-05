@@ -23,6 +23,7 @@ const { GENERIC_TEMPLATE_TASKS } = require('./generic-template-tasks');
 // what the UI shows. The module is dependency-free, so a relative
 // require resolves cleanly under tsx.
 const { iso27001Domain } = require('../src/lib/controls/control-taxonomy');
+import { fixtureArray } from './fixture-io';
 
 const prisma = new PrismaClient();
 
@@ -31,9 +32,12 @@ async function main() {
     console.log('🌱 Seeding global catalog (frameworks, requirements, control templates, packs)…');
 
     // ── ISO 27001:2022 ───────────────────────────────────────────
-    const annexAData = require('./fixtures/iso27001_2022_annexA.json') as Array<{
+    const annexAData = fixtureArray<{
         key: string; theme: string; themeNumber: number; sortOrder: number; title: string; summary?: string;
-    }>;
+    }>(
+        'fixtures/iso27001_2022_annexA',
+        require('./fixtures/iso27001_2022_annexA.json'),
+    );
     const iso27001 = await prisma.framework.upsert({
         where: { key: 'ISO27001' },
         update: { name: 'ISO/IEC 27001', version: '2022', description: 'ISO/IEC 27001:2022 Information Security Management' },
@@ -81,7 +85,10 @@ async function main() {
     console.log(`✅ SOC 2 + ${soc2Reqs.length} requirements`);
 
     // ── NIS2 ─────────────────────────────────────────────────────
-    const nis2Data = require('./fixtures/nis2_requirements.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
+    const nis2Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
+        'fixtures/nis2_requirements',
+        require('./fixtures/nis2_requirements.json'),
+    );
     const nis2 = await prisma.framework.upsert({
         where: { key_version: { key: 'NIS2', version: '2022/2555' } },
         update: { name: 'NIS2 Directive', kind: 'EU_DIRECTIVE', description: 'Directive (EU) 2022/2555 on cybersecurity' },
@@ -99,7 +106,10 @@ async function main() {
     console.log(`✅ NIS2 + ${nis2Data.length} requirements`);
 
     // ── ISO 9001:2015 ────────────────────────────────────────────
-    const iso9001Data = require('./fixtures/iso9001_clauses.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
+    const iso9001Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
+        'fixtures/iso9001_clauses',
+        require('./fixtures/iso9001_clauses.json'),
+    );
     const iso9001 = await prisma.framework.upsert({
         where: { key_version: { key: 'ISO9001', version: '2015' } },
         update: { name: 'ISO 9001', description: 'ISO 9001:2015 Quality Management Systems' },
@@ -117,7 +127,10 @@ async function main() {
     console.log(`✅ ISO 9001 + ${iso9001Data.length} requirements`);
 
     // ── ISO 28000:2022 ───────────────────────────────────────────
-    const iso28000Data = require('./fixtures/iso28000_clauses.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
+    const iso28000Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
+        'fixtures/iso28000_clauses',
+        require('./fixtures/iso28000_clauses.json'),
+    );
     const iso28000 = await prisma.framework.upsert({
         where: { key_version: { key: 'ISO28000', version: '2022' } },
         update: { name: 'ISO 28000', description: 'ISO 28000:2022 Supply Chain Security Management' },
@@ -135,7 +148,10 @@ async function main() {
     console.log(`✅ ISO 28000 + ${iso28000Data.length} requirements`);
 
     // ── ISO 39001:2012 ───────────────────────────────────────────
-    const iso39001Data = require('./fixtures/iso39001_clauses.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
+    const iso39001Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
+        'fixtures/iso39001_clauses',
+        require('./fixtures/iso39001_clauses.json'),
+    );
     const iso39001 = await prisma.framework.upsert({
         where: { key_version: { key: 'ISO39001', version: '2012' } },
         update: { name: 'ISO 39001', description: 'ISO 39001:2012 Road Traffic Safety Management' },

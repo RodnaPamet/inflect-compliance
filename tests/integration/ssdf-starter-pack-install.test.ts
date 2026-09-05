@@ -42,20 +42,31 @@ interface StarterControl {
     title: string;
     description: string;
     defaultFrequency: string;
-    requirements: string[];
-    tasks: Array<{ title: string; description: string }>;
+    requirementCodes: string[];
+    tasks: Array<{ title: { en: string }; description: { en: string } }>;
 }
-const FIXTURE = JSON.parse(
-    fs.readFileSync(
-        path.resolve(__dirname, '../../prisma/fixtures/ssdf-control-templates.json'),
-        'utf8',
-    ),
-) as StarterControl[];
+
+/**
+ * The fixture became a CatalogFile — `{ framework, requirements, templates,
+ * pack }` — so `applyCatalogFile` can create the framework, its requirements,
+ * the templates, their links and the pack together. This suite still builds
+ * its OWN pack from the templates on purpose: it tests what pack INSTALL does
+ * for a tenant, a different question from whether the catalog seeder delivers
+ * (tests/integration/framework-catalog-delivery.test.ts covers that).
+ */
+const FIXTURE = (
+    JSON.parse(
+        fs.readFileSync(
+            path.resolve(__dirname, '../../prisma/fixtures/ssdf-control-templates.json'),
+            'utf8',
+        ),
+    ) as { templates: StarterControl[] }
+).templates;
 
 // Every SSDF task requirement the fixture references (dedup across controls).
-const REQ_REFS = [...new Set(FIXTURE.flatMap((c) => c.requirements))];
+const REQ_REFS = [...new Set(FIXTURE.flatMap((c) => c.requirementCodes))];
 const TOTAL_TASKS = FIXTURE.reduce((a, c) => a + c.tasks.length, 0);
-const TOTAL_LINKS = FIXTURE.reduce((a, c) => a + c.requirements.length, 0);
+const TOTAL_LINKS = FIXTURE.reduce((a, c) => a + c.requirementCodes.length, 0);
 // Suite-unique control code so global-unique columns never collide.
 const codeFor = (c: string) => `${c}-${SUITE}`;
 
@@ -111,10 +122,10 @@ describeFn('SSDF Starter Pack install (real DB, generic flow)', () => {
             });
             for (const t of c.tasks) {
                 await prisma.controlTemplateTask.create({
-                    data: { templateId: tmpl.id, title: t.title, description: t.description },
+                    data: { templateId: tmpl.id, title: t.title.en, description: t.description.en },
                 });
             }
-            for (const ref of c.requirements) {
+            for (const ref of c.requirementCodes) {
                 await prisma.controlTemplateRequirementLink.create({
                     data: { templateId: tmpl.id, requirementId: reqIdByRef[ref] },
                 });

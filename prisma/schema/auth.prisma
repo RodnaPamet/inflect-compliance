@@ -192,6 +192,7 @@ model Tenant {
   agentPolicyCardVersions           AgentPolicyCardVersion[]
   agentProposalApprovals            AgentProposalApproval[]
   agentProposalSampleAudits         AgentProposalSampleAudit[]
+  mcpToolManifestPins               McpToolManifestPin[]
   tenantFrameworkDeltas             TenantFrameworkDelta[]
   riskMatrixConfig                  RiskMatrixConfig?
   riskAppetiteConfig                RiskAppetiteConfig?

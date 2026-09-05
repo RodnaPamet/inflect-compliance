@@ -39,6 +39,7 @@ import {
     type McpHandlers,
 } from '@/lib/mcp/protocol';
 import { listReadToolDescriptors, runReadTool, McpToolNotFoundError } from '@/lib/mcp/tools/registry';
+import { approvedToolDescriptors } from '@/lib/agentic/tool-manifest-store';
 import {
     listProposeToolDescriptors,
     runProposeTool,
@@ -78,10 +79,18 @@ export const POST = withApiErrorHandling(async (req: NextRequest) => {
     }
 
     const handlers: McpHandlers = {
-        listTools: () => [
-            ...listReadToolDescriptors(invocation),
-            ...listProposeToolDescriptors(invocation),
-        ],
+        // The catalogue is filtered TWICE and the second filter is the newer
+        // one: first to what this agent is granted and its principal may see,
+        // then to the tools whose DEFINITION this tenant has approved. The
+        // second is where tool poisoning is stopped, because `tools/list` is
+        // where a description is delivered into the model's context — it does
+        // its work there whether or not that tool is ever called. See
+        // `approvedToolDescriptors`.
+        listTools: () =>
+            approvedToolDescriptors(invocation.ctx.tenantId, [
+                ...listReadToolDescriptors(invocation),
+                ...listProposeToolDescriptors(invocation),
+            ]),
         // Read tools and propose (write-proposal) tools share the endpoint. Read
         // tools require the resource scope; propose tools additionally require
         // the mcp:propose capability. A propose tool NEVER creates a record — it

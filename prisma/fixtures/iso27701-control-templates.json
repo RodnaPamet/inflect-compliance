@@ -1,122 +1,1580 @@
-[
-  {
-    "code": "PIMS-01",
-    "title": "Lawful Basis and Purpose Register",
-    "description": "Maintain a register that records, for each processing activity, its purpose and the lawful basis relied on, and keep it current.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Privacy Officer / DPO",
-    "requirements": ["7.2.1", "7.2.2"],
-    "tasks": [
-      { "title": "Document processing purposes", "description": "List each category of PII processed and the specific purpose it is processed for." },
-      { "title": "Record the lawful basis per purpose", "description": "Assign and document a lawful basis for each purpose and review when purposes change." }
-    ]
+{
+  "_meta": {
+    "purpose": "ISO/IEC 27701:2019 control catalogue in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
+    "why": "The templates carried authored task sets that reached no database: the fixture was a bare array that only prisma/seed.ts read, and prod does not run it. Reshaped so scripts/seed-framework-catalogs.ts can deliver them.",
+    "grounding": "Requirement titles and summaries come from src/data/libraries/iso27701-2019.yaml so the two cannot drift. Task content is grounded in each template's own description.",
+    "deliveredBy": "scripts/seed-framework-catalogs.ts"
   },
-  {
-    "code": "PIMS-02",
-    "title": "Consent Management",
-    "description": "Operate a process to determine when consent is required, obtain it, evidence it, and allow individuals to modify or withdraw it.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Privacy Officer / DPO",
-    "requirements": ["7.2.3", "7.2.4", "7.3.4"],
-    "tasks": [
-      { "title": "Define consent capture points", "description": "Identify where consent is required and design granular, purpose-specific capture." },
-      { "title": "Retain consent records", "description": "Store evidence of consent and provide a mechanism to withdraw or change it." }
-    ]
+  "framework": {
+    "key": "ISO27701",
+    "name": "ISO/IEC 27701:2019",
+    "version": "2019",
+    "kind": "ISO_STANDARD",
+    "description": "ISO/IEC 27701:2019 — privacy information management extension to ISO 27001/27002."
   },
-  {
-    "code": "PIMS-03",
-    "title": "Privacy Impact Assessment",
-    "description": "Assess the privacy impact of new or changed high-risk processing before it begins and record the outcome.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Privacy Officer / DPO",
-    "requirements": ["7.2.5"],
-    "tasks": [
-      { "title": "Trigger a PIA for high-risk processing", "description": "Screen new processing and run a privacy impact assessment where the risk is high." },
-      { "title": "Track PIA remediation", "description": "Record identified risks and follow mitigations through to closure." }
-    ]
-  },
-  {
-    "code": "PIMS-04",
-    "title": "Records of Processing Activities",
-    "description": "Maintain records of processing carried out as a controller and as a processor on behalf of customers.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Privacy Officer / DPO",
-    "requirements": ["7.2.8", "8.2.6"],
-    "tasks": [
-      { "title": "Compile the RoPA", "description": "Record processing activities, categories of data and recipients." },
-      { "title": "Review the RoPA periodically", "description": "Reconcile the records against actual processing at least annually." }
-    ]
-  },
-  {
-    "code": "PIMS-05",
-    "title": "Data Subject Rights Handling",
-    "description": "Receive, verify and fulfil individuals' access, correction, erasure, objection and copy requests within required timescales.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Privacy Officer / DPO",
-    "requirements": ["7.3.5", "7.3.6", "7.3.8", "7.3.9"],
-    "tasks": [
-      { "title": "Operate a request intake channel", "description": "Provide and monitor a channel for data-subject requests and verify identity." },
-      { "title": "Fulfil requests within SLA", "description": "Action access, correction, erasure and objection requests and log the outcome." }
-    ]
-  },
-  {
-    "code": "PIMS-06",
-    "title": "Privacy Notice and Transparency",
-    "description": "Determine the privacy information individuals should receive and provide it clearly at the appropriate time.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Privacy Officer / DPO",
-    "requirements": ["7.3.2", "7.3.3"],
-    "tasks": [
-      { "title": "Maintain the privacy notice", "description": "Keep the privacy notice accurate and aligned to actual processing." },
-      { "title": "Surface notices at collection", "description": "Present the relevant privacy information where PII is collected." }
-    ]
-  },
-  {
-    "code": "PIMS-07",
-    "title": "Data Minimization and Retention",
-    "description": "Collect and process only necessary PII, set minimization objectives, and delete or de-identify PII at the end of its retention.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Data Owner",
-    "requirements": ["7.4.1", "7.4.4", "7.4.5", "7.4.7"],
-    "tasks": [
-      { "title": "Set a retention schedule", "description": "Define retention periods per data category and enforce them." },
-      { "title": "Delete or de-identify at end of purpose", "description": "Remove or de-identify PII when the processing purpose ends." }
-    ]
-  },
-  {
-    "code": "PIMS-08",
-    "title": "Processor and Sub-processor Management",
-    "description": "Bind processors and sub-processors by contract, disclose sub-processors, and manage changes with the customer.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Vendor Manager",
-    "requirements": ["7.2.6", "8.5.6", "8.5.7", "8.5.8"],
-    "tasks": [
-      { "title": "Put processing agreements in place", "description": "Ensure written agreements bind processors to privacy obligations." },
-      { "title": "Maintain the sub-processor list", "description": "Disclose sub-processors and notify customers of changes." }
-    ]
-  },
-  {
-    "code": "PIMS-09",
-    "title": "Cross-Border Transfer Governance",
-    "description": "Establish and document a lawful basis for cross-border transfers of PII and the jurisdictions to which it may flow.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Privacy Officer / DPO",
-    "requirements": ["7.5.1", "7.5.2", "8.5.1"],
-    "tasks": [
-      { "title": "Map cross-border data flows", "description": "Identify where PII is transferred and the jurisdictions involved." },
-      { "title": "Document the transfer basis", "description": "Record the safeguard or basis relied on for each transfer." }
-    ]
-  },
-  {
-    "code": "PIMS-10",
-    "title": "Privacy Breach Handling",
-    "description": "Extend incident management to detect, assess and notify personal-data breaches to authorities and affected individuals.",
-    "defaultFrequency": "ANNUALLY",
-    "defaultOwnerHint": "Security / Privacy Incident Lead",
-    "requirements": ["6"],
-    "tasks": [
-      { "title": "Define a personal-data breach playbook", "description": "Extend the incident process with breach assessment and notification steps." },
-      { "title": "Run a breach notification drill", "description": "Exercise the authority (72h) and data-subject notification paths." }
+  "requirements": [
+    {
+      "code": "6",
+      "title": "PIMS-specific guidance (extends the controls)",
+      "summary": "Apply the ISO 27002 control themes with privacy-specific implementation guidance across policies, HR, access, crypto, operations, supplier and incident management. (Paraphrase) depth: 1 assessable: false category: PIMS Controls artifacts: \"Privacy-extended control set, Supplier privacy clauses\"",
+      "category": "PIMS Controls",
+      "sortOrder": 1
+    },
+    {
+      "code": "7.2.1",
+      "title": "Identify and document purpose",
+      "category": "PII Controller",
+      "sortOrder": 2
+    },
+    {
+      "code": "7.2.2",
+      "title": "Identify lawful basis",
+      "category": "PII Controller",
+      "sortOrder": 3
+    },
+    {
+      "code": "7.2.3",
+      "title": "Determine when and how to obtain consent",
+      "category": "PII Controller",
+      "sortOrder": 4
+    },
+    {
+      "code": "7.2.4",
+      "title": "Obtain and record consent",
+      "category": "PII Controller",
+      "sortOrder": 5
+    },
+    {
+      "code": "7.2.5",
+      "title": "Privacy impact assessment",
+      "category": "PII Controller",
+      "sortOrder": 6
+    },
+    {
+      "code": "7.2.6",
+      "title": "Contracts with PII processors",
+      "category": "PII Controller",
+      "sortOrder": 7
+    },
+    {
+      "code": "7.2.8",
+      "title": "Records related to processing PII",
+      "category": "PII Controller",
+      "sortOrder": 8
+    },
+    {
+      "code": "7.3.2",
+      "title": "Determining information for PII principals",
+      "category": "PII Controller",
+      "sortOrder": 9
+    },
+    {
+      "code": "7.3.3",
+      "title": "Providing information to PII principals",
+      "category": "PII Controller",
+      "sortOrder": 10
+    },
+    {
+      "code": "7.3.4",
+      "title": "Mechanism to modify or withdraw consent",
+      "category": "PII Controller",
+      "sortOrder": 11
+    },
+    {
+      "code": "7.3.5",
+      "title": "Mechanism to object to processing",
+      "category": "PII Controller",
+      "sortOrder": 12
+    },
+    {
+      "code": "7.3.6",
+      "title": "Access, correction and erasure",
+      "category": "PII Controller",
+      "sortOrder": 13
+    },
+    {
+      "code": "7.3.8",
+      "title": "Provide a copy of PII processed",
+      "category": "PII Controller",
+      "sortOrder": 14
+    },
+    {
+      "code": "7.3.9",
+      "title": "Handle requests",
+      "category": "PII Controller",
+      "sortOrder": 15
+    },
+    {
+      "code": "7.4.1",
+      "title": "Limit collection",
+      "category": "PII Controller",
+      "sortOrder": 16
+    },
+    {
+      "code": "7.4.4",
+      "title": "PII minimization objectives",
+      "category": "PII Controller",
+      "sortOrder": 17
+    },
+    {
+      "code": "7.4.5",
+      "title": "De-identification and deletion at end of processing",
+      "category": "PII Controller",
+      "sortOrder": 18
+    },
+    {
+      "code": "7.4.7",
+      "title": "Retention",
+      "category": "PII Controller",
+      "sortOrder": 19
+    },
+    {
+      "code": "7.5.1",
+      "title": "Identify basis for cross-border transfer",
+      "category": "PII Controller",
+      "sortOrder": 20
+    },
+    {
+      "code": "7.5.2",
+      "title": "Countries and organizations PII may be transferred to",
+      "category": "PII Controller",
+      "sortOrder": 21
+    },
+    {
+      "code": "8.2.6",
+      "title": "Records related to processing PII",
+      "category": "PII Processor",
+      "sortOrder": 22
+    },
+    {
+      "code": "8.5.1",
+      "title": "Basis for transfer between jurisdictions",
+      "category": "PII Processor",
+      "sortOrder": 23
+    },
+    {
+      "code": "8.5.6",
+      "title": "Disclosure of subcontractors",
+      "category": "PII Processor",
+      "sortOrder": 24
+    },
+    {
+      "code": "8.5.7",
+      "title": "Engagement of a subcontractor",
+      "category": "PII Processor",
+      "sortOrder": 25
+    },
+    {
+      "code": "8.5.8",
+      "title": "Change of subcontractor",
+      "category": "PII Processor",
+      "sortOrder": 26
+    }
+  ],
+  "templates": [
+    {
+      "code": "PIMS-01",
+      "title": "Lawful Basis and Purpose Register",
+      "description": "Maintain a register that records, for each processing activity, its purpose and the lawful basis relied on, and keep it current.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "7.2.1",
+        "7.2.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Inventory each category of PII processed and the purpose it is processed for"
+          },
+          "description": {
+            "en": "Walk the systems and business teams that hold personal data and write down, one row per pairing, the category of PII (contact details, payroll data, support-ticket content, and so on) and the specific purpose it is processed for. A category serving three purposes gets three rows: the register is keyed on the pairing, not on the data. Where a team names a purpose so broadly that it would cover any future use, push until it names what the data is actually used for today. Attach the inventory, dated at the point it was compiled."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Dated purpose inventory listing each PII category against each specific purpose it is processed for"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Ask each system owner what personal data their system holds."
+              }
+            },
+            {
+              "text": {
+                "en": "Record one row for every PII category and purpose pairing."
+              }
+            },
+            {
+              "text": {
+                "en": "Rewrite any purpose stated too broadly to be checkable."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the inventory and hold it as the register's first content."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record the lawful basis relied on for each purpose in the register"
+          },
+          "description": {
+            "en": "For every purpose row in the inventory, record which lawful basis the organisation relies on and the short reasoning that led there — the basis alone is an assertion, the reasoning is what lets somebody else check it. Where two bases are arguable, record the one actually relied on rather than listing both, because the individual's rights differ by basis and downstream tasks read this field. Attach the register showing purpose, basis and reasoning for every row."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Lawful-basis record: one row per purpose giving the basis relied on and the reasoning recorded for it"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Record the purpose and lawful basis of every processing activity added or changed in the period"
+          },
+          "description": {
+            "en": "When a processing activity is added or its purpose changes, add or amend the register row and record who reported the change and on what date, keeping the previous value visible so a reader can see what changed and when. A purpose that ended is marked as ended with its date rather than deleted, because the basis it ran under still explains the data still held. Attach the dated register export for the period together with its change log."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Dated purpose and lawful-basis register export for the period, with the change log showing each addition, amendment and ended purpose, who reported it and when"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Confirm each recorded lawful basis still holds and list the entries that changed"
+          },
+          "description": {
+            "en": "Take the register row by row and ask whether the basis recorded is still the one being relied on: consent that is no longer collected, a contract that has ended, or a purpose that has quietly widened all invalidate the recorded answer while leaving the row looking healthy. Record the outcome against each row — unchanged, amended, or ended — and carry the amendments into the register in the same pass. Attach the review record naming who performed it and on what date."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Register review record showing the outcome against every row and the amendments made, with reviewer and date"
+          },
+          "suggestedRole": "Legal/DPO"
+        }
+      ]
+    },
+    {
+      "code": "PIMS-02",
+      "title": "Consent Management",
+      "description": "Operate a process to determine when consent is required, obtain it, evidence it, and allow individuals to modify or withdraw it.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "7.2.3",
+        "7.2.4",
+        "7.3.4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List the collection points where consent is the basis relied on"
+          },
+          "description": {
+            "en": "Take the purposes whose recorded lawful basis is consent and find every place the organisation actually asks for it — sign-up forms, cookie banners, marketing preference centres, in-product opt-ins, paper forms taken at events. Record for each point what is being asked, which purposes it covers, and whether a consent record is currently produced at all. A collection point that relies on consent but stores nothing is the finding this task exists to surface. Attach the list."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Consent collection-point list giving the purposes covered at each point and whether a record is produced"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Select the purposes whose recorded basis is consent."
+              }
+            },
+            {
+              "text": {
+                "en": "Trace each purpose to the surfaces where consent is asked for."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what wording is shown at each collection point."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the points that ask for consent but store no record."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Build the consent capture so each purpose is agreed separately"
+          },
+          "description": {
+            "en": "Rework each collection point so the individual can agree to one purpose without agreeing to another, rather than accepting a single bundled tick. The wording shown must name the purpose in the terms the register uses, and the affirmative act must be the individual's — nothing pre-selected. Attach the before and after of each surface, showing the purposes now offered separately."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Before-and-after capture of each consent surface showing per-purpose choices and the wording presented"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Split bundled consent into one choice per purpose."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the wording of each choice from the purpose register."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove any pre-selected or implied agreement from the surface."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture the reworked surface as it appears to the individual."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Build the route by which an individual withdraws or changes consent"
+          },
+          "description": {
+            "en": "Give the individual a route to change or withdraw what they agreed to, reachable from the surfaces where consent is asked for, and connect that route to the systems that must act on it — a withdrawal that updates a preference table but never reaches the sending system has changed nothing. Record which systems receive the change and how long propagation takes. Attach the withdrawal route together with the list of systems it reaches."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Withdrawal route documentation naming the systems the change propagates to and the observed propagation time"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Add a withdrawal and change route at each consent surface."
+              }
+            },
+            {
+              "text": {
+                "en": "List the systems that must act when consent is withdrawn."
+              }
+            },
+            {
+              "text": {
+                "en": "Connect the route to each of those systems."
+              }
+            },
+            {
+              "text": {
+                "en": "Time a test withdrawal through to the last system reached."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Log every consent given, changed and withdrawn with the action taken downstream"
+          },
+          "description": {
+            "en": "Keep one record per consent event carrying who consented, which purposes, the wording version they saw, the timestamp, and — for a change or withdrawal — what processing stopped as a result. The wording version matters: consent is evidence only against the text the individual actually read, so a record that omits it cannot be relied on later. Attach the consent record export for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Consent record export for the period: one row per event with subject, purposes, wording version, timestamp and downstream action"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Sample consent records and check the processing matches what was agreed"
+          },
+          "description": {
+            "en": "Draw a sample of individuals across the collection points, read what each of them actually agreed to, and check the processing that ran against them — the marketing they received, the profiling applied, the data shared — against that agreement. Include withdrawals in the sample deliberately, because a withdrawal that did not take effect is invisible from the consent table alone. Record each mismatch with its cause and the correction made. Attach the sample test with its results."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Consent sample test showing the records examined, the processing compared and every mismatch with its correction"
+          },
+          "suggestedRole": "Legal/DPO"
+        }
+      ]
+    },
+    {
+      "code": "PIMS-03",
+      "title": "Privacy Impact Assessment",
+      "description": "Assess the privacy impact of new or changed high-risk processing before it begins and record the outcome.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "7.2.5"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Identify the routes through which new or changed processing enters the organisation"
+          },
+          "description": {
+            "en": "An assessment that has to happen before processing begins can only be triggered where processing is first proposed, so list those places: the product intake or discovery process, the procurement request, the marketing campaign brief, the data-science project request, the integration or partnership approval. Record for each route who initiates it and where in it a screen could sit without being skipped. Attach the route list with those two facts against each entry."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "List of intake routes for new or changed processing, naming the initiator and the point at which screening can be attached"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the processes through which new processing is proposed."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who initiates each route and who approves it."
+              }
+            },
+            {
+              "text": {
+                "en": "Choose the point in each route where the screen fires."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm with each route owner that the point is unavoidable."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Write the screening questions that separate high-risk processing from the rest"
+          },
+          "description": {
+            "en": "Turn the judgement into a short question set an initiator can answer without a privacy specialist present, covering the things that make processing consequential here — the categories of data involved, the scale, whether individuals expect it, whether decisions are made about them, and whether new recipients or jurisdictions are introduced. State plainly which answers require a full assessment, so the screen produces a decision rather than a discussion. Attach the question set with the answer-to-decision mapping."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Screening question set with the mapping from answers to the 'assessment required' decision"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Draft the questions an initiator can answer unaided."
+              }
+            },
+            {
+              "text": {
+                "en": "State which answers make an assessment mandatory."
+              }
+            },
+            {
+              "text": {
+                "en": "Test the questions against processing already known to be high risk."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the question set to each intake route identified."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Complete a privacy impact assessment for each high-risk processing before it goes live"
+          },
+          "description": {
+            "en": "Where the screen says an assessment is required, work through it with the people who designed the processing and record what it does, the PII involved, who is affected, the risks to those individuals, and the mitigations chosen or rejected with the reason. Date the assessment and record the go-live date beside it — the control's whole point is the order of those two dates, and an assessment written after launch evidences the opposite of what it claims. Attach the completed assessments for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Completed privacy impact assessments for the period, each dated and showing the go-live date it preceded"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Convene the people who designed the processing."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe the processing, the PII and the individuals affected."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each risk identified and the mitigation chosen or rejected."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the assessment and record the go-live date beside it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record each risk a PIA identifies with an owner and track it to closure"
+          },
+          "description": {
+            "en": "Lift every mitigation an assessment commits to into a tracked item with a named owner and a due date, held wherever the organisation already tracks work rather than inside the assessment document where nobody will look again. Record the evidence that closed each item, and where a mitigation was dropped record who decided that and on what grounds. Attach the tracker showing every open and closed item against its assessment."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Assessment action tracker: one item per committed mitigation with owner, due date, status and closing evidence"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Check every processing initiated in the period against the screening records"
+          },
+          "description": {
+            "en": "Take what actually launched or changed in the period from the intake routes' own records — releases, purchase orders, campaigns — and match each item to a screening record. The gap you are looking for is processing that reached production without ever meeting the screen, which the assessment file itself can never reveal. Record each unscreened item, screen it retrospectively and note what the assessment would have changed. Attach the coverage comparison."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Screening coverage comparison listing everything initiated in the period against its screening record, with unscreened items named"
+          },
+          "suggestedRole": "Legal/DPO"
+        }
+      ]
+    },
+    {
+      "code": "PIMS-04",
+      "title": "Records of Processing Activities",
+      "description": "Maintain records of processing carried out as a controller and as a processor on behalf of customers.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "7.2.8",
+        "8.2.6"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Separate the processing the organisation controls from the processing it performs for customers"
+          },
+          "description": {
+            "en": "Go through the processing activities and decide, for each, whether the organisation determines the purpose and means itself or acts on a customer's instructions, and record the reasoning behind the answer. The two roles carry different record content, so an activity sitting in the wrong column produces a record that looks complete and answers the wrong question. Mark the activities that are genuinely both. Attach the role determination with its reasoning per activity."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Role determination listing each processing activity as controller, processor or both, with the reasoning recorded"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the processing activities from the purpose register."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide for each whether the organisation sets the purpose and means."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reasoning that produced each decision."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the activities that carry both roles at once."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record each controller activity with its data categories and recipients"
+          },
+          "description": {
+            "en": "For the activities the organisation controls, write the record: what the activity does, the categories of PII and of individuals involved, who receives the data inside and outside the organisation, and where it is stored. Name recipients as organisations rather than as classes — 'our email provider' does not let anybody check anything. Attach the controller section of the records of processing."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Records of processing, controller section: activity, PII and individual categories, named recipients and storage locations"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "List each customer-instructed processing activity against the customer that instructed it"
+          },
+          "description": {
+            "en": "For the activities performed on customers' behalf, record which customer instructed each one, what the instruction covers, the categories of PII it touches and the parties the data reaches while under the organisation's control. Where one platform activity serves every customer alike, record it once and name the customers it covers rather than duplicating a row per contract. Attach the processor section of the records of processing."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Records of processing, processor section: activity, instructing customer, PII categories and parties the data reaches"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Log each change of recipient, data category or customer instruction in the records"
+          },
+          "description": {
+            "en": "The three things that move under a record without anyone announcing it are the recipients (a new sub-processor, a new analytics destination), the data categories (a new field captured, an old one retired) and the customer instruction itself. Record each change with the date and the person who reported it, and keep the superseded value readable. Attach the dated records export for the period with its change log."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Dated records-of-processing export for the period with a change log covering recipients, data categories and instructions"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Reconcile the records of processing against the systems that actually hold PII"
+          },
+          "description": {
+            "en": "At the interval the entity has set for this check, compare the records against an independent view of reality — the systems inventory, the data stores actually running, the vendors actually being paid — and look in both directions: an activity in the records that no system performs, and a system holding PII that no record describes. Record every discrepancy with an owner and how it was resolved. Attach the reconciliation with its discrepancy list."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Reconciliation of the records of processing against the live systems and vendors, listing discrepancies and their resolution"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Take an independent list of systems and vendors holding PII."
+              }
+            },
+            {
+              "text": {
+                "en": "Match each record entry to a system that performs it."
+              }
+            },
+            {
+              "text": {
+                "en": "Match each PII-holding system back to a record entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every unmatched item in either direction with an owner."
+              }
+            },
+            {
+              "text": {
+                "en": "Carry the corrections into the records in the same pass."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-05",
+      "title": "Data Subject Rights Handling",
+      "description": "Receive, verify and fulfil individuals' access, correction, erasure, objection and copy requests within required timescales.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "7.3.5",
+        "7.3.6",
+        "7.3.8",
+        "7.3.9"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Map each request type to the systems holding the PII and the team that answers it"
+          },
+          "description": {
+            "en": "Take the five request types the control names — access, correction, erasure, objection and a copy of the PII — and for each one record which systems would have to be touched, who does the touching, and what a complete answer looks like. Erasure and copy usually reach further than anyone expects, into backups, logs, analytics stores and the support inbox. Attach the map with the systems and the responsible team named per request type."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Request-type map naming, for access, correction, erasure, objection and copy, the systems involved and the team responsible"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the systems that hold PII about an individual."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which of them each request type must reach."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the team that acts in each system."
+              }
+            },
+            {
+              "text": {
+                "en": "State what a complete answer contains for each request type."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Open a monitored intake channel for data-subject requests"
+          },
+          "description": {
+            "en": "Publish a route by which an individual can make a request — an address, a form, or an in-product option — and make it monitored by a named team rather than an inbox nobody owns, since the clock starts when the request arrives, not when somebody notices it. Requests that arrive elsewhere, through support or an account manager, need a written path into the same channel. Attach the published channel together with the monitoring arrangement covering it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "The published request channel and the written monitoring arrangement naming the team responsible for it"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Write the identity check a requester must pass before their request is actioned"
+          },
+          "description": {
+            "en": "Set out what proof is required before PII is disclosed, corrected or erased, and pitch it at the risk rather than at the maximum: demanding identity documents for every routine request deters legitimate requesters, and accepting an email address alone hands one person's data to another. Record the check separately for requests arriving through an authenticated account and through an open channel. Attach the verification procedure with the accepted evidence for each route."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Identity verification procedure stating the evidence accepted for authenticated and unauthenticated request routes"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Set the proof required for an authenticated account holder."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the proof required for a request from an open channel."
+              }
+            },
+            {
+              "text": {
+                "en": "State what happens when verification fails or stalls."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how verification evidence is stored and for how long."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record the fulfilment of each request in the data-subject request log"
+          },
+          "description": {
+            "en": "Work each request through to an answer and keep one log row per request carrying the date received, the type, the verification outcome, the systems searched, what was provided, refused or erased, and the date the response was sent. Refusals are logged with their reason: an unrecorded refusal is indistinguishable from a request that was dropped. Attach the data-subject request log for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Data-subject request log for the period: date received, type, verification outcome, action taken and response date per request"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Measure the elapsed time from receipt to response for every request closed in the period"
+          },
+          "description": {
+            "en": "Calculate receipt-to-response for each closed request and compare it against the timescale the organisation is required to meet, then read the overruns rather than the average — a mean well inside the limit hides the erasure request that took four months. Record for each overrun what caused the delay and what changed as a result. Attach the timeliness analysis for the period."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Timeliness analysis for the period showing receipt-to-response time per request, every overrun and its stated cause"
+          },
+          "suggestedRole": "Legal/DPO"
+        }
+      ]
+    },
+    {
+      "code": "PIMS-06",
+      "title": "Privacy Notice and Transparency",
+      "description": "Determine the privacy information individuals should receive and provide it clearly at the appropriate time.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "7.3.2",
+        "7.3.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Map each processing purpose to the privacy information the individual is told about it"
+          },
+          "description": {
+            "en": "Work from the purpose register and decide, purpose by purpose, what an individual needs to be told: what is done with their data, why, who else sees it, how long it is kept and what they can do about it. Record the decision as a mapping rather than as prose, because the mapping is what the notice is later checked against. Where a purpose is deliberately not described to individuals, record that and the reason. Attach the mapping."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Mapping from each processing purpose to the privacy information the individual receives about it"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Take each purpose from the lawful basis register."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide what an individual must be told about that purpose."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where that information will appear."
+              }
+            },
+            {
+              "text": {
+                "en": "Note any purpose not described, with the reason."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Write a privacy notice section for each purpose in the mapping"
+          },
+          "description": {
+            "en": "Draft the notice against the mapping, one identifiable passage per purpose, in language an ordinary reader can follow at the reading speed they will actually give it — short sentences, no cross-references to defined terms, no clause that means nothing until a lawyer reads it. Where a purpose is genuinely complex, say the plain thing first and put the detail below it. Attach the draft with the passage covering each purpose identifiable."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Privacy notice draft with the passage covering each mapped purpose marked"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Add the privacy information to every screen and form where PII is collected"
+          },
+          "description": {
+            "en": "Put the relevant part of the notice where the data is actually given up, at the moment it is given up, rather than relying on a link in the footer: the control asks for the information at the appropriate time, and after submission is not it. For each collection surface record what is shown inline and what is reachable in one step. Attach a capture of each surface showing the privacy information as the individual sees it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Captures of every PII collection surface showing the privacy information presented at the point of collection"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "List the surfaces where PII is collected from individuals."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide what each surface shows inline and what it links to."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the information to each surface at the point of entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture each surface as the individual sees it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record each notice change with its version, effective date and what prompted it"
+          },
+          "description": {
+            "en": "Every time the notice changes, record the version, the date it took effect, what changed and which processing change prompted it. Keep superseded versions retrievable: an individual who gave data last year was told the old text, and questions about what they were told are answered from the version history rather than from the live page. Attach the notice version history for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Privacy notice version history for the period giving version, effective date, the change made and its cause, with superseded text retained"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Compare the published notice against the purpose register and list what it fails to describe"
+          },
+          "description": {
+            "en": "Read the live notice against the register row by row and record three things: purposes being carried out that the notice does not describe, descriptions in the notice for processing that has stopped, and recipients or retention statements that no longer match the record. The first of the three is the one that matters, and it is only visible from this direction. Attach the comparison with each gap and the correction made."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Notice-to-register comparison listing undescribed purposes, stale descriptions and mismatched statements, with corrections"
+          },
+          "suggestedRole": "Legal/DPO"
+        }
+      ]
+    },
+    {
+      "code": "PIMS-07",
+      "title": "Data Minimization and Retention",
+      "description": "Collect and process only necessary PII, set minimization objectives, and delete or de-identify PII at the end of its retention.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Data Owner",
+      "requirementCodes": [
+        "7.4.1",
+        "7.4.4",
+        "7.4.5",
+        "7.4.7"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List the PII fields each collection point captures and mark those no purpose needs"
+          },
+          "description": {
+            "en": "Go field by field through the forms, APIs and imports that bring PII in, and record against each field the purpose that needs it. Fields that survive only because they were on the original form, or because somebody might want them one day, end this task marked as unneeded — that mark is the deliverable, not the list. Attach the field-level inventory with the purpose recorded against each field and the unneeded ones flagged."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Field-level collection inventory giving the purpose served by each PII field, with the fields no purpose needs flagged"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Enumerate the fields captured at every collection point."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the purpose that requires each field."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag every field with no purpose behind it."
+              }
+            },
+            {
+              "text": {
+                "en": "Circulate the flagged list to the owning teams for challenge."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record a retention period for every data category in the retention schedule"
+          },
+          "description": {
+            "en": "Set, for each category of PII, how long it is held and from what event the clock runs — last activity, contract end, collection date — because a period without a trigger cannot be applied by anyone. Where a period is set by a legal or contractual obligation, cite it against the row so the number can be defended rather than re-argued. Attach the retention schedule covering every category in the inventory."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Retention schedule giving the retention period and the event the clock runs from for every PII category"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the PII categories the schedule must cover."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the retention period for each category."
+              }
+            },
+            {
+              "text": {
+                "en": "State the event from which each period is counted."
+              }
+            },
+            {
+              "text": {
+                "en": "Cite the obligation behind any period that is externally set."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Remove the fields no purpose needs from the collection forms and stored payloads"
+          },
+          "description": {
+            "en": "Act on the flagged fields: stop capturing them at the collection point, and clear what was already stored, including the copies that sit in logs, analytics events and exports. Record each field removed, the systems it was cleared from, and any field kept despite the flag with the purpose that justified keeping it. Attach the change record with the before-and-after field list."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Change record listing every field removed, the systems cleared, and any flagged field retained with its justification"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Set the minimization objectives and the measure each will be tracked by"
+          },
+          "description": {
+            "en": "State what the organisation is trying to reduce and how it will know — fields captured per collection point, systems holding a given category, copies of a production dataset, records held past their purpose. Give each objective a starting figure taken now, so movement is readable later; an objective with no baseline can be reported as met in either direction. Attach the objectives with their measures and baseline figures."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Minimization objectives with the measure and the baseline figure recorded for each"
+          },
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Run the deletions and de-identifications due under the schedule and record what was removed"
+          },
+          "description": {
+            "en": "Work the schedule against the live data: select the records whose retention has expired or whose purpose has ended, delete or de-identify them, and record per run the category, the volume acted on, the systems covered and the date. Where a record could not be removed — a legal hold, a system with no delete path — record it as an exception with the reason rather than letting the run report success. Attach the deletion run log for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Deletion and de-identification run log for the period: category, volume, systems covered, date and every exception with its reason"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Select the records whose retention period has expired."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the records whose processing purpose has ended."
+              }
+            },
+            {
+              "text": {
+                "en": "Run the deletion or de-identification across each system holding them."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the volume acted on per category and per system."
+              }
+            },
+            {
+              "text": {
+                "en": "Log every record that could not be removed, with the reason."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sample records past their retention period and confirm they are gone"
+          },
+          "description": {
+            "en": "Query each system for records that should no longer exist under the schedule and read what comes back, rather than reading the deletion job's own report — a job that silently skipped a table reports success. Cover the places deletion routinely misses: backups, replicas, search indexes, data warehouses and third-party copies. Record every survivor with the system it was found in and how it was dealt with. Attach the sample test with its findings."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Retention sample test showing the systems queried, the records found past retention and how each was resolved"
+          },
+          "suggestedRole": "Engineering lead"
+        }
+      ]
+    },
+    {
+      "code": "PIMS-08",
+      "title": "Processor and Sub-processor Management",
+      "description": "Bind processors and sub-processors by contract, disclose sub-processors, and manage changes with the customer.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Vendor Manager",
+      "requirementCodes": [
+        "7.2.6",
+        "8.5.6",
+        "8.5.7",
+        "8.5.8"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List every third party that processes PII and mark it as processor or sub-processor"
+          },
+          "description": {
+            "en": "Build one list of the third parties that touch personal data — those engaged directly, and those engaged by them to help deliver the service — recording for each the service provided, the PII categories involved, and which of the organisation's own services depend on it. Ask each direct processor who they in turn rely on; the onward tier is the part no internal system knows about. Attach the list with the processor or sub-processor role marked against each entry."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Third-party PII processing list marking processor or sub-processor role, service provided and PII categories per entry"
+          },
+          "suggestedRole": "Procurement",
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the vendors that touch PII from spend and system records."
+              }
+            },
+            {
+              "text": {
+                "en": "Ask each direct processor which subcontractors it relies on."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the service and PII categories for every entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each entry as processor or sub-processor."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Obtain a signed processing agreement from each processor on the list"
+          },
+          "description": {
+            "en": "For every direct processor, get a written agreement in place that binds them to the privacy obligations the organisation owes, and index the executed copy against the list entry so the two can be read together. Where a processor is operating without one, record the gap and the date it was raised — an unpapered processor is the finding, and hiding it inside a percentage helps nobody. Attach the agreement index showing the executed document or the recorded gap per processor."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Processor agreement index: executed agreement referenced against each processor, with unpapered processors named and dated"
+          },
+          "suggestedRole": "Procurement"
+        },
+        {
+          "title": {
+            "en": "Compare each sub-processor's contract terms against the customer agreement it must satisfy"
+          },
+          "description": {
+            "en": "Read the terms binding each sub-processor beside the obligations owed to customers and record, clause by clause for the privacy terms, whether the onward contract carries them — confidentiality, security, transfer restrictions, deletion at end of service, audit and assistance. Record every term that does not flow down as a gap with an owner. Attach the comparison covering each sub-processor."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Flow-down comparison per sub-processor showing each privacy term against the customer obligation, with gaps and owners"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the privacy obligations owed under customer agreements."
+              }
+            },
+            {
+              "text": {
+                "en": "Read each sub-processor contract against that list."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark every obligation that does not flow down."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign an owner to close each gap found."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Publish the sub-processor list where customers can read it"
+          },
+          "description": {
+            "en": "Make the disclosure available to customers by the route the customer agreement provides — naming each sub-processor, what it does and where it processes the data — and record where it was made available and the date that version was issued. Without the location and date recorded, nobody can later establish what a customer had been told at the time. Attach the disclosed list together with its location and issue date."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "The disclosed sub-processor list, with the route it was made available on and its issue date recorded"
+          },
+          "suggestedRole": "Procurement"
+        },
+        {
+          "title": {
+            "en": "Notify customers of each sub-processor addition or replacement before it takes effect"
+          },
+          "description": {
+            "en": "When a sub-processor is to be added or swapped, tell affected customers before the change takes effect, so an objection can be raised while it can still be acted on. Keep the notification record: what changed, when it was sent, to whom, and every objection received with how it was resolved. Attach the notification record for each change in the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Sub-processor change notification record per change: what changed, date sent, recipients, and objections received with their resolution"
+          },
+          "suggestedRole": "Procurement"
+        },
+        {
+          "title": {
+            "en": "Verify the published sub-processor list against the third parties actually receiving PII"
+          },
+          "description": {
+            "en": "Compare the published list against evidence of who is actually processing data — the vendor spend, the integrations live in production, the data flows observed — and read it in both directions: a sub-processor receiving PII but absent from the list, and a listed name no longer used. The first is a disclosure failure and the second erodes trust in the list. Record each discrepancy and the correction. Attach the verification with its findings."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Sub-processor list verification against live vendors and integrations, listing both undisclosed and stale entries with corrections"
+          },
+          "suggestedRole": "Procurement"
+        }
+      ]
+    },
+    {
+      "code": "PIMS-09",
+      "title": "Cross-Border Transfer Governance",
+      "description": "Establish and document a lawful basis for cross-border transfers of PII and the jurisdictions to which it may flow.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "7.5.1",
+        "7.5.2",
+        "8.5.1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Map every flow of PII that leaves its origin jurisdiction"
+          },
+          "description": {
+            "en": "Trace where personal data physically goes: the hosting regions of the systems that store it, the regions its backups and replicas land in, the locations of support and engineering staff who can read it, and the destinations of every third-party integration. Record source, destination jurisdiction, receiving organisation and PII categories per flow. Engineering and IT supply the routing facts; the record itself is the privacy function's. Attach the transfer map."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Cross-border transfer map: source, destination jurisdiction, receiving organisation and PII categories for every flow"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the hosting and backup regions of every system holding PII."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the locations from which staff and vendors access that data."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the destinations of each third-party integration."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the PII categories carried by each flow."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record the safeguard each cross-border transfer relies on"
+          },
+          "description": {
+            "en": "For every flow on the map, record the mechanism relied on to make the transfer lawful and the document that evidences it — the executed clauses, the adequacy finding, the derogation and the reasoning behind relying on it. A flow whose safeguard cannot be named is recorded as unsupported rather than left blank, because a blank reads as unfinished paperwork instead of as an unlawful transfer. Attach the transfer register showing the safeguard and its evidence per flow."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Transfer register giving the safeguard relied on and the evidencing document for every cross-border flow, with unsupported flows named"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Consolidate the map into the list of countries and organisations PII may reach"
+          },
+          "description": {
+            "en": "Reduce the transfer map to a single plain statement: which jurisdictions PII may reach and which organisations may hold it there. Keep it as the authoritative list a customer question, a contract schedule or a notice section is answered from, so those three answers cannot drift apart. Attach the jurisdiction and recipient list with the date it was last set."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Dated list of the countries and receiving organisations to which PII may be transferred"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Log each new transfer destination with the safeguard settled before PII reaches it"
+          },
+          "description": {
+            "en": "When a new region, vendor or support location is introduced, record it as a transfer with its safeguard settled before data flows — and where the data belongs to a customer, record the agreement that permits the destination, since the basis is one agreed with them rather than chosen unilaterally. Attach the transfer approval log for the period, showing each new destination, its safeguard and the date data first flowed."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Transfer approval log for the period: each new destination, the safeguard settled, the customer agreement relied on and the first-flow date"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Compare the transfer map against where PII is actually hosted and processed"
+          },
+          "description": {
+            "en": "Check the map against the systems themselves — cloud region settings, backup destinations, CDN and log-shipping configuration, vendor-declared processing locations, and the countries staff actually sign in from. Configuration drifts silently and a replica added in another region announces nothing. Record every destination found that the map does not carry, and settle its safeguard or stop the flow. Attach the comparison with its findings."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Comparison of the transfer map against live hosting, backup and access locations, listing undeclared destinations and their resolution"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Read the region settings of every system holding PII."
+              }
+            },
+            {
+              "text": {
+                "en": "Check where backups, replicas and logs are shipped."
+              }
+            },
+            {
+              "text": {
+                "en": "Take the processing locations each vendor declares."
+              }
+            },
+            {
+              "text": {
+                "en": "Review the countries staff and vendors sign in from."
+              }
+            },
+            {
+              "text": {
+                "en": "List every destination not already on the transfer map."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-10",
+      "title": "Privacy Breach Handling",
+      "description": "Extend incident management to detect, assess and notify personal-data breaches to authorities and affected individuals.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Security / Privacy Incident Lead",
+      "requirementCodes": [
+        "6"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Define the criteria that make an incident a personal-data breach"
+          },
+          "description": {
+            "en": "Write down what turns a security incident into a personal-data breach here, in terms the on-call responder can apply at three in the morning: which systems hold PII, what counts as unauthorised access, loss or disclosure, and the point at which suspicion is enough to start the assessment. Test the criteria against incidents already closed and record how each would have been classified. Attach the criteria with those worked examples."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Breach criteria document with worked examples showing how past incidents would have been classified"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List the systems and datasets whose compromise involves PII."
+              }
+            },
+            {
+              "text": {
+                "en": "State what counts as unauthorised access, loss or disclosure."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the point at which assessment starts on suspicion alone."
+              }
+            },
+            {
+              "text": {
+                "en": "Classify several closed incidents against the draft criteria."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Add breach assessment and notification steps to the incident response procedure"
+          },
+          "description": {
+            "en": "Extend the existing incident procedure rather than writing a parallel one — a second document is the one nobody opens during an incident. Insert the assessment step, who is called when PII is implicated, the decision to be recorded, and the notification paths to the authority and to affected individuals with the responder who owns each. Attach the updated procedure with the inserted steps marked."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Updated incident response procedure with the breach assessment and notification steps marked and owners named"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Find the point in the incident procedure where PII is first known."
+              }
+            },
+            {
+              "text": {
+                "en": "Insert the assessment step and name who is called."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the decision the assessment must produce."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the authority and individual notification paths with owners."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Write the authority and individual notification templates"
+          },
+          "description": {
+            "en": "Draft the two notifications ahead of needing them, each carrying the facts the assessment produces: what happened and when, which PII and roughly how many people, the likely consequences, what is being done, and where to get more. The individual-facing one is written to be understood by the person affected, not by a regulator. Attach both templates with the fields the assessment supplies marked."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Authority and individual breach notification templates with the assessment-supplied fields marked"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Record the breach assessment decision for every incident that involved PII"
+          },
+          "description": {
+            "en": "For each incident touching personal data, record the assessment: what data was involved, how many individuals, what the risk to them is, and the decision on notifying the authority and the individuals, with the reasoning. Record it whether or not notification followed — the decision not to notify is the one that will be questioned, and it exists nowhere else. Attach the breach assessment records for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Breach assessment record per PII incident: data involved, individuals affected, risk, notification decision and its reasoning"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Exercise the authority and individual notification paths in a timed drill"
+          },
+          "description": {
+            "en": "Run a scenario through the extended procedure with the people who would really be on it, and time it: detection to assessment, assessment to a drafted authority notification against the 72-hour authority notification window, and the point at which individuals could be contacted. Record where the clock actually went — usually waiting on a fact nobody owned — and what changed as a result. Attach the drill record with its timings and actions."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Notification drill record showing the scenario, elapsed times against the 72-hour authority path, gaps found and actions taken"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Pick a scenario that reaches PII in a real system."
+              }
+            },
+            {
+              "text": {
+                "en": "Run it with the responders who would actually be called."
+              }
+            },
+            {
+              "text": {
+                "en": "Time detection, assessment and the drafted authority notification."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where the delay sat and who owned the missing fact."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise an action for each gap the drill exposed."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pack": {
+    "key": "ISO27701_CORE",
+    "name": "ISO 27701 Core Pack",
+    "version": "2019",
+    "description": "ISO/IEC 27701:2019 — privacy information management extension to ISO 27001/27002.",
+    "templateCodes": [
+      "PIMS-01",
+      "PIMS-02",
+      "PIMS-03",
+      "PIMS-04",
+      "PIMS-05",
+      "PIMS-06",
+      "PIMS-07",
+      "PIMS-08",
+      "PIMS-09",
+      "PIMS-10"
     ]
   }
-]
+}

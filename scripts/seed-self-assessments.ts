@@ -18,6 +18,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { fixtureObject } from '../prisma/fixture-io';
 
 // Prisma 7 — adapter is required for PrismaClient construction.
 const prisma = new PrismaClient({
@@ -25,7 +26,7 @@ const prisma = new PrismaClient({
 });
 
 async function seedNis2GapAssessment(): Promise<void> {
-    const nis2Gap = require('../prisma/fixtures/nis2-gap-assessment.json') as {
+    const nis2Gap = fixtureObject<{
         version: string;
         domains: Array<{ id: number; code: string; name: unknown; description: unknown; day: number }>;
         questions: Array<{
@@ -33,7 +34,11 @@ async function seedNis2GapAssessment(): Promise<void> {
             criticality: string; respondent: string; consequence: string; fineExposure: boolean;
             timeToFix: string; day: number; dependsOn: string[];
         }>;
-    };
+    }>(
+        'fixtures/nis2-gap-assessment',
+        require('../prisma/fixtures/nis2-gap-assessment.json'),
+        'version', 'domains', 'questions',
+    );
     for (const d of nis2Gap.domains) {
         await prisma.nis2GapDomain.upsert({
             where: { id: d.id },
@@ -61,11 +66,15 @@ async function seedNis2GapAssessment(): Promise<void> {
 }
 
 async function seedAiGovAssessment(): Promise<void> {
-    const aiGov = require('../prisma/fixtures/ai-governance-self-assessment.json') as {
+    const aiGov = fixtureObject<{
         questionSetVersion: number;
         domains: Array<{ id: number; code: string; name: string }>;
         questions: Array<{ id: string; domainId: number; criticality: string; conditional: string | null; text: string; mappings: { aisvs: string[]; iso42001: string[]; euAiAct: string[] } }>;
-    };
+    }>(
+        'fixtures/ai-governance-self-assessment',
+        require('../prisma/fixtures/ai-governance-self-assessment.json'),
+        'questionSetVersion', 'domains', 'questions',
+    );
     for (const d of aiGov.domains) {
         await prisma.aiGovDomain.upsert({
             where: { id: d.id },
@@ -81,11 +90,15 @@ async function seedAiGovAssessment(): Promise<void> {
 }
 
 async function seedAgentRiskAssessment(): Promise<void> {
-    const agentRisk = require('../prisma/fixtures/agent-risk-assessment.json') as {
+    const agentRisk = fixtureObject<{
         questionSetVersion: number;
         domains: Array<{ id: number; code: string; name: string; description: string; sortOrder: number }>;
         questions: Array<{ id: string; domainId: number; criticality: string; text: string; guidance: string | null; mappings: { asi: string[]; imda: string[] } }>;
-    };
+    }>(
+        'fixtures/agent-risk-assessment',
+        require('../prisma/fixtures/agent-risk-assessment.json'),
+        'questionSetVersion', 'domains', 'questions',
+    );
     for (const d of agentRisk.domains) {
         const data = { code: d.code, name: d.name, description: d.description, sortOrder: d.sortOrder };
         await prisma.agentAssessmentDomain.upsert({ where: { id: d.id }, update: data, create: { id: d.id, ...data } });

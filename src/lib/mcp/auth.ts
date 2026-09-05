@@ -83,7 +83,7 @@ import {
     type MintedToken,
     systemClock,
 } from './token-exchange';
-import { isKnownMcpTool } from './tool-catalogue';
+import { isKnownMcpTool, MCP_TOOL_NAMES } from './tool-catalogue';
 import {
     resolveAgentAuthority,
     PrincipalUnresolvedError,
@@ -365,6 +365,16 @@ export async function buildMcpInvocation(
         principal,
         agentId,
         grantedTools,
+        // The catalogue SNAPSHOT — a copy, taken now, of what this build offers.
+        //
+        // `MCP_TOOL_NAMES` is the leaf mirror of the two registries, pinned
+        // equal to them by `tests/guards/mcp-tools-use-shared-authz.test.ts`;
+        // reading it here is what keeps this module from importing the whole
+        // tool graph to learn fourteen strings. The COPY is the point: from here
+        // on, resolution enumerates this array and never the live registry, so a
+        // tool that becomes offered after this line runs is not loadable by this
+        // invocation — no detection required. See `loadable-tools.ts`.
+        offeredTools: [...MCP_TOOL_NAMES],
         audience: options.audience ?? null,
         autonomyCeiling,
         policyCard: inForce
