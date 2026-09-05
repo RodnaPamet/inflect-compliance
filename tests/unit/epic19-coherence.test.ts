@@ -66,6 +66,13 @@ describe('Epic 19 Coherence: metric names', () => {
         //   tracing layer; it shows up as span attributes in OTel traces and is
         //   used ad-hoc when chasing slow queries, not on the SLO board.
         const diagnosticOnly = new Set([
+            // Size of each sealed workflow-context envelope. The SLO signal for
+            // this subsystem is the HALT counter, which has its own critical
+            // alert; the size distribution is what an operator reads *after*
+            // that fires, to tell the benign cap breach from the tampering
+            // codes. A distribution is also the wrong shape for an SLO board
+            // whose panels are API/health and job metrics.
+            'agentic.workflow.context.bytes',
             'api.request.errors',
             'repo.method.duration',
             // EI-4 — SCIM bearer-token auth outcome counter. A diagnostic
@@ -213,6 +220,13 @@ describe('Epic 19 Coherence: alert rules', () => {
     // healthy, which is precisely the condition nothing else would surface.
     const SECURITY_ALERT_NAMES = [
         'SessionPolicyResolutionFailing',
+        // A workflow run halted because its own context failed verification.
+        // CONTEXT_CHAIN_BROKEN and CONTEXT_REPLAYED do not occur through normal
+        // application writes — the blob disagrees with its head, or an earlier
+        // sealed pair was restored over a later one. The system stays healthy
+        // while an agent's memory stops being trustworthy, which is exactly the
+        // condition this tier exists for.
+        'AgenticWorkflowContextIntegrityHalt',
     ];
 
     const ALL_ALERT_NAMES = [
