@@ -166,10 +166,15 @@ declaration nobody made. NULL → NULL is not a change; NULL → a value is.
    `REVERSIBILITY_WORSENED` and `PROVENANCE_WIDENED` move axes that appear in
    the ceiling NOWHERE, and `updateRegisteredAgent` accepted every one of them
    without a murmur: an agent could be walked READ_TENANT_DATA →
-   EXTERNAL_EGRESS and REVERSIBLE → TERMINAL, keep a LOW tier and the full
-   ladder, and run at an authority a fresh score of the same agent put at
-   CRITICAL. `TOOL_GRANTED` was worse still — the grant took effect immediately,
-   in the transaction that recorded the assessment as overtaken.
+   EXTERNAL_EGRESS and REVERSIBLE → TERMINAL, keep whatever tier it had and the
+   whole ladder that tier bought, and run at an authority a fresh score of the
+   same agent refused — a HIGH agent walked that way scores CRITICAL, cap 1,
+   READ only. (Not LOW → CRITICAL in one step, which the arithmetic forbids:
+   LOW caps the pre-walk score at 8, the walk adds at most 14, and CRITICAL
+   starts at 25. Every LOW agent walked that way lands at HIGH — swept in
+   `tests/unit/agent-risk-scoring.test.ts`.) `TOOL_GRANTED` was worse still —
+   the grant took effect immediately, in the transaction that recorded the
+   assessment as overtaken.
 3. **(replacement) The tier does not lag the agent, because a widening
    RE-SCORES.** The scorer is pure in (autonomy, data access, reversibility,
    provenance, answers). Four of those five are declared fields an operator has

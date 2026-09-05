@@ -170,9 +170,13 @@ right thing stops doing the right thing.
 > `dataAccessScope`, `reversibility` and `provenance` are terms in NOTHING, and
 > `updateRegisteredAgent` checked only `autonomyLevel`. So an agent could be
 > walked READ_TENANT_DATA → EXTERNAL_EGRESS and REVERSIBLE → TERMINAL and keep
-> its LOW tier and its full ceiling while a fresh score of that same agent came
-> out CRITICAL. `TOOL_GRANTED` was worse: the grant took effect in the same
-> transaction that recorded the assessment as overtaken.
+> whatever tier it held and the whole ceiling that tier bought, while a fresh
+> score of that same agent came out higher — a HIGH agent walked that way scores
+> CRITICAL, cap 1, READ only. (LOW → CRITICAL in one step is not among the
+> reachable states: LOW bounds the pre-walk score at 8 and the walk adds at most
+> 14, so every LOW agent walked that way lands at HIGH.) `TOOL_GRANTED` was
+> worse: the grant took effect in the same transaction that recorded the
+> assessment as overtaken.
 
 **What makes the claim true now: a widening RE-SCORES.** The scorer is a pure
 function of the four declared axes plus the answers, so when an axis moves the

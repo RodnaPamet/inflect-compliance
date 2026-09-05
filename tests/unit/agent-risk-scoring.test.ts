@@ -507,11 +507,57 @@ describe('the cap a tier buys', () => {
  * is where it is guaranteed rather than asserted in a docstring: an unanswered
  * question counts as NO, so a run with no answers carries the full answer
  * weight, which alone exceeds the LOW band. A provisional score can therefore
- * never come out LOW — and LOW is the only tier that leaves the ladder whole.
- * Nobody can use the backfill to buy an agent its full autonomy; filling in the
- * questionnaire is the only route there, which is what makes the questionnaire
- * worth filling in.
+ * never come out LOW — and LOW is the tier that costs the agent fewest rungs.
+ * Nobody can use the backfill to buy an agent the widest ladder any tier grants;
+ * filling in the questionnaire is the only route there, which is what makes the
+ * questionnaire worth filling in. (No tier leaves the ladder WHOLE: rungs 5 and
+ * 6 are unattended operation, which floors at MODERATE, and MODERATE caps at 3.
+ * The sweep in `the cap a tier buys` above is where that is pinned.)
  */
+/**
+ * ── HOW FAR ONE AMENDMENT CAN MOVE A TIER ──────────────────────────
+ *
+ * The worst single amendment an operator can make without touching autonomy is
+ * to walk BOTH free axes to their worst rung at once: data access to
+ * EXTERNAL_EGRESS and reversibility to TERMINAL. Before the re-score existed,
+ * that walk left the tier untouched — the defect corrected in
+ * `docs/implementation-notes/2026-09-05-agent-widening-rescore.md`.
+ *
+ * This sweep says how far it can actually move, and it exists because the note
+ * describing that defect asserts a bound: a LOW agent walked this way lands at
+ * HIGH, never CRITICAL. That is arithmetic, not judgement — LOW bounds the
+ * pre-walk score at the top of the LOW band, and the walk adds at most the two
+ * axes' full weight, which together fall short of the CRITICAL band. Asserting
+ * it here rather than in prose means a weight change that breaks the bound
+ * turns a test red instead of leaving a plausible sentence behind in a note.
+ */
+describe('one amendment moves the tier by a bounded amount', () => {
+    /** The same cell with both free axes walked to their worst rung. */
+    function widened(cell: Cell): Cell {
+        return { ...cell, dataAccessScope: 'EXTERNAL_EGRESS', reversibility: 'TERMINAL' };
+    }
+
+    const fromLow = ALL_CELLS.filter((c) => score(c).tier === 'LOW');
+
+    it('has LOW cells to walk, so the sweep below is not vacuous', () => {
+        expect(fromLow.length).toBeGreaterThan(0);
+    });
+
+    it('every LOW agent walked to EXTERNAL_EGRESS + TERMINAL lands at HIGH', () => {
+        const landed = new Set(fromLow.map((c) => score(widened(c)).tier));
+        expect([...landed]).toEqual(['HIGH']);
+    });
+
+    it('but the same walk from a worse starting tier DOES reach CRITICAL', () => {
+        // The paired positive. Without it, "never CRITICAL" would be satisfied
+        // by a scorer that could not produce CRITICAL at all.
+        const reached = ALL_CELLS.filter((c) => score(widened(c)).tier === 'CRITICAL');
+        expect(reached.length).toBeGreaterThan(0);
+        // And what those agents were before the walk is never LOW.
+        expect(reached.map((c) => score(c).tier)).not.toContain('LOW');
+    });
+});
+
 describe('a provisional score — nothing answered — can never be the friendliest tier', () => {
     const provisionalCells = ALL_CELLS.filter((c) => c.profile === 'UNANSWERED');
 
