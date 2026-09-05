@@ -1,377 +1,3496 @@
-[
-  {
-    "code": "ASVS-V2",
-    "title": "Authentication (ASVS L1)",
-    "description": "Implements the Level 1 verification requirements of ASVS chapter V2 \u2014 Authentication. Establishes the baseline application-security controls for this chapter.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Application Security",
-    "requirements": [
-      "V2.1.1",
-      "V2.1.2",
-      "V2.1.3",
-      "V2.1.4",
-      "V2.1.5",
-      "V2.1.6",
-      "V2.1.7",
-      "V2.1.8",
-      "V2.1.9",
-      "V2.1.10",
-      "V2.1.11",
-      "V2.1.12",
-      "V2.2.1",
-      "V2.2.2",
-      "V2.2.3",
-      "V2.3.1",
-      "V2.5.1",
-      "V2.5.2",
-      "V2.5.3",
-      "V2.5.4",
-      "V2.5.5",
-      "V2.5.6",
-      "V2.6.1",
-      "V2.7.1",
-      "V2.7.2",
-      "V2.7.3",
-      "V2.7.4",
-      "V2.8.1"
-    ],
-    "tasks": [
-      {
-        "title": "Implement ASVS L1 requirements for V2",
-        "description": "Put in place the Level 1 verification requirements for Authentication (ASVS chapter V2)."
-      },
-      {
-        "title": "Verify V2 coverage",
-        "description": "Periodically verify that the Level 1 requirements for Authentication remain satisfied as the application evolves."
-      }
-    ]
+{
+  "_meta": {
+    "purpose": "OWASP Application Security Verification Standard 4.0.3 control catalogue in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
+    "why": "The templates carried authored task sets that reached no database: the fixture was a bare array that only prisma/seed.ts read, and prod does not run it. Reshaped so scripts/seed-framework-catalogs.ts can deliver them.",
+    "grounding": "Requirement titles and summaries come from src/data/libraries/owasp-asvs-4.0.3.yaml so the two cannot drift. Task content is grounded in each template's own description.",
+    "deliveredBy": "scripts/seed-framework-catalogs.ts"
   },
-  {
-    "code": "ASVS-V3",
-    "title": "Session Management (ASVS L1)",
-    "description": "Implements the Level 1 verification requirements of ASVS chapter V3 \u2014 Session Management. Establishes the baseline application-security controls for this chapter.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Application Security",
-    "requirements": [
-      "V3.1.1",
-      "V3.2.1",
-      "V3.2.2",
-      "V3.2.3",
-      "V3.3.1",
-      "V3.3.2",
-      "V3.4.1",
-      "V3.4.2",
-      "V3.4.3",
-      "V3.4.4",
-      "V3.4.5"
-    ],
-    "tasks": [
-      {
-        "title": "Implement ASVS L1 requirements for V3",
-        "description": "Put in place the Level 1 verification requirements for Session Management (ASVS chapter V3)."
-      },
-      {
-        "title": "Verify V3 coverage",
-        "description": "Periodically verify that the Level 1 requirements for Session Management remain satisfied as the application evolves."
-      }
-    ]
+  "framework": {
+    "key": "OWASP-ASVS",
+    "name": "OWASP Application Security Verification Standard 4.0.3",
+    "version": "4.0.3",
+    "kind": "INDUSTRY_STANDARD",
+    "description": "OWASP ASVS 4.0.3 Level 1 — the verification requirements applicable to all applications."
   },
-  {
-    "code": "ASVS-V4",
-    "title": "Access Control (ASVS L1)",
-    "description": "Implements the Level 1 verification requirements of ASVS chapter V4 \u2014 Access Control. Establishes the baseline application-security controls for this chapter.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Application Security",
-    "requirements": [
-      "V4.1.1",
-      "V4.1.2",
-      "V4.1.3",
-      "V4.1.5",
-      "V4.2.1",
-      "V4.2.2",
-      "V4.3.1",
-      "V4.3.2"
-    ],
-    "tasks": [
-      {
-        "title": "Implement ASVS L1 requirements for V4",
-        "description": "Put in place the Level 1 verification requirements for Access Control (ASVS chapter V4)."
-      },
-      {
-        "title": "Verify V4 coverage",
-        "description": "Periodically verify that the Level 1 requirements for Access Control remain satisfied as the application evolves."
-      }
-    ]
-  },
-  {
-    "code": "ASVS-V5",
-    "title": "Validation, Sanitization and Encoding (ASVS L1)",
-    "description": "Implements the Level 1 verification requirements of ASVS chapter V5 \u2014 Validation, Sanitization and Encoding. Establishes the baseline application-security controls for this chapter.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Application Security",
-    "requirements": [
-      "V5.1.1",
-      "V5.1.2",
-      "V5.1.3",
-      "V5.1.4",
-      "V5.1.5",
-      "V5.2.1",
-      "V5.2.2",
-      "V5.2.3",
-      "V5.2.4",
-      "V5.2.5",
-      "V5.2.6",
-      "V5.2.7",
-      "V5.2.8",
-      "V5.3.1",
-      "V5.3.2",
-      "V5.3.3",
-      "V5.3.4",
-      "V5.3.5",
-      "V5.3.6",
-      "V5.3.7",
-      "V5.3.9",
-      "V5.3.10",
-      "V5.5.1",
-      "V5.5.2",
-      "V5.5.3",
-      "V5.5.4"
-    ],
-    "tasks": [
-      {
-        "title": "Implement ASVS L1 requirements for V5",
-        "description": "Put in place the Level 1 verification requirements for Validation, Sanitization and Encoding (ASVS chapter V5)."
-      },
-      {
-        "title": "Verify V5 coverage",
-        "description": "Periodically verify that the Level 1 requirements for Validation, Sanitization and Encoding remain satisfied as the application evolves."
-      }
-    ]
-  },
-  {
-    "code": "ASVS-V6",
-    "title": "Stored Cryptography (ASVS L1)",
-    "description": "Implements the Level 1 verification requirements of ASVS chapter V6 \u2014 Stored Cryptography. Establishes the baseline application-security controls for this chapter.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Application Security",
-    "requirements": [
-      "V6.2.1"
-    ],
-    "tasks": [
-      {
-        "title": "Implement ASVS L1 requirements for V6",
-        "description": "Put in place the Level 1 verification requirements for Stored Cryptography (ASVS chapter V6)."
-      },
-      {
-        "title": "Verify V6 coverage",
-        "description": "Periodically verify that the Level 1 requirements for Stored Cryptography remain satisfied as the application evolves."
-      }
-    ]
-  },
-  {
-    "code": "ASVS-V7",
-    "title": "Error Handling and Logging (ASVS L1)",
-    "description": "Implements the Level 1 verification requirements of ASVS chapter V7 \u2014 Error Handling and Logging. Establishes the baseline application-security controls for this chapter.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Security Operations",
-    "requirements": [
-      "V7.4.1"
-    ],
-    "tasks": [
-      {
-        "title": "Implement ASVS L1 requirements for V7",
-        "description": "Put in place the Level 1 verification requirements for Error Handling and Logging (ASVS chapter V7)."
-      },
-      {
-        "title": "Verify V7 coverage",
-        "description": "Periodically verify that the Level 1 requirements for Error Handling and Logging remain satisfied as the application evolves."
-      }
-    ]
-  },
-  {
-    "code": "ASVS-V8",
-    "title": "Data Protection (ASVS L1)",
-    "description": "Implements the Level 1 verification requirements of ASVS chapter V8 \u2014 Data Protection. Establishes the baseline application-security controls for this chapter.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Application Security / Privacy",
-    "requirements": [
-      "V8.2.1",
-      "V8.2.2",
-      "V8.2.3",
-      "V8.3.1",
-      "V8.3.2",
-      "V8.3.3",
-      "V8.3.4"
-    ],
-    "tasks": [
-      {
-        "title": "Implement ASVS L1 requirements for V8",
-        "description": "Put in place the Level 1 verification requirements for Data Protection (ASVS chapter V8)."
-      },
-      {
-        "title": "Verify V8 coverage",
-        "description": "Periodically verify that the Level 1 requirements for Data Protection remain satisfied as the application evolves."
-      }
-    ]
-  },
-  {
-    "code": "ASVS-V9",
-    "title": "Communication (ASVS L1)",
-    "description": "Implements the Level 1 verification requirements of ASVS chapter V9 \u2014 Communication. Establishes the baseline application-security controls for this chapter.",
-    "defaultFrequency": "MONTHLY",
-    "defaultOwnerHint": "Platform Engineering",
-    "requirements": [
-      "V9.1.1",
-      "V9.1.2",
-      "V9.1.3"
-    ],
-    "tasks": [
-      {
-        "title": "Implement ASVS L1 requirements for V9",
-        "description": "Put in place the Level 1 verification requirements for Communication (ASVS chapter V9)."
-      },
-      {
-        "title": "Verify V9 coverage",
-        "description": "Periodically verify that the Level 1 requirements for Communication remain satisfied as the application evolves."
-      }
-    ]
-  },
-  {
-    "code": "ASVS-V10",
-    "title": "Malicious Code (ASVS L1)",
-    "description": "Implements the Level 1 verification requirements of ASVS chapter V10 \u2014 Malicious Code. Establishes the baseline application-security controls for this chapter.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Application Security",
-    "requirements": [
-      "V10.3.1",
-      "V10.3.2",
-      "V10.3.3"
-    ],
-    "tasks": [
-      {
-        "title": "Implement ASVS L1 requirements for V10",
-        "description": "Put in place the Level 1 verification requirements for Malicious Code (ASVS chapter V10)."
-      },
-      {
-        "title": "Verify V10 coverage",
-        "description": "Periodically verify that the Level 1 requirements for Malicious Code remain satisfied as the application evolves."
-      }
-    ]
-  },
-  {
-    "code": "ASVS-V11",
-    "title": "Business Logic (ASVS L1)",
-    "description": "Implements the Level 1 verification requirements of ASVS chapter V11 \u2014 Business Logic. Establishes the baseline application-security controls for this chapter.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Application Security",
-    "requirements": [
-      "V11.1.1",
-      "V11.1.2",
-      "V11.1.3",
-      "V11.1.4",
-      "V11.1.5",
-      "V11.1.6"
-    ],
-    "tasks": [
-      {
-        "title": "Implement ASVS L1 requirements for V11",
-        "description": "Put in place the Level 1 verification requirements for Business Logic (ASVS chapter V11)."
-      },
-      {
-        "title": "Verify V11 coverage",
-        "description": "Periodically verify that the Level 1 requirements for Business Logic remain satisfied as the application evolves."
-      }
-    ]
-  },
-  {
-    "code": "ASVS-V12",
-    "title": "Files and Resources (ASVS L1)",
-    "description": "Implements the Level 1 verification requirements of ASVS chapter V12 \u2014 Files and Resources. Establishes the baseline application-security controls for this chapter.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "Application Security",
-    "requirements": [
-      "V12.1.1",
-      "V12.3.1",
-      "V12.3.2",
-      "V12.3.3",
-      "V12.3.4",
-      "V12.3.5",
-      "V12.4.1",
-      "V12.4.2",
-      "V12.5.1",
-      "V12.5.2",
-      "V12.6.1"
-    ],
-    "tasks": [
-      {
-        "title": "Implement ASVS L1 requirements for V12",
-        "description": "Put in place the Level 1 verification requirements for Files and Resources (ASVS chapter V12)."
-      },
-      {
-        "title": "Verify V12 coverage",
-        "description": "Periodically verify that the Level 1 requirements for Files and Resources remain satisfied as the application evolves."
-      }
-    ]
-  },
-  {
-    "code": "ASVS-V13",
-    "title": "API and Web Service (ASVS L1)",
-    "description": "Implements the Level 1 verification requirements of ASVS chapter V13 \u2014 API and Web Service. Establishes the baseline application-security controls for this chapter.",
-    "defaultFrequency": "QUARTERLY",
-    "defaultOwnerHint": "API Platform",
-    "requirements": [
-      "V13.1.1",
-      "V13.1.3",
-      "V13.1.5",
-      "V13.2.1",
-      "V13.2.2",
-      "V13.2.3",
-      "V13.2.5",
-      "V13.3.1"
-    ],
-    "tasks": [
-      {
-        "title": "Implement ASVS L1 requirements for V13",
-        "description": "Put in place the Level 1 verification requirements for API and Web Service (ASVS chapter V13)."
-      },
-      {
-        "title": "Verify V13 coverage",
-        "description": "Periodically verify that the Level 1 requirements for API and Web Service remain satisfied as the application evolves."
-      }
-    ]
-  },
-  {
-    "code": "ASVS-V14",
-    "title": "Configuration (ASVS L1)",
-    "description": "Implements the Level 1 verification requirements of ASVS chapter V14 \u2014 Configuration. Establishes the baseline application-security controls for this chapter.",
-    "defaultFrequency": "MONTHLY",
-    "defaultOwnerHint": "Platform Engineering",
-    "requirements": [
-      "V14.2.1",
-      "V14.2.2",
-      "V14.2.3",
-      "V14.3.2",
-      "V14.3.3",
-      "V14.4.1",
-      "V14.4.2",
-      "V14.4.3",
-      "V14.4.4",
-      "V14.4.5",
-      "V14.4.6",
-      "V14.4.7",
-      "V14.5.1",
-      "V14.5.2",
-      "V14.5.3"
-    ],
-    "tasks": [
-      {
-        "title": "Implement ASVS L1 requirements for V14",
-        "description": "Put in place the Level 1 verification requirements for Configuration (ASVS chapter V14)."
-      },
-      {
-        "title": "Verify V14 coverage",
-        "description": "Periodically verify that the Level 1 requirements for Configuration remain satisfied as the application evolves."
-      }
+  "requirements": [
+    {
+      "code": "V2.1.1",
+      "title": "Minimum Password Length",
+      "summary": "Require passwords of at least twelve characters so that short, easily guessed secrets are rejected. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 1
+    },
+    {
+      "code": "V2.1.2",
+      "title": "Long Passwords Permitted",
+      "summary": "Permit long passwords of at least sixty-four characters so users can choose strong passphrases. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 2
+    },
+    {
+      "code": "V2.1.3",
+      "title": "No Silent Truncation",
+      "summary": "Do not silently truncate passwords; accept the full secret the user typed or reject it clearly. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 3
+    },
+    {
+      "code": "V2.1.4",
+      "title": "Unicode and Spaces Allowed",
+      "summary": "Allow spaces and printable Unicode, including emoji, within passwords without stripping meaningful characters. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 4
+    },
+    {
+      "code": "V2.1.5",
+      "title": "Users Can Change Password",
+      "summary": "Let authenticated users change their password through a supported, self-service flow. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 5
+    },
+    {
+      "code": "V2.1.6",
+      "title": "Change Requires Current Password",
+      "summary": "Require the current password when changing to a new one so a hijacked session cannot lock out the owner. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 6
+    },
+    {
+      "code": "V2.1.7",
+      "title": "Breached Password Screening",
+      "summary": "Check chosen passwords against a set of known-breached values and refuse those that appear in it. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 7
+    },
+    {
+      "code": "V2.1.8",
+      "title": "Password Strength Guidance",
+      "summary": "Provide a strength meter or guidance to help users choose stronger passwords. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 8
+    },
+    {
+      "code": "V2.1.9",
+      "title": "No Arbitrary Composition Rules",
+      "summary": "Do not impose composition rules such as mandatory symbol mixes that push users toward predictable patterns. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 9
+    },
+    {
+      "code": "V2.1.10",
+      "title": "No Forced Periodic Rotation",
+      "summary": "Do not force periodic password rotation in the absence of evidence of compromise. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 10
+    },
+    {
+      "code": "V2.1.11",
+      "title": "Password Managers Supported",
+      "summary": "Allow pasting and browser or password-manager autofill so that strong, unique secrets are practical. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 11
+    },
+    {
+      "code": "V2.1.12",
+      "title": "Reveal or Show Last Character",
+      "summary": "Offer an option to view the entered password or its last character to reduce entry errors. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 12
+    },
+    {
+      "code": "V2.2.1",
+      "title": "Anti-Automation on Login",
+      "summary": "Apply anti-automation controls such as rate limiting and lockout so that credential guessing is impractical. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 13
+    },
+    {
+      "code": "V2.2.2",
+      "title": "Restrict Weak Authenticators",
+      "summary": "Limit weak authenticators such as SMS and favour stronger factors, offering users at least one strong option. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 14
+    },
+    {
+      "code": "V2.2.3",
+      "title": "Secure Authentication Notifications",
+      "summary": "Notify users through a secure channel after significant authentication events such as password or factor changes. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 15
+    },
+    {
+      "code": "V2.3.1",
+      "title": "Random Initial Secrets",
+      "summary": "Generate initial or temporary passwords with sufficient randomness and expire them after first use. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 16
+    },
+    {
+      "code": "V2.5.1",
+      "title": "No Vendor Default Recovery Secret",
+      "summary": "Do not ship default or shared recovery secrets that would grant access out of the box. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 17
+    },
+    {
+      "code": "V2.5.2",
+      "title": "No Password Hints",
+      "summary": "Do not store or expose password hints or knowledge-based answers that ease guessing. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 18
+    },
+    {
+      "code": "V2.5.3",
+      "title": "Recovery Does Not Reveal Password",
+      "summary": "Ensure account recovery never discloses the current password to the requester. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 19
+    },
+    {
+      "code": "V2.5.4",
+      "title": "No Shared or Default Accounts",
+      "summary": "Avoid shared or built-in default accounts such as generic administrator logins. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 20
+    },
+    {
+      "code": "V2.5.5",
+      "title": "Notify on Factor Change",
+      "summary": "Notify the user when an authentication factor is added, changed, or removed. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 21
+    },
+    {
+      "code": "V2.5.6",
+      "title": "Secure Recovery Mechanism",
+      "summary": "Provide a secure recovery mechanism that does not rely on an insecure channel or weak secret. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 22
+    },
+    {
+      "code": "V2.6.1",
+      "title": "One-Time Lookup Secrets",
+      "summary": "Ensure lookup or backup codes can each be used only once. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 23
+    },
+    {
+      "code": "V2.7.1",
+      "title": "No Cleartext Out-of-Band",
+      "summary": "Do not use unencrypted out-of-band mechanisms as a primary factor for sensitive accounts. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 24
+    },
+    {
+      "code": "V2.7.2",
+      "title": "Out-of-Band Expiry",
+      "summary": "Expire out-of-band verification codes after a short validity window. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 25
+    },
+    {
+      "code": "V2.7.3",
+      "title": "Single-Use Out-of-Band",
+      "summary": "Ensure an out-of-band code can only be consumed once. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 26
+    },
+    {
+      "code": "V2.7.4",
+      "title": "Authenticated Out-of-Band Delivery",
+      "summary": "Deliver out-of-band codes only over a channel bound to the correct user. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 27
+    },
+    {
+      "code": "V2.8.1",
+      "title": "Time-Based One-Time Passwords",
+      "summary": "Support time-based one-time password authenticators as a recognised second factor. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 28
+    },
+    {
+      "code": "V3.1.1",
+      "title": "No Session Tokens in URLs",
+      "summary": "Never place session tokens in URLs where they can leak through logs, history, or referrers. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 29
+    },
+    {
+      "code": "V3.2.1",
+      "title": "New Token After Authentication",
+      "summary": "Issue a fresh session token upon authentication to prevent fixation of a pre-login value. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 30
+    },
+    {
+      "code": "V3.2.2",
+      "title": "Sufficient Token Entropy",
+      "summary": "Generate session tokens with enough entropy that they cannot be guessed or enumerated. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 31
+    },
+    {
+      "code": "V3.2.3",
+      "title": "Secure Token Storage",
+      "summary": "Store session tokens in the client using secure, tamper-resistant cookie mechanisms. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 32
+    },
+    {
+      "code": "V3.3.1",
+      "title": "Logout Invalidates Session",
+      "summary": "Fully invalidate the session server-side on logout so the token cannot be reused. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 33
+    },
+    {
+      "code": "V3.3.2",
+      "title": "Inactivity and Absolute Timeout",
+      "summary": "Expire sessions after a period of inactivity and enforce a reasonable absolute lifetime. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 34
+    },
+    {
+      "code": "V3.4.1",
+      "title": "Secure Cookie Attribute",
+      "summary": "Set the Secure attribute on session cookies so they are sent only over encrypted connections. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 35
+    },
+    {
+      "code": "V3.4.2",
+      "title": "HttpOnly Cookie Attribute",
+      "summary": "Set the HttpOnly attribute so session cookies are not readable from client scripts. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 36
+    },
+    {
+      "code": "V3.4.3",
+      "title": "SameSite Cookie Attribute",
+      "summary": "Set an appropriate SameSite attribute to reduce cross-site request risk. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 37
+    },
+    {
+      "code": "V3.4.4",
+      "title": "Host-Prefixed Cookies",
+      "summary": "Use the __Host- cookie prefix where possible to constrain scope and origin. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 38
+    },
+    {
+      "code": "V3.4.5",
+      "title": "Path-Scoped Cookies",
+      "summary": "Scope session cookies to the narrowest path the application needs. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 39
+    },
+    {
+      "code": "V4.1.1",
+      "title": "Server-Side Access Enforcement",
+      "summary": "Enforce access control on a trusted server layer, never solely in client-side code. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V4 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 40
+    },
+    {
+      "code": "V4.1.2",
+      "title": "Non-Manipulable Access Metadata",
+      "summary": "Ensure the attributes used for access decisions cannot be tampered with by the requester. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V4 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 41
+    },
+    {
+      "code": "V4.1.3",
+      "title": "Principle of Least Privilege",
+      "summary": "Grant each user and process only the access their function requires. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V4 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 42
+    },
+    {
+      "code": "V4.1.5",
+      "title": "Fail Securely on Access Errors",
+      "summary": "Make access-control checks deny by default and fail closed when an error occurs. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V4 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 43
+    },
+    {
+      "code": "V4.2.1",
+      "title": "Protect Against Object Reference Abuse",
+      "summary": "Verify the caller is authorised for each object so identifiers cannot be swapped to reach others' data. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V4 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 44
+    },
+    {
+      "code": "V4.2.2",
+      "title": "Anti-CSRF for State Changes",
+      "summary": "Protect state-changing requests with anti-CSRF measures or equivalent controls. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V4 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 45
+    },
+    {
+      "code": "V4.3.1",
+      "title": "Multi-Factor Admin Access",
+      "summary": "Require multi-factor authentication for administrative interfaces. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V4 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 46
+    },
+    {
+      "code": "V4.3.2",
+      "title": "Directory Browsing Disabled",
+      "summary": "Disable directory listing and block access to backup or system files under the web root. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V4 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 47
+    },
+    {
+      "code": "V5.1.1",
+      "title": "HTTP Parameter Pollution",
+      "summary": "Defend against HTTP parameter pollution by handling duplicated parameters predictably. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 48
+    },
+    {
+      "code": "V5.1.2",
+      "title": "Mass Assignment Protection",
+      "summary": "Guard against mass assignment by binding only the fields a request is permitted to set. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 49
+    },
+    {
+      "code": "V5.1.3",
+      "title": "Validate All Input",
+      "summary": "Validate all input against expected type, length, and range on the server. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 50
+    },
+    {
+      "code": "V5.1.4",
+      "title": "Allowlist Structured Data",
+      "summary": "Validate structured data such as identifiers and enums against a strict allowlist. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 51
+    },
+    {
+      "code": "V5.1.5",
+      "title": "Validate Redirect Targets",
+      "summary": "Validate redirect and forward destinations so they cannot be steered to attacker-controlled sites. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 52
+    },
+    {
+      "code": "V5.2.1",
+      "title": "Sanitize Untrusted HTML",
+      "summary": "Sanitize user-supplied HTML with a well-tested library before it is stored or rendered. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 53
+    },
+    {
+      "code": "V5.2.2",
+      "title": "Sanitize Unstructured Data",
+      "summary": "Sanitize unstructured user content so that control characters cannot alter downstream processing. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 54
+    },
+    {
+      "code": "V5.2.3",
+      "title": "Prevent Mail Injection",
+      "summary": "Neutralise mail-header and message injection when user input feeds email generation. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 55
+    },
+    {
+      "code": "V5.2.4",
+      "title": "Avoid Dynamic Code Evaluation",
+      "summary": "Avoid evaluating user input as code and remove dynamic eval-style execution paths. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 56
+    },
+    {
+      "code": "V5.2.5",
+      "title": "Prevent Template Injection",
+      "summary": "Prevent template injection by keeping user input out of template syntax. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 57
+    },
+    {
+      "code": "V5.2.6",
+      "title": "Mitigate SSRF",
+      "summary": "Protect server-side requests by validating and restricting user-supplied URLs and destinations. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 58
+    },
+    {
+      "code": "V5.2.7",
+      "title": "Neutralize Scriptable SVG",
+      "summary": "Sanitize or reject scriptable content in uploaded SVG or similar files. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 59
+    },
+    {
+      "code": "V5.2.8",
+      "title": "Sanitize Scriptable Markup",
+      "summary": "Sanitize scriptable content in formats such as Markdown or CSS before rendering. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 60
+    },
+    {
+      "code": "V5.3.1",
+      "title": "Context-Aware Output Encoding",
+      "summary": "Apply output encoding appropriate to each rendering context to stop injection. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 61
+    },
+    {
+      "code": "V5.3.2",
+      "title": "Unicode-Safe Encoding",
+      "summary": "Handle Unicode correctly during encoding so normalisation tricks cannot bypass filters. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 62
+    },
+    {
+      "code": "V5.3.3",
+      "title": "Context-Aware XSS Defense",
+      "summary": "Defend against cross-site scripting with context-aware encoding and safe sinks. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 63
+    },
+    {
+      "code": "V5.3.4",
+      "title": "Parameterized Database Queries",
+      "summary": "Use parameterized queries or safe ORM methods to prevent SQL injection. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 64
+    },
+    {
+      "code": "V5.3.5",
+      "title": "Prevent OS Command Injection",
+      "summary": "Avoid building shell commands from input and use safe APIs to prevent command injection. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 65
+    },
+    {
+      "code": "V5.3.6",
+      "title": "Prevent XML Injection",
+      "summary": "Protect XML processing from injection through validation and safe construction. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 66
+    },
+    {
+      "code": "V5.3.7",
+      "title": "Prevent LDAP Injection",
+      "summary": "Escape or parameterize LDAP queries to prevent injection. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 67
+    },
+    {
+      "code": "V5.3.9",
+      "title": "Prevent File Inclusion",
+      "summary": "Prevent local and remote file inclusion driven by user input. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 68
+    },
+    {
+      "code": "V5.3.10",
+      "title": "Prevent XPath Injection",
+      "summary": "Protect XPath and similar query languages from injection via user input. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 69
+    },
+    {
+      "code": "V5.5.1",
+      "title": "Safe Deserialization",
+      "summary": "Do not deserialize untrusted data with mechanisms that can instantiate arbitrary types. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 70
+    },
+    {
+      "code": "V5.5.2",
+      "title": "Hardened XML Parsing",
+      "summary": "Configure XML parsers to disable external entities and prevent XXE. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 71
+    },
+    {
+      "code": "V5.5.3",
+      "title": "Deserialization Integrity Checks",
+      "summary": "Apply integrity checks and type restrictions when serialized data must be accepted. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 72
+    },
+    {
+      "code": "V5.5.4",
+      "title": "Strict JSON Parsing",
+      "summary": "Parse JSON with strict, well-tested parsers and reject malformed structures. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true category: L1",
+      "category": "L1",
+      "sortOrder": 73
+    },
+    {
+      "code": "V6.2.1",
+      "title": "Fail Securely in Crypto Modules",
+      "summary": "Ensure cryptographic operations fail closed and never fall back to processing data unprotected. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V6 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 74
+    },
+    {
+      "code": "V7.4.1",
+      "title": "Generic Error Messages",
+      "summary": "Return generic error messages to users and keep diagnostic detail server-side. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V7 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 75
+    },
+    {
+      "code": "V8.2.1",
+      "title": "Anti-Caching Response Headers",
+      "summary": "Set anti-caching headers on responses containing sensitive data. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V8 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 76
+    },
+    {
+      "code": "V8.2.2",
+      "title": "Limit Client-Side Storage",
+      "summary": "Avoid storing sensitive data in browser storage that persists beyond the session. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V8 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 77
+    },
+    {
+      "code": "V8.2.3",
+      "title": "Clear Data on Logout",
+      "summary": "Clear client-side sensitive data when the user logs out. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V8 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 78
+    },
+    {
+      "code": "V8.3.1",
+      "title": "Sensitive Data in Request Body",
+      "summary": "Send sensitive data in the request body or headers, not in the query string. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V8 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 79
+    },
+    {
+      "code": "V8.3.2",
+      "title": "User Data Export and Removal",
+      "summary": "Allow users to export and remove their personal data on request. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V8 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 80
+    },
+    {
+      "code": "V8.3.3",
+      "title": "Privacy Notice and Consent",
+      "summary": "Present clear terms and obtain consent before collecting personal data. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V8 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 81
+    },
+    {
+      "code": "V8.3.4",
+      "title": "Sensitive Data Inventory",
+      "summary": "Identify and document the sensitive data the application collects and processes. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V8 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 82
+    },
+    {
+      "code": "V9.1.1",
+      "title": "TLS for All Connections",
+      "summary": "Require TLS for all client connections and never fall back to unencrypted transport. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V9 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 83
+    },
+    {
+      "code": "V9.1.2",
+      "title": "Strong Cipher Configuration",
+      "summary": "Configure only strong, current cipher suites and disable weak ones. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V9 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 84
+    },
+    {
+      "code": "V9.1.3",
+      "title": "Current TLS Versions",
+      "summary": "Support only current TLS versions and disable obsolete protocols. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V9 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 85
+    },
+    {
+      "code": "V10.3.1",
+      "title": "Integrity-Checked Updates",
+      "summary": "Verify the integrity and authenticity of application updates before applying them. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V10 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 86
+    },
+    {
+      "code": "V10.3.2",
+      "title": "Signed Code and Dependencies",
+      "summary": "Use signing and integrity checks so that tampered code or dependencies are rejected. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V10 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 87
+    },
+    {
+      "code": "V10.3.3",
+      "title": "Protection Against Subdomain Takeover",
+      "summary": "Guard against subdomain takeover and stale references that attackers could claim. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V10 depth: 2 assessable: true category: L1",
+      "category": "L1",
+      "sortOrder": 88
+    },
+    {
+      "code": "V11.1.1",
+      "title": "Enforce Sequential Steps",
+      "summary": "Enforce that multi-step workflows are completed in order and cannot be skipped. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V11 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 89
+    },
+    {
+      "code": "V11.1.2",
+      "title": "Realistic Timing Limits",
+      "summary": "Reject workflow submissions that arrive faster than a genuine human could produce them. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V11 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 90
+    },
+    {
+      "code": "V11.1.3",
+      "title": "Enforce Usage Limits",
+      "summary": "Apply per-user limits so that a single actor cannot abuse a feature at scale. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V11 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 91
+    },
+    {
+      "code": "V11.1.4",
+      "title": "Anti-Automation for Aggregation",
+      "summary": "Apply anti-automation to actions an attacker could script to harvest data or resources. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V11 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 92
+    },
+    {
+      "code": "V11.1.5",
+      "title": "Enforce Business Rule Limits",
+      "summary": "Enforce business-rule limits such as maximum values or quantities server-side. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V11 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 93
+    },
+    {
+      "code": "V11.1.6",
+      "title": "Prevent Logic Race Conditions",
+      "summary": "Protect high-value operations from race conditions that could bypass business rules. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V11 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 94
+    },
+    {
+      "code": "V12.1.1",
+      "title": "Reject Oversized Uploads",
+      "summary": "Reject uploads larger than the application expects to avoid denial of service. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 95
+    },
+    {
+      "code": "V12.3.1",
+      "title": "Validate Submitted Filenames",
+      "summary": "Validate and normalise user-submitted filenames to prevent path traversal. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 96
+    },
+    {
+      "code": "V12.3.2",
+      "title": "Guard File Metadata",
+      "summary": "Prevent user-controlled file metadata from steering unsafe processing. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 97
+    },
+    {
+      "code": "V12.3.3",
+      "title": "Prevent Path Manipulation",
+      "summary": "Block path manipulation so file operations cannot escape their intended directory. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 98
+    },
+    {
+      "code": "V12.3.4",
+      "title": "Restrict Executable Extensions",
+      "summary": "Reject or neutralise dangerous, executable file extensions on upload. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 99
+    },
+    {
+      "code": "V12.3.5",
+      "title": "Distrust File Metadata",
+      "summary": "Do not make trust decisions based on user-supplied file metadata. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 100
+    },
+    {
+      "code": "V12.4.1",
+      "title": "Store Files Outside Web Root",
+      "summary": "Store uploaded files outside the web root or on a storage service so they cannot be executed. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 101
+    },
+    {
+      "code": "V12.4.2",
+      "title": "Scan Uploads for Malware",
+      "summary": "Scan uploaded files for malware before they are made available. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 102
+    },
+    {
+      "code": "V12.5.1",
+      "title": "Do Not Serve Source Files",
+      "summary": "Configure the web tier so that source and configuration files are never served. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 103
+    },
+    {
+      "code": "V12.5.2",
+      "title": "Control Access to Uploaded Files",
+      "summary": "Serve uploaded files through access-controlled, safe delivery paths. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 104
+    },
+    {
+      "code": "V12.6.1",
+      "title": "Prevent File-Based Redirects",
+      "summary": "Prevent file features from being used for open redirect or server-side request forgery. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true category: L1",
+      "category": "L1",
+      "sortOrder": 105
+    },
+    {
+      "code": "V13.1.1",
+      "title": "Consistent API Validation",
+      "summary": "Apply the same validation and encoding rules to API endpoints as to the user interface. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V13 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 106
+    },
+    {
+      "code": "V13.1.3",
+      "title": "No Sensitive Data in API URLs",
+      "summary": "Keep sensitive data out of API URLs where it could be logged or cached. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V13 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 107
+    },
+    {
+      "code": "V13.1.5",
+      "title": "Reject Unexpected Content Types",
+      "summary": "Reject requests whose content type is not one the endpoint expects. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V13 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 108
+    },
+    {
+      "code": "V13.2.1",
+      "title": "Allowlist HTTP Methods",
+      "summary": "Allow only the HTTP methods each API resource is designed to accept. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V13 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 109
+    },
+    {
+      "code": "V13.2.2",
+      "title": "Schema-Validate API Payloads",
+      "summary": "Validate API request bodies against a defined schema and reject malformed input. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V13 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 110
+    },
+    {
+      "code": "V13.2.3",
+      "title": "Anti-CSRF for Cookie APIs",
+      "summary": "Protect cookie-authenticated API calls against cross-site request forgery. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V13 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 111
+    },
+    {
+      "code": "V13.2.5",
+      "title": "Verify Request Content Type",
+      "summary": "Verify that request content types match what the API contract specifies. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V13 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 112
+    },
+    {
+      "code": "V13.3.1",
+      "title": "Validate SOAP Payloads",
+      "summary": "Validate SOAP requests against their schema to prevent malformed or malicious input. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V13 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 113
+    },
+    {
+      "code": "V14.2.1",
+      "title": "Up-to-Date Dependencies",
+      "summary": "Keep components and dependencies current with security updates. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 114
+    },
+    {
+      "code": "V14.2.2",
+      "title": "Remove Unneeded Features",
+      "summary": "Remove unused features, sample content, and default files from deployments. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 115
+    },
+    {
+      "code": "V14.2.3",
+      "title": "Verify Third-Party Asset Integrity",
+      "summary": "Verify the integrity of third-party assets, for example with subresource integrity. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 116
+    },
+    {
+      "code": "V14.3.2",
+      "title": "Disable Debug Modes",
+      "summary": "Disable debug modes and developer consoles in production. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 117
+    },
+    {
+      "code": "V14.3.3",
+      "title": "No Version Disclosure",
+      "summary": "Suppress framework and server version information in responses. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 118
+    },
+    {
+      "code": "V14.4.1",
+      "title": "Charset in Content-Type",
+      "summary": "Specify a safe character set in the Content-Type header of responses. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 119
+    },
+    {
+      "code": "V14.4.2",
+      "title": "Content-Disposition for Downloads",
+      "summary": "Set a Content-Disposition header so downloads are handled safely by browsers. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 120
+    },
+    {
+      "code": "V14.4.3",
+      "title": "Content Security Policy",
+      "summary": "Deploy a Content-Security-Policy header to reduce the impact of injection. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 121
+    },
+    {
+      "code": "V14.4.4",
+      "title": "No MIME Sniffing",
+      "summary": "Set X-Content-Type-Options to nosniff to stop content-type guessing. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 122
+    },
+    {
+      "code": "V14.4.5",
+      "title": "Strict Transport Security",
+      "summary": "Send an HTTP Strict-Transport-Security header to enforce HTTPS. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 123
+    },
+    {
+      "code": "V14.4.6",
+      "title": "Referrer Policy",
+      "summary": "Set a Referrer-Policy header to limit leakage of URLs to other origins. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 124
+    },
+    {
+      "code": "V14.4.7",
+      "title": "Anti-Clickjacking Controls",
+      "summary": "Restrict framing with frame-ancestors or equivalent to prevent clickjacking. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 125
+    },
+    {
+      "code": "V14.5.1",
+      "title": "Validate HTTP Methods at Edge",
+      "summary": "Reject unsupported HTTP methods at the server so only intended verbs are processed. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 126
+    },
+    {
+      "code": "V14.5.2",
+      "title": "Do Not Trust Origin for Auth",
+      "summary": "Do not use the Origin header alone to make authentication decisions. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 127
+    },
+    {
+      "code": "V14.5.3",
+      "title": "Strict CORS Configuration",
+      "summary": "Configure cross-origin resource sharing with a strict, explicit allowlist of origins. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "category": "L1",
+      "sortOrder": 128
+    }
+  ],
+  "templates": [
+    {
+      "code": "ASVS-V2",
+      "title": "Authentication (ASVS L1)",
+      "description": "Implements the Level 1 verification requirements of ASVS chapter V2 — Authentication. Establishes the baseline application-security controls for this chapter.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Application Security",
+      "requirementCodes": [
+        "V2.1.1",
+        "V2.1.2",
+        "V2.1.3",
+        "V2.1.4",
+        "V2.1.5",
+        "V2.1.6",
+        "V2.1.7",
+        "V2.1.8",
+        "V2.1.9",
+        "V2.1.10",
+        "V2.1.11",
+        "V2.1.12",
+        "V2.2.1",
+        "V2.2.2",
+        "V2.2.3",
+        "V2.3.1",
+        "V2.5.1",
+        "V2.5.2",
+        "V2.5.3",
+        "V2.5.4",
+        "V2.5.5",
+        "V2.5.6",
+        "V2.6.1",
+        "V2.7.1",
+        "V2.7.2",
+        "V2.7.3",
+        "V2.7.4",
+        "V2.8.1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Inventory every authentication entry point and the credentials each one accepts"
+          },
+          "description": {
+            "en": "Walk the routing table and the identity configuration and record every way a caller can prove who they are: the interactive login, single sign-on, any API key or service account, the recovery flow and each second factor. For each entry point record the credential type accepted, the code path that enforces it, and whether the account behind it belongs to one named person or is shared. A built-in or vendor-default administrator login is the entry point nothing else in this control can protect, so it is the one this inventory exists to surface. Attach the inventory."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Authentication entry-point inventory: one row per entry point giving the credential type accepted, the enforcing code path, and whether the account is individual or shared"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Walk the routing table for handlers that establish an authenticated identity."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the credential type each entry point accepts and where it is enforced."
+              }
+            },
+            {
+              "text": {
+                "en": "List the service accounts and API keys that bypass the interactive login."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag every shared or vendor-default account for individual replacement."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Set the password rules to the Level 1 limits and screen new secrets against a breached set"
+          },
+          "description": {
+            "en": "Change the password configuration so twelve characters is the minimum accepted, at least sixty-four are still accepted, the value is never silently truncated, and spaces and printable Unicode pass through unaltered. Delete the mandatory character-class rules and the scheduled expiry, both of which push users toward predictable variants, and leave paste and password-manager autofill working. Then wire the breached-password lookup into every path that writes a password hash, including administrative reset, so a value in the breach set is refused with an explanation rather than accepted quietly, and require the current password before a self-service change. Leave the strength guidance and the option to reveal what was typed in place, so a refusal tells the user how to succeed rather than only that they failed. Attach the configuration together with a transcript per path showing a known-breached value refused."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Password policy configuration showing the accepted length range and the removed composition and expiry rules, plus a transcript per password-setting path showing a known-breached value refused"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Set the minimum length and confirm the field accepts a long passphrase."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove any truncation applied before the secret reaches the hashing call."
+              }
+            },
+            {
+              "text": {
+                "en": "Delete the character-class rules and the scheduled password expiry job."
+              }
+            },
+            {
+              "text": {
+                "en": "Call the breached-password lookup on every path that writes a hash."
+              }
+            },
+            {
+              "text": {
+                "en": "Require and verify the current password on the self-service change flow."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm paste and password-manager autofill are not blocked on the field."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the strength guidance and the reveal option on the field."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Issue recovery and initial secrets as single-use values that never disclose the existing password"
+          },
+          "description": {
+            "en": "Rework account recovery so the value it sends is generated from a cryptographic random source, is valid for a short window, is marked consumed the first time it is redeemed, and is delivered only over a channel already bound to the account. Remove password hints and knowledge-based answers from the account schema, remove any recovery secret shipped with the product, and make the flow set a new secret rather than return the current one. Backup and lookup codes follow the same single-use rule. Attach a walkthrough of the flow together with the token record showing generation, expiry and consumption."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Recovery flow walkthrough with the token record for one reset showing random generation, the expiry window and the point of single-use consumption"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Generate recovery and initial secrets from a cryptographic random source."
+              }
+            },
+            {
+              "text": {
+                "en": "Expire the value after a short window and mark it used on first redemption."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove password hints and knowledge-based answers from the account schema."
+              }
+            },
+            {
+              "text": {
+                "en": "Send the value only to a channel already verified against the account."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the flow sets a new secret rather than disclosing the current one."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Enable a time-based one-time-password factor and retire the weak authenticators beside it"
+          },
+          "description": {
+            "en": "Add time-based one-time-password enrolment to account settings so every account, not only the administrative ones, has a strong second factor available, and stop offering an unencrypted out-of-band channel as the only strong option on sensitive accounts. Send the account holder a notice over an already-verified channel whenever a factor is added, changed or removed, so a factor swapped by somebody else is visible to the owner. Attach the enrolment walkthrough together with one of the notices a factor change produced."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Second-factor enrolment walkthrough with the notice sent to the account holder when a factor was added or removed"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Add time-based one-time-password enrolment to the account settings page."
+              }
+            },
+            {
+              "text": {
+                "en": "Offer the strong factor to every account, not only administrative ones."
+              }
+            },
+            {
+              "text": {
+                "en": "Retire the unencrypted out-of-band channel as a standalone strong factor."
+              }
+            },
+            {
+              "text": {
+                "en": "Send a notice to a verified channel on every factor add, change or removal."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record the lockouts and throttled attempts the login rate limiter produced in the period"
+          },
+          "description": {
+            "en": "Extract the authentication events for the period and summarise them by account and source address: the failed attempts that drew a delay, the accounts the limiter locked, and the notices sent after a password or factor change. The point of this extract is to show the anti-automation control firing on real traffic rather than merely being configured, so note any account locked repeatedly and what was done about it. Attach the extract."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Authentication event extract for the period: throttled attempts and lockouts grouped by account and source address, with the change notices sent"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Retest each entry point on the inventory against the Level 1 authentication requirements"
+          },
+          "description": {
+            "en": "Take the entry-point inventory as the population and work through it one row at a time, attempting the behaviour each requirement forbids: a short password, a truncated one, a breached one, a change without the current secret, a recovery token used twice, a lookup code redeemed twice, and a login loop fast enough to trip the limiter. Confirm too that every row the inventory flagged as shared or vendor-default now resolves to a single named person, since that is the row none of the other checks can speak for. Record the response against each, so a requirement that regressed as the application changed is visible as a failed row rather than an absence. Raise a ticket for every failure and reference it in the record. Attach the retest record."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Retest record covering every entry point on the inventory, giving the requirement exercised, the response observed and the ticket raised for each failure"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Use the entry-point inventory as the population for the retest."
+              }
+            },
+            {
+              "text": {
+                "en": "Attempt a short, a truncated and a known-breached password on each path."
+              }
+            },
+            {
+              "text": {
+                "en": "Redeem a recovery token and a lookup code a second time and record the result."
+              }
+            },
+            {
+              "text": {
+                "en": "Loop the login until the limiter engages and record where it did."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm each flagged shared or default account now has one named holder."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a ticket for each failed row and cite it in the record."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ASVS-V3",
+      "title": "Session Management (ASVS L1)",
+      "description": "Implements the Level 1 verification requirements of ASVS chapter V3 — Session Management. Establishes the baseline application-security controls for this chapter.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Application Security",
+      "requirementCodes": [
+        "V3.1.1",
+        "V3.2.1",
+        "V3.2.2",
+        "V3.2.3",
+        "V3.3.1",
+        "V3.3.2",
+        "V3.4.1",
+        "V3.4.2",
+        "V3.4.3",
+        "V3.4.4",
+        "V3.4.5"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List every session token the application issues and where the client keeps it"
+          },
+          "description": {
+            "en": "Record each token the application uses to carry an authenticated identity between requests: its name, the flow that issues it, whether it lives in a cookie or in script-reachable storage, its lifetime, and which requests carry it. Include the tokens issued by any single sign-on or gateway layer in front of the application, because those are the ones the application team most often does not know the attributes of. Attach the register."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Session token register: token name, issuing flow, client storage location, lifetime and the requests that carry it"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Name each token the application uses to carry identity between requests."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where the client stores it and whether script can read it."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the tokens issued by any gateway or single sign-on layer in front."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the lifetime configured for each token and where it is set."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Issue a fresh session token at authentication and widen its entropy to the generator's full width"
+          },
+          "description": {
+            "en": "Change the login path so the identifier held before authentication is discarded and a new one is minted once the credentials are accepted, which is what stops a value planted in the browser beforehand from becoming an authenticated session. Generate the value from a cryptographic random source at the full width the generator offers rather than from a counter, timestamp or truncated hash. Attach the captured token values from one login showing the pre-authentication value replaced, together with the generator and length now in use."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Captured token values across one login showing the pre-authentication value discarded, with the random source and token length recorded"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Discard the pre-authentication identifier once credentials are accepted."
+              }
+            },
+            {
+              "text": {
+                "en": "Mint the new value from a cryptographic random source at full width."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture the token before and after login and confirm it changed."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the generator and the token length in the session register."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Set the Secure, HttpOnly, SameSite, host-prefix and path attributes on every session cookie"
+          },
+          "description": {
+            "en": "Work through the session register and set the attributes on each cookie carrying identity: Secure so it never travels unencrypted, HttpOnly so page script cannot read it, a SameSite value that suits how the application is embedded, the host prefix where the deployment allows it, and the narrowest path the application actually needs. Set them in one place so a cookie added later inherits them rather than being configured by hand. Attach the Set-Cookie headers captured from a live login."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Set-Cookie headers captured from a live login showing the Secure, HttpOnly, SameSite, prefix and path attributes on each session cookie"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Set Secure and HttpOnly on every cookie that carries identity."
+              }
+            },
+            {
+              "text": {
+                "en": "Choose a SameSite value that suits how the application is embedded."
+              }
+            },
+            {
+              "text": {
+                "en": "Apply the host prefix where the deployment and domain allow it."
+              }
+            },
+            {
+              "text": {
+                "en": "Narrow the cookie path to what the application actually requires."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture the Set-Cookie headers from a login as the record."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Revoke the session server-side at logout and enforce the inactivity and absolute lifetimes"
+          },
+          "description": {
+            "en": "Make logout delete the server-held session record rather than only clearing the client cookie, so a token captured earlier stops working the moment the user signs out. Configure an inactivity timeout that ends a session left untouched and an absolute lifetime that ends it regardless of activity, and apply both to the server-side record rather than to the cookie expiry, which the client controls. Attach the test record showing a logged-out token refused on replay together with the two configured values."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Test record showing a logged-out token refused when replayed, alongside the configured inactivity and absolute lifetime values"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Delete the server-held session record on logout, not just the cookie."
+              }
+            },
+            {
+              "text": {
+                "en": "Configure the inactivity timeout against the server-side record."
+              }
+            },
+            {
+              "text": {
+                "en": "Configure an absolute lifetime that ends the session regardless of use."
+              }
+            },
+            {
+              "text": {
+                "en": "Replay a logged-out token and record the response it received."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Scan the access and referrer logs for session tokens travelling inside URLs"
+          },
+          "description": {
+            "en": "Search the period's application, gateway, content-delivery and analytics logs for the token names on the session register appearing in a path segment, a query string or a referrer header. A token in a URL survives in browser history, proxy logs and the referrer sent to third parties, so a single hit is a live disclosure rather than a style problem. Record each hit with the route that produced it and the change made. Attach the scan output."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Log scan output for the period listing every URL found carrying a session token, with the originating route and the remediation for each hit"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Walk the session lifecycle end to end and record the token at each step"
+          },
+          "description": {
+            "en": "Move one test account through the whole lifecycle in order and capture the token and its attributes at every step: before login, immediately after, after a privileged action, after the inactivity window elapses, after logout, and on a replay of each earlier value. This is the check that catches a regression the individual settings hide, such as a timeout configured but not applied to the server record. Record the value, the attributes and the server response at each step. Attach the walkthrough."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Session lifecycle walkthrough recording the token value, its cookie attributes and the server response at each step, including the replays"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Capture the token before login and immediately after it succeeds."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture it again after a privileged action and confirm it is unchanged."
+              }
+            },
+            {
+              "text": {
+                "en": "Let the inactivity window elapse and record the response to the next call."
+              }
+            },
+            {
+              "text": {
+                "en": "Log out, then replay every earlier token value and record each response."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a ticket for any step where an earlier value still worked."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ASVS-V4",
+      "title": "Access Control (ASVS L1)",
+      "description": "Implements the Level 1 verification requirements of ASVS chapter V4 — Access Control. Establishes the baseline application-security controls for this chapter.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Application Security",
+      "requirementCodes": [
+        "V4.1.1",
+        "V4.1.2",
+        "V4.1.3",
+        "V4.1.5",
+        "V4.2.1",
+        "V4.2.2",
+        "V4.3.1",
+        "V4.3.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Map every route and object type to the role and ownership rule that governs it"
+          },
+          "description": {
+            "en": "Build the matrix the rest of this control is measured against: one row per route and per object type, giving the role required to reach it, the ownership rule that decides which instances of the object a caller may touch, and the code that enforces both. Record the minimum role each route genuinely needs rather than the role it currently accepts, because the gap between those two is where excess privilege lives. Attach the matrix."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Access-control matrix: one row per route and object type giving the role required, the ownership rule and the enforcing code path"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List every route and every object type the application exposes."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the minimum role each route genuinely requires to function."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the ownership rule deciding which instances a caller may touch."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the code path that enforces each row and flag rows with none."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Move every access decision into the server-side layer and make the default a denial"
+          },
+          "description": {
+            "en": "Find the decisions currently made by hiding a control in the interface, by a role carried in a request parameter, or by a claim the caller can edit, and re-take each one on the server from attributes held in the session record. Wrap the check so an unmatched route or a thrown exception resolves to a denial rather than falling through to the handler, which is the failure mode that turns an error in an unrelated component into an authorisation bypass. Attach the diff together with a test showing an edited role attribute ignored and an induced error producing a denial."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Diff and test record showing the decision taken server-side from session-held attributes, with an edited role attribute ignored and an induced error resolving to a denial"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Find decisions made only by hiding controls in the interface."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-take each decision from attributes held in the server session record."
+              }
+            },
+            {
+              "text": {
+                "en": "Make an unmatched route or thrown error resolve to a denial."
+              }
+            },
+            {
+              "text": {
+                "en": "Test with an edited role attribute and confirm it is ignored."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Add an ownership check to every endpoint that accepts a record identifier"
+          },
+          "description": {
+            "en": "For each endpoint on the matrix that takes an identifier, add the check that the caller is entitled to that particular record rather than to records of that type, and make the refusal indistinguishable from the response for a record that does not exist so the endpoint cannot be used to enumerate. Cover the endpoints reached through nested paths and batch operations, which are routinely missed because the parent request was already authorised. Attach the diff and a test in which one account requests another account's record by identifier."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Test record showing an authenticated account refused when it requests another account's record by identifier, across single, nested and batch endpoints"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "List the endpoints that accept a record identifier from the caller."
+              }
+            },
+            {
+              "text": {
+                "en": "Check entitlement to the specific record, not to the record type."
+              }
+            },
+            {
+              "text": {
+                "en": "Cover nested paths and batch operations reached under one authorisation."
+              }
+            },
+            {
+              "text": {
+                "en": "Return the same response for forbidden and non-existent records."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Add anti-CSRF protection to every state-changing request the browser can make"
+          },
+          "description": {
+            "en": "Take the state-changing routes from the matrix and give each one a defence against a request the browser is tricked into sending: a per-session token the server checks, or an equivalent the application already relies on. Reject a request whose token is missing or does not match rather than logging and continuing. Record which mechanism protects each route, since a route added later inherits nothing automatically. Attach the route list with its mechanism and the response to a forged cross-site submission."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "List of state-changing routes with the anti-CSRF mechanism against each, plus the response the application returned to a forged cross-site submission"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Restrict the administrative interfaces to sessions that completed a second factor"
+          },
+          "description": {
+            "en": "Take the administrative routes named on the matrix and require a session that has completed a second factor to reach them, so a stolen password alone does not reach the administrative surface. A session authenticated by password only is offered the step-up rather than the page. Include the administrative endpoints that are not part of the main interface, such as maintenance consoles and batch tooling. Attach the configuration together with a test showing an administrative route refusing a password-only session."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Configuration and test record showing an administrative route refusing a session that has not completed a second factor"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Run each role's forbidden actions against the deployed application and record the response"
+          },
+          "description": {
+            "en": "Work the matrix as a test plan: for every role, attempt the routes and objects that role should not reach, and add two probes the matrix does not cover — a request for a directory listing and a request for a backup, source or configuration file under the web root. Record the status and body returned for each attempt, because a denial delivered as a redirect to a page that still renders the data is a pass on paper and a failure in fact. Raise a ticket for each success and cite it. Attach the test record."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Access-control test record: one row per role and forbidden action giving the status and body returned, including the directory listing and backup-file probes"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Turn each matrix row into an attempt made under a role that should fail."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the status and the body returned, not only the status code."
+              }
+            },
+            {
+              "text": {
+                "en": "Request a directory listing on each path that serves static content."
+              }
+            },
+            {
+              "text": {
+                "en": "Request a backup, source or configuration file under the web root."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a ticket for every attempt that succeeded and cite it in the record."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ASVS-V5",
+      "title": "Validation, Sanitization and Encoding (ASVS L1)",
+      "description": "Implements the Level 1 verification requirements of ASVS chapter V5 — Validation, Sanitization and Encoding. Establishes the baseline application-security controls for this chapter.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Application Security",
+      "requirementCodes": [
+        "V5.1.1",
+        "V5.1.2",
+        "V5.1.3",
+        "V5.1.4",
+        "V5.1.5",
+        "V5.2.1",
+        "V5.2.2",
+        "V5.2.3",
+        "V5.2.4",
+        "V5.2.5",
+        "V5.2.6",
+        "V5.2.7",
+        "V5.2.8",
+        "V5.3.1",
+        "V5.3.2",
+        "V5.3.3",
+        "V5.3.4",
+        "V5.3.5",
+        "V5.3.6",
+        "V5.3.7",
+        "V5.3.9",
+        "V5.3.10",
+        "V5.5.1",
+        "V5.5.2",
+        "V5.5.3",
+        "V5.5.4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Map every external input to the interpreter or renderer it eventually reaches"
+          },
+          "description": {
+            "en": "List the inputs the application accepts — query and body parameters, headers, uploaded filenames, and payloads arriving from third parties — and for each one trace where the value ends up: a database query, a shell command, a template, an XML or XPath expression, a directory query, a rendered page, a mail header, or a deserialiser. The map is the denominator for every other task here, and the rows with two sinks are the ones that get defended once and rendered unsafely somewhere else. Attach the map."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Input-to-sink map: one row per input naming the entry point, every interpreter or renderer the value reaches, and the defence currently applied"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List the parameters, headers, filenames and third-party payloads accepted."
+              }
+            },
+            {
+              "text": {
+                "en": "Trace each value to the interpreter or renderer that consumes it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every sink a value reaches, not only the first one found."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the defence currently applied at each sink, or record that none is."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the rows where the value crosses into a different interpreter."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Validate every request parameter, including submitted URLs, against a server-side rule"
+          },
+          "description": {
+            "en": "Give each parameter on the map a rule the server applies before the value is used: an expected type, a length and range, and for identifiers and enumerations an allowlist of permitted values. Decide deterministically what a duplicated parameter means rather than letting the framework choose, and bind incoming fields only to the properties a request is permitted to set so an extra field cannot reach a privileged property. Resolve user-supplied URLs used for redirects or for server-side fetches against an allowlist of hosts. Attach the rule set with a transcript showing each class of bad input refused."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Validation rule set with a transcript showing a malformed value, a duplicated parameter, an unpermitted field and an off-allowlist URL each refused"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Give each parameter an expected type, length and range checked on the server."
+              }
+            },
+            {
+              "text": {
+                "en": "Validate identifiers and enumerations against an explicit allowlist."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide deterministically how a duplicated parameter is resolved."
+              }
+            },
+            {
+              "text": {
+                "en": "Bind request fields only to the properties that request may set."
+              }
+            },
+            {
+              "text": {
+                "en": "Resolve submitted redirect and fetch URLs against an allowlist of hosts."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Rewrite the string-built statements as parameterised calls at every interpreter boundary"
+          },
+          "description": {
+            "en": "Go through the interpreter sinks on the map and replace concatenation with a call that keeps data out of the statement: bound parameters or a safe query builder for the database, an argument array rather than a shell string for process execution, escaped or parameterised directory and XPath queries, and file paths resolved from an identifier the application controls instead of a value the caller supplied. Delete the paths that evaluate a submitted value as code, and keep submitted values out of template syntax so a template is never assembled from input. Attach the diff per sink with the dynamic paths that remain listed and justified."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Diff per interpreter boundary showing the concatenated statement replaced by a parameterised call, with any remaining dynamic path listed and its reason"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Replace concatenated database statements with bound parameters."
+              }
+            },
+            {
+              "text": {
+                "en": "Run external programs from an argument array rather than a shell string."
+              }
+            },
+            {
+              "text": {
+                "en": "Escape or parameterise directory and XPath queries built from input."
+              }
+            },
+            {
+              "text": {
+                "en": "Resolve file paths from an application-controlled identifier, not input."
+              }
+            },
+            {
+              "text": {
+                "en": "Delete the paths that evaluate a submitted value as code."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep submitted values out of template syntax rather than escaping them in."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Apply the encoder each rendering context needs and sanitise the markup the application stores"
+          },
+          "description": {
+            "en": "Apply the encoder that matches each rendering context — page body, attribute, script, URL and stylesheet are different problems and one encoder does not cover them — and normalise Unicode before the encoding decision so an alternative representation cannot slip past the filter. Where the application stores user-supplied HTML, Markdown or an uploaded vector image, put it through a maintained sanitiser at write time rather than relying on the renderer, so the stored row is safe for the export, the report and any later consumer. Strip the control characters that could alter downstream processing, and neutralise line breaks in values that feed mail headers. Attach the record naming the encoder used per context and the sanitiser applied at each write path, with one stored payload shown neutralised."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Encoding and sanitisation record naming the encoder used per rendering context and the sanitiser applied at each write path, with a stored payload shown neutralised"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Choose the encoder that matches each rendering context separately."
+              }
+            },
+            {
+              "text": {
+                "en": "Normalise Unicode before the encoding decision is taken."
+              }
+            },
+            {
+              "text": {
+                "en": "Sanitise stored HTML, Markdown and vector images at write time."
+              }
+            },
+            {
+              "text": {
+                "en": "Strip control characters and neutralise line breaks feeding mail headers."
+              }
+            },
+            {
+              "text": {
+                "en": "Store one sanitised payload as the worked example for the record."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Configure the deserialisers and document parsers to refuse untrusted structures"
+          },
+          "description": {
+            "en": "Turn off external entity resolution and document type definitions in every XML parser the application uses, including the ones inside libraries that parse office or feed formats. Where serialised objects must be accepted, restrict them to a declared set of types or move the interface to a data-only format, and check the integrity of anything that crossed a trust boundary before it is read back. Parse submitted JSON with a strict parser that rejects malformed and duplicate-keyed structures rather than repairing them. Attach the parser configuration per format with a test showing an external-entity document and a malformed payload both refused."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Parser configuration extract per format, with a test showing an external-entity document and a malformed payload each refused"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Disable external entities and document type definitions in XML parsers."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the parsers inside libraries handling office and feed formats."
+              }
+            },
+            {
+              "text": {
+                "en": "Restrict deserialisation to declared types or move to a data-only format."
+              }
+            },
+            {
+              "text": {
+                "en": "Reject malformed and duplicate-keyed JSON rather than repairing it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Run an injection probe against each input on the map and record what came back"
+          },
+          "description": {
+            "en": "Take the map row by row and send the payload class that matches the sink recorded against it — a quote and comment sequence at a database sink, a command separator at a process sink, markup at a rendered sink, an entity declaration at an XML sink. Record the status, the response body and what appeared in the server log, and treat a payload that was stored intact but not rendered as an open finding rather than a pass, since the next consumer of that row may render it. Raise a ticket for each and cite it. Attach the probe record."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Injection probe record: one row per input and payload class giving the response body, the log entry and the ticket raised for anything not neutralised"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Match each payload class to the sink recorded for that input."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the response body and the server log entry, not only the status."
+              }
+            },
+            {
+              "text": {
+                "en": "Treat a payload stored intact but unrendered as an open finding."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a ticket per finding and cite it against the map row."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ASVS-V6",
+      "title": "Stored Cryptography (ASVS L1)",
+      "description": "Implements the Level 1 verification requirements of ASVS chapter V6 — Stored Cryptography. Establishes the baseline application-security controls for this chapter.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Application Security",
+      "requirementCodes": [
+        "V6.2.1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Inventory every cryptographic operation the application performs and the module behind it"
+          },
+          "description": {
+            "en": "Record each place the application encrypts, decrypts, signs, verifies, hashes or fetches a key: the operation, the module or library performing it, where the key comes from, and — the column this control turns on — what the code does today when the operation raises rather than returns. Read the failure path rather than assuming it, because a fallback that writes the value unprotected usually looks like ordinary error handling. Attach the inventory."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Cryptographic operation inventory: operation, module, key source and the behaviour observed on the failure path of each call"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List each encrypt, decrypt, sign, verify, hash and key-fetch call site."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the module or library that performs each operation."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where the key for each operation is obtained from."
+              }
+            },
+            {
+              "text": {
+                "en": "Read the failure path of each call and record what it does today."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Configure every cryptographic call to fail closed rather than return the data unprotected"
+          },
+          "description": {
+            "en": "For each row of the inventory whose failure path returns the value in the clear, skips the encryption step, or continues with a signature it could not verify, change it to raise and abort the operation. Remove the fallbacks that write an unencrypted value when the key is unavailable and the ones that treat a verification error as a pass. Where an operation legitimately has a degraded mode, make it refuse the data rather than process it unprotected. Attach the diff naming each fallback removed and the resulting behaviour of every call."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Diff naming each removed fallback path, with the resulting failure behaviour recorded against every cryptographic call in the inventory"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Take the inventory rows whose failure path returns data unprotected."
+              }
+            },
+            {
+              "text": {
+                "en": "Change each to raise and abort rather than continue."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove the fallbacks that write unencrypted when a key is unavailable."
+              }
+            },
+            {
+              "text": {
+                "en": "Stop treating a failed signature verification as a pass."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Test each cryptographic call against an induced failure and record what the application returned"
+          },
+          "description": {
+            "en": "Fault-inject the conditions the failure path exists for — an unavailable key store, a key that does not decrypt the value, and a module error — against each call on the inventory, and record what the application returned to the caller and what it wrote to storage. The finding this looks for is data that reached a user or a table unprotected while the surface behaviour looked like an ordinary error. Raise a ticket for each occurrence. Attach the fault-injection record."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Fault-injection record per cryptographic operation giving the induced failure, the response returned and whether unprotected data was written or disclosed"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Induce an unavailable key store against each call on the inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Induce a key that cannot decrypt the stored value and repeat."
+              }
+            },
+            {
+              "text": {
+                "en": "Induce a module error and record the response and any write."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a ticket wherever unprotected data was returned or stored."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ASVS-V7",
+      "title": "Error Handling and Logging (ASVS L1)",
+      "description": "Implements the Level 1 verification requirements of ASVS chapter V7 — Error Handling and Logging. Establishes the baseline application-security controls for this chapter.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Security Operations",
+      "requirementCodes": [
+        "V7.4.1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Catalogue the error responses the application returns and what each one discloses"
+          },
+          "description": {
+            "en": "Walk the error handlers and the framework defaults behind them and record each class of error the application can return — validation failure, authorisation denial, unhandled exception, upstream timeout, and the platform's own default page — giving the status, the body a user sees, and the internal detail that body carries: a stack frame, a query fragment, a file path, an internal hostname or a library version. The framework default is the row most often missed, because no handler in the codebase produces it. Attach the catalogue."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Error response catalogue: error class, status, the user-visible body and the internal detail that body currently discloses"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List the error classes the application can return to a caller."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the framework and platform defaults no handler produces."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the body a user sees for each class."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the stack frames, query fragments, paths and versions disclosed."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Rewrite the disclosing error responses as a generic message carrying a correlation identifier"
+          },
+          "description": {
+            "en": "Replace each body flagged in the catalogue with a message that tells the user what to do next and carries an identifier that ties the response to the record held on the server, so support can trace an incident without the response itself describing the internals. Set this as the framework default rather than fixing the handlers one at a time, so a route added later inherits it instead of falling back to the verbose page. Attach the handler configuration together with the before and after body for each disclosing class."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Handler configuration with the before-and-after response body for each disclosing error class, showing the correlation identifier returned in place of internal detail"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Write a generic body carrying a correlation identifier for each class."
+              }
+            },
+            {
+              "text": {
+                "en": "Set it as the framework default rather than per handler."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the platform default page is replaced as well."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture the before and after body for each class in the catalogue."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record the diagnostic detail retained server-side against the period's correlation identifiers"
+          },
+          "description": {
+            "en": "Extract the server-side error records for the period keyed by correlation identifier, showing the error class, the stack and the request context retained against each, and confirm by sampling that the same detail did not travel to the client. This extract is what makes the previous task an improvement rather than a loss: the detail has to still exist somewhere an engineer can reach. Note any identifier returned to a user with no server-side record behind it. Attach the extract."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Server-side error log extract for the period keyed by correlation identifier, giving the retained stack and request context, with any identifier lacking a record noted"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Run each catalogued error class against the deployed application and record the body returned"
+          },
+          "description": {
+            "en": "Trigger every class in the catalogue against the running environment rather than a local build, since verbose pages are usually a deployment profile rather than a code path, and record exactly what came back. Any response still carrying a stack frame, a query fragment, an internal path or a version banner is a ticket. Include an unhandled exception raised deliberately, because that is the class the framework default serves. Attach the probe record."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Error probe record per catalogued class giving the response body returned by the deployed environment and any internal detail still disclosed"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Trigger each catalogued class against the deployed environment."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise an unhandled exception deliberately to reach the default page."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the returned body verbatim for each class."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a ticket for every response still carrying internal detail."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ASVS-V8",
+      "title": "Data Protection (ASVS L1)",
+      "description": "Implements the Level 1 verification requirements of ASVS chapter V8 — Data Protection. Establishes the baseline application-security controls for this chapter.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Application Security / Privacy",
+      "requirementCodes": [
+        "V8.2.1",
+        "V8.2.2",
+        "V8.2.3",
+        "V8.3.1",
+        "V8.3.2",
+        "V8.3.3",
+        "V8.3.4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Inventory the personal and sensitive fields the application collects and the responses that return them"
+          },
+          "description": {
+            "en": "Record each personal or otherwise sensitive field the application takes in, what it is collected for, where it is stored, and every endpoint whose response returns it. Include the fields that arrive incidentally — in free-text notes, in uploaded documents, in support attachments — because those are collected without a form asking for them and are the ones the later reconciliation finds. Engineering supplies the storage and endpoint columns; a row is not complete until both halves are filled. Attach the inventory."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Sensitive-data inventory: field, purpose, storage location and every endpoint whose response returns it"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the personal and sensitive fields the application takes in."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the purpose and the storage location of each field."
+              }
+            },
+            {
+              "text": {
+                "en": "Name every endpoint whose response returns the field."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the fields arriving in free text, uploads and support attachments."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Configure the client so sensitive responses are neither cached nor persisted past logout"
+          },
+          "description": {
+            "en": "Set anti-caching headers on the endpoints the inventory marks as returning sensitive data, so a shared or proxied browser does not serve the response again to the next person. Take the sensitive values out of storage that survives the session — local and indexed browser storage — and leave them in memory or in the session only. Then make logout clear what remains client-side rather than only dropping the cookie. Attach the captured headers for one sensitive endpoint together with a listing of browser storage before and after a logout."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Captured response headers for a sensitive endpoint, plus a browser storage listing taken before and after a logout"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Set anti-caching headers on the endpoints returning sensitive data."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove sensitive values from local and indexed browser storage."
+              }
+            },
+            {
+              "text": {
+                "en": "Clear the remaining client-side state as part of logout."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture browser storage before and after logout as the record."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Move the sensitive parameters out of request URLs into the body or headers"
+          },
+          "description": {
+            "en": "Using the inventory, find the endpoints carrying a sensitive value in a path segment or a query string and move it into the request body or a header, changing the callers in the same pass. A URL is retained in browser history, in proxy and web-server logs and in the referrer sent to third parties, none of which the transport encryption protects, which is what makes this different from serving the endpoint over TLS. Leave a handled response for links already in circulation. Attach the route list showing each parameter's location before and after."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Route list giving each sensitive parameter's location before and after the change, with the handling applied to links already in circulation"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Build the self-service export and deletion path for a user's own personal data"
+          },
+          "description": {
+            "en": "Give a signed-in user a way to obtain a machine-readable copy of the personal data the application holds about them and a way to ask for its removal, both without opening a support ticket. Record what the deletion path actually removes and what it leaves behind, so the answer given to a requester matches what the system does. Run both against a test account end to end. Attach the exported file together with the record of what deletion removed and what it retained."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Export and deletion walkthrough for a test account: the exported file, and the record of what the deletion path removed and what it retained"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Build the export so a signed-in user can obtain their own copy."
+              }
+            },
+            {
+              "text": {
+                "en": "Return the export in a machine-readable format, not a rendered page."
+              }
+            },
+            {
+              "text": {
+                "en": "Build the deletion request path and record what it removes."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what deletion leaves behind so the answer given matches reality."
+              }
+            },
+            {
+              "text": {
+                "en": "Run both paths end to end against a test account."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record the consent captured against the current privacy notice version"
+          },
+          "description": {
+            "en": "Extract the consent records for the period and show, for each, the user, the version of the notice they were shown, the timestamp and the collection point. Compare the collection points appearing in the extract with the ones on the inventory and note any that collect personal data with no consent record behind it, which is the gap this extract exists to surface. Attach the extract."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Consent register extract for the period: user, notice version, timestamp and collection point, with any collection point lacking a record noted"
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Reconcile the sensitive-data inventory against the fields the application actually returns"
+          },
+          "description": {
+            "en": "Sample a response from each endpoint the inventory names and compare the fields it returned with the fields recorded against it, in both directions: a field returned but not inventoried is undocumented collection, and an inventoried field no longer returned is a stale row that makes the inventory less trusted every time somebody checks it. Include the endpoints added since the inventory was written. Engineering captures the sampled responses; each discrepancy and its resolution is recorded against the inventory row here. Attach the reconciliation."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Reconciliation of the inventory against sampled responses, listing undocumented fields found, stale rows retired, and the resolution of each"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Sample one response from every endpoint named on the inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the returned fields with the fields recorded against it."
+              }
+            },
+            {
+              "text": {
+                "en": "List fields returned but not inventoried as undocumented collection."
+              }
+            },
+            {
+              "text": {
+                "en": "Retire the inventory rows for fields no longer returned."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the endpoints created since the inventory was last written."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ASVS-V9",
+      "title": "Communication (ASVS L1)",
+      "description": "Implements the Level 1 verification requirements of ASVS chapter V9 — Communication. Establishes the baseline application-security controls for this chapter.",
+      "category": "Security",
+      "defaultFrequency": "MONTHLY",
+      "defaultOwnerHint": "Platform Engineering",
+      "requirementCodes": [
+        "V9.1.1",
+        "V9.1.2",
+        "V9.1.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List every hostname and internal service on which the application terminates or initiates TLS"
+          },
+          "description": {
+            "en": "Record each place an encrypted connection begins or ends for this application: the public hostnames, the load balancer and reverse proxy in front of it, the application listener itself, and the internal service-to-service calls it makes. For each, name the component that terminates, the certificate in use and the configuration file that governs the settings. The internal hops are the rows that decide whether this control is about the edge or about the whole path. Attach the list."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "TLS endpoint list: hostname or internal service, terminating component, certificate in use and the configuration file that governs it"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Record the public hostnames the application is reached on."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the load balancer, reverse proxy and application listener."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the internal service-to-service connections the application makes."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the certificate and the configuration file for each row."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Set the protocol floor and cipher suite list on every terminating endpoint"
+          },
+          "description": {
+            "en": "Decide one protocol floor and one cipher suite list, write them in a single configuration source, and apply that source to every terminating component on the list rather than configuring each by hand, which is how an edge gets hardened while a listener behind it stays permissive. Disable the obsolete protocol versions explicitly rather than relying on the platform default, and record the effective settings each endpoint ends up with. Attach the configuration together with the rendered settings per endpoint."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "TLS configuration per terminating endpoint showing the enabled protocol versions and the cipher suite list actually in effect"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Write one protocol floor and cipher list as a single configuration source."
+              }
+            },
+            {
+              "text": {
+                "en": "Apply that source to every terminating component on the list."
+              }
+            },
+            {
+              "text": {
+                "en": "Disable the obsolete protocol versions explicitly, not by default."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the effective settings each endpoint ends up serving."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Remove the cleartext listeners and redirect the remaining plain requests to TLS"
+          },
+          "description": {
+            "en": "Find the listeners still accepting unencrypted connections — including the internal service-to-service hops and the health-check port, which are usually exempted and then forgotten — and either close them or make them answer with a redirect and nothing else. Configure the application's own outbound clients to refuse a downgrade rather than retry without encryption. Attach the listener list before and after together with a captured plain request showing the redirect it received."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Listener list before and after the change, with the redirect configuration and a captured plain request showing the response it received"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Scan each listed endpoint for the protocol and cipher it actually negotiates"
+          },
+          "description": {
+            "en": "Run a handshake scan for the period against every endpoint on the list, internal ones included, and record what each actually negotiated: the protocol version, the cipher suite, and whether the endpoint also answered a connection attempted without TLS. Scan what is deployed rather than reading the configuration, because a platform upgrade or a proxy in front can offer something the configuration file does not mention. Attach the scan report."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "TLS handshake scan report for the period covering every listed endpoint with its negotiated protocol version and cipher suite, and whether it answered an unencrypted connection"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Compare the scan results with the configured floor and raise a ticket for each endpoint that drifted"
+          },
+          "description": {
+            "en": "Line the scan report up against the intended configuration and mark every endpoint that offered a protocol version or cipher suite the configuration disables, or that failed to offer one it enables. For each, record what it offered, which change introduced the difference, and the ticket raised to close it. An endpoint absent from the scan is a finding too, because it means the list and the deployment disagree. Attach the comparison."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Drift comparison listing each endpoint whose negotiated protocol or cipher differed from the configured set, the cause identified and the ticket raised"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Line the scan report up against the intended configuration row by row."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark endpoints offering a version or suite the configuration disables."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark endpoints absent from the scan as a list-versus-deployment gap."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a ticket per deviation and record the change that caused it."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ASVS-V10",
+      "title": "Malicious Code (ASVS L1)",
+      "description": "Implements the Level 1 verification requirements of ASVS chapter V10 — Malicious Code. Establishes the baseline application-security controls for this chapter.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Application Security",
+      "requirementCodes": [
+        "V10.3.1",
+        "V10.3.2",
+        "V10.3.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Inventory the dependency and update channels the application consumes"
+          },
+          "description": {
+            "en": "Record every route by which code the application runs arrives: package registries, container base images, vendored source, build plugins, and the release channel that upgrades the running application itself. Add the DNS records pointing at externally hosted services, since a name under your domain resolving to somebody else's platform is a route into the application's origin. For each row name the publisher, how the artefact arrives, and what integrity evidence it carries — a signature, a pinned digest, a lockfile hash, or nothing. Attach the inventory."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Supply inventory: each dependency and update channel with its publisher and integrity mechanism, plus the DNS records pointing at externally hosted services"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List the package registries and base images the build pulls from."
+              }
+            },
+            {
+              "text": {
+                "en": "Add vendored source, build plugins and the application's update channel."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the DNS records pointing at externally hosted services."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the publisher and the arrival mechanism for each row."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the integrity evidence each row carries, or that it carries none."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Verify the signature or digest of every dependency and release artefact before it is installed"
+          },
+          "description": {
+            "en": "Configure the build to check a publisher signature or a pinned digest for each channel on the inventory and to fail rather than warn when the check does not match, since a warning in a build log is not a control. Sign the artefacts this application publishes and make the deployment step verify that signature before it applies an update, so an artefact substituted between build and deploy is refused. Attach the pipeline configuration together with a build log recording the verification."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Build and deployment configuration showing the integrity check applied per channel, with a build log recording the verification result"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Pin a digest or require a publisher signature for each channel."
+              }
+            },
+            {
+              "text": {
+                "en": "Make a mismatch fail the build rather than emit a warning."
+              }
+            },
+            {
+              "text": {
+                "en": "Sign the artefacts this application publishes for deployment."
+              }
+            },
+            {
+              "text": {
+                "en": "Verify that signature in the deployment step before applying it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Scan the DNS zones for records pointing at unclaimed targets and record what was removed"
+          },
+          "description": {
+            "en": "For each record on the inventory pointing at an externally hosted target, confirm the target still exists and is still held by the organisation. A record resolving to a decommissioned bucket, application slot or content-delivery distribution can be claimed by whoever registers that name next, and they then hold a host under your domain. Remove or repoint each dangling record and record the change. Attach the scan output with the resolution status of every record and the removals made."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "DNS scan output for the period listing each externally targeted record with its resolution status, and the records removed or repointed"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Retest the update path with a tampered artefact and record that it was refused"
+          },
+          "description": {
+            "en": "Take a real release artefact and either alter it after signing or replace it with one signed by a key that is not on the trust list, then run it through the deployment path and record the stage that stopped it and what was logged. If it installs, the verification is advisory and the previous task is not finished. Repeat for each update channel on the inventory that reaches production. Attach the negative test record."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Negative test record per update channel showing a tampered or wrongly signed artefact refused, naming the stage that stopped it and the log entry produced"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Alter a signed artefact or sign one with an untrusted key."
+              }
+            },
+            {
+              "text": {
+                "en": "Run it through the deployment path for each production channel."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the stage that refused it and the log entry it produced."
+              }
+            },
+            {
+              "text": {
+                "en": "Treat an artefact that installed as an unfinished verification step."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ASVS-V11",
+      "title": "Business Logic (ASVS L1)",
+      "description": "Implements the Level 1 verification requirements of ASVS chapter V11 — Business Logic. Establishes the baseline application-security controls for this chapter.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Application Security",
+      "requirementCodes": [
+        "V11.1.1",
+        "V11.1.2",
+        "V11.1.3",
+        "V11.1.4",
+        "V11.1.5",
+        "V11.1.6"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List the multi-step and high-value workflows and the rule each one must not break"
+          },
+          "description": {
+            "en": "Register the flows this control is about: any sequence of two or more steps a user completes in order, and any single action that moves money, grants an entitlement or releases data in volume. Against each, write the ordered steps, the per-user limit that applies, the ceiling on any value the client submits, and whether two requests arriving together would interfere. This register is what turns the rest of these tasks from opinions into a checklist. Attach it."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Workflow register: ordered steps, per-user limit, submitted-value ceiling and a concurrency note, one row per workflow"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List the sequences a user completes across two or more steps."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the single actions moving money, entitlement or bulk data."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the ordered steps and the per-user limit for each row."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the ceiling on any value the client submits."
+              }
+            },
+            {
+              "text": {
+                "en": "Note where two simultaneous requests would interfere."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Enforce step order server-side so a workflow cannot be completed out of sequence"
+          },
+          "description": {
+            "en": "Hold the position in each registered workflow in server-side state rather than in a hidden field, a client parameter or the page the user happens to be on, and refuse a request for a later step from a session that has not completed the ones before it. The case to check is the final step called directly with a well-formed body, which is what a skipped payment or a bypassed approval actually looks like on the wire. Attach the diff together with a test calling each workflow's final step first."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Test record showing the final step of every registered workflow refused when the preceding steps were skipped"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Hold the workflow position in server-side state, not in the request."
+              }
+            },
+            {
+              "text": {
+                "en": "Refuse a later step from a session that has not completed earlier ones."
+              }
+            },
+            {
+              "text": {
+                "en": "Call each workflow's final step directly with a well-formed body."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the response and raise a ticket for anything that succeeded."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Enforce the per-user rate, quantity and value limits recorded in the workflow register"
+          },
+          "description": {
+            "en": "Apply each register row's ceiling on the server, where the client cannot see or edit it: the maximum value or quantity a submission may carry, the number of times one account may run the flow, and a floor on how quickly a submission can plausibly arrive after the form was served. Count against the account and against the source together, so one actor scripting the endpoint cannot spread the load across sessions to harvest data. Attach the configuration mapped to the register rows with a transcript showing a submission above the ceiling refused."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Limit configuration mapped row by row to the workflow register, with a transcript showing a submission above a ceiling refused"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Move each value and quantity ceiling to a server-side check."
+              }
+            },
+            {
+              "text": {
+                "en": "Limit how many times one account may run each registered flow."
+              }
+            },
+            {
+              "text": {
+                "en": "Reject submissions arriving faster than the form could be completed."
+              }
+            },
+            {
+              "text": {
+                "en": "Count against the account and the source address together."
+              }
+            },
+            {
+              "text": {
+                "en": "Map every configured limit back to its register row."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Configure the high-value operations to serialise concurrent requests against one record"
+          },
+          "description": {
+            "en": "For the register rows marked as concurrency-sensitive, stop two simultaneous requests from each reading the state before the other's change: take a lock on the record, or make the write conditional on the value the request read, so the second request sees the first's effect or fails. This is the defect that lets one balance be spent twice or one entitlement be redeemed twice, and it does not appear under sequential testing. Attach the diff together with a concurrency test firing parallel requests at one record."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Concurrency test output showing parallel requests against a single record producing exactly one applied change"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Take the register rows marked as concurrency-sensitive."
+              }
+            },
+            {
+              "text": {
+                "en": "Lock the record or make the write conditional on the value read."
+              }
+            },
+            {
+              "text": {
+                "en": "Fire parallel requests at one record and count the applied changes."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the outcome for each concurrency-sensitive row."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record the workflow submissions the limits refused during the period"
+          },
+          "description": {
+            "en": "Extract the refusals for the period grouped by rule and by account. Two patterns are worth writing down beside the numbers: a rule that never fired at all, which usually means it is misconfigured rather than that nobody tried, and a rule firing constantly against one account, which is either abuse to investigate or a limit set below legitimate use. Note which of the two each case is. Attach the extract."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Refusal extract for the period grouped by rule and account, with a note against every rule that never fired and every account refused repeatedly"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Exercise each registered workflow out of order, at machine speed and in parallel"
+          },
+          "description": {
+            "en": "Run the three abuse cases against every row of the register and record what the application permitted: call a later step before its predecessor, submit faster than a person could have completed the form, and fire concurrent requests at the same limit. Run them against the deployed environment, since a lock or a limit configured per instance behaves differently behind more than one. Raise a ticket for each case the application allowed and cite it. Attach the test record."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Business-logic abuse test record per workflow covering the out-of-order, machine-speed and concurrent attempts, with the response and any ticket raised"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Call a later step before its predecessor on every registered workflow."
+              }
+            },
+            {
+              "text": {
+                "en": "Submit faster than a person could have completed the form."
+              }
+            },
+            {
+              "text": {
+                "en": "Fire concurrent requests at the same limit and count what applied."
+              }
+            },
+            {
+              "text": {
+                "en": "Run the cases against the deployed environment, not a single instance."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ASVS-V12",
+      "title": "Files and Resources (ASVS L1)",
+      "description": "Implements the Level 1 verification requirements of ASVS chapter V12 — Files and Resources. Establishes the baseline application-security controls for this chapter.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Application Security",
+      "requirementCodes": [
+        "V12.1.1",
+        "V12.3.1",
+        "V12.3.2",
+        "V12.3.3",
+        "V12.3.4",
+        "V12.3.5",
+        "V12.4.1",
+        "V12.4.2",
+        "V12.5.1",
+        "V12.5.2",
+        "V12.6.1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List every upload and download path, the file types it accepts and where the bytes are stored"
+          },
+          "description": {
+            "en": "Record each route that takes a file in or hands one out: the types it accepts, the size it expects, where the bytes are written, and the route by which they are served back. Include the paths that are not obviously uploads — an avatar, an import, a support attachment, a report the application generates and stores — because those are the ones configured once and never revisited. Attach the register."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "File-handling register: upload and download routes, accepted types, expected size, storage location and the route that serves the bytes back"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List the routes that accept a file from a caller."
+              }
+            },
+            {
+              "text": {
+                "en": "Add avatars, imports, support attachments and generated reports."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the accepted types and the expected size for each route."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where the bytes are written and how they are served back."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Set the maximum accepted upload size and refuse larger bodies before they are buffered"
+          },
+          "description": {
+            "en": "Give each upload route on the register a ceiling matching what it is for, and enforce it at the web server or gateway as well as in the handler, so an oversized body is dropped as it arrives rather than after it has been read into memory or written to disk. A ceiling checked only in application code still lets the request consume the resource it was meant to protect. Attach the configuration per route together with the response to an upload above the ceiling."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Size limit configuration per upload route, with the response returned to an upload above the ceiling"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Validate submitted filenames and refuse traversal sequences and executable extensions"
+          },
+          "description": {
+            "en": "Generate the name a file is stored under on the server rather than trusting the one submitted, and after resolving the final path confirm it still sits inside the intended directory, which catches the encoded and doubled traversal sequences a string check misses. Refuse the extensions the hosting platform would execute, and make no trust decision from the content type, the extension or any other metadata the client supplied — read the bytes if the type matters. Attach the test record for a traversal name, an executable extension and a spoofed content type."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Test record showing a traversal filename, an executable extension and a spoofed content type each refused on upload"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Generate the stored filename server-side instead of trusting the input."
+              }
+            },
+            {
+              "text": {
+                "en": "Resolve the final path and confirm it stays inside the directory."
+              }
+            },
+            {
+              "text": {
+                "en": "Refuse the extensions the hosting platform would execute."
+              }
+            },
+            {
+              "text": {
+                "en": "Take no trust decision from client-supplied file metadata."
+              }
+            },
+            {
+              "text": {
+                "en": "Test with an encoded traversal sequence, not only a literal one."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Move the stored files out of the web root and serve them through an access-controlled route"
+          },
+          "description": {
+            "en": "Write uploaded files outside the document root, or to an object store that is not directly browsable, so a stored file cannot be requested as a page or executed by the web tier. Serve downloads through a handler that checks the caller's entitlement to that file, and have the handler resolve its target from an identifier the application controls, so a parameter cannot point it at another host or an internal address. Attach the storage layout and delivery configuration together with the response to a direct fetch that bypasses the handler."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Storage layout and delivery route configuration, with the response returned to a direct fetch of a stored file that bypassed the handler"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Write stored files outside the document root or to an object store."
+              }
+            },
+            {
+              "text": {
+                "en": "Serve downloads through a handler that checks entitlement per file."
+              }
+            },
+            {
+              "text": {
+                "en": "Resolve the handler's target from an application-controlled identifier."
+              }
+            },
+            {
+              "text": {
+                "en": "Attempt a direct fetch bypassing the handler and record the response."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Scan every uploaded file for malware before it is made available and keep the verdict log"
+          },
+          "description": {
+            "en": "Scan each file on receipt and hold it unavailable until a verdict comes back, rather than scanning after it is already reachable. Keep one row per file: the identifier, the verdict, the scanner and signature version, and the timestamp. When you extract the log for the period, note any file that became available with no verdict recorded against it, which is what a scanner outage looks like from the outside. Attach the log."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Scanner verdict log for the period: file identifier, verdict, scanner and signature version, timestamp, with any file released without a verdict noted"
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Run the upload and download abuse cases against the deployed application and record each response"
+          },
+          "description": {
+            "en": "Work the register as a test plan and record what the deployed environment returned to each of five attempts: an upload above the ceiling, a filename carrying a traversal sequence, a file with an executable extension, a direct request for a source or configuration file under the web root, and a download handler pointed at an address outside the application. Run against the deployment rather than a local build, because storage location and web-tier handling are deployment properties. Raise a ticket per success and cite it. Attach the record."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Abuse test record covering the oversized, traversal, executable-extension, source-file and redirected-download attempts, with the response and ticket for each"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Upload a file above the ceiling and record the response."
+              }
+            },
+            {
+              "text": {
+                "en": "Submit a filename carrying an encoded traversal sequence."
+              }
+            },
+            {
+              "text": {
+                "en": "Submit a file bearing an extension the platform would execute."
+              }
+            },
+            {
+              "text": {
+                "en": "Request a source or configuration file under the web root."
+              }
+            },
+            {
+              "text": {
+                "en": "Point the download handler at an address outside the application."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ASVS-V13",
+      "title": "API and Web Service (ASVS L1)",
+      "description": "Implements the Level 1 verification requirements of ASVS chapter V13 — API and Web Service. Establishes the baseline application-security controls for this chapter.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "API Platform",
+      "requirementCodes": [
+        "V13.1.1",
+        "V13.1.3",
+        "V13.1.5",
+        "V13.2.1",
+        "V13.2.2",
+        "V13.2.3",
+        "V13.2.5",
+        "V13.3.1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Inventory every published API endpoint with its authentication mode, methods and content types"
+          },
+          "description": {
+            "en": "Register each endpoint the application publishes outside the browser interface, giving the path, how a caller authenticates to it, the HTTP methods it is meant to accept and the content types it is meant to parse. Record two extra columns this control turns on: which endpoints authenticate by cookie, because a browser can be made to call those from another site, and which carry a sensitive value in a path segment or query string. Include the endpoints serving an older client version, which are the ones missing from the published documentation. Attach the register."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "API endpoint register: path, authentication mode, accepted methods and content types, whether it authenticates by cookie, and any sensitive value carried in the URL"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "List the endpoints published outside the browser interface."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the authentication mode and the methods each is meant to accept."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the content types each endpoint is meant to parse."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the endpoints that authenticate by cookie."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the endpoints carrying a sensitive value in path or query string."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Validate every API request body against a published schema and refuse what fails"
+          },
+          "description": {
+            "en": "Give each endpoint on the register a schema that states the fields it accepts, their types and which are required, and reject a body that carries an unknown field as firmly as one with a wrong type, since an unexpected field is how a property gets set that the endpoint never meant to expose. Validate any document-format payload against its own schema before the handler processes it. Attach the schema list together with a transcript showing a wrong-typed body and an unknown-field body each refused."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Schema list mapped to the endpoint register, with a transcript showing a wrong-typed body and an unknown-field body each refused"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Write a schema per endpoint naming fields, types and requiredness."
+              }
+            },
+            {
+              "text": {
+                "en": "Reject unknown fields rather than ignoring them silently."
+              }
+            },
+            {
+              "text": {
+                "en": "Validate document-format payloads against their schema first."
+              }
+            },
+            {
+              "text": {
+                "en": "Transcribe a refused wrong-typed and unknown-field request."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Configure each endpoint to refuse HTTP methods and content types it does not declare"
+          },
+          "description": {
+            "en": "Take the accepted methods and content types from the register and enforce them per endpoint: a verb the resource does not implement is answered as not allowed rather than falling through to a default handler, and a body whose declared content type is not on the list is refused rather than parsed. Do not choose a parser by inspecting the body when the header disagrees with it, because that is the behaviour that lets one content type be processed as another. Attach the configuration with the responses to an undeclared method and a mismatched content type."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Per-endpoint method and content-type configuration, with the responses returned to an undeclared HTTP method and a mismatched content type"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Route each API handler through the same validation and encoding path as the browser flow"
+          },
+          "description": {
+            "en": "Go endpoint by endpoint and put the API handler on the same input rules and output encoding the equivalent browser flow uses: the same allowlists, the same length and range checks, the same encoding on values returned. Where an endpoint already shares a usecase with the interface, record that it inherits them; where it has its own handler applying something weaker, move it onto the shared path or raise a ticket naming the difference. APIs are commonly the older surface and were built before the interface's rules were tightened, so the table is the artefact that shows which side was behind and what was done about it. Attach the table with the diff or ticket for each endpoint that differed."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Parity table: one row per endpoint stating whether it shares the interface's validation and encoding path or applies its own, with the diff or ticket recorded for every endpoint that differed"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Scan the API access logs for sensitive values appearing in request URLs"
+          },
+          "description": {
+            "en": "Search the period's API, gateway and analytics logs for the sensitive parameter names on the register turning up in a path segment or a query string, and record each hit with the endpoint and the calling client. This finds the callers still using an older route as well as the endpoints that were never changed, which is why it is a log search rather than a code review. Attach the scan output."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "API log scan for the period listing every sensitive value found in a request URL, with the endpoint and the calling client behind each hit"
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Run a cross-site request, an undeclared method and a malformed body against each endpoint"
+          },
+          "description": {
+            "en": "Work the register as a test plan against the deployed API: forge a cross-site submission at each endpoint that authenticates by cookie, call each endpoint with a method it does not declare, and send it a body that violates its schema and one whose content type does not match. Record the status and body returned for each of the four attempts per endpoint, since a request that was accepted and then failed later is not the same as one refused at the boundary. Raise a ticket per acceptance. Attach the record."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "API contract test record per endpoint covering the cross-site, undeclared-method, malformed-body and mismatched-content-type attempts and the response to each"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Forge a cross-site submission at every cookie-authenticated endpoint."
+              }
+            },
+            {
+              "text": {
+                "en": "Call each endpoint with a method its register row does not declare."
+              }
+            },
+            {
+              "text": {
+                "en": "Send a body that violates the endpoint's published schema."
+              }
+            },
+            {
+              "text": {
+                "en": "Send a body whose content type does not match the declared list."
+              }
+            },
+            {
+              "text": {
+                "en": "Record status and body for each attempt and raise tickets."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "ASVS-V14",
+      "title": "Configuration (ASVS L1)",
+      "description": "Implements the Level 1 verification requirements of ASVS chapter V14 — Configuration. Establishes the baseline application-security controls for this chapter.",
+      "category": "Security",
+      "defaultFrequency": "MONTHLY",
+      "defaultOwnerHint": "Platform Engineering",
+      "requirementCodes": [
+        "V14.2.1",
+        "V14.2.2",
+        "V14.2.3",
+        "V14.3.2",
+        "V14.3.3",
+        "V14.4.1",
+        "V14.4.2",
+        "V14.4.3",
+        "V14.4.4",
+        "V14.4.5",
+        "V14.4.6",
+        "V14.4.7",
+        "V14.5.1",
+        "V14.5.2",
+        "V14.5.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Inventory the deployed components, their versions and the third-party assets the front end loads"
+          },
+          "description": {
+            "en": "Record what is actually running: language runtime, framework, libraries, container base image and web server, each with the version deployed rather than the version in the manifest. Then list every script, stylesheet and font the browser fetches from somewhere the organisation does not control, noting for each whether the tag carries an integrity hash. Those externally loaded assets execute with the application's origin, so an unpinned one is a component of the application whether or not anybody calls it that. Attach the inventory."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Component and asset inventory: each component with its deployed version, and each externally loaded asset with its origin and integrity hash"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Record the deployed version of the runtime, framework and libraries."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the container base image and the web server software."
+              }
+            },
+            {
+              "text": {
+                "en": "List every script, stylesheet and font loaded from outside the estate."
+              }
+            },
+            {
+              "text": {
+                "en": "Note whether each external asset tag carries an integrity hash."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Set the security response headers on every application response"
+          },
+          "description": {
+            "en": "Configure the headers at one layer so a route added later inherits them: an explicit character set on the content type, a disposition header on responses that deliver a file, a content security policy, the option that stops content-type guessing, strict transport security, a referrer policy, and a framing restriction that names the ancestors permitted to embed the application. Setting these per handler is how a subset of routes ends up covered. Attach the configuration together with a captured response showing each header and its value."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Header configuration with a captured response showing each security header present and the value it carries"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Set the headers at one shared layer rather than per handler."
+              }
+            },
+            {
+              "text": {
+                "en": "Declare an explicit character set on the response content type."
+              }
+            },
+            {
+              "text": {
+                "en": "Set a disposition header on responses that deliver a file."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the content security policy and the framing restriction."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture one response showing every header and its value."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Remove the debug modes, sample content and version banners from the production build"
+          },
+          "description": {
+            "en": "Turn off the developer console, the debug endpoints and the verbose error profile in the production configuration, and delete what shipped with the platform rather than with the application: sample applications, default documentation, installer leftovers and modules nothing enables. Suppress the framework and server version from response headers and error pages, since a version string is the shortest route from a published advisory to a working attempt. Attach the before-and-after listing together with response headers showing no version disclosed."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Before-and-after listing of the removed sample content, debug endpoints and enabled modules, with response headers showing no version disclosed"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Turn off developer consoles and debug endpoints in production."
+              }
+            },
+            {
+              "text": {
+                "en": "Select the production error profile rather than the verbose one."
+              }
+            },
+            {
+              "text": {
+                "en": "Delete sample applications, default documentation and install leftovers."
+              }
+            },
+            {
+              "text": {
+                "en": "Disable the platform modules nothing in the application enables."
+              }
+            },
+            {
+              "text": {
+                "en": "Suppress framework and server versions from headers and error pages."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Define the cross-origin allowlist and the HTTP methods the edge will accept"
+          },
+          "description": {
+            "en": "Name the origins permitted to make cross-origin calls explicitly, rather than reflecting whatever origin the request arrived with, which grants every site at once while looking like a configuration. Do not let the origin header stand in for authentication, since a non-browser client sets it freely. Reject at the server the HTTP verbs the application does not implement, so they never reach a handler. Attach the configuration together with the responses to a request from a disallowed origin and to an unsupported verb."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Cross-origin and method configuration, with the responses returned to a request from a disallowed origin and to an unsupported HTTP verb"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Name the permitted origins explicitly instead of reflecting the header."
+              }
+            },
+            {
+              "text": {
+                "en": "Stop the origin header being used as an authentication signal."
+              }
+            },
+            {
+              "text": {
+                "en": "Reject unimplemented HTTP verbs at the server before any handler."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the response to a disallowed origin and an unsupported verb."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Apply the security updates published for the inventoried components and record what moved"
+          },
+          "description": {
+            "en": "Take the advisories affecting the components on the inventory for the period, upgrade what can be upgraded, and record against each what was not upgraded and why, so the untreated items are a written list rather than an absence. Refresh the integrity hash of any externally loaded asset whose contents changed in the same pass, and pin one on any asset the inventory recorded without, because a stale hash breaks the asset and a missing one removes the check. Attach the update record."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Update record for the period: component, version before and after, the advisory addressed, the reason for anything deferred, and any integrity hash refreshed or newly pinned"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Capture the deployed environment's headers and configuration and compare them with the baseline"
+          },
+          "description": {
+            "en": "Pull the live response headers, the cross-origin behaviour, the error pages and the enabled modules from the running environment rather than from the repository, and compare them with what this control configured. Deployment overrides, content-delivery layers rewriting headers and platform defaults reasserting themselves are where the difference comes from, and none of them show up in a diff. Record each deviation with the ticket raised to close it. Attach the comparison."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Configuration comparison between the deployed environment and the configured baseline, listing each deviation found and the ticket raised for it"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Capture the live response headers from the running environment."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture the cross-origin behaviour and the error pages served."
+              }
+            },
+            {
+              "text": {
+                "en": "List the modules actually enabled on the deployed platform."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each against the configuration this control set."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every deviation with the ticket raised to close it."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pack": {
+    "key": "ASVS_L1",
+    "name": "OWASP ASVS Level 1 Pack",
+    "version": "4.0.3",
+    "description": "OWASP ASVS 4.0.3 Level 1 — the verification requirements applicable to all applications.",
+    "templateCodes": [
+      "ASVS-V2",
+      "ASVS-V3",
+      "ASVS-V4",
+      "ASVS-V5",
+      "ASVS-V6",
+      "ASVS-V7",
+      "ASVS-V8",
+      "ASVS-V9",
+      "ASVS-V10",
+      "ASVS-V11",
+      "ASVS-V12",
+      "ASVS-V13",
+      "ASVS-V14"
     ]
   }
-]
+}

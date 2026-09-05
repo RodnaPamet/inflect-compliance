@@ -42,12 +42,19 @@ interface StarterControl {
     description: string;
     defaultFrequency: string;
     defaultOwnerHint: string;
-    requirements: string[];
-    tasks: Array<{ title: string; description: string }>;
+    requirementCodes: string[];
+    tasks: Array<{ title: { en: string }; description: { en: string } }>;
 }
-const controls = JSON.parse(
+/**
+ * The fixture is a CatalogFile — `{ framework, requirements, templates, pack }`
+ * — since its templates gained authored task sets and a delivery path through
+ * `applyCatalogFile` (scripts/seed-framework-catalogs.ts). Only the reader
+ * moved; every assertion below is unchanged, because they were always about
+ * RESOLUTION rather than shape.
+ */
+const controls = (JSON.parse(
     read('prisma/fixtures/ssdf-control-templates.json'),
-) as StarterControl[];
+) as { templates: StarterControl[] }).templates;
 
 describe('SSDF Starter Pack — curated control templates', () => {
     it('ships 15–20 curated controls with unique SDLC- codes', () => {
@@ -71,8 +78,8 @@ describe('SSDF Starter Pack — curated control templates', () => {
             expect(c.defaultOwnerHint).toBeTruthy();
             expect(c.tasks.length).toBeGreaterThanOrEqual(1);
             for (const t of c.tasks) {
-                expect(t.title).toBeTruthy();
-                expect(t.description).toBeTruthy();
+                expect(t.title.en).toBeTruthy();
+                expect(t.description.en).toBeTruthy();
             }
         }
     });
@@ -80,8 +87,8 @@ describe('SSDF Starter Pack — curated control templates', () => {
     it('every requirement link resolves to a real SSDF task (no dangling refs)', () => {
         const dangling: string[] = [];
         for (const c of controls) {
-            expect(c.requirements.length).toBeGreaterThanOrEqual(1);
-            for (const r of c.requirements) {
+            expect(c.requirementCodes.length).toBeGreaterThanOrEqual(1);
+            for (const r of c.requirementCodes) {
                 if (!SSDF_TASK_REFS.has(r)) dangling.push(`${c.code} → ${r}`);
             }
         }
@@ -90,7 +97,7 @@ describe('SSDF Starter Pack — curated control templates', () => {
 
     it('covers every SSDF practice group (PO/PS/PW/RV) with at least one control', () => {
         const groupsCovered = new Set(
-            controls.flatMap((c) => c.requirements.map((r) => r.split('.')[0])),
+            controls.flatMap((c) => c.requirementCodes.map((r) => r.split('.')[0])),
         );
         for (const g of GROUPS) expect(groupsCovered.has(g)).toBe(true);
     });

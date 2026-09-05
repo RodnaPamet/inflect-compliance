@@ -192,15 +192,30 @@ export async function applyCatalogFile(
     assertCatalogConsistency(file, filePath);
 
     // ── 1. Framework ────────────────────────────────────────────
-    const fwUpsertWhere = file.framework.version
-        ? { key_version: { key: file.framework.key, version: file.framework.version } }
-        : { key: file.framework.key };
+    // Keyed on `key` ALONE, which is the framework's real identity:
+    // `Framework.key` is `@unique`, so there can only ever be one row per key.
+    //
+    // This used to key on the compound `key_version` whenever the file declared
+    // a version, and that is broken against a row whose version differs — most
+    // sharply when it is NULL. `version = '2017'` matches no NULL row, so the
+    // upsert found nothing, tried to CREATE, and could not (the `key` unique
+    // constraint), and Prisma returned null rather than raising. The next line
+    // then read `.id` off it.
+    //
+    // Not hypothetical: production carried SOC2 with `version: null`, the
+    // catalog declared '2017', and the seeder died with
+    // "Cannot read properties of null (reading 'id')" on every deploy — a
+    // failure that was visible in the container log and nowhere else, because
+    // the entrypoint runs seeders non-fatally by design.
+    //
+    // `version` moves into the payload, where it belongs: it is data about the
+    // framework, not part of its identity.
     const fwBefore = await prisma.framework.findFirst({ where: { key: file.framework.key } });
     const framework = await prisma.framework.upsert({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the Prisma type for compound `key_version` vs single `key` upsert keys is a discriminated union; the simple `key` form is valid but the static checker can't narrow `fwUpsertWhere` cleanly here
-        where: fwUpsertWhere as any,
+        where: { key: file.framework.key },
         update: {
             name: file.framework.name,
+            ...(file.framework.version ? { version: file.framework.version } : {}),
             ...(file.framework.kind ? { kind: file.framework.kind } : {}),
             ...(file.framework.description !== undefined
                 ? { description: file.framework.description }
@@ -253,6 +268,34 @@ export async function applyCatalogFile(
     let templatesExisting = 0;
     let tasksReconciled: TaskReconcileResult = { created: 0, updated: 0, deprecated: 0, unchanged: 0 };
     const templateMap: Record<string, string> = {};
+
+    /**
+     * Ensure a template's requirement links, whether it was just created or
+     * already existed.
+     *
+     * This used to run ONLY on the create path, so an existing template kept
+     * whatever links it happened to have — including none. That is not a
+     * cosmetic gap like a stale title: requirement links are the reachability
+     * wiring. `installFrameworkPack` finds templates BY
+     * `requirementLinks.some.requirement.frameworkId`, so a template with no
+     * links is present in the catalogue and installable by nobody.
+     *
+     * The file is authoritative for links even where it deliberately is not
+     * authoritative for titles — re-titling a shipped control is a decision,
+     * but a declared link is a statement about what the control covers.
+     */
+    const ensureLinks = async (templateId: string, requirementCodes: readonly string[]) => {
+        for (const reqCode of requirementCodes) {
+            const requirementId = requirementMap[reqCode];
+            if (!requirementId) continue; // already covered by assertCatalogConsistency
+            await prisma.controlTemplateRequirementLink.upsert({
+                where: { templateId_requirementId: { templateId, requirementId } },
+                create: { templateId, requirementId },
+                update: {},
+            });
+        }
+    };
+
     for (const t of file.templates) {
         const existing = await prisma.controlTemplate.findUnique({
             where: { code: t.code },
@@ -268,6 +311,7 @@ export async function applyCatalogFile(
                 tasksReconciled,
                 await reconcileTemplateTasks(prisma, existing.id, t.tasks),
             );
+            await ensureLinks(existing.id, t.requirementCodes);
             continue;
         }
         const tmpl = await prisma.controlTemplate.create({
@@ -298,13 +342,8 @@ export async function applyCatalogFile(
             }
         }
 
-        for (const reqCode of t.requirementCodes) {
-            const reqId = requirementMap[reqCode];
-            if (!reqId) continue; // already covered by assertCatalogConsistency
-            await prisma.controlTemplateRequirementLink.create({
-                data: { templateId: tmpl.id, requirementId: reqId },
-            }).catch(() => undefined); // tolerate duplicate-link races
-        }
+        await ensureLinks(tmpl.id, t.requirementCodes);
+
     }
 
     // ── 6. + 7. Pack + PackTemplateLinks ───────────────────────
