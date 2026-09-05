@@ -898,9 +898,26 @@ Reviewed at least annually.` },
     // by scripts/backfill-framework-catalog.mjs, which packs every
     // 'SOC2-'-prefixed template into SOC2_BASELINE by code prefix — sharing the
     // prefix would make the two packs swallow each other's templates.
-    const soc2StarterControls = require('./fixtures/soc2-control-templates.json') as Array<{
-        code: string; title: string; description: string; category: string; defaultFrequency: string; requirements: string[]; tasks: Array<{ title: string; description: string }>;
-    }>;
+    //
+    // The fixture is a CatalogFile — `{ framework, requirements, templates,
+    // pack }` — since the templates gained authored task sets and a delivery
+    // path through `applyCatalogFile` (scripts/seed-framework-catalogs.ts).
+    // This block reads `.templates` out of it and otherwise behaves as before:
+    // dev and CI seed through here, production through the catalog seeder.
+    //
+    // Read via the shape, NOT through an `as` cast over the whole file. The
+    // previous line cast the JSON straight to an array, so when the file
+    // became an object the cast still compiled and `for...of` threw at
+    // runtime — taking the entire seed down and failing E2E specs that have
+    // nothing to do with SOC 2. A cast is a claim the compiler stops checking.
+    const soc2Catalog = require('./fixtures/soc2-control-templates.json') as {
+        templates: Array<{
+            code: string; title: string; description: string; category: string;
+            defaultFrequency: string; requirementCodes: string[];
+            tasks: Array<{ title: { en: string }; description: { en: string } }>;
+        }>;
+    };
+    const soc2StarterControls = soc2Catalog.templates;
     for (const c of soc2StarterControls) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
         if (!existing) {
@@ -914,9 +931,9 @@ Reviewed at least annually.` },
                 },
             });
             for (const task of c.tasks) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
+                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
             }
-            for (const rk of c.requirements) {
+            for (const rk of c.requirementCodes) {
                 if (soc2ReqMap[rk]) {
                     await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: soc2ReqMap[rk] } }).catch(() => { });
                 }

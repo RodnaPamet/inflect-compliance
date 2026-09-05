@@ -147,6 +147,39 @@ describe('SOC 2 Starter Pack — curated control templates', () => {
     });
 });
 
+describe('the seed consumes the fixture in the shape it actually has', () => {
+    /**
+     * This is here because it broke. The fixture became a CatalogFile and
+     * `prisma/seed.ts` still read it as `require(...) as Array<...>` — a cast,
+     * so the compiler kept quiet, and `for...of` threw on an object at
+     * runtime. That took down the WHOLE seed, and the visible symptom was E2E
+     * specs for ISO 27001 and AI governance failing, which have nothing to do
+     * with SOC 2.
+     *
+     * A shape mismatch between a fixture and its consumer is invisible to
+     * every test that reads the fixture — this file included, which was green
+     * throughout. So the assertion has to be about the CONSUMER.
+     */
+    const seedBlock = read('prisma/seed.ts');
+
+    it('reads .templates rather than treating the file as an array', () => {
+        expect(seedBlock).toContain('soc2Catalog.templates');
+        // The old shape, which compiled and threw. If this ever comes back the
+        // seed dies again and the failures point somewhere else entirely.
+        expect(seedBlock).not.toMatch(
+            /soc2-control-templates\.json'\) as Array</,
+        );
+    });
+
+    it('reads the renamed and re-typed fields', () => {
+        // `requirements` -> `requirementCodes`, and task strings -> locale
+        // objects. Both renames are silent under a cast.
+        expect(seedBlock).toContain('c.requirementCodes');
+        expect(seedBlock).toContain('task.title.en');
+        expect(seedBlock).toContain('task.description.en');
+    });
+});
+
 describe('SOC 2 criteria — every declaration agrees', () => {
     it("the catalog file's own requirements match the criteria the seed creates", () => {
         // The CatalogFile now declares the criteria itself, so they are stated
