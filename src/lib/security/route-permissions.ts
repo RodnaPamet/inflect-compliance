@@ -185,10 +185,28 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     },
 
     // ── Agent register (Epic Agentic) ───────────────────────────────
-    // ORDER MATTERS: matching is first-wins, so the narrower tool-exposure rule
-    // has to precede the register's own catch-all below. Reversed, every grant
-    // would resolve to `admin.agent_registry` and the separate key would be
-    // unreachable — present in the type, enforced nowhere.
+    // ORDER MATTERS: matching is first-wins, so every narrower rule here has to
+    // precede the register's own catch-all below. Reversed, every grant and
+    // every card edit would resolve to `admin.agent_registry`: the two specific
+    // keys would be present in the type and enforced nowhere, and whoever holds
+    // the register key would silently gain both surfaces — which is the exact
+    // consolidation the split exists to prevent. It fails SILENTLY, because a
+    // route gated by the wrong-but-still-privileged key still returns 403 to
+    // everyone it should. So the two specific rules are kept together above the
+    // catch-all rather than sorted in with it, and
+    // `tests/integration/policy-card-authz.test.ts` asserts both paths resolve
+    // to their own key rather than only asserting the narrow one.
+    {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/[^/]+\\/policy-card$`),
+        permission: 'admin.agent_policy_card',
+        note:
+            "Create or edit an agent's versioned runtime policy card. Its own " +
+            'key, and the WIDEST of the three agent keys rather than the ' +
+            'narrowest: a card declares the permitted tools AND the data rung ' +
+            'AND the autonomy rung AND the per-run and per-day action budgets. ' +
+            'Sharing admin.agent_tool_exposure would make every routine tool ' +
+            "grant carry the authority to raise an agent's autonomy ceiling.",
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/agents\\/[^/]+\\/tools$`),
         permission: 'admin.agent_tool_exposure',

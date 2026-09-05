@@ -93,6 +93,7 @@ const KEY_PREFIX_DISPLAY_LENGTH = 8;
  * Some ACTIONS are deliberately unreachable by any NAMED scope:
  * `admin.tenant_lifecycle`, `admin.owner_management`,
  * `admin.agent_registry`, `admin.agent_tool_exposure`,
+ * `admin.agent_policy_card`,
  * `admin.compliance_dsar_*` and `reports.schedule_external`. Deleting
  * the tenant, rotating the DEK, managing OWNERs, deciding which agents
  * may act and what they may reach, moving DSARs, and aiming a standing
@@ -207,12 +208,15 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
     // The two subtractions are the point of the branch, not a detail of it.
     // `admin.agent_registry` decides which autonomous agents may act at all;
     // `admin.agent_tool_exposure` decides what each of them may reach, and it is
-    // the list `/api/mcp` refuses a tool against. A `*` key held BY an agent
-    // that could set either would make both self-modifiable: the credential
-    // could activate its own registration and grant itself every tool, and a
-    // deny-by-default allowlist a caller can widen is not an allowlist. So they
-    // join `tenant_lifecycle` and `owner_management` — actions that need a real
-    // session and that no bearer token, however scoped, performs.
+    // the list `/api/mcp` refuses a tool against; `admin.agent_policy_card`
+    // decides the versioned runtime policy that narrows all of it further. A `*`
+    // key held BY an agent that could set any of the three would make all three
+    // self-modifiable: the credential could activate its own registration, grant
+    // itself every tool, and then widen its own card's autonomy rung and action
+    // budgets to match. A deny-by-default allowlist a caller can widen is not an
+    // allowlist, and a policy its own subject can rewrite is not a policy. So
+    // they join `tenant_lifecycle` and `owner_management` — actions that need a
+    // real session and that no bearer token, however scoped, performs.
     //
     // Asymmetric with `compliance_dsar_manage` and `reports.schedule_external`,
     // which `*` DOES grant, and deliberately: those are ordinary privileged
@@ -232,6 +236,7 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
                 ...adminPermissions.admin,
                 agent_registry: false,
                 agent_tool_exposure: false,
+                agent_policy_card: false,
             },
         };
     }

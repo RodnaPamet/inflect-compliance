@@ -34,6 +34,23 @@ model AgentProposal {
   /// So a NULL here means "written before the register existed", and nothing
   /// else — treat it as unattributed, never as "any agent".
   agentId              String?
+  /// WHICH VERSION OF THE AGENT'S POLICY CARD WAS IN FORCE when this proposal
+  /// was made. Write-once: a DB trigger refuses any UPDATE that changes a value
+  /// already set, because a pin that can be rewritten reconstructs today's rules
+  /// wearing an old version number, which is worse evidence than none.
+  ///
+  /// THREE STATES, AND THEY ARE THREE DIFFERENT FACTS:
+  ///   NULL — this row predates version pinning. We do not know.
+  ///   0    — the card was evaluated and NO card was in force (the agent has
+  ///          none, or a human/assistant made the proposal). `NO_POLICY_CARD` in
+  ///          `src/lib/agentic/policy-card.ts`; 0 can never collide with a real
+  ///          version, which the version table CHECKs at >= 1.
+  ///   >= 1 — the version that authorized the call which produced this row.
+  ///
+  /// Written from the invocation that was actually authorized, not re-read
+  /// afterwards: "the version that allowed this" and "the version in force a
+  /// moment later" are different claims, and only the first is evidence.
+  policyCardVersion    Int?
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
   tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -70,6 +87,18 @@ model WorkflowRun {
   /// backfills it, so it cannot be NOT NULL at ALTER time. A NULL means
   /// "pre-register", not "any agent".
   agentId           String?
+  /// WHICH VERSION OF THE AGENT'S POLICY CARD WAS IN FORCE when this run was
+  /// admitted. Same three states and the same write-once trigger as
+  /// `AgentProposal.policyCardVersion` above — see that comment.
+  ///
+  /// It is the version at the run's START, and that is a deliberate narrowing
+  /// rather than the whole story: a run re-resolves its invocation after every
+  /// human checkpoint, so a run spanning a card edit is authorized under the
+  /// NEWER card for its later segments. Each individual call's audit row
+  /// (`MCP_TOOL_INVOKED` / `AUTHZ_DENIED`) carries the version that decided it.
+  /// This column answers "what did this run open under", which is the question
+  /// that stops being answerable once the card has moved on.
+  policyCardVersion Int?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -235,6 +264,12 @@ model RegisteredAgent {
   /// not one: a re-score after a staleness trigger is a NEW run, so the
   /// previous judgement and the basis it was true of stay legible.
   assessments AgentRiskAssessment[]
+  /// The agent's policy card (Epic Agentic 5) — at most one, holding many
+  /// versions. Optional because an agent registered before the card existed has
+  /// none, and an absent card contributes NO term at the tool boundary: the
+  /// register's own governance artefact must never be the thing that takes a
+  /// working agent dark.
+  policyCard  AgentPolicyCard?
 
   /// Composite parent key so the child tables that attribute work to an agent
   /// can never point cross-tenant. Mirrors AiSystem's own shape.
@@ -504,4 +539,158 @@ model AgentRiskAssessmentAnswer {
   @@unique([assessmentId, questionId])
   @@index([tenantId, assessmentId])
   @@index([questionId])
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// Epic Agentic 5 — the POLICY CARD.
+//
+// A machine-readable, VERSIONED runtime policy for one registered agent,
+// evaluated at the MCP tool boundary before anything executes (arXiv 2510.24383,
+// "Policy Cards: Machine-Readable Runtime Governance for Autonomous AI Agents").
+// 1/10 recorded what an agent is, 2/10 bounded what its credential may reach,
+// 3/10 scored how much authority it has earned — all three are RECORDS. This is
+// where they become a refusal.
+//
+// TWO TABLES, AND THE SPLIT IS THE POINT:
+//
+//   • AgentPolicyCard is the MUTABLE HEAD — which version is in force, and the
+//     agent's rolling per-day action window. It is one row per agent and it is
+//     written on every tool call (the budget reservation).
+//   • AgentPolicyCardVersion is APPEND-ONLY POLICY. Every edit writes a NEW row;
+//     no row is ever updated. `app_user` holds no UPDATE privilege on the table
+//     and a trigger refuses one from any role.
+//
+// A version has to be immutable because the next prompt PINS it: a WorkflowRun
+// and an AgentProposal each record the version in force when they executed, so
+// that an audit reconstructs what the rules WERE. A pinned version that can
+// still be edited reconstructs nothing — it reconstructs today's rules wearing
+// last quarter's version number, which is worse than recording nothing at all.
+// ═════════════════════════════════════════════════════════════════════
+
+/// Tenant-scoped: one agent's policy card — the mutable head.
+///
+/// The per-day usage columns live HERE rather than on a counter table of their
+/// own, because this row already has exactly the counter's key (one row per
+/// agent, tenant-scoped) and a separate table would be a second thing to keep in
+/// step. They are HEAD STATE, not policy: nothing about how many calls an agent
+/// has made today belongs in the immutable record of what it was allowed to do.
+model AgentPolicyCard {
+  id       String @id @default(cuid())
+  tenantId String
+  agentId  String
+
+  /// The version number in force. Versions are append-only and this pointer
+  /// moves; an Int rather than an FK to the version row so the two tables do not
+  /// point at each other, which would make either one impossible to insert first.
+  currentVersion Int @default(1)
+
+  /// The UTC day the counter below is counting. NULL until the first call.
+  /// A `@db.Date` and not a DateTime: the window is a calendar day, and storing
+  /// a timestamp would invite a comparison that is right in one timezone.
+  usageWindowDate DateTime? @db.Date
+  /// Tool calls made in that window. Reserved (incremented) BEFORE the call is
+  /// allowed to proceed, so two concurrent calls cannot both read the same
+  /// number and both be admitted.
+  actionsInWindow Int       @default(0)
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant   Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Composite FK to the agent's (id, tenantId) parent key — a card can never
+  /// point at another tenant's agent. CASCADE, like RegisteredAgentTool: a card
+  /// is authority, and authority for an agent that no longer exists must not
+  /// outlive it.
+  agent    RegisteredAgent          @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  versions AgentPolicyCardVersion[]
+
+  /// Composite parent key so versions can never point cross-tenant.
+  @@unique([id, tenantId])
+  /// One card per agent, declared twice, and both earn their place — the same
+  /// pair `RegisteredAgent` carries for its AiSystem link. `[tenantId, agentId]`
+  /// is the tenant-leading lookup index every tenant-scoped model must have;
+  /// `[agentId, tenantId]` is the unique over the exact relation field list that
+  /// Prisma requires before it will type the composite relation as 1:1. Either
+  /// one implies the other at the database, so the pair is redundant there —
+  /// kept anyway so neither half can be deleted as obviously unnecessary
+  /// without the other being noticed.
+  @@unique([tenantId, agentId])
+  @@unique([agentId, tenantId])
+}
+
+/// Tenant-scoped: ONE IMMUTABLE VERSION of a policy card.
+///
+/// Every column is a declaration the boundary reads. None is derived at read
+/// time, because a version has to mean the same thing when it is read back as
+/// evidence years later as it did when it was written.
+///
+/// The two set-valued columns are `String[]` rather than join tables: unlike
+/// `RegisteredAgentTool` — where "who granted it and when" is the question an
+/// incident review asks first — a version row IS the answer to when and by whom,
+/// for every field at once, and it is never mutated, so the read-modify-write
+/// hazard that rules an array out for a live allowlist does not exist here.
+///
+/// `approvalRung` is a String and not a Postgres enum, for the reason
+/// `RegisteredAgentTool.toolName` is: an `ALTER TYPE` mid-rolling-deploy makes
+/// still-running old containers fail with SQLSTATE 42704. Validated against
+/// `APPROVAL_LADDER` at the usecase.
+model AgentPolicyCardVersion {
+  id       String @id @default(cuid())
+  tenantId String
+  cardId   String
+
+  /// 1, 2, 3 … within one card. Unique per card, and never reused.
+  version Int
+
+  /// The MCP tools this agent may call. INTERSECTED with the 2/10 grant list at
+  /// the boundary, never unioned — a card cannot widen, only narrow.
+  permittedTools String[]
+
+  /// The highest data-access rung any call may reach. The permitted SET is the
+  /// prefix of the enum up to this rung, derived rather than stored, because the
+  /// enum's own doc comment says each rung is strictly more exposing than the
+  /// one above it.
+  maxDataScope AgentDataAccessScope
+
+  /// The highest autonomy rung any call may require (0-6).
+  maxAutonomyLevel Int
+
+  /// Action budgets. Rungs of `ACTION_CAP_LADDER`; validated at the usecase.
+  maxActionsPerRun Int
+  maxActionsPerDay Int
+
+  /// Which refusal rules are worth waking somebody for, as the stable codes in
+  /// `POLICY_CARD_RULES`. A refusal always audits; a refusal on a declared
+  /// trigger additionally carries `escalate: true` into the audit row.
+  escalationTriggers String[]
+
+  /// How many humans must sign a proposal from this agent — a rung of
+  /// `APPROVAL_LADDER`. Not read at the tool boundary (a tool call is not an
+  /// approval); declared and pinned so 8/10's review queue reads the version
+  /// that was in force when the proposal was made.
+  approvalRung String
+
+  /// TRUE for the version a card was CREATED with, false for every edit. Kept
+  /// because "what did this open at" and "what did somebody change it to" are
+  /// different questions, and the first one stops being answerable once the
+  /// version numbers are all that is left.
+  seeded         Boolean        @default(false)
+  /// The tier the seeding was derived from. NULL on an edit, and NULL is not
+  /// "unscored" here — a card is refused for an unscored agent, so no version
+  /// row can carry that state.
+  seededFromTier AgentRiskTier?
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+
+  /// No `updatedAt`. The row is append-only, and a column that promises to
+  /// record an update on a table that refuses updates is a promise the table
+  /// does not make.
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  card   AgentPolicyCard @relation(fields: [cardId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, cardId, version])
+  @@index([tenantId, cardId])
 }

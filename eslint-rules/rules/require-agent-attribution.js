@@ -4,30 +4,36 @@
  * `local/require-agent-attribution`
  *
  * Every Prisma CREATE against a table that attributes work to a registered
- * agent must name `agentId` in its `data` object.
+ * agent must name BOTH attribution columns in its `data` object: `agentId`
+ * (which agent) and `policyCardVersion` (under which version of that agent's
+ * declared policy).
  *
  * ── What the rule is protecting ──────────────────────────────────────
  *
  * `AgentProposal` and `WorkflowRun` are the two records an autonomous agent
  * leaves behind. `RegisteredAgent` is the register saying which agents a tenant
- * runs and what authority each holds. The pair is only worth having if every
- * runtime record RESOLVES to a register entry — otherwise "which agents are
- * running here?" has two answers, the register's and the truth's, and the
- * register is the one on the compliance report.
+ * runs and what authority each holds, and `AgentPolicyCardVersion` is the
+ * immutable statement of what one of them was allowed to do. The set is only
+ * worth having if every runtime record RESOLVES to both — otherwise "which
+ * agents are running here?" has two answers, the register's and the truth's,
+ * and "what was it allowed to do when it did that?" has only today's answer,
+ * which is the wrong one exactly when somebody has edited the card.
  *
- * The column is NULLABLE, because it had to be: it was added to populated
- * tables in the same transaction that back-filled it, and because a
- * human-started workflow run genuinely has no agent. So the type system cannot
- * ask for it. This rule asks instead.
+ * Both columns are NULLABLE, because both had to be: each was added to
+ * populated tables in the same transaction that back-filled them, and a
+ * human-started workflow run genuinely has neither an agent nor a card. So the
+ * type system cannot ask for them. This rule asks instead.
  *
  * ── What it demands, exactly ─────────────────────────────────────────
  *
- * That `agentId` is MENTIONED — not that it is non-null. `agentId: null` for a
+ * That each field is MENTIONED — not that it is non-null. `agentId: null` for a
  * human-started run is the correct value, and a rule that refused it would push
  * writers toward inventing an agent to satisfy the linter, which is the failure
- * it exists to prevent. What it refuses is SILENCE: a write site that never
- * considered attribution at all, whose row is then indistinguishable from a
- * pre-register one.
+ * it exists to prevent. `policyCardVersion` has the same shape one level over:
+ * `NO_POLICY_CARD` (0) is the right value when no card governed the row, and it
+ * is a DIFFERENT fact from the NULL a row written before pinning carries. What
+ * the rule refuses is SILENCE: a write site that never considered attribution at
+ * all, whose row is then indistinguishable from a pre-register one.
  *
  * A spread (`...data`) counts as naming it. That is a real hole and it is
  * deliberate: following a spread to its source is cross-statement data flow,
@@ -60,8 +66,15 @@ const AGENT_ATTRIBUTED_MODELS = new Set(['agentProposal', 'workflowRun']);
 /** Create-shaped Prisma methods. `createManyAndReturn` included for completeness. */
 const CREATE_METHODS = new Set(['create', 'createMany', 'createManyAndReturn', 'upsert']);
 
-/** The property that must appear. */
-const REQUIRED_FIELD = 'agentId';
+/**
+ * The properties that must appear.
+ *
+ * Two, not one, and they are checked together rather than by two rules: they
+ * are the same decision seen from two angles (which principal, under which
+ * policy), a write site that forgot one has almost always forgotten the other,
+ * and one report listing both is one fix rather than two round trips.
+ */
+const REQUIRED_FIELDS = ['agentId', 'policyCardVersion'];
 
 /** `data:` for create/createMany; upsert carries `create:` and `update:`. */
 const DATA_KEYS = new Set(['data', 'create']);
@@ -75,14 +88,20 @@ function propertyName(prop) {
 }
 
 /**
- * True when this object literal names the field, or spreads something that
- * might. See the header for why a spread is accepted.
+ * The required fields this object literal does NOT name.
+ *
+ * A spread satisfies EVERY field, not just one: following it to its source is
+ * cross-statement data flow, which this rule does not do, so a spread is opaque
+ * for all of them alike. See the header for why that hole is deliberate.
  */
-function namesField(objectExpression) {
-    return objectExpression.properties.some((prop) => {
-        if (prop.type === 'SpreadElement' || prop.type === 'ExperimentalSpreadProperty') return true;
-        return propertyName(prop) === REQUIRED_FIELD;
-    });
+function missingFields(objectExpression) {
+    const named = new Set();
+    for (const prop of objectExpression.properties) {
+        if (prop.type === 'SpreadElement' || prop.type === 'ExperimentalSpreadProperty') return [];
+        const name = propertyName(prop);
+        if (name !== null) named.add(name);
+    }
+    return REQUIRED_FIELDS.filter((f) => !named.has(f));
 }
 
 /**
@@ -105,12 +124,12 @@ module.exports = {
         type: 'problem',
         docs: {
             description:
-                'Require every create against an agent-attributed table to name agentId, so a runtime agent record always resolves to the register.',
+                'Require every create against an agent-attributed table to name agentId and policyCardVersion, so a runtime agent record always resolves to the register and to the policy version in force when it ran.',
         },
         schema: [],
         messages: {
             missingAttribution:
-                "This `{{model}}.{{method}}` does not name `{{field}}`. Every agent runtime record must resolve to a RegisteredAgent, so set `{{field}}: ctx.agentId ?? null` — null is a legitimate value for a human-started record, silence is not.",
+                "This `{{model}}.{{method}}` does not name `{{fields}}`. Every agent runtime record must resolve to a RegisteredAgent (`agentId: ctx.agentId ?? null`) and to the policy-card version in force when it ran (`policyCardVersion`, from `pinFromCard(inv.policyCard?.inForce ?? null)` or `await resolvePolicyCardPin(ctx.tenantId, ctx.agentId)`). `null` and `NO_POLICY_CARD` are legitimate values for a human-started record; silence is not, because a row that never answered is indistinguishable from one written before the column existed.",
         },
     },
 
@@ -134,14 +153,18 @@ module.exports = {
                 for (const dataProp of dataProps) {
                     const value = dataProp.value;
                     if (value.type !== 'ObjectExpression') continue;
-                    if (namesField(value)) continue;
+                    const missing = missingFields(value);
+                    if (missing.length === 0) continue;
+                    // ONE report naming every missing field, not one per field.
+                    // A site that forgot both is one omission, and two errors on
+                    // one line reads as two problems to fix separately.
                     context.report({
                         node: dataProp,
                         messageId: 'missingAttribution',
                         data: {
                             model,
                             method: node.callee.property.name,
-                            field: REQUIRED_FIELD,
+                            fields: missing.map((f) => `\`${f}\``).join(' and '),
                         },
                     });
                 }

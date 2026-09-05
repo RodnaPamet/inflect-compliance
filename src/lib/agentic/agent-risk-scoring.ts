@@ -384,3 +384,48 @@ export const MAX_AUTONOMY_BY_TIER: Readonly<Record<AgentRiskTier, number>> = {
     HIGH: 2,
     CRITICAL: 1,
 };
+
+/**
+ * How many tool calls a tier's agent may make, per run and per UTC day.
+ *
+ * Here rather than with the policy card, for the same reason `MAX_AUTONOMY_BY_TIER`
+ * is here: these numbers are what coming out CRITICAL actually COSTS, and a
+ * consequence that lives in the module that spends it is one that can be changed
+ * without anyone re-reading why it was set. `policy-card.ts` owns the ladder the
+ * values must sit on; this owns which rung each tier gets.
+ *
+ * Every value is a rung of `ACTION_CAP_LADDER` — a card cannot hold a number
+ * that is not, and a default that could not be saved by hand would be a default
+ * that only the seeder can produce.
+ *
+ * The numbers, and the reasoning:
+ *   LOW      → 50 / 500.  The engine's own per-run step cap is 50, so at LOW the
+ *                         card stops being the binding term on a run and the
+ *                         engine's cap is. That is the correct place for a
+ *                         well-assessed agent to sit: bounded by the platform,
+ *                         not by its own file.
+ *   MODERATE → 25 / 250.  Half. It chains steps between checkpoints, so a run is
+ *                         where its cost accumulates.
+ *   HIGH     → 10 / 100.  It can only put drafts in front of a person, and a
+ *                         hundred drafts a day is already more than a person
+ *                         reads.
+ *   CRITICAL →  5 /  25.  Read-only, and deliberately too small to enumerate the
+ *                         tenant with. A critical-tier agent that needs to walk
+ *                         every control is an agent whose tier is the finding.
+ *
+ * As with the autonomy table there is NO unscored key: unscored is the absence
+ * of a tier, and `defaultPolicyCardForRiskTier` resolves it to a zero budget.
+ */
+export const MAX_ACTIONS_PER_RUN_BY_TIER: Readonly<Record<AgentRiskTier, number>> = {
+    LOW: 50,
+    MODERATE: 25,
+    HIGH: 10,
+    CRITICAL: 5,
+};
+
+export const MAX_ACTIONS_PER_DAY_BY_TIER: Readonly<Record<AgentRiskTier, number>> = {
+    LOW: 500,
+    MODERATE: 250,
+    HIGH: 100,
+    CRITICAL: 25,
+};

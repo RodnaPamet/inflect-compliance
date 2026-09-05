@@ -6,6 +6,12 @@
  * narrowing the rule performs gets a case here that would go red if the
  * narrowing broke: the model allowlist, the create-method allowlist, the
  * data-key allowlist, and the deliberate spread hole.
+ *
+ * The rule requires TWO fields, and the pair is what most of the cases below
+ * are about. A rule that reported only when BOTH were missing would pass an
+ * invalid-only suite and every "names both" valid case, so each field gets its
+ * own single-omission invalid case — the shape a real write site fails in when
+ * a column is added and one seam is updated.
  */
 import { RuleTester } from 'eslint';
 
@@ -22,12 +28,16 @@ describe('local/require-agent-attribution', () => {
     ruleTester.run('require-agent-attribution', rule, {
         valid: [
             {
-                name: 'names agentId from the resolved context',
-                code: `db.agentProposal.create({ data: { tenantId: t, agentId: ctx.agentId ?? null } });`,
+                name: 'names both attribution fields from the resolved context',
+                code: `db.agentProposal.create({ data: { tenantId: t, agentId: ctx.agentId ?? null, policyCardVersion: pin } });`,
             },
             {
-                name: 'an explicit null is a correct value — a human-started run has no agent',
-                code: `db.workflowRun.create({ data: { tenantId: t, agentId: null } });`,
+                name: 'an explicit null and the no-card sentinel are correct values — a human-started run has neither',
+                code: `db.workflowRun.create({ data: { tenantId: t, agentId: null, policyCardVersion: NO_POLICY_CARD } });`,
+            },
+            {
+                name: 'order does not matter — the rule reads names, not positions',
+                code: `db.workflowRun.create({ data: { policyCardVersion: 3, tenantId: t, agentId: a } });`,
             },
             {
                 name: 'a spread might carry the field, and following it is data flow this rule does not do',
@@ -50,8 +60,8 @@ describe('local/require-agent-attribution', () => {
                 code: `db.workflowRun.update({ where: { id }, data: { status: 'DONE' } });`,
             },
             {
-                name: 'upsert names the field in its create branch',
-                code: `db.agentProposal.upsert({ where: { id }, create: { agentId: null }, update: { status: s } });`,
+                name: 'upsert names both fields in its create branch',
+                code: `db.agentProposal.upsert({ where: { id }, create: { agentId: null, policyCardVersion: 0 }, update: { status: s } });`,
             },
             {
                 name: 'a bare identifier argument carries no object literal to inspect',
@@ -60,7 +70,7 @@ describe('local/require-agent-attribution', () => {
         ],
         invalid: [
             {
-                name: 'a create that never considered attribution',
+                name: 'a create that never considered attribution at all',
                 code: `db.agentProposal.create({ data: { tenantId: t, kind: 'RISK' } });`,
                 errors: [{ messageId: 'missingAttribution' }],
             },
@@ -70,12 +80,27 @@ describe('local/require-agent-attribution', () => {
                 errors: [{ messageId: 'missingAttribution' }],
             },
             {
-                name: 'reached through a transaction handle rather than the client',
+                // The realistic regression: a column is added and one of the
+                // two seams is updated. A rule that only fired when BOTH were
+                // absent would pass this, and pass every valid case above.
+                name: 'names the agent but not the policy version it ran under',
+                code: `db.workflowRun.create({ data: { tenantId: t, agentId: a } });`,
+                errors: [{ messageId: 'missingAttribution' }],
+            },
+            {
+                name: 'names the policy version but not the agent',
+                code: `db.agentProposal.create({ data: { tenantId: t, policyCardVersion: 2 } });`,
+                errors: [{ messageId: 'missingAttribution' }],
+            },
+            {
+                // ONE report for two missing fields, not two. The count is the
+                // assertion: a per-field report would make this `errors: 2`.
+                name: 'both missing is still one omission to fix',
                 code: `tx.agentProposal.create({ data: { tenantId: t } });`,
                 errors: [{ messageId: 'missingAttribution' }],
             },
             {
-                name: 'upsert whose create branch forgot it',
+                name: 'upsert whose create branch forgot them',
                 code: `db.workflowRun.upsert({ where: { id }, create: { tenantId: t }, update: {} });`,
                 errors: [{ messageId: 'missingAttribution' }],
             },

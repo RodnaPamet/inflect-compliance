@@ -114,29 +114,34 @@ describe('API Key Scopes — scopesToPermissions', () => {
         const { admin: starAdmin, ...starRest } = perms;
         const { admin: adminAdmin, ...adminRest } = adminPerms;
         expect(starRest).toEqual(adminRest);
-        // And `admin` differs in exactly two places — asserted as a whole
-        // object, so a THIRD divergence appearing later fails here rather than
-        // slipping past two named checks.
+        // And `admin` differs in exactly three places — asserted as a whole
+        // object, so a FOURTH divergence appearing later fails here rather than
+        // slipping past the named checks below.
         expect(starAdmin).toEqual({
             ...adminAdmin,
             agent_registry: false,
             agent_tool_exposure: false,
+            agent_policy_card: false,
         });
     });
 
-    it('full access (*) cannot decide which agents may act, or what they may reach', () => {
-        // ADMIN holds both of these, so unlike the two OWNER-only actions below
-        // they are denied to `*` explicitly. The reason is a composition: a `*`
-        // key CARRIED BY an agent could otherwise activate its own registration
-        // and grant itself every MCP tool, and a deny-by-default allowlist its
-        // own subject can widen is not an allowlist.
+    it('full access (*) cannot decide which agents may act, what they may reach, or what bounds them', () => {
+        // ADMIN holds all three of these, so unlike the two OWNER-only actions
+        // below they are denied to `*` explicitly. The reason is a composition:
+        // a `*` key CARRIED BY an agent could otherwise activate its own
+        // registration, grant itself every MCP tool, and then widen its own
+        // policy card's autonomy rung and action budgets to match. A
+        // deny-by-default allowlist its own subject can widen is not an
+        // allowlist, and a policy its own subject can rewrite is not a policy.
         const star = scopesToPermissions(['*']);
         expect(star.admin.agent_registry).toBe(false);
         expect(star.admin.agent_tool_exposure).toBe(false);
+        expect(star.admin.agent_policy_card).toBe(false);
         // The contrast that makes it a decision rather than an omission: a human
-        // ADMIN session holds both.
+        // ADMIN session holds all three.
         expect(getPermissionsForRole('ADMIN').admin.agent_registry).toBe(true);
         expect(getPermissionsForRole('ADMIN').admin.agent_tool_exposure).toBe(true);
+        expect(getPermissionsForRole('ADMIN').admin.agent_policy_card).toBe(true);
         // And the asymmetry is deliberate — `*` still reaches the privileged
         // DATA operations. Without this the assertions above would also pass on
         // a `*` that had quietly stopped granting anything at all.

@@ -4,10 +4,10 @@
  * `runReadTool` is the ONE path every MCP tool call takes. It:
  *   1. resolves the tool by name;
  *   2. AUTHORIZES the invocation through `authorizeToolCall` — deny-by-default
- *      tool exposure, then the credential's resource scope, then the SAME
- *      `assertPermission` / `assertCan*` gate the equivalent human route uses,
- *      against the principal-narrowed context. Every refusal writes exactly one
- *      hash-chained `AUTHZ_DENIED` row;
+ *      tool exposure, the agent's versioned POLICY CARD, then the credential's
+ *      resource scope, then the SAME `assertPermission` / `assertCan*` gate the
+ *      equivalent human route uses, against the principal-narrowed context.
+ *      Every refusal writes exactly one hash-chained `AUTHZ_DENIED` row;
  *   3. validates the agent's arguments against the tool's Zod schema;
  *   4. runs the tool — which calls exactly one existing read usecase with the
  *      tenant ctx (the usecase owns RLS + its own permission check);
@@ -135,15 +135,20 @@ export async function runReadTool(
     const ctx = inv.ctx;
 
     // 1. The one gate: token audience → credential liveness → deny-by-default
-    //    exposure → the autonomy ceiling → credential scope → the human route's
-    //    own permission check. Audits exactly one row on whichever step refuses.
+    //    exposure → the autonomy ceiling → the policy card → credential scope →
+    //    the human route's own permission check. Audits exactly one row on
+    //    whichever step refuses, and every one of them runs BEFORE step 3.
     //
     //    `capabilityClass: 'read'` is the AUTONOMY class, not a credential
     //    check: read tools deliberately carry no `capability`, because the
     //    endpoint gate already accepted `mcp:read` OR `mcp:propose` and
     //    re-checking here would newly refuse propose-only keys the read tools
     //    they can call today.
-    await authorizeToolCall(inv, { ...tool, capabilityClass: 'read' });
+    //
+    //    `rawArgs` goes in UNVALIDATED, and it has to: the policy card's data
+    //    rung can depend on an argument, and validation happens at step 2 —
+    //    after the gate, because nothing may run ahead of the gate.
+    await authorizeToolCall(inv, { ...tool, capabilityClass: 'read' }, rawArgs);
 
     // 2. Validate arguments.
     const parsed = tool.argsSchema.safeParse(rawArgs ?? {});
@@ -159,8 +164,9 @@ export async function runReadTool(
     //    both without them fighting over the same object.
     const visible = applyRowRedaction(inv, tool.redactRows, applyRedaction(inv, tool.redact, data));
 
-    // 5. Audit the invocation as an API_KEY actor.
-    await auditToolCall(ctx, name);
+    // 5. Audit the invocation as an API_KEY actor, naming the card version that
+    //    allowed it.
+    await auditToolCall(ctx, name, inv.policyCard?.inForce.version ?? null);
 
     return {
         content: [{ type: 'text', text: JSON.stringify(visible, null, 2) }],
@@ -173,7 +179,11 @@ export async function runReadTool(
  * structured metadata. Best-effort: an audit-write failure must not fail the
  * tool call (the read already happened; the outer chain already RLS-scoped it).
  */
-async function auditToolCall(ctx: RequestContext, tool: string): Promise<void> {
+async function auditToolCall(
+    ctx: RequestContext,
+    tool: string,
+    policyCardVersion: number | null,
+): Promise<void> {
     await appendAuditEntry({
         tenantId: ctx.tenantId,
         userId: ctx.userId,
@@ -182,7 +192,16 @@ async function auditToolCall(ctx: RequestContext, tool: string): Promise<void> {
         entityId: tool,
         action: 'MCP_TOOL_INVOKED',
         requestId: ctx.requestId,
-        detailsJson: { category: 'access', tool, agentId: ctx.agentId ?? null },
+        detailsJson: {
+            category: 'access',
+            tool,
+            agentId: ctx.agentId ?? null,
+            // Which policy-card version ALLOWED this call. The refusal rows
+            // carry the same field, so a reader reconstructing what the rules
+            // were does not have to infer the allow case from the absence of a
+            // denial. `null` means the agent has no card.
+            policyCardVersion,
+        },
         metadataJson: { apiKeyId: ctx.apiKeyId ?? null, scopes: ctx.apiKeyScopes ?? [] },
     }).catch(() => undefined);
 }

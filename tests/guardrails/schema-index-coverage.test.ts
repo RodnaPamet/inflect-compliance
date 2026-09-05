@@ -376,6 +376,13 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
         justification:
             'AgentRiskAssessmentRepository.listAnswers filters by [tenantId, assessmentId]',
     },
+    // ── Agent policy card (AgentPolicyCardRepository) ───────────────
+    {
+        model: 'AgentPolicyCardVersion',
+        fields: ['tenantId', 'cardId'],
+        justification:
+            'AgentPolicyCardRepository.listVersions filters by [tenantId, cardId] and orders by version desc; the @@unique([tenantId, cardId, version]) covers that ordering and is also the point lookup findVersion makes on every tool call',
+    },
 ];
 
 // ─────────────────────────────────────────────────────────────────────

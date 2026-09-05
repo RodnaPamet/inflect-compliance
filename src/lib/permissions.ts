@@ -139,6 +139,32 @@ export type PermissionSet = {
          * without also holding the switch that admits new agents.
          */
         agent_tool_exposure: boolean;
+        /**
+         * THE POLICY CARD: create an agent's machine-readable runtime policy,
+         * and widen or narrow it.
+         *
+         * A THIRD key rather than a reuse of either neighbour, and the split is
+         * the same argument `agent_tool_exposure` makes against
+         * `agent_registry`, applied once more — because the card is the widest
+         * of the three, not the narrowest.
+         *
+         * A card declares the permitted tools AND the data rung AND the autonomy
+         * rung AND the per-run and per-day action budgets AND how many humans
+         * must sign what the agent proposes. Folding it into
+         * `agent_tool_exposure` would mean every routine "let the reporting
+         * agent read tasks too" grant also carried the authority to raise that
+         * agent's autonomy ceiling and its action budgets — which is precisely
+         * the composition `agent_tool_exposure`'s own docstring rejects one
+         * level down. Folding it into `agent_registry` would put the everyday
+         * edit behind the switch that admits new agents, and an edit people
+         * cannot make is an edit people route around.
+         *
+         * Granted to OWNER and ADMIN, like both neighbours. Never to a bearer
+         * token, not even `*` — see `scopesToPermissions`: a `*` key CARRIED BY
+         * an agent that could edit its own card could widen its own ceiling, and
+         * a policy its own subject can rewrite is not a policy.
+         */
+        agent_policy_card: boolean;
     };
 };
 
@@ -197,7 +223,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
         'view', 'manage', 'members', 'sso', 'scim',
         'tenant_lifecycle', 'owner_management',
         'compliance_dsar_view', 'compliance_dsar_manage',
-        'agent_registry', 'agent_tool_exposure',
+        'agent_registry', 'agent_tool_exposure', 'agent_policy_card',
     ],
 };
 
@@ -236,6 +262,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     tenant_lifecycle: true, owner_management: true,
                     compliance_dsar_view: true, compliance_dsar_manage: true,
                     agent_registry: true, agent_tool_exposure: true,
+                    agent_policy_card: true,
                 },
             };
         case 'ADMIN':
@@ -270,6 +297,10 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     // Same reasoning, one notch narrower: deciding which tools
                     // an approved agent may reach is operational administration.
                     agent_tool_exposure: true,
+                    // Same reasoning one axis further: editing a card is
+                    // operational administration of an already-approved agent,
+                    // not the authority to admit new ones.
+                    agent_policy_card: true,
                 },
             };
         case 'EDITOR':
@@ -291,7 +322,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false },
             };
         case 'AUDITOR':
             return {
@@ -313,7 +344,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
                 audits: { view: true, manage: false, freeze: false, share: true },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false },
             };
         case 'READER':
         default:
@@ -333,7 +364,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: false, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false },
             };
     }
 }

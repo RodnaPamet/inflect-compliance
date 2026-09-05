@@ -12,7 +12,7 @@
  * writes a hash-chained `AUTHZ_DENIED` row — a usecase throw records nothing,
  * which is the whole of Epic D.3.
  *
- * ## Four refusals, and why each is here rather than in the database
+ * ## Five refusals, and why each is here rather than in the database
  *
  *   • UNKNOWN TOOL. Validated against the live catalogue
  *     (`src/lib/mcp/tool-catalogue.ts`) rather than a DB enum, because a tool is
@@ -34,15 +34,20 @@
  *     The granted-tool count is NOT a scorer input, so a grant cannot be
  *     answered by re-scoring the agent the way an axis widening is — the rung
  *     the tool requires, against the rung the tier permits, is what bounds it.
+ *   • A TOOL THAT REACHES FURTHER THAN THE AGENT'S DECLARED DATA AXIS. See
+ *     `assertGrantWithinDeclaredDataScope` below. Same shape, second axis.
  */
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { isKnownMcpTool, mcpToolCapabilityClass, MCP_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
+import { baseDataScopeForTool } from '@/lib/mcp/tool-data-scope';
 import {
     AUTONOMY_REQUIRED_BY_CAPABILITY,
     ceilingForRiskTier,
     DENY_CEILING,
 } from '@/lib/agentic/autonomy-ceiling';
+import { dataScopeWithinCard } from '@/lib/agentic/policy-card';
+import type { AgentDataAccessScope } from '@prisma/client';
 import type { PrismaTx } from '@/lib/db-context';
 
 import { assertCanRead, assertCanWrite } from '../policies/common';
@@ -59,7 +64,10 @@ import type { RequestContext } from '../types';
 async function assertAgentGrantable(db: PrismaTx, ctx: RequestContext, agentId: string) {
     const agent = await db.registeredAgent.findFirst({
         where: { id: agentId, tenantId: ctx.tenantId, deletedAt: null },
-        select: { id: true, status: true, riskTier: true },
+        // `dataAccessScope` is selected because it BOUNDS a grant, not merely
+        // because it describes the agent — see
+        // `assertGrantWithinDeclaredDataScope`.
+        select: { id: true, status: true, riskTier: true, dataAccessScope: true },
     });
     // Same shape whether absent or foreign, so a caller learns nothing about
     // another tenant's id space.
@@ -133,6 +141,62 @@ function assertGrantWithinTier(
     );
 }
 
+/**
+ * ── AND THE SAME RULE ON THE DATA AXIS ──────────────────────────────
+ *
+ * `assertGrantWithinTier` above bounds a grant on AUTONOMY. Nothing bounded it
+ * on DATA, and the register declares both. So an agent registered as
+ * `READ_METADATA` could be granted `list_risks` — which reads tenant data on
+ * every call, whatever its arguments — and the grant sat in the register looking
+ * deliberate. Two things then went wrong, one at a time:
+ *
+ *   • THE DECLARATION WAS FALSE, AND THE SCORE WAS COMPUTED FROM IT.
+ *     `dataAccessScope` is a weighted scorer input with its own tier floor. An
+ *     agent that actually reads tenant data while declaring metadata is scored
+ *     as the agent it is not, and comes out at a tier that buys it a higher
+ *     autonomy cap. This refusal is the only thing standing between the two
+ *     numbers.
+ *   • THE POLICY CARD SEEDS ITS DATA CEILING FROM THIS AXIS. So the first card
+ *     created for such an agent permitted a tool the card itself refuses on
+ *     every call, and the agent went dark. That contradiction is now also
+ *     handled where cards are made (`seedPolicyCardValue` withholds it), but a
+ *     contradiction is better prevented than reported: this is the seam where
+ *     an operator is asking for the thing, and where "raise the declaration" is
+ *     still a live option rather than a repair.
+ *
+ * The BASE rung, never the maximum — the same choice `withholdingReasonForTool`
+ * makes and for the same reason. `get_framework_status` bases at
+ * `READ_METADATA` and only reaches tenant data with a `frameworkKey`, so a
+ * metadata agent may hold it: the tool works and the wider ARGUMENT is refused
+ * at the boundary. Only a base above the declaration makes the grant inert.
+ *
+ * UNLIKE the tier rule, this one applies to an UNSCORED agent too. That is not
+ * an inconsistency: the tier is absent until somebody scores it, and refusing
+ * every grant on an absent tier would make preparing a DRAFT agent impossible.
+ * The data axis is DECLARED at registration and is never absent, so there is
+ * nothing to wait for — and an unscored agent is precisely the one whose
+ * declaration is about to be scored.
+ */
+function assertGrantWithinDeclaredDataScope(
+    agent: { dataAccessScope: AgentDataAccessScope },
+    toolName: string,
+): void {
+    const floor = baseDataScopeForTool(toolName);
+    // Ordinal, via the ladder both the card and the boundary read. An
+    // unrecognised rung on either side refuses — `dataScopeWithinCard` states
+    // that fail direction, and a grant is the wrong place to guess.
+    if (dataScopeWithinCard(floor, agent.dataAccessScope)) return;
+
+    throw badRequest(
+        `"${toolName}" reaches ${floor} on every call, and this agent is registered ` +
+            `as reaching ${agent.dataAccessScope}. Granting it would write a permission ` +
+            `the agent's own policy card refuses on every call, and would leave the ` +
+            `risk score standing on a declaration the grant contradicts. Raise the ` +
+            `agent's data-access scope — that re-scores it on the spot, which is the ` +
+            `point — or grant a tool that stays within ${agent.dataAccessScope}.`,
+    );
+}
+
 export async function grantAgentTool(ctx: RequestContext, agentId: string, input: unknown) {
     assertCanWrite(ctx);
     const { toolName } = AgentToolGrantSchema.parse(input);
@@ -143,6 +207,7 @@ export async function grantAgentTool(ctx: RequestContext, agentId: string, input
     return runInTenantContext(ctx, async (db) => {
         const agent = await assertAgentGrantable(db, ctx, agentId);
         assertGrantWithinTier(agent, toolName);
+        assertGrantWithinDeclaredDataScope(agent, toolName);
         const granted = await RegisteredAgentToolRepository.grant(db, ctx, agentId, toolName);
 
         await logEvent(db, ctx, {

@@ -106,6 +106,10 @@ function invocationFor(
         // A scored agent, so the tier term is never what refuses here — these
         // assertions are about audience, liveness and the ceiling arithmetic.
         riskTier: 'LOW' as const,
+        // No policy card, so the card contributes no term and these assertions
+        // stay about audience, liveness and the ceiling. The card's own
+        // behaviour is proved in `tests/unit/policy-card-evaluation.test.ts`.
+        policyCard: null,
         credential: { apiKeyId: API_KEY_ID, tokenExpiresAt: null },
         now: () => T0,
         ...overrides,

@@ -96,6 +96,12 @@ describe('the 5/10 seam — what a policy card opens at', () => {
             requireSecondApprover: true,
             allowAutoApproval: false,
             assessmentRequired: true,
+            // A zero budget as well as a denying ceiling. Both, because they are
+            // independent terms and an unscored agent must be inert under either
+            // one on its own — a future edit that softened the ceiling should
+            // still leave nothing runnable.
+            maxActionsPerRun: 0,
+            maxActionsPerDay: 0,
         });
     });
 
