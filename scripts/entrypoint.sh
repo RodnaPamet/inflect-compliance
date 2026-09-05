@@ -78,6 +78,22 @@ echo ""
 echo "→ Seeding vendor-assessment questionnaires..."
 node dist/seed-vendor-questionnaires.mjs || echo "⚠ vendor-questionnaire seed skipped (non-fatal)"
 
+# ── 1e. Seed catalog-shaped framework fixtures (idempotent) ──
+#
+# Runs BEFORE the task seeder, and the order is load-bearing: a task seeder can
+# only write onto templates that already exist, so a framework arriving for the
+# first time must be applied first or its tasks report "template absent" and
+# silently do nothing.
+#
+# applyCatalogFile is the only path that creates a Framework, its requirements,
+# the templates, their requirement links and a pack together. Until this line it
+# had exactly one non-test caller — a manual operator CLI — which is how the
+# production catalogue came to diverge from the fixtures by hundreds of
+# templates in both directions. Upsert-only; safe to re-run. Non-fatal.
+echo ""
+echo "→ Seeding framework catalogs..."
+node dist/seed-framework-catalogs.mjs || echo "⚠ framework-catalog seed skipped (non-fatal)"
+
 # ── 1e. Seed authored control-template tasks (idempotent) ──
 #
 # The authored task content on global ControlTemplate rows lives in

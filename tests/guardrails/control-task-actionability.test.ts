@@ -37,7 +37,6 @@ const FIXTURE_DIR = path.join(REPO_ROOT, 'prisma/fixtures');
  * authors the content; when it is empty, every shipped template is actionable.
  */
 const LEGACY_GENERIC_ALLOWLIST: Record<string, string> = {
-    'TSC-': 'SOC 2 (29). Carries bespoke tasks already, not yet in the steps format.',
     'SDLC-': 'NIST SSDF starter (19). Carries bespoke tasks already, not yet in the steps format.',
     'CIS-': 'CIS v8 IG1 (15). Its existing tasks are formulaic ("Implement IG1 safeguards for Control {n}").',
     'ASVS-': 'OWASP ASVS L1 (13). Same formulaic shape as CIS.',
@@ -350,7 +349,7 @@ describe('the allowlist is honest', () => {
         // A downward ratchet. Each content PR deletes its prefix here in the
         // same diff that authors the content; at zero, every shipped template
         // is held to the bar and this whole allowlist is deleted.
-        expect(Object.keys(LEGACY_GENERIC_ALLOWLIST)).toHaveLength(14);
+        expect(Object.keys(LEGACY_GENERIC_ALLOWLIST)).toHaveLength(13);
     });
 
     it('a frozen population is not also allowlisted', () => {

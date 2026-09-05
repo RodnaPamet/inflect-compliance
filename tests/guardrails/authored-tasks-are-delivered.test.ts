@@ -29,9 +29,20 @@ import { REPO_ROOT } from '../helpers/repo-files';
 
 const FIXTURE_DIR = path.join(REPO_ROOT, 'prisma/fixtures');
 const SEEDER = path.join(REPO_ROOT, 'scripts/seed-control-template-tasks.ts');
+/**
+ * The second delivery path. `seed-control-template-tasks.ts` writes tasks onto
+ * templates that already exist; `seed-framework-catalogs.ts` applies a whole
+ * CatalogFile — framework, requirements, templates, links and pack — for a
+ * framework production may never have seen. A fixture delivered by either is
+ * delivered, so both count as wiring here.
+ */
+const CATALOG_SEEDER = path.join(REPO_ROOT, 'scripts/seed-framework-catalogs.ts');
 
 /** Fixture files referenced by the standalone prod seeder. */
-const seederSource = fs.readFileSync(SEEDER, 'utf8');
+const seederSource = [SEEDER, CATALOG_SEEDER]
+    .filter((f) => fs.existsSync(f))
+    .map((f) => fs.readFileSync(f, 'utf8'))
+    .join('\n');
 
 /**
  * Fixtures whose authored tasks reach no production database, with the reason.
@@ -50,8 +61,6 @@ const seederSource = fs.readFileSync(SEEDER, 'utf8');
  * must be wired, because nothing about it is hard.
  */
 const KNOWN_UNDELIVERED: Record<string, string> = {
-    'soc2-control-templates.json':
-        'TSC- (29 templates, 87 tasks). Prod has SOC2- 7 templates from the YAML library instead — a different population entirely.',
     'ssdf-control-templates.json': 'SDLC- (19 templates, 42 tasks). No SDLC- template exists in prod.',
     'cis-v8-ig1-control-templates.json': 'CIS- (15 templates, 30 tasks). No CIS- template exists in prod.',
     'asvs-l1-control-templates.json': 'ASVS- (13 templates, 26 tasks). No ASVS- template exists in prod.',
@@ -148,7 +157,7 @@ describe('authored tasks have a delivery path', () => {
         const undelivered = authored
             .filter(({ file }) => KNOWN_UNDELIVERED[file])
             .reduce((n, a) => n + a.tasks, 0);
-        expect(Object.keys(KNOWN_UNDELIVERED)).toHaveLength(5);
-        expect(undelivered).toBe(205);
+        expect(Object.keys(KNOWN_UNDELIVERED)).toHaveLength(4);
+        expect(undelivered).toBe(118);
     });
 });
