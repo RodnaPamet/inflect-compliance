@@ -6,6 +6,185 @@
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.21(2)(a)"
+    ],
+    "tasks": [
+      {
+        "title": {
+          "en": "Catalogue the network and information systems in scope and record each one's classification"
+        },
+        "description": {
+          "en": "Build the inventory every risk assessment works from: one row per network or information system, naming the service it supports, the team that runs it, and the classification assigned to it. Take the rows from the systems actually in service - hosting accounts, configuration management data, the application list - rather than from an existing document, so the inventory reflects the estate as it is. Classify each row using the sensitivity and criticality scale the organisation already uses, and record the date it was classified. Done when every system carries a classification and a named owning team, and the inventory is attached as an export."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "evidenceHint": {
+          "en": "Inventory of network and information systems: system, supported service, owning team, classification and classification date"
+        },
+        "suggestedRole": "IT Operations",
+        "steps": [
+          {
+            "text": {
+              "en": "Draw the initial rows from hosting accounts, configuration management data and the application list."
+            }
+          },
+          {
+            "text": {
+              "en": "Name the team accountable for running each system, not just the team that uses it."
+            }
+          },
+          {
+            "text": {
+              "en": "Apply the organisation's existing sensitivity and criticality scale to every row."
+            }
+          },
+          {
+            "text": {
+              "en": "Record any system that could not be classified, with the reason, so the gap stays visible."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Document the risk assessment methodology, including how likelihood and impact are scored"
+        },
+        "description": {
+          "en": "Write the methodology every cybersecurity risk assessment follows, so two assessors scoring the same risk reach the same number. State where the population comes from (the systems inventory), how a risk is identified and described, the likelihood and impact scales with what each level means in words, how the two combine into a rating, and who decides that a rating is acceptable. Record the version and the date it takes effect, so the methodology in force at any assessment is identifiable. The attached document is what an assessor's work is later measured against."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "evidenceHint": {
+          "en": "Risk assessment methodology document, versioned and dated, carrying the likelihood and impact scales and the rating rule"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "State which inventory rows form the population each assessment covers."
+            }
+          },
+          {
+            "text": {
+              "en": "Define the likelihood scale, giving every level a written meaning."
+            }
+          },
+          {
+            "text": {
+              "en": "Define the impact scale in the same form, covering service, data and legal impact."
+            }
+          },
+          {
+            "text": {
+              "en": "Set out how likelihood and impact combine into a single risk rating."
+            }
+          },
+          {
+            "text": {
+              "en": "Name the role that decides whether a rated risk is accepted."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Publish the risk analysis and information system security policy and record who received it"
+        },
+        "description": {
+          "en": "Issue the policy stating how the organisation analyses cybersecurity risk and secures its information systems, and get it in front of the people it binds. The policy names the methodology in force, the register risks are held in, the roles accountable for treatment, and the review cycle the organisation has set for itself. Distribute it to every team that runs a system on the inventory and keep the distribution record - recipient, date sent, and acknowledgement where one was asked for. Attach the issued policy with its version number alongside the distribution record."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 2,
+        "evidenceHint": {
+          "en": "Issued policy with version number and effective date, plus the distribution record listing recipients, dates and acknowledgements"
+        },
+        "suggestedRole": "Management"
+      },
+      {
+        "title": {
+          "en": "Record each periodic risk assessment result in the cybersecurity risk register"
+        },
+        "description": {
+          "en": "Run the assessment at the interval the policy sets and put the output where it can be read: one register row per risk, carrying the system or service it affects, the threat described in a sentence, the likelihood and impact scores taken from the methodology, the resulting rating, the assessment date and the assessor. Risks carried forward from an earlier assessment are re-scored rather than copied, and a risk that has closed is marked closed with its date instead of being deleted. Attach the register export covering the assessment period."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 3,
+        "evidenceHint": {
+          "en": "Risk register export for the period: one row per risk with the system affected, likelihood, impact, rating, assessment date and assessor"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Take the assessment population from the current systems inventory."
+            }
+          },
+          {
+            "text": {
+              "en": "Score every risk using the documented likelihood and impact scales."
+            }
+          },
+          {
+            "text": {
+              "en": "Re-score each risk carried forward instead of copying its previous rating."
+            }
+          },
+          {
+            "text": {
+              "en": "Mark closed risks with a closure date rather than removing the row."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Assign a treatment owner and a priority to every risk the assessment rated"
+        },
+        "description": {
+          "en": "Turn the register into a plan somebody works from. For each rated risk record the treatment decision the methodology provides for - commonly reduce, transfer, avoid or accept - the named person accountable for it, its priority relative to the other open risks, and the date the treatment is expected to complete. An accepted risk records who accepted it and on what basis, since acceptance is a decision rather than the absence of one. Attach the treatment plan for the period showing every open risk with an owner and a priority."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 4,
+        "evidenceHint": {
+          "en": "Risk treatment plan for the period: every open risk with its treatment decision, named owner, priority and expected completion date"
+        },
+        "suggestedRole": "Management",
+        "steps": [
+          {
+            "text": {
+              "en": "Record each risk's treatment decision from the set the methodology defines."
+            }
+          },
+          {
+            "text": {
+              "en": "Name one accountable person per risk rather than a team mailbox."
+            }
+          },
+          {
+            "text": {
+              "en": "Order the open risks by priority so the sequence of work is decidable."
+            }
+          },
+          {
+            "text": {
+              "en": "Record who accepted each risk that is accepted rather than treated, and why."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Review the risk management measures in force and record what changed since the last review"
+        },
+        "description": {
+          "en": "Take the register, the treatment plan and the policy together and check they still describe how the organisation manages cybersecurity risk. Confirm every system on the inventory is represented in the register, that treatments recorded as complete produced the change claimed, and that risks past their expected completion date carry a reason. Write the outcome up as a dated review note listing what was changed in the methodology, the policy or the register as a result, and what was deliberately left alone. Attach the note together with any reissued documents."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 5,
+        "evidenceHint": {
+          "en": "Dated review note listing the systems checked, the treatments verified, and every change made to the methodology, policy or register"
+        },
+        "suggestedRole": "Management"
+      }
     ]
   },
   {
@@ -15,6 +194,185 @@
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.21(2)(b)"
+    ],
+    "tasks": [
+      {
+        "title": {
+          "en": "Define the incident classification and severity levels used to triage a cybersecurity incident"
+        },
+        "description": {
+          "en": "Produce the matrix a responder consults, under pressure and out of hours, to decide how serious an event is. For each severity level state the observable conditions that place an incident there - which systems or services are affected, whether data was exposed, whether the incident is still spreading - so two responders classify the same event the same way. Cover the full range from a single suspicious event to loss of an essential service, and record against each level the response and escalation the organisation has agreed for it. Attach the matrix with its version and effective date."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "evidenceHint": {
+          "en": "Incident classification matrix: each severity level with the observable conditions that place an incident there and the escalation it triggers"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "List the severity levels the organisation will use, from lowest to highest."
+            }
+          },
+          {
+            "text": {
+              "en": "Write the observable conditions that place an incident at each level."
+            }
+          },
+          {
+            "text": {
+              "en": "Record which internal roles are raised at each level."
+            }
+          },
+          {
+            "text": {
+              "en": "Classify two past incidents with the draft matrix to check it is decidable."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Document the incident response plan with the escalation path and the role accountable at each step"
+        },
+        "description": {
+          "en": "Write the plan the response team executes: how an incident is opened, who takes the lead, the containment, eradication and recovery steps expected at each severity, and the escalation path naming the role - not the individual - accountable at every step. Include the internal notification list and how each entry is reached out of hours, and state where the incident record is kept and who may write to it. Individual names live in a contact annex that can be corrected without reissuing the plan. Attach the plan with its version and the annex with its last-verified date."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "evidenceHint": {
+          "en": "Incident response plan, versioned, carrying the escalation path, the accountable role at each step, and the dated contact annex"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Set out how an incident is opened and who takes the incident lead role."
+            }
+          },
+          {
+            "text": {
+              "en": "Describe the containment, eradication and recovery steps expected per severity."
+            }
+          },
+          {
+            "text": {
+              "en": "Draw the escalation path, naming the accountable role at each step."
+            }
+          },
+          {
+            "text": {
+              "en": "Record the out-of-hours contact route for every role on that path."
+            }
+          },
+          {
+            "text": {
+              "en": "State where the incident record is kept and who may write to it."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Configure the detection sources that raise a cybersecurity incident and route their alerts to the response team"
+        },
+        "description": {
+          "en": "Make detection produce something a responder actually sees. List the sources that can raise an incident - endpoint agents, network and firewall logs, authentication failures, application error streams, notifications from third parties - and for each one enable the rules that create an alert, point the alert at a queue the response team monitors, and record which severity in the classification matrix the alert maps to. Where a source cannot raise an alert, record the shortfall against it rather than leaving the gap unstated. Attach the exported configuration per source with the date it was taken."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 2,
+        "evidenceHint": {
+          "en": "Exported detection configuration per source, showing the alerting rules, the destination queue, and the severity each alert maps to"
+        },
+        "suggestedRole": "IT Operations",
+        "steps": [
+          {
+            "text": {
+              "en": "List every source capable of raising a cybersecurity incident today."
+            }
+          },
+          {
+            "text": {
+              "en": "Enable the alerting rules on each source and record which rule fires."
+            }
+          },
+          {
+            "text": {
+              "en": "Point every alert at a queue the response team monitors."
+            }
+          },
+          {
+            "text": {
+              "en": "Record each source that cannot alert, so the detection gap is visible."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Log every cybersecurity incident with its severity, the escalation performed and the containment actions taken"
+        },
+        "description": {
+          "en": "Keep one record across all incidents in the period. Each entry carries the detection time and the source that raised it, the severity assigned from the matrix, who was escalated to and when, the containment and recovery actions taken with their times, and how the incident was closed. Where severity changed during handling, record both the original and the revised value with the reason. This log is what shows the escalation and notification procedure actually running, and it is the population the post-incident reviews are drawn from, so an incident handled informally still gets an entry. Attach the incident log covering the period."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 3,
+        "evidenceHint": {
+          "en": "Incident log for the period: one row per incident with detection time, source, severity, escalation, actions taken and closure"
+        },
+        "suggestedRole": "Security engineering"
+      },
+      {
+        "title": {
+          "en": "Train the incident response team on the plan and record the scenario exercised"
+        },
+        "description": {
+          "en": "Put the team through the plan rather than circulating it. Run a session against a scenario drawn from a threat the organisation plausibly faces, walk the team through classification, escalation and the containment steps, and note every point where the plan was unclear or a contact was wrong. Record the date, the scenario used, who attended and the role each holds in the plan, and the corrections the session produced. Attach the attendance record together with the list of plan corrections raised."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 4,
+        "evidenceHint": {
+          "en": "Training record: date, scenario exercised, attendees against their plan role, and the plan corrections the session raised"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Choose a scenario matching a threat the organisation plausibly faces."
+            }
+          },
+          {
+            "text": {
+              "en": "Walk the team through classification and escalation for that scenario."
+            }
+          },
+          {
+            "text": {
+              "en": "Note every point where the plan or the contact annex proved wrong."
+            }
+          },
+          {
+            "text": {
+              "en": "Record attendance against the role each person holds in the plan."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Record the post-incident review and the lessons learned for each incident closed in the period"
+        },
+        "description": {
+          "en": "For every incident closed in the period, hold the review while the detail is still recoverable and write it down: what happened in sequence, what detected it and how long that took, what worked in the response and what did not, the root cause where one was established, and the corrective actions with a named owner for each. Where no root cause was found, say so rather than substituting a plausible one. Attach the review report per incident together with the corrective action list drawn from them."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 5,
+        "evidenceHint": {
+          "en": "Post-incident review report per closed incident, with the timeline, the root cause where established, and the corrective actions with named owners"
+        },
+        "suggestedRole": "Security engineering"
+      }
     ]
   },
   {
@@ -24,6 +382,190 @@
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.21(2)(c)"
+    ],
+    "tasks": [
+      {
+        "title": {
+          "en": "Identify the essential services that must continue and the systems each one depends on"
+        },
+        "description": {
+          "en": "Name the services the organisation must keep running, then work down from each to the systems, suppliers and people it depends on, so continuity planning has a defined subject. For every dependency record whether it is internal or supplied, and what the service can still deliver without it. Agree the resulting list with the business rather than deriving it from the IT estate alone - the service the business considers essential is not always the one with the largest infrastructure behind it. Attach the list with the date it was agreed and the name of who agreed it."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "evidenceHint": {
+          "en": "Essential-service list with the systems, suppliers and people each service depends on, dated and showing who agreed it"
+        },
+        "suggestedRole": "Management",
+        "steps": [
+          {
+            "text": {
+              "en": "List the services the business considers essential, in its own words."
+            }
+          },
+          {
+            "text": {
+              "en": "Trace each service down to the systems and suppliers it runs on."
+            }
+          },
+          {
+            "text": {
+              "en": "Record what the service can still deliver when each dependency fails."
+            }
+          },
+          {
+            "text": {
+              "en": "Have the list confirmed by the business before it is used for planning."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Document the business continuity plan for each essential service"
+        },
+        "description": {
+          "en": "Write, per essential service, what happens when it stops: the recovery objective the business has agreed for it, the order its dependencies are brought back in, the fallback the service runs on meanwhile, who declares the plan in effect and who executes it. Keep it usable under pressure - steps in sequence, contacts reachable, and no reference to a document that only exists on the system that has failed. Record the version and date, and hold a copy that survives the loss of the systems the plan covers. Attach the plan set."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "evidenceHint": {
+          "en": "Business continuity plan per essential service, versioned and dated, with recovery objectives, restoration order, and the roles that declare and execute it"
+        },
+        "suggestedRole": "Management",
+        "steps": [
+          {
+            "text": {
+              "en": "Record the recovery objective the business has agreed for each service."
+            }
+          },
+          {
+            "text": {
+              "en": "Set the order in which that service's dependencies are restored."
+            }
+          },
+          {
+            "text": {
+              "en": "Describe the fallback the service runs on while recovery is under way."
+            }
+          },
+          {
+            "text": {
+              "en": "Name the role that declares the plan in effect and the role that executes it."
+            }
+          },
+          {
+            "text": {
+              "en": "Hold a copy that stays readable when the covered systems are down."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Define the backup procedure covering what is copied, where it is held and how it is restored"
+        },
+        "description": {
+          "en": "Write the backup rules for the systems the essential services depend on: which data and configuration is copied, how often, where each copy is held including whether one is kept off the production network, how long copies are retained, and the steps to restore one. State who may authorise a restore and how a restored copy is checked for integrity before it goes back into service. Attach the procedure with its version, together with the current backup schedule showing which systems it covers and which it does not."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 2,
+        "evidenceHint": {
+          "en": "Backup procedure with the current backup schedule: per system what is copied, the frequency, the storage location, the retention, and the restore steps"
+        },
+        "suggestedRole": "IT Operations",
+        "steps": [
+          {
+            "text": {
+              "en": "List the systems each essential service depends on that must be backed up."
+            }
+          },
+          {
+            "text": {
+              "en": "Record the frequency and retention agreed for every one of them."
+            }
+          },
+          {
+            "text": {
+              "en": "State where each copy is held and whether it sits off the production network."
+            }
+          },
+          {
+            "text": {
+              "en": "Write the restore steps, including who authorises a restore."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Record the crisis management roles and the communication plan each one follows"
+        },
+        "description": {
+          "en": "Set out who runs the organisation during a crisis and what gets said. Name the crisis team roles - who chairs, who decides, who speaks to staff, to customers and to external parties - with a deputy for each, and the channel used to convene them when the usual one is unavailable. For communications, record the audiences, the role that owns each, the channel used, and the holding message that goes out before the facts are confirmed. Attach the crisis management procedure with its contact list and the date the contacts were last verified."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 3,
+        "evidenceHint": {
+          "en": "Crisis management procedure with named roles and deputies, the convening channel, the audience-by-audience communication plan, and a dated contact list"
+        },
+        "suggestedRole": "Management"
+      },
+      {
+        "title": {
+          "en": "Test the disaster recovery procedure in a continuity exercise and record what was restored"
+        },
+        "description": {
+          "en": "Exercise the plan rather than reading it. Pick a scenario that removes a real dependency of an essential service, run the recovery for real where it is safe to - restoring from a backup copy into a working state - and time it against the recovery objective the business agreed. Record the scenario, the services and systems exercised, who took part, what was actually restored, how long it took, and every step that failed or had to be improvised. A step that was assumed rather than performed is recorded as assumed, because that is where plans break. Attach the exercise report."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 4,
+        "evidenceHint": {
+          "en": "Continuity exercise report: scenario, services exercised, participants, what was restored, elapsed time against the recovery objective, and every failed or assumed step"
+        },
+        "suggestedRole": "IT Operations",
+        "steps": [
+          {
+            "text": {
+              "en": "Choose a scenario that removes a real dependency of an essential service."
+            }
+          },
+          {
+            "text": {
+              "en": "Restore from the backup copy rather than from a system still running."
+            }
+          },
+          {
+            "text": {
+              "en": "Time the recovery and compare it with the agreed recovery objective."
+            }
+          },
+          {
+            "text": {
+              "en": "Record each step that failed, was improvised, or was assumed rather than done."
+            }
+          },
+          {
+            "text": {
+              "en": "Confirm the restored service works by exercising it, not by observing it start."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Review the continuity plans against the exercise findings and record the updates made"
+        },
+        "description": {
+          "en": "Take the failures, improvisations and assumptions the exercise produced and decide, item by item, whether the plan changes, the infrastructure changes, or nothing changes with the reason recorded. Update the continuity, backup and crisis management documents in one pass so their versions stay aligned, and re-check that the essential-service list still matches what the business considers essential. Record the outcome as a dated review note naming each finding, the decision taken, the document version it produced, and the owner of anything left open. Attach the note with the reissued documents."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 5,
+        "evidenceHint": {
+          "en": "Dated review note mapping each exercise finding to a decision, the document version it produced, and the owner of every item left open"
+        },
+        "suggestedRole": "Management"
+      }
     ]
   },
   {
@@ -33,6 +575,163 @@
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.21(2)(d)"
+    ],
+    "tasks": [
+      {
+        "title": {
+          "en": "Register every direct supplier and service provider with the service it delivers and its criticality"
+        },
+        "description": {
+          "en": "Build the supplier register the rest of this control works from. One row per direct supplier or service provider, naming the service it delivers, the internal owner of the relationship, the systems or data it can reach, and whether the organisation could keep operating without it. Mark the rows where the answer is no as critical, and record the basis for that call rather than the label alone. Draw the population from payment records and contract records together, since a supplier with no contract on file still appears in the ledger. Attach the register export."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "evidenceHint": {
+          "en": "Supplier register export: supplier, service delivered, internal owner, systems or data reachable, criticality and the basis recorded for it"
+        },
+        "suggestedRole": "Procurement",
+        "steps": [
+          {
+            "text": {
+              "en": "Draw the supplier population from payment records and contract records together."
+            }
+          },
+          {
+            "text": {
+              "en": "Record the service each supplier delivers and the internal relationship owner."
+            }
+          },
+          {
+            "text": {
+              "en": "Record which systems or data each supplier is able to reach."
+            }
+          },
+          {
+            "text": {
+              "en": "Mark the suppliers the organisation could not operate without, with the reason."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Define the supplier security assessment process and the questions every supplier answers"
+        },
+        "description": {
+          "en": "Write down how a supplier's security is assessed, so the result does not depend on who ran it. State which register rows require an assessment and at what depth, the question set covering the security measures a supplier is expected to have, what evidence may be accepted in place of an answer such as an audit report or certificate, how answers are scored, and who decides that a result is acceptable. Record the version and the date the process takes effect. Attach the process document with its question set."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "evidenceHint": {
+          "en": "Supplier security assessment process, versioned, with the question set, the scoring rule, and the role that decides acceptability"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Decide which register rows require an assessment and at what depth."
+            }
+          },
+          {
+            "text": {
+              "en": "Write the question set covering the security measures expected of a supplier."
+            }
+          },
+          {
+            "text": {
+              "en": "State the evidence accepted in place of an answer, such as an audit report."
+            }
+          },
+          {
+            "text": {
+              "en": "Set how answers are scored and who decides the result is acceptable."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Add the security requirements to the supplier contract template"
+        },
+        "description": {
+          "en": "Get the requirements into the document that binds the supplier. Amend the standard contract and renewal templates so they carry the security obligations the assessment process sets out - the security measures the supplier undertakes to maintain, the right to receive its security evidence or third-party audit report, and how it tells the organisation about a security incident affecting the service it delivers. Take the clause set from the assessment process rather than drafting a separate list, so a supplier is contracted to the same measures it is assessed against. Agree the wording with Legal before issue, and record which template version carries which clauses so an executed contract can be traced back to it. Attach the amended templates with their effective date."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 2,
+        "evidenceHint": {
+          "en": "Amended supplier contract and renewal templates, versioned and dated, with the security clause set each now carries"
+        },
+        "suggestedRole": "Legal/DPO"
+      },
+      {
+        "title": {
+          "en": "Assess each direct supplier against the assessment process and record the result in the vendor risk register"
+        },
+        "description": {
+          "en": "Work through the register rows the process says are due an assessment: send the question set, chase the answers, review any evidence offered in their place, score the result, and write the outcome into the vendor risk assessment register with the date, the assessor, the score, and the risks this supplier introduces to the organisation specifically rather than the generic risks of its category. Where a supplier declines to answer, record the refusal and the rating it produces rather than leaving the row blank. Attach the register export for the period."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 3,
+        "evidenceHint": {
+          "en": "Vendor risk assessment register export for the period: supplier, assessment date, assessor, score, and the supplier-specific risks recorded"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Select the register rows due an assessment in this period."
+            }
+          },
+          {
+            "text": {
+              "en": "Send the question set and record the date each response was received."
+            }
+          },
+          {
+            "text": {
+              "en": "Review any audit report or certificate offered in place of an answer."
+            }
+          },
+          {
+            "text": {
+              "en": "Record the risks this particular supplier introduces, not its category's."
+            }
+          },
+          {
+            "text": {
+              "en": "Record a refusal to answer as a result, with the rating it produces."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Collect the current third-party audit report or certificate from each critical supplier"
+        },
+        "description": {
+          "en": "For every supplier marked critical, obtain the current independent evidence of its security - an audit report, a certificate, or the equivalent the supplier issues - file it against that register row, and record the period it covers and its expiry so a lapsed report is visible without opening it. Read the qualifications and exceptions rather than the cover page: an exception touching the service this supplier delivers is recorded as a risk on its register row. Where a critical supplier has none, record that fact against the row. Attach the collected reports with an index showing which row each belongs to."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 4,
+        "evidenceHint": {
+          "en": "Third-party audit reports and certificates collected for the period, indexed to supplier register rows, with coverage period, expiry, and any exception recorded"
+        },
+        "suggestedRole": "Procurement"
+      },
+      {
+        "title": {
+          "en": "Review the security posture of every critical supplier and record whether its rating changed"
+        },
+        "description": {
+          "en": "Revisit each critical supplier's register row and decide whether what the organisation believes about it still holds. Compare the current assessment result and audit evidence against the previous one, take account of anything that happened during the period - a breach at the supplier, a change of subcontractor, a change of service or ownership - and record the rating as unchanged, improved or worsened with the reason. Every worsened rating gets a named owner and the action agreed with the supplier. Attach the review summary covering every critical row."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 5,
+        "evidenceHint": {
+          "en": "Review summary naming each critical supplier, its previous and current rating, the reason for any change, and the owner of every action raised"
+        },
+        "suggestedRole": "Procurement"
+      }
     ]
   },
   {
@@ -42,6 +741,207 @@
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.21(2)(e)"
+    ],
+    "tasks": [
+      {
+        "title": {
+          "en": "Register every application the organisation develops and every third-party component it acquires"
+        },
+        "description": {
+          "en": "Establish what the development and acquisition rules apply to. One row per application or service built in house, naming its repository and the team that maintains it; one row per acquired product or library running in or alongside those systems, naming the supplier and the version actually deployed. Record for each row whether it faces the internet and what data it processes, since that is what decides the depth of testing later. Attach the register export with the date it was compiled."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "evidenceHint": {
+          "en": "Application and third-party component register: repository or product, maintaining team or supplier, deployed version, internet exposure, and data processed"
+        },
+        "suggestedRole": "Engineering lead",
+        "steps": [
+          {
+            "text": {
+              "en": "List the repositories in use and the team that maintains each one."
+            }
+          },
+          {
+            "text": {
+              "en": "List the acquired products and libraries running in or alongside them."
+            }
+          },
+          {
+            "text": {
+              "en": "Record the version of each third-party component actually deployed."
+            }
+          },
+          {
+            "text": {
+              "en": "Mark which rows face the internet and what data each of them processes."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Document the secure development lifecycle and the security check each stage must pass"
+        },
+        "description": {
+          "en": "Write the lifecycle every change to an in-house system follows, stage by stage, with the security check that has to pass before it moves on - what is required at design, at code review, before merge, and before release. State who may approve an exception and where the exception is recorded, because an undocumented exception is indistinguishable from a check that never ran. Cover maintenance changes as well as new development, since most changes to a running system are the former. Attach the policy with its version and effective date."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "evidenceHint": {
+          "en": "Secure development lifecycle policy, versioned and dated, naming the security check required at each stage and the exception approval route"
+        },
+        "suggestedRole": "Engineering lead",
+        "steps": [
+          {
+            "text": {
+              "en": "Set out the lifecycle stages a change passes through, in order."
+            }
+          },
+          {
+            "text": {
+              "en": "State the security check that must pass before each stage completes."
+            }
+          },
+          {
+            "text": {
+              "en": "Cover maintenance changes as well as new development."
+            }
+          },
+          {
+            "text": {
+              "en": "Define who approves an exception and where the exception is recorded."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Add the security tests to the CI/CD pipeline of every repository in the register"
+        },
+        "description": {
+          "en": "Put the checks where they run without anyone having to remember them. Wire the security tests the lifecycle policy requires into the pipeline of each repository on the register - known-vulnerability scanning of dependencies at a minimum, plus whichever further tests the policy names for that stage. Record per repository which tests run, at what point they run - on a pull request, before merge, before deploy - and what a failure does, whether it blocks, warns, or is only reported, since a test whose failure does nothing is not a control. Where a repository cannot run one of the tests, record that against its register row. Attach the pipeline configuration export per repository."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 2,
+        "evidenceHint": {
+          "en": "Pipeline configuration export per repository showing the security test stages, when each runs, and what a failing result does"
+        },
+        "suggestedRole": "Engineering lead",
+        "steps": [
+          {
+            "text": {
+              "en": "Wire the tests the lifecycle policy requires into each repository's pipeline."
+            }
+          },
+          {
+            "text": {
+              "en": "Record at which point in the pipeline every test runs."
+            }
+          },
+          {
+            "text": {
+              "en": "Record whether a failing test blocks, warns, or is only reported."
+            }
+          },
+          {
+            "text": {
+              "en": "Record each repository that cannot run a required test, with the reason."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Publish the vulnerability handling and disclosure procedure with the address a reporter uses"
+        },
+        "description": {
+          "en": "Make it possible for a vulnerability to reach the people who can fix it, from inside or outside the organisation. The procedure states the contact address or form a reporter uses, what is acknowledged and when, how a report is triaged and given a severity, the remediation timescale the organisation commits to at each severity, who is told internally, and how the reporter is kept informed to closure. Publish the reporting address somewhere an outsider can find it, not only on the intranet. Attach the published procedure and the page or record showing where that address is reachable."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 3,
+        "evidenceHint": {
+          "en": "Published vulnerability handling and disclosure procedure with the reporting address, the triage and severity rules, and the remediation timescale set for each severity"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Set the contact address or form a reporter uses and make it publicly findable."
+            }
+          },
+          {
+            "text": {
+              "en": "Define how a report is acknowledged, triaged and given a severity."
+            }
+          },
+          {
+            "text": {
+              "en": "Record the remediation timescale the organisation commits to per severity."
+            }
+          },
+          {
+            "text": {
+              "en": "State how the reporter is kept informed until the report is closed."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Record every vulnerability found by scanning or penetration testing in the vulnerability register"
+        },
+        "description": {
+          "en": "Keep one register across all sources - pipeline scans, infrastructure scans, penetration tests, and reports arriving through the disclosure procedure. Each row carries the application or component register entry it affects, the finding and its severity, the date found and the source that found it, the remediation timescale it falls under, the owner, and the date it was fixed or the reason it is still open. A row is closed by verifying the fix, not by the owner asserting it. Attach the register export for the period together with the scan and test reports it draws from."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 4,
+        "evidenceHint": {
+          "en": "Vulnerability register export for the period with the scan and penetration test reports behind it: finding, severity, source, owner, remediation timescale, and closure date"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Merge findings from pipeline scans, infrastructure scans and tests into one register."
+            }
+          },
+          {
+            "text": {
+              "en": "Link each finding to the application or component register row it affects."
+            }
+          },
+          {
+            "text": {
+              "en": "Assign a severity and the remediation timescale that severity falls under."
+            }
+          },
+          {
+            "text": {
+              "en": "Verify each fix before the row is closed, and record who verified it."
+            }
+          },
+          {
+            "text": {
+              "en": "Record a reason against every finding still open past its timescale."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Review the third-party software acquired in the period against the secure acquisition requirements"
+        },
+        "description": {
+          "en": "Take the acquisitions made during the period - new products, new libraries, and new versions of either - and check each was put through the security requirements before it entered service: the supplier's security evidence considered, the component's known vulnerabilities checked, the version pinned and recorded on the register, and the approval recorded. Anything that entered service without them is a finding with a named owner and a decision: remediate, replace, or accept with the reason written down. Security engineering supplies the vulnerability check; the acquisition record is Procurement's. Attach the review record listing every acquisition checked with its outcome."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 5,
+        "evidenceHint": {
+          "en": "Acquisition review record listing every third-party product or library taken into service in the period, what was checked before it entered service, and each finding with its owner"
+        },
+        "suggestedRole": "Procurement"
+      }
     ]
   },
   {
@@ -51,6 +951,168 @@
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.21(2)(f)"
+    ],
+    "tasks": [
+      {
+        "title": {
+          "en": "Write the assessment policy naming each measure to be assessed, its method and its cadence"
+        },
+        "description": {
+          "en": "The control stands on a written policy, so produce it: list every cybersecurity risk-management measure that will be assessed and, against each one, the method used to assess it (internal audit, control test, commissioned external assessment), who performs it, how often it recurs, and what is produced when it is done. Take the cadence from what the organisation has already decided rather than proposing a new one, and record the decision that set it. The measures listed here are the population every later task in this control works from, so a measure left off the list is a measure nobody assesses. Attach the issued policy with its version and approval date."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "evidenceHint": {
+          "en": "Issued security assessment policy, versioned and dated, listing each measure to be assessed with its method, assessor, cadence and output"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "List the risk-management measures that are to be assessed, one row each."
+            }
+          },
+          {
+            "text": {
+              "en": "Record the assessment method and the assessor against every listed measure."
+            }
+          },
+          {
+            "text": {
+              "en": "State what document or record each assessment produces when it completes."
+            }
+          },
+          {
+            "text": {
+              "en": "Record the decision and date that set the assessment cadence being used."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Define a control-effectiveness metric and its data source for each measure in the assessment policy"
+        },
+        "description": {
+          "en": "An assessment that reports only 'implemented' cannot show whether a measure works, so give each measure in the policy at least one metric that moves when it stops working — coverage, failure rate, time to remediate. For each metric record the exact data source it is read from, who reads it, and the value that counts as an acceptable result. Where no data source exists yet, record the metric as unmeasurable and name what would have to be instrumented, so the gap is visible rather than the metric silently going unreported. Attach the metric definition sheet with the measure each metric belongs to."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "evidenceHint": {
+          "en": "Metric definition sheet: measure assessed, metric, data source, reader, acceptable value, and the metrics recorded as unmeasurable"
+        },
+        "suggestedRole": "Security engineering"
+      },
+      {
+        "title": {
+          "en": "Build the effectiveness metrics dashboard from the defined data sources"
+        },
+        "description": {
+          "en": "Stand up the dashboard the control's artifacts name, pulling each metric from the data source recorded on the definition sheet rather than from a hand-maintained spreadsheet, so the figures cannot drift from the systems they describe. Show every metric against its acceptable value and the time its source was last read; a stale panel must read as stale rather than presenting an old number as current. Give the dashboard a fixed export so a point-in-time copy can be attached as evidence at each assessment. Attach the first export together with the list of metrics the dashboard could not yet source."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 2,
+        "evidenceHint": {
+          "en": "Dated export of the effectiveness metrics dashboard showing each metric, its current value, its acceptable value and its last refresh time"
+        },
+        "suggestedRole": "IT Operations"
+      },
+      {
+        "title": {
+          "en": "Conduct the internal audit of the controls named in the assessment policy and issue the audit report"
+        },
+        "description": {
+          "en": "Work through the measures the policy schedules for internal audit and test each by the method the policy records rather than by interview alone, then write the result up as the audit report the control calls for: the scope covered, the method applied per control, the evidence examined, and a pass or exception verdict for each. Issue the report as the policy directs and record the date it was issued and to whom. Where a scheduled control could not be tested, keep its row and say why rather than dropping it, so the report's coverage is readable from the report itself. Attach the issued report with the evidence index behind it."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 3,
+        "evidenceHint": {
+          "en": "Internal audit report for the period: controls tested, method applied, evidence examined, verdict per control, and the untested controls with the reason"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Confirm which measures the policy schedules for audit this round."
+            }
+          },
+          {
+            "text": {
+              "en": "Test each scheduled control by its policy-recorded method and keep the evidence."
+            }
+          },
+          {
+            "text": {
+              "en": "Record a pass or exception verdict against every control tested."
+            }
+          },
+          {
+            "text": {
+              "en": "Keep a row for each control that could not be tested, with the reason."
+            }
+          },
+          {
+            "text": {
+              "en": "Record the date the report was issued and the recipients it went to."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Log each assessment finding in the remediation tracker with an owner and a due date"
+        },
+        "description": {
+          "en": "Every finding — from an internal audit, from a commissioned external assessment, or from a metric breaching its acceptable value — gets a row carrying the finding itself, where it came from, the measure it affects, the accountable owner, the agreed remediation and the date it is due. Update the row's status as the work proceeds and, on closure, record what was produced that shows the finding is fixed. The tracker is what turns an assessment report into remediation rather than a filed document, and its extract is the evidence that findings are being worked rather than accumulating."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 4,
+        "evidenceHint": {
+          "en": "Remediation tracker extract for the period: finding, source assessment, affected measure, owner, agreed remediation, due date, status and closure evidence"
+        },
+        "suggestedRole": "Security engineering"
+      },
+      {
+        "title": {
+          "en": "Report the assessment results and the state of open findings to management"
+        },
+        "description": {
+          "en": "Bring the period's assessment results together into the report management receives: what was assessed, the verdicts from the internal audit, each metric against its acceptable value, and the findings raised, closed and still open. Before a finding is reported as fixed, repeat the test that raised it — a finding is remediated when the measure passes the test that failed it, not when the owner reports the work is done — and where that retest does not pass, reopen the tracker row and report the finding as open. State the conclusion the results support about whether the measures are working, and name the measures where the evidence was too thin to reach one, so an unproven measure is not reported as an effective one. Attach the issued report with the date it went to management and who received it."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 5,
+        "evidenceHint": {
+          "en": "Assessment results report issued to management: what was assessed, the audit verdicts, each metric against its acceptable value, the findings closed after a passed retest, the findings reopened or still open, the effectiveness conclusion with the measures too thinly evidenced to judge, and the issue date and recipients"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Pull the period's audit verdicts, metric values and tracker rows together."
+            }
+          },
+          {
+            "text": {
+              "en": "Repeat the test that raised each finding reported as closed this period."
+            }
+          },
+          {
+            "text": {
+              "en": "Reopen and report as open any finding whose retest did not pass."
+            }
+          },
+          {
+            "text": {
+              "en": "State the effectiveness conclusion and the measures too thinly evidenced to judge."
+            }
+          },
+          {
+            "text": {
+              "en": "Record the date the report went to management and who received it."
+            }
+          }
+        ]
+      }
     ]
   },
   {
@@ -60,6 +1122,136 @@
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.21(2)(g)"
+    ],
+    "tasks": [
+      {
+        "title": {
+          "en": "Write down the baseline cyber hygiene practices every member of personnel must follow"
+        },
+        "description": {
+          "en": "Set out, in the cyber hygiene policy the control names, the practices expected of everyone regardless of role — the ones a person can actually perform, such as how credentials are handled, what is done with an unexpected attachment or link, how devices are locked and kept updated, and how a suspected incident is reported and to whom. Keep each practice to one observable behaviour, because the training programme and the simulations later in this control are built directly from this list and a vague practice cannot be taught or tested. Agree any practice that depends on a technical control with IT Operations before issue. Attach the issued policy with its version and date."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "evidenceHint": {
+          "en": "Issued cyber hygiene policy, versioned and dated, listing each baseline practice as a single observable behaviour"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Draft each expected practice as one behaviour a person can perform."
+            }
+          },
+          {
+            "text": {
+              "en": "Name the reporting route the policy tells people to use for a suspicion."
+            }
+          },
+          {
+            "text": {
+              "en": "Confirm with IT Operations which practices depend on a technical control."
+            }
+          },
+          {
+            "text": {
+              "en": "Number the practices so training modules can cite the one they teach."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Build the security awareness training programme covering each baseline hygiene practice"
+        },
+        "description": {
+          "en": "Turn the policy's practice list into deliverable material: for every baseline practice, a module or section showing what the behaviour looks like in this organisation, and a check that the learner can demonstrate it. Record which practice each module covers, so a gap in coverage shows on the map rather than being discovered when somebody fails a simulation. Mark which modules apply to all personnel and which are role-specific, and note the format each is delivered in. Attach the training materials together with the coverage map from practice to module."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "evidenceHint": {
+          "en": "Security awareness training materials plus the coverage map showing which module teaches each baseline hygiene practice"
+        },
+        "suggestedRole": "Security engineering"
+      },
+      {
+        "title": {
+          "en": "Add the awareness training to the onboarding checklist for every new joiner"
+        },
+        "description": {
+          "en": "Wire the programme into joining so the training happens at onboarding rather than at the next campaign: put the module on the standard onboarding checklist, name the role that assigns it, and record where a new starter's completion is captured. Cover every type of joiner the organisation onboards — employees, contractors and anyone else issued an account — since the hygiene policy applies to all personnel. Attach the amended onboarding checklist showing the training step and the completion field."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 2,
+        "evidenceHint": {
+          "en": "Amended onboarding checklist showing the security awareness training step, the role that assigns it, and where completion is recorded"
+        },
+        "suggestedRole": "HR"
+      },
+      {
+        "title": {
+          "en": "Deliver the periodic awareness training and record attendance for every member of personnel"
+        },
+        "description": {
+          "en": "Run the training round the programme schedules and capture the attendance records the control names: who it was assigned to, who completed it, the date, and the version of the module they took. Chase the non-completions and record the outcome of the chase rather than leaving the row blank — an unexplained gap in the register is the finding an assessor raises. Report completion by department so a team that is not attending is visible to its manager. Attach the attendance record for the round."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 3,
+        "evidenceHint": {
+          "en": "Training attendance record for the round: person, department, module and version, assignment date, completion date, and the outstanding non-completions with the chase outcome"
+        },
+        "suggestedRole": "HR"
+      },
+      {
+        "title": {
+          "en": "Send the scheduled phishing simulation and record the click and report rates"
+        },
+        "description": {
+          "en": "Run the simulation exercise the control calls for against the population the programme defines, using a scenario drawn from what the organisation actually receives rather than a generic template. Record for each run the date, the scenario, the population targeted, and the three numbers that matter: who clicked, who submitted anything, and who reported it through the channel the hygiene policy names — the report rate is the one that shows the training working. Break the result down by department so remedial training can be aimed. Attach the simulation results report, keeping the identification of individuals out of the reported figures unless a follow-up requires it."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 4,
+        "evidenceHint": {
+          "en": "Phishing simulation results report: date, scenario, population targeted, click rate, submission rate, report rate and the departmental breakdown"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Choose a scenario based on messages the organisation actually receives."
+            }
+          },
+          {
+            "text": {
+              "en": "Agree the target population and the send window before the run."
+            }
+          },
+          {
+            "text": {
+              "en": "Capture click, submission and report counts for the run."
+            }
+          },
+          {
+            "text": {
+              "en": "Break the three rates down by department for the report."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Revise the training content against the simulation results and the incidents of the period"
+        },
+        "description": {
+          "en": "Read the last simulation results and the incidents recorded since the previous revision, and change the material where the evidence says the message is not landing — a scenario people fall for and a behaviour that keeps causing incidents both belong in the next version. Record for each change what prompted it, and record explicitly where the review concluded no change was needed, so a review that happened is distinguishable from one that did not. Reissue the material under a new version number and tell the assigning role which modules changed. Attach the revision record with the reissued content."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 5,
+        "evidenceHint": {
+          "en": "Dated training revision record: the simulation results and incidents examined, each change with the evidence that prompted it, the no-change conclusions, and the new content version"
+        },
+        "suggestedRole": "Security engineering"
+      }
     ]
   },
   {
@@ -69,6 +1261,168 @@
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.21(2)(h)"
+    ],
+    "tasks": [
+      {
+        "title": {
+          "en": "Record every data store and transmission path that requires encryption at rest or in transit"
+        },
+        "description": {
+          "en": "Identify the data that must be protected and where it sits or travels: one row per data store (database, file share, backup, endpoint, removable media) and one per transmission path (external interface, site-to-site link, remote access, email flow), naming the data it holds or carries, whether the requirement is encryption at rest, in transit or both, and the team that owns it. Build the rows from the systems themselves rather than from memory, and mark any row where the requirement is not currently met. This register is the population every later task in this control works from. Attach it with the date it was compiled."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "evidenceHint": {
+          "en": "Encryption scope register: data store or transmission path, data held or carried, at-rest or in-transit requirement, owning team, and whether the requirement is currently met"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Enumerate the data stores holding data that has to be protected."
+            }
+          },
+          {
+            "text": {
+              "en": "Enumerate the transmission paths that data travels over, internal and external."
+            }
+          },
+          {
+            "text": {
+              "en": "Mark each row as requiring encryption at rest, in transit, or both."
+            }
+          },
+          {
+            "text": {
+              "en": "Name the owning team for every row so later tasks have somebody to go to."
+            }
+          },
+          {
+            "text": {
+              "en": "Flag the rows where the requirement is not met today."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Issue the cryptography and encryption policy with the approved algorithms and minimum key lengths"
+        },
+        "description": {
+          "en": "Produce the policy and the encryption standard the control's artifacts name. The policy states which categories of data must be encrypted at rest and which in transit, who may authorise an exception and for how long, and who owns the document. The standard states, for each use the scope register produces — data at rest, data in transit, backups, remote access — the algorithms approved, the minimum key length or equivalent strength, and the permitted modes and protocol versions, and names the deprecated algorithms explicitly so the scan later in this control has something concrete to look for. Cite the source used to select each value so it can be revised when that source moves. Attach both documents with their versions and approval dates."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "evidenceHint": {
+          "en": "Approved cryptography policy and encryption standards document, versioned and dated: mandatory data categories, exception authority, approved algorithms and minimum key lengths per use, and the explicitly deprecated algorithms"
+        },
+        "suggestedRole": "Security engineering"
+      },
+      {
+        "title": {
+          "en": "Write the key management procedure covering generation, storage and rotation for each key type"
+        },
+        "description": {
+          "en": "For every type of key the encryption standard requires — disk encryption keys, TLS private keys, application data keys, backup keys — record how it is generated and by whom, where it is stored and who can reach it, and the interval and method by which it is rotated. Record where each key type's activity is logged, so a rotation that has happened leaves a trace that can be produced later without console access. Where a key is held by a service provider, name the provider and the recovery arrangement. Security engineering owns the values in the procedure; IT Operations executes it. Attach the issued procedure with its version."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 2,
+        "evidenceHint": {
+          "en": "Issued key management procedure: key type, generation method and owner, storage location and access holders, rotation interval and method, and where each key activity is logged"
+        },
+        "suggestedRole": "Security engineering"
+      },
+      {
+        "title": {
+          "en": "Configure each system in the encryption scope register to the approved algorithms and key lengths"
+        },
+        "description": {
+          "en": "Work the register row by row and change the systems that do not meet the standard: enable encryption where the row requires it and it is absent, replace algorithms and key lengths below the approved minimum, and disable the protocol versions and cipher suites the standard deprecates. Where a system cannot be brought to the standard — an appliance that supports nothing stronger, an interface outside the organisation's control — record it as an exception under the policy's exception authority with a review date, rather than leaving the row silently non-conforming. Export each changed system's cryptographic configuration after the change. Attach the exports with the exception list."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 3,
+        "evidenceHint": {
+          "en": "Post-change cryptographic configuration export per system (algorithm, key length, protocol version, cipher suites) plus the exception list with the granting authority and review date for each"
+        },
+        "suggestedRole": "IT Operations",
+        "steps": [
+          {
+            "text": {
+              "en": "Compare each register row's current settings against the encryption standard."
+            }
+          },
+          {
+            "text": {
+              "en": "Change the systems that fall short, starting with the externally reachable ones."
+            }
+          },
+          {
+            "text": {
+              "en": "Disable the protocol versions and cipher suites the standard deprecates."
+            }
+          },
+          {
+            "text": {
+              "en": "Raise an exception with a review date where a system cannot be brought up."
+            }
+          },
+          {
+            "text": {
+              "en": "Export the resulting cryptographic configuration from each system changed."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Scan the estate for deprecated or weak cryptographic methods and record each finding"
+        },
+        "description": {
+          "en": "Run the scan the control's monitoring item calls for across the endpoints, services and interfaces in the encryption scope register, looking for the algorithms, key lengths, protocol versions and cipher suites the encryption standard marks as deprecated or below minimum. Record each hit with the system, what was observed, the standard value it breaches and the owning team, and pass the hits into the organisation's existing remediation route rather than leaving them inside the scanning tool. A run that finds nothing is still recorded with its date and coverage, so no findings is distinguishable from no scan. Attach the scan report for the period."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 4,
+        "evidenceHint": {
+          "en": "Cryptographic scan report for the period: scope covered and date, each system with the deprecated or weak method observed, the standard value it breaches, and the owning team it was passed to"
+        },
+        "suggestedRole": "Security engineering"
+      },
+      {
+        "title": {
+          "en": "Compare the algorithms and key lengths in use against the encryption standard and record the exceptions"
+        },
+        "description": {
+          "en": "Take the encryption scope register row by row, read the cryptographic settings each system is actually running rather than what its documentation claims, and record a conformance verdict per row against the published standard. For every deviation, name the observed value, the standard value, the accountable owner, and whether an approved exception covers it — a deviation with no exception is a finding, not a note. Include the rows the register marks as not currently meeting the requirement so they are counted rather than skipped, and carry the unresolved ones into the conclusion. Attach the comparison with the raw configuration output behind it."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 5,
+        "evidenceHint": {
+          "en": "Cryptographic conformance comparison: every register row with its observed algorithm, key length and protocol version, the standard value, a verdict, and the owner plus approved exception for each deviation"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Read the live cryptographic settings from each system in the register."
+            }
+          },
+          {
+            "text": {
+              "en": "Record a conformance verdict per row against the published standard."
+            }
+          },
+          {
+            "text": {
+              "en": "Check each deviation against the exception list before calling it a finding."
+            }
+          },
+          {
+            "text": {
+              "en": "Carry the deviations with no approved exception into the conclusion."
+            }
+          }
+        ]
+      }
     ]
   },
   {
@@ -78,6 +1432,158 @@
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.21(2)(i)"
+    ],
+    "tasks": [
+      {
+        "title": {
+          "en": "List the roles classified as security-sensitive and the background check each requires"
+        },
+        "description": {
+          "en": "Go through the organisation's roles with HR and record which ones the HR security policy treats as security-sensitive — typically those holding privileged system access, handling personal or confidential data, or carrying authority over payments or hiring — and against each one the check that applies, who performs it, and what the check covers. Record the basis for each classification so a role's presence or absence from the list can be explained later, and note where local law limits what may be checked. This schedule is what the hiring task in this control works from, so a role missing here is a role hired without a check. Attach the schedule with its approval date."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "evidenceHint": {
+          "en": "Security-sensitive role schedule: role, the basis for classifying it sensitive, the background check required, who performs it, and any legal limit on the check"
+        },
+        "suggestedRole": "HR",
+        "steps": [
+          {
+            "text": {
+              "en": "Walk the role list with HR and mark the security-sensitive ones."
+            }
+          },
+          {
+            "text": {
+              "en": "Record why each marked role is sensitive, in one line per role."
+            }
+          },
+          {
+            "text": {
+              "en": "Name the check that applies to each and the party who performs it."
+            }
+          },
+          {
+            "text": {
+              "en": "Note any legal limit on what may be checked in each jurisdiction."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Record every issued device and account against its holder in the asset management register"
+        },
+        "description": {
+          "en": "Populate the asset management register the control names with one row per issued asset — laptops, phones, removable media, tokens — and per account each person holds, giving the holder, the issue date, and whether the asset carries organisational data. Build the rows from the systems that issue the assets (the directory, the device management console, the procurement record) rather than from a survey, and keep the assets that no issuing source accounts for as their own rows so the gap is visible rather than absent. This register is what the leaver task recovers against. Attach the register export with the date it was taken."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 1,
+        "evidenceHint": {
+          "en": "Asset management register export: asset or account, holder, issue date, whether it carries organisational data, and the assets no issuing source accounts for"
+        },
+        "suggestedRole": "IT Operations"
+      },
+      {
+        "title": {
+          "en": "Write the security responsibilities of each role into its job description"
+        },
+        "description": {
+          "en": "For every role, add to its job description the security duties the person actually carries: the systems they may access, the data they handle, what they must report and to whom, and the duties that continue after they leave the role. Take the wording from the HR security policy rather than inventing new obligations role by role, and keep it specific enough that a candidate can tell what they are agreeing to. A role on the sensitive schedule additionally states that appointment depends on the check named there. Legal/DPO reviews the wording before issue. Attach the amended job descriptions with the list of roles covered and those still outstanding."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 2,
+        "evidenceHint": {
+          "en": "Amended job descriptions carrying the security responsibilities section, with the list of roles covered and the roles still outstanding"
+        },
+        "suggestedRole": "HR"
+      },
+      {
+        "title": {
+          "en": "Build the access control matrix granting each role the least access its duties require"
+        },
+        "description": {
+          "en": "Produce the matrix the control's artifacts name: rows for roles, columns for systems and data sets, and in each cell the access level that role needs to do its job and no more. Derive the entries from the duties written into the job descriptions rather than from what people currently hold, then compare what is held today against the matrix and record the holdings that exceed it, so the difference is visible and can be withdrawn. Name the approver for each system's column so provisioning has an authority to check a request against. Attach the matrix with the list of holdings that exceed it."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 3,
+        "evidenceHint": {
+          "en": "Access control matrix: role by system and data set with the granted level per cell, the named approver per system, and the list of current holdings that exceed the matrix"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Derive each role's needed access from the duties in its job description."
+            }
+          },
+          {
+            "text": {
+              "en": "Fill one cell per role and system with the least access those duties require."
+            }
+          },
+          {
+            "text": {
+              "en": "Name the approver who authorises access for each system column."
+            }
+          },
+          {
+            "text": {
+              "en": "Compare access held today against the matrix and list what exceeds it."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Record the completed background check for each hire into a security-sensitive role"
+        },
+        "description": {
+          "en": "Whenever somebody is appointed to a role on the security-sensitive schedule, run the check that schedule names and file the outcome: the role, the check performed, who performed it, the date it completed, the decision taken and who took it. Record the result rather than the underlying material, keeping the personal data to the minimum the decision needed and handling it as Legal/DPO directs. Where a check could not be completed — a jurisdiction that does not permit it, a record that does not exist — record what was done instead and who accepted the residual risk. Attach the background check register for the period."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 4,
+        "evidenceHint": {
+          "en": "Background check register for the period: role appointed to, check performed, performing party, completion date, decision and decision-maker, and any check not completed with the acceptance recorded"
+        },
+        "suggestedRole": "HR"
+      },
+      {
+        "title": {
+          "en": "Revoke the access and recover the assets recorded against every leaver"
+        },
+        "description": {
+          "en": "For each person leaving or changing role, work the access control matrix and the asset management register together: disable the accounts and withdraw the access they held, collect the devices, tokens and media listed against them, and close the register rows. Record the date each account was disabled and each asset returned; where an asset is not returned, keep the row open with the recovery action rather than closing it. HR triggers the process when the leaving or move date is known and IT Operations performs the revocations, so both records have to line up. Attach the completed offboarding record for each leaver in the period."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 5,
+        "evidenceHint": {
+          "en": "Completed offboarding record per leaver: accounts disabled with dates, access rights withdrawn, assets returned against the register, and the outstanding items with their recovery action"
+        },
+        "suggestedRole": "IT Operations",
+        "steps": [
+          {
+            "text": {
+              "en": "Pull the leaver's rows from the access control matrix and the asset register."
+            }
+          },
+          {
+            "text": {
+              "en": "Disable the accounts and withdraw the access, recording the date of each."
+            }
+          },
+          {
+            "text": {
+              "en": "Collect the devices, tokens and media listed against the person."
+            }
+          },
+          {
+            "text": {
+              "en": "Keep any unreturned asset open with the recovery action being taken."
+            }
+          }
+        ]
+      }
     ]
   },
   {
@@ -87,6 +1593,168 @@
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.21(2)(j)"
+    ],
+    "tasks": [
+      {
+        "title": {
+          "en": "List the critical systems in scope for multi-factor authentication and the accounts privileged on each"
+        },
+        "description": {
+          "en": "Decide and record what counts as critical here — systems whose compromise would interrupt the essential service, hold the most sensitive data, or grant administrative reach into other systems — then list each one with how it authenticates today, whether it can accept the organisation's second factor, and which accounts hold privileged access to it. Include the remote-access and externally reachable entry points, because that is where a stolen password gets used. Mark the systems that cannot support a second factor so they are handled as exceptions rather than quietly skipped. Attach the register with the basis recorded for each criticality judgement."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "evidenceHint": {
+          "en": "Authentication scope register: system, basis for its criticality, current authentication method, second-factor capability, the privileged accounts held on it, and the systems that cannot support MFA"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Write down the test used to decide a system is critical here."
+            }
+          },
+          {
+            "text": {
+              "en": "List each system meeting it, with how it authenticates users today."
+            }
+          },
+          {
+            "text": {
+              "en": "Record which accounts hold privileged access on each system listed."
+            }
+          },
+          {
+            "text": {
+              "en": "Mark the systems whose authentication cannot accept a second factor."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Publish the MFA policy naming the systems that require a second factor and the factors accepted"
+        },
+        "description": {
+          "en": "Write the policy the control's artifacts name: which systems on the scope register must enforce multi-factor authentication, which factor types are accepted and which are not, what applies to privileged accounts and to remote access, how a factor is enrolled and re-enrolled when it is lost, and who may grant a time-limited exception. State how an exception is recorded and when it is reviewed, so the systems the register marks as incapable have a defined route instead of an indefinite silence. Attach the approved policy with its version and approval date."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "evidenceHint": {
+          "en": "Approved MFA policy, versioned and dated: systems in scope, accepted and rejected factor types, the enrolment and recovery route, and the exception authority with its review interval"
+        },
+        "suggestedRole": "Security engineering"
+      },
+      {
+        "title": {
+          "en": "Enable multi-factor authentication on every system the scope register marks as capable"
+        },
+        "description": {
+          "en": "Turn the policy into configuration. Where a system authenticates through the central identity provider, enforce the requirement there so it covers every account at once; where it authenticates locally, enable it on the system itself and confirm no local bypass account is left outside the requirement — a break-glass account excluded by design is recorded as such, not forgotten. Enrol the privileged accounts on the register first, then the remainder. Export each system's authentication configuration after the change so enforcement can be shown without console access. Attach the exports with the list of systems left unenforced under an approved exception."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 2,
+        "evidenceHint": {
+          "en": "Per-system authentication configuration export showing the enforced second factor and the accounts covered, plus the list of systems left unenforced with their approved exception"
+        },
+        "suggestedRole": "IT Operations",
+        "steps": [
+          {
+            "text": {
+              "en": "Enforce the requirement at the central identity provider where a system uses it."
+            }
+          },
+          {
+            "text": {
+              "en": "Enable it on the system itself where authentication is local."
+            }
+          },
+          {
+            "text": {
+              "en": "Account for every local bypass or break-glass account left outside it."
+            }
+          },
+          {
+            "text": {
+              "en": "Enrol the privileged accounts from the scope register before the rest."
+            }
+          },
+          {
+            "text": {
+              "en": "Export each changed system's authentication configuration as evidence."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Route remote access and external correspondence over the approved encrypted channels"
+        },
+        "description": {
+          "en": "The control covers secured communication as well as authentication, so record which channels are approved — the remote-access service or equivalent for reaching internal systems, and encrypted email or a secure transfer service for correspondence carrying confidential data — and configure access so those are the channels actually in use: remote administration reachable only over the approved path, and the transfer route available to the people expected to use it. Name the alternative for recipients who cannot receive encrypted email, so the requirement does not push people onto an unapproved workaround. Attach the channel list with the configuration export for each."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 3,
+        "evidenceHint": {
+          "en": "List of approved communication channels with a configuration export for each (remote-access service, encrypted email or secure transfer), and the documented route for recipients who cannot use them"
+        },
+        "suggestedRole": "IT Operations"
+      },
+      {
+        "title": {
+          "en": "Review the authentication event log for failed and anomalous multi-factor challenges"
+        },
+        "description": {
+          "en": "Authentication events are only useful if somebody reads them, so work the log for the period: repeated failed second-factor challenges against one account, successful sign-ins from unexpected locations or at unexpected hours, factor enrolments and resets that did not come through the enrolment route, and privileged sign-ins by accounts not on the scope register. Record what was examined, what was found and what was done about each item. Confirm that every system in the register is still delivering its events to the log store — a system that stopped sending looks identical to a system with nothing to report. Attach the review record for the period."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 4,
+        "evidenceHint": {
+          "en": "Authentication log review record for the period: the systems whose events were examined, the anomalies found, the action taken on each, and any in-scope system not delivering events"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Query the period's failed second-factor challenges grouped by account."
+            }
+          },
+          {
+            "text": {
+              "en": "Check factor enrolments and resets against the policy's enrolment route."
+            }
+          },
+          {
+            "text": {
+              "en": "List privileged sign-ins by accounts absent from the scope register."
+            }
+          },
+          {
+            "text": {
+              "en": "Confirm each in-scope system is still delivering events to the log store."
+            }
+          },
+          {
+            "text": {
+              "en": "Record the action taken on every anomaly the review raised."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Recertify the access rights held on each system with its owner and withdraw what is no longer needed"
+        },
+        "description": {
+          "en": "Give each system owner the list of accounts and privileges currently held on their system — including the privileged accounts on the scope register and any service accounts — and ask them to confirm, reduce or revoke each one. Record the owner's decision per account with the date, then carry the revocations through to the systems rather than stopping at the sign-off: the withdrawn access is the outcome, the signed list is only the record of it. Note the accounts nobody claims, because an unclaimed privileged account is the finding this task exists to surface. Attach the completed recertification with the evidence that each revocation was applied."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 5,
+        "evidenceHint": {
+          "en": "Completed access recertification: system, account, privilege held, the owner's decision and its date, and evidence that each revocation was applied on the system"
+        },
+        "suggestedRole": "Security engineering"
+      }
     ]
   },
   {
@@ -96,6 +1764,168 @@
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.23(1)"
+    ],
+    "tasks": [
+      {
+        "title": {
+          "en": "Define the criteria that make an incident significant enough to start the 24-hour early-warning clock"
+        },
+        "description": {
+          "en": "Write down the conditions under which an incident is treated as significant and therefore reportable, so the responder holding the incident overnight can decide without escalating the question. State the conditions in observable terms - which services are unavailable, whether data was accessed, how many users or customers are affected - and record which event starts the 24-hour period, namely the point at which the entity became aware of the incident. Where the national authority publishes its own significance thresholds, take the values from that publication and cite it rather than setting your own. Attach the criteria with their version and effective date."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "evidenceHint": {
+          "en": "Significance criteria document, versioned and dated, stating the observable conditions that make an incident reportable and the event that starts the 24-hour period"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "List the observable conditions that make an incident reportable."
+            }
+          },
+          {
+            "text": {
+              "en": "Record how the point of awareness is established for each condition."
+            }
+          },
+          {
+            "text": {
+              "en": "Cite any significance thresholds the national authority publishes."
+            }
+          },
+          {
+            "text": {
+              "en": "Classify a sample of past incidents to check the criteria decide."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Record the CSIRT and competent-authority contacts and the channel each notification is submitted through"
+        },
+        "description": {
+          "en": "Build the contact register the whole reporting procedure depends on. One row per authority the entity must report to, naming the jurisdiction, the CSIRT or competent authority, the submission channel (portal address, form, email address or telephone number), any account or credential needed to use it, and the internal holder of that credential. Include the out-of-hours route where the authority publishes one. Verify each row against the authority's own published contact page rather than against a previous copy, and record the date verified so a stale row is visible. Attach the register export."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 1,
+        "evidenceHint": {
+          "en": "Authority contact register: jurisdiction, CSIRT or competent authority, submission channel, credential holder and date last verified"
+        },
+        "suggestedRole": "Legal/DPO"
+      },
+      {
+        "title": {
+          "en": "Build the 24-hour early-warning template and the route that gets it submitted"
+        },
+        "description": {
+          "en": "Produce the form the on-call responder fills in, and the path it takes to the authority, so none of the 24 hours is spent deciding who does what. Take the fields from the receiving authority's own early-warning form or portal where one is published; where none is published, fix the fields your procedure will always supply so submissions stay consistent between incidents. Name the role that drafts, the role that submits, and the fallback for each when the first is unreachable. Attach the template and the one-page route alongside it."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 2,
+        "evidenceHint": {
+          "en": "Early-warning template and submission route, showing the fields supplied, the role that drafts, the role that submits, and each fallback"
+        },
+        "suggestedRole": "Legal/DPO",
+        "steps": [
+          {
+            "text": {
+              "en": "Take the field list from the authority's form where one is published."
+            }
+          },
+          {
+            "text": {
+              "en": "Fill the template once with a worked example from a past incident."
+            }
+          },
+          {
+            "text": {
+              "en": "Name the drafting and submitting roles, and a fallback for each."
+            }
+          },
+          {
+            "text": {
+              "en": "Record where the completed early warning is filed after submission."
+            }
+          },
+          {
+            "text": {
+              "en": "Walk one responder through the route and correct what they stumble on."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Train the staff who detect and escalate incidents on the 24-hour early-warning trigger"
+        },
+        "description": {
+          "en": "The 24 hours are lost at the first hop, so brief the people who see incidents first - service desk, on-call engineers, monitoring analysts - on the significance criteria, who they must tell, and how quickly. Use the organisation's own criteria document rather than a general awareness deck, and close the session by having attendees classify example incidents and say who they would contact. Record attendance with names, roles, date and the version of the criteria taught, so a later reporting failure can be traced to whether the person had been briefed."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 3,
+        "evidenceHint": {
+          "en": "Briefing attendance record with names, roles, date and the version of the significance criteria taught, plus the material used"
+        },
+        "suggestedRole": "Security engineering"
+      },
+      {
+        "title": {
+          "en": "Log every early warning submitted, with the time the incident became known and the time it was sent"
+        },
+        "description": {
+          "en": "For each incident classified significant, file the early warning that was sent and record two timestamps against the incident record: when the entity became aware, and when the submission was made. Attach the submitted content itself and whatever the authority returns - a portal receipt, a reference number, an acknowledging email - so the submission can be evidenced without access to the authority's system. Where no early warning was sent for an incident that met the criteria, record that too, with the reason, rather than leaving the row absent."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 4,
+        "evidenceHint": {
+          "en": "Early-warning submission log for the period: incident reference, time became aware, time submitted, the submitted content and the authority's receipt"
+        },
+        "suggestedRole": "Security engineering"
+      },
+      {
+        "title": {
+          "en": "Review the significant incidents of the period against the early warnings actually submitted"
+        },
+        "description": {
+          "en": "Take every incident logged in the period, apply the significance criteria to each, and check that each one meeting them has a submission in the early-warning log. Record the elapsed time between awareness and submission for each, so late submissions are visible as well as absent ones, and note for every miss what caused it - the incident was not classified, the criteria were unclear, the contact was wrong. Feed the causes back into the criteria document or the contact register in the same review rather than filing them. Attach the reconciliation with its findings."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 5,
+        "evidenceHint": {
+          "en": "Reconciliation of logged incidents against early-warning submissions, with the elapsed time for each and the cause of every miss"
+        },
+        "suggestedRole": "Legal/DPO",
+        "steps": [
+          {
+            "text": {
+              "en": "List the period's incidents and apply the significance criteria to each."
+            }
+          },
+          {
+            "text": {
+              "en": "Match each reportable incident to its early-warning submission."
+            }
+          },
+          {
+            "text": {
+              "en": "Record the elapsed time from awareness to submission for every match."
+            }
+          },
+          {
+            "text": {
+              "en": "Name the cause of each missing or late submission."
+            }
+          },
+          {
+            "text": {
+              "en": "Raise a correction against the criteria or the contact register per cause."
+            }
+          }
+        ]
+      }
     ]
   },
   {
@@ -105,6 +1935,144 @@
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.23(2)"
+    ],
+    "tasks": [
+      {
+        "title": {
+          "en": "Map each field of the 72-hour incident notification to the incident record that supplies it"
+        },
+        "description": {
+          "en": "The full notification that follows the early warning is only fast if nobody has to hunt for its content. List the items the notification carries - taking the field list from the receiving authority's own notification form or portal where one is published - and against each one name where the answer comes from: the incident record, the classification matrix, the asset register, the affected service owner. Mark any field for which no source exists today, so the gap is closed before an incident makes it urgent. Attach the field-to-source map."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "evidenceHint": {
+          "en": "Field-to-source map for the 72-hour notification: each field, the record it is taken from, and any field with no source today"
+        },
+        "suggestedRole": "Legal/DPO",
+        "steps": [
+          {
+            "text": {
+              "en": "List the notification fields, from the authority's form where published."
+            }
+          },
+          {
+            "text": {
+              "en": "Name the record or register that supplies each field."
+            }
+          },
+          {
+            "text": {
+              "en": "Mark every field that has no source today as a gap."
+            }
+          },
+          {
+            "text": {
+              "en": "Assign an owner to close each gap before the next review."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Document the 72-hour notification procedure and the template it produces"
+        },
+        "description": {
+          "en": "Write the procedure that turns the incident record into a submitted notification within 72 hours of the entity becoming aware: who drafts it from the field map, who checks the assessment it carries before it is sent, who submits it through the channel held in the authority contact register, and what happens when any of them is unavailable. Include the template itself, pre-populated with the field labels from the map, so drafting is transcription rather than composition under time pressure. Attach the procedure with its version and the blank template."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "evidenceHint": {
+          "en": "Versioned 72-hour notification procedure and its blank template, naming the drafting, checking and submitting roles and their fallbacks"
+        },
+        "suggestedRole": "Security engineering"
+      },
+      {
+        "title": {
+          "en": "Configure the incident record to carry the 72-hour notification due date and alert its owner before it lapses"
+        },
+        "description": {
+          "en": "Make the deadline visible in the tool the responders already use rather than only in the procedure document. When an incident is classified significant, its record should carry the due date computed from the time the entity became aware, show it on the incident view, and raise a reminder to the incident owner and a named backstop before it is reached. Where the tool cannot compute the date, record the shortfall and put a manual step in the procedure instead of leaving it implied. Attach the exported configuration, or a test incident showing the due date and the reminder."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 2,
+        "evidenceHint": {
+          "en": "Exported incident-tool configuration, or a test incident showing the 72-hour due date and the reminder raised to the incident owner"
+        },
+        "suggestedRole": "IT Operations",
+        "steps": [
+          {
+            "text": {
+              "en": "Add the notification due date field to the incident record."
+            }
+          },
+          {
+            "text": {
+              "en": "Compute it from the time the entity became aware of the incident."
+            }
+          },
+          {
+            "text": {
+              "en": "Raise the reminder to the incident owner and a named backstop."
+            }
+          },
+          {
+            "text": {
+              "en": "Open a test incident and confirm the date and reminder appear."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Capture the submitted 72-hour notification and the authority's acknowledgement against the incident record"
+        },
+        "description": {
+          "en": "For every incident where an early warning was sent, file the notification that followed it: the content submitted, the date and time of submission, the channel used, and the reference or acknowledgement the authority returned. Store all four against the incident record, so the incident rather than somebody's mailbox is where the reporting history lives. Where the notification updated or corrected what the early warning said, note what changed, so the sequence sent to the authority can be read in order afterwards."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 3,
+        "evidenceHint": {
+          "en": "Submitted 72-hour notification per incident, with submission date and time, channel used, and the authority's reference or acknowledgement"
+        },
+        "suggestedRole": "Security engineering"
+      },
+      {
+        "title": {
+          "en": "Assess each 72-hour notification submitted in the period against its deadline and the field map"
+        },
+        "description": {
+          "en": "Take the incidents in the period that reached a notification and check two things for each: that the submission was made within 72 hours of the entity becoming aware, and that every field on the map was populated rather than left blank or marked unknown. Record the elapsed time and the count of unpopulated fields per notification. Where a field was repeatedly unpopulated, the fix belongs in the field map or in the incident record, not in the reviewer's memory - raise it as an action with an owner. Attach the assessment."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 4,
+        "evidenceHint": {
+          "en": "Assessment record listing each notification, its elapsed time from awareness to submission, the fields left unpopulated, and the actions raised"
+        },
+        "suggestedRole": "Legal/DPO",
+        "steps": [
+          {
+            "text": {
+              "en": "List every incident in the period that reached a notification."
+            }
+          },
+          {
+            "text": {
+              "en": "Record the elapsed time from awareness to submission for each."
+            }
+          },
+          {
+            "text": {
+              "en": "Count the fields left unpopulated on each notification sent."
+            }
+          },
+          {
+            "text": {
+              "en": "Raise an action for any field unpopulated more than once."
+            }
+          }
+        ]
+      }
     ]
   },
   {
@@ -114,6 +2082,149 @@
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.23(3)"
+    ],
+    "tasks": [
+      {
+        "title": {
+          "en": "Record every incident notified to the authority and the date its final report falls due"
+        },
+        "description": {
+          "en": "Open the register that says what reporting is still owed. One row per incident for which a notification was submitted, carrying the incident reference, the date the notification went in, the date one month later on which the final report falls due, the person compiling it, and its current state. Source the rows from the notification log rather than from memory, and add a row at the moment a notification is submitted so nothing is discovered late in the month. Attach the register export."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "evidenceHint": {
+          "en": "Final-report register: incident reference, notification date, final-report due date, compiler and current state"
+        },
+        "suggestedRole": "Security engineering"
+      },
+      {
+        "title": {
+          "en": "Publish the final incident report template with each section mapped to the record that supplies it"
+        },
+        "description": {
+          "en": "Produce the template the compiler fills in, and say where each section's content comes from - the incident record, the containment and recovery actions logged during the response, the post-incident review, the asset and service registers. Take the section list from the receiving authority's own final-report form or portal where one is published. Naming the source record per section is what stops a final report being rewritten from memory a month after the event. Attach the template with its version and the section-to-source map."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "evidenceHint": {
+          "en": "Versioned final incident report template with a section-to-source map naming the record each section is drawn from"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Take the section list from the authority's form where one is published."
+            }
+          },
+          {
+            "text": {
+              "en": "Name the record that supplies each section's content."
+            }
+          },
+          {
+            "text": {
+              "en": "Mark the sections that depend on the post-incident review."
+            }
+          },
+          {
+            "text": {
+              "en": "Fill the template once from a closed incident as a worked example."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Document who compiles the final report, from which records, and the channel it is submitted through"
+        },
+        "description": {
+          "en": "Write the procedure that carries a notified incident to a submitted final report inside the month: who is assigned as compiler at the moment a notification is submitted, which records they draw on, who checks the draft against the template's section-to-source map, and which entry in the authority contact register the submission goes through. State the handover route when the compiler leaves or is unavailable, since a month is long enough for that to happen. Attach the procedure with its version and effective date."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 2,
+        "evidenceHint": {
+          "en": "Versioned final-report compilation and submission procedure, naming the compiler, the source records, the checker and the submission channel"
+        },
+        "suggestedRole": "Legal/DPO",
+        "steps": [
+          {
+            "text": {
+              "en": "Assign a compiler at the moment a notification is submitted."
+            }
+          },
+          {
+            "text": {
+              "en": "List the records the compiler draws each section from."
+            }
+          },
+          {
+            "text": {
+              "en": "Name who checks the draft against the section-to-source map."
+            }
+          },
+          {
+            "text": {
+              "en": "Record the contact-register entry the submission goes through."
+            }
+          },
+          {
+            "text": {
+              "en": "State the handover route when the compiler becomes unavailable."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Log the final report submitted for each notified incident and the reference the authority returns"
+        },
+        "description": {
+          "en": "For every row on the final-report register, file the report that was sent, the date it went in against the date it was due, the channel used, and the acknowledgement or reference returned. Close the register row only when all four are present. Where a report was not submitted by its due date, keep the row open and record the reason and the revised date rather than closing it, so the register always shows what is actually outstanding."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 3,
+        "evidenceHint": {
+          "en": "Final reports submitted in the period with due date, submission date, channel and the authority's reference, filed against each register row"
+        },
+        "suggestedRole": "Security engineering"
+      },
+      {
+        "title": {
+          "en": "Confirm every incident on the final-report register has a submitted report or a recorded reason"
+        },
+        "description": {
+          "en": "Read the register end to end and check each row whose due date has passed: either a submitted report with its reference, or a written reason it was not submitted and what was done about it. Count the rows in each state and record the counts, so the trend across periods is visible rather than being re-derived each time. Where a lapse traces to the compilation procedure - an unassigned compiler, a missing source record - raise the correction against the procedure in the same review. Attach the confirmation with its counts and actions."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 4,
+        "evidenceHint": {
+          "en": "Register confirmation for the period: rows due, rows submitted, rows lapsed with their reasons, and the corrections raised"
+        },
+        "suggestedRole": "Legal/DPO",
+        "steps": [
+          {
+            "text": {
+              "en": "Filter the register to rows whose due date has passed."
+            }
+          },
+          {
+            "text": {
+              "en": "Match each row to a submitted report or a recorded reason."
+            }
+          },
+          {
+            "text": {
+              "en": "Count the rows submitted on time, late and not at all."
+            }
+          },
+          {
+            "text": {
+              "en": "Raise a correction for every lapse traced to the procedure."
+            }
+          }
+        ]
+      }
     ]
   },
   {
@@ -123,6 +2234,144 @@
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.20(1)"
+    ],
+    "tasks": [
+      {
+        "title": {
+          "en": "Record the management body accountable for cybersecurity and what each of its roles answers for"
+        },
+        "description": {
+          "en": "Name the body that carries cybersecurity accountability for this entity rather than leaving it assumed. Record which body that is - board, executive committee or the equivalent - list the roles that sit on it, and against each role state what it answers for in relation to cybersecurity: approving the measures, overseeing their implementation, or receiving the reporting. Record where this is written down (terms of reference, delegation of authority, governance manual) so the accountability survives a change of individuals. Attach the governance record with the date it was adopted."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "evidenceHint": {
+          "en": "Governance record naming the management body, its roles, what each answers for in cybersecurity, and the document the accountability is written into"
+        },
+        "suggestedRole": "Management",
+        "steps": [
+          {
+            "text": {
+              "en": "Name the body that approves the cybersecurity measures for this entity."
+            }
+          },
+          {
+            "text": {
+              "en": "List the roles sitting on it and what each answers for."
+            }
+          },
+          {
+            "text": {
+              "en": "Cite the terms of reference or delegation that records this."
+            }
+          },
+          {
+            "text": {
+              "en": "Record the date the governance record was adopted."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Approve the cybersecurity risk-management measures at the management body and minute the resolution"
+        },
+        "description": {
+          "en": "Put the set of risk-management measures in force to the management body as a decision item rather than an information item, with enough detail for the body to know what it is approving: the measures, the risks they address, and what remains unaddressed. Minute the resolution naming the version of the measures approved, the date, and the members present. That minute is the artifact an auditor asks for when testing whether the body approved the measures, so record it as a resolution with its own reference rather than as a line inside general minutes."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "evidenceHint": {
+          "en": "Board cybersecurity resolution: the version of the measures approved, the date, the members present, and its own minute reference"
+        },
+        "suggestedRole": "Management"
+      },
+      {
+        "title": {
+          "en": "Schedule the management body's cybersecurity oversight reviews and define the pack presented at each"
+        },
+        "description": {
+          "en": "Fix the cadence at which the body will review cybersecurity, and write down what it will be shown each time, so oversight is a standing item rather than something that only follows an incident. Record the agreed interval, the standing agenda, and the contents of the pack - movement in the risk register, the status of the approved measures, open incidents and those reported to the authority, and the actions outstanding from the last review. Record who prepares the pack and how long before the meeting it is issued. Attach the terms of reference or standing agenda carrying both."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 2,
+        "evidenceHint": {
+          "en": "Terms of reference or standing agenda stating the oversight cadence, the pack contents, who prepares it and when it is issued"
+        },
+        "suggestedRole": "Management",
+        "steps": [
+          {
+            "text": {
+              "en": "Agree the interval between cybersecurity oversight reviews."
+            }
+          },
+          {
+            "text": {
+              "en": "List the items the pack must carry at every review."
+            }
+          },
+          {
+            "text": {
+              "en": "Name who prepares the pack and when it is issued."
+            }
+          },
+          {
+            "text": {
+              "en": "Add the standing item to the body's forward agenda."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Log each management body cybersecurity review with the decisions taken and their owners"
+        },
+        "description": {
+          "en": "After every scheduled review, record what the body was shown, what it decided, and who owns each action with the date it is due. File the pack that was presented alongside the minute, because a minute on its own does not evidence what the body actually saw. Where the body accepted a risk or deferred a measure, record that explicitly as a decision with its rationale - a deferral that appears nowhere is indistinguishable from an oversight failure when it is examined later."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 3,
+        "evidenceHint": {
+          "en": "Management oversight log for the period: date, pack presented, decisions taken, and actions with owners and due dates"
+        },
+        "suggestedRole": "Management",
+        "steps": [
+          {
+            "text": {
+              "en": "File the pack presented alongside the minute of the review."
+            }
+          },
+          {
+            "text": {
+              "en": "Record each decision the body took, with its rationale."
+            }
+          },
+          {
+            "text": {
+              "en": "Assign an owner and a due date to every action raised."
+            }
+          },
+          {
+            "text": {
+              "en": "Carry open actions forward into the next review's pack."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Verify the cybersecurity measures in force still match the set the management body approved"
+        },
+        "description": {
+          "en": "Compare the measures actually operating against the version the body approved in its resolution, and list every difference: measures added since, measures dropped, and measures whose scope has changed. For each difference say whether it needs the body's approval or falls within a delegation already recorded. Take the differences that need approval back to the body as a decision item rather than noting them in a report, and record the outcome against the resolution. Attach the comparison with its date and the version of the measures it was made against."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 4,
+        "evidenceHint": {
+          "en": "Comparison of the measures in force against the approved version, listing each difference and whether it was taken back to the body"
+        },
+        "suggestedRole": "Security engineering"
+      }
     ]
   },
   {
@@ -132,6 +2381,127 @@
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.20(2)"
+    ],
+    "tasks": [
+      {
+        "title": {
+          "en": "Register the management members required to complete cybersecurity training and their current status"
+        },
+        "description": {
+          "en": "List the people, not the seats. One row per member of the management body, carrying the role, the date they joined it, whether they have completed cybersecurity training, the date they last completed it, and the syllabus version they were taught. Take the membership from the governance record that names the body, so the roster and the accountability record cannot drift apart, and refresh it whenever the body's membership changes. Attach the roster export with the date it was compiled."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "evidenceHint": {
+          "en": "Management training roster: member, role, date joined the body, training completed, date last completed and syllabus version"
+        },
+        "suggestedRole": "Management"
+      },
+      {
+        "title": {
+          "en": "Define the cybersecurity training syllabus for the management body and the material it is taught from"
+        },
+        "description": {
+          "en": "Decide what the training will actually cover and write it down, so the training records point at something specific rather than at an attendance line. Build the syllabus from the organisation's own material rather than a generic course: the risks its risk assessment identified, the measures the body approves and oversees, the incident reporting obligations and their timelines, and the accountability the body carries. State the delivery method, the duration, and the provider or internal presenter. Version the syllabus, because the roster records which version each member was taught. Attach the syllabus and its material."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "evidenceHint": {
+          "en": "Versioned management cybersecurity training syllabus with its material, stating the topics covered, the delivery method, duration and presenter"
+        },
+        "suggestedRole": "Security engineering",
+        "steps": [
+          {
+            "text": {
+              "en": "Draw the risk topics from the organisation's own risk assessment."
+            }
+          },
+          {
+            "text": {
+              "en": "Cover the measures the management body approves and oversees."
+            }
+          },
+          {
+            "text": {
+              "en": "Include the incident reporting obligations and their timelines."
+            }
+          },
+          {
+            "text": {
+              "en": "State the delivery method, the duration and who presents it."
+            }
+          },
+          {
+            "text": {
+              "en": "Version the syllabus so the roster can cite which one was taught."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Add cybersecurity training to the induction of newly appointed management members"
+        },
+        "description": {
+          "en": "A roster that is complete today goes stale at the next appointment, so put the training into the induction rather than into a reminder. Amend the induction checklist used when someone joins the management body to include the cybersecurity syllabus, name who arranges the session, and state the point in the induction by which it is expected. Agree the change with HR, who issue and file the induction checklist, and confirm the amended version is the one actually in use rather than leaving the old one in circulation. Attach the amended checklist with its version and effective date."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 2,
+        "evidenceHint": {
+          "en": "Amended management induction checklist showing the cybersecurity training item, who arranges it and when it is expected, with its version and effective date"
+        },
+        "suggestedRole": "HR"
+      },
+      {
+        "title": {
+          "en": "Collect the completed-training record for each management member, with its date and syllabus version"
+        },
+        "description": {
+          "en": "As each member completes the training, file the evidence and update their row on the roster: the date completed, the syllabus version taught, the delivery method, and the attendance or completion record from the presenter or the training platform. Where a member attended only part of a session, record what they covered rather than marking the row complete. The roster and these records together are what an auditor reads as the management training records, so keep them in one place with the roster."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 3,
+        "evidenceHint": {
+          "en": "Management training records: per member, the completion or attendance evidence with the date completed and the syllabus version taught"
+        },
+        "suggestedRole": "HR",
+        "steps": [
+          {
+            "text": {
+              "en": "File the attendance or completion evidence per member."
+            }
+          },
+          {
+            "text": {
+              "en": "Record the date completed and the syllabus version taught."
+            }
+          },
+          {
+            "text": {
+              "en": "Update that member's row on the training roster."
+            }
+          },
+          {
+            "text": {
+              "en": "Record partial attendance rather than marking a row complete."
+            }
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Identify the management members with no completed training and report the gaps to the body"
+        },
+        "description": {
+          "en": "Read the roster against the current membership of the management body and list every member with no completed training, or whose training was against a syllabus version since superseded. Put that list, with the reason for each gap, into the pack for the body's next oversight review rather than into a mailbox, so the body sees its own coverage. Record the date each outstanding member is booked to complete the training. Attach the gap list with the review it was reported to."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 4,
+        "evidenceHint": {
+          "en": "Training gap list for the period: members with no completed training or a superseded syllabus version, the reason, the booked date, and the review it was reported to"
+        },
+        "suggestedRole": "Management"
+      }
     ]
   },
   {

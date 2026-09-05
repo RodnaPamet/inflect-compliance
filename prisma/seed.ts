@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 import { createTenantWithOwner } from '@/app-layer/usecases/tenant-lifecycle';
 import { hashForLookup } from '@/lib/security/encryption';
 import { seedDefaultOrgDashboard } from '@/app-layer/usecases/org-dashboard-presets';
-import { seedInternalControls, type PolicyFrameworkMap } from './internal-controls-seed';
+import { seedInternalControls, type PolicyFrameworkMap } from './control-template-seed';
 
 // Prisma 7 — adapter is required for PrismaClient construction.
 const prisma = new PrismaClient({
@@ -1965,7 +1965,7 @@ Reviewed at least annually.` },
     // discarded at the type boundary without a single error anywhere, while a
     // conformance gate, an actionability ratchet and 24 green CI checks all
     // certified the file. A cast lies quietly; the loader now parses and
-    // throws. See prisma/internal-controls-seed.ts.
+    // throws. See prisma/control-template-seed.ts.
     const ic = await seedInternalControls(prisma, internalControlsFixture, icPolicyFwMap);
     console.log(`✅ Internal Controls: ${ic.templates.created} created / ${ic.templates.updated} updated templates + ${ic.requirementLinks} policy-mediated requirement links`);
     console.log(`✅ Internal Controls authored tasks: ${ic.fixtureTaskCount} in fixture -> created ${ic.created}, updated ${ic.updated}, unchanged ${ic.unchanged}, deprecated ${ic.deprecated}`);

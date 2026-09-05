@@ -25,7 +25,8 @@ import { prismaTestClient, resetDatabase } from '../helpers/db';
 import {
     loadAuthoredControlTasks,
     seedInternalControls,
-} from '../../prisma/internal-controls-seed';
+} from '../../prisma/control-template-seed';
+import { GENERIC_TEMPLATE_TASKS } from '../../prisma/generic-template-tasks';
 
 const FIXTURE = require('../../prisma/fixtures/internal-controls.json') as unknown;
 
@@ -130,6 +131,57 @@ describe('authored control-template tasks reach the database', () => {
         });
         expect(operate.length).toBeGreaterThan(0);
         expect(operate.filter((t) => !t.evidenceHint?.trim()).map((t) => t.title)).toEqual([]);
+    });
+
+    it("retires production's generic placeholders, all of which share sortOrder 0", async () => {
+        // THE PRODUCTION SHAPE, reproduced exactly. Every one of prod's 1,155
+        // template tasks is one of five generic placeholder strings, carries a
+        // NULL contentHash, and sits at sortOrder 0 — the loops that created
+        // them predate both columns and took their defaults.
+        //
+        // Keying the reconcile by sortOrder collapses those five rows into one
+        // Map entry, and the four it drops are invisible to both the update
+        // and the deprecation pass. They would survive as live boilerplate
+        // beside the authored tasks: a customer opening a DORA control would
+        // see six real tasks and four "Document procedure or policy".
+        // A DIFFERENT control from the deprecation test below, which shares
+        // this database and counts rows on the template it uses.
+        const entries = [...authored.byCode.entries()];
+        const [code, tasks] = entries[entries.length - 1]!;
+        const template = await prisma.controlTemplate.findUniqueOrThrow({ where: { code } });
+
+        await prisma.controlTemplateTask.deleteMany({ where: { templateId: template.id } });
+        // Imported, not spelled out: `no-generic-task-strings.test.ts` forbids
+        // a sixth copy of these strings, and it is right to — the placeholders
+        // this test reproduces are the ones that live in exactly one place.
+        for (const { title } of GENERIC_TEMPLATE_TASKS) {
+            await prisma.controlTemplateTask.create({
+                data: { templateId: template.id, title, description: null, sortOrder: 0 },
+            });
+        }
+        expect(
+            await prisma.controlTemplateTask.count({
+                where: { templateId: template.id, deprecatedAt: null },
+            }),
+        ).toBe(GENERIC_TEMPLATE_TASKS.length);
+
+        await seedInternalControls(prisma, FIXTURE);
+
+        const live = await prisma.controlTemplateTask.findMany({
+            where: { templateId: template.id, deprecatedAt: null },
+            orderBy: { sortOrder: 'asc' },
+        });
+        // Exactly the authored set — no placeholder survives.
+        expect(live).toHaveLength(tasks.length);
+        expect(live.map((r) => r.title)).toEqual(tasks.map((t) => t.title.en));
+        expect(live.every((r) => r.contentHash)).toBe(true);
+
+        // Retired, not deleted: a tenant may already have installed them.
+        expect(
+            await prisma.controlTemplateTask.count({
+                where: { templateId: template.id, deprecatedAt: { not: null } },
+            }),
+        ).toBe(GENERIC_TEMPLATE_TASKS.length - 1); // one row is reused in place at sortOrder 0
     });
 
     it('re-running is idempotent — no duplicates, no churn', async () => {

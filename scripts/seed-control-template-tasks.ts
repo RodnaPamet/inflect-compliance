@@ -40,8 +40,9 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import {
     seedInternalControls,
+    seedAuthoredTemplateTasks,
     type PolicyFrameworkMap,
-} from '../prisma/internal-controls-seed';
+} from '../prisma/control-template-seed';
 
 const prisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }),
@@ -56,6 +57,18 @@ const POLICY_MAP = (
     }
 ).policies;
 
+/**
+ * Framework fixtures whose templates ALREADY exist in every environment (they
+ * come from seed-catalog.ts / framework-import), so only their authored tasks
+ * need delivering. Add a fixture here the moment it gains authored tasks —
+ * otherwise the content sits in the repo reaching nothing, which is the exact
+ * failure this file was written for.
+ */
+const TASK_ONLY_FIXTURES: Array<{ label: string; data: unknown }> = [
+    { label: 'DORA', data: require('../prisma/fixtures/dora-control-templates.json') as unknown },
+    { label: 'NIS2', data: require('../prisma/fixtures/nis2-control-templates.json') as unknown },
+];
+
 async function main(): Promise<void> {
     console.log('🌱 Seeding authored control-template tasks...');
 
@@ -65,6 +78,21 @@ async function main(): Promise<void> {
             `${r.requirementLinks} requirement links`,
     );
     console.log(`  fixture: ${r.fixtureTaskCount} authored tasks`);
+
+    for (const { label, data } of TASK_ONLY_FIXTURES) {
+        const f = await seedAuthoredTemplateTasks(prisma, data);
+        if (f.fixtureTaskCount === 0) {
+            console.log(`  ${label}: no authored tasks in fixture, skipped`);
+            continue;
+        }
+        console.log(
+            `  ${label}: ${f.fixtureTaskCount} authored -> created ${f.created}, updated ${f.updated}, ` +
+                `unchanged ${f.unchanged}, deprecated ${f.deprecated}` +
+                (f.missingTemplates.length
+                    ? ` ⚠ ${f.missingTemplates.length} template(s) absent: ${f.missingTemplates.slice(0, 8).join(', ')}`
+                    : ''),
+        );
+    }
 
     const live = await prisma.controlTemplateTask.count({ where: { deprecatedAt: null } });
     console.log(

@@ -1,5 +1,5 @@
 /**
- * The ONE seeder for the internal-controls library.
+ * The ONE seeder for authored control-template content.
  *
  * ═══ WHY THIS MODULE EXISTS ═══
  *
@@ -26,9 +26,16 @@ import type { PrismaClient } from '@prisma/client';
 import { CatalogTaskSchema } from './catalog-loader';
 import { reconcileTemplateTasks, type AuthoredTask, type TaskReconcileResult } from './catalog-applier';
 
-interface InternalControlsFixture {
-    controls?: Array<{ code?: unknown; tasks?: unknown }>;
-}
+/**
+ * Three fixture shapes ship, and all three must be readable here.
+ *
+ * `internal-controls.json` nests under `controls`; every framework fixture
+ * (DORA, NIS2, SOC 2, …) nests under `templates`; a couple are a bare array.
+ * The first draft read only `controls`, which silently skipped every framework
+ * — the same denominator mistake that hid 151 templates from the actionability
+ * scan, one layer down.
+ */
+type FixtureEntry = { code?: unknown; tasks?: unknown };
 
 export interface AuthoredControlTasks {
     /** Template code (`ICN-001`) -> its authored tasks, in authored order. */
@@ -47,8 +54,17 @@ export interface AuthoredControlTasks {
  *         because a partial seed is indistinguishable from a complete one
  *         once the process exits 0.
  */
+/** Every template/control entry in a fixture, whatever shape it ships in. */
+export function fixtureEntries(fixture: unknown): FixtureEntry[] {
+    if (Array.isArray(fixture)) return fixture as FixtureEntry[];
+    const obj = (fixture ?? {}) as { controls?: unknown[]; templates?: unknown[] };
+    return ((obj.controls ?? obj.templates ?? []) as FixtureEntry[]).filter(
+        (e) => e && typeof e === 'object',
+    );
+}
+
 export function loadAuthoredControlTasks(fixture: unknown): AuthoredControlTasks {
-    const controls = (fixture as InternalControlsFixture)?.controls ?? [];
+    const controls = fixtureEntries(fixture);
     const byCode = new Map<string, AuthoredTask[]>();
     let taskCount = 0;
 
@@ -199,6 +215,58 @@ export async function seedInternalControls(
 
         const tasks = authored.byCode.get(c.code);
         if (!tasks) continue;
+        const r = await reconcileTemplateTasks(prisma, template.id, tasks);
+        out.created += r.created;
+        out.updated += r.updated;
+        out.deprecated += r.deprecated;
+        out.unchanged += r.unchanged;
+    }
+
+    return out;
+}
+
+export interface SeedAuthoredTasksResult extends TaskReconcileResult {
+    /** Codes carrying authored tasks with no ControlTemplate in this database. */
+    missingTemplates: string[];
+    /** Authored tasks the fixture carries, whether or not they landed. */
+    fixtureTaskCount: number;
+}
+
+/**
+ * Deliver authored tasks onto templates that ALREADY EXIST, by code.
+ *
+ * This is the DORA / NIS2 case, and it differs from the internal-controls one
+ * in a way that matters: production already carries those templates — they came
+ * from `seed-catalog.ts` / `framework-import` — so there is nothing to create
+ * and no requirement links to mediate. Only the tasks are missing.
+ *
+ * A code with no template is REPORTED rather than created. Creating one here
+ * would invent a control template from a task list, and an unrecognised code is
+ * far more likely to be a typo than a new control.
+ */
+export async function seedAuthoredTemplateTasks(
+    prisma: PrismaClient,
+    fixture: unknown,
+): Promise<SeedAuthoredTasksResult> {
+    const authored = loadAuthoredControlTasks(fixture);
+    const out: SeedAuthoredTasksResult = {
+        created: 0,
+        updated: 0,
+        deprecated: 0,
+        unchanged: 0,
+        missingTemplates: [],
+        fixtureTaskCount: authored.taskCount,
+    };
+
+    for (const [code, tasks] of authored.byCode) {
+        const template = await prisma.controlTemplate.findUnique({
+            where: { code },
+            select: { id: true },
+        });
+        if (!template) {
+            out.missingTemplates.push(code);
+            continue;
+        }
         const r = await reconcileTemplateTasks(prisma, template.id, tasks);
         out.created += r.created;
         out.updated += r.updated;
