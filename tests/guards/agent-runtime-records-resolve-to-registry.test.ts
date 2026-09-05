@@ -1,16 +1,19 @@
 /**
- * Every agent runtime record resolves to the register.
+ * Every agent runtime record resolves to the register, and to the policy version
+ * that was in force when it ran.
  *
  * `RegisteredAgent` says which autonomous agents a tenant runs and what
- * authority each holds. `AgentProposal` and `WorkflowRun` are what those agents
- * leave behind. The pair only means anything if every runtime row names the
- * register entry it came from — otherwise "which agents run here?" has two
- * answers, the register's and the truth's, and the register is the one that goes
- * on the compliance report.
+ * authority each holds; `AgentPolicyCardVersion` is the immutable statement of
+ * what one of them was allowed to do. `AgentProposal` and `WorkflowRun` are what
+ * those agents leave behind. The set only means anything if every runtime row
+ * names both — otherwise "which agents run here?" has two answers, the
+ * register's and the truth's, and "what was it allowed to do when it did that?"
+ * has only today's answer, which is the wrong one precisely when somebody has
+ * edited the card.
  *
- * The column had to be NULLABLE (it was added to populated tables in the
+ * Both columns had to be NULLABLE (each was added to populated tables in the
  * transaction that back-filled them, and a human-started workflow run genuinely
- * has no agent), so the type system cannot demand it.
+ * has neither an agent nor a card), so the type system cannot demand them.
  *
  * ── Why this runs an ESLint rule instead of grepping ─────────────────
  *
@@ -128,7 +131,7 @@ describe('every agent runtime record resolves to the register', () => {
         expect(rels).toContain('src/app-layer/usecases/workflow-runs.ts');
     });
 
-    it('no create against an agent-attributed table omits agentId', () => {
+    it('no create against an agent-attributed table omits agentId or the policy-card pin', () => {
         const violations: Violation[] = [];
         for (const abs of CANDIDATES) {
             violations.push(...lint(readFileSync(abs, 'utf8'), abs));
@@ -138,7 +141,7 @@ describe('every agent runtime record resolves to the register', () => {
         ).toEqual([]);
     });
 
-    it('the detector fires — a write site that forgets the field is caught', () => {
+    it('the detector fires — a write site that forgets both fields is caught', () => {
         // The mutation proof. Without it "no violations" is equally consistent
         // with a rule that reports nothing at all, which is how a sweep keyed
         // on its own marker reports full coverage of the subset it understands.
@@ -152,15 +155,37 @@ describe('every agent runtime record resolves to the register', () => {
         const found = lint(planted, path.join(REPO_ROOT, 'src/planted.ts'));
         expect(found).toHaveLength(1);
         expect(found[0].message).toContain('agentId');
+        expect(found[0].message).toContain('policyCardVersion');
+    });
+
+    it('the detector fires on the HALF-updated shape, which is how this actually regresses', () => {
+        // The realistic failure is not a site that forgot everything — it is a
+        // site written before the pin existed and left behind when the column
+        // was added. A detector that only caught the total omission would have
+        // reported this tree clean on the day the column landed.
+        const halfDone = `
+            export async function start(ctx: { tenantId: string; agentId?: string }) {
+                return db.workflowRun.create({
+                    data: { tenantId: ctx.tenantId, agentId: ctx.agentId ?? null },
+                });
+            }
+        `;
+        const found = lint(halfDone, path.join(REPO_ROOT, 'src/planted-half.ts'));
+        expect(found).toHaveLength(1);
+        expect(found[0].message).toContain('policyCardVersion');
     });
 
     it('the detector does NOT fire on the shape the seams actually use', () => {
         // Paired negative. A rule that flagged the correct shape too would make
-        // the assertion above pass while telling nobody anything.
+        // the assertions above pass while telling nobody anything.
         const correct = `
             export async function propose(ctx: { tenantId: string; agentId?: string }) {
                 return db.agentProposal.create({
-                    data: { tenantId: ctx.tenantId, agentId: ctx.agentId ?? null },
+                    data: {
+                        tenantId: ctx.tenantId,
+                        agentId: ctx.agentId ?? null,
+                        policyCardVersion: 0,
+                    },
                 });
             }
         `;

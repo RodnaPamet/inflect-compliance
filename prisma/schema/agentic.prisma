@@ -34,6 +34,23 @@ model AgentProposal {
   /// So a NULL here means "written before the register existed", and nothing
   /// else — treat it as unattributed, never as "any agent".
   agentId              String?
+  /// WHICH VERSION OF THE AGENT'S POLICY CARD WAS IN FORCE when this proposal
+  /// was made. Write-once: a DB trigger refuses any UPDATE that changes a value
+  /// already set, because a pin that can be rewritten reconstructs today's rules
+  /// wearing an old version number, which is worse evidence than none.
+  ///
+  /// THREE STATES, AND THEY ARE THREE DIFFERENT FACTS:
+  ///   NULL — this row predates version pinning. We do not know.
+  ///   0    — the card was evaluated and NO card was in force (the agent has
+  ///          none, or a human/assistant made the proposal). `NO_POLICY_CARD` in
+  ///          `src/lib/agentic/policy-card.ts`; 0 can never collide with a real
+  ///          version, which the version table CHECKs at >= 1.
+  ///   >= 1 — the version that authorized the call which produced this row.
+  ///
+  /// Written from the invocation that was actually authorized, not re-read
+  /// afterwards: "the version that allowed this" and "the version in force a
+  /// moment later" are different claims, and only the first is evidence.
+  policyCardVersion    Int?
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
   tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -70,6 +87,18 @@ model WorkflowRun {
   /// backfills it, so it cannot be NOT NULL at ALTER time. A NULL means
   /// "pre-register", not "any agent".
   agentId           String?
+  /// WHICH VERSION OF THE AGENT'S POLICY CARD WAS IN FORCE when this run was
+  /// admitted. Same three states and the same write-once trigger as
+  /// `AgentProposal.policyCardVersion` above — see that comment.
+  ///
+  /// It is the version at the run's START, and that is a deliberate narrowing
+  /// rather than the whole story: a run re-resolves its invocation after every
+  /// human checkpoint, so a run spanning a card edit is authorized under the
+  /// NEWER card for its later segments. Each individual call's audit row
+  /// (`MCP_TOOL_INVOKED` / `AUTHZ_DENIED`) carries the version that decided it.
+  /// This column answers "what did this run open under", which is the question
+  /// that stops being answerable once the card has moved on.
+  policyCardVersion Int?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)

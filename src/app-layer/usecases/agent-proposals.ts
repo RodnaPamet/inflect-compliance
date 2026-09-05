@@ -68,6 +68,21 @@ export interface ProposeInput {
     payload: unknown;
     rationale?: string | null;
     proposedBySessionRef?: string | null;
+    /**
+     * WHICH VERSION of the proposing agent's policy card was in force.
+     * `NO_POLICY_CARD` (0, from `@/lib/agentic/policy-card-pin`) when none
+     * was — a human-started assistant proposal, or an agent with no card.
+     *
+     * REQUIRED, and deliberately not optional-with-a-fallback. A caller that
+     * may omit it is a caller that will, and the row it omits from is
+     * indistinguishable from one written before the column existed. Every
+     * caller has the answer cheaply: the MCP propose path holds the invocation
+     * the boundary already authorized (`pinFromCard`), and the assistant path
+     * has no agent at all (`resolvePolicyCardPin` returns the sentinel without
+     * a query). Making it required puts the decision at the call site, where a
+     * reader can see which of the two it is.
+     */
+    policyCardVersion: number;
 }
 
 export interface ProposalResult {
@@ -133,6 +148,12 @@ export async function createAgentProposal(
                 // this seam made, not a column nobody thought about — the
                 // `local/require-agent-attribution` lint rule enforces that.
                 agentId: ctx.agentId ?? null,
+                // …and under WHICH VERSION of that agent's declared policy the
+                // call that produced this proposal was authorized. Write-once
+                // at the database: a trigger refuses any UPDATE that changes a
+                // pin already set, so approving or rejecting this proposal
+                // later cannot rewrite what the rules were when it was made.
+                policyCardVersion: input.policyCardVersion,
             },
             select: { id: true, kind: true, status: true },
         }),
@@ -146,7 +167,12 @@ export async function createAgentProposal(
         entityId: proposal.id,
         action: 'AGENT_PROPOSAL_CREATED',
         requestId: ctx.requestId,
-        detailsJson: { category: 'access', kind: input.kind, agentId: ctx.agentId ?? null },
+        detailsJson: {
+            category: 'access',
+            kind: input.kind,
+            agentId: ctx.agentId ?? null,
+            policyCardVersion: input.policyCardVersion,
+        },
         metadataJson: { apiKeyId: ctx.apiKeyId ?? null, agentId: ctx.agentId ?? null },
     }).catch(() => undefined);
 

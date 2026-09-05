@@ -21,6 +21,13 @@
  *      on values; this asserts the usecase actually asks it, and that a refused
  *      edit leaves NO new version behind — a ladder that refuses the response
  *      while writing the row would pass any assertion about the error alone.
+ *
+ *   4. THE PIN RESOLVER'S OWN SCOPE. `resolvePolicyCardPin` is what stamps a
+ *      version onto a `WorkflowRun` or an `AgentProposal`, and like the
+ *      boundary's read it runs with no `RequestContext` — so its `tenantId`
+ *      argument is the only isolation it has. Asserted directly rather than
+ *      inferred from the usecase's, because the two take different paths to the
+ *      same table.
  */
 import { PrismaClient, MembershipStatus, Role } from '@prisma/client';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
@@ -33,6 +40,8 @@ import {
     updateAgentPolicyCard,
 } from '@/app-layer/usecases/agent-policy-card';
 import { loadPolicyCardInForce, reserveDailyAction } from '@/lib/agentic/policy-card-store';
+import { NO_POLICY_CARD } from '@/lib/agentic/policy-card';
+import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
 
 /**
  * Every escalation trigger, spelled out.
@@ -472,5 +481,38 @@ describe('creating a card', () => {
         await expect(createAgentPolicyCard(ctxFor(T2), seeded[T2].agentId)).rejects.toThrow(
             /already has a policy card/,
         );
+    });
+});
+
+describe('the version pin resolves within one tenant and no further', () => {
+    it("each tenant's agent resolves to its OWN card version", async () => {
+        // Both cards are at version 1 here, which is exactly why the negative
+        // case below is the load-bearing one: equal numbers cannot distinguish
+        // "read the right card" from "read any card".
+        await expect(resolvePolicyCardPin(T1, seeded[T1].agentId)).resolves.toBe(
+            await headVersion(T1),
+        );
+        await expect(resolvePolicyCardPin(T2, seeded[T2].agentId)).resolves.toBe(
+            await headVersion(T2),
+        );
+    });
+
+    it("tenant A's id with tenant B's agent resolves to NO card, not to B's version", async () => {
+        // The pin is written onto a row that is then read back as evidence. A
+        // resolver that ignored its tenant argument would stamp one customer's
+        // policy version onto another customer's run — and because both cards
+        // are at version 1, the wrong answer here would be numerically
+        // indistinguishable from the right one on any single-tenant fixture.
+        await expect(resolvePolicyCardPin(T1, seeded[T2].agentId)).resolves.toBe(NO_POLICY_CARD);
+        await expect(resolvePolicyCardPin(T2, seeded[T1].agentId)).resolves.toBe(NO_POLICY_CARD);
+    });
+
+    it('an absent agent resolves to NO card without a query', async () => {
+        // The human path — a workflow run somebody started, or the in-product
+        // assistant. It records the sentinel rather than NULL, because "no card
+        // governed this" is a fact about the row and NULL is a fact about when
+        // the code was deployed.
+        await expect(resolvePolicyCardPin(T1, null)).resolves.toBe(NO_POLICY_CARD);
+        await expect(resolvePolicyCardPin(T1, undefined)).resolves.toBe(NO_POLICY_CARD);
     });
 });

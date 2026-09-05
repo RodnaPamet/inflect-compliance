@@ -594,3 +594,125 @@ export function recordSyncLock(attrs: {
     }
     _syncLock.add(1, { component: attrs.component, outcome: attrs.outcome });
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Agent policy cards (Epic Agentic 5) — the pre-execution gate's own signal
+// ═══════════════════════════════════════════════════════════════════
+//
+// The policy card refuses a tool call BEFORE the tool runs. That is the point
+// of it, and it is also why the subsystem cannot be watched the way a check or
+// a sync is: a refusal produces no failed job, no error rate and no user-visible
+// break — the agent simply gets less done. Nothing degrades. Somebody notices in
+// a week, or at audit.
+//
+// So the two counters below are the instrument, and the shapes they distinguish
+// are the reason there are two:
+//
+//   • MISCONFIGURATION — refusals concentrated on ONE agent and ONE rule,
+//     starting at a card edit or a new tool grant, while the agent goes on doing
+//     its ordinary work. The fix is an edit; nobody needs waking.
+//   • ASI10 (an agent operating outside its intended envelope) — refusals from
+//     one agent SPREAD ACROSS RULES, or repeatedly against the action budgets.
+//     An agent trying tools it was never granted, reaching data rungs it was
+//     never given, and burning its day is not a misconfiguration; the card is
+//     working and something upstream is not.
+//
+// Telling those apart needs the agent AND the rule on the same series, which is
+// why `agent` is a label here and `tenant.id` is a label nowhere. The cardinality
+// argument is different in kind, not merely in degree: `api.request.count` emits
+// for every tenant on every request, so a tenant label creates a series per
+// tenant unconditionally. A refusal series exists only for an agent that has
+// ACTUALLY BEEN REFUSED — in a healthy deployment, none — and the agent
+// population is operator-curated behind a privileged route and a risk
+// assessment, not something signups grow.
+//
+// The EVALUATION counter, which does fire on every call, deliberately carries no
+// agent for exactly that reason. It is the denominator; the refusal counter is
+// the detail.
+
+let _policyCardEvaluation: Counter | null = null;
+let _policyCardRefusal: Counter | null = null;
+
+/**
+ * One policy-card evaluation at the MCP tool boundary.
+ *
+ * Emitted on EVERY call through the gate, so the four outcomes partition the
+ * traffic and the refusal counter has a denominator.
+ *
+ *   allowed  — a card was in force and permitted the call.
+ *   refused  — a card was in force and refused it.
+ *   no_card  — the caller IS a registered agent and has no policy card. This is
+ *              the governance gap: it looks exactly like an agent whose card
+ *              permits everything, because both produce zero refusals for ever.
+ *   no_agent — the caller is not an agent at all (a signed-in human, an
+ *              ordinary integration key, a tenant with the register switched
+ *              off). Separated from `no_card` deliberately: folded together, a
+ *              tenant that simply does not run agents would be indistinguishable
+ *              from one running agents nobody has written a card for, and the
+ *              adoption number would be unreadable in exactly the deployments
+ *              where somebody needs to read it.
+ *
+ * Labels stay bounded and small: four outcomes × two surfaces.
+ *
+ * ALERT ON — nothing directly. This is the denominator that makes the refusal
+ * counter a RATE. A refusal rate that steps up without the evaluation rate
+ * moving is a policy change; both moving together is a traffic change.
+ */
+export function recordPolicyCardEvaluation(attrs: {
+    outcome: 'allowed' | 'refused' | 'no_card' | 'no_agent';
+    surface: 'tool' | 'resource';
+}): void {
+    if (!_policyCardEvaluation) {
+        _policyCardEvaluation = getMeter().createCounter('agentic.policy_card.evaluation', {
+            description:
+                'Policy-card evaluations at the MCP tool boundary, by outcome and surface',
+            unit: '1',
+        });
+    }
+    _policyCardEvaluation.add(1, { outcome: attrs.outcome, surface: attrs.surface });
+}
+
+/**
+ * One policy-card REFUSAL, with enough dimension to act on.
+ *
+ * `agent` and `rule` are both required and neither is sufficient alone: `rule`
+ * without `agent` cannot tell one broken card from a fleet-wide problem, and
+ * `agent` without `rule` cannot tell a mis-scoped grant from an agent reaching
+ * past its envelope. `escalate` is the card's own declaration that this rule is
+ * worth waking somebody for; `riskTier` is what decides how fast.
+ *
+ * The TOOL is deliberately not a label. It is on the `AUTHZ_DENIED` audit row
+ * for every one of these, which is the per-call record; adding it here would
+ * multiply the series by the catalogue for the one dimension the audit trail
+ * already answers precisely.
+ *
+ * ALERT ON — any refusal with `escalate="true"`, immediately. And on
+ * `count(count by (rule) (increase(agentic_policy_card_refusal_total{agent="X"}[1h]))) >= 3`:
+ * one agent tripping three different declarations in an hour is the spread that
+ * separates the second shape above from the first.
+ */
+export function recordPolicyCardRefusal(attrs: {
+    agentId: string;
+    rule: string;
+    escalate: boolean;
+    riskTier: string | null;
+    surface: 'tool' | 'resource';
+}): void {
+    if (!_policyCardRefusal) {
+        _policyCardRefusal = getMeter().createCounter('agentic.policy_card.refusal', {
+            description:
+                'Tool calls refused by an agent policy card, by agent and by the rule that fired',
+            unit: '1',
+        });
+    }
+    _policyCardRefusal.add(1, {
+        agent: attrs.agentId,
+        rule: attrs.rule,
+        escalate: String(attrs.escalate),
+        // `unscored` rather than an omitted label: a missing label collapses
+        // into whichever series shares the rest of the key, and an unscored
+        // agent is the state most worth seeing on its own.
+        'risk.tier': attrs.riskTier ?? 'unscored',
+        surface: attrs.surface,
+    });
+}

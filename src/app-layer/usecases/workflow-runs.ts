@@ -41,6 +41,7 @@ import { enforceMcpCapability, resolveMcpInvocation } from '@/lib/mcp/auth';
 import { runReadTool } from '@/lib/mcp/tools/registry';
 import { runProposeTool } from '@/lib/mcp/tools/propose-tools';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
+import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
 import {
     ENGINE_CAPS,
     estimateTokens,
@@ -78,6 +79,21 @@ export async function startWorkflowRun(
     if (!def) throw badRequest(`Unknown workflow: ${workflowKey}`);
 
     const context: WorkflowContext = { input, outputs: {} };
+
+    // WHICH VERSION of this agent's policy card the run opens under. Resolved
+    // BEFORE the row is written, because the pin is write-once at the database
+    // and a row inserted without it can only ever be filled in by the one
+    // NULL → value transition the trigger still permits — which a later segment
+    // would have to remember to make.
+    //
+    // It is the version at the START. A run re-resolves its invocation after
+    // every human checkpoint, so a run spanning a card edit is authorized under
+    // the newer card for its later segments, and each call's own audit row
+    // carries the version that decided it. This column answers the question
+    // those rows cannot once the card has moved on: what did this run open
+    // under.
+    const policyCardVersion = await resolvePolicyCardPin(ctx.tenantId, ctx.agentId);
+
     const run = await runInTenantContext(ctx, (db) =>
         db.workflowRun.create({
             data: {
@@ -93,6 +109,11 @@ export async function startWorkflowRun(
                 // `local/require-agent-attribution` refuses a write site that
                 // leaves the field out.
                 agentId: ctx.agentId ?? null,
+                // …and under WHICH VERSION of that agent's declared policy.
+                // `NO_POLICY_CARD` (0) for a human-started run — the question
+                // was asked and the answer was "none", which is a different
+                // fact from the NULL a pre-pinning row carries.
+                policyCardVersion,
                 contextJson: JSON.stringify(context),
             },
             select: { id: true },
@@ -107,7 +128,14 @@ export async function startWorkflowRun(
         entityId: run.id,
         action: 'WORKFLOW_RUN_STARTED',
         requestId: ctx.requestId,
-        detailsJson: { category: 'access', workflowKey, agentId: ctx.agentId ?? null },
+        detailsJson: {
+            category: 'access',
+            workflowKey,
+            agentId: ctx.agentId ?? null,
+            // The pin, in the trail as well as on the row. The row can be
+            // deleted with its tenant; the hash-chained entry is what survives.
+            policyCardVersion,
+        },
         metadataJson: { apiKeyId: ctx.apiKeyId ?? null, agentId: ctx.agentId ?? null },
     }).catch(() => undefined);
 

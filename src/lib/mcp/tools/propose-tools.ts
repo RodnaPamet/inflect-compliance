@@ -37,6 +37,7 @@
 import { z } from 'zod';
 
 import { badRequest } from '@/lib/errors/types';
+import { pinFromCard } from '@/lib/agentic/policy-card-pin';
 import {
     createAgentProposal,
     type AgentProposalKind,
@@ -237,6 +238,12 @@ export async function runProposeTool(
             kind: tool.kind,
             payload: item,
             rationale: parsed.data.rationale ?? null,
+            // The version that ALLOWED this call, taken from the invocation the
+            // gate above authorized — not re-read from the card here. A re-read
+            // would answer "what is in force now", which is a different claim
+            // and is not what this proposal executed under; between the gate and
+            // this line an operator can have edited the card.
+            policyCardVersion: pinFromCard(inv.policyCard?.inForce ?? null),
         });
         ids.push(proposal.id);
     }

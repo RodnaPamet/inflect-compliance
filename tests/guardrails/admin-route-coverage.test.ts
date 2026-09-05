@@ -67,6 +67,12 @@ const ADMIN_ONLY_ROUTES = [
     // Deny-by-default MCP tool exposure — its own key,
     // `admin.agent_tool_exposure`, narrower than the register's.
     'admin/agents/[agentId]/tools/route.ts',
+    // The versioned runtime policy card (Agentic 5) — its own key,
+    // `admin.agent_policy_card`, and the WIDEST of the three: a card declares
+    // the permitted tools, the data rung, the autonomy rung and both action
+    // budgets, so sharing the tool-exposure key would make every routine grant
+    // carry the authority to raise an agent's ceiling.
+    'admin/agents/[agentId]/policy-card/route.ts',
     // The agent risk assessment (Agentic 3) — read the instrument, answer one
     // question, and score the agent. Same `admin.agent_registry` key as the
     // register: completing a run writes the tier that caps the agent's

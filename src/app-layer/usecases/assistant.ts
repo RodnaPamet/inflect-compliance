@@ -29,6 +29,7 @@ import { recordAiGeneration } from '@/lib/observability/integration-metrics';
 import { guardUntrustedInput, guardEgress, assertGuardAllowed, assertNoReviewRequired } from '@/app-layer/ai/guard';
 import { getDashboardData } from './dashboard';
 import { createAgentProposal } from './agent-proposals';
+import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
 
 export const AskAssistantSchema = z.object({ question: z.string().min(1).max(2000) });
 
@@ -69,6 +70,14 @@ export async function askAssistant(
     const q = question.toLowerCase();
     let answer: AssistantAnswer;
 
+    // Which policy-card version governs a proposal queued from here. The
+    // assistant speaks for a HUMAN — `ctx.agentId` is absent on a session
+    // context — so this resolves to `NO_POLICY_CARD` without a query. Written
+    // anyway rather than left NULL: "no card governed this" and "this row
+    // predates pinning" are different facts, and the queue is one table whose
+    // rows come from both an agent and a person.
+    const policyCardVersion = await resolvePolicyCardPin(ctx.tenantId, ctx.agentId);
+
     // ── Action intents → propose (PENDING), never execute ──
     if (/\b(create|open|raise|add|log|file)\b.*\bfinding\b/.test(q)) {
         const title = extractTitle(question, /\bfinding\b(\s+(to|for|about|:))?/i);
@@ -76,6 +85,7 @@ export async function askAssistant(
             kind: 'FINDING',
             payload: { title, severity: 'MEDIUM', type: 'OBSERVATION' },
             rationale: `Proposed by the compliance assistant from: "${sanitizePlainText(question).slice(0, 400)}"`,
+            policyCardVersion,
         });
         answer = {
             kind: 'proposal',
@@ -89,6 +99,7 @@ export async function askAssistant(
             kind: 'RISK',
             payload: { title },
             rationale: `Proposed by the compliance assistant from: "${sanitizePlainText(question).slice(0, 400)}"`,
+            policyCardVersion,
         });
         answer = {
             kind: 'proposal',

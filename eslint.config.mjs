@@ -102,10 +102,14 @@ const config = [
             // An AgentProposal / WorkflowRun row that names no agent cannot be
             // resolved back to the register, so "which agents run here?" gets
             // two answers and the register is the one on the compliance report.
-            // The column is nullable (it was added to populated tables, and a
-            // human-started run genuinely has no agent), so the type system
-            // cannot ask for it — this does. It demands the field be NAMED, not
-            // non-null: `agentId: null` is a correct value, silence is not.
+            // Same for `policyCardVersion`: without it, "what was this agent
+            // allowed to do when it did that?" has only today's answer, which
+            // is the wrong one exactly when somebody has edited the card.
+            // Both columns are nullable (each was added to populated tables,
+            // and a human-started run genuinely has neither), so the type
+            // system cannot ask for them — this does. It demands the fields be
+            // NAMED, not non-null: `agentId: null` and `policyCardVersion:
+            // NO_POLICY_CARD` are correct values, silence is not.
             'local/require-agent-attribution': 'error',
 
             // An MCP tool DECLARES the authorization its human equivalent

@@ -80,6 +80,10 @@ import {
     type PolicyCardInForce,
 } from '@/lib/agentic/policy-card-evaluation';
 import { reserveDailyAction } from '@/lib/agentic/policy-card-store';
+import {
+    recordPolicyCardEvaluation,
+    recordPolicyCardRefusal,
+} from '@/lib/observability/integration-metrics';
 import { RESOURCE_READ_DATA_SCOPE, dataScopeForToolCall } from './tool-data-scope';
 import type { AgentDataAccessScope } from '@prisma/client';
 import { checkCredentialLiveness } from '@/lib/agentic/agent-credential-state';
@@ -435,6 +439,19 @@ async function assertAutonomy(
  * declaration refused), `policyCardVersion` (which version said so) and
  * `escalate` (whether this card asked to be woken for that rule), because those
  * are three different things an operator does next.
+ *
+ * ## And it is COUNTED, here, at the single emission point
+ *
+ * A refusal breaks nothing: no failed job, no error rate, no user-visible
+ * symptom — the agent just does less. So the gate has to report itself, and this
+ * function is the one place every evaluation passes through, which is why both
+ * counters are emitted here rather than beside each `return`. Every path out
+ * emits exactly one evaluation: the no-card early return, each refusal, and the
+ * allow. `recordPolicyCardRefusal` carries the agent AND the rule, because
+ * telling a misconfigured card (one agent, one rule, starting at an edit) from
+ * an agent operating outside its envelope (one agent, spread across rules)
+ * needs both on the same series — see the counters' own docstrings in
+ * `integration-metrics.ts` for the cardinality argument and the alert shapes.
  */
 async function assertWithinPolicyCard(
     inv: McpInvocation,
@@ -443,11 +460,41 @@ async function assertWithinPolicyCard(
     dataScope: AgentDataAccessScope,
     requiredAutonomy: number,
 ): Promise<void> {
-    const binding = inv.policyCard;
-    if (binding === null) return;
+    // `tool: null` is the RESOURCES surface — see the parameter's own docstring
+    // on `PolicyCardRequest`. Named once here so both counters agree about which
+    // door a call came through.
+    const surface = tool === null ? 'resource' : 'tool';
 
-    const deny = async (verdict: Exclude<ReturnType<typeof evaluateCardReach>, { allowed: true }>) =>
-        denyToolCall(inv.ctx, 'policy_card_denied', {
+    const binding = inv.policyCard;
+    if (binding === null) {
+        // Counted, and counted as WHICH of the two nulls this is. An agent with
+        // no card is not the same as an agent whose card permits everything —
+        // both produce zero refusals for ever — so `no_card` is the governance
+        // gap worth reading. `no_agent` is a human, an ordinary integration key
+        // or a tenant with the register off, and folding the two together would
+        // make a tenant that runs no agents indistinguishable from one running
+        // agents nobody has written a card for.
+        recordPolicyCardEvaluation({
+            outcome: inv.agentId === null ? 'no_agent' : 'no_card',
+            surface,
+        });
+        return;
+    }
+
+    const deny = async (verdict: Exclude<ReturnType<typeof evaluateCardReach>, { allowed: true }>) => {
+        recordPolicyCardEvaluation({ outcome: 'refused', surface });
+        recordPolicyCardRefusal({
+            // Non-null in practice: a binding exists only when the invocation
+            // named an agent (`buildMcpInvocation` loads no card without one).
+            // The fallback is a label, not a guess — it would show up as its own
+            // series rather than silently joining another agent's.
+            agentId: inv.agentId ?? 'unattributed',
+            rule: verdict.rule,
+            escalate: verdict.escalate,
+            riskTier: inv.riskTier,
+            surface,
+        });
+        return denyToolCall(inv.ctx, 'policy_card_denied', {
             tool: target,
             agentId: inv.agentId,
             message: verdict.message,
@@ -462,6 +509,7 @@ async function assertWithinPolicyCard(
                 escalate: verdict.escalate,
             },
         });
+    };
 
     const reach = evaluateCardReach(binding.inForce, {
         tool,
@@ -482,6 +530,7 @@ async function assertWithinPolicyCard(
     // Counted only once the call is cleared, so a refused call does not consume
     // the run's budget either. The two budgets are spent on the same terms.
     binding.actionsThisRun += 1;
+    recordPolicyCardEvaluation({ outcome: 'allowed', surface });
 }
 
 /**

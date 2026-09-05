@@ -74,6 +74,23 @@ export const POLICY_CARD_RULES = [
 
 export type PolicyCardRule = (typeof POLICY_CARD_RULES)[number];
 
+/**
+ * The version PINNED onto a `WorkflowRun` or an `AgentProposal` when NO policy
+ * card governed it — because the agent has none, or because a person made the
+ * proposal.
+ *
+ * Here rather than beside the resolvers in `policy-card-pin.ts` for the reason
+ * this whole module has no server imports: a surface rendering a run's
+ * provenance has to say "no card governed this run", and importing that word
+ * from the module that reads the card would pull Prisma into a browser bundle.
+ *
+ * NOT null, which the column reserves for "this row predates pinning", and not
+ * -1: the database CHECKs the column at >= 0, and a sentinel sharing a value
+ * space with `DENY_CEILING` would invite reading one as the other. 0 cannot
+ * collide with a real version, which is CHECKed at >= 1.
+ */
+export const NO_POLICY_CARD = 0;
+
 // ─── The four ladders ───────────────────────────────────────────────
 
 /**
