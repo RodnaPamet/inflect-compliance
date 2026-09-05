@@ -27,7 +27,7 @@
  * one card at a time cannot see a button attached to the wrong card's diff.
  */
 import * as React from 'react';
-import { render, screen, within, cleanup } from '@testing-library/react';
+import { render, screen, within, cleanup, act } from '@testing-library/react';
 
 jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
@@ -338,5 +338,69 @@ describe('"nothing would change" is not shown as "we could not work it out"', ()
         for (const row of UNREVIEWABLE_ROWS) {
             expect(screen.queryByTestId(`proposal-diff-nochanges-${row.id}`)).toBeNull();
         }
+    });
+});
+
+// ─── The other half of the automation-bias failure: the SUCCESS shape ───
+
+describe('a first signature does not look like an approval', () => {
+    afterEach(() => {
+        cleanup();
+        (global as { fetch?: unknown }).fetch = undefined;
+    });
+
+    it('keeps the row and says a second reviewer is required', async () => {
+        // A tiered proposal's FIRST approval is a 200 whose body says
+        // AWAITING_APPROVAL and applies nothing. The client used to check only
+        // `res.ok` and drop the row — so the reviewer was told, by the queue
+        // emptying, that the thing was approved. That is this epic's own failure
+        // committed by its own UI, and it is invisible: no error, no counter,
+        // nothing to notice.
+        (global as { fetch?: unknown }).fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                status: 'AWAITING_APPROVAL',
+                approvalsRecorded: 1,
+                approvalsRequired: 2,
+                createdEntityId: null,
+            }),
+        });
+
+        render(<AgentProposalsClient tenantSlug="acme" initialProposals={[CREATE_ROW]} />);
+
+        const approve = screen.getByTestId(`proposal-approve-${CREATE_ROW.id}`);
+        await act(async () => {
+            approve.click();
+        });
+
+        // The row SURVIVES…
+        expect(screen.getByTestId(`proposal-approve-${CREATE_ROW.id}`)).toBeInTheDocument();
+        // …and the reviewer is told what is still missing, with both numbers.
+        const notice = screen.getByTestId('proposal-awaiting-second');
+        expect(notice.textContent).toContain('1');
+        expect(notice.textContent).toContain('2');
+        // Not an error — nothing went wrong; the signature was recorded.
+        expect(screen.queryByTestId('proposal-action-error')).toBeNull();
+    });
+
+    it('and a real approval DOES clear the row', async () => {
+        // The companion. Without it the test above passes on a client that never
+        // removes anything, which is a different broken queue.
+        (global as { fetch?: unknown }).fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                status: 'ACCEPTED',
+                createdEntityId: 'risk-1',
+            }),
+        });
+
+        render(<AgentProposalsClient tenantSlug="acme" initialProposals={[CREATE_ROW]} />);
+
+        await act(async () => {
+            screen.getByTestId(`proposal-approve-${CREATE_ROW.id}`).click();
+        });
+
+        expect(screen.queryByTestId(`proposal-approve-${CREATE_ROW.id}`)).toBeNull();
+        expect(screen.queryByTestId('proposal-awaiting-second')).toBeNull();
     });
 });

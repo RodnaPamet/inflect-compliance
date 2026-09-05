@@ -107,10 +107,27 @@ describe('the declaration that diff expansion is unobservable rests on live fact
                 'AgentProposalsClient',
             ),
         );
-        // The payload is rendered, unconditionally, in a plain `<pre>`.
-        expect(client).toContain('JSON.stringify(payload, null, 2)');
-        // …and there is no disclosure primitive around it. `<Accordion>` and
-        // `<details>` are the two the repo would reach for.
+        // The grounding for "unobservable" CHANGED under this guard while it was
+        // being written, and the new grounding is stronger.
+        //
+        // It used to be "the queue renders `JSON.stringify(payload, null, 2)` in
+        // a plain <pre>, so there is nothing to expand" — a claim about an opaque
+        // blob. The diff work removed that blob entirely: `payloadJson` no longer
+        // reaches the browser, and a field-level diff is rendered in its place.
+        //
+        // Expansion is STILL unobservable, and now for a better reason. The diff
+        // is not collapsible and the approve control is a CHILD of the panel that
+        // renders it, so there is no state in which a reviewer has reached the
+        // button without the diff being on screen — and therefore no expansion
+        // EVENT that could be recorded. A metric counting "approved without
+        // expanding" would be counting something that cannot happen.
+        //
+        // What must stay true is the absence of a disclosure primitive: wrap the
+        // diff in an <Accordion> or a <details> and the un-expanded approval
+        // becomes reachable again, at which point this declaration is false and
+        // the metric it excuses has to be built.
+        expect(client).toContain('<ProposalDiffPanel');
+        expect(client).not.toContain('JSON.stringify(payload');
         expect(client).not.toContain('<Accordion');
         expect(client).not.toContain('<details');
     });

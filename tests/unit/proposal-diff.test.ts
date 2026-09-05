@@ -52,6 +52,7 @@ describe('UPDATE compares the payload against the base it was given', () => {
         const byField = Object.fromEntries(diff.fields.map((f) => [f.field, f]));
         expect(byField.likelihood).toStrictEqual({
             field: 'likelihood',
+            baseHasField: true,
             before: '4',
             after: '9',
             changed: true,
@@ -153,10 +154,10 @@ describe('baseDigest fingerprints the base, not the proposal', () => {
         // owner was cleared to '' would share a fingerprint with one whose owner
         // was never in the diff at all.
         const absent = computeDiffBaseDigest([
-            { field: 'owner', before: null, after: 'x', changed: true },
+            { field: 'owner', baseHasField: true, before: null, after: 'x', changed: true },
         ]);
         const emptyString = computeDiffBaseDigest([
-            { field: 'owner', before: '', after: 'x', changed: true },
+            { field: 'owner', baseHasField: true, before: '', after: 'x', changed: true },
         ]);
         expect(absent).not.toBe(emptyString);
     });
@@ -174,5 +175,28 @@ describe('values are rendered the way a reviewer compares them', () => {
         expect(renderDiffValue({ b: 1, a: 2 })).toBe(renderDiffValue({ a: 2, b: 1 }));
         // Array order IS a change - the reviewer would see a different list.
         expect(renderDiffValue([1, 2])).not.toBe(renderDiffValue([2, 1]));
+    });
+});
+
+describe('an absent field is not a null field', () => {
+    it('marks a payload key the base record does not carry', () => {
+        // `renderDiffValue` maps both `undefined` and `null` to `null`, so
+        // before this distinction a key the base lacked rendered as an ordinary
+        // "null → value" change — a diff asserting the record HAS a field it
+        // does not. A reviewer consents to a delta FROM A BASE; misdescribing
+        // the base is the one thing the before-column must not do.
+        const diff = computeProposalDiff({
+            operation: 'UPDATE',
+            payloadJson: JSON.stringify({ likelihood: 4, notARealColumn: 'x' }),
+            target: { likelihood: null },
+        });
+
+        const byField = Object.fromEntries(diff.fields.map((f) => [f.field, f]));
+        // Present on the base, holding null.
+        expect(byField.likelihood.baseHasField).toBe(true);
+        expect(byField.likelihood.before).toBeNull();
+        // Not on the base at all — same rendered `before`, different fact.
+        expect(byField.notARealColumn.baseHasField).toBe(false);
+        expect(byField.notARealColumn.before).toBeNull();
     });
 });

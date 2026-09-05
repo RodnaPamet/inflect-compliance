@@ -461,3 +461,37 @@ describe('a signature belongs to exactly one tenant', () => {
         expect(await signaturesOn(t1Proposal)).toHaveLength(1);
     });
 });
+
+describe('a credential is not a human', () => {
+    it('refuses an approval carrying an API key, even from a user who could approve by cookie', async () => {
+        // `ctx.userId` on an API-key request is the KEY'S CREATOR, not somebody
+        // who read this proposal — `api-key-auth.ts` mints it as
+        // `userId: apiKey.createdById`. Four-eyes counts distinct user ids, so
+        // without this refusal a machine supplies one of the two: the key's
+        // creator "signs", a human signs, and a proposal that required two
+        // independent people is applied having been read by one.
+        //
+        // Deliberately uses a person who IS a valid reviewer over a cookie
+        // session, so the only difference between accept and refuse is the
+        // credential.
+        const proposalId = await propose(T1, seeded[T1].lowAgentId, 'machine-signature');
+
+        const machine: RequestContext = {
+            ...reviewerCtx(T1, 'alice'),
+            apiKeyId: `key-${T1}`,
+        };
+
+        await expect(approveAgentProposal(machine, proposalId)).rejects.toThrow(
+            /agent_proposal_human_review_required/,
+        );
+        // Nothing recorded: a refused machine approval must not leave a
+        // signature that a later human tops up to two.
+        expect(await signaturesOn(proposalId)).toHaveLength(0);
+        expect(await proposalStatus(proposalId)).toBe('PENDING');
+
+        // And the SAME person over a cookie session is accepted — proving the
+        // refusal is about the credential, not about alice.
+        await approveAgentProposal(reviewerCtx(T1, 'alice'), proposalId);
+        expect(await signaturesOn(proposalId)).toHaveLength(1);
+    });
+});

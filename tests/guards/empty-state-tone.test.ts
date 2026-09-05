@@ -63,6 +63,13 @@ describe('Empty-state copy tone (Roadmap-3 PR-6)', () => {
             // `noXAvailable` / `noXYet` (the empty-state shape).
             const last = key.split('.').pop() ?? '';
             if (!/^no[A-Z][A-Za-z]*$/.test(last)) continue;
+            // A key that NAMES itself a body or a description is not a title,
+            // and the locked voice above is a rule about titles. Without this,
+            // the guard's own advice — "move the what-to-do-next guidance to a
+            // separate descriptionX field" — produces a new offender, because
+            // the moved sentence still starts with `no` and still ends with the
+            // period a sentence is supposed to have.
+            if (/(Body|Description|Desc|Hint|Help)$/.test(last)) continue;
 
             // Sanctioned exceptions — keys whose `noX` shape is
             // coincidental (they're not empty-state titles).

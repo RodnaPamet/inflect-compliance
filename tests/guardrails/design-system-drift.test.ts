@@ -26,6 +26,11 @@ const MIGRATED_PAGES = [
     // native from birth (semantic tokens + Card/KPIStat/StatusBadge/PageHeader/
     // InfoTooltip primitives only, no raw colours or legacy btn/badge).
     'audits/readiness/ReadinessOverviewClient.tsx',
+    // ASI09 review-quality report — the per-reviewer approval-behaviour surface.
+    // Design-system-native from birth: semantic tokens only, PageHeader /
+    // StatusBadge / InlineNotice / Heading primitives, no raw colour utilities
+    // and no legacy btn/badge classes.
+    'admin/agents/review-quality/page.tsx',
     // Asset CSV import wizard; design-system-native from birth
     // (semantic tokens + Card/Button/DataTable/StatusBadge only).
     'assets/import/page.tsx',

@@ -1,4 +1,5 @@
 import { PageHeader } from '@/components/layout/PageHeader';
+import { Heading } from '@/components/ui/typography';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { getTenantCtx } from '@/app-layer/context';
@@ -81,9 +82,9 @@ export default async function AgentReviewQualityPage({
             )}
 
             <section className="space-y-default">
-                <h2 className="text-sm font-medium text-content-emphasis">
+                <Heading level={3} as="h2">
                     {t('reviewQuality.unobservableTitle')}
-                </h2>
+                </Heading>
                 {/* Rendered ABOVE the numbers, and unconditionally — including on
                     an empty tenant. A blind spot mentioned only in a footnote is
                     a blind spot a reader assumes is not there. */}
@@ -101,9 +102,9 @@ export default async function AgentReviewQualityPage({
             ) : (
                 <>
                     <section className="space-y-default">
-                        <h2 className="text-sm font-medium text-content-emphasis">
+                        <Heading level={3} as="h2">
                             {t('reviewQuality.signalsTitle')}
-                        </h2>
+                        </Heading>
                         {report.signals.length === 0 ? (
                             <p className="text-sm text-content-muted">
                                 {t('reviewQuality.signalsNone')}
@@ -139,9 +140,9 @@ export default async function AgentReviewQualityPage({
                     </section>
 
                     <section className="space-y-default">
-                        <h2 className="text-sm font-medium text-content-emphasis">
+                        <Heading level={3} as="h2">
                             {t('reviewQuality.reviewersTitle')}
-                        </h2>
+                        </Heading>
                         <ul className="space-y-default">
                             {report.reviewers.map((r) => (
                                 <li
@@ -180,9 +181,9 @@ export default async function AgentReviewQualityPage({
                     </section>
 
                     <section className="space-y-default">
-                        <h2 className="text-sm font-medium text-content-emphasis">
+                        <Heading level={3} as="h2">
                             {t('reviewQuality.agentsTitle')}
-                        </h2>
+                        </Heading>
                         <ul className="space-y-default">
                             {report.agents.map((a) => (
                                 <li

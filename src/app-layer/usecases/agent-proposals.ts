@@ -1121,6 +1121,46 @@ export async function approveAgentProposal(
 
     const status: 'ACCEPTED' | 'EDITED' = parsedEdits ? 'EDITED' : 'ACCEPTED';
 
+    // ═══ A SIGNATURE IS A HUMAN'S. A CREDENTIAL IS NOT A HUMAN. ═══
+    //
+    // `ctx.userId` on an API-key request is the key's CREATOR, not somebody who
+    // looked at this proposal — `api-key-auth.ts` mints the context with
+    // `userId: apiKey.createdById`. So without this refusal the four-eyes rule
+    // counts distinct USER IDS and a machine supplies one: the key's creator
+    // signs, a human signs, and a proposal that required two independent people
+    // is applied having been read by one. Worse for the strictest case, because a
+    // proposal naming no registered agent is scored at the top rung AND has no
+    // owner for the trigger to exclude.
+    //
+    // The usecase already knew the difference and threw it away: `refuseExpired`
+    // and the four-eyes refusal both compute `actorType: ctx.apiKeyId ? 'API_KEY'
+    // : 'USER'` on their FAILURE paths, while the success path hardcoded 'USER'.
+    //
+    // Refused rather than recorded-and-not-counted, because a review queue that
+    // accepts machine approvals at all is a queue where the automation is doing
+    // the overseeing. If a machine-approval path is ever wanted for single-
+    // approver proposals, persist `viaApiKeyId` on the row and count only the
+    // NULLs — do not relax this into "count it but flag it".
+    if (ctx.apiKeyId) {
+        await appendAuditEntry({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            actorType: 'API_KEY',
+            entity: 'AgentProposal',
+            entityId: proposal.id,
+            action: 'AUTHZ_DENIED',
+            requestId: ctx.requestId,
+            detailsJson: {
+                category: 'access',
+                event: 'authz_denied',
+                reason: 'agent_proposal_human_review_required',
+                approvalsRequired: review.required,
+            },
+            metadataJson: { role: ctx.role, apiKeyId: ctx.apiKeyId },
+        }).catch(() => undefined);
+        throw forbidden('agent_proposal_human_review_required');
+    }
+
     // ═══ RECORD THIS HUMAN'S SIGNATURE. THE DATABASE ARBITRATES. ═══
     //
     // The insert IS the check. Two constraints on `AgentProposalApproval` do the

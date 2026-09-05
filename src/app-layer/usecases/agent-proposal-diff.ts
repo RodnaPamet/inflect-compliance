@@ -28,6 +28,7 @@
  * approve path refuses any approval whose fingerprint no longer matches.
  */
 import { runInTenantContext } from '@/lib/db/rls-middleware';
+import { internal } from '@/lib/errors/types';
 import { assertCanRead } from '@/app-layer/policies/common';
 import {
     computeProposalDiff,
@@ -170,6 +171,6 @@ export async function buildProposalDiff(
     // input - but asserted rather than `!`-ed so a future change to that
     // contract fails here instead of producing an undefined diff downstream.
     const diff = diffs.get(proposal.id);
-    if (!diff) throw new Error('proposal diff was not computed');
+    if (!diff) throw internal('proposal diff was not computed');
     return diff;
 }

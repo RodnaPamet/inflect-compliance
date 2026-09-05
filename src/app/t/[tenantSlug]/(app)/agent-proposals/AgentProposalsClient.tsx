@@ -36,6 +36,14 @@ export interface ProposalRow {
      * away from returning.
      */
     diff: ProposalDiff;
+    /**
+     * This viewer's signature is recorded and the proposal still needs another.
+     *
+     * Client-side only and deliberately so: it is set from the approve response,
+     * which is the one moment the browser learns it. The authoritative count
+     * lives on the server; this exists so the row does not silently vanish.
+     */
+    awaitingSecondApproval?: boolean;
 }
 
 /**
@@ -64,10 +72,13 @@ export function AgentProposalsClient({
     const [proposals, setProposals] = useState(initialProposals);
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    /** "your signature was recorded, a second reviewer is still required". */
+    const [notice, setNotice] = useState<string | null>(null);
 
     async function act(p: ProposalRow, action: 'approve' | 'reject') {
         setBusy(p.id);
         setError(null);
+        setNotice(null);
         const fallback = t(`proposals.${action}Failed`);
         try {
             const res = await fetch(apiUrl(`/agent-proposals/${p.id}/${action}`), {
@@ -86,6 +97,29 @@ export function AgentProposalsClient({
             if (!res.ok) {
                 const body = await res.json().catch(() => null);
                 throw new Error(body?.error?.message ?? fallback);
+            }
+
+            // TWO SUCCESS SHAPES, AND THEY MEAN OPPOSITE THINGS.
+            //
+            // A tiered proposal's FIRST approval records a signature and applies
+            // nothing — a 200 whose body says `AWAITING_APPROVAL`. Treating that
+            // as "done" and dropping the row is this epic's own failure in
+            // miniature: a reviewer told "approved" for a proposal that has not
+            // been approved learns that clicking the button is what approval
+            // means, and the queue hides the fact that a second human is still
+            // required. So the row STAYS, and it says what is missing.
+            const body: { status?: string; approvalsRecorded?: number; approvalsRequired?: number } =
+                await res.json().catch(() => ({}));
+            if (action === 'approve' && body.status === 'AWAITING_APPROVAL') {
+                const recorded = body.approvalsRecorded ?? 1;
+                const required = body.approvalsRequired ?? 2;
+                setProposals((prev) =>
+                    prev.map((row) =>
+                        row.id === p.id ? { ...row, awaitingSecondApproval: true } : row,
+                    ),
+                );
+                setNotice(t('proposals.signatureRecorded', { recorded, required }));
+                return;
             }
             setProposals((prev) => prev.filter((row) => row.id !== p.id));
         } catch (e) {
@@ -108,6 +142,15 @@ export function AgentProposalsClient({
                 title={t('proposals.title')}
                 description={t('proposals.description')}
             />
+
+            {notice && (
+                <div
+                    data-testid="proposal-awaiting-second"
+                    className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-muted')}
+                >
+                    {notice}
+                </div>
+            )}
 
             {error && (
                 <div

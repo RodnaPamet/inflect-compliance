@@ -170,7 +170,7 @@ describe('the single-proposal convenience returns the same answer', () => {
 
         expect(diff.status).toBe('UPDATE');
         expect(diff.fields).toStrictEqual([
-            { field: 'likelihood', before: '4', after: '9', changed: true },
+            { field: 'likelihood', baseHasField: true, before: '4', after: '9', changed: true },
         ]);
     });
 });

@@ -70,6 +70,21 @@ export interface ProposalDiffField {
     before: string | null;
     after: string | null;
     changed: boolean;
+    /**
+     * Does the base RECORD carry this field at all?
+     *
+     * `before: null` answers two different questions with one word — "the record
+     * holds null here" and "the record has no such field" — and `renderDiffValue`
+     * maps `undefined` and `null` to the same `null`, so a payload key the base
+     * does not have rendered as an ordinary null→value change. That is a diff
+     * asserting the record HAS a field it does not, which is the one thing a
+     * before/after column exists to be trusted about.
+     *
+     * Always `true` where there is no base to ask (CREATE, TARGET_MISSING) — the
+     * status already carries that story, and a second `false` there would mean
+     * something different from the one this flag is for.
+     */
+    baseHasField: boolean;
 }
 
 export interface ProposalDiff {
@@ -190,6 +205,7 @@ export function computeProposalDiff(input: ComputeProposalDiffInput): ProposalDi
             status: 'CREATE',
             fields: keys.map((field) => ({
                 field,
+                baseHasField: true,
                 before: null,
                 after: renderDiffValue(payload[field]),
                 changed: true,
@@ -209,6 +225,7 @@ export function computeProposalDiff(input: ComputeProposalDiffInput): ProposalDi
             status: 'TARGET_MISSING',
             fields: keys.map((field) => ({
                 field,
+                baseHasField: true,
                 before: null,
                 after: renderDiffValue(payload[field]),
                 changed: false,
@@ -220,9 +237,15 @@ export function computeProposalDiff(input: ComputeProposalDiffInput): ProposalDi
 
     const target = input.target;
     const fields: ProposalDiffField[] = keys.map((field) => {
+        // OWN-PROPERTY, not a truthiness or an `undefined` test. A key the base
+        // does not have and a key the base holds as null both read `undefined`
+        // through `renderDiffValue`, and telling a reviewer "null → high" about
+        // a field the record does not have is a false statement about the base
+        // they are being asked to consent to a delta from.
+        const baseHasField = Object.prototype.hasOwnProperty.call(target, field);
         const before = renderDiffValue(target[field]);
         const after = renderDiffValue(payload[field]);
-        return { field, before, after, changed: before !== after };
+        return { field, baseHasField, before, after, changed: before !== after };
     });
 
     return {
