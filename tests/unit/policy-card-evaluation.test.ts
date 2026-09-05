@@ -46,15 +46,23 @@ jest.mock('@/lib/agentic/policy-card-store', () => ({
 import prisma from '@/lib/prisma';
 import { appendAuditEntry } from '@/lib/audit';
 import { reserveDailyAction } from '@/lib/agentic/policy-card-store';
-import { POLICY_CARD_RULES, type AgentPolicyCardValue } from '@/lib/agentic/policy-card';
+import {
+    DATA_SCOPE_LADDER,
+    POLICY_CARD_RULES,
+    type AgentPolicyCardValue,
+} from '@/lib/agentic/policy-card';
 import {
     evaluateCardDailyBudget,
     evaluateCardReach,
     seedPolicyCardValue,
     type PolicyCardInForce,
 } from '@/lib/agentic/policy-card-evaluation';
-import { DENY_CEILING } from '@/lib/agentic/autonomy-ceiling';
-import { dataScopeForToolCall } from '@/lib/mcp/tool-data-scope';
+import {
+    AUTONOMY_REQUIRED_BY_CAPABILITY,
+    DENY_CEILING,
+} from '@/lib/agentic/autonomy-ceiling';
+import { MCP_TOOL_NAMES, mcpToolCapabilityClass } from '@/lib/mcp/tool-catalogue';
+import { baseDataScopeForTool, dataScopeForToolCall } from '@/lib/mcp/tool-data-scope';
 import type { McpInvocation } from '@/lib/mcp/authorize';
 import { runReadTool } from '@/lib/mcp/tools/registry';
 import { getFrameworkStatusTool } from '@/lib/mcp/tools/framework-tools';
@@ -396,7 +404,7 @@ describe('what a new card opens at', () => {
 
         // Nothing invented: the autonomy cap is the tier's, the budgets are the
         // tier's, the data rung is the register's, the tools are the grants'.
-        expect(seeded).toEqual({
+        expect(seeded.value).toEqual({
             permittedTools: ['list_risks', 'list_controls'],
             maxDataScope: 'READ_TENANT_DATA',
             maxAutonomyLevel: 2,
@@ -405,6 +413,10 @@ describe('what a new card opens at', () => {
             escalationTriggers: [...POLICY_CARD_RULES],
             approvalRung: 'SECOND_APPROVER',
         });
+        // And nothing was dropped on the way — the whole grant list survived,
+        // which is what makes the withholding cases below findings rather than
+        // the normal shape of a seed.
+        expect(seeded.withheld).toEqual([]);
     });
 
     it('creating a card changes NOTHING about what the agent may already do', async () => {
@@ -417,7 +429,7 @@ describe('what a new card opens at', () => {
             dataAccessScope: 'READ_TENANT_DATA',
             grantedTools: ['list_risks'],
         });
-        const inv = invocationFor({ cardId: 'card-1', version: 1, value: seeded });
+        const inv = invocationFor({ cardId: 'card-1', version: 1, value: seeded.value });
 
         await expect(runReadTool(inv, 'list_risks', {})).resolves.toBeDefined();
         expect(risksRun).toHaveBeenCalledTimes(1);
@@ -434,19 +446,161 @@ describe('what a new card opens at', () => {
         // still leaves nothing runnable. The register's declared EXTERNAL_EGRESS
         // is deliberately NOT honoured here — an unscored agent's declaration is
         // the thing nobody has checked.
-        expect(seeded.maxAutonomyLevel).toBe(DENY_CEILING);
-        expect(seeded.maxDataScope).toBe('NONE');
-        expect(seeded.maxActionsPerRun).toBe(0);
-        expect(seeded.maxActionsPerDay).toBe(0);
-        expect(seeded.approvalRung).toBe('SECOND_APPROVER');
+        expect(seeded.value.maxAutonomyLevel).toBe(DENY_CEILING);
+        expect(seeded.value.maxDataScope).toBe('NONE');
+        expect(seeded.value.maxActionsPerRun).toBe(0);
+        expect(seeded.value.maxActionsPerDay).toBe(0);
+        expect(seeded.value.approvalRung).toBe('SECOND_APPROVER');
+
+        // The grant is WITHHELD rather than written into a card that refuses it:
+        // a card is not allowed to permit what it forbids, and the tool is named
+        // so the operator can see it is the assessment, not the grant, that is
+        // missing.
+        expect(seeded.value.permittedTools).toEqual([]);
+        expect(seeded.withheld).toEqual([
+            {
+                toolName: 'list_risks',
+                reason: 'AUTONOMY_ABOVE_CARD',
+                requires: '1',
+                permits: String(DENY_CEILING),
+            },
+        ]);
 
         expect(
-            evaluateCardReach({ cardId: 'c', version: 1, value: seeded }, {
+            evaluateCardReach({ cardId: 'c', version: 1, value: seeded.value }, {
                 tool: 'list_risks',
                 dataScope: 'READ_TENANT_DATA',
                 requiredAutonomy: 1,
                 actionsThisRun: 0,
             }).allowed,
         ).toBe(false);
+    });
+});
+
+describe('a seeded card never permits what it forbids', () => {
+    /**
+     * The defect this whole section exists for. The three inputs a seed draws on
+     * — the tier, the register's data axis, and the grant list — are independent,
+     * and nothing made them agree. A card seeded from all three could therefore
+     * permit a tool its own ceiling refuses on every call: legible in the
+     * register, deliberate-looking, and dark at runtime.
+     */
+    it('withholds a granted tool whose BASE data rung is above the seeded ceiling', () => {
+        const seeded = seedPolicyCardValue({
+            riskTier: 'LOW',
+            dataAccessScope: 'READ_METADATA',
+            grantedTools: ['list_risks'],
+        });
+
+        expect(seeded.value.permittedTools).toEqual([]);
+        expect(seeded.withheld).toEqual([
+            {
+                toolName: 'list_risks',
+                reason: 'DATA_SCOPE_ABOVE_CARD',
+                requires: 'READ_TENANT_DATA',
+                permits: 'READ_METADATA',
+            },
+        ]);
+    });
+
+    it('keeps a tool whose base is within the ceiling even when its MAXIMUM is not', () => {
+        // The paired positive, and the one that says the rule is about the BASE
+        // rung. `get_framework_status` bases at READ_METADATA and only reaches
+        // tenant data with a `frameworkKey`, so a metadata card keeps it: the
+        // catalogue read works and the wider ARGUMENT is refused at the
+        // boundary. A rule written against the maximum would have deleted this
+        // tool from the card and made the argument-derived rung pointless.
+        const seeded = seedPolicyCardValue({
+            riskTier: 'LOW',
+            dataAccessScope: 'READ_METADATA',
+            grantedTools: ['get_framework_status'],
+        });
+
+        expect(seeded.value.permittedTools).toEqual(['get_framework_status']);
+        expect(seeded.withheld).toEqual([]);
+    });
+
+    it('withholds a granted tool whose autonomy rung is above the tier cap', () => {
+        // CRITICAL caps autonomy at 1; `propose_finding` needs 2. The grant seam
+        // refuses this pairing today, so reaching it means a grant that predates
+        // that gate or a tier that rose after the grant — both real, and both
+        // arriving here rather than at the agent's next call.
+        const seeded = seedPolicyCardValue({
+            riskTier: 'CRITICAL',
+            dataAccessScope: 'WRITE_TENANT_DATA',
+            grantedTools: ['list_risks', 'propose_finding'],
+        });
+
+        expect(seeded.value.permittedTools).toEqual(['list_risks']);
+        expect(seeded.withheld).toEqual([
+            {
+                toolName: 'propose_finding',
+                reason: 'AUTONOMY_ABOVE_CARD',
+                requires: '2',
+                permits: '1',
+            },
+        ]);
+    });
+
+    it('withholds a grant naming a tool this build no longer offers', () => {
+        const seeded = seedPolicyCardValue({
+            riskTier: 'LOW',
+            dataAccessScope: 'WRITE_TENANT_DATA',
+            grantedTools: ['list_risks', 'list_everything'],
+        });
+
+        expect(seeded.value.permittedTools).toEqual(['list_risks']);
+        expect(seeded.withheld.map((w) => [w.toolName, w.reason])).toEqual([
+            ['list_everything', 'NOT_IN_CATALOGUE'],
+        ]);
+    });
+
+    it('every seeded card is one the boundary can actually exercise', () => {
+        // The invariant itself, over the whole catalogue and the whole data
+        // ladder, rather than over the four examples above. For every (tier,
+        // axis) pair, each tool the seeded card PERMITS must pass the boundary's
+        // own reach evaluation at that tool's base rung — and each tool it
+        // WITHHOLDS must fail it. A seeder that filtered on a different rule
+        // than the boundary enforces would show up here as one of the two
+        // halves going wrong.
+        for (const riskTier of ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'] as const) {
+            for (const dataAccessScope of DATA_SCOPE_LADDER) {
+                const seeded = seedPolicyCardValue({
+                    riskTier,
+                    dataAccessScope,
+                    grantedTools: MCP_TOOL_NAMES,
+                });
+                const card = { cardId: 'c', version: 1, value: seeded.value };
+
+                expect(
+                    [...seeded.value.permittedTools, ...seeded.withheld.map((w) => w.toolName)]
+                        .sort(),
+                ).toEqual([...MCP_TOOL_NAMES].sort());
+
+                for (const tool of seeded.value.permittedTools) {
+                    expect(
+                        evaluateCardReach(card, {
+                            tool,
+                            dataScope: baseDataScopeForTool(tool),
+                            requiredAutonomy:
+                                AUTONOMY_REQUIRED_BY_CAPABILITY[mcpToolCapabilityClass(tool)],
+                            actionsThisRun: 0,
+                        }).allowed,
+                    ).toBe(true);
+                }
+
+                for (const { toolName } of seeded.withheld) {
+                    expect(
+                        evaluateCardReach(card, {
+                            tool: toolName,
+                            dataScope: baseDataScopeForTool(toolName),
+                            requiredAutonomy:
+                                AUTONOMY_REQUIRED_BY_CAPABILITY[mcpToolCapabilityClass(toolName)],
+                            actionsThisRun: 0,
+                        }).allowed,
+                    ).toBe(false);
+                }
+            }
+        }
     });
 });

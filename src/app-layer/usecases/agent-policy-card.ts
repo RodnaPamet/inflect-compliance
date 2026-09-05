@@ -43,21 +43,18 @@
  */
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, conflict, notFound } from '@/lib/errors/types';
+import { ceilingForRiskTier } from '@/lib/agentic/autonomy-ceiling';
 import {
-    AUTONOMY_REQUIRED_BY_CAPABILITY,
-    ceilingForRiskTier,
-} from '@/lib/agentic/autonomy-ceiling';
-import {
-    DATA_SCOPE_LADDER,
     checkLadderStep,
     isActionCap,
     narrowApprovalRung,
     narrowEscalationTriggers,
     type AgentPolicyCardValue,
 } from '@/lib/agentic/policy-card';
-import { seedPolicyCardValue } from '@/lib/agentic/policy-card-evaluation';
-import { isKnownMcpTool, mcpToolCapabilityClass } from '@/lib/mcp/tool-catalogue';
-import { baseDataScopeForTool } from '@/lib/mcp/tool-data-scope';
+import {
+    seedPolicyCardValue,
+    withholdingReasonForTool,
+} from '@/lib/agentic/policy-card-evaluation';
 import type { PrismaTx } from '@/lib/db-context';
 
 import { assertCanRead, assertCanWrite } from '../policies/common';
@@ -96,22 +93,31 @@ export async function getAgentPolicyCard(ctx: RequestContext, agentId: string) {
         const agent = await assertAgentCardable(db, ctx, agentId);
         const card = await AgentPolicyCardRepository.findForAgent(db, ctx, agentId);
         if (!card) {
+            /**
+             * What creating one would produce, so the surface offering the
+             * button can show the answer rather than a blank form. Derived from
+             * the same function that would write it — never a second preview
+             * that can disagree with the real thing.
+             */
+            const seeded = seedPolicyCardValue({
+                riskTier: agent.riskTier,
+                dataAccessScope: agent.dataAccessScope,
+                grantedTools: (
+                    await RegisteredAgentToolRepository.listForAgent(db, ctx, agentId)
+                ).map((t) => t.toolName),
+            });
             return {
                 agentId,
                 card: null,
+                wouldSeed: seeded.value,
                 /**
-                 * What creating one would produce, so the surface offering the
-                 * button can show the answer rather than a blank form. Derived
-                 * from the same function that would write it — never a second
-                 * preview that can disagree with the real thing.
+                 * Granted tools the seeded card would NOT permit, and the
+                 * ceiling each ran into. Shown BEFORE the button is pressed:
+                 * "creating this card will not permit 2 of the 3 tools you
+                 * granted" is a question an operator can still answer, and the
+                 * same fact arriving as a runtime refusal is one they cannot.
                  */
-                wouldSeed: seedPolicyCardValue({
-                    riskTier: agent.riskTier,
-                    dataAccessScope: agent.dataAccessScope,
-                    grantedTools: (
-                        await RegisteredAgentToolRepository.listForAgent(db, ctx, agentId)
-                    ).map((t) => t.toolName),
-                }),
+                wouldWithhold: seeded.withheld,
                 assessmentRequired: agent.riskTier === null,
             };
         }
@@ -132,7 +138,7 @@ export async function getAgentPolicyCard(ctx: RequestContext, agentId: string) {
 }
 
 /**
- * Create the card, seeded from what is already true.
+ * Create the card, seeded from what is already true AND exercisable.
  *
  * The seed writes down the agent's CURRENT grants, the register's own
  * data-access declaration and the tier's autonomy cap and budgets — so creating
@@ -140,6 +146,21 @@ export async function getAgentPolicyCard(ctx: RequestContext, agentId: string) {
  * seeded empty would take a working agent dark the moment its governance
  * artefact was created, which is the one failure mode that would teach operators
  * not to create one.
+ *
+ * ## The seeded card goes through the SAME gate an edited one does
+ *
+ * It did not, and that was the defect: `assertDeclarationsExercisable` ran on
+ * the edit path only, so a create could write a card permitting a tool its own
+ * data ceiling refuses on every call — a card the edit path then rejected
+ * VERBATIM as impossible to write. The agent stopped working and nothing said
+ * so.
+ *
+ * The assertion below is therefore a no-op on a correct seed, and that is the
+ * point. `seedPolicyCardValue` filters with the same predicate the assertion
+ * throws on (`withholdingReasonForTool`), so the two cannot disagree about what
+ * a valid card is; running the assertion anyway means a future seeder bug
+ * surfaces as a refused create with a named tool rather than as a silently dark
+ * agent. Anything it catches is OUR bug, not the operator's.
  */
 export async function createAgentPolicyCard(ctx: RequestContext, agentId: string) {
     assertCanWrite(ctx);
@@ -161,11 +182,12 @@ export async function createAgentPolicyCard(ctx: RequestContext, agentId: string
         }
 
         const granted = await RegisteredAgentToolRepository.listForAgent(db, ctx, agentId);
-        const value = seedPolicyCardValue({
+        const { value, withheld } = seedPolicyCardValue({
             riskTier: agent.riskTier,
             dataAccessScope: agent.dataAccessScope,
             grantedTools: granted.map((t) => t.toolName),
         });
+        assertDeclarationsExercisable(value, agent.riskTier);
 
         const card = await AgentPolicyCardRepository.createWithFirstVersion(
             db,
@@ -182,12 +204,22 @@ export async function createAgentPolicyCard(ctx: RequestContext, agentId: string
                 category: 'access',
                 entityName: 'AgentPolicyCard',
                 operation: 'create',
-                summary: `Created policy card v1 for agent ${agentId}, seeded from tier ${agent.riskTier}`,
-                after: { version: 1, seededFromTier: agent.riskTier, ...value },
+                summary:
+                    `Created policy card v1 for agent ${agentId}, seeded from tier ` +
+                    `${agent.riskTier}` +
+                    (withheld.length === 0
+                        ? ''
+                        : `; ${withheld.length} granted tool(s) withheld as unexercisable ` +
+                          `(${withheld.map((w) => w.toolName).join(', ')})`),
+                // The withheld list is in the audit row as well as the response,
+                // because the response is read once by whoever pressed the
+                // button and the row is what the next person asking "why is this
+                // agent not calling the tool we granted it" can actually find.
+                after: { version: 1, seededFromTier: agent.riskTier, ...value, withheld },
             },
         });
 
-        return { agentId, cardId: card.id, version: 1, value };
+        return { agentId, cardId: card.id, version: 1, value, withheld };
     });
 }
 
@@ -288,6 +320,11 @@ export async function updateAgentPolicyCard(
  *     tool's MAXIMUM reach is deliberately not the test: a ceiling below that is
  *     the useful case, where the tool works and its wider arguments are refused.
  *
+ * Both are decided by `withholdingReasonForTool`, which is the SAME predicate
+ * the seeder filters on — see `createAgentPolicyCard` for why a create that
+ * skipped this check was a create that wrote states an edit called impossible.
+ * This function only turns the predicate's answer into a sentence.
+ *
  * The tier's own cap is checked too, because a card cannot widen past it: a
  * card naming autonomy 4 on a CRITICAL agent is a promise the tool boundary
  * breaks on the first call, and the operator should be told by the thing they
@@ -297,15 +334,6 @@ function assertDeclarationsExercisable(
     card: AgentPolicyCardValue,
     riskTier: Parameters<typeof ceilingForRiskTier>[0],
 ): void {
-    for (const tool of card.permittedTools) {
-        if (!isKnownMcpTool(tool)) {
-            throw badRequest(
-                `"${tool}" is not an MCP tool this build offers. A card may name only ` +
-                    'tools from the live catalogue.',
-            );
-        }
-    }
-
     const tierCap = ceilingForRiskTier(riskTier);
     if (card.maxAutonomyLevel > tierCap) {
         throw badRequest(
@@ -316,28 +344,34 @@ function assertDeclarationsExercisable(
         );
     }
 
-    const ceiling = DATA_SCOPE_LADDER.indexOf(card.maxDataScope);
     for (const tool of card.permittedTools) {
-        const required = AUTONOMY_REQUIRED_BY_CAPABILITY[mcpToolCapabilityClass(tool)];
-        if (required > card.maxAutonomyLevel) {
+        const withheld = withholdingReasonForTool(tool, card);
+        if (!withheld) continue;
+
+        if (withheld.reason === 'NOT_IN_CATALOGUE') {
             throw badRequest(
-                `"${tool}" needs autonomy ${required} and this card caps it at ` +
-                    `${card.maxAutonomyLevel}. Permitting it would write a declaration the ` +
-                    'tool boundary refuses on every call.',
+                `"${tool}" is not an MCP tool this build offers. A card may name only ` +
+                    'tools from the live catalogue.',
             );
         }
-        // The tool's BASE rung, not its maximum. A ceiling below the maximum is
-        // the useful case — the tool works and its more-reaching ARGUMENTS are
-        // refused — and only a ceiling below the base makes the tool
-        // unreachable however it is called.
-        const floor = baseDataScopeForTool(tool);
-        if (DATA_SCOPE_LADDER.indexOf(floor) > ceiling) {
+
+        if (withheld.reason === 'AUTONOMY_ABOVE_CARD') {
             throw badRequest(
-                `"${tool}" reaches ${floor} on every call and this card stops at ` +
-                    `${card.maxDataScope}. Permitting it would write a declaration the tool ` +
-                    'boundary refuses on every call.',
+                `"${tool}" needs autonomy ${withheld.requires} and this card caps it at ` +
+                    `${withheld.permits}. Permitting it would write a declaration the ` +
+                    'tool boundary refuses on every call. Raise maxAutonomyLevel first, ' +
+                    'in its own edit — widening two dimensions at once is refused by the ' +
+                    'ladder, so the order matters.',
             );
         }
+
+        throw badRequest(
+            `"${tool}" reaches ${withheld.requires} on every call and this card stops at ` +
+                `${withheld.permits}. Permitting it would write a declaration the tool ` +
+                'boundary refuses on every call. Raise maxDataScope first, in its own ' +
+                'edit — widening two dimensions at once is refused by the ladder, so the ' +
+                'order matters.',
+        );
     }
 }
 

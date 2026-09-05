@@ -38,7 +38,10 @@
  */
 import type { AgentDataAccessScope, AgentRiskTier } from '@prisma/client';
 
-import { DENY_CEILING } from './autonomy-ceiling';
+import { isKnownMcpTool, mcpToolCapabilityClass } from '@/lib/mcp/tool-catalogue';
+import { baseDataScopeForTool } from '@/lib/mcp/tool-data-scope';
+
+import { AUTONOMY_REQUIRED_BY_CAPABILITY, DENY_CEILING } from './autonomy-ceiling';
 import { defaultPolicyCardForRiskTier } from './risk-tier-consequences';
 import {
     APPROVAL_LADDER,
@@ -48,6 +51,7 @@ import {
     type AgentPolicyCardValue,
     type ApprovalRung,
     type PolicyCardRule,
+    type PolicyDataScope,
 } from './policy-card';
 
 /** The card version in force for one agent, as the boundary reads it. */
@@ -232,8 +236,119 @@ export interface PolicyCardSeed {
      * may do — it only pins it. A card seeded empty would take a working agent
      * dark the moment its governance artefact was created, which is the
      * composition failure this subsystem keeps naming.
+     *
+     * A grant the seeded ceilings could not exercise is the one exception, and
+     * it is WITHHELD rather than permitted — see `withholdingReasonForTool`
+     * below for why permitting it would be the worse of the two failures.
      */
     grantedTools: readonly string[];
+}
+
+// ─── One definition of "this card could never call that tool" ───────
+
+/** Which ceiling a granted tool ran into. */
+export type ToolWithholdingReason =
+    /** The build does not offer this tool at all — a grant left behind by a deploy. */
+    | 'NOT_IN_CATALOGUE'
+    /** Its capability class needs an autonomy rung above the card's cap. */
+    | 'AUTONOMY_ABOVE_CARD'
+    /** Its BASE data rung — the one every call reaches — is above the card's ceiling. */
+    | 'DATA_SCOPE_ABOVE_CARD';
+
+/** A granted tool a card cannot permit, and the two numbers that say why. */
+export interface WithheldTool {
+    toolName: string;
+    reason: ToolWithholdingReason;
+    /** What the tool needs on EVERY call, in the failing axis's own units. */
+    requires: string;
+    /** What the card offers on that axis. */
+    permits: string;
+}
+
+/** The two ceilings a card imposes on every call, whatever its arguments. */
+export interface CardCeilings {
+    maxDataScope: PolicyDataScope;
+    maxAutonomyLevel: number;
+}
+
+/**
+ * ── WHY THIS IS ONE FUNCTION AND NOT TWO ────────────────────────────
+ *
+ * A card that PERMITS a tool it also FORBIDS is a governance object that
+ * refuses everything it declares. There are two ways to write one and they
+ * used to be answered in two different places: the EDIT path threw
+ * (`assertDeclarationsExercisable`), and the CREATE path did not check at all —
+ * so creating a card could write exactly the state editing one calls
+ * impossible, and the agent went dark at its next tool call with nobody told.
+ *
+ * The disagreement was possible because the rule was spelled once. It is now
+ * spelled here, and both paths read it: create uses it as a FILTER (the seeded
+ * card cannot contain a contradiction, because contradictions never enter it)
+ * and edit uses it as a REFUSAL (an operator typing one is told at the moment
+ * they type it). Same predicate, two dispositions — which is the honest shape,
+ * because the two paths differ in whose decision is being judged. A seed is
+ * assembled by the product from state that already exists; an edit is composed
+ * by a person.
+ *
+ * ## The BASE rung, never the maximum
+ *
+ * `baseDataScopeForTool` deliberately answers the rung a tool reaches with NO
+ * argument raising it. A ceiling below a tool's MAXIMUM is the useful case —
+ * `get_framework_status` under a `READ_METADATA` card is a working catalogue
+ * read whose tenant-coverage argument is refused. Only a ceiling below the BASE
+ * makes the tool unreachable however it is called, and only that is a
+ * contradiction.
+ *
+ * Returns `null` when the card can exercise the tool.
+ */
+export function withholdingReasonForTool(
+    toolName: string,
+    ceilings: CardCeilings,
+): WithheldTool | null {
+    if (!isKnownMcpTool(toolName)) {
+        return {
+            toolName,
+            reason: 'NOT_IN_CATALOGUE',
+            requires: 'a tool this build offers',
+            permits: 'the live catalogue',
+        };
+    }
+
+    const requiredAutonomy = AUTONOMY_REQUIRED_BY_CAPABILITY[mcpToolCapabilityClass(toolName)];
+    if (!autonomyWithinCard(requiredAutonomy, ceilings.maxAutonomyLevel)) {
+        return {
+            toolName,
+            reason: 'AUTONOMY_ABOVE_CARD',
+            requires: String(requiredAutonomy),
+            permits: String(ceilings.maxAutonomyLevel),
+        };
+    }
+
+    const floor = baseDataScopeForTool(toolName);
+    if (!dataScopeWithinCard(floor, ceilings.maxDataScope)) {
+        return {
+            toolName,
+            reason: 'DATA_SCOPE_ABOVE_CARD',
+            requires: floor,
+            permits: ceilings.maxDataScope,
+        };
+    }
+
+    return null;
+}
+
+/** What a fresh card opens at, and which grants could not come with it. */
+export interface SeededPolicyCard {
+    value: AgentPolicyCardValue;
+    /**
+     * Granted tools the seeded card does NOT permit, each with the ceiling it
+     * ran into. NEVER silently dropped: this list is what the create usecase
+     * returns to the caller and writes into the audit row, and what the GET
+     * preview shows before anybody presses the button. A withheld tool is a
+     * finding about the register — the grant and the agent's own declarations
+     * disagree — and the operator is the only one who can settle it.
+     */
+    withheld: readonly WithheldTool[];
 }
 
 /**
@@ -252,28 +367,73 @@ export interface PolicyCardSeed {
  * function grows: a default the card invents is a default nobody reviewed, and
  * it will differ from the one the boundary enforces.
  *
+ * ## The tool list is the grants FILTERED BY the ceilings, and why
+ *
+ * The three bullets above are three independent sources, and nothing made them
+ * agree. An agent declaring `READ_METADATA` that had been granted `list_risks`
+ * seeded a card permitting a tool its own data ceiling refuses on every call:
+ * legible in the register, deliberate-looking, and dark at runtime. The edit
+ * path already refused to WRITE that card. So creation produced a state editing
+ * called impossible.
+ *
+ * Three ways to close it, and only one of them is honest about what is wrong:
+ *
+ *   • SEED THE CEILING FROM THE TOOLS instead (the union of their base rungs).
+ *     Rejected: it NARROWS a live agent. `get_framework_status` bases at
+ *     `READ_METADATA` and reaches `READ_TENANT_DATA` with a `frameworkKey`, so
+ *     a ceiling seeded from base rungs would take a working argument dark —
+ *     creating the governance artefact would itself be the outage.
+ *   • REFUSE TO CREATE THE CARD. Rejected: it makes the register's own
+ *     contradiction into a reason the agent cannot be governed at all, and the
+ *     operator's route back is to fix a register they may not own. A correct
+ *     gate that bricks the product is still a broken change.
+ *   • WITHHOLD THE TOOL AND SAY SO. Taken. The card is coherent by
+ *     construction, the agent keeps every call it could actually make, and the
+ *     grant that cannot be exercised is named to the operator at the moment
+ *     they create the card rather than at the agent's next refusal.
+ *
+ * The withheld tool is NOT revoked and NOT hidden: its grant row stands, the
+ * preview and the audit row both name it, and permitting it is two ordinary
+ * ladder steps once the agent's declared axis is raised. Nothing is lost.
+ *
  * UNSCORED fails closed on every axis at once: `DENY_CEILING` autonomy (below
  * rung 0, so no tool reaches it), `NONE` data, a zero budget and the strictest
- * approval rung. The tool list is still seeded, because the list is not what
- * makes an unscored agent inert — the ceiling is — and blanking it would lose
- * the operator's work for no additional safety.
+ * approval rung — which means every grant is withheld. That is the same
+ * statement the old empty-ceiling card made, said where somebody can read it:
+ * the agent is inert because nobody has assessed it, and the tools it holds are
+ * listed rather than written into a card that refuses them.
  */
-export function seedPolicyCardValue(seed: PolicyCardSeed): AgentPolicyCardValue {
+export function seedPolicyCardValue(seed: PolicyCardSeed): SeededPolicyCard {
     const defaults = defaultPolicyCardForRiskTier(seed.riskTier);
     const unscored = defaults.assessmentRequired;
 
-    return {
-        permittedTools: [...seed.grantedTools],
+    const ceilings: CardCeilings = {
         maxDataScope: unscored ? 'NONE' : seed.dataAccessScope,
         maxAutonomyLevel: unscored ? DENY_CEILING : defaults.maxAutonomyLevel,
-        maxActionsPerRun: defaults.maxActionsPerRun,
-        maxActionsPerDay: defaults.maxActionsPerDay,
-        // A new card escalates on EVERY rule. Quieting one is a widening, and
-        // goes up the ladder like every other widening — so the noisy default is
-        // the one an operator has to deliberately turn down, rather than the
-        // silent one they have to remember to turn up.
-        escalationTriggers: [...POLICY_CARD_RULES],
-        approvalRung: approvalRungFor(defaults),
+    };
+
+    const permittedTools: string[] = [];
+    const withheld: WithheldTool[] = [];
+    for (const toolName of seed.grantedTools) {
+        const reason = withholdingReasonForTool(toolName, ceilings);
+        if (reason) withheld.push(reason);
+        else permittedTools.push(toolName);
+    }
+
+    return {
+        value: {
+            permittedTools,
+            ...ceilings,
+            maxActionsPerRun: defaults.maxActionsPerRun,
+            maxActionsPerDay: defaults.maxActionsPerDay,
+            // A new card escalates on EVERY rule. Quieting one is a widening,
+            // and goes up the ladder like every other widening — so the noisy
+            // default is the one an operator has to deliberately turn down,
+            // rather than the silent one they have to remember to turn up.
+            escalationTriggers: [...POLICY_CARD_RULES],
+            approvalRung: approvalRungFor(defaults),
+        },
+        withheld,
     };
 }
 

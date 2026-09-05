@@ -50,7 +50,7 @@ const ctx = makeRequestContext('ADMIN', { tenantId: 'tenant-1', userId: 'user-1'
 
 interface DbOptions {
     /** The agent the tenant-scoped lookup resolves, or null for "not ours". */
-    agent?: { id: string; status: string } | null;
+    agent?: { id: string; status: string; dataAccessScope?: string; riskTier?: string } | null;
     /** Rows the revoke deleteMany reports. */
     revoked?: number;
     /**
@@ -80,7 +80,13 @@ function makeDb(options: DbOptions = {}) {
                           // selection.
                           name: 'Agent one',
                           autonomyLevel: 2,
-                          dataAccessScope: 'READ_TENANT_DATA',
+                          // WRITE_TENANT_DATA because this fixture is granted
+                          // PROPOSE tools below, whose base data rung is
+                          // WRITE_TENANT_DATA. A narrower declaration here would
+                          // be refused by the grant seam — which is the point of
+                          // that seam, and not a thing to work around in the
+                          // fixture that exercises everything else.
+                          dataAccessScope: 'WRITE_TENANT_DATA',
                           reversibility: 'REVERSIBLE',
                           provenance: 'FIRST_PARTY',
                           modelRef: null,
@@ -168,7 +174,13 @@ describe('grantAgentTool', () => {
     });
 
     it('allows a SUSPENDED agent — suspension is reversible, and its tool list is what you fix first', async () => {
-        makeDb({ agent: { id: 'agent-1', status: 'SUSPENDED' } });
+        makeDb({
+            agent: {
+                id: 'agent-1',
+                status: 'SUSPENDED',
+                dataAccessScope: 'READ_TENANT_DATA',
+            },
+        });
         await expect(
             grantAgentTool(ctx, 'agent-1', { toolName: 'list_risks' }),
         ).resolves.toMatchObject({ toolName: 'list_risks' });
@@ -188,6 +200,97 @@ describe('grantAgentTool', () => {
             ctx,
             expect.objectContaining({ action: 'AGENT_TOOL_GRANTED' }),
         );
+    });
+});
+
+/**
+ * ── THE SECOND AXIS AT THE SAME SEAM ────────────────────────────────
+ *
+ * `assertGrantWithinTier` bounded a grant on AUTONOMY. Nothing bounded it on
+ * DATA, and the register declares both — so an agent registered as reaching
+ * `READ_METADATA` could be granted `list_risks`, which reads tenant data on
+ * every call. Two consequences, and the second is what made it urgent: the risk
+ * score is computed FROM the declaration, and the policy card seeds its data
+ * ceiling FROM the declaration, so the first card created for such an agent
+ * permitted a tool the card itself refused on every call.
+ */
+describe('a grant the declared data axis could never exercise', () => {
+    it('is refused, and writes no grant row', async () => {
+        const { upserts } = makeDb({
+            agent: { id: 'agent-1', status: 'ACTIVE', dataAccessScope: 'READ_METADATA' },
+        });
+
+        const err = await grantAgentTool(ctx, 'agent-1', { toolName: 'list_risks' }).catch(
+            (e: Error) => e,
+        );
+        // Both halves named separately rather than joined by a wildcard span: a
+        // span between two needles re-forms across whatever sits between them,
+        // so it would still match a message that had lost one of the two facts.
+        expect((err as Error).message).toMatch(/"list_risks" reaches READ_TENANT_DATA/);
+        expect((err as Error).message).toMatch(/registered as reaching READ_METADATA/);
+
+        // The refusal is worth nothing if the row lands anyway: the register is
+        // read as evidence, and a grant that exists but is refused at runtime is
+        // the exact state this seam exists to keep out of it.
+        expect(upserts).toHaveLength(0);
+        expect(mockLogEvent).not.toHaveBeenCalled();
+    });
+
+    it('allows a tool whose BASE rung fits even though its MAXIMUM does not', async () => {
+        // The paired positive, and the one that says the rule reads the base
+        // rung. `get_framework_status` returns the installable-framework
+        // catalogue with no arguments (READ_METADATA) and this tenant's coverage
+        // when given a `frameworkKey` (READ_TENANT_DATA). A metadata agent may
+        // hold it — the tool works, and the wider ARGUMENT is refused at the
+        // boundary. A rule written against the maximum would refuse this grant
+        // and make the argument-derived rung pointless.
+        const { upserts } = makeDb({
+            agent: { id: 'agent-1', status: 'ACTIVE', dataAccessScope: 'READ_METADATA' },
+        });
+
+        await expect(
+            grantAgentTool(ctx, 'agent-1', { toolName: 'get_framework_status' }),
+        ).resolves.toMatchObject({ toolName: 'get_framework_status' });
+        expect(upserts[0].create.toolName).toBe('get_framework_status');
+    });
+
+    it('applies to an UNSCORED agent, unlike the tier rule', async () => {
+        // Deliberately different from `assertGrantWithinTier`, which SKIPS an
+        // unscored agent so a DRAFT agent's tool list can be prepared before
+        // anybody scores it. The tier is absent until somebody computes it; the
+        // data axis is declared at registration and is never absent, so there is
+        // nothing to wait for — and this is the declaration the score is about
+        // to be computed from.
+        const { upserts } = makeDb({
+            agent: {
+                id: 'agent-1',
+                status: 'DRAFT',
+                dataAccessScope: 'NONE',
+                riskTier: undefined,
+            },
+        });
+
+        await expect(
+            grantAgentTool(ctx, 'agent-1', { toolName: 'list_risks' }),
+        ).rejects.toThrow(/registered as reaching NONE/);
+        expect(upserts).toHaveLength(0);
+    });
+
+    it('names the two remedies, because the grant is only half of the disagreement', async () => {
+        // Either the declaration is wrong (raise it — that re-scores the agent,
+        // which is the price) or the grant is (pick a narrower tool). An error
+        // that only said "refused" would leave an operator to guess which of
+        // their two records is the false one.
+        makeDb({
+            agent: { id: 'agent-1', status: 'ACTIVE', dataAccessScope: 'READ_METADATA' },
+        });
+
+        const err = await grantAgentTool(ctx, 'agent-1', { toolName: 'list_risks' }).catch(
+            (e: Error) => e,
+        );
+        expect((err as Error).message).toMatch(/Raise the agent's data-access scope/);
+        expect((err as Error).message).toMatch(/re-scores it/);
+        expect((err as Error).message).toMatch(/grant a tool that stays within READ_METADATA/);
     });
 });
 

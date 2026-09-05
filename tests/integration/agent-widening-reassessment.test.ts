@@ -479,12 +479,20 @@ describeFn('a widening re-scores the agent', () => {
     // ─────────────────────────────────────────────────────────────────
     describe('the ceiling narrows at the MCP boundary, not just in the column', () => {
         it('a propose call that succeeded is refused after the agent is widened', async () => {
-            // autonomy 2 + READ_TENANT_DATA + REVERSIBLE, nothing answered → 18,
-            // which is HIGH (cap 2). Rung 2 is PROPOSE, so the agent sits
+            // autonomy 2 + WRITE_TENANT_DATA + REVERSIBLE, nothing answered →
+            // 20, which is HIGH (cap 2). Rung 2 is PROPOSE, so the agent sits
             // exactly at the rung its tier permits.
+            //
+            // WRITE_TENANT_DATA rather than READ_TENANT_DATA because this agent
+            // is granted `propose_finding` below, and a propose tool's base data
+            // rung IS WRITE_TENANT_DATA — the grant seam refuses that pairing on
+            // a read-only declaration, and the score is computed from the
+            // declaration, so the fixture has to state the truth about the agent
+            // it is describing. The band does not move: 2 + 6 + 0 + 12 = 20 is
+            // still HIGH, and WRITE_TENANT_DATA's own floor is MODERATE.
             const agentId = await createAgent('boundary-probe', {
                 autonomyLevel: 2,
-                dataAccessScope: 'READ_TENANT_DATA',
+                dataAccessScope: 'WRITE_TENANT_DATA',
                 reversibility: 'REVERSIBLE',
             });
             const scored = await completeAgentRiskAssessment(ctx(), agentId);
@@ -567,7 +575,9 @@ describeFn('a widening re-scores the agent', () => {
             // refusal is a property of the assessment, not of `propose_finding`.
             const agentId = await createAgent('grant-high-tier', {
                 autonomyLevel: 2,
-                dataAccessScope: 'READ_TENANT_DATA',
+                // See `boundary-probe` above: a propose tool bases at
+                // WRITE_TENANT_DATA, so an agent that may hold one declares it.
+                dataAccessScope: 'WRITE_TENANT_DATA',
                 reversibility: 'REVERSIBLE',
             });
             expect((await completeAgentRiskAssessment(ctx(), agentId)).tier).toBe('HIGH');
@@ -580,7 +590,9 @@ describeFn('a widening re-scores the agent', () => {
             // Its ceiling is DENY, so a rung rule applied here would refuse
             // every grant and make setting a DRAFT agent up impossible. The
             // register's own maintenance must not be the outage.
-            const agentId = await createAgent('grant-unscored');
+            const agentId = await createAgent('grant-unscored', {
+                dataAccessScope: 'WRITE_TENANT_DATA',
+            });
             expect((await row(agentId)).riskTier).toBeNull();
             await expect(
                 grantAgentTool(ctx(), agentId, { toolName: 'propose_finding' }),
