@@ -34,6 +34,12 @@ import {
     type AgentProposalGuardResult,
 } from '@/app-layer/ai/guard/proposal-guard';
 import { logAiDecision } from '@/app-layer/ai/decision-log';
+import { NO_POLICY_CARD, narrowApprovalRung, type ApprovalRung } from '@/lib/agentic/policy-card';
+import {
+    resolveApprovalRequirement,
+    type ApprovalPinState,
+    type ApprovalRequirement,
+} from '@/lib/agentic/approval-tiering';
 import {
     CreateRiskSchema,
     CreateControlSchema,
@@ -146,6 +152,82 @@ async function refuseQuarantined(
 }
 
 /**
+ * HOW MANY DISTINCT HUMANS must sign this proposal — the same answer for the
+ * seam that writes the row and the seam that reads it back.
+ *
+ * ONE function, called from both, because the composition lives in
+ * `approval-tiering.ts` and a second copy of it would be the four-verbatim-copies
+ * failure the identity write-ladder already cost this repo. The DATABASE holds a
+ * third reading of the same number (the four-eyes trigger reads
+ * `AgentProposal.requiredApprovals`), and it reads the PINNED integer rather
+ * than re-deriving the ladder in plpgsql for exactly that reason.
+ *
+ * The card version read here is the PINNED one, never the one in force today.
+ * That distinction is the whole point of the pin: "what was this agent allowed
+ * to do when it proposed" and "what is it allowed to do now" differ precisely
+ * when somebody has edited the card, which is the case a review exists to find.
+ */
+async function resolveRequirementForRow(
+    ctx: RequestContext,
+    row: {
+        agentId: string | null;
+        policyCardVersion: number | null;
+        proposedViaKeyId: string | null;
+    },
+): Promise<ApprovalRequirement> {
+    return runInTenantContext(ctx, async (db) => {
+        const agent = row.agentId
+            ? await db.registeredAgent.findFirst({
+                  where: { id: row.agentId, tenantId: ctx.tenantId },
+                  select: { riskTier: true, autonomyLevel: true },
+              })
+            : null;
+
+        // The three states of `policyCardVersion`, kept apart. See
+        // `policy-card-pin.ts`: NULL is "we do not know", 0 is "asked, and the
+        // answer was none", >= 1 is a real version. Collapsing them is how a
+        // governance gap becomes a bypass.
+        const pinState: ApprovalPinState =
+            row.policyCardVersion === null
+                ? 'UNPINNED'
+                : row.policyCardVersion === NO_POLICY_CARD
+                  ? 'NO_CARD'
+                  : 'PINNED';
+
+        let pinnedRung: ApprovalRung | null = null;
+        if (pinState === 'PINNED' && row.agentId) {
+            const card = await db.agentPolicyCard.findFirst({
+                where: { tenantId: ctx.tenantId, agentId: row.agentId },
+                select: { id: true },
+            });
+            const version = card
+                ? await db.agentPolicyCardVersion.findFirst({
+                      where: {
+                          tenantId: ctx.tenantId,
+                          cardId: card.id,
+                          version: row.policyCardVersion ?? NO_POLICY_CARD,
+                      },
+                      select: { approvalRung: true },
+                  })
+                : null;
+            // A pin naming a version that cannot be read is a BROKEN policy, not
+            // an absent one — `null` here, which the resolver reads as the
+            // strictest rung. Same call `loadPolicyCardInForce` makes when a
+            // card's head points at a version row that is not there.
+            pinnedRung = version ? narrowApprovalRung(version.approvalRung) : null;
+        }
+
+        return resolveApprovalRequirement({
+            agent,
+            agentNamed: row.agentId !== null,
+            pinState,
+            pinnedRung,
+            viaApiKey: row.proposedViaKeyId !== null,
+        });
+    });
+}
+
+/**
  * Create a PENDING proposal from an agent. Validates the payload against the
  * kind's create-schema, sanitises all free text, and writes ONE AgentProposal
  * row. Does NOT create the real entity. Attributed to the API key.
@@ -207,6 +289,19 @@ export async function createAgentProposal(
         assertGuardAllowed(egressOutcome);
     }
 
+    // 2d. HOW MANY HUMANS WILL HAVE TO SIGN THIS — resolved once, here, and
+    // PINNED onto the row. The composition (strictest of the pinned card rung,
+    // the scored risk tier and the registered autonomy) lives in
+    // `approval-tiering.ts`; nothing downstream recomputes it, because the card
+    // and the tier can both move between the proposal and the review, and the
+    // question a reviewer is answering is what was required when the work was
+    // proposed.
+    const requirement = await resolveRequirementForRow(ctx, {
+        agentId: ctx.agentId ?? null,
+        policyCardVersion: input.policyCardVersion,
+        proposedViaKeyId: ctx.apiKeyId ?? null,
+    });
+
     // 3. Persist the proposal (RLS-scoped). NOT the real entity — and, when the
     // guard quarantined it, not a queued one either.
     const proposal = await runInTenantContext(ctx, async (db) => {
@@ -241,6 +336,13 @@ export async function createAgentProposal(
                 // pin already set, so approving or rejecting this proposal
                 // later cannot rewrite what the rules were when it was made.
                 policyCardVersion: input.policyCardVersion,
+                // …and HOW MANY HUMANS have to sign it. Written here rather
+                // than derived at review time so a card edit or a re-score
+                // between now and then cannot change what this proposal was
+                // queued under. The four-eyes database trigger reads this
+                // column, so it is also the reason the rule needs no second
+                // implementation in plpgsql.
+                requiredApprovals: requirement.requiredApprovals,
             },
             select: { id: true, kind: true, status: true },
         });
@@ -283,6 +385,12 @@ export async function createAgentProposal(
             kind: input.kind,
             agentId: ctx.agentId ?? null,
             policyCardVersion: input.policyCardVersion,
+            // The review requirement AND the term that set it. The basis is a
+            // propose-time fact and is recorded only here: by review time the
+            // tier may have moved, so re-deriving it would answer a different
+            // question than the one this row is evidence of.
+            requiredApprovals: requirement.requiredApprovals,
+            approvalBasis: requirement.decidedBy,
             guardVerdict: guard.verdict,
             // Rule ids carry no user content — that is the contract the whole
             // guard is built on (`patterns.ts`: "Rules never capture or return
@@ -404,6 +512,106 @@ export interface ApproveResult {
 }
 
 /**
+ * What comes back when a human's approval was RECORDED but the proposal still
+ * needs another one. Nothing was created.
+ *
+ * A distinct shape rather than `ApproveResult` with a null entity id, because
+ * the two outcomes are different facts and a caller that reads them as one is
+ * the automation-bias failure in miniature: a reviewer told "approved" for a
+ * proposal that has not been approved learns that clicking the button is what
+ * approval means.
+ */
+export interface ApprovalRecordedResult {
+    proposalId: string;
+    kind: AgentProposalKind;
+    status: 'AWAITING_APPROVAL';
+    createdEntityId: null;
+    approvalsRecorded: number;
+    approvalsRequired: number;
+}
+
+export type ApproveOutcome = ApproveResult | ApprovalRecordedResult;
+
+/**
+ * Which four-eyes constraint refused, as the database reported it.
+ *
+ * Both are DATABASE refusals and neither is a check this usecase performs, which
+ * is the point: counting approvals and then writing one is a read-then-write,
+ * and two concurrent requests both read "one signature so far" and both write
+ * the second. The unique index and the trigger have no window between the read
+ * and the write because they do not read.
+ *
+ * `null` means the failure was something else and must be rethrown — swallowing
+ * an unrelated error here would turn a broken database into a silent four-eyes
+ * refusal, which reads to an operator as the control working.
+ */
+function fourEyesRefusal(err: unknown): { rule: string; message: string } | null {
+    const text = err instanceof Error ? err.message : '';
+    if (text.includes('AGENT_PROPOSAL_APPROVAL_OWNER_SELF_REVIEW')) {
+        return {
+            rule: 'agent_owner_may_not_approve',
+            message:
+                'This proposal needs two independent approvers, and you are the ' +
+                'registered owner of the agent that made it. Someone else has to sign.',
+        };
+    }
+    if (text.includes('AGENT_PROPOSAL_APPROVAL_NO_PROPOSAL')) {
+        return {
+            rule: 'proposal_not_visible',
+            message: 'Proposal not found.',
+        };
+    }
+    if ((err as { code?: unknown } | null)?.code === 'P2002') {
+        return {
+            rule: 'approver_already_signed',
+            message:
+                'You have already approved this proposal. A second approval has ' +
+                'to come from a different person.',
+        };
+    }
+    return null;
+}
+
+/**
+ * The four-eyes refusal, audited then thrown. Same shape as
+ * `refuseQuarantined`: exactly one hash-chained `AUTHZ_DENIED` row, then a 403
+ * whose body names the CONDITION and nothing else — no permission key, no
+ * approver identity, no fragment of the payload.
+ */
+async function refuseFourEyes(
+    ctx: RequestContext,
+    proposal: { id: string; kind: string; agentId: string | null; requiredApprovals: number | null },
+    refusal: { rule: string; message: string },
+): Promise<never> {
+    await appendAuditEntry({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
+        entity: 'AgentProposal',
+        entityId: proposal.id,
+        action: 'AUTHZ_DENIED',
+        requestId: ctx.requestId,
+        detailsJson: {
+            category: 'access',
+            event: 'authz_denied',
+            reason: 'agent_proposal_four_eyes',
+            attemptedAction: 'approve',
+            // WHICH constraint refused goes in the TRAIL, never in the 403.
+            fourEyesRule: refusal.rule,
+            kind: proposal.kind,
+            approvalsRequired: proposal.requiredApprovals,
+        },
+        metadataJson: {
+            role: ctx.role,
+            agentId: proposal.agentId,
+            apiKeyId: ctx.apiKeyId ?? null,
+        },
+    }).catch(() => undefined);
+
+    throw forbidden('agent_proposal_four_eyes');
+}
+
+/**
  * Approve a PENDING proposal — a privileged HUMAN action. Merges any edits,
  * runs the REAL create-usecase for the kind (which re-validates + re-sanitises
  * + audits its own creation), and records the human+agent dual attribution.
@@ -413,7 +621,7 @@ export async function approveAgentProposal(
     ctx: RequestContext,
     id: string,
     edits?: Record<string, unknown>,
-): Promise<ApproveResult> {
+): Promise<ApproveOutcome> {
     assertCanWrite(ctx);
     const parsedEdits = edits ? editsSchema.parse(edits) : undefined;
 
@@ -429,6 +637,42 @@ export async function approveAgentProposal(
     }
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);
+    }
+
+    // ═══ HOW MANY HUMANS THIS ONE NEEDS ═══
+    //
+    // Read from the PIN. `??` is not a convenience: a row written before this
+    // column existed had its requirement composed by nothing at all, and an
+    // uncomputed requirement must fail toward the expensive answer, so those
+    // rows are re-resolved from what they DO record (their pinned card version
+    // and their attribution) rather than defaulted to the cheap one. The
+    // re-resolution reads the PINNED version, which is immutable, so it is not
+    // the "re-derive against today's card" this module refuses to do.
+    const review = {
+        required:
+            proposal.requiredApprovals ??
+            (await resolveRequirementForRow(ctx, proposal)).requiredApprovals,
+    };
+
+    // ═══ A TWO-APPROVER PROPOSAL IS SIGNED AS PROPOSED ═══
+    //
+    // Edits are refused outright when a second approver is required, and this is
+    // the four-eyes bypass that is easiest to miss: approver one signs the
+    // content they read, approver two approves WITH EDITS, and the record that
+    // commits is one no two people ever agreed on. Merging the first approver's
+    // edits instead has the same defect pointing the other way.
+    //
+    // The alternative — re-arming the queue on every edit so both signatures
+    // reattach to the new content — is a real design and a larger one; refusing
+    // is the honest version of it until that exists. Rejecting and re-proposing
+    // costs one round trip and leaves both decisions legible.
+    if (review.required > 1 && parsedEdits) {
+        throw badRequest(
+            'This proposal needs two independent approvers, so it must be ' +
+                'approved exactly as proposed — an edit after the first signature ' +
+                'would commit content nobody signed twice. Reject it and propose ' +
+                'the corrected content instead.',
+        );
     }
 
     const base = JSON.parse(proposal.payloadJson) as Record<string, unknown>;
@@ -450,6 +694,94 @@ export async function approveAgentProposal(
     );
 
     const status: 'ACCEPTED' | 'EDITED' = parsedEdits ? 'EDITED' : 'ACCEPTED';
+
+    // ═══ RECORD THIS HUMAN'S SIGNATURE. THE DATABASE ARBITRATES. ═══
+    //
+    // The insert IS the check. Two constraints on `AgentProposalApproval` do the
+    // work, and neither is a read:
+    //
+    //   • `@@unique([tenantId, proposalId, approverUserId])` — the same person
+    //     cannot be both approvers. That is the classic four-eyes bypass, and a
+    //     usecase that counted first and wrote second would let two concurrent
+    //     requests from one reviewer both pass the count.
+    //   • the `agent_proposal_approval_four_eyes` trigger — the agent's
+    //     registered owner is not among the approvers of a proposal that needs
+    //     two. A CHECK cannot read `RegisteredAgent`; a trigger can.
+    //
+    // Written BEFORE the claim, so a signature that does not yet complete the
+    // requirement is still durable evidence that this person looked. A queue
+    // whose first approval leaves no trace cannot tell "one person approved" from
+    // "nobody has looked yet", and those are the two states the whole control is
+    // about.
+    try {
+        await runInTenantContext(ctx, (db) =>
+            db.agentProposalApproval.create({
+                data: {
+                    tenantId: ctx.tenantId,
+                    proposalId: proposal.id,
+                    approverUserId: ctx.userId,
+                    outcome: status,
+                    requiredApprovals: review.required,
+                },
+                select: { id: true },
+            }),
+        );
+    } catch (err) {
+        const refusal = fourEyesRefusal(err);
+        // Not a four-eyes refusal — a real failure. Rethrow rather than let a
+        // broken database read to an operator as the control working.
+        if (!refusal) throw err;
+        await refuseFourEyes(ctx, proposal, refusal);
+    }
+
+    // ═══ IS THE REQUIREMENT MET? ═══
+    //
+    // DISTINCT approvers, and only TERMINAL APPROVING outcomes. A `PENDING` row
+    // is not a signature — the column defaults to it precisely so that a writer
+    // which never stated an outcome grants nothing — and a `REJECTED` one is the
+    // opposite of a signature.
+    const signatures = await runInTenantContext(ctx, (db) =>
+        db.agentProposalApproval.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                proposalId: proposal.id,
+                outcome: { in: ['ACCEPTED', 'EDITED'] },
+            },
+            select: { approverUserId: true },
+            take: 32,
+        }),
+    );
+    const approvers = new Set(signatures.map((row) => row.approverUserId));
+
+    if (approvers.size < review.required) {
+        // Short of the requirement. NOTHING is created and the proposal stays
+        // PENDING for the next reviewer — the claim below is never reached.
+        await appendAuditEntry({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            actorType: 'USER',
+            entity: 'AgentProposal',
+            entityId: proposal.id,
+            action: 'AGENT_PROPOSAL_APPROVAL_RECORDED',
+            requestId: ctx.requestId,
+            detailsJson: {
+                category: 'access',
+                kind: proposal.kind,
+                approvalsRecorded: approvers.size,
+                approvalsRequired: review.required,
+            },
+            metadataJson: { agentId: proposal.agentId },
+        }).catch(() => undefined);
+
+        return {
+            proposalId: proposal.id,
+            kind,
+            status: 'AWAITING_APPROVAL',
+            createdEntityId: null,
+            approvalsRecorded: approvers.size,
+            approvalsRequired: review.required,
+        };
+    }
 
     // ═══ CLAIM BEFORE CREATING. THE ORDER IS THE WHOLE FIX. ═══
     //
@@ -593,7 +925,16 @@ export async function approveAgentProposal(
         entityId: id,
         action: 'AGENT_PROPOSAL_APPROVED',
         requestId: ctx.requestId,
-        detailsJson: { category: 'access', kind, createdEntityId },
+        detailsJson: {
+            category: 'access',
+            kind: proposal.kind,
+            createdEntityId,
+            // How many humans actually signed, and how many were required. The
+            // pair is the evidence: "approved" on its own is the claim this
+            // whole subsystem exists to stop taking on trust.
+            approvalsRecorded: approvers.size,
+            approvalsRequired: review.required,
+        },
         metadataJson: { proposedByApiKeyId: proposal.proposedViaKeyId, createdEntityId, edited: !!parsedEdits },
     }).catch(() => undefined);
 

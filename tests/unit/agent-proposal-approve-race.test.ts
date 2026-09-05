@@ -20,6 +20,16 @@
  */
 const db = {
     agentProposal: { findFirst: jest.fn(), updateMany: jest.fn() },
+    // The four-eyes signature table. `approveAgentProposal` records the
+    // reviewer's signature and counts DISTINCT approvers BEFORE it reaches the
+    // claim, so a mock without these two never gets to the code under test.
+    // Both answers are the single-approver case — the tiered path is a set of
+    // database constraints and is proved in
+    // `tests/integration/proposal-review-tiering.test.ts`.
+    agentProposalApproval: {
+        create: jest.fn(async () => ({ id: 'approval-1' })),
+        findMany: jest.fn(async () => [{ approverUserId: 'u1' }]),
+    },
 };
 
 const createRisk = jest.fn();
@@ -59,6 +69,13 @@ function pendingProposal() {
         kind: 'RISK',
         payloadJson: JSON.stringify({ title: 'A risk', description: 'x' }),
         proposedViaKeyId: 'k1',
+        agentId: null,
+        policyCardVersion: 0,
+        // ONE approver, so this suite stays about the claim/create ORDERING it
+        // was written for. The tiered two-approver path short-circuits before
+        // the claim by design, and is proved against a real database in
+        // `tests/integration/proposal-review-tiering.test.ts`.
+        requiredApprovals: 1,
     };
 }
 

@@ -401,6 +401,7 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    AgentProposalApproval: 'approveAgentProposal reads the signatures on ONE proposal by (tenantId, proposalId) plus a small outcome equality — covered by @@index([tenantId, proposalId]), which the @@unique([tenantId, proposalId, approverUserId]) four-eyes index also serves as a prefix of; bounded take \u2264 32 and, in practice, by requiredApprovals.',
     AiSystemRequirementLink: 'computeAgentRiskCoverage reads the agent\'s own scope by (tenantId, aiSystemId, requirementId IN [ten ASI rows]) \u2014 covered by @@index([tenantId, aiSystemId]); bounded by the framework\'s requirement count, not by tenant data.',
     AuditChecklistItem: 'updateAudit prefetches the touched checklist rows by (id IN […], tenantId) for FAIL-transition detection — a PK IN lookup + RLS-bound tenantId; @@index([tenantId, auditId]) is more than sufficient; bounded by the request payload size.',
     AuditPackItem: 'getPackByShareToken reads a pack\'s items by (tenantId, auditPackId) for the public share-page projection — covered by @@index([tenantId, auditPackId]); bounded take ≤2000.',

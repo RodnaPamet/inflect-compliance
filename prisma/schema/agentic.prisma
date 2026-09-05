@@ -72,13 +72,115 @@ model AgentProposal {
   /// that somehow arrives without a label must not read as tenant-authored.
   guardProvenance      AgentContentProvenance @default(THIRD_PARTY_INGESTED)
 
+  /// HOW MANY DISTINCT HUMANS must approve this proposal — resolved ONCE, at
+  /// the propose seam, by `resolveApprovalRequirement` in
+  /// `src/lib/agentic/approval-tiering.ts`, and never recomputed.
+  ///
+  /// PINNED for the same reason `policyCardVersion` above is pinned: the
+  /// requirement is composed from the card version in force, the agent's scored
+  /// tier and its registered autonomy, and all three can move between the
+  /// proposal and the review. "What was required when this was proposed" is the
+  /// question an incident review asks; "what would be required if it were
+  /// proposed now" is a different one, and only the first is evidence.
+  ///
+  /// It is also what makes the four-eyes rule enforceable IN THE DATABASE: the
+  /// trigger on `AgentProposalApproval` reads this integer instead of
+  /// re-deriving the ladder in plpgsql. A second copy of that composition, in
+  /// another language, is the four-verbatim-copies failure this subsystem
+  /// already paid for once.
+  ///
+  /// NULLABLE because the column is added to a populated table. NULL means the
+  /// requirement was never computed, and it reads as
+  /// `UNKNOWN_REQUIREMENT_APPROVALS` (2) at EVERY consumer including the
+  /// trigger — an uncomputed requirement must not be the cheapest one.
+  requiredApprovals    Int?
+
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
   tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   agent                RegisteredAgent?     @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  approvals            AgentProposalApproval[]
 
+  /// Composite parent key, so an approval can never point cross-tenant. Same
+  /// shape `AgentPolicyCard` carries for its versions.
+  @@unique([id, tenantId])
   @@index([tenantId, status, createdAt])
   @@index([tenantId, agentId])
+}
+
+/// Tenant-scoped: ONE HUMAN'S SIGNATURE on one agent proposal.
+///
+/// The propose-not-commit queue's whole safety claim is "a human approved it".
+/// Until this table there was no record of WHO, only a `reviewedByUserId` on the
+/// proposal that the next writer overwrote — so "two people signed" was not a
+/// question the database could answer, and therefore not one the product could
+/// enforce.
+///
+/// ## The four-eyes rule lives HERE, not in the usecase
+///
+/// A usecase that counts approvals and then writes one is a read-then-write, and
+/// two concurrent requests both read "one so far" and both write the second. So
+/// both halves of the rule are constraints on this table:
+///
+///   • THE SECOND APPROVER CANNOT BE THE FIRST — `@@unique([tenantId,
+///     proposalId, approverUserId])`. One row per human per proposal, arbitrated
+///     by the index, with no window between the read and the write. This is the
+///     classic four-eyes bypass and the unique index is the only place it can be
+///     closed without one.
+///   • THE APPROVERS CANNOT INCLUDE THE AGENT'S REGISTERED OWNER, whenever the
+///     proposal needs two — a `BEFORE INSERT OR UPDATE` trigger joining through
+///     `AgentProposal.agentId` to `RegisteredAgent.ownerUserId`. A CHECK
+///     constraint cannot read another table; a trigger can, and it needs no
+///     count, so it too has no window.
+///
+/// ## `outcome` is a ONE-WAY stamp, and the row is otherwise frozen
+///
+/// Mirrors `AiDecisionLog` exactly: a trigger refuses any UPDATE that changes
+/// any other column, and refuses to move `outcome` once it has left `PENDING`.
+/// An approval that can be edited afterwards is not evidence — it is a claim
+/// about the past that the present can rewrite (EU AI Act Art 14).
+///
+/// The `PENDING` default is load-bearing rather than decorative: ONLY a terminal
+/// approving outcome counts toward the requirement, so a row written by anything
+/// that forgot to state an outcome grants nothing. `AiHumanOutcome` is reused
+/// rather than a new enum minted — PENDING / ACCEPTED / EDITED / REJECTED is the
+/// same Art 14 human-oversight vocabulary, it already exists, and a new Postgres
+/// enum type is one more `ALTER TYPE` hazard in a rolling deploy for no new
+/// meaning.
+model AgentProposalApproval {
+  id         String @id @default(cuid())
+  tenantId   String
+  proposalId String
+
+  /// The human who signed. A plain String with NO foreign key, matching
+  /// `RegisteredAgentTool.grantedByUserId`: the signature must survive the
+  /// signer's account being deleted, and a `RESTRICT` FK would block that
+  /// deletion while a `SET NULL` one would erase the accountability the row
+  /// exists for.
+  approverUserId String
+
+  /// PENDING until stamped, then terminal forever. Only `ACCEPTED` and `EDITED`
+  /// count toward the requirement.
+  outcome AiHumanOutcome @default(PENDING)
+
+  /// The requirement in force when this signature was recorded, copied from the
+  /// proposal's pin. Denormalised deliberately: a signature that cannot say what
+  /// it was signing up to is not self-describing evidence, and the proposal's
+  /// own pin is write-once but sits on a table with a dozen other columns.
+  requiredApprovals Int
+
+  createdAt DateTime @default(now())
+
+  /// No `updatedAt`. The row is append-only apart from the one-way stamp, and a
+  /// column promising to record an update on a table that refuses them is a
+  /// promise the table does not make.
+
+  tenant   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  proposal AgentProposal @relation(fields: [proposalId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// ONE signature per human per proposal. The four-eyes constraint itself.
+  @@unique([tenantId, proposalId, approverUserId])
+  @@index([tenantId, proposalId])
 }
 
 /// Epic Agentic 1A — a durable, audited, human-gated agentic workflow run. The

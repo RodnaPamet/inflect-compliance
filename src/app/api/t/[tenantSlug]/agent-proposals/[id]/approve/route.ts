@@ -11,6 +11,14 @@ import { jsonResponse } from '@/lib/api-response';
  * the proposing agent's key in metadata). Write-gated by the usecase
  * (`assertCanWrite`). Optional `{ edits: {...} }` body merges edits before
  * creation.
+ *
+ * TWO SUCCESS SHAPES, and a caller must tell them apart. A proposal that needs
+ * a second approver returns `{ status: 'AWAITING_APPROVAL', createdEntityId:
+ * null, approvalsRecorded, approvalsRequired }` — this reviewer's signature is
+ * recorded and NOTHING is created. Only `status: 'ACCEPTED' | 'EDITED'` carries
+ * a real `createdEntityId`. Reading the two as one is the automation-bias
+ * failure in miniature: a reviewer told "approved" for a proposal that has not
+ * been approved learns that clicking the button is what approval means.
  */
 export const POST = withApiErrorHandling(async (
     req: NextRequest,
