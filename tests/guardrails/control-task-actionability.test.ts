@@ -42,9 +42,6 @@ const LEGACY_GENERIC_ALLOWLIST: Record<string, string> = {
     'CIS-': 'CIS v8 IG1 (15). Its existing tasks are formulaic ("Implement IG1 safeguards for Control {n}").',
     'ASVS-': 'OWASP ASVS L1 (13). Same formulaic shape as CIS.',
     'PIMS-': 'ISO 27701 (10).',
-    'QMS-': 'ISO 9001 (22). Fixture extracted from seed.ts, no authored tasks yet.',
-    'RTS-': 'ISO 39001 (17). Fixture extracted from seed.ts, no authored tasks yet.',
-    'SCS-': 'ISO 28000 (15). Fixture extracted from seed.ts, no authored tasks yet.',
     'AC-': 'Legacy starter templates. Belong to no framework and carry ZERO tasks — the worst current state of any population.',
     'IR-': 'Legacy starter templates.',
     'RA-': 'Legacy starter templates.',
@@ -54,6 +51,50 @@ const LEGACY_GENERIC_ALLOWLIST: Record<string, string> = {
     'SA-': 'Legacy starter templates.',
     'AU-': 'Legacy starter templates.',
     'VN-': 'Legacy starter templates.',
+};
+
+/**
+ * Populations that CANNOT be authored, and the precondition to unfreeze each.
+ *
+ * ═══ WHY THIS IS NOT AN ALLOWLIST ENTRY ═══
+ *
+ * `LEGACY_GENERIC_ALLOWLIST` is a downward ratchet whose stated end state is
+ * zero — every content PR deletes its own prefix, and when the list is empty
+ * every shipped template is actionable. These 54 templates can never leave it,
+ * because the thing they lack is not effort: ISO 9001, ISO 39001 and ISO 28000
+ * have no library under `src/data/libraries/`, so there is no source to ground
+ * a task set in. Leaving them on the ratchet makes its end state unreachable
+ * and quietly converts a temporary exemption into a permanent one — the same
+ * shape as a TODO that outlives the person who wrote it.
+ *
+ * Their old reasons said "Fixture extracted from seed.ts, no authored tasks
+ * yet", which reads as work queued rather than work refused. This is the
+ * refusal, named by its precondition.
+ *
+ * The `libraryPattern` is the unfreeze trigger, and it is checked. The moment
+ * a matching library lands, the assertion below goes RED and tells whoever
+ * added it what to do — so the freeze cannot outlive its own reason.
+ */
+const FROZEN_UNGROUNDED_POPULATIONS: Record<
+    string,
+    { standard: string; libraryPattern: RegExp; reason: string }
+> = {
+    'QMS-': {
+        standard: 'ISO 9001',
+        libraryPattern: /9001/,
+        reason:
+            'ISO 9001 (22). No library under src/data/libraries, and the templates carry a title plus a requirement reference and nothing else — no objective, successCriteria or testingMethodology. Authoring here would mean writing from knowledge of the standard rather than from any source this repo holds.',
+    },
+    'RTS-': {
+        standard: 'ISO 39001',
+        libraryPattern: /39001/,
+        reason: 'ISO 39001 road-traffic safety (17). Same absence of a library, same title-only metadata.',
+    },
+    'SCS-': {
+        standard: 'ISO 28000',
+        libraryPattern: /28000/,
+        reason: 'ISO 28000 supply-chain security (15). Same absence of a library, same title-only metadata.',
+    },
 };
 
 /**
@@ -309,7 +350,74 @@ describe('the allowlist is honest', () => {
         // A downward ratchet. Each content PR deletes its prefix here in the
         // same diff that authors the content; at zero, every shipped template
         // is held to the bar and this whole allowlist is deleted.
-        expect(Object.keys(LEGACY_GENERIC_ALLOWLIST)).toHaveLength(17);
+        expect(Object.keys(LEGACY_GENERIC_ALLOWLIST)).toHaveLength(14);
+    });
+
+    it('a frozen population is not also allowlisted', () => {
+        // The two lists mean different things — "not yet held to the bar" and
+        // "cannot be held to the bar" — and a prefix in both would let a
+        // reader take either meaning.
+        const both = Object.keys(FROZEN_UNGROUNDED_POPULATIONS).filter(
+            (prefix) => prefix in LEGACY_GENERIC_ALLOWLIST,
+        );
+        expect(both).toEqual([]);
+    });
+
+    it('every frozen prefix matches templates that actually ship', () => {
+        const codes = allTemplates().map((t) => t.code ?? '');
+        const phantom = Object.keys(FROZEN_UNGROUNDED_POPULATIONS).filter(
+            (prefix) => !codes.some((c) => c.startsWith(prefix)),
+        );
+        expect(phantom).toEqual([]);
+    });
+
+    it('frozen templates carry no authored tasks, in EITHER declaration site', () => {
+        // Both sites, deliberately. These 54 are declared twice — once in
+        // prisma/fixtures/*.json and again as inline literals in
+        // prisma/seed-catalog.ts, which writes ControlTemplateTask rows from a
+        // `tasks` key if one is present. A fixture-only scan would be green
+        // while tasks were being seeded from the other copy.
+        const prefixes = Object.keys(FROZEN_UNGROUNDED_POPULATIONS);
+        const withTasks = allTemplates()
+            .filter((t) => prefixes.some((p) => (t.code ?? '').startsWith(p)))
+            .filter((t) => (t.tasks ?? []).length > 0)
+            .map((t) => `${t.code} (fixture ${t.file})`);
+
+        const catalogSrc = fs.readFileSync(
+            path.join(REPO_ROOT, 'prisma/seed-catalog.ts'),
+            'utf8',
+        );
+        const inlineWithTasks = catalogSrc
+            .split('\n')
+            .filter((line) => prefixes.some((p) => line.includes(`code: '${p}`)))
+            .filter((line) => line.includes('tasks:'))
+            .map((line) => `prisma/seed-catalog.ts: ${line.trim().slice(0, 70)}`);
+
+        expect([...withTasks, ...inlineWithTasks]).toEqual([]);
+    });
+
+    it('no library exists for a frozen standard — the unfreeze tripwire', () => {
+        // Goes RED the moment somebody adds one, which is exactly when the
+        // freeze stops being justified. The failure message is the runbook:
+        //   1. delete that prefix from FROZEN_UNGROUNDED_POPULATIONS
+        //   2. author its task sets against the new library
+        //   3. add the fixture to the prod seeder (authored-tasks-are-delivered)
+        //   4. drop the toHaveLength below by one
+        const libraryDir = path.join(REPO_ROOT, 'src/data/libraries');
+        const libraries = fs.existsSync(libraryDir) ? fs.readdirSync(libraryDir) : [];
+        expect(libraries.length).toBeGreaterThan(0); // not vacuous
+
+        const nowGroundable = Object.entries(FROZEN_UNGROUNDED_POPULATIONS)
+            .filter(([, { libraryPattern }]) => libraries.some((f) => libraryPattern.test(f)))
+            .map(([prefix, { standard }]) => `${prefix} (${standard}) — a library now exists; unfreeze it`);
+        expect(nowGroundable).toEqual([]);
+    });
+
+    it('the frozen list only shrinks', () => {
+        // Three today. It goes down when a library lands, never up: a NEW
+        // population that cannot be grounded should not exist, because nothing
+        // should ship templates for a standard the repo holds no source for.
+        expect(Object.keys(FROZEN_UNGROUNDED_POPULATIONS)).toHaveLength(3);
     });
 
     it('no framework is seeded from an inline array any more', () => {
