@@ -12,8 +12,27 @@ model AgentProposal {
   id                   String               @id @default(cuid())
   tenantId             String
   kind                 AgentProposalKind
+  /// CREATE (queue a new record) or UPDATE (change one that already exists).
+  /// Defaulted rather than nullable: every pre-existing row is a create, and a
+  /// NULL here would be a third state the diff builder would have to guess at —
+  /// see `AgentProposalOperation` in enums.prisma.
+  operation            AgentProposalOperation @default(CREATE)
   status               SuggestionItemStatus @default(PENDING)
   payloadJson          String
+  /// The id of the record an UPDATE proposal would change. NULL for a CREATE,
+  /// and a database CHECK (`AgentProposal_update_requires_target`) refuses an
+  /// UPDATE row without one — an update naming no target is not a proposal a
+  /// reviewer can be shown a diff for, so it must not be storable.
+  ///
+  /// A plain String with NO foreign key, and that is not laziness: the target
+  /// is polymorphic over four tables (`kind` says which), so there is no single
+  /// column to point at. The consequence is that the target can be deleted out
+  /// from under a pending proposal, which the review path handles explicitly —
+  /// the diff resolves to TARGET_MISSING and approval is refused. A dangling
+  /// pointer that the reader is REQUIRED to check is safer here than a
+  /// RESTRICT that would block deleting a risk because an agent once proposed
+  /// an edit to it.
+  targetEntityId       String?
   rationale            String?
   proposedViaKeyId     String?
   proposedBySessionRef String?

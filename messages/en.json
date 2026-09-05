@@ -7253,7 +7253,26 @@
             "keySuffix": " · key {key}",
             "reject": "Reject",
             "approve": "Approve",
-            "rationale": "Rationale: "
+            "rationale": "Rationale: ",
+            "diff": {
+                "createHeading": "Full proposed content",
+                "updateHeading": "Proposed changes to this record",
+                "operationCreate": "Create",
+                "operationUpdate": "Update",
+                "targetLabel": "Target record: {id}",
+                "beforeColumn": "Current value",
+                "afterColumn": "Proposed value",
+                "emptyValue": "empty",
+                "unchanged": "unchanged",
+                "noChangesBadge": "No changes",
+                "noChangesTitle": "This proposal would change nothing",
+                "noChangesBody": "Every proposed value already matches the record. Approving it is a no-op; reject it to clear the queue.",
+                "blockedBadge": "Cannot be reviewed",
+                "uncomputableTitle": "The changes could not be worked out",
+                "reasonTargetMissing": "The record this proposal would change no longer exists, so there is nothing to compare against. Approval is unavailable — reject this proposal.",
+                "reasonPayloadUnreadable": "The stored proposal content could not be read as a set of fields, so no change list can be shown. Approval is unavailable — reject this proposal and check the agent that produced it.",
+                "approveBlocked": "Approval is unavailable while the changes cannot be shown."
+            }
         },
         "runs": {
             "accessMessage": "You do not have permission to view agent runs. Contact your workspace administrator to request access.",
