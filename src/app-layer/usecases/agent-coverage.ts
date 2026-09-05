@@ -15,11 +15,7 @@
  * key would make `prisma/seed.ts` and `syncAllLibraries` fight over one row.
  * A tenant's controls may hang off either. A single-key lookup would therefore
  * report a tenant with a full ASI control set as covering nothing, and the
- * failure would look exactly like a tenant that had done no work. Both
- * representations carry the SAME `Framework.sourceUrn` (the seed writes the
- * library's urn verbatim), so the family is derived from data rather than from
- * a hand-maintained alias table; the key list below is a fallback for rows
- * predating that convention.
+ * failure would look exactly like a tenant that had done no work.
  *
  * The same expansion is applied to the SOURCE side of every cross-framework
  * mapping. Mapping-set YAML resolves refs against library keys
@@ -28,6 +24,14 @@
  * make inherited coverage silently, permanently zero on every seeded database
  * — which is the commercial claim quietly not being true rather than visibly
  * broken.
+ *
+ * BOTH HALVES OF THAT RECONCILIATION LIVE IN `domain/framework-representation.ts`
+ * — the family id AND the requirement-code spelling. They are separate
+ * failures and fixing one alone delivers nothing: the ISO 27001 route was
+ * inert on every seeded database because the seeded row carried no
+ * `sourceUrn` (so the family never collapsed) AND because the seed numbers
+ * Annex A `5.15` where the library numbers it `A.5.15` (so a code-equality
+ * join would have reached nothing even after the family collapsed).
  *
  * Read-only. No audit event: this reads existing links, it changes nothing.
  */
@@ -47,6 +51,11 @@ import {
     MAPPING_STRENGTH_RANK,
     type MappingStrengthValue,
 } from '../domain/requirement-mapping.types';
+import {
+    canonicalRequirementCode,
+    frameworkFamilyId,
+    requirementCodeSpellings,
+} from '../domain/framework-representation';
 import type { RequestContext } from '../types';
 
 /**
@@ -75,15 +84,6 @@ interface CatalogueEntry {
     key: string;
     name: string;
     sourceUrn: string | null;
-}
-
-/**
- * The identity of a framework ACROSS representations. `sourceUrn` when the row
- * has one (both representations do); the key otherwise, which degrades to
- * "this row is its own family" rather than to a wrong join.
- */
-function familyOf(fw: CatalogueEntry): string {
-    return fw.sourceUrn ?? `key:${fw.key}`;
 }
 
 export interface AgentRiskCoverageReport {
@@ -340,13 +340,26 @@ async function loadInheritedCoverage(
     const wantedFamilies = new Set<string>();
     for (const edge of edges) {
         const fw = catalogueById.get(edge.sourceRequirement.frameworkId);
-        if (fw) wantedFamilies.add(familyOf(fw));
+        if (fw) wantedFamilies.add(frameworkFamilyId(fw));
     }
     const familyFrameworkIds = catalogue
-        .filter((f) => wantedFamilies.has(familyOf(f)))
+        .filter((f) => wantedFamilies.has(frameworkFamilyId(f)))
         .map((f) => f.id);
 
-    const sourceCodes = [...new Set(edges.map((e) => e.sourceRequirement.code))];
+    // Ask for every SPELLING of each source code, not just the one the mapping
+    // was authored with. ISO 27001 Annex A control 5.15 is `A.5.15` in the
+    // library the mapping cites and `5.15` in the seed a tenant's controls hang
+    // off; `code: { in: [...] }` on one spelling reaches neither the other
+    // representation's rows nor, therefore, that tenant's controls.
+    const sourceCodes = [
+        ...new Set(
+            edges.flatMap((e) => {
+                const fw = catalogueById.get(e.sourceRequirement.frameworkId);
+                if (!fw) return [e.sourceRequirement.code];
+                return requirementCodeSpellings(frameworkFamilyId(fw), e.sourceRequirement.code);
+            }),
+        ),
+    ];
     const siblingRows = await db.frameworkRequirement.findMany({
         where: {
             frameworkId: { in: familyFrameworkIds },
@@ -356,12 +369,14 @@ async function loadInheritedCoverage(
         select: { id: true, code: true, frameworkId: true },
     });
 
-    // (family, code) → every requirement row that means the same obligation.
+    // (family, canonical code) → every requirement row that means the same
+    // obligation, across both representations AND both spellings.
     const siblingsByFamilyCode = new Map<string, string[]>();
     for (const row of siblingRows) {
         const fw = catalogueById.get(row.frameworkId);
         if (!fw) continue;
-        const key = `${familyOf(fw)}::${row.code}`;
+        const family = frameworkFamilyId(fw);
+        const key = `${family}::${canonicalRequirementCode(family, row.code)}`;
         const bucket = siblingsByFamilyCode.get(key);
         if (bucket) bucket.push(row.id);
         else siblingsByFamilyCode.set(key, [row.id]);
@@ -382,7 +397,8 @@ async function loadInheritedCoverage(
         const fw = catalogueById.get(edge.sourceRequirement.frameworkId);
         if (!riskCode || !fw) continue;
 
-        const routeKey = `${familyOf(fw)}::${edge.sourceRequirement.code}`;
+        const family = frameworkFamilyId(fw);
+        const routeKey = `${family}::${canonicalRequirementCode(family, edge.sourceRequirement.code)}`;
         const controls = dedupeControls(
             (siblingsByFamilyCode.get(routeKey) ?? []).flatMap(
                 (id) => controlsBySourceRequirement.get(id) ?? [],

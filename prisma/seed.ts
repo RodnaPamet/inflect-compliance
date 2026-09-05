@@ -829,10 +829,16 @@ Reviewed at least annually.` },
     }>;
 
     // ISO 27001:2022
+    // `sourceUrn` ties this row to `src/data/libraries/iso27001-2022.yaml`, the
+    // OTHER representation of the same framework. Without it a tenant whose
+    // Annex A controls hang off THESE rows inherits nothing from any mapping
+    // set — every mapping is authored against the library key. Note the two
+    // representations still number Annex A differently (`5.15` here, `A.5.15`
+    // there); `domain/framework-representation.ts` reconciles that half.
     const iso27001 = await prisma.framework.upsert({
         where: { key: 'ISO27001' },
-        update: { name: 'ISO/IEC 27001', version: '2022', description: 'ISO/IEC 27001:2022 Information Security Management' },
-        create: { key: 'ISO27001', name: 'ISO/IEC 27001', version: '2022', description: 'ISO/IEC 27001:2022 Information Security Management' },
+        update: { name: 'ISO/IEC 27001', version: '2022', description: 'ISO/IEC 27001:2022 Information Security Management', sourceUrn: 'urn:inflect:library:iso27001-2022' },
+        create: { key: 'ISO27001', name: 'ISO/IEC 27001', version: '2022', description: 'ISO/IEC 27001:2022 Information Security Management', sourceUrn: 'urn:inflect:library:iso27001-2022' },
     });
 
     // Upsert all 93 Annex A requirements

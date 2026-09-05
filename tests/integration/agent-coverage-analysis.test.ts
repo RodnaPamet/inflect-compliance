@@ -24,6 +24,14 @@
  *      AI-system entry was never scoped. Nothing is COVERED. Delete the
  *      `scopedToAgent` conjunction and this is the test that fails — every
  *      other assertion in the file would still pass.
+ *   F  the ISMS holder, built as `prisma/seed.ts` ACTUALLY writes ISO 27001:
+ *      key `ISO27001`, Annex A numbered `5.15` (the library numbers the same
+ *      control `A.5.15`), and — for the half of the run that models an
+ *      already-provisioned database — no `sourceUrn` at all. Tenant D proves
+ *      the seeded representation resolves for ISO 42001, where both
+ *      representations agree on both axes; ISO 27001 agrees on NEITHER, and
+ *      nothing in this suite built that shape, which is why an ISMS route
+ *      that returned ten NOT_COVERED shipped looking correct.
  *
  * Frameworks and mappings are GLOBAL rows (no tenantId, no RLS), so the suite
  * imports them through the production path and owns the catalogue outright:
@@ -31,6 +39,7 @@
  * why the import happens after it and the tenant fixtures after that.
  */
 import { MembershipStatus, PrismaClient, Role } from '@prisma/client';
+import * as fs from 'fs';
 import * as path from 'path';
 
 import { DB_AVAILABLE } from './db-helper';
@@ -54,7 +63,9 @@ const ROOT = path.resolve(__dirname, '../..');
 const LIB_DIR = path.join(ROOT, 'src/data/libraries');
 const ASI_FILE = path.join(LIB_DIR, 'owasp-agentic-top10.yaml');
 const ISO_FILE = path.join(LIB_DIR, 'iso-42001.yaml');
+const ISMS_FILE = path.join(LIB_DIR, 'iso27001-2022.yaml');
 const MAP_FILE = path.join(LIB_DIR, 'mappings/iso-42001-to-owasp-agentic.yaml');
+const ISMS_MAP_FILE = path.join(LIB_DIR, 'mappings/iso27001-to-owasp-agentic.yaml');
 
 const ASI_CODES = [
     'ASI01', 'ASI02', 'ASI03', 'ASI04', 'ASI05',
@@ -65,7 +76,8 @@ const TA = 'agentcov-tenant-a';
 const TB = 'agentcov-tenant-b';
 const TC = 'agentcov-tenant-c';
 const TD = 'agentcov-tenant-d';
-const TENANTS = [TA, TB, TC, TD];
+const TF = 'agentcov-tenant-f';
+const TENANTS = [TA, TB, TC, TD, TF];
 
 /**
  * The library URN both representations of a framework carry — `prisma/seed.ts`
@@ -76,6 +88,17 @@ const TENANTS = [TA, TB, TC, TD];
  */
 const ASI_LIBRARY_URN = 'urn:inflect:library:owasp-agentic-top10';
 const ISO_LIBRARY_URN = 'urn:inflect:library:iso-42001';
+const ISMS_LIBRARY_URN = 'urn:inflect:library:iso27001-2022';
+
+/**
+ * The six Annex A controls this mapping names as sources for ASI03, four of
+ * them SUBSET — spelled the way the LIBRARY spells them, which is how
+ * `iso27001-to-owasp-agentic.yaml` had to be authored (the importer resolves
+ * refs against library keys). Tenant F holds a control on the SEEDED row for
+ * each, spelled without the `A.`.
+ */
+const ISMS_ASI03_SOURCES = ['A.5.15', 'A.5.17', 'A.8.2', 'A.8.5', 'A.5.3', 'A.8.15'];
+const seededAnnexACode = (libraryCode: string) => libraryCode.replace(/^A\./, '');
 
 interface Fixture {
     userId: string;
@@ -114,7 +137,7 @@ async function seedRepresentation(
     key: string,
     name: string,
     version: string,
-    sourceUrn: string,
+    sourceUrn: string | null,
     requirements: Array<{ code: string; title: string }>,
 ): Promise<Map<string, string>> {
     const fw = await prisma.framework.create({
@@ -177,12 +200,15 @@ describeFn('per-agent agentic-risk coverage', () => {
         // sets go second: they resolve requirement CODES against rows the
         // framework import has to have created first.
         await importLibraryFromFile(prisma, ISO_FILE, { propagateDelta: false });
+        await importLibraryFromFile(prisma, ISMS_FILE, { propagateDelta: false });
         await importLibraryFromFile(prisma, ASI_FILE, { propagateDelta: false });
-        const mappingSet = parseMappingSetFile(MAP_FILE);
-        const result = await importMappingSet(prisma, mappingSet, computeMappingSetHash(mappingSet));
-        // Every curated entry has to have resolved — an unresolved ref is
-        // recorded and skipped, so the map would silently do less than it says.
-        expect(result.errors).toEqual([]);
+        for (const file of [MAP_FILE, ISMS_MAP_FILE]) {
+            const mappingSet = parseMappingSetFile(file);
+            const result = await importMappingSet(prisma, mappingSet, computeMappingSetHash(mappingSet));
+            // Every curated entry has to have resolved — an unresolved ref is
+            // recorded and skipped, so the map would silently do less than it says.
+            expect(result.errors).toEqual([]);
+        }
 
         const asi = await requirementIds('OWASP-ASI-TOP10');
         const iso = await requirementIds('ISO42001-2023');
@@ -202,6 +228,21 @@ describeFn('per-agent agentic-risk coverage', () => {
             '2023',
             ISO_LIBRARY_URN,
             [{ code: 'A.4.2', title: 'Document an inventory of AI system resources' }],
+        );
+        // The ISMS, as a REAL database holds it: the whole 93-row Annex A from
+        // `prisma/fixtures/iso27001_2022_annexA.json`, numbered without the
+        // `A.` the library uses, and — this is the deployed state, not a
+        // contrivance — no `sourceUrn`, because `prisma/seed.ts` did not write
+        // one until this change and an existing database is not re-seeded.
+        const annexA = JSON.parse(
+            fs.readFileSync(path.join(ROOT, 'prisma/fixtures/iso27001_2022_annexA.json'), 'utf8'),
+        ) as Array<{ key: string; title: string }>;
+        const ismsSeed = await seedRepresentation(
+            'ISO27001',
+            'ISO/IEC 27001',
+            '2022',
+            null,
+            annexA.map((r) => ({ code: r.key, title: r.title })),
         );
 
         for (const tenantId of TENANTS) {
@@ -231,10 +272,10 @@ describeFn('per-agent agentic-risk coverage', () => {
 
             // Every tenant scopes its agent's AI-system entry to all ten risks:
             // the scope is held constant so the differences below are about
-            // CONTROLS, not about who filled in the register. Tenant D scopes
-            // against the SEEDED rows — a different id space for the same ten
-            // codes.
-            const scopeIds = tenantId === TD ? asiSeed : asi;
+            // CONTROLS, not about who filled in the register. Tenants D and F
+            // scope against the SEEDED rows — a different id space for the
+            // same ten codes.
+            const scopeIds = tenantId === TD || tenantId === TF ? asiSeed : asi;
             await prisma.aiSystemRequirementLink.createMany({
                 data: ASI_CODES.map((code) => ({
                     tenantId,
@@ -262,6 +303,16 @@ describeFn('per-agent agentic-risk coverage', () => {
         // the direct and the inherited answer here require the family collapse.
         await linkControl(TD, 'D-ASI01', asiSeed.get('ASI01')!);
         await linkControl(TD, 'D-ISO-A42', isoSeed.get('A.4.2')!);
+
+        // F: an ISMS and nothing else. One control per ASI03 source row, on
+        // the SEEDED Annex A numbering. Six controls, four of the six edges
+        // SUBSET — the posture the "we already run an ISO 27001 ISMS"
+        // customer walks in with, and the population the ISMS-side route was
+        // built for.
+        for (const libraryCode of ISMS_ASI03_SOURCES) {
+            const code = seededAnnexACode(libraryCode);
+            await linkControl(TF, `F-ISMS-${code}`, ismsSeed.get(code)!);
+        }
 
         // A second agent in tenant A, on its own AI-system entry, with NO
         // requirement links at all.
@@ -411,6 +462,100 @@ describeFn('per-agent agentic-risk coverage', () => {
             expect(rogue.status).toBe('PARTIALLY_COVERED');
             expect(rogue.inheritedFrom.map((i) => i.requirementCode)).toEqual(['A.4.2']);
             expect(rogue.inheritedFrom[0].controls.map((c) => c.code)).toEqual(['D-ISO-A42']);
+        });
+    });
+
+    describe('F — an ISO 27001 ISMS holder, on the SEEDED representation', () => {
+        it('does not start at zero — the ISMS-side route delivers', async () => {
+            const report = await computeAgentRiskCoverage(ctxFor(TF), fx[TF].agentId);
+
+            // The regression this whole tenant exists for: before the fix
+            // every one of these ten codes came back NOT_COVERED, because the
+            // seeded ISO 27001 row carried no `sourceUrn` AND numbers Annex A
+            // `5.15` where the mapping cites `A.5.15`. Two independent breaks,
+            // one indistinguishable readout — a tenant that had done the work
+            // looked exactly like a tenant that had done none.
+            expect(report.frameworkInstalled).toBe(true);
+            expect(report.summary.uncovered).toEqual(['ASI01', 'ASI04', 'ASI05', 'ASI08', 'ASI09']);
+            expect(report.summary.partiallyCovered).toEqual(['ASI02', 'ASI03', 'ASI07']);
+            expect(report.summary.reviewNeeded).toEqual(['ASI06', 'ASI10']);
+
+            // Still nothing COVERED, and the percentage is still 0: inherited
+            // coverage is capped, so "does not start at zero" is a claim about
+            // the WHICH lists, never about the number.
+            expect(report.summary.covered).toEqual([]);
+            expect(report.summary.coveragePercent).toBe(0);
+        });
+
+        it('names every Annex A control behind ASI03, strongest route first', async () => {
+            const report = await computeAgentRiskCoverage(ctxFor(TF), fx[TF].agentId);
+            const identity = report.entries.find((e) => e.code === 'ASI03')!;
+
+            expect(identity.status).toBe('PARTIALLY_COVERED');
+            expect(identity.directControls).toEqual([]);
+            expect(
+                identity.inheritedFrom.map((i) => [i.requirementCode, i.strength]),
+            ).toEqual([
+                ['A.5.15', 'SUBSET'],
+                ['A.5.17', 'SUBSET'],
+                ['A.8.2', 'SUBSET'],
+                ['A.8.5', 'SUBSET'],
+                ['A.5.3', 'INTERSECT'],
+                ['A.8.15', 'INTERSECT'],
+            ]);
+
+            // Each route reports the tenant's own control, held against the
+            // SEEDED row it is named on — `5.15`, not `A.5.15`.
+            expect(identity.inheritedFrom.map((i) => i.controls.map((c) => c.code))).toEqual([
+                ['F-ISMS-5.15'],
+                ['F-ISMS-5.17'],
+                ['F-ISMS-8.2'],
+                ['F-ISMS-8.5'],
+                ['F-ISMS-5.3'],
+                ['F-ISMS-8.15'],
+            ]);
+            // The route is reported under the framework the MAPPING cites.
+            expect([...new Set(identity.inheritedFrom.map((i) => i.frameworkKey))]).toEqual([
+                'ISO27001-2022',
+            ]);
+        });
+
+        it('still says NO_CONTROL, not NOT_SCOPED, for the risks the ISMS cannot reach', async () => {
+            const report = await computeAgentRiskCoverage(ctxFor(TF), fx[TF].agentId);
+            const rogue = report.entries.find((e) => e.code === 'ASI05')!;
+
+            // The scope links hang off the SEEDED ASI rows, so this doubles as
+            // the ASI-side family check: get that wrong and every reason here
+            // flips to NOT_SCOPED while the coverage lists stay the same.
+            expect(rogue.scopedToAgent).toBe(true);
+            expect(rogue.status).toBe('NOT_COVERED');
+            expect(rogue.reason).toBe('NO_CONTROL');
+            expect(rogue.inheritedFrom).toEqual([]);
+        });
+
+        it('reads identically once the seed writes the sourceUrn', async () => {
+            // Two deployment states, one answer. A database seeded before
+            // `prisma/seed.ts` carried `sourceUrn` reaches the family through
+            // the legacy-key fallback; one seeded after reaches it through the
+            // urn. If only the seed had been fixed, every tenant provisioned
+            // before today would still read zero.
+            const legacy = await computeAgentRiskCoverage(ctxFor(TF), fx[TF].agentId);
+            try {
+                await prisma.framework.update({
+                    where: { key: 'ISO27001' },
+                    data: { sourceUrn: ISMS_LIBRARY_URN },
+                });
+                const reseeded = await computeAgentRiskCoverage(ctxFor(TF), fx[TF].agentId);
+                expect(reseeded.summary).toEqual(legacy.summary);
+                expect(
+                    reseeded.entries.find((e) => e.code === 'ASI03')!.inheritedFrom,
+                ).toEqual(legacy.entries.find((e) => e.code === 'ASI03')!.inheritedFrom);
+            } finally {
+                await prisma.framework.update({
+                    where: { key: 'ISO27001' },
+                    data: { sourceUrn: null },
+                });
+            }
         });
     });
 

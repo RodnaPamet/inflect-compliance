@@ -9,7 +9,7 @@
  * framework the shipped control library is built on. So this suite holds the
  * DATA to account.
  *
- * Four invariants, each chosen because its failure mode is silent:
+ * Five invariants, each chosen because its failure mode is silent:
  *
  *  1. ZERO SILENT GAPS. Every assessable requirement in both agentic
  *     frameworks is reached from a control-library-backed framework, or is
@@ -39,13 +39,22 @@
  *     ISO 42001 or ISO 27001 IS an agentic risk control; claiming otherwise
  *     would let `determineGapStatus` return COVERED off a curated judgement.
  *
+ *  5. BOTH REPRESENTATIONS. Every ref also resolves against the SEED fixture,
+ *     not just the library the mapping is authored against. `ISO27001-2022`
+ *     shipped 39 edges that resolved perfectly and reached zero seeded
+ *     tenants, because the seed numbers Annex A `5.15` where the library
+ *     numbers it `A.5.15`. Each file was internally consistent, so nothing
+ *     short of comparing the two representations could see it.
+ *
  * Everything is asserted against PARSED data — the production
  * `scanMappingSetDirectory` scanner and the production library loader — never
  * by matching source text.
  */
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
+import { canonicalRequirementCode } from '@/app-layer/domain/framework-representation';
 import {
     scanMappingSetDirectory,
     type StoredMappingSet,
@@ -95,6 +104,42 @@ const CONTROL_LIBRARY_BACKED = ['ISO42001-2023', 'ISO27001-2022'] as const;
  * has NO defensible route in — write the reason, do not delete the assertion.
  */
 const UNMAPPED_WITH_REASON: Record<string, string> = {};
+
+/**
+ * The SEEDED representation of each framework an agentic mapping names: the
+ * fixture `prisma/seed.ts` loads, and the family urn that decides how its
+ * requirement codes reconcile with the library's.
+ *
+ * A framework in an agentic mapping set with no entry here fails the first
+ * test below rather than being skipped — the point of invariant 5 is that a
+ * new edge cannot be authored against the library alone.
+ */
+const SEEDED_REPRESENTATIONS: Record<string, { fixture: string; familyUrn: string }> = {
+    'OWASP-ASI-TOP10': {
+        fixture: 'owasp_asi_requirements.json',
+        familyUrn: 'urn:inflect:library:owasp-agentic-top10',
+    },
+    'IMDA-MGF-2026': {
+        fixture: 'imda_mgf_requirements.json',
+        familyUrn: 'urn:inflect:library:imda-mgf-2026',
+    },
+    'ISO42001-2023': {
+        fixture: 'iso_42001_requirements.json',
+        familyUrn: 'urn:inflect:library:iso-42001',
+    },
+    'ISO27001-2022': {
+        fixture: 'iso27001_2022_annexA.json',
+        familyUrn: 'urn:inflect:library:iso27001-2022',
+    },
+};
+
+const seededCodes = (frameworkRef: string): Set<string> => {
+    const rep = SEEDED_REPRESENTATIONS[frameworkRef];
+    const rows = JSON.parse(
+        fs.readFileSync(path.join(ROOT, 'prisma/fixtures', rep.fixture), 'utf8'),
+    ) as Array<{ key: string }>;
+    return new Set(rows.map((r) => r.key));
+};
 
 const INVERSE: Record<MappingStrengthValue, MappingStrengthValue> = {
     EQUAL: 'EQUAL',
@@ -179,6 +224,55 @@ describe('agentic cross-framework mappings — the sets exist and are complete',
         // the coverage check above while making no coverage claim at all.
         expect(new Set(set!.mapping_entries.map((e) => e.strength)).size).toBeGreaterThanOrEqual(3);
     });
+});
+
+describe('agentic cross-framework mappings — both representations, not just the library', () => {
+    /**
+     * INVARIANT 5. Every framework ships TWICE — the `prisma/seed.ts` row and
+     * the `src/data/libraries/*.yaml` row — and a tenant's controls hang off
+     * whichever one its database got. A mapping set is authored against the
+     * LIBRARY (the importer resolves `source_framework_ref` against
+     * `Framework.key`), so an edge whose code has no counterpart in the seeded
+     * representation delivers nothing to a seeded tenant, and delivers it
+     * silently: the readout is the same ten NOT_COVERED a tenant with no
+     * controls sees.
+     *
+     * That is not hypothetical. `iso27001-to-owasp-agentic.yaml` shipped with
+     * 39 resolving edges and reached zero seeded tenants, because the seed
+     * numbers Annex A `5.15` where the library numbers it `A.5.15` — a break
+     * every existing check was blind to, because each file is internally
+     * consistent and the integration suite only ever built the ISO 42001
+     * shape, where the two representations happen to agree.
+     */
+    it('names a seeded representation for every framework in an agentic mapping', () => {
+        const referenced = new Set(
+            agenticSets.flatMap((s) => [s.source_framework_ref, s.target_framework_ref]),
+        );
+        const undeclared = [...referenced].filter((f) => !(f in SEEDED_REPRESENTATIONS)).sort();
+        expect(undeclared).toEqual([]);
+    });
+
+    it.each(agenticSets)(
+        '$source_framework_ref → $target_framework_ref resolves against the SEED fixtures too',
+        (set) => {
+            const unreachable: string[] = [];
+            for (const [frameworkRef, refs] of [
+                [set.source_framework_ref, set.mapping_entries.map((e) => e.source_ref)],
+                [set.target_framework_ref, set.mapping_entries.map((e) => e.target_ref)],
+            ] as Array<[string, string[]]>) {
+                const seeded = seededCodes(frameworkRef);
+                const { familyUrn } = SEEDED_REPRESENTATIONS[frameworkRef];
+                for (const ref of new Set(refs)) {
+                    // The same reconciliation `computeAgentRiskCoverage` does:
+                    // one join key both spellings of an obligation reduce to.
+                    if (!seeded.has(canonicalRequirementCode(familyUrn, ref))) {
+                        unreachable.push(`${frameworkRef}:${ref}`);
+                    }
+                }
+            }
+            expect(unreachable.sort()).toEqual([]);
+        },
+    );
 });
 
 describe('agentic cross-framework mappings — symmetry', () => {
