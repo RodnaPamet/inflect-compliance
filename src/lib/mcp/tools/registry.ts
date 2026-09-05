@@ -37,6 +37,8 @@ import {
 } from '../authorize';
 import { loadableToolsDigest } from '../loadable-tools';
 import { RpcErrorCode, type McpToolDescriptor, type McpToolResult } from '../protocol';
+import { buildProvenanceEnvelope } from '@/lib/agentic/content-provenance';
+
 import type { McpReadTool } from './types';
 import { getCompliancePostureTool } from './get-compliance-posture';
 import { listRisksTool } from './risk-tools';
@@ -188,8 +190,18 @@ export async function runReadTool(
         loadableToolsDigest(loadableSetOf(inv)),
     );
 
+    // 6. Label the payload with its PROVENANCE. Appended as a SECOND content
+    //    block, never wrapped around the data: `content[0]` is the exact JSON
+    //    an agent already parses, and shifting it would break every consumer to
+    //    add a banner. The banner is defence in depth and nothing more — a model
+    //    can ignore it. What actually stops an injected instruction from
+    //    becoming a compliance record is `guardAgentProposal` at the propose
+    //    seam, which asks the model nothing.
     return {
-        content: [{ type: 'text', text: JSON.stringify(visible, null, 2) }],
+        content: [
+            { type: 'text', text: JSON.stringify(visible, null, 2) },
+            { type: 'text', text: JSON.stringify(buildProvenanceEnvelope(name), null, 2) },
+        ],
     };
 }
 

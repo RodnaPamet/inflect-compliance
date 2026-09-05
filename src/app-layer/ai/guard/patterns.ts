@@ -132,6 +132,19 @@ export const INJECTION_RULES: ReadonlyArray<GuardRule<InjectionCategory>> = [
         severity: 'medium',
         test: has(/!\[[^\]]*\]\(\s*https?:\/\/|\b(?:fetch|load|render|embed)\b[^.]{0,20}https?:\/\//),
     },
+    {
+        // Markdown-IMAGE exfil with a DATA-BEARING query string. Separate from
+        // `render_remote` above, and high rather than medium, because the two
+        // are not the same act: a bare `![logo](https://cdn/x.png)` is an image,
+        // which is why that rule is deliberately tempered — but an image URL
+        // carrying `?k=<something>` exfiltrates on RENDER, with no click and no
+        // tool call, and the query string is what separates the two. Requiring
+        // the `?`/`&` + `=` is what keeps this specific enough to be high.
+        id: 'inj.exfil.markdown_image_beacon',
+        category: 'exfil_directive',
+        severity: 'high',
+        test: has(/!\[[^\]]*\]\(\s*https?:\/\/[^)\s]*[?&][^)\s]*=/),
+    },
 ];
 
 // ─── Egress / DLP rules (model + agent output → outward) ─────────────────────

@@ -246,6 +246,24 @@ export type McpDenialReason =
     | 'policy_denied';
 
 /**
+ * What a denial may carry into the audit row beyond the fixed fields.
+ *
+ * SCALARS ONLY, and the narrowing is the control. `extra` is spread straight
+ * into `detailsJson`, which is plaintext, hash-chained and never deleted — so
+ * the previous `Record<string, unknown>` permitted `extra: { args }` on the tool
+ * path, which would have written unvetted tool arguments (the injection surface
+ * itself) into permanent evidence. Every one of the ten call sites already
+ * passes an identifier, an enum-ish string, a number, a boolean or a string
+ * array, so this costs nothing and removes the shape that could leak.
+ *
+ * A value that needs to be an object is a value that needs a digest instead —
+ * see `computeInputDigest`. `local/no-raw-prompt-logging` polices the sinks;
+ * this makes the unsafe call unspellable at the one sink that spreads.
+ */
+type DenialExtraValue = string | number | boolean | null | readonly string[];
+type DenialExtra = Readonly<Record<string, DenialExtraValue>>;
+
+/**
  * Write ONE hash-chained `AUTHZ_DENIED` row and throw. Best-effort audit, on the
  * same principle as `requirePermission`'s: an audit outage must never turn a
  * refusal into an admission, so the throw happens whether or not the row landed.
@@ -253,7 +271,7 @@ export type McpDenialReason =
 export async function denyToolCall(
     ctx: RequestContext,
     reason: McpDenialReason,
-    detail: { tool: string; agentId: string | null; message: string; extra?: Record<string, unknown> },
+    detail: { tool: string; agentId: string | null; message: string; extra?: DenialExtra },
 ): Promise<never> {
     try {
         await appendAuditEntry({

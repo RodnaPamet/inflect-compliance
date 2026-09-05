@@ -31,6 +31,31 @@ import { getDashboardData } from './dashboard';
 import { createAgentProposal } from './agent-proposals';
 import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
 
+/**
+ * The user-facing sentence for a queued proposal.
+ *
+ * A proposal the agentic output guard QUARANTINES never enters the review
+ * queue, so telling the asker it is "queued for review" would be false — and
+ * false in the direction that matters: they would wait for an approval that
+ * cannot arrive, and nobody would look at the quarantine. See
+ * `ai/guard/proposal-guard.ts`.
+ */
+function proposalMessage(
+    status: string,
+    noun: string,
+    title: string,
+): string {
+    if (status === 'QUARANTINED') {
+        return (
+            `I could not queue the ${noun} "${title}": its text was withheld by the ` +
+            `content guard, which refuses material that reads as an instruction rather ` +
+            `than as a record. Nothing was created. Rephrase it, or ask an administrator ` +
+            `to review the quarantined item.`
+        );
+    }
+    return `I've queued a ${noun} "${title}" as a proposal for review — nothing is created until a reviewer approves it.`;
+}
+
 export const AskAssistantSchema = z.object({ question: z.string().min(1).max(2000) });
 
 export interface AssistantAnswer {
@@ -91,7 +116,7 @@ export async function askAssistant(
             kind: 'proposal',
             proposalId: proposal.id,
             proposalKind: proposal.kind,
-            message: `I've queued a finding "${title}" as a proposal for review — nothing is created until a reviewer approves it in the proposal queue.`,
+            message: proposalMessage(proposal.status, 'finding', title),
         };
     } else if (/\b(create|open|add|log|raise)\b.*\brisk\b/.test(q)) {
         const title = extractTitle(question, /\brisk\b(\s+(to|for|about|:))?/i);
@@ -105,7 +130,7 @@ export async function askAssistant(
             kind: 'proposal',
             proposalId: proposal.id,
             proposalKind: proposal.kind,
-            message: `I've queued a risk "${title}" as a proposal for review — nothing is created until a reviewer approves it.`,
+            message: proposalMessage(proposal.status, 'risk', title),
         };
     } else {
         // ── Read intents → answer from live posture data (RLS-scoped) ──

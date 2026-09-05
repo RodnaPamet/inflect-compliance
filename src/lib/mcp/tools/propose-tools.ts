@@ -240,8 +240,11 @@ export async function runProposeTool(
     }
 
     // 3. Queue one proposal per item (createAgentProposal validates each item
-    //    against the create-schema + sanitises + audits). Malformed → throws.
-    const ids: string[] = [];
+    //    against the create-schema + sanitises + GUARDS + audits). Malformed →
+    //    throws. An item the agentic output guard quarantines is written as a
+    //    terminal QUARANTINED row and never enters the review queue.
+    const queued: string[] = [];
+    const quarantined: string[] = [];
     for (const item of parsed.data.items) {
         const proposal = await createAgentProposal(ctx, {
             kind: tool.kind,
@@ -254,8 +257,22 @@ export async function runProposeTool(
             // this line an operator can have edited the card.
             policyCardVersion: pinFromCard(inv.policyCard?.inForce ?? null),
         });
-        ids.push(proposal.id);
+        (proposal.status === 'QUARANTINED' ? quarantined : queued).push(proposal.id);
     }
+
+    // The result reports the two counts SEPARATELY. It used to hard-code
+    // `status: 'PENDING'` for the whole batch, which is now a claim the seam
+    // cannot make — and reporting a quarantined item as pending would tell the
+    // agent (and any human reading a run transcript) that a record is waiting
+    // for review when nothing is.
+    //
+    // Rule ids are deliberately NOT returned. The count is what an honest
+    // client needs; the ids are what an attacker would use to tune a payload,
+    // and they are already in the audit trail where a responder can read them.
+    const message =
+        quarantined.length === 0
+            ? `Proposed ${queued.length} ${tool.kind.toLowerCase()}(s), pending human approval in the tenant's agent-proposals review queue. Nothing was created.`
+            : `Proposed ${queued.length} ${tool.kind.toLowerCase()}(s) for human approval; ${quarantined.length} were QUARANTINED by the content guard and did NOT enter the review queue. Nothing was created.`;
 
     return {
         content: [
@@ -263,11 +280,13 @@ export async function runProposeTool(
                 type: 'text',
                 text: JSON.stringify(
                     {
-                        proposed: ids.length,
+                        proposed: queued.length,
+                        quarantined: quarantined.length,
                         kind: tool.kind,
-                        proposalIds: ids,
+                        proposalIds: queued,
+                        quarantinedProposalIds: quarantined,
                         status: 'PENDING',
-                        message: `Proposed ${ids.length} ${tool.kind.toLowerCase()}(s), pending human approval in the tenant's agent-proposals review queue. Nothing was created.`,
+                        message,
                     },
                     null,
                     2,

@@ -204,6 +204,11 @@ export async function createAgentPolicyCard(ctx: RequestContext, agentId: string
             { ...toVersionInput(value), seededFromTier: agent.riskTier },
         );
 
+        // Hoisted out of the audit call below: a call inside a sink's arguments
+        // is a position `local/no-raw-prompt-logging` cannot open, and so must
+        // count as unjudged. Tool NAMES are identifiers, not content.
+        const withheldNames = withheld.map((w) => w.toolName).join(', ');
+
         await logEvent(db, ctx, {
             action: 'AGENT_POLICY_CARD_CREATED',
             entityType: 'RegisteredAgent',
@@ -218,12 +223,30 @@ export async function createAgentPolicyCard(ctx: RequestContext, agentId: string
                     (withheld.length === 0
                         ? ''
                         : `; ${withheld.length} granted tool(s) withheld as unexercisable ` +
-                          `(${withheld.map((w) => w.toolName).join(', ')})`),
+                          `(${withheldNames})`),
                 // The withheld list is in the audit row as well as the response,
                 // because the response is read once by whoever pressed the
                 // button and the row is what the next person asking "why is this
                 // agent not calling the tool we granted it" can actually find.
-                after: { version: 1, seededFromTier: agent.riskTier, ...value, withheld },
+                // Named one by one rather than spread. A spread puts whatever the
+                // type happens to carry into permanent, hash-chained evidence, so a
+                // field added to `AgentPolicyCardValue` later would join this row
+                // without anyone deciding it should — and an opaque spread is also a
+                // position `local/no-raw-prompt-logging` must count as unjudged.
+                // Every field below is a POLICY DECLARATION (tool names, ladder
+                // rungs, budgets); none is user free text.
+                after: {
+                    version: 1,
+                    seededFromTier: agent.riskTier,
+                    permittedTools: [...value.permittedTools],
+                    maxDataScope: value.maxDataScope,
+                    maxAutonomyLevel: value.maxAutonomyLevel,
+                    maxActionsPerRun: value.maxActionsPerRun,
+                    maxActionsPerDay: value.maxActionsPerDay,
+                    escalationTriggers: [...value.escalationTriggers],
+                    approvalRung: value.approvalRung,
+                    withheld,
+                },
             },
         });
 
@@ -308,8 +331,29 @@ export async function updateAgentPolicyCard(
                 entityName: 'AgentPolicyCard',
                 operation: 'update',
                 summary: `Policy card for agent ${agentId} moved to version ${written}`,
-                before: { version: card.currentVersion, ...fromRow(inForce) },
-                after: { version: written, ...next },
+                // Named, not spread — see the create path above. `current` is the
+                // `fromRow(inForce)` already in scope; calling it again here would
+                // also be a helper this rule cannot open.
+                before: {
+                    version: card.currentVersion,
+                    permittedTools: [...current.permittedTools],
+                    maxDataScope: current.maxDataScope,
+                    maxAutonomyLevel: current.maxAutonomyLevel,
+                    maxActionsPerRun: current.maxActionsPerRun,
+                    maxActionsPerDay: current.maxActionsPerDay,
+                    escalationTriggers: [...current.escalationTriggers],
+                    approvalRung: current.approvalRung,
+                },
+                after: {
+                    version: written,
+                    permittedTools: [...next.permittedTools],
+                    maxDataScope: next.maxDataScope,
+                    maxAutonomyLevel: next.maxAutonomyLevel,
+                    maxActionsPerRun: next.maxActionsPerRun,
+                    maxActionsPerDay: next.maxActionsPerDay,
+                    escalationTriggers: [...next.escalationTriggers],
+                    approvalRung: next.approvalRung,
+                },
             },
         });
 

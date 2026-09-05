@@ -17,6 +17,10 @@ import tsPlugin from '@typescript-eslint/eslint-plugin';
 // This repo's own rules. CommonJS on purpose — see the header of
 // ./eslint-rules/index.js for why `.mjs` and `.cjs` both fail here.
 import localPlugin from './eslint-rules/index.js';
+// The one definition of "the agentic path" — see that file's header. The guard
+// at tests/guards/no-raw-prompt-logging.test.ts imports the same list, so the
+// lint scope and the swept population cannot drift apart.
+import { AGENTIC_PATH_GLOBS } from './eslint-rules/agentic-path.js';
 
 const config = [
     ...nextCoreWebVitals,
@@ -228,6 +232,31 @@ const config = [
                     ],
                 },
             ],
+        },
+    },
+    {
+        // ── The agentic path only ──
+        //
+        // `no-raw-prompt-logging` is the digest-only rule the AI-feature path
+        // already keeps by convention (`src/app-layer/ai/decision-log` digests
+        // its input and says so in a comment). A comment binds one module; this
+        // binds a path — the one where the content arrives from an unvetted
+        // external principal and the sink is a plaintext, hash-chained,
+        // never-deleted audit row.
+        //
+        // Scoped rather than repo-wide because the vocabulary it polices
+        // (`payload`, `context`, `input`, `args`) is ordinary English
+        // elsewhere. A rule that fires on correct code teaches people to
+        // disable it, and a disabled rule protects the path it was written for
+        // least of all.
+        //
+        // The globs come from ./eslint-rules/agentic-path.js, which the
+        // companion guard imports too. `reportUnanalysable` / `reportSinks`
+        // stay OFF here — they are census output, not findings; the guard
+        // turns them on to count what this rule could and could not judge.
+        files: AGENTIC_PATH_GLOBS,
+        rules: {
+            'local/no-raw-prompt-logging': 'error',
         },
     },
     {
