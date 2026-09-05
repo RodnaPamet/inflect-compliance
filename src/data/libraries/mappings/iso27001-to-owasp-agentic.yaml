@@ -1,0 +1,187 @@
+# Cross-Framework Mapping Set: ISO/IEC 27001:2022 → OWASP Agentic AI Top 10
+# Data-driven mapping file for the RequirementMapping ingestion pipeline.
+#
+# Most agentic risks are security risks wearing new clothes, and the shipped control
+# library is heaviest on ISO 27001 Annex A. This is the map that turns an existing ISMS
+# into partial agentic coverage — and, by its silences, shows what an ISMS cannot reach.
+#
+# Every entry is [curated] — Inflect's judgement of conceptual alignment, NOT
+# part of either publication. Mappings are STRUCTURAL GUIDANCE, never a
+# compliance guarantee: the gap-analysis layer treats SUBSET / INTERSECT /
+# RELATED as "partially covered" or "review needed" and never as covered.
+#
+# SYMMETRY: this pair ships in BOTH directions. `owasp-agentic-to-iso27001.yaml` is the exact
+# transpose of this file with each strength inverted (SUBSET ⇄ SUPERSET;
+# EQUAL / INTERSECT / RELATED are self-inverse). Edit one side and
+# tests/unit/agentic-framework-mappings.test.ts fails until the other matches.
+#
+# Refs are YAML-library ref_ids resolved against Framework.key and
+# FrameworkRequirement.code by mapping-set-importer.ts.
+
+urn: urn:inflect:mappingset:iso27001-to-owasp-agentic
+name: "ISO/IEC 27001:2022 → OWASP Agentic AI Top 10"
+description: >
+  Cross-framework traceability between ISO/IEC 27001:2022 and OWASP Agentic AI Top 10.
+  Curated alignment for gap analysis and inherited coverage — structural
+  guidance, not a compliance guarantee.
+version: 1
+source_framework_ref: ISO27001-2022
+target_framework_ref: OWASP-ASI-TOP10
+
+mapping_entries:
+  - source_ref: "A.8.25"
+    target_ref: "ASI01"
+    strength: INTERSECT
+    rationale: "[curated] A secure development life cycle is where instruction-trust boundaries would be designed in, though 27001 has no notion of a prompt."
+  - source_ref: "A.5.7"
+    target_ref: "ASI01"
+    strength: RELATED
+    rationale: "[curated] Threat intelligence is how an organisation would learn of new goal-hijack techniques."
+  - source_ref: "A.5.14"
+    target_ref: "ASI01"
+    strength: RELATED
+    rationale: "[curated] Information transfer controls govern the channels through which injected instructions arrive."
+  - source_ref: "A.8.2"
+    target_ref: "ASI02"
+    strength: INTERSECT
+    rationale: "[curated] Privileged access rights bound what a tool call can reach; they do not bound how many times or in what sequence an agent calls it."
+  - source_ref: "A.5.15"
+    target_ref: "ASI02"
+    strength: INTERSECT
+    rationale: "[curated] Access control decides which tools the agent's identity may invoke at all."
+  - source_ref: "A.8.15"
+    target_ref: "ASI02"
+    strength: SUBSET
+    rationale: "[curated] Logging covers recording tool invocations, a proper part of detecting misuse."
+  - source_ref: "A.8.32"
+    target_ref: "ASI02"
+    strength: RELATED
+    rationale: "[curated] Change management governs the tools available to the agent over time."
+  - source_ref: "A.5.15"
+    target_ref: "ASI03"
+    strength: SUBSET
+    rationale: "[curated] Access control is the classic answer to privilege abuse and covers a proper part of it; delegated and impersonated agent identity is outside its scope."
+  - source_ref: "A.5.17"
+    target_ref: "ASI03"
+    strength: SUBSET
+    rationale: "[curated] Authentication-information handling covers the credential half of agent identity abuse."
+  - source_ref: "A.8.2"
+    target_ref: "ASI03"
+    strength: SUBSET
+    rationale: "[curated] Privileged access rights cover privilege accumulation for human and service accounts."
+  - source_ref: "A.8.5"
+    target_ref: "ASI03"
+    strength: SUBSET
+    rationale: "[curated] Secure authentication covers how an agent proves who it is, not what it may then do on a user's behalf."
+  - source_ref: "A.5.3"
+    target_ref: "ASI03"
+    strength: INTERSECT
+    rationale: "[curated] Segregation of duties is what an agent holding several delegated identities quietly collapses."
+  - source_ref: "A.8.15"
+    target_ref: "ASI03"
+    strength: INTERSECT
+    rationale: "[curated] Logging is what makes an agent action attributable to an accountable principal."
+  - source_ref: "A.5.19"
+    target_ref: "ASI04"
+    strength: SUBSET
+    rationale: "[curated] Supplier-relationship security covers contracted suppliers, a narrower set than model hubs, plugin registries and MCP servers."
+  - source_ref: "A.5.20"
+    target_ref: "ASI04"
+    strength: SUBSET
+    rationale: "[curated] Security in supplier agreements covers the contractual half of agentic supply-chain risk."
+  - source_ref: "A.5.23"
+    target_ref: "ASI04"
+    strength: INTERSECT
+    rationale: "[curated] Cloud-service security overlaps hosted model and tool providers an agent depends on."
+  - source_ref: "A.8.8"
+    target_ref: "ASI04"
+    strength: INTERSECT
+    rationale: "[curated] Technical vulnerability management covers vulnerable components reaching the agent through its update channels."
+  - source_ref: "A.5.7"
+    target_ref: "ASI04"
+    strength: RELATED
+    rationale: "[curated] Threat intelligence is how compromise of a shared agent component becomes known."
+  - source_ref: "A.8.7"
+    target_ref: "ASI05"
+    strength: INTERSECT
+    rationale: "[curated] Malware protection addresses hostile code executing on a host, which is the outcome of this risk if not its route."
+  - source_ref: "A.8.25"
+    target_ref: "ASI05"
+    strength: INTERSECT
+    rationale: "[curated] A secure development life cycle is where sandboxing and safe evaluation of generated code belong."
+  - source_ref: "A.8.8"
+    target_ref: "ASI05"
+    strength: INTERSECT
+    rationale: "[curated] Vulnerability management covers the escape paths agent-generated code would exploit."
+  - source_ref: "A.8.1"
+    target_ref: "ASI05"
+    strength: RELATED
+    rationale: "[curated] Endpoint controls bound what an escaped execution reaches on a workstation."
+  - source_ref: "A.5.12"
+    target_ref: "ASI06"
+    strength: RELATED
+    rationale: "[curated] Information classification decides what may be written into a shared context, without addressing adversarial writes."
+  - source_ref: "A.8.13"
+    target_ref: "ASI06"
+    strength: RELATED
+    rationale: "[curated] Backups are how a poisoned memory store is rolled back once poisoning is known."
+  - source_ref: "A.8.15"
+    target_ref: "ASI06"
+    strength: RELATED
+    rationale: "[curated] Logging is how a poisoning write would later be traced to its session."
+  - source_ref: "A.5.14"
+    target_ref: "ASI07"
+    strength: SUBSET
+    rationale: "[curated] Information-transfer controls cover authenticated, protected transfer between parties, a proper part of securing agent-to-agent messages."
+  - source_ref: "A.8.24"
+    target_ref: "ASI07"
+    strength: INTERSECT
+    rationale: "[curated] Cryptography provides the integrity and authenticity primitives inter-agent messaging needs."
+  - source_ref: "A.8.15"
+    target_ref: "ASI07"
+    strength: INTERSECT
+    rationale: "[curated] Logging is what turns an unlogged delegation into an auditable one."
+  - source_ref: "A.5.15"
+    target_ref: "ASI07"
+    strength: RELATED
+    rationale: "[curated] Access control governs which agent may address which other agent."
+  - source_ref: "A.5.29"
+    target_ref: "ASI08"
+    strength: INTERSECT
+    rationale: "[curated] Disruption preparedness is the discipline of limiting blast radius, applied here to chained automated action."
+  - source_ref: "A.5.30"
+    target_ref: "ASI08"
+    strength: INTERSECT
+    rationale: "[curated] ICT readiness for business continuity covers recovering from an amplified failure."
+  - source_ref: "A.5.24"
+    target_ref: "ASI08"
+    strength: INTERSECT
+    rationale: "[curated] Incident-management planning is where a stop-the-fleet procedure would live."
+  - source_ref: "A.5.26"
+    target_ref: "ASI08"
+    strength: INTERSECT
+    rationale: "[curated] Incident response is the human intervention a cascade outruns."
+  - source_ref: "A.6.3"
+    target_ref: "ASI09"
+    strength: INTERSECT
+    rationale: "[curated] Awareness and training is the direct control on people over-trusting a fluent, authoritative-sounding agent."
+  - source_ref: "A.5.1"
+    target_ref: "ASI09"
+    strength: RELATED
+    rationale: "[curated] Security policy is where acceptable reliance on agent output would be stated."
+  - source_ref: "A.5.9"
+    target_ref: "ASI10"
+    strength: SUBSET
+    rationale: "[curated] An inventory of assets covers the unregistered-agent half of this risk; it says nothing about authority, schedule or decommissioning."
+  - source_ref: "A.5.2"
+    target_ref: "ASI10"
+    strength: INTERSECT
+    rationale: "[curated] Assigned security roles are what an orphaned agent has lost."
+  - source_ref: "A.5.15"
+    target_ref: "ASI10"
+    strength: RELATED
+    rationale: "[curated] Access control is how an unsanctioned agent would be denied a foothold."
+  - source_ref: "A.8.32"
+    target_ref: "ASI10"
+    strength: RELATED
+    rationale: "[curated] Change management is the process an agent deployed outside the sanctioned inventory bypassed."

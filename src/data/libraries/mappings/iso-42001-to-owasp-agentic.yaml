@@ -1,0 +1,183 @@
+# Cross-Framework Mapping Set: ISO/IEC 42001:2023 → OWASP Agentic AI Top 10
+# Data-driven mapping file for the RequirementMapping ingestion pipeline.
+#
+# Connects the AI MANAGEMENT SYSTEM a customer may already hold to the ten agentic
+# risks it never names. This is the mapping behind the product claim that an ISO 42001
+# holder starts with partial agentic coverage rather than zero.
+#
+# Every entry is [curated] — Inflect's judgement of conceptual alignment, NOT
+# part of either publication. Mappings are STRUCTURAL GUIDANCE, never a
+# compliance guarantee: the gap-analysis layer treats SUBSET / INTERSECT /
+# RELATED as "partially covered" or "review needed" and never as covered.
+#
+# SYMMETRY: this pair ships in BOTH directions. `owasp-agentic-to-iso-42001.yaml` is the exact
+# transpose of this file with each strength inverted (SUBSET ⇄ SUPERSET;
+# EQUAL / INTERSECT / RELATED are self-inverse). Edit one side and
+# tests/unit/agentic-framework-mappings.test.ts fails until the other matches.
+#
+# Refs are YAML-library ref_ids resolved against Framework.key and
+# FrameworkRequirement.code by mapping-set-importer.ts.
+
+urn: urn:inflect:mappingset:iso-42001-to-owasp-agentic
+name: "ISO/IEC 42001:2023 → OWASP Agentic AI Top 10"
+description: >
+  Cross-framework traceability between ISO/IEC 42001:2023 and OWASP Agentic AI Top 10.
+  Curated alignment for gap analysis and inherited coverage — structural
+  guidance, not a compliance guarantee.
+version: 1
+source_framework_ref: ISO42001-2023
+target_framework_ref: OWASP-ASI-TOP10
+
+mapping_entries:
+  - source_ref: "A.9.4"
+    target_ref: "ASI01"
+    strength: INTERSECT
+    rationale: "[curated] Preventing use beyond the intended purpose and goal hijack are the same boundary read from the management and the adversarial side."
+  - source_ref: "A.6.2.4"
+    target_ref: "ASI01"
+    strength: RELATED
+    rationale: "[curated] Verification and validation methodologies are where an organisation would test for objective drift, but 42001 never names injected instructions."
+  - source_ref: "A.6.2.6"
+    target_ref: "ASI01"
+    strength: RELATED
+    rationale: "[curated] Operation and performance monitoring is the surface on which a hijacked objective becomes observable."
+  - source_ref: "A.6.2.2"
+    target_ref: "ASI01"
+    strength: RELATED
+    rationale: "[curated] Capturing functional and non-functional requirements is where an agent's permitted objectives would be written down."
+  - source_ref: "8.1"
+    target_ref: "ASI01"
+    strength: RELATED
+    rationale: "[curated] Operational planning and control of AI processes governs how the agent is run, not how instructions are trusted."
+  - source_ref: "A.9.2"
+    target_ref: "ASI02"
+    strength: INTERSECT
+    rationale: "[curated] Responsible-use operational processes constrain how the system may be operated; tool misuse is that constraint failing at the tool call."
+  - source_ref: "A.9.4"
+    target_ref: "ASI02"
+    strength: INTERSECT
+    rationale: "[curated] A tool invoked outside the task's need is the scope creep A.9.4 exists to prevent."
+  - source_ref: "A.4.4"
+    target_ref: "ASI02"
+    strength: SUBSET
+    rationale: "[curated] Tracking tooling dependencies covers knowing WHICH tools exist, a proper part of governing how they may be called."
+  - source_ref: "8.1"
+    target_ref: "ASI02"
+    strength: RELATED
+    rationale: "[curated] Operational planning and control frames tool usage but sets no invocation limits."
+  - source_ref: "A.3.2"
+    target_ref: "ASI03"
+    strength: RELATED
+    rationale: "[curated] Roles and accountability structures name the humans; 42001 has no clause on machine identity or delegated credentials."
+  - source_ref: "A.6.2.8"
+    target_ref: "ASI03"
+    strength: INTERSECT
+    rationale: "[curated] Life-cycle event logging is what makes an action attributable back to a principal, which is half of this risk."
+  - source_ref: "A.4.6"
+    target_ref: "ASI03"
+    strength: RELATED
+    rationale: "[curated] Identifying the people and competencies involved records who may act, not what privilege an agent holds."
+  - source_ref: "A.10.2"
+    target_ref: "ASI04"
+    strength: INTERSECT
+    rationale: "[curated] Allocating accountability across the AI supply chain is the governance half of agentic supply-chain risk."
+  - source_ref: "A.10.3"
+    target_ref: "ASI04"
+    strength: SUBSET
+    rationale: "[curated] Supplier assessment covers named suppliers, a narrower set than model, prompt-pack, plugin registry and MCP-server provenance."
+  - source_ref: "A.4.4"
+    target_ref: "ASI04"
+    strength: INTERSECT
+    rationale: "[curated] An inventory of algorithms, models and tooling dependencies is the record an agentic supply-chain compromise is traced through."
+  - source_ref: "A.4.3"
+    target_ref: "ASI04"
+    strength: RELATED
+    rationale: "[curated] Dataset provenance addresses one input channel of a broader compromise surface."
+  - source_ref: "A.4.5"
+    target_ref: "ASI04"
+    strength: RELATED
+    rationale: "[curated] Recording computing infrastructure and environments bounds where a compromised component could run."
+  - source_ref: "A.6.2.5"
+    target_ref: "ASI05"
+    strength: RELATED
+    rationale: "[curated] Release criteria in a deployment plan are where an execution sandbox would be required, but 42001 does not require one."
+  - source_ref: "A.4.5"
+    target_ref: "ASI05"
+    strength: RELATED
+    rationale: "[curated] Recording computing infrastructure identifies what an escaped execution would reach."
+  - source_ref: "8.1"
+    target_ref: "ASI05"
+    strength: RELATED
+    rationale: "[curated] Operational control of AI processes is the clause under which execution boundaries would be planned."
+  - source_ref: "A.7.4"
+    target_ref: "ASI06"
+    strength: INTERSECT
+    rationale: "[curated] Data-quality criteria and verification are the closest 42001 gets to detecting adversarial content written into a store."
+  - source_ref: "A.7.5"
+    target_ref: "ASI06"
+    strength: SUBSET
+    rationale: "[curated] Data lineage and transformation history covers tracing a poisoned value back, a proper part of managing memory poisoning."
+  - source_ref: "A.7.2"
+    target_ref: "ASI06"
+    strength: INTERSECT
+    rationale: "[curated] Managing data used for development and enhancement overlaps the memory an agent enhances itself from."
+  - source_ref: "A.4.3"
+    target_ref: "ASI06"
+    strength: RELATED
+    rationale: "[curated] Dataset origin and selection rationale governs training inputs, not runtime scratchpads and vector stores."
+  - source_ref: "A.6.2.8"
+    target_ref: "ASI07"
+    strength: RELATED
+    rationale: "[curated] Life-cycle event logging would record inter-agent messages; 42001 does not require them to be authenticated or authorised."
+  - source_ref: "A.10.2"
+    target_ref: "ASI07"
+    strength: RELATED
+    rationale: "[curated] Supply-chain accountability reaches third-party agents an organisation delegates to, without addressing the message channel."
+  - source_ref: "A.6.2.6"
+    target_ref: "ASI08"
+    strength: INTERSECT
+    rationale: "[curated] Operation and performance monitoring is where amplification would first be visible; it sets no circuit breaker."
+  - source_ref: "10.2"
+    target_ref: "ASI08"
+    strength: INTERSECT
+    rationale: "[curated] Nonconformity and corrective action is the response half of a cascade, after amplification has happened."
+  - source_ref: "6.1"
+    target_ref: "ASI08"
+    strength: RELATED
+    rationale: "[curated] Actions to address AI risks and opportunities is the planning clause under which cascade risk would be treated."
+  - source_ref: "A.8.4"
+    target_ref: "ASI08"
+    strength: RELATED
+    rationale: "[curated] Incident-notification planning covers telling people, not stopping propagation."
+  - source_ref: "A.8.2"
+    target_ref: "ASI09"
+    strength: INTERSECT
+    rationale: "[curated] User-facing system documentation is how a person is told what the agent is and is not, which is what exploitation of trust subverts."
+  - source_ref: "A.5.4"
+    target_ref: "ASI09"
+    strength: INTERSECT
+    rationale: "[curated] Evaluating effects on individuals and groups is where manipulation of a human operator belongs in an impact assessment."
+  - source_ref: "7.3"
+    target_ref: "ASI09"
+    strength: RELATED
+    rationale: "[curated] Awareness of the AI policy and roles is the training lever against over-trusting an agent."
+  - source_ref: "A.9.3"
+    target_ref: "ASI09"
+    strength: RELATED
+    rationale: "[curated] Responsible-use objectives frame how people are expected to work with the system."
+  - source_ref: "A.4.2"
+    target_ref: "ASI10"
+    strength: SUBSET
+    rationale: "[curated] An inventory of AI system resources covers the unregistered-agent half of this risk and none of the orphaned, out-of-schedule or never-decommissioned halves."
+  - source_ref: "A.3.2"
+    target_ref: "ASI10"
+    strength: INTERSECT
+    rationale: "[curated] Accountability structures are what an orphaned agent has lost when its owner leaves."
+  - source_ref: "A.6.2.5"
+    target_ref: "ASI10"
+    strength: RELATED
+    rationale: "[curated] Release criteria decide what may be deployed; nothing in 42001 retires it afterwards."
+  - source_ref: "A.9.4"
+    target_ref: "ASI10"
+    strength: RELATED
+    rationale: "[curated] Preventing scope creep addresses an agent drifting beyond its authorised purpose."

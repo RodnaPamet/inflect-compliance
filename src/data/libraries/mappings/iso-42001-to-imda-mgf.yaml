@@ -1,0 +1,219 @@
+# Cross-Framework Mapping Set: ISO/IEC 42001:2023 → IMDA Model AI Governance Framework (May 2026)
+# Data-driven mapping file for the RequirementMapping ingestion pipeline.
+#
+# The MGF and ISO 42001 answer the same governance questions in different registers.
+# This map is how an AIMS-certified customer inherits MGF coverage, and it is the hop
+# that puts the MGF two edges from ISO 27001 through OWASP ASI.
+#
+# Every entry is [curated] — Inflect's judgement of conceptual alignment, NOT
+# part of either publication. Mappings are STRUCTURAL GUIDANCE, never a
+# compliance guarantee: the gap-analysis layer treats SUBSET / INTERSECT /
+# RELATED as "partially covered" or "review needed" and never as covered.
+#
+# SYMMETRY: this pair ships in BOTH directions. `imda-mgf-to-iso-42001.yaml` is the exact
+# transpose of this file with each strength inverted (SUBSET ⇄ SUPERSET;
+# EQUAL / INTERSECT / RELATED are self-inverse). Edit one side and
+# tests/unit/agentic-framework-mappings.test.ts fails until the other matches.
+#
+# Refs are YAML-library ref_ids resolved against Framework.key and
+# FrameworkRequirement.code by mapping-set-importer.ts.
+
+urn: urn:inflect:mappingset:iso-42001-to-imda-mgf
+name: "ISO/IEC 42001:2023 → IMDA Model AI Governance Framework (May 2026)"
+description: >
+  Cross-framework traceability between ISO/IEC 42001:2023 and IMDA Model AI Governance Framework (May 2026).
+  Curated alignment for gap analysis and inherited coverage — structural
+  guidance, not a compliance guarantee.
+version: 1
+source_framework_ref: ISO42001-2023
+target_framework_ref: IMDA-MGF-2026
+
+mapping_entries:
+  - source_ref: "6.1"
+    target_ref: "MGF-1.1"
+    strength: INTERSECT
+    rationale: "[curated] Actions to address AI risks and opportunities is the planning clause a risk taxonomy and tolerances would be recorded under."
+  - source_ref: "8.2"
+    target_ref: "MGF-1.1"
+    strength: INTERSECT
+    rationale: "[curated] Performing the AI risk assessment produces the harms; the MGF additionally asks for an agreed tolerance per harm."
+  - source_ref: "A.5.2"
+    target_ref: "MGF-1.1"
+    strength: RELATED
+    rationale: "[curated] A repeatable impact-assessment process is the machinery a taxonomy feeds."
+  - source_ref: "5.3"
+    target_ref: "MGF-1.2"
+    strength: INTERSECT
+    rationale: "[curated] Assigning AI roles, responsibilities and authorities is the same obligation stated as a management-system clause."
+  - source_ref: "A.3.2"
+    target_ref: "MGF-1.2"
+    strength: INTERSECT
+    rationale: "[curated] Defining AI roles and accountability structures is the Annex A control behind the MGF's internal governance dimension."
+  - source_ref: "5.1"
+    target_ref: "MGF-1.2"
+    strength: RELATED
+    rationale: "[curated] Top-management commitment is what makes a governance structure carry authority."
+  - source_ref: "A.9.4"
+    target_ref: "MGF-1.3"
+    strength: INTERSECT
+    rationale: "[curated] Preventing scope creep from the intended purpose is the 42001 statement of an agent's authority limits."
+  - source_ref: "A.6.2.2"
+    target_ref: "MGF-1.3"
+    strength: RELATED
+    rationale: "[curated] Functional and non-functional requirements are where declared limits would be written."
+  - source_ref: "4.3"
+    target_ref: "MGF-1.3"
+    strength: RELATED
+    rationale: "[curated] Determining the scope of the AIMS bounds the organisation, not the individual agent."
+  - source_ref: "8.2"
+    target_ref: "MGF-1.4"
+    strength: SUBSET
+    rationale: "[curated] The AI risk assessment addresses systems one at a time; the May 2026 revision asks for risk at the level of the composed agent system."
+  - source_ref: "8.4"
+    target_ref: "MGF-1.4"
+    strength: SUBSET
+    rationale: "[curated] The AI system impact assessment covers a single system's effects, a proper part of multi-agent risk."
+  - source_ref: "6.1"
+    target_ref: "MGF-1.4"
+    strength: RELATED
+    rationale: "[curated] Risk planning is the clause emergent multi-agent behaviour would be treated under."
+  - source_ref: "A.10.3"
+    target_ref: "MGF-1.5"
+    strength: INTERSECT
+    rationale: "[curated] Assessing and managing supplier expectations is the 42001 control nearest third-party agent due diligence."
+  - source_ref: "A.10.2"
+    target_ref: "MGF-1.5"
+    strength: INTERSECT
+    rationale: "[curated] Allocating accountability across the AI supply chain is what adopting a third-party agent redistributes."
+  - source_ref: "A.9.2"
+    target_ref: "MGF-2.1"
+    strength: INTERSECT
+    rationale: "[curated] Responsible-use operational processes are where a human-involvement model per decision class would be defined."
+  - source_ref: "8.1"
+    target_ref: "MGF-2.1"
+    strength: RELATED
+    rationale: "[curated] Operational planning and control frames how decisions are made, without choosing an oversight model."
+  - source_ref: "5.3"
+    target_ref: "MGF-2.2"
+    strength: INTERSECT
+    rationale: "[curated] Assigning roles and authorities is the clause under which a named accountable owner per deployed agent sits."
+  - source_ref: "A.3.2"
+    target_ref: "MGF-2.2"
+    strength: INTERSECT
+    rationale: "[curated] Accountability structures name who answers for a system in operation."
+  - source_ref: "A.3.3"
+    target_ref: "MGF-2.3"
+    strength: INTERSECT
+    rationale: "[curated] A mechanism for reporting concerns is the escalation half of intervention authority; stop authority is not in 42001."
+  - source_ref: "A.6.2.6"
+    target_ref: "MGF-2.3"
+    strength: RELATED
+    rationale: "[curated] Operation and performance monitoring is what a human intervenes on the strength of."
+  - source_ref: "10.2"
+    target_ref: "MGF-2.3"
+    strength: RELATED
+    rationale: "[curated] Nonconformity and corrective action is the after-the-fact counterpart to intervening in the moment."
+  - source_ref: "7.2"
+    target_ref: "MGF-2.4"
+    strength: RELATED
+    rationale: "[curated] Competence of people affecting AI performance is the lever nearest automation bias; 42001 does not name the bias."
+  - source_ref: "7.3"
+    target_ref: "MGF-2.4"
+    strength: RELATED
+    rationale: "[curated] Awareness of the AI policy and roles is where over-reliance on agent output would be addressed."
+  - source_ref: "A.5.4"
+    target_ref: "MGF-2.4"
+    strength: RELATED
+    rationale: "[curated] Evaluating effects on individuals covers the reviewer as an affected person."
+  - source_ref: "A.7.3"
+    target_ref: "MGF-3.1"
+    strength: INTERSECT
+    rationale: "[curated] Dataset origin and selection rationale is provenance for training inputs; the MGF extends it to runtime memory."
+  - source_ref: "A.7.4"
+    target_ref: "MGF-3.1"
+    strength: INTERSECT
+    rationale: "[curated] Data-quality criteria and verification are the quality half of input and memory governance."
+  - source_ref: "A.7.5"
+    target_ref: "MGF-3.1"
+    strength: INTERSECT
+    rationale: "[curated] Data lineage and transformation history is the traceability half."
+  - source_ref: "A.4.3"
+    target_ref: "MGF-3.1"
+    strength: INTERSECT
+    rationale: "[curated] Recording dataset provenance and characteristics is the resource-inventory statement of the same control."
+  - source_ref: "A.6.2.4"
+    target_ref: "MGF-3.2"
+    strength: INTERSECT
+    rationale: "[curated] Verification and validation methodologies are pre-release testing; red-teaming and ongoing evaluation are the MGF's additions."
+  - source_ref: "A.6.2.5"
+    target_ref: "MGF-3.2"
+    strength: RELATED
+    rationale: "[curated] Release criteria in a deployment plan are what testing evidence is judged against."
+  - source_ref: "A.6.2.8"
+    target_ref: "MGF-3.3"
+    strength: INTERSECT
+    rationale: "[curated] Logging events across the life cycle is the traceability control; the MGF names tool calls and actions specifically."
+  - source_ref: "A.6.2.3"
+    target_ref: "MGF-3.3"
+    strength: RELATED
+    rationale: "[curated] Design and development documentation records how a decision path was intended to work."
+  - source_ref: "A.3.2"
+    target_ref: "MGF-3.4"
+    strength: RELATED
+    rationale: "[curated] Accountability structures assign human authority; 42001 has no least-privilege or credential-handling control for machine identities."
+  - source_ref: "A.6.2.2"
+    target_ref: "MGF-3.4"
+    strength: RELATED
+    rationale: "[curated] Non-functional requirements are where a privilege boundary would be specified if it were specified at all."
+  - source_ref: "A.8.4"
+    target_ref: "MGF-3.5"
+    strength: INTERSECT
+    rationale: "[curated] Planning incident-notification communication is the disclosure half of incident response."
+  - source_ref: "A.8.3"
+    target_ref: "MGF-3.5"
+    strength: INTERSECT
+    rationale: "[curated] An external problem-reporting mechanism is how an incident reaches the organisation."
+  - source_ref: "10.2"
+    target_ref: "MGF-3.5"
+    strength: INTERSECT
+    rationale: "[curated] Nonconformity and corrective action is the post-incident review the MGF asks for."
+  - source_ref: "A.6.2.8"
+    target_ref: "MGF-3.6"
+    strength: RELATED
+    rationale: "[curated] Life-cycle event logging would record delegations between agents without constraining them."
+  - source_ref: "A.10.2"
+    target_ref: "MGF-3.6"
+    strength: RELATED
+    rationale: "[curated] Supply-chain accountability reaches the third-party agents delegated to."
+  - source_ref: "A.8.2"
+    target_ref: "MGF-4.1"
+    strength: INTERSECT
+    rationale: "[curated] User-facing system documentation is the vehicle for disclosing that an AI agent is in use."
+  - source_ref: "A.8.5"
+    target_ref: "MGF-4.1"
+    strength: INTERSECT
+    rationale: "[curated] Proactively sharing relevant AI system information is the same disclosure duty stated as a control."
+  - source_ref: "A.8.2"
+    target_ref: "MGF-4.2"
+    strength: INTERSECT
+    rationale: "[curated] User-facing documentation is where capabilities and limits are explained."
+  - source_ref: "A.6.2.7"
+    target_ref: "MGF-4.2"
+    strength: INTERSECT
+    rationale: "[curated] Technical documentation for defined audiences covers failure modes for a technical reader."
+  - source_ref: "A.8.3"
+    target_ref: "MGF-4.3"
+    strength: INTERSECT
+    rationale: "[curated] An external problem-reporting mechanism is the redress channel; consent and user control are not in 42001."
+  - source_ref: "A.5.4"
+    target_ref: "MGF-4.3"
+    strength: RELATED
+    rationale: "[curated] Evaluating effects on individuals and groups is the assessment behind a redress obligation."
+  - source_ref: "A.8.2"
+    target_ref: "MGF-4.4"
+    strength: INTERSECT
+    rationale: "[curated] User-facing documentation carries safe-operation guidance."
+  - source_ref: "A.9.3"
+    target_ref: "MGF-4.4"
+    strength: RELATED
+    rationale: "[curated] Responsible-use objectives frame what safe operation means for this deployment."
