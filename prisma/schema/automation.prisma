@@ -435,6 +435,35 @@ model AgentActionReceipt {
   auditLogId      String?
   /// True iff the Ed25519 signature verified against the configured public key.
   verified        Boolean  @default(false)
+
+  // ── Tool provenance (OWASP ASI04) ────────────────────────────────────────
+  //
+  // "Which version of which tool description produced this action" is a question
+  // an audit asks AFTER a poisoned description has been found, about actions
+  // taken months earlier — by which time the definition has been fixed and the
+  // registry no longer holds the text that caused the harm. A receipt that names
+  // only the tool cannot answer it. These four columns can.
+  //
+  // All NULLABLE, and that is the honest shape rather than a migration
+  // convenience: a receipt can arrive from an external mediator about a tool
+  // served by somebody else's MCP server, and the correct record for that is
+  // "we do not know what its description said" — not a hash of a definition we
+  // invented. `toolProvenance` says which case this is.
+
+  /// `inflect:builtin` when `toolName` is a tool THIS build defines;
+  /// `unattested` when it is not. NULL only on rows written before this column
+  /// existed.
+  toolProvenance       String?
+  /// The `McpToolManifestPin.descriptionHash` in force for this tenant + tool at
+  /// ingest. NULL when the tool is unpinned or not ours.
+  toolDescriptionHash  String?
+  /// The `McpToolManifestPin.manifestHash` — name + description + schema — in
+  /// force at ingest.
+  toolManifestHash     String?
+  /// The pin revision, i.e. how many times this tool's definition had moved
+  /// under this tenant by the time the action was recorded.
+  toolManifestRevision Int?
+
   createdAt       DateTime @default(now())
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id])

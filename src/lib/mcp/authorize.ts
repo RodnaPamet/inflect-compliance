@@ -8,21 +8,28 @@
  *      (RFC 8693; `null` for a caller holding the long-lived key itself.)
  *   2. LIVENESS — is the credential still live RIGHT NOW? Re-read per tool
  *      call, never cached, so a revoke lands inside a run in flight.
- *   3. EXPOSURE — is this tool on the agent's allowlist? Deny-by-default.
- *   4. AUTONOMY — is the rung this tool represents at or below the effective
+ *   3. TOOL MANIFEST — is the tool's DEFINITION (name + description + parameter
+ *      schema) the one this tenant approved? Deny on any drift, until a named
+ *      human re-approves. See `assertToolManifestPinned`.
+ *   4. EXPOSURE — is this tool on the agent's allowlist? Deny-by-default.
+ *   5. AUTONOMY — is the rung this tool represents at or below the effective
  *      ceiling, `min(key max, agent autonomyLevel)`?
- *   5. POLICY CARD — is this call inside the agent's own declared, versioned
+ *   6. POLICY CARD — is this call inside the agent's own declared, versioned
  *      runtime policy: its permitted tools, its data rung, its autonomy rung and
  *      its per-run and per-day action budgets?
- *   6. CAPABILITY — does the CREDENTIAL carry `mcp:propose`? (propose tools).
- *   7. RESOURCE SCOPE — does the CREDENTIAL carry `risks:read`?
- *   8. PERMISSION — may the PRINCIPAL do this? `assertPermission`, the SAME
+ *   7. CAPABILITY — does the CREDENTIAL carry `mcp:propose`? (propose tools).
+ *   8. RESOURCE SCOPE — does the CREDENTIAL carry `risks:read`?
+ *   9. PERMISSION — may the PRINCIPAL do this? `assertPermission`, the SAME
  *      function `requirePermission` calls on the equivalent human route.
- *   9. POLICY — the shared `assertCanRead` / `assertCanWrite` the mirrored route
+ *  10. POLICY — the shared `assertCanRead` / `assertCanWrite` the mirrored route
  *      applies, where `PermissionSet` has no key to name.
  *
  * Cheapest and least-revealing first, and CREDENTIAL checks before PRINCIPAL
- * checks. That ordering is not cosmetic: 1-7 are configuration — a key scoped
+ * checks. Step 3 is the exception to "cheapest first" and is placed on purpose:
+ * it costs a query, but it is the only step that asks about the TOOL rather than
+ * the caller, and a definition whose instruction text is unverified must not
+ * have its grants consulted first — the question "should anything about this
+ * tool proceed" precedes "may you". That ordering is not cosmetic: 1-7 are configuration — a key scoped
  * for controls calling a risks tool is an integration that needs a wider key,
  * and its refusal should say "scope", by name, so somebody can fix it. 8-9 are
  * the authority question, and a refusal there means the human this agent speaks
@@ -51,7 +58,7 @@
  *
  * ## Exactly one audit row per denial
  *
- * Every refusal writes ONE hash-chained `AUTHZ_DENIED` row and throws. Step 8
+ * Every refusal writes ONE hash-chained `AUTHZ_DENIED` row and throws. Step 9
  * does it inside `assertPermission` (the same row a denied human route writes,
  * `entity: 'Permission'`); every other step does it through `denyToolCall`
  * below (`entity: 'McpTool'`). The steps are ordered and each returns by
@@ -83,7 +90,10 @@ import { reserveDailyAction } from '@/lib/agentic/policy-card-store';
 import {
     recordPolicyCardEvaluation,
     recordPolicyCardRefusal,
+    recordToolManifestDrift,
 } from '@/lib/observability/integration-metrics';
+import { verifyToolManifestForTenant } from '@/lib/agentic/tool-manifest-store';
+import type { ToolDefinition } from './tool-manifest';
 import { RESOURCE_READ_DATA_SCOPE, dataScopeForToolCall } from './tool-data-scope';
 import type { AgentDataAccessScope } from '@prisma/client';
 import { checkCredentialLiveness } from '@/lib/agentic/agent-credential-state';
@@ -208,6 +218,7 @@ export type McpDenialReason =
     | 'credential_revoked'
     | 'credential_expired'
     | 'tool_not_granted'
+    | 'tool_manifest_unapproved'
     | 'autonomy_denied'
     | 'policy_card_denied'
     | 'capability_denied'
@@ -570,6 +581,87 @@ export async function authorizeResourceRead(inv: McpInvocation): Promise<void> {
 }
 
 /**
+ * Is this tool's DEFINITION the one this tenant approved? (OWASP ASI04.)
+ *
+ * A tool definition is three fields the model reads — name, DESCRIPTION and
+ * parameter schema — and only the first is ever visible in a normal session. The
+ * description is instruction text delivered straight into the agent's context by
+ * `tools/list`, so it is the field an attacker edits expecting nobody to look at
+ * it. This compares all three against the tenant's pin and refuses the tool when
+ * any of them has moved, until a named human re-approves.
+ *
+ * ## Why it runs here and this early
+ *
+ * Every other step in this gate asks about the CALLER — its audience, its
+ * liveness, its grants, its authority. This one asks about the TOOL, and the
+ * answer does not depend on who is calling. Running it after the exposure
+ * allowlist would mean a tool whose description had been rewritten still had its
+ * grant consulted first, which is the wrong order for a supply-chain fact: the
+ * question "should anything about this tool proceed" precedes "may you".
+ *
+ * ## What the refusal says, and what it does not
+ *
+ * The 403 names the TOOL and says re-approval is required. It does not carry the
+ * hashes, the status, or — most importantly — one character of either
+ * description. An error body is a channel back to the caller, and the caller in
+ * the scenario this defends against is the thing holding the poisoned text; a
+ * refusal that quoted the diff would hand it a confirmation oracle. The hashes
+ * and the status go in the audit row and the metric, where an operator reads
+ * them.
+ *
+ * `escalate: true` on the audit row, unconditionally. A policy-card refusal
+ * escalates only when the card declared that rule worth waking somebody for; a
+ * tool definition changing under a tenant that had already seen it has exactly
+ * one benign cause — a deploy — and no tenant declares it.
+ */
+async function assertToolManifestPinned(
+    inv: McpInvocation,
+    tool: ToolDefinition,
+): Promise<void> {
+    const verdict = await verifyToolManifestForTenant(inv.ctx.tenantId, {
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+    });
+
+    if (!verdict.mustRefuse) return;
+
+    recordToolManifestDrift({ tool: tool.name, status: verdict.status });
+    logger.error('mcp: tool manifest drift — refusing tool until re-approved', {
+        tenantId: inv.ctx.tenantId,
+        tool: tool.name,
+        status: verdict.status,
+        // Digests only. The descriptions themselves never reach a log line: the
+        // whole point of the alert is that somebody goes and reads the diff in
+        // the source, not that the log becomes another place the instruction
+        // text is delivered.
+        approvedManifestHash: verdict.approved?.manifestHash ?? null,
+        liveManifestHash: verdict.live.manifestHash,
+        approvedRevision: verdict.approvedRevision,
+    });
+
+    await denyToolCall(inv.ctx, 'tool_manifest_unapproved', {
+        tool: tool.name,
+        agentId: inv.agentId,
+        message:
+            `The definition of the "${tool.name}" tool has changed since it was ` +
+            'approved for this tenant. An administrator must review and re-approve ' +
+            'it before it can be called again.',
+        extra: {
+            manifestStatus: verdict.status,
+            approvedManifestHash: verdict.approved?.manifestHash ?? null,
+            liveManifestHash: verdict.live.manifestHash,
+            approvedDescriptionHash: verdict.approved?.descriptionHash ?? null,
+            liveDescriptionHash: verdict.live.descriptionHash,
+            approvedSchemaHash: verdict.approved?.schemaHash ?? null,
+            liveSchemaHash: verdict.live.schemaHash,
+            approvedRevision: verdict.approvedRevision,
+            escalate: true,
+        },
+    });
+}
+
+/**
  * The gate. Throws `forbidden` — after exactly one audit row — when this
  * invocation may not call this tool.
  */
@@ -577,6 +669,14 @@ export async function authorizeToolCall(
     inv: McpInvocation,
     tool: {
         name: string;
+        /**
+         * The instruction text `tools/list` hands the model, and the parameter
+         * contract beside it. Both are here because both are IN THE PIN — see
+         * `assertToolManifestPinned`. Naming only what the gate compares would
+         * have left the description out, which is the field the attack uses.
+         */
+        description: string;
+        inputSchema: Record<string, unknown>;
         authorize: McpToolAuthorization;
         resourceScope: { resource: string; action: ScopeAction };
         /** Propose tools only — the MCP capability the credential must carry. */
@@ -606,7 +706,13 @@ export async function authorizeToolCall(
     // 2. Is the credential still live, right now?
     await assertCredentialLive(inv, tool.name);
 
-    // 3. Deny-by-default exposure.
+    // 3. Is the tool DEFINITION the one this tenant approved? Supply chain
+    //    before authority: a poisoned description is not a question about who
+    //    the caller is, and nothing about this tool may proceed while what it
+    //    says is unverified.
+    await assertToolManifestPinned(inv, tool);
+
+    // 4. Deny-by-default exposure.
     if (!isToolExposed(inv, tool.name)) {
         await denyToolCall(inv.ctx, 'tool_not_granted', {
             tool: tool.name,
@@ -617,10 +723,10 @@ export async function authorizeToolCall(
         });
     }
 
-    // 4. Is this rung within the agent's ceiling?
+    // 5. Is this rung within the agent's ceiling?
     await assertAutonomy(inv, tool.name, tool.capabilityClass, tool.authorize.autonomy);
 
-    // 5. Is this call inside the agent's own versioned policy card? Evaluated
+    // 6. Is this call inside the agent's own versioned policy card? Evaluated
     //    HERE, before anything runs — a violation is a refusal, not a note.
     await assertWithinPolicyCard(
         inv,
@@ -630,7 +736,7 @@ export async function authorizeToolCall(
         requiredAutonomyFor(tool.capabilityClass, tool.authorize.autonomy),
     );
 
-    // 6. Credential capability (propose tools). Message preserved verbatim from
+    // 7. Credential capability (propose tools). Message preserved verbatim from
     //    `enforceMcpCapability` — it names a scope, not a permission key.
     if (tool.capability) {
         try {
@@ -646,7 +752,7 @@ export async function authorizeToolCall(
         }
     }
 
-    // 7. Credential resource scope. Same treatment: the existing message is the
+    // 8. Credential resource scope. Same treatment: the existing message is the
     //    actionable one and is safe (it echoes scopes the caller already holds).
     try {
         enforceApiKeyScope(inv.ctx, tool.resourceScope.resource, tool.resourceScope.action);
@@ -665,7 +771,7 @@ export async function authorizeToolCall(
 
     const { authorize } = tool;
 
-    // 8. Permission keys — through the SAME `assertPermission` the human
+    // 9. Permission keys — through the SAME `assertPermission` the human
     //    route's `requirePermission` calls. It audits its own denial and
     //    throws the generic 403, so nothing is added here.
     if (authorize.keys && authorize.keys.length > 0) {
@@ -676,7 +782,7 @@ export async function authorizeToolCall(
         );
     }
 
-    // 9. The shared read/write policy, for a mirrored route that has no
+    // 10. The shared read/write policy, for a mirrored route that has no
     //    permission key to name. `assertCanRead` / `assertCanWrite` throw
     //    without auditing — which is precisely how an agent denial used to be
     //    invisible — so the throw is caught and turned into the one row.

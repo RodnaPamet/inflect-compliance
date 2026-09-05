@@ -87,6 +87,11 @@ jest.mock('@/lib/db-context', () => ({
                 findMany: () => Promise.resolve([]),
                 findFirst: () => Promise.resolve(null),
             },
+            // The tool-manifest pin the ingest path stamps onto every receipt.
+            // `null` — nothing pinned — keeps this suite about the signature
+            // gate; the provenance stamp is proved in
+            // tests/integration/agent-receipt-tool-provenance.test.ts.
+            mcpToolManifestPin: { findUnique: () => Promise.resolve(null) },
         }),
 }));
 

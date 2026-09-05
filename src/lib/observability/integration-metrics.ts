@@ -632,6 +632,7 @@ export function recordSyncLock(attrs: {
 
 let _policyCardEvaluation: Counter | null = null;
 let _policyCardRefusal: Counter | null = null;
+let _toolManifestDrift: Counter | null = null;
 
 /**
  * One policy-card evaluation at the MCP tool boundary.
@@ -715,4 +716,41 @@ export function recordPolicyCardRefusal(attrs: {
         'risk.tier': attrs.riskTier ?? 'unscored',
         surface: attrs.surface,
     });
+}
+
+// ── Tool-manifest pinning (OWASP ASI04) ────────────────────────────────────
+
+/**
+ * A tool DEFINITION no longer matches what the tenant approved.
+ *
+ * This is the tool-poisoning signal, and it is the loudest one this subsystem
+ * emits. Unlike a policy-card refusal — which is usually a mis-scoped
+ * integration and is expected to fire routinely — a manifest drift means the
+ * instruction text or the parameter contract of a tool CHANGED under a tenant
+ * that had already seen it. The benign cause is a deploy; there is no other
+ * benign cause.
+ *
+ * `status` is the label that matters: `DESCRIPTION_CHANGED` is the case a pin
+ * over name + schema alone would have missed, and the one that corresponds to
+ * the published attack. It is separated from `SCHEMA_CHANGED` here rather than
+ * collapsed into a single `drift` counter precisely so the two can be alerted on
+ * at different thresholds.
+ *
+ * The tool NAME is a label and the hashes are NOT. A hash is high-cardinality
+ * and unbounded — one new series per poisoned description — and it is already on
+ * the `AUTHZ_DENIED` audit row, which is the per-call record.
+ *
+ * ALERT ON — any increase at all, immediately, for `status!="UNPINNED"`. A
+ * fleet-wide simultaneous jump across every tenant is a deploy; a jump confined
+ * to one tenant or one tool is not, and cannot be.
+ */
+export function recordToolManifestDrift(attrs: { tool: string; status: string }): void {
+    if (!_toolManifestDrift) {
+        _toolManifestDrift = getMeter().createCounter('agentic.tool_manifest.drift', {
+            description:
+                'MCP tool calls refused because the tool definition no longer matches the tenant-approved manifest',
+            unit: '1',
+        });
+    }
+    _toolManifestDrift.add(1, { tool: attrs.tool, status: attrs.status });
 }

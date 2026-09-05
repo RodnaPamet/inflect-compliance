@@ -73,6 +73,13 @@ const ADMIN_ONLY_ROUTES = [
     // budgets, so sharing the tool-exposure key would make every routine grant
     // carry the authority to raise an agent's ceiling.
     'admin/agents/[agentId]/policy-card/route.ts',
+    // Tool-manifest pinning (OWASP ASI04) — the tenant's record of which tool
+    // DEFINITION it has accepted, and the audited act of re-approving one that
+    // changed. Same `admin.agent_registry` key as the register, and for the same
+    // reason: this is tenant-wide rather than per-agent, so approving a rewritten
+    // description hands its instructions to every agent at once. That is the
+    // register's blast radius, not the per-agent grant's.
+    'admin/agents/tool-manifests/route.ts',
     // The agent risk assessment (Agentic 3) — read the instrument, answer one
     // question, and score the agent. Same `admin.agent_registry` key as the
     // register: completing a run writes the tier that caps the agent's

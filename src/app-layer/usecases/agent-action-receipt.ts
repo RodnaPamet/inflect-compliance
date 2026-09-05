@@ -26,7 +26,7 @@
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { appendAuditEntry } from '@/lib/audit';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { log } from '@/lib/observability';
@@ -38,6 +38,11 @@ import {
     type PipelockReceipt,
 } from '@/lib/mcp/receipt-verification';
 import { env } from '@/env';
+import { isKnownMcpTool } from '@/lib/mcp/tool-catalogue';
+import {
+    TOOL_PROVENANCE_BUILTIN,
+    TOOL_PROVENANCE_UNATTESTED,
+} from '@/lib/mcp/tool-manifest';
 import { assertCanWrite, assertCanRead } from '@/app-layer/policies/common';
 import type { RequestContext } from '@/app-layer/types';
 
@@ -49,6 +54,73 @@ export interface IngestReceiptResult {
     auditLogId: string | null;
     /** Machine-readable reason when unverified (never surfaces secrets). */
     reason?: string;
+}
+
+/** The tool-provenance columns stamped on one receipt. */
+interface ReceiptToolProvenance {
+    toolProvenance: string;
+    toolDescriptionHash: string | null;
+    toolManifestHash: string | null;
+    toolManifestRevision: number | null;
+}
+
+/**
+ * Which tool DESCRIPTION was in force when this action happened (OWASP ASI04).
+ *
+ * "Which version of which tool description produced this action" is a question
+ * an audit asks AFTER a poisoned description has been found, about actions taken
+ * months earlier — by which time the description has been fixed and the registry
+ * no longer holds the text that caused the harm. A receipt naming only the tool
+ * cannot answer it. These four columns can, and they are stamped at INGEST
+ * rather than derived at read time for exactly that reason: a value derived
+ * later would answer "what does the build say now", which is a different claim.
+ *
+ * The hash comes from the tenant's PIN, not from the live registry, and that is
+ * the load-bearing choice. The pin is what the MCP boundary ENFORCED: a call
+ * whose live definition had drifted from the pin was refused, so for any action
+ * that actually executed the two agree — and where they do not agree, the pin is
+ * the one that describes the regime the action ran under. Reading the live
+ * registry instead would attribute an old action to whatever the current deploy
+ * happens to say.
+ *
+ * Three outcomes, and the NULLs are meaningful rather than missing:
+ *
+ *   • a tool this build defines, WITH a pin → `inflect:builtin` + the hashes.
+ *   • a tool this build defines with NO pin yet (a receipt about a call that
+ *     never reached our boundary) → `inflect:builtin`, hashes NULL. We know
+ *     whose tool it is and we do not know which definition was in front of it;
+ *     saying so is the honest record.
+ *   • a name this build does not define — an external mediator sees calls to
+ *     third-party MCP servers too → `unattested`, hashes NULL. Hashing OUR
+ *     registry for a name we do not serve would invent provenance.
+ */
+async function resolveToolProvenance(
+    db: PrismaTx,
+    tenantId: string,
+    toolName: string,
+): Promise<ReceiptToolProvenance> {
+    const known = isKnownMcpTool(toolName);
+    const provenance = known ? TOOL_PROVENANCE_BUILTIN : TOOL_PROVENANCE_UNATTESTED;
+    if (!known) {
+        return {
+            toolProvenance: provenance,
+            toolDescriptionHash: null,
+            toolManifestHash: null,
+            toolManifestRevision: null,
+        };
+    }
+
+    const pin = await db.mcpToolManifestPin.findUnique({
+        where: { tenantId_toolName: { tenantId, toolName } },
+        select: { descriptionHash: true, manifestHash: true, revision: true },
+    });
+
+    return {
+        toolProvenance: provenance,
+        toolDescriptionHash: pin?.descriptionHash ?? null,
+        toolManifestHash: pin?.manifestHash ?? null,
+        toolManifestRevision: pin?.revision ?? null,
+    };
 }
 
 /**
@@ -106,9 +178,11 @@ export async function ingestReceipt(ctx: RequestContext, rawReceipt: unknown): P
         });
     }
 
-    // 5. Persist the receipt (tenant-scoped write via runInTenantContext).
-    const row = await runInTenantContext(ctx, (db) =>
-        db.agentActionReceipt.create({
+    // 5. Persist the receipt (tenant-scoped write via runInTenantContext),
+    //    stamped with the TOOL PROVENANCE in force — see `resolveToolProvenance`.
+    const row = await runInTenantContext(ctx, async (db) => {
+        const provenance = await resolveToolProvenance(db, ctx.tenantId, fields.toolName);
+        return db.agentActionReceipt.create({
             data: {
                 tenantId: ctx.tenantId,
                 mcpKeyId: ctx.apiKeyId ?? null,
@@ -122,10 +196,14 @@ export async function ingestReceipt(ctx: RequestContext, rawReceipt: unknown): P
                 occurredAt: fields.occurredAt,
                 auditLogId,
                 verified: verification.valid,
+                toolProvenance: provenance.toolProvenance,
+                toolDescriptionHash: provenance.toolDescriptionHash,
+                toolManifestHash: provenance.toolManifestHash,
+                toolManifestRevision: provenance.toolManifestRevision,
             },
             select: { id: true },
-        }),
-    );
+        });
+    });
 
     return {
         id: row.id,
@@ -155,6 +233,11 @@ export interface ReceiptListItem {
     auditLogId: string | null;
     occurredAt: Date;
     createdAt: Date;
+    /** Tool provenance in force at ingest — see `resolveToolProvenance`. */
+    toolProvenance: string | null;
+    toolDescriptionHash: string | null;
+    toolManifestHash: string | null;
+    toolManifestRevision: number | null;
 }
 
 /** List receipts for the current tenant, newest first. Bounded (default 100). */
@@ -182,6 +265,10 @@ export async function listReceipts(ctx: RequestContext, filter: ListReceiptsFilt
                 auditLogId: true,
                 occurredAt: true,
                 createdAt: true,
+                toolProvenance: true,
+                toolDescriptionHash: true,
+                toolManifestHash: true,
+                toolManifestRevision: true,
             },
         }),
     );
@@ -202,6 +289,15 @@ export interface ReceiptExport {
     verified: boolean;
     auditLogId: string | null;
     occurredAt: string;
+    /**
+     * Which tool DESCRIPTION was in force when the action happened. The question
+     * an auditor asks once a poisoned description has been found and the
+     * registry no longer holds the text that caused the harm.
+     */
+    toolProvenance: string | null;
+    toolDescriptionHash: string | null;
+    toolManifestHash: string | null;
+    toolManifestRevision: number | null;
     /**
      * How to verify independently. The signature is Ed25519 over
      * SHA-256(canonical-json(action_record)). We store only a SCRUBBED, bounded
@@ -242,6 +338,10 @@ export async function getReceiptForExport(ctx: RequestContext, id: string): Prom
                 verified: true,
                 auditLogId: true,
                 occurredAt: true,
+                toolProvenance: true,
+                toolDescriptionHash: true,
+                toolManifestHash: true,
+                toolManifestRevision: true,
             },
         }),
     );
@@ -262,6 +362,10 @@ export async function getReceiptForExport(ctx: RequestContext, id: string): Prom
         verified: row.verified,
         auditLogId: row.auditLogId,
         occurredAt: row.occurredAt.toISOString(),
+        toolProvenance: row.toolProvenance,
+        toolDescriptionHash: row.toolDescriptionHash,
+        toolManifestHash: row.toolManifestHash,
+        toolManifestRevision: row.toolManifestRevision,
         verification: {
             algorithm: 'ed25519',
             messageDerivation: 'sha256(canonical-json(action_record))',

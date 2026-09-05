@@ -26,7 +26,18 @@
 
 jest.mock('@/lib/prisma', () => {
     const tenantApiKey = { findFirst: jest.fn() };
-    return { __esModule: true, default: { tenantApiKey }, prisma: { tenantApiKey } };
+    // The tool-manifest pin the gate reads before the exposure allowlist.
+    // `null` — nothing pinned — is trust-on-first-use, so the manifest step
+    // contributes no term and these assertions stay about the policy card.
+    const mcpToolManifestPin = {
+        findUnique: jest.fn().mockResolvedValue(null),
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+    };
+    return {
+        __esModule: true,
+        default: { tenantApiKey, mcpToolManifestPin },
+        prisma: { tenantApiKey, mcpToolManifestPin },
+    };
 });
 
 jest.mock('@/lib/audit', () => ({
