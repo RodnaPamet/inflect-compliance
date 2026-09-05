@@ -155,6 +155,12 @@ export class RegisteredAgentRepository {
                 dataAccessScope: true,
                 reversibility: true,
                 provenance: true,
+                // The supplier, for the merged-row attribution rule in
+                // `updateRegisteredAgent`. A THIRD_PARTY agent must name a
+                // vendor, and an edit that strips the vendor names no
+                // provenance — so the check needs both halves of the row it is
+                // about to become, not just the half the payload carries.
+                vendorId: true,
                 modelRef: true,
                 riskTier: true,
                 riskTierScoredAt: true,

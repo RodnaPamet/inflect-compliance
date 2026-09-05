@@ -119,6 +119,10 @@ function invocationFor(
         },
         agentId: 'agent-1',
         grantedTools: new Set(['list_risks', 'get_framework_status']),
+        // The catalogue snapshot `buildMcpInvocation` takes. Everything this
+        // suite calls is on it, so the loader never refuses and every assertion
+        // below stays about the CARD.
+        offeredTools: [...MCP_TOOL_NAMES],
         audience: null,
         // Above every rung any tool here requires, so the SEPARATE autonomy
         // ceiling of 2/10 is never what refuses.

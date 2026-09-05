@@ -55,6 +55,7 @@ import {
 } from '@/lib/mcp/token-exchange';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { makeRequestContext } from '../helpers/make-context';
+import { MCP_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
 
 const findFirst = (prisma as any).tenantApiKey.findFirst as jest.Mock;
 const auditRows = appendAuditEntry as unknown as jest.Mock;
@@ -101,6 +102,7 @@ function invocationFor(
         },
         agentId: 'agent-1',
         grantedTools: new Set(['list_risks', 'list_controls']),
+        offeredTools: [...MCP_TOOL_NAMES],
         audience,
         autonomyCeiling: 6,
         // A scored agent, so the tier term is never what refuses here — these
