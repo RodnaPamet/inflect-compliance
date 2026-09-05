@@ -38,27 +38,44 @@ is still reported, because the row tells its reader the field is the prompt.
 
 **The census.** Two options, both off in `eslint.config.mjs` and both on in the
 guard. `reportUnanalysable` reports each position the rule could not judge — an
-object spread, a helper it cannot open, a variable declared elsewhere — under
-its own messageId. `reportSinks` reports each sink it recognised. Together they
-make the guard's clean result mean something: "zero violations" and "zero sinks
-found" are the same output otherwise.
+object spread, a helper it cannot open, a value that is just a local identifier —
+under its own messageId. `reportSinks` reports each sink it recognised. Together
+they make the guard's clean result mean something: "zero violations" and "zero
+sinks found" are the same output otherwise.
 
-Measured when this landed: **46 files, 33 sink calls in 11 of them, 0 raw-content
-violations, 1 un-analysable position.** The sink count was cross-checked against
-a naive grep of the same population (32 grep-shaped calls plus one bare `log(`
-the grep could not see) — the AST census and the grep agree exactly, so the
-sweep is not quietly skipping files.
+Measured over the swept path: **55 files, 39 sink calls in 13 of them, 0
+raw-content violations, 84 un-analysable positions over 13 `file — kind` pairs.**
+The sink count was cross-checked against a naive grep of the same population —
+the AST census and the grep agree, so the sweep is not quietly skipping files.
+
+**The opaque-identifier class, and why the first census was dishonest.** The
+first version of this rule reported a hole for an object spread and for a helper
+call, and NOTHING for the third case its own header named:
+`const detail = prompt; logger.info('m', { detail })`. Not a violation, which is
+correct — the rule does no data-flow analysis and cannot know. But not a hole
+either, which is not correct: the whole renamed-variable class sat outside the
+capped denominator, so `KNOWN_UNANALYSABLE` had one entry, `holes / sinks` was
+0.026, and an unbounded class of leak was invisible while the guard reported a
+clean sweep. Six planted shapes were silent — a renamed local, a destructured
+rename, a renamed parameter, an array of renamed content, a `JSON.stringify` of
+one, and one interpolated into the message string.
+
+The fix is one clause, not an analysis: a value position that resolves to a plain
+`Identifier` which is neither a content name nor a literal-in-disguise reports an
+`identifier bound elsewhere` hole. Over the same unchanged tree the census went
+**1 hole → 84**, and `holes / sinks` went **0.026 → 2.154**. Both pairs of
+numbers describe the same code; only the second pair was honest.
 
 ## Files
 
 | File | Role |
 | --- | --- |
 | `eslint-rules/agentic-path.js` | The scope. Live globs (each must match a real file) + anticipatory globs (must match nothing today, must point at a real directory). |
-| `eslint-rules/rules/no-raw-prompt-logging.js` | The rule: sinks, content vocabulary, reducer vocabulary, the walk, the two census modes. |
-| `eslint-rules/__tests__/no-raw-prompt-logging.test.ts` | RuleTester. Ten `valid` cases, one per narrowing. |
+| `eslint-rules/rules/no-raw-prompt-logging.js` | The rule: sinks, content vocabulary, reducer vocabulary, the walk, the two census modes, and the header's account of what stays silent. |
+| `eslint-rules/__tests__/no-raw-prompt-logging.test.ts` | RuleTester. A `valid` case per narrowing, plus the census cases — including the opaque-identifier class and the exemptions that keep its count honest. |
 | `eslint.config.mjs` | Wires the rule at `error`, scoped to `AGENTIC_PATH_GLOBS`. |
 | `eslint-rules/index.js` | Registers the rule on the `local` plugin. |
-| `tests/guards/no-raw-prompt-logging.test.ts` | Runs the rule over the git-listed path; floors the sinks; pins the un-analysable set exactly; four planted mutations. |
+| `tests/guards/no-raw-prompt-logging.test.ts` | Runs the rule over the git-listed path; floors the sinks; pins the un-analysable `file — kind` set exactly; caps opacity per sink call; planted mutations for a raw prompt and for a renamed one. |
 | `tests/guards/eslint-local-rules-wired.test.ts` | Its `LOCAL_RULES` list gains the new rule, so switching it off fails CI. |
 | `eslint-rules/README.md` | The rule's entry, and why a shared scope module lives beside `rules/`. |
 
@@ -75,8 +92,9 @@ sweep is not quietly skipping files.
   test points at `rules/` rather than at the config.
 
 - **…and a guard as well, because ESLint cannot report a denominator.** A lint
-  rule's output is per-file violations; it has no way to say "I judged 33 call
-  sites and could not read 1". That number is part of the result, so the guard
+  rule's output is per-file violations; it has no way to say "I judged 39 call
+  sites and could not read 84 positions in them". That number is part of the
+  result, so the guard
   runs the same rule with the census options on and caps what it could not
   read. The guard is also the backstop for anyone who never runs `npm run lint`.
   The two are not duplicate implementations: there is one AST rule and the guard
@@ -89,6 +107,44 @@ sweep is not quietly skipping files.
   Drift allowance is zero in both directions, matching the assertion-reach
   ratchets: a closed hole loses its entry in the same diff, because the slack it
   would otherwise leave is exactly enough for the next one to land unnoticed.
+
+- **…and the "set" was a multiset that only looked like one at n = 1.** The
+  guard mapped one entry per FINDING. With a single spread on the path that is
+  indistinguishable from a set, and it stayed indistinguishable right up until
+  the population became 84 findings over 13 pairs. It is now deduped, and the
+  cost is written down beside it: one MORE opaque identifier in a file already
+  listed does not move that assertion. The per-sink ceiling is the cap that sees
+  it, which is why there are two.
+
+- **The ceiling is derived from two measured quantities, not chosen.** The old
+  `holes / sinks < 0.1` meant "a small share". It cannot mean that any more: a
+  hole is a POSITION and a sink is a CALL, so the numerator now scales with how
+  many fields the path logs. The number is read as opaque value positions per
+  sink call, and the ceiling is `(84 + 6) / 39` — the path today, plus the most
+  opaque single call on it (`src/lib/mcp/auth.ts`, a six-field bag of locals).
+  In words: the path may absorb one more sink call as opaque as its worst
+  existing one before somebody has to look. Two fail; seven more opaque fields
+  on the existing calls, with no new sink, fail.
+
+- **A denominator was rejected because it made the number pass.** The rule could
+  also census the NAMED positions it resolves — object keys and member-chain
+  final properties — which gives `holes / positions = 0.099`, under the original
+  0.1 ceiling, no ceiling change needed. That denominator is mostly object KEYS,
+  and a key is not where a renamed value hides. Choosing it would have been
+  picking the denominator that keeps the number green, which is the defect the
+  cap exists to catch, one level up. Recorded here because the reasoning is the
+  durable part.
+
+- **What is still silent is written down in the rule header, not implied away.**
+  Four classes report neither a violation nor a hole: a rename reached through a
+  PROPERTY (`{ d: ctx.detail }` — counting it would make a hole of every `ctx.*`
+  at every sink and the census would be mostly noise), a bare identifier BELOW
+  the field-bag index (`logger.info(detail)` — the index cannot tell a message
+  slot from a `db`/`ctx` plumbing slot without a second index per sink), and the
+  `message` / `summary` vocabulary gaps, which are now at least COUNTED even
+  though they are not flagged. The interpolated form IS counted: a template
+  literal's expressions are holes wherever they sit, because their values are
+  stringified into the emitted text.
 
 - **The scope is a set of globs, and four of them match nothing on purpose.**
   Two other branches were adding agentic code while this landed. A scope written
@@ -111,6 +167,14 @@ sweep is not quietly skipping files.
   path it was written for least of all. The final property is what the
   expression evaluates to, so `run.contextJson` is still caught and `ctx.role`
   is not.
+
+- **One unjudgeable position reports one hole.** A helper call's arguments and an
+  object spread's argument are walked (a prompt going IN is still reportable) but
+  no longer add an opaque-identifier hole of their own: `buildFields(run)` is one
+  thing the rule cannot judge, not two. A denominator inflated with noise says as
+  little as one that drops what it cannot read — the same reasoning that gives
+  `SINK_FUNCTIONS` a field-bag index, and that exempts `undefined` and the
+  `JSON` / `Object` namespace objects from being read as opaque bindings.
 
 - **`summary` is deliberately NOT content vocabulary, and that is a gap.**
   `WorkflowRun.summary` is an encrypted output artifact, so tainting the name
@@ -142,7 +206,9 @@ sweep is not quietly skipping files.
 capability name, a required autonomy level, a resource/action pair — so nothing
 is leaking. But the TYPE permits anything, so `extra: { args }` on the MCP
 denial path would put unvetted tool arguments into a permanent plaintext audit
-row and no check in this repo would see it. It is the single entry in
-`KNOWN_UNANALYSABLE`. Narrowing the parameter to a named union closes it and
-lets the entry be deleted; that was left out of this diff because
-`authorize.ts` was being edited concurrently on another branch.
+row and no check in this repo would see it. It is one of the thirteen entries in
+`KNOWN_UNANALYSABLE`, and the only one that is a defect rather than an accounting
+fact — the other twelve are files logging ids, enums and `err` through names the
+rule cannot resolve. Narrowing the parameter to a named union closes it and lets
+that entry be deleted; that was left out of this diff because `authorize.ts` was
+being edited concurrently on another branch.

@@ -181,13 +181,23 @@ store to the second, and nothing can take it back out.
 
 **What it cannot see.** No data-flow analysis at all — it is a name check at a
 syntactic position. A prompt renamed on the way in (`const detail = prompt`), a
-helper that builds the field bag, and an object spread are all invisible to it.
-Those are not swept under the rug: `{ reportUnanalysable: true }` reports each
-one under its own messageId, and `tests/guards/no-raw-prompt-logging.test.ts`
-pins the exact set of them so a new hole is a failing test. `{ reportSinks:
-true }` reports the sink calls it recognised, so the same guard can floor the
-denominator — "zero violations" and "zero sinks found" are otherwise the same
-output.
+helper that builds the field bag, and an object spread are all opaque to it.
+
+Those are not swept under the rug, but read the shape of the promise carefully,
+because a weaker version of this paragraph was false for a while. Each opaque
+position is COUNTED: `{ reportUnanalysable: true }` reports it under its own
+messageId, and `tests/guards/no-raw-prompt-logging.test.ts` holds two caps — the
+exact set of `file — kind` pairs, and a per-sink-call ceiling. Two caps because
+the first alone is a multiset that only looks like a set while the counts are
+one: one MORE opaque identifier in an already-listed file does not move it, and
+the per-sink ceiling is what sees that. `{ reportSinks: true }` reports the sink
+calls it recognised, so the same guard floors the denominator — "zero
+violations" and "zero sinks found" are otherwise the same output.
+
+Three things stay genuinely silent, and they are named in the rule's own header
+rather than implied away: a rename through a property (`{ d: ctx.detail }`), a
+bare identifier below the field-bag index (`logger.info(detail)`), and the
+`message` / `summary` vocabulary gap.
 
 `message` (singular) is deliberately not content vocabulary: `err.message` is at
 nearly every sink in the repo, while `messages` is the LLM transcript. A prompt

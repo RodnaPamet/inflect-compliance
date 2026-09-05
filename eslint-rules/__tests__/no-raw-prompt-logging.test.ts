@@ -11,7 +11,13 @@
  * The census messages (`unanalysable`, `sinkSeen`) get their own cases at the
  * bottom. They are the denominator half — the rule saying what it could not
  * judge — and a mode that silently reported nothing would make the companion
- * guard's caps vacuous.
+ * guard's caps vacuous. The largest hole class is the OPAQUE IDENTIFIER
+ * (`const detail = prompt; logger.info('m', { detail })`): the rule cannot
+ * resolve the name, and until 2026-09-05 it said nothing at all about it, so a
+ * whole class of leak sat outside the capped denominator. Its cases are at the
+ * bottom too, paired with the `valid` cases that keep the count honest —
+ * `undefined` and the `JSON`/`Object` namespaces are not bindings to be
+ * uncertain about, and one unjudgeable position reports one hole, not two.
  */
 import { RuleTester } from 'eslint';
 
@@ -77,6 +83,21 @@ describe('local/no-raw-prompt-logging', () => {
             {
                 name: 'a shielded prompt inside a hash, even under an innocuous key',
                 code: `appendAuditEntry({ detailsJson: { fingerprint: createHash('sha256').update(prompt).digest('hex') } });`,
+            },
+            {
+                name: 'a literal wearing an identifier, and a namespace object, are not opaque bindings',
+                options: HOLES,
+                // `undefined` has nothing bound to it, and `JSON` is only how
+                // the transparent call is spelled — its member base is walked
+                // so `prompt.slice(0, 10)` is still the prompt. Counting either
+                // would inflate the guard's denominator with noise, which says
+                // as little as a denominator that drops what it cannot read.
+                code: `logger.info('agent step', { snapshot: JSON.stringify({ ok: 1 }), missing: undefined });`,
+            },
+            {
+                name: 'a shielded identifier is not a hole — what comes out is a digest whatever went in',
+                options: HOLES,
+                code: `appendAuditEntry({ detailsJson: { fingerprint: sha256(detail) } });`,
             },
         ],
 
@@ -163,6 +184,38 @@ describe('local/no-raw-prompt-logging', () => {
                 options: CENSUS,
                 code: `logger.info('agent step started');`,
                 errors: [{ messageId: 'sinkSeen' }],
+            },
+            {
+                // The class the rule's own header names FIRST and, until
+                // 2026-09-05, the one it said nothing about: renaming the
+                // content on the way in defeats a name check completely, so the
+                // only honest report is a hole. Silence here meant the guard's
+                // capped denominator excluded an unbounded class of leak and
+                // reported full coverage of the rest.
+                name: 'an identifier bound elsewhere — the renamed-content class',
+                options: CENSUS,
+                code: `logger.info('agent step', { detail });`,
+                errors: [{ messageId: 'sinkSeen' }, { messageId: 'unanalysable' }],
+            },
+            {
+                // The field-bag index decides where OPACITY OF KEYS is worth
+                // counting, and argument 0 of `logger.info` is below it. An
+                // interpolated value is stringified into the emitted text, so
+                // that reasoning does not apply and the hole is counted here.
+                name: 'and one interpolated into the message string, below the field-bag index',
+                options: CENSUS,
+                code: 'logger.info(`agent asked: ${detail}`);',
+                errors: [{ messageId: 'sinkSeen' }, { messageId: 'unanalysable' }],
+            },
+            {
+                // ONE position, ONE hole. The helper's return value is what
+                // cannot be judged; `run` is walked only to catch a prompt
+                // going in. A second hole here would count one uncertainty
+                // twice and inflate every ratio built on this census.
+                name: 'a helper argument does not add a hole of its own',
+                options: CENSUS,
+                code: `appendAuditEntry({ detailsJson: { fields: buildFields(run) } });`,
+                errors: [{ messageId: 'sinkSeen' }, { messageId: 'unanalysable' }],
             },
         ],
     });

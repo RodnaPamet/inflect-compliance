@@ -47,12 +47,11 @@
  * This rule does NO data-flow analysis. It is a name check at a syntactic
  * position, and three holes follow from that directly:
  *
- *   - `const detail = prompt; logger.info('m', { detail });` passes. The
- *     content was renamed on the way in and nothing at the sink says so.
- *   - `logger.info('m', buildFields(run))` passes. The keys are inside a
- *     function this rule never opens.
- *   - `logger.info('m', { ...fields })` passes. The keys are not in the source
- *     at all.
+ *   - `const detail = prompt; logger.info('m', { detail });`. The content was
+ *     renamed on the way in and nothing at the sink says so.
+ *   - `logger.info('m', buildFields(run))`. The keys are inside a function this
+ *     rule never opens.
+ *   - `logger.info('m', { ...fields })`. The keys are not in the source at all.
  *
  * Those three are the UNANALYSABLE class, and the rule does not stay quiet
  * about them: with `{ reportUnanalysable: true }` it reports each one under a
@@ -61,10 +60,42 @@
  * coverage of the subset it understands — the defect CLAUDE.md's
  * assertion-reach section is about, one level up.
  *
- * A fourth hole is deliberate and unfixable here: `message`. `err.message` is
- * the universal error field and appears at nearly every sink in the repo, while
- * `messages` is the LLM transcript. Only the plural is treated as content. A
- * prompt assigned to a variable called `message` is invisible to this rule.
+ * That sentence was FALSE for the first of the three until 2026-09-05, which is
+ * the one that matters most: it is the easiest way to write the leak, and the
+ * rule reported nothing whatsoever for it — not a violation, correctly, but not
+ * a hole either. Measured over the swept path, counting it moved the census
+ * from 1 hole to 84 and the guard's per-sink figure from 0.026 to 2.154. The
+ * two numbers describe the same tree; only one of them was honest. The rule now
+ * reports a hole at any value position that resolves to a plain identifier it
+ * cannot judge — `NOT_A_VALUE_IDENTIFIERS` below carries the two exemptions,
+ * and one unjudgeable position reports exactly one hole.
+ *
+ * ── What is STILL silent, and it is not nothing ──────────────────────
+ *
+ * Four classes report neither a violation nor a hole. Each is a place a prompt
+ * could reach an audit row with nothing in this repo saying so:
+ *
+ *   - A rename through a PROPERTY. `logger.info('m', { d: ctx.detail })` is
+ *     case one above with a member access instead of a local, and it is judged
+ *     by its final property, found innocent, and dropped. Counting it would
+ *     make a hole of every `ctx.*` and `run.*` at every sink — the census would
+ *     be mostly noise — so it is written down here instead of counted.
+ *   - A bare identifier BELOW the field-bag index. `logger.info(detail)` puts
+ *     the value straight into the message. Opacity is only counted from the
+ *     field bag on, because a `db` or a `ctx` in a plumbing slot is not a value
+ *     that reaches the row, and this rule cannot tell a message slot from a
+ *     plumbing slot without a second index per sink. Note the INTERPOLATED
+ *     form IS counted — a template literal's expressions are holes wherever
+ *     they sit, because their values are stringified into the emitted text.
+ *   - `message` (singular). `err.message` is the universal error field and
+ *     appears at nearly every sink in the repo, while `messages` is the LLM
+ *     transcript, so only the plural is content. A prompt in a variable called
+ *     `message` is not FLAGGED — though since 2026-09-05 it is at least
+ *     COUNTED, like any other unresolvable identifier.
+ *   - `summary`. `WorkflowRun.summary` is an encrypted output artifact, but
+ *     `detailsJson.summary` is the repo's own idiom for a human-readable
+ *     one-liner. Tainting the name would flag the idiom rather than the leak.
+ *     Counted, not flagged, exactly as `message` is.
  *
  * ── Why a rule and not a regex under tests/guards ────────────────────
  *
@@ -282,6 +313,33 @@ const TRANSPARENT_CALLS = new Set([
 /** Member reads that reduce their base to a scalar. */
 const REDUCING_PROPERTIES = new Set(['length', 'size', 'byteLength']);
 
+/**
+ * Identifiers that carry no value from elsewhere, so an opaque-identifier hole
+ * at one would be noise rather than a finding.
+ *
+ * Two kinds. `undefined` / `NaN` / `Infinity` are literals wearing an
+ * identifier's clothes — there is no binding to be uncertain about. The
+ * namespace objects are what a transparent or reducer call is SPELLED through:
+ * `JSON.stringify(x)` has its member base walked so that `prompt.slice(0, 10)`
+ * is still the prompt, and that walk must not read `JSON` as a bound value.
+ *
+ * A denominator inflated with noise says as little as one that drops what it
+ * cannot read — the same reason `SINK_FUNCTIONS` carries a field-bag index.
+ */
+const NOT_A_VALUE_IDENTIFIERS = new Set([
+    'undefined',
+    'NaN',
+    'Infinity',
+    'JSON',
+    'Object',
+    'Math',
+    'Number',
+    'String',
+    'Boolean',
+    'Array',
+    'Date',
+]);
+
 /** camelCase / snake_case / dotted → lowercase word tokens. */
 function tokenize(name) {
     return String(name)
@@ -404,7 +462,27 @@ module.exports = {
 
             switch (node.type) {
                 case 'Identifier':
-                    if (!shielded && isContentName(node.name)) reportRaw(node, node.name);
+                    if (shielded) return;
+                    if (isContentName(node.name)) {
+                        reportRaw(node, node.name);
+                        return;
+                    }
+                    // Anything else is a NAME THIS RULE CANNOT RESOLVE, and the
+                    // easiest way to write the leak is to rename the content on
+                    // the way in: `const detail = prompt; logger.info('m', {
+                    // detail })`. Nothing at the sink says `detail` holds the
+                    // prompt, and this rule does no data-flow analysis, so the
+                    // only honest report is a HOLE. Reporting it puts the whole
+                    // renamed-variable class into the capped denominator instead
+                    // of leaving it silent.
+                    //
+                    // Depth 0 is skipped because the visitor at the bottom of
+                    // this file already reports that position under a stricter
+                    // label: a bare identifier standing in for the WHOLE field
+                    // bag hides every key name, not one value.
+                    if (depth > 0 && !NOT_A_VALUE_IDENTIFIERS.has(node.name)) {
+                        reportHole(node, 'identifier bound elsewhere', countHoles);
+                    }
                     return;
 
                 case 'MemberExpression': {
@@ -438,7 +516,15 @@ module.exports = {
                             // rule a name check depends on. Walk the spread
                             // argument anyway (`...prompt` is still reportable),
                             // then record the hole.
-                            walk(prop.argument, shielded, depth + 1, countHoles);
+                            //
+                            // `false` for the sub-walk, not `countHoles`: the
+                            // one hole below already says this position cannot
+                            // be judged. Letting the argument add an
+                            // opaque-identifier hole of its own would count one
+                            // uncertainty twice, and a denominator inflated with
+                            // noise says as little as one that drops what it
+                            // cannot read.
+                            walk(prop.argument, shielded, depth + 1, false);
                             reportHole(prop, 'spread of an object whose keys are not in the source', countHoles);
                             continue;
                         }
@@ -499,14 +585,26 @@ module.exports = {
                     }
                     // An unknown helper. Its arguments are still walked (a
                     // prompt going IN is worth reporting), but what it RETURNS
-                    // is invisible — that is the hole.
+                    // is invisible — that is the hole, and it is ONE hole. The
+                    // arguments carry `false` so an opaque identifier inside
+                    // them does not report a second time for the same position:
+                    // `buildFields(run)` is one thing this rule cannot judge,
+                    // not two.
                     reportHole(node, 'call to a helper this rule cannot open', countHoles);
-                    for (const arg of node.arguments) walk(arg, shielded, depth + 1, countHoles);
+                    for (const arg of node.arguments) walk(arg, shielded, depth + 1, false);
                     return;
                 }
 
                 case 'TemplateLiteral':
-                    for (const expr of node.expressions) walk(expr, shielded, depth + 1, countHoles);
+                    // An interpolated expression is STRINGIFIED INTO THE OUTPUT,
+                    // so its value reaches the row or the log line whichever
+                    // argument holds it. The field-bag index is about key
+                    // opacity — a `ctx` in a plumbing slot is not an object
+                    // whose keys reach the row — and it does not apply here, so
+                    // holes are counted at a `${...}` regardless of position.
+                    // The rule already judges CONTENT in the message string for
+                    // the same reason.
+                    for (const expr of node.expressions) walk(expr, shielded, depth + 1, true);
                     return;
 
                 case 'TaggedTemplateExpression':
@@ -546,7 +644,10 @@ module.exports = {
                     return;
 
                 case 'SpreadElement':
-                    walk(node.argument, shielded, depth + 1, countHoles);
+                    // Same one-hole-per-position rule as the object-literal
+                    // spread above: the hole is the hidden key set, and the
+                    // argument is walked only to catch `...prompt`.
+                    walk(node.argument, shielded, depth + 1, false);
                     reportHole(node, 'spread of an object whose keys are not in the source', countHoles);
                     return;
 
