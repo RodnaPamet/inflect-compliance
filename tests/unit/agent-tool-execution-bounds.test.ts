@@ -288,7 +288,13 @@ describe('ToolExecutionOutputCapError — what a refusal is allowed to say', () 
         // property cannot be broken or fixed by anything to do with detection.
         // A cap breach is the one case where nobody has READ the output, so it
         // is the one case where nobody can say it holds no credential.
-        const secret = 'AKIAIOSFODNN7EXAMPLE-super-secret-value';
+        // The token below is AWS's own published documentation placeholder,
+        // not a credential. It is shaped like one on purpose: the property
+        // under test is that a refusal never repeats captured bytes, and a
+        // fixture that looks nothing like a secret would not demonstrate it.
+        // (Spelling the token in this comment would itself trip the secret
+        // scanner — the guard reads prose as well as code.)
+        const secret = 'AKIAIOSFODNN7EXAMPLE-super-secret-value'; // pragma: allowlist secret
         const captured = `${secret}${'z'.repeat(2_048)}`;
         const err = new ToolExecutionOutputCapError({
             tool: 'leaky',

@@ -35,7 +35,7 @@ import {
     loadableSetOf,
     type McpInvocation,
 } from '../authorize';
-import { toolManifestDigest } from '../tool-manifest';
+import { loadableToolsDigest } from '../loadable-tools';
 import { RpcErrorCode, type McpToolDescriptor, type McpToolResult } from '../protocol';
 import type { McpReadTool } from './types';
 import { getCompliancePostureTool } from './get-compliance-posture';
@@ -185,7 +185,7 @@ export async function runReadTool(
         ctx,
         name,
         inv.policyCard?.inForce.version ?? null,
-        toolManifestDigest(loadableSetOf(inv)),
+        loadableToolsDigest(loadableSetOf(inv)),
     );
 
     return {

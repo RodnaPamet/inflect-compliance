@@ -26,7 +26,7 @@
  * `runInTenantContext` all participate.
  */
 import { PrismaClient, MembershipStatus, Role } from '@prisma/client';
-import { generateKeyPairSync, sign as cryptoSign } from 'crypto';
+import { type KeyObject, generateKeyPairSync, sign as cryptoSign } from 'crypto';
 
 import { prismaTestClient, resetDatabase } from '../helpers/db';
 import { hashForLookup } from '@/lib/security/encryption';
@@ -71,7 +71,7 @@ const liveDef = toolDefinitionByName(TOOL)!;
 const liveHashes = hashToolManifest(liveDef);
 
 let ownerUserId = '';
-let privateKey: ReturnType<typeof generateKeyPairSync<'ed25519'>>['privateKey'];
+let privateKey: KeyObject;
 
 const ctx = () =>
     makeRequestContext('OWNER', { tenantId: TENANT, tenantSlug: TENANT, userId: ownerUserId });

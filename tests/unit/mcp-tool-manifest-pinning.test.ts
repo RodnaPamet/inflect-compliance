@@ -131,6 +131,7 @@ jest.mock('@/lib/observability/logger', () => ({
 }));
 
 import { appendAuditEntry } from '@/lib/audit';
+import { MCP_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
 import { authorizeToolCall, type McpInvocation } from '@/lib/mcp/authorize';
 import { hashToolManifest, type ToolDefinition } from '@/lib/mcp/tool-manifest';
 import { toolDefinitionByName } from '@/lib/mcp/tool-definitions';
@@ -214,6 +215,11 @@ function invocation(): McpInvocation {
         apiKeyScopes: ['mcp:read', 'risks:read', 'evidence:read'],
     });
     return {
+        // Every tool this invocation was offered. Pinned at assembly by the
+        // deny-by-default work, so a fixture has to state it: an invocation that
+        // was offered nothing can load nothing, and these tests are about what
+        // the manifest PIN does to a tool that IS on offer.
+        offeredTools: MCP_TOOL_NAMES,
         ctx,
         principal: {
             userId: APPROVER,

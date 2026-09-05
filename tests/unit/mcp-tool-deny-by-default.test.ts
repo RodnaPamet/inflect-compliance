@@ -45,7 +45,20 @@
 
 jest.mock('@/lib/prisma', () => {
     const tenantApiKey = { findFirst: jest.fn() };
-    return { __esModule: true, default: { tenantApiKey }, prisma: { tenantApiKey } };
+    // Nothing pinned. The manifest gate runs ahead of the loader and reads this
+    // table on every call; an unpinned tool is recorded as a BASELINE and
+    // allowed, so these tests exercise the LOADER rather than the pin.
+    const mcpToolManifestPin = {
+        findUnique: () => Promise.resolve(null),
+        findMany: () => Promise.resolve([]),
+        upsert: () => Promise.resolve(null),
+        create: () => Promise.resolve(null),
+    };
+    return {
+        __esModule: true,
+        default: { tenantApiKey, mcpToolManifestPin },
+        prisma: { tenantApiKey, mcpToolManifestPin },
+    };
 });
 
 jest.mock('@/lib/audit', () => ({
@@ -369,7 +382,7 @@ describe('the audit trail fingerprints the loadable set', () => {
         await refusalOf(() => runReadTool(inv, 'get_framework_status', {}));
 
         const extra = denials()[0].detailsJson;
-        expect(typeof extra.toolManifestDigest).toBe('string');
+        expect(typeof extra.loadableToolsDigest).toBe('string');
         // A number, not an array: an audit row answers "same or different", it
         // is not a place to accumulate payload.
         expect(typeof extra.offeredAtAssembly).toBe('number');
