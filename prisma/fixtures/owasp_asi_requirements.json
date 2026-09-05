@@ -1,0 +1,62 @@
+[
+  {
+    "key": "ASI01",
+    "section": "ASI01 Agent Goal Hijack",
+    "sortOrder": 0,
+    "title": "Agent Goal Hijack"
+  },
+  {
+    "key": "ASI02",
+    "section": "ASI02 Tool Misuse and Exploitation",
+    "sortOrder": 1,
+    "title": "Tool Misuse and Exploitation"
+  },
+  {
+    "key": "ASI03",
+    "section": "ASI03 Identity and Privilege Abuse",
+    "sortOrder": 2,
+    "title": "Identity and Privilege Abuse"
+  },
+  {
+    "key": "ASI04",
+    "section": "ASI04 Agentic Supply Chain Vulnerabilities",
+    "sortOrder": 3,
+    "title": "Agentic Supply Chain Vulnerabilities"
+  },
+  {
+    "key": "ASI05",
+    "section": "ASI05 Unexpected Code Execution",
+    "sortOrder": 4,
+    "title": "Unexpected Code Execution"
+  },
+  {
+    "key": "ASI06",
+    "section": "ASI06 Memory and Context Poisoning",
+    "sortOrder": 5,
+    "title": "Memory and Context Poisoning"
+  },
+  {
+    "key": "ASI07",
+    "section": "ASI07 Insecure Inter-Agent Communication",
+    "sortOrder": 6,
+    "title": "Insecure Inter-Agent Communication"
+  },
+  {
+    "key": "ASI08",
+    "section": "ASI08 Cascading Failures",
+    "sortOrder": 7,
+    "title": "Cascading Failures"
+  },
+  {
+    "key": "ASI09",
+    "section": "ASI09 Human-Agent Trust Exploitation",
+    "sortOrder": 8,
+    "title": "Human-Agent Trust Exploitation"
+  },
+  {
+    "key": "ASI10",
+    "section": "ASI10 Rogue Agents",
+    "sortOrder": 9,
+    "title": "Rogue Agents"
+  }
+]

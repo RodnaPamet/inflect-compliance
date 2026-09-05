@@ -1,0 +1,174 @@
+# OWASP Agentic AI Top 10 (ASI01–ASI10) — Framework Library
+#
+# WHY THIS FRAMEWORK EXISTS IN INFLECT: NIST AI RMF, ISO/IEC 42001 and the EU
+# AI Act govern AI as a *content producer*. None of them carries a control set
+# for AI that *acts* — takes tool calls, holds credentials, delegates to other
+# agents, and persists memory between sessions. OWASP's agentic Top 10 and the
+# IMDA Model AI Governance Framework are the two authoritative sources that do.
+#
+# LICENSE: OWASP project content is CC-BY-SA-4.0. This file is a REFERENCE
+# INDEX, not a copy of the publication. It stores each risk's canonical ASI
+# identifier and a SHORT title, with an Inflect-authored governance paraphrase
+# in `description` — never the verbatim OWASP prose. The canonical text lives
+# at the OWASP source linked from each node. Facts + IDs are not copyrightable;
+# prose is. Same handling as owasp-aisvs-1.0.yaml — see
+# docs/implementation-notes/2026-06-29-aisvs-framework.md for the rationale.
+#
+# THE KEY IS THE CONTRACT. `ref_id` carries NO edition suffix on purpose: an
+# assessor citing ASI04 must resolve to the same FrameworkRequirement row
+# forever, and OWASP re-issues Top-10 lists in place. A revised list re-imports
+# over this same ref_id (content-hash update), it does not fork a new framework.
+
+urn: urn:inflect:library:owasp-agentic-top10
+locale: en
+ref_id: OWASP-ASI-TOP10
+name: OWASP Agentic AI Top 10
+description: >
+  The OWASP Agentic AI Top 10 (ASI01–ASI10) enumerates the ten most critical
+  security risks specific to AI systems that ACT: agents that plan, call tools,
+  hold delegated identity, communicate with other agents, and carry memory
+  across sessions. Inflect stores the canonical ASI identifiers and short risk
+  titles with governance-oriented summaries, and links to the canonical OWASP
+  text for the full treatment.
+copyright: >
+  OWASP Agentic AI Top 10, (c) OWASP Foundation / OWASP GenAI Security Project,
+  licensed under CC-BY-SA-4.0 (https://creativecommons.org/licenses/by-sa/4.0/).
+  Source: https://genai.owasp.org/. Inflect stores a reference INDEX (canonical
+  ASI identifiers and short risk titles) plus Inflect-authored governance
+  summaries — not the verbatim OWASP risk prose, which remains at the OWASP
+  source linked from each requirement. Attribution to OWASP retained.
+version: 1
+provider: OWASP
+packager: inflect
+kind: INDUSTRY_STANDARD
+
+objects:
+  framework:
+    urn: urn:inflect:framework:owasp-agentic-top10
+    ref_id: OWASP-ASI-TOP10
+    name: OWASP Agentic AI Top 10
+    description: >
+      Ten agentic-AI security risks (ASI01–ASI10). One assessable requirement
+      per risk; the ASI identifier is the stable external key.
+    requirement_nodes:
+      - urn: urn:inflect:req:owasp-agentic-top10:asi01
+        ref_id: ASI01
+        name: "Agent Goal Hijack"
+        description: >
+          An adversary redirects the agent's objective through instructions
+          injected into prompts, retrieved documents, tool output or delegated
+          sub-goals, so the agent pursues attacker intent while appearing to
+          operate normally.
+        annotation: "Canonical text: https://genai.owasp.org/ (OWASP Agentic AI Top 10, ASI01)"
+        depth: 1
+        assessable: true
+        category: "OWASP Agentic AI Top 10"
+        section: "ASI01 Agent Goal Hijack"
+      - urn: urn:inflect:req:owasp-agentic-top10:asi02
+        ref_id: ASI02
+        name: "Tool Misuse and Exploitation"
+        description: >
+          The agent invokes its authorised tools and APIs in unintended, unsafe
+          or excessive ways — chained calls, injected parameters, destructive
+          operations beyond what the task required.
+        annotation: "Canonical text: https://genai.owasp.org/ (OWASP Agentic AI Top 10, ASI02)"
+        depth: 1
+        assessable: true
+        category: "OWASP Agentic AI Top 10"
+        section: "ASI02 Tool Misuse and Exploitation"
+      - urn: urn:inflect:req:owasp-agentic-top10:asi03
+        ref_id: ASI03
+        name: "Identity and Privilege Abuse"
+        description: >
+          Agent identities, delegated credentials and impersonated user sessions
+          accumulate or exceed the privilege the task requires, and actions
+          cannot be attributed back to an accountable principal.
+        annotation: "Canonical text: https://genai.owasp.org/ (OWASP Agentic AI Top 10, ASI03)"
+        depth: 1
+        assessable: true
+        category: "OWASP Agentic AI Top 10"
+        section: "ASI03 Identity and Privilege Abuse"
+      - urn: urn:inflect:req:owasp-agentic-top10:asi04
+        ref_id: ASI04
+        name: "Agentic Supply Chain Vulnerabilities"
+        description: >
+          Compromise reaches the agent through its supply chain: base models,
+          prompt and skill packs, tool and plugin registries, MCP servers,
+          third-party agents, and the update channels for all of them.
+        annotation: "Canonical text: https://genai.owasp.org/ (OWASP Agentic AI Top 10, ASI04)"
+        depth: 1
+        assessable: true
+        category: "OWASP Agentic AI Top 10"
+        section: "ASI04 Agentic Supply Chain Vulnerabilities"
+      - urn: urn:inflect:req:owasp-agentic-top10:asi05
+        ref_id: ASI05
+        name: "Unexpected Code Execution"
+        description: >
+          Agent-generated or agent-retrieved code, expressions or shell commands
+          execute outside a controlled sandbox, giving an adversary execution on
+          the host or in downstream systems the agent can reach.
+        annotation: "Canonical text: https://genai.owasp.org/ (OWASP Agentic AI Top 10, ASI05)"
+        depth: 1
+        assessable: true
+        category: "OWASP Agentic AI Top 10"
+        section: "ASI05 Unexpected Code Execution"
+      - urn: urn:inflect:req:owasp-agentic-top10:asi06
+        ref_id: ASI06
+        name: "Memory and Context Poisoning"
+        description: >
+          Persistent memory, vector stores, scratchpads and shared context are
+          written with adversarial content that steers later, otherwise
+          unrelated sessions long after the injecting interaction ended.
+        annotation: "Canonical text: https://genai.owasp.org/ (OWASP Agentic AI Top 10, ASI06)"
+        depth: 1
+        assessable: true
+        category: "OWASP Agentic AI Top 10"
+        section: "ASI06 Memory and Context Poisoning"
+      - urn: urn:inflect:req:owasp-agentic-top10:asi07
+        ref_id: ASI07
+        name: "Insecure Inter-Agent Communication"
+        description: >
+          Messages, delegations and results exchanged between agents are
+          unauthenticated, unauthorised, unbounded or unlogged, allowing
+          spoofing, replay and privilege transfer across the agent fleet.
+        annotation: "Canonical text: https://genai.owasp.org/ (OWASP Agentic AI Top 10, ASI07)"
+        depth: 1
+        assessable: true
+        category: "OWASP Agentic AI Top 10"
+        section: "ASI07 Insecure Inter-Agent Communication"
+      - urn: urn:inflect:req:owasp-agentic-top10:asi08
+        ref_id: ASI08
+        name: "Cascading Failures"
+        description: >
+          A single faulty output, tool error or compromised agent propagates
+          through chained agents and automated actions, amplifying damage faster
+          than human oversight can intervene.
+        annotation: "Canonical text: https://genai.owasp.org/ (OWASP Agentic AI Top 10, ASI08)"
+        depth: 1
+        assessable: true
+        category: "OWASP Agentic AI Top 10"
+        section: "ASI08 Cascading Failures"
+      - urn: urn:inflect:req:owasp-agentic-top10:asi09
+        ref_id: ASI09
+        name: "Human-Agent Trust Exploitation"
+        description: >
+          The agent's fluency, persona or apparent authority is used to
+          manipulate people into approving actions, disclosing secrets or
+          lowering scrutiny — including automation bias in approval workflows.
+        annotation: "Canonical text: https://genai.owasp.org/ (OWASP Agentic AI Top 10, ASI09)"
+        depth: 1
+        assessable: true
+        category: "OWASP Agentic AI Top 10"
+        section: "ASI09 Human-Agent Trust Exploitation"
+      - urn: urn:inflect:req:owasp-agentic-top10:asi10
+        ref_id: ASI10
+        name: "Rogue Agents"
+        description: >
+          Agents operate outside the sanctioned inventory or beyond their
+          authorised scope, schedule or lifecycle — unregistered, orphaned after
+          an owner leaves, or never decommissioned.
+        annotation: "Canonical text: https://genai.owasp.org/ (OWASP Agentic AI Top 10, ASI10)"
+        depth: 1
+        assessable: true
+        category: "OWASP Agentic AI Top 10"
+        section: "ASI10 Rogue Agents"

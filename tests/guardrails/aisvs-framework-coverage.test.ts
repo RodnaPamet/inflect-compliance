@@ -27,7 +27,7 @@ import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { parseMappingSetFile } from '@/app-layer/services/mapping-set-importer';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -171,8 +171,13 @@ describe('AISVS seed wiring (seed.ts)', () => {
     });
 
     it('persists OWASP attribution + CC-BY-SA-4.0 in framework metadata', () => {
-        expect(seed).toMatch(/provider:\s*'OWASP'/);
-        expect(seed).toContain('CC-BY-SA-4.0');
+        // Bound to the declaration this test names. Against the whole of
+        // seed.ts the needles stopped naming AISVS's metadata once a second
+        // CC-BY-SA-4.0 OWASP framework was seeded — either could satisfy them,
+        // so deleting aisvsMeta would have left both assertions green.
+        const meta = declarationOf(seed, 'aisvsMeta');
+        expect(meta).toMatch(/provider:\s*'OWASP'/);
+        expect(meta).toContain('CC-BY-SA-4.0');
     });
 
     it('seeds an AISVS framework pack (idempotent upsert)', () => {
