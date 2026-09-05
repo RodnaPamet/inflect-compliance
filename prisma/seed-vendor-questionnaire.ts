@@ -62,5 +62,11 @@ async function main() {
 }
 
 main()
-    .catch(console.error)
+    .catch((err) => {
+        // Not `catch(console.error)`: that logs and returns, so the process
+        // still exits 0 and a failed seed is indistinguishable from a clean
+        // one. See tests/guardrails/seeders-fail-loudly.test.ts.
+        console.error('❌ Vendor-questionnaire seed failed:', err);
+        process.exitCode = 1;
+    })
     .finally(() => prisma.$disconnect());
