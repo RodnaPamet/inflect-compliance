@@ -122,4 +122,15 @@ ALTER TABLE "AgentActionReceipt" ADD COLUMN "toolManifestRevision" INTEGER;
 -- touch.
 ALTER TABLE "AgentActionReceipt"
     ADD CONSTRAINT "AgentActionReceipt_tool_provenance_known"
-    CHECK ("toolProvenance" IS NULL OR "toolProvenance" IN ('inflect:builtin', 'unattested'));
+    CHECK (
+        "toolProvenance" IS NULL
+        OR "toolProvenance" IN (
+            'inflect:builtin',
+            'unattested',
+            -- Our tool, but the pin on file was approved AFTER the action
+            -- occurred, so the definition in front of the agent is not the one
+            -- we hold. The three digest columns are NULL alongside it: saying
+            -- "we do not know" beats recording a definition nobody observed.
+            'pin-moved-since-action'
+        )
+    );

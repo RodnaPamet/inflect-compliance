@@ -58,6 +58,17 @@ import { canonicalJson } from '@/lib/canonical-json';
  */
 export const TOOL_PROVENANCE_BUILTIN = 'inflect:builtin';
 export const TOOL_PROVENANCE_UNATTESTED = 'unattested';
+/**
+ * Our tool, but the pin on file was approved AFTER the action happened, so the
+ * definition in front of the agent at the time is not the one we hold.
+ *
+ * This is the ordinary incident sequence, not an edge case: poison is found, an
+ * operator re-approves, and every receipt still queued about the poisoned era
+ * would otherwise be stamped with the CLEAN hash — evidence that actively
+ * misleads. The same instinct as `UNATTESTED`: say we do not know, rather than
+ * record a definition we did not observe.
+ */
+export const TOOL_PROVENANCE_PIN_MOVED = 'pin-moved-since-action';
 
 /** The three fields a manifest hash covers. */
 export interface ToolDefinition {
@@ -69,7 +80,7 @@ export interface ToolDefinition {
 export interface ToolManifestHashes {
     /** SHA-256 over the description's exact UTF-8 bytes. */
     descriptionHash: string;
-    /** SHA-256 over `canonicalJson(inputSchema)`. */
+    /** SHA-256 over the schema's WIRE bytes, canonicalised. */
     schemaHash: string;
     /** SHA-256 over the domain-separated triple. What the gate compares. */
     manifestHash: string;
@@ -139,7 +150,20 @@ function sha256(input: string): string {
  */
 export function hashToolManifest(def: ToolDefinition): ToolManifestHashes {
     const descriptionHash = sha256(def.description);
-    const schemaHash = sha256(canonicalJson(def.inputSchema));
+    // Serialised through `JSON.stringify` FIRST, then canonicalised.
+    //
+    // Not belt-and-braces — it closes a real evasion. `canonicalJson` walks
+    // `Object.keys`; `JSON.stringify` honours `toJSON`. A schema object carrying
+    // a `toJSON` (on itself or its prototype) therefore hashes as one thing and
+    // goes out on the wire as another, so an attacker who has read this hasher
+    // gets a free description channel into the model with an unchanged
+    // `manifestHash`. Round-tripping first makes the HASHED BYTES the WIRE BYTES
+    // by construction, which is the only version of this property that survives
+    // someone reading the code.
+    //
+    // It also removes two silent shape bugs: a `Date` canonicalised to `{}`, and
+    // a function-valued key canonicalising to `undefined`, which is not JSON.
+    const schemaHash = sha256(canonicalJson(JSON.parse(JSON.stringify(def.inputSchema ?? null))));
     const manifestHash = sha256(
         canonicalJson({
             v: 'mcp-tool-manifest/v1',

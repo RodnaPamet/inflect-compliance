@@ -76,6 +76,18 @@ let privateKey: KeyObject;
 const ctx = () =>
     makeRequestContext('OWNER', { tenantId: TENANT, tenantSlug: TENANT, userId: ownerUserId });
 
+
+/**
+ * A receipt timestamp AFTER the pin was established.
+ *
+ * The pin's `approvedAt` defaults to `now()`, so a hard-coded past date makes
+ * every receipt look like one whose definition moved underneath it — which is a
+ * real distinction the stamp now draws, and not the one these tests are about.
+ * Anchoring to the clock keeps them testing the ordinary case: the action
+ * happened under the pin on file.
+ */
+const afterPin = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString();
+
 /** A pipelock CORE receipt, signed with the key this run trusts. */
 function signedReceipt(toolName: string, at: string) {
     const actionRecord = {
@@ -143,7 +155,7 @@ describe('a receipt for a pinned tool carries that tool definition', () => {
         const verdict = await verifyToolManifestForTenant(TENANT, liveDef);
         expect(verdict.status).toBe('UNPINNED');
 
-        const ingested = await ingestReceipt(ctx(), signedReceipt(TOOL, '2026-09-05T10:00:00.000Z'));
+        const ingested = await ingestReceipt(ctx(), signedReceipt(TOOL, afterPin(60_000)));
         expect(ingested.verified).toBe(true);
 
         const row = await prisma.agentActionReceipt.findUniqueOrThrow({
@@ -166,7 +178,7 @@ describe('a receipt for a pinned tool carries that tool definition', () => {
 
     it('exposes it on the auditor export, which is the surface the question is asked from', async () => {
         await verifyToolManifestForTenant(TENANT, liveDef);
-        const ingested = await ingestReceipt(ctx(), signedReceipt(TOOL, '2026-09-05T10:05:00.000Z'));
+        const ingested = await ingestReceipt(ctx(), signedReceipt(TOOL, afterPin(60_000)));
 
         const exported = await getReceiptForExport(ctx(), ingested.id);
         expect(exported.toolProvenance).toBe('inflect:builtin');
@@ -178,7 +190,7 @@ describe('a receipt for a pinned tool carries that tool definition', () => {
 describe('the stamp is captured at ingest, not resolved at read time', () => {
     it('an earlier receipt keeps its digest after the tenant re-pins the tool', async () => {
         await verifyToolManifestForTenant(TENANT, liveDef);
-        const first = await ingestReceipt(ctx(), signedReceipt(TOOL, '2026-09-05T11:00:00.000Z'));
+        const first = await ingestReceipt(ctx(), signedReceipt(TOOL, afterPin(60_000)));
 
         // The definition moves and the tenant accepts the new one. Whatever the
         // pin says now, the action above ran under the OLD description and must
@@ -197,7 +209,7 @@ describe('the stamp is captured at ingest, not resolved at read time', () => {
             },
         });
 
-        const second = await ingestReceipt(ctx(), signedReceipt(TOOL, '2026-09-05T12:00:00.000Z'));
+        const second = await ingestReceipt(ctx(), signedReceipt(TOOL, afterPin(120_000)));
 
         const before = await prisma.agentActionReceipt.findUniqueOrThrow({
             where: { id: first.id },
@@ -222,7 +234,7 @@ describe('a receipt never invents provenance it does not have', () => {
         // which is worse than recording none.
         const ingested = await ingestReceipt(
             ctx(),
-            signedReceipt('third_party_delete_everything', '2026-09-05T13:00:00.000Z'),
+            signedReceipt('third_party_delete_everything', afterPin(60_000)),
         );
 
         const row = await prisma.agentActionReceipt.findUniqueOrThrow({
@@ -245,7 +257,7 @@ describe('a receipt never invents provenance it does not have', () => {
         // We know whose tool it is and we do not know which definition was in
         // front of it — a receipt can arrive about a call that never reached our
         // own boundary. Saying exactly that is the honest record.
-        const ingested = await ingestReceipt(ctx(), signedReceipt(TOOL, '2026-09-05T14:00:00.000Z'));
+        const ingested = await ingestReceipt(ctx(), signedReceipt(TOOL, afterPin(60_000)));
 
         const row = await prisma.agentActionReceipt.findUniqueOrThrow({
             where: { id: ingested.id },
@@ -269,5 +281,37 @@ describe('a receipt never invents provenance it does not have', () => {
                 TENANT,
             ),
         ).rejects.toThrow();
+    });
+});
+
+describe('a pin that moved AFTER the action says so, instead of guessing', () => {
+    it('stamps pin-moved-since-action with no digests when the pin postdates the receipt', async () => {
+        // The ordinary incident sequence: poison is found, an operator
+        // re-approves, and receipts about the poisoned era are still draining
+        // from an external mediator. The pin on file describes a definition the
+        // agent never saw, so stamping it would put evidence pointing at the
+        // WRONG text into exactly the case somebody reads it.
+        await verifyToolManifestForTenant(TENANT, liveDef);
+
+        const ingested = await ingestReceipt(
+            ctx(),
+            // An hour before the pin was established.
+            signedReceipt(TOOL, new Date(Date.now() - 3_600_000).toISOString()),
+        );
+
+        const row = await prisma.agentActionReceipt.findUniqueOrThrow({
+            where: { id: ingested.id },
+            select: {
+                toolProvenance: true,
+                toolDescriptionHash: true,
+                toolManifestHash: true,
+                toolManifestRevision: true,
+            },
+        });
+
+        expect(row.toolProvenance).toBe('pin-moved-since-action');
+        expect(row.toolDescriptionHash).toBeNull();
+        expect(row.toolManifestHash).toBeNull();
+        expect(row.toolManifestRevision).toBeNull();
     });
 });

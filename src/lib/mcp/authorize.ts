@@ -151,7 +151,7 @@ export interface McpInvocation {
      *
      * Resolution enumerates THIS, never the live registry arrays, so a tool that
      * enters the registry after assembly is not loadable by an invocation
-     * already in flight. See `tool-manifest.ts` for why the property is stated
+     * already in flight. See `loadable-tools.ts` for why the property is stated
      * as "resolution enumerates the manifest" rather than as a detection of the
      * addition, and for what "mid-session" means when the session is an
      * `McpInvocation`.
@@ -327,7 +327,7 @@ export function isToolExposed(inv: McpInvocation, toolName: string): boolean {
  *
  * A VIEW over fields the invocation already carries — it stores nothing and
  * derives nothing that is not already decided. The adapter lives here rather
- * than in `tool-manifest.ts` because that module must not import
+ * than in `loadable-tools.ts` because that module must not import
  * `McpInvocation`: the manifest describes an invocation, so importing the
  * invocation back would make the two a cycle, and would also tie a
  * deliberately-leaf module to the whole authorization graph.

@@ -218,7 +218,7 @@ export async function runProposeTool(
 ): Promise<McpToolResult> {
     // 0. LOAD the tool through this invocation's pinned manifest rather than
     //    straight out of `PROPOSE_TOOLS` — the same door `runReadTool` uses, for
-    //    the same reason. See `resolveOfferedTool` and `tool-manifest.ts`.
+    //    the same reason. See `resolveOfferedTool` and `loadable-tools.ts`.
     const tool = await resolveOfferedTool(inv, PROPOSE_TOOLS, name);
     if (!tool) throw new McpProposeToolNotFoundError(name);
 

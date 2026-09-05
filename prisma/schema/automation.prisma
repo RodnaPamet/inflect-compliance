@@ -462,6 +462,14 @@ model AgentActionReceipt {
   toolManifestHash     String?
   /// The pin revision, i.e. how many times this tool's definition had moved
   /// under this tenant by the time the action was recorded.
+  ///
+  /// ALL THREE ARE NULL, with `toolProvenance = 'pin-moved-since-action'`, when
+  /// the pin on file was approved AFTER `occurredAt`. Ingest is not execution —
+  /// the mediator is external and late delivery is ordinary — so a pin that has
+  /// moved in between describes a definition the agent never saw. That is the
+  /// ordinary incident sequence (poison found, operator re-approves, queued
+  /// receipts drain afterwards), and stamping the clean hash on them would put
+  /// evidence pointing at the wrong text into exactly the case it is read.
   toolManifestRevision Int?
 
   createdAt       DateTime @default(now())

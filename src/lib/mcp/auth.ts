@@ -373,7 +373,7 @@ export async function buildMcpInvocation(
         // tool graph to learn fourteen strings. The COPY is the point: from here
         // on, resolution enumerates this array and never the live registry, so a
         // tool that becomes offered after this line runs is not loadable by this
-        // invocation — no detection required. See `tool-manifest.ts`.
+        // invocation — no detection required. See `loadable-tools.ts`.
         offeredTools: [...MCP_TOOL_NAMES],
         audience: options.audience ?? null,
         autonomyCeiling,

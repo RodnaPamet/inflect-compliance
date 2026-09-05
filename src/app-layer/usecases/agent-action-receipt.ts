@@ -41,6 +41,7 @@ import { env } from '@/env';
 import { isKnownMcpTool } from '@/lib/mcp/tool-catalogue';
 import {
     TOOL_PROVENANCE_BUILTIN,
+    TOOL_PROVENANCE_PIN_MOVED,
     TOOL_PROVENANCE_UNATTESTED,
 } from '@/lib/mcp/tool-manifest';
 import { assertCanWrite, assertCanRead } from '@/app-layer/policies/common';
@@ -98,6 +99,7 @@ async function resolveToolProvenance(
     db: PrismaTx,
     tenantId: string,
     toolName: string,
+    occurredAt: Date,
 ): Promise<ReceiptToolProvenance> {
     const known = isKnownMcpTool(toolName);
     const provenance = known ? TOOL_PROVENANCE_BUILTIN : TOOL_PROVENANCE_UNATTESTED;
@@ -112,8 +114,27 @@ async function resolveToolProvenance(
 
     const pin = await db.mcpToolManifestPin.findUnique({
         where: { tenantId_toolName: { tenantId, toolName } },
-        select: { descriptionHash: true, manifestHash: true, revision: true },
+        select: {
+            descriptionHash: true,
+            manifestHash: true,
+            revision: true,
+            approvedAt: true,
+        },
     });
+
+    // The stamp is captured at INGEST, and ingest is not execution — the
+    // mediator is external and late delivery is ordinary. If the pin on file was
+    // approved after the action occurred, the definition in front of the agent
+    // at the time is not the one we hold, and stamping it would produce evidence
+    // that points at the wrong text in exactly the incident where it matters.
+    if (pin && pin.approvedAt > occurredAt) {
+        return {
+            toolProvenance: TOOL_PROVENANCE_PIN_MOVED,
+            toolDescriptionHash: null,
+            toolManifestHash: null,
+            toolManifestRevision: null,
+        };
+    }
 
     return {
         toolProvenance: provenance,
@@ -181,7 +202,12 @@ export async function ingestReceipt(ctx: RequestContext, rawReceipt: unknown): P
     // 5. Persist the receipt (tenant-scoped write via runInTenantContext),
     //    stamped with the TOOL PROVENANCE in force — see `resolveToolProvenance`.
     const row = await runInTenantContext(ctx, async (db) => {
-        const provenance = await resolveToolProvenance(db, ctx.tenantId, fields.toolName);
+        const provenance = await resolveToolProvenance(
+            db,
+            ctx.tenantId,
+            fields.toolName,
+            fields.occurredAt,
+        );
         return db.agentActionReceipt.create({
             data: {
                 tenantId: ctx.tenantId,

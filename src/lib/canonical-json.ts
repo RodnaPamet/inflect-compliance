@@ -2,8 +2,11 @@
  * The ONE canonical-JSON form in this repo.
  *
  * Recursively sorts object keys and emits no whitespace; arrays keep their order
- * because order is semantic. `undefined` collapses to `null`, so a key that is
- * present-but-undefined and a key that is absent hash the same — the only way to
+ * because order is semantic. `undefined` collapses to `null`, which does NOT make
+ * a present-but-undefined key hash the same as an absent one — `{a: undefined}`
+ * canonicalises to `{"a":null}` and `{}` to `{}`, and this comment claimed the
+ * opposite until somebody checked. The collapse only guarantees the output is
+ * JSON; it says nothing about key presence. The only way to
  * make the form total over the values JSON can hold.
  *
  * Two callers depend on it and they must agree byte-for-byte:

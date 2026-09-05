@@ -145,7 +145,7 @@ export async function runReadTool(
     //    straight out of `READ_TOOLS`. A name this build does not know at all is
     //    a protocol error (`null` below); a name the registry holds but this
     //    invocation's manifest never offered is a refusal with its own audit
-    //    row. See `resolveOfferedTool` and `tool-manifest.ts`.
+    //    row. See `resolveOfferedTool` and `loadable-tools.ts`.
     const tool = await resolveOfferedTool(inv, READ_TOOLS, name);
     if (!tool) throw new McpToolNotFoundError(name);
 
