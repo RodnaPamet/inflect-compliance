@@ -10,7 +10,7 @@
  * per-run and a per-day action budget, which refusals to escalate on, and how
  * many humans must sign what the agent proposes.
  *
- * ## Three refusals, and why each is here rather than at the boundary
+ * ## Four refusals, and why each is here rather than at the boundary
  *
  *   • UNSCORED AGENT. `defaultPolicyCardForRiskTier` already says what a card
  *     opens at for an unassessed agent — nothing, on every axis — and its
@@ -32,6 +32,13 @@
  *     for why the shape is the identity write ladder's and why narrowing is
  *     never restricted.
  *
+ *   • A CARD REACHING PAST THE DECLARATION IT NARROWS. See
+ *     `assertDataScopeRaiseWithinDeclaration` below. The card's autonomy ceiling
+ *     was already bounded by the assessed tier; its DATA ceiling was bounded by
+ *     nothing, and the register's data axis — unlike its autonomy — is not a
+ *     live term at the boundary, so the widening would have been honoured rather
+ *     than broken.
+ *
  * ## Why there is no update-in-place
  *
  * Every edit APPENDS a version and moves the head. The version table refuses
@@ -46,6 +53,7 @@ import { badRequest, conflict, notFound } from '@/lib/errors/types';
 import { ceilingForRiskTier } from '@/lib/agentic/autonomy-ceiling';
 import {
     checkLadderStep,
+    dataScopeWithinCard,
     isActionCap,
     narrowApprovalRung,
     narrowEscalationTriggers,
@@ -271,7 +279,10 @@ export async function updateAgentPolicyCard(
 
         assertDeclarationsExercisable(next, agent.riskTier);
 
-        const step = checkLadderStep(fromRow(inForce), next);
+        const current = fromRow(inForce);
+        assertDataScopeRaiseWithinDeclaration(current, next, agent);
+
+        const step = checkLadderStep(current, next);
         if (step) throw badRequest(step.message);
 
         const written = await AgentPolicyCardRepository.appendVersion(
@@ -373,6 +384,63 @@ function assertDeclarationsExercisable(
                 'order matters.',
         );
     }
+}
+
+/**
+ * ── AND THE DECLARED AXIS BOUNDS THE CARD, IN THE RAISING DIRECTION ─
+ *
+ * `assertDeclarationsExercisable` above already stops the card's AUTONOMY
+ * ceiling from rising above what the assessed tier permits. The DATA ceiling had
+ * no such bound, and the two axes are not symmetric at the boundary in a way
+ * that makes the omission harmless:
+ *
+ *   • autonomy is `min(key max, agent.autonomyLevel, tier cap)` at every call,
+ *     so `RegisteredAgent.autonomyLevel` is a LIVE narrowing term — lowering it
+ *     narrows the agent on the next request;
+ *   • `RegisteredAgent.dataAccessScope` is read at SEED time and nowhere else.
+ *     `evaluateCardReach` compares the call's rung against the card alone.
+ *
+ * So a card edited to a data rung above the agent's own declaration is not a
+ * promise the boundary breaks — it is one the boundary KEEPS, and it re-opens
+ * the hole `assertGrantWithinDeclaredDataScope` was added to close: the risk
+ * score is computed from `dataAccessScope`, with its own tier floor, so an agent
+ * reaching further than it declares is scored as the agent it is not and comes
+ * out with a higher autonomy cap. Closing that at the grant seam and leaving it
+ * open at the card seam would close one of two doors into the same room.
+ *
+ * ## Why a RAISE and not the resulting VALUE
+ *
+ * The same shape, and for the same reason, as `assertRaiseWithinTier` in the
+ * register usecase. A card ALREADY above the declaration is an ordinary,
+ * reachable state: narrowing `dataAccessScope` on the register is never refused
+ * (taking authority away is not the move to refuse) and does not reach back to
+ * rewrite a card that was seeded before it. Judging the resulting VALUE would
+ * then refuse every edit to such a card — including the narrowing edit that
+ * would have fixed it — which is the failure mode of a gate that fights the
+ * person repairing the thing. Only a widening is checked.
+ */
+function assertDataScopeRaiseWithinDeclaration(
+    current: AgentPolicyCardValue,
+    next: AgentPolicyCardValue,
+    agent: { dataAccessScope: AgentPolicyCardValue['maxDataScope'] },
+): void {
+    // Ordinal on both comparisons, via the ladder the boundary itself reads —
+    // never `===`, which is right only while the declaration sits on the top
+    // rung. `PolicyCardVersionSchema` is `z.enum(DATA_SCOPE_LADDER)`, so an
+    // unrankable REQUESTED rung cannot get this far; an unrankable DECLARED one
+    // (a column value from a newer build) sorts to -1 and refuses, which is the
+    // direction `isWithinRung` already takes for a ceiling.
+    if (dataScopeWithinCard(next.maxDataScope, current.maxDataScope)) return; // narrowing, or no move
+    if (dataScopeWithinCard(next.maxDataScope, agent.dataAccessScope)) return;
+
+    throw badRequest(
+        `This card would reach ${next.maxDataScope}, and this agent is registered as ` +
+            `reaching ${agent.dataAccessScope}. The card narrows the register's own ` +
+            `declaration; it cannot widen it, or the agent would read further than the ` +
+            `declaration its risk tier was scored from. Raise the agent's data-access ` +
+            `scope first — that re-scores it on the spot, which is the point — and then ` +
+            `widen the card.`,
+    );
 }
 
 // ─── Row ⇄ value ────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 # 2026-09-05 — a policy card may not be born permitting what it forbids
 
-**Commit:** `<pending>` fix(agentic): the card create path wrote a state the edit path calls impossible
+**Commit:** `f033ede66` fix(agentic): a card could be born permitting what its own ceiling forbids, plus the follow-up that bounds the card against the same declaration.
 
 ## What was contradictory
 
@@ -94,14 +94,66 @@ deliberate: the tier is absent until somebody computes it (refusing on an absent
 tier would make preparing a DRAFT agent impossible), whereas the data axis is
 declared at registration and is never absent.
 
+### The other door into the same room: the card seam
+
+The grant seam refuses a tool reaching past `dataAccessScope`. Re-verification then
+asked the obvious next question — what stops the CARD reaching past it — and the
+answer was nothing. `updateAgentPolicyCard` bounded the card's **autonomy** ceiling
+against the assessed tier and left its **data** ceiling unbounded.
+
+That is not symmetric with autonomy, and the asymmetry is what makes it matter:
+
+| axis | the register's value at the boundary |
+| --- | --- |
+| autonomy | `min(key.maxAutonomyLevel, agent.autonomyLevel, tier cap)` on **every call** — a live narrowing term |
+| data | read once, when a card is **seeded**, and nowhere else — `evaluateCardReach` compares the call's rung against the card alone |
+
+So a card edited above the declaration is not a promise the boundary breaks; it is
+one the boundary **keeps**, while the risk tier goes on standing on the smaller
+declaration — the same two-numbers problem the grant gate was added to close.
+Measured, not assumed: an agent registered `READ_TENANT_DATA`, narrowed to
+`READ_METADATA`, accepted a card edit to `WRITE_TENANT_DATA` and wrote v2.
+
+`assertDataScopeRaiseWithinDeclaration` closes it, and it judges a **RAISE**, never
+the resulting value — the same one-directional shape, for the same reason, as
+`assertRaiseWithinTier` in the register usecase. A card already above the
+declaration is an ordinary reachable state (see the next section), and a rule
+written against the value would refuse every edit to such a card **including the
+narrowing edit that fixes it**.
+
+### Narrowing `dataAccessScope` after a card exists — what happens, and why
+
+Nothing reaches back into the card. The card keeps the ceiling it was seeded with,
+the boundary goes on honouring it, and the standing grant stands. This is
+deliberate on three counts, and it is pinned by
+`tests/integration/policy-card-seed-coherence.test.ts` at the real MCP boundary so
+that nobody reads the seeding as a live link:
+
+- **A version has to mean the same thing when it is read back as evidence.**
+  `AgentPolicyCardVersion` refuses UPDATE at two levels precisely so nothing
+  rewrites one behind the operator's back; a register edit silently re-writing a
+  card's ceiling would be that, with no version recording the decision.
+- **It is exactly how narrowing behaves for GRANTS**, which the register has always
+  left standing, and consistency between the two is worth more here than either
+  choice on its own.
+- **The remedy is free.** Narrowing the card is never refused by the ladder, and it
+  is one edit.
+
+The residual is honest and is stated rather than closed: lowering
+`autonomyLevel` narrows the agent on its next call, lowering `dataAccessScope` does
+not. Making the declared axis a live term at the boundary — `min(card ceiling,
+declared axis)`, the shape autonomy already has — is the change that would remove
+the asymmetry, and it belongs with the boundary's own terms in `mcp/authorize.ts`
+rather than bolted onto a card write path.
+
 ## Files
 
 | File | Role |
 | --- | --- |
 | `src/lib/agentic/policy-card-evaluation.ts` | `withholdingReasonForTool` — the one definition of unexercisable. `seedPolicyCardValue` now returns `{ value, withheld }` and filters. |
-| `src/app-layer/usecases/agent-policy-card.ts` | Create runs the same gate the edit runs; `withheld` in the response and the audit row; `wouldWithhold` in the GET preview. `assertDeclarationsExercisable` rewritten on the shared predicate. |
+| `src/app-layer/usecases/agent-policy-card.ts` | Create runs the same gate the edit runs; `withheld` in the response and the audit row; `wouldWithhold` in the GET preview. `assertDeclarationsExercisable` rewritten on the shared predicate. `assertDataScopeRaiseWithinDeclaration` bounds a card raise against the register's declared axis. |
 | `src/app-layer/usecases/agent-tool-exposure.ts` | `assertGrantWithinDeclaredDataScope` — the data axis at the grant seam. `dataAccessScope` added to the tenant-scoped select. |
-| `tests/integration/policy-card-seed-coherence.test.ts` | The reviewer's repro end-to-end through the real usecases, the real DB and the real MCP route, including the operator's whole way back. |
+| `tests/integration/policy-card-seed-coherence.test.ts` | The reviewer's repro end-to-end through the real usecases, the real DB and the real MCP route, including the operator's whole way back; the card-side bound with its paired positive; and what narrowing the declaration does to a card that already exists. |
 | `tests/unit/policy-card-evaluation.test.ts` | Seeding cases per reason, plus the invariant over every (tier × data rung) pair against the boundary's own evaluator. |
 | `tests/unit/agent-tool-exposure-usecase.test.ts` | The grant-seam refusal, its paired positive (`get_framework_status` at `READ_METADATA`), and the unscored asymmetry. |
 | `tests/integration/agent-widening-reassessment.test.ts` | Fixtures corrected: an agent granted a PROPOSE tool now declares `WRITE_TENANT_DATA`, which is that tool's base rung. Tiers unchanged (2+6+0+12 = 20 is still HIGH). |
@@ -122,7 +174,8 @@ declared at registration and is never absent.
   authority away is never the move to refuse. That is precisely the case the seed has
   to handle, and the integration suite reaches the contradictory state that way —
   through the product's own write paths, with the new grant gate in place — rather
-  than by hand-writing a row.
+  than by hand-writing a row. It leaves a card already written untouched, for
+  the three reasons above, and the boundary goes on honouring that card.
 - **No repair path for cards already written.** `AgentPolicyCardVersion` refuses
   UPDATE at two levels by design, so a repair would have to append a version nobody
   decided about. The policy card is unreleased (this branch), so no such card exists;

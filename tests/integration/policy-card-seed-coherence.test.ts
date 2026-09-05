@@ -517,4 +517,162 @@ describeFn('a seeded policy card is one the tool boundary can actually exercise'
             expect(errorOf(res.json)).toBeUndefined();
         });
     });
+
+    // ─────────────────────────────────────────────────────────────────
+    // 4. The other direction: the declaration bounds the CARD too.
+    // ─────────────────────────────────────────────────────────────────
+    //
+    // The grant seam now refuses a tool reaching past the agent's declared data
+    // axis. The card seam is the other door into the same room, and the two
+    // axes are not symmetric at the boundary: autonomy is
+    // `min(key max, agent.autonomyLevel, tier cap)` on every call, so lowering
+    // the register's autonomy narrows the agent immediately, while
+    // `dataAccessScope` is read when a card is SEEDED and nowhere else. A card
+    // edited above the declaration is therefore a widening the boundary HONOURS
+    // — while the risk tier goes on standing on the smaller declaration.
+    describe('a card may not be widened past the declaration it was seeded from', () => {
+        let agentId = '';
+
+        beforeAll(async () => {
+            agentId = await scoredAgent('bounded-card', 'READ_TENANT_DATA');
+            await createAgentPolicyCard(ctx(), agentId);
+        });
+
+        it('narrowing the card below the declaration is free, and raising it back is one rung', async () => {
+            // The positive half, and it has to come first: a rule that only ever
+            // refuses is indistinguishable from a rule that refuses everything.
+            await expect(
+                updateAgentPolicyCard(
+                    ctx(),
+                    agentId,
+                    edit(1, {
+                        permittedTools: [],
+                        maxDataScope: 'READ_METADATA',
+                        maxAutonomyLevel: 2,
+                        maxActionsPerRun: 10,
+                        maxActionsPerDay: 100,
+                    }),
+                ),
+            ).resolves.toMatchObject({ version: 2 });
+
+            await expect(
+                updateAgentPolicyCard(
+                    ctx(),
+                    agentId,
+                    edit(2, {
+                        permittedTools: [],
+                        maxDataScope: 'READ_TENANT_DATA',
+                        maxAutonomyLevel: 2,
+                        maxActionsPerRun: 10,
+                        maxActionsPerDay: 100,
+                    }),
+                ),
+            ).resolves.toMatchObject({ version: 3 });
+        });
+
+        it('but one rung PAST the declaration is refused, and the ladder is not what refuses it', async () => {
+            // READ_TENANT_DATA → WRITE_TENANT_DATA is a single rung, so
+            // `checkLadderStep` is satisfied. Only the declaration stops it,
+            // which is what makes this a sole detector for the new bound.
+            const err = await updateAgentPolicyCard(
+                ctx(),
+                agentId,
+                edit(3, {
+                    permittedTools: [],
+                    maxDataScope: 'WRITE_TENANT_DATA',
+                    maxAutonomyLevel: 2,
+                    maxActionsPerRun: 10,
+                    maxActionsPerDay: 100,
+                }),
+            ).catch((e: Error) => e);
+
+            expect((err as Error).message).toMatch(/This card would reach WRITE_TENANT_DATA/);
+            expect((err as Error).message).toMatch(/registered as reaching READ_TENANT_DATA/);
+            expect((err as Error).message).toMatch(/Raise the agent's data-access scope first/);
+
+            // Nothing was appended. A refusal that still moved the head would
+            // leave the head naming a version composed against a different base.
+            const card = await getAgentPolicyCard(ctx(), agentId);
+            expect(card.card?.currentVersion).toBe(3);
+            expect(
+                await prisma.agentPolicyCardVersion.count({
+                    where: { tenantId: TENANT, card: { agentId } },
+                }),
+            ).toBe(3);
+        });
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // 5. What narrowing the DECLARATION does to a card that already exists —
+    //    which is nothing, deliberately, and is pinned here so that nobody
+    //    reads the seeding as a live link between the two.
+    // ─────────────────────────────────────────────────────────────────
+    describe('narrowing the declaration does not reach back into a card already written', () => {
+        let agentId = '';
+        let token = '';
+
+        beforeAll(async () => {
+            agentId = await scoredAgent('narrow-after-card', 'READ_TENANT_DATA');
+            await grantAgentTool(ctx(), agentId, { toolName: 'list_risks' });
+            await createAgentPolicyCard(ctx(), agentId);
+            await activateRegisteredAgent(ctx(), agentId);
+            token = await mintKey(agentId);
+        });
+
+        it('the card keeps its ceiling and the boundary keeps honouring it', async () => {
+            expect(errorOf((await callTool(token, 'list_risks')).json)).toBeUndefined();
+
+            await updateRegisteredAgent(ctx(), agentId, { dataAccessScope: 'READ_METADATA' });
+            expect(
+                (
+                    await prisma.registeredAgent.findUniqueOrThrow({
+                        where: { id: agentId },
+                        select: { dataAccessScope: true },
+                    })
+                ).dataAccessScope,
+            ).toBe('READ_METADATA');
+
+            // The card is a stored version, not a view over the register. It is
+            // still at the rung it was seeded at, and the call still runs.
+            //
+            // DELIBERATE, and the reason is the one the whole subsystem keeps
+            // repeating: a version has to mean the same thing when it is read
+            // back as evidence, so nothing may rewrite one behind the operator's
+            // back — and `AgentPolicyCardVersion` refuses UPDATE at two levels
+            // to make sure of it. Narrowing the register therefore behaves the
+            // way narrowing it behaves for GRANTS: the standing authority
+            // stands, and the operator narrows the card (free, no ladder step)
+            // or revokes the grant.
+            //
+            // The asymmetry with `autonomyLevel` — which IS a live term and so
+            // narrows the agent on the next call — is recorded in
+            // docs/implementation-notes/2026-09-05-policy-card-seed-coherence.md.
+            const card = await getAgentPolicyCard(ctx(), agentId);
+            expect(card.card?.inForce?.maxDataScope).toBe('READ_TENANT_DATA');
+            expect(card.card?.inForce?.permittedTools).toEqual(['list_risks']);
+            expect(errorOf((await callTool(token, 'list_risks')).json)).toBeUndefined();
+        });
+
+        it('and the card can still be narrowed — the new bound does not fight the repair', async () => {
+            // The gate added in block 4 judges a RAISE, never the resulting
+            // value, precisely so this edit is possible: the card sits above the
+            // declaration and the operator is bringing it down.
+            await expect(
+                updateAgentPolicyCard(
+                    ctx(),
+                    agentId,
+                    edit(1, {
+                        permittedTools: [],
+                        maxDataScope: 'READ_METADATA',
+                        maxAutonomyLevel: 2,
+                        maxActionsPerRun: 10,
+                        maxActionsPerDay: 100,
+                    }),
+                ),
+            ).resolves.toMatchObject({ version: 2 });
+
+            const res = await callTool(token, 'list_risks');
+            expect(errorOf(res.json)).toMatch(/does not permit/);
+        });
+    });
 });
