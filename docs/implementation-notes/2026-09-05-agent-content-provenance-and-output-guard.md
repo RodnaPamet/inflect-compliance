@@ -1,6 +1,6 @@
 # 2026-09-05 — Agent content provenance + the agentic output guard
 
-**Commit:** `f22b0a25b` feat(agentic): tag the agent's corpus and quarantine an injected proposal
+**Commit:** `990fff796` feat(agentic): tag the agent's corpus and quarantine an injected proposal
 
 ## Design
 
