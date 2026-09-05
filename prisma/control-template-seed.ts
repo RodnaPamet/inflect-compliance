@@ -35,7 +35,7 @@ import { reconcileTemplateTasks, type AuthoredTask, type TaskReconcileResult } f
  * — the same denominator mistake that hid 151 templates from the actionability
  * scan, one layer down.
  */
-type FixtureEntry = { code?: unknown; tasks?: unknown };
+type FixtureEntry = { code?: unknown; tasks?: unknown; title?: unknown; description?: unknown };
 
 export interface AuthoredControlTasks {
     /** Template code (`ICN-001`) -> its authored tasks, in authored order. */
@@ -230,6 +230,8 @@ export interface SeedAuthoredTasksResult extends TaskReconcileResult {
     missingTemplates: string[];
     /** Authored tasks the fixture carries, whether or not they landed. */
     fixtureTaskCount: number;
+    /** Templates whose title/description were refreshed from the fixture. */
+    scalarsUpdated: number;
 }
 
 /**
@@ -256,7 +258,22 @@ export async function seedAuthoredTemplateTasks(
         unchanged: 0,
         missingTemplates: [],
         fixtureTaskCount: authored.taskCount,
+        scalarsUpdated: 0,
     };
+
+    // Title and description travel with the tasks, keyed by the same fixture
+    // entry. Without this the fixture could rescope a control — change what it
+    // claims to be about — and production would keep the old title above the
+    // new task set, which is worse than either alone.
+    //
+    // Safe because the fixture is authoritative for these codes and agrees with
+    // production everywhere it is not deliberately changing something: a diff
+    // of all 108 shared codes found ZERO title drift.
+    const byCode = new Map(
+        fixtureEntries(fixture)
+            .filter((e) => typeof e.code === 'string')
+            .map((e) => [e.code as string, e]),
+    );
 
     for (const [code, tasks] of authored.byCode) {
         const template = await prisma.controlTemplate.findUnique({
@@ -267,6 +284,18 @@ export async function seedAuthoredTemplateTasks(
             out.missingTemplates.push(code);
             continue;
         }
+
+        const entry = byCode.get(code);
+        const title = typeof entry?.title === 'string' ? entry.title : undefined;
+        const description = typeof entry?.description === 'string' ? entry.description : undefined;
+        if (title || description) {
+            await prisma.controlTemplate.update({
+                where: { id: template.id },
+                data: { ...(title ? { title } : {}), ...(description ? { description } : {}) },
+            });
+            out.scalarsUpdated++;
+        }
+
         const r = await reconcileTemplateTasks(prisma, template.id, tasks);
         out.created += r.created;
         out.updated += r.updated;

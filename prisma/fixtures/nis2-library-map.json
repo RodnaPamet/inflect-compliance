@@ -22,11 +22,11 @@
     "NIS2-TR": "NIS2-GOV"
   },
   "unmapped": {
-    "_why": "These five carry no library node, and that is the library being CORRECT rather than incomplete: it covers entity-facing obligations, and these are not. Authoring compliance tasks against them would tell a customer they must satisfy an obligation the directive does not place on them. Each needs a product decision, recorded here rather than silently filled with generic content.",
-    "NIS2-NS2": "Art.7(1) — national cybersecurity strategy. Addressed to MEMBER STATES. An entity cannot satisfy it.",
-    "NIS2-ST": "Art.25 — standards and technical specifications. Addressed to Member States and ENISA, who promote their use.",
-    "NIS2-CE": "Art.24(1) — certification schemes. Permissive: Member States MAY require entities to use certified products.",
-    "NIS2-DN": "Art.28(1) — domain name registration data. Applies only to TLD registries and DNS service providers, not to entities generally.",
-    "NIS2-IS": "Art.29(1) — information-sharing arrangements. Voluntary: entities MAY exchange information."
+    "_why": "These five carry no library node, and that is the library being CORRECT rather than incomplete: it covers entity-facing obligations and these articles are not. They are NOT deleted and NOT left blank — each is RESCOPED as a determination control, whose authored tasks are about establishing whether the article reaches this entity and recording the outcome with its basis. That is a real, finishable, evidence-producing obligation, where 'implement Article 7' is not. Deleting them instead would drop five genuine directive articles from coverage and leave a future NIS2 assessment unable to show it had considered them.",
+    "NIS2-NS2": "Art.7(1) — national cybersecurity strategy. Binds MEMBER STATES. Rescoped to identifying the competent authority and CSIRT per jurisdiction, which the Art.23 reporting duties depend on.",
+    "NIS2-ST": "Art.25 — standards and technical specifications. Binds Member States and ENISA, who promote their use. Rescoped to recording which standards the entity relies on to evidence its Art.21 measures.",
+    "NIS2-CE": "Art.24(1) — certification schemes. Permissive: a Member State MAY require certified products. Rescoped to determining whether such a requirement was in fact made where the entity operates.",
+    "NIS2-DN": "Art.28(1) — domain registration data. Applies to TLD registries and DNS providers only. Rescoped so the first task is determining whether the entity is one; a recorded \"no\" is a complete outcome.",
+    "NIS2-IS": "Art.29(1) — information sharing. Voluntary: entities MAY exchange information. Rescoped to recording the participation decision, where deciding not to participate is fully compliant."
   }
 }

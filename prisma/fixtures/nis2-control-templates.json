@@ -2506,47 +2506,283 @@
   },
   {
     "code": "NIS2-CE",
-    "title": "Cybersecurity certification schemes",
+    "title": "Certification-scheme applicability determination (Article 24 is permissive)",
     "category": "NIS2",
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.24(1)"
+    ],
+    "description": "Article 24 is permissive, not mandatory: it ALLOWS a Member State to require entities to use ICT products, services and processes certified under a European scheme. By itself it requires nothing. The entity's obligation is therefore to determine whether such a requirement has in fact been made where it operates, and to record the determination and its basis.",
+    "tasks": [
+      {
+        "title": {
+          "en": "Determine whether any Member State the entity operates in mandates certified ICT products"
+        },
+        "description": {
+          "en": "Check the national transposition of NIS2 in each jurisdiction on the entity's list for a certification requirement under Article 24, and note the sector it applies to. Most Member States have made no such requirement, and recording that finding with its source is the whole answer where it holds. Attach the determination per jurisdiction."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "suggestedRole": "Legal/DPO"
+      },
+      {
+        "title": {
+          "en": "Record the certification determination with the legal basis it rests on"
+        },
+        "description": {
+          "en": "Write the outcome down so it can be re-argued rather than re-researched: the jurisdiction, the provision consulted, the date, who reached the conclusion, and which of the entity's products or services it would cover if it applies. Attach the determination record."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "suggestedRole": "Legal/DPO"
+      },
+      {
+        "title": {
+          "en": "Log the certificates held for each product the determination brings into scope"
+        },
+        "description": {
+          "en": "Where a requirement does apply, keep one record per in-scope product: the scheme, the assurance level, the certificate identifier, the issuing body and the expiry. Where no requirement applies, this task is closed by the recorded determination rather than left open. Attach the certificate register or the determination it rests on."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 2,
+        "suggestedRole": "Procurement",
+        "evidenceHint": {
+          "en": "Certificate register for in-scope products (scheme, level, identifier, issuer, expiry), or the recorded determination that no requirement applies"
+        }
+      },
+      {
+        "title": {
+          "en": "Re-check the certification determination against changes to national implementing law"
+        },
+        "description": {
+          "en": "National transposition is still moving in several Member States, so a determination made once is not durable. Re-read the provision consulted for each jurisdiction, record whether it has changed, and re-date the determination. Attach the re-checked determination with the date and source for each entry."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 3,
+        "suggestedRole": "Legal/DPO"
+      }
     ]
   },
   {
     "code": "NIS2-ST",
-    "title": "Standards and technical specifications",
+    "title": "Standards adopted to demonstrate compliance (Article 25 binds Member States)",
     "category": "NIS2",
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.25"
+    ],
+    "description": "Article 25 addresses Member States and ENISA, requiring them to PROMOTE the use of European and international standards. It obliges no entity to adopt any particular standard. What is worth recording is which standards the entity has chosen to evidence its Article 21 measures, so an assessor can trace a measure to the clause that supports it.",
+    "tasks": [
+      {
+        "title": {
+          "en": "List the European and international standards the entity relies on for its security measures"
+        },
+        "description": {
+          "en": "Name each standard with its version and the scope it is applied to — the certificate or statement of applicability where one exists. Include standards used informally as a design reference, since they will be cited in an assessment whether or not they are certified. Attach the list."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "suggestedRole": "Security engineering"
+      },
+      {
+        "title": {
+          "en": "Map each Article 21 measure to the standard clause the entity uses to evidence it"
+        },
+        "description": {
+          "en": "Take the ten Article 21(2) measures in turn and record, for each, which standard clause the entity points to and where that evidence lives. Measures with no standard behind them are the useful output: they are the ones an assessor will ask about first, and they are not a deficiency, only an absence of that particular shortcut. Attach the mapping."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "suggestedRole": "Security engineering"
+      },
+      {
+        "title": {
+          "en": "Compare the adopted standards against their current published versions"
+        },
+        "description": {
+          "en": "For each standard on the list, check whether a newer version has been published and what changed in the clauses the mapping relies on. Record the version in force, the version adopted, and whether the difference affects any mapped measure. Attach the comparison with a decision recorded against each gap."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 2,
+        "suggestedRole": "Security engineering"
+      }
     ]
   },
   {
     "code": "NIS2-DN",
-    "title": "Domain name registration accuracy",
+    "title": "Domain registration data — applies to TLD registries and DNS providers only (Article 28)",
     "category": "NIS2",
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.28(1)"
+    ],
+    "description": "Article 28 applies to TLD name registries and to entities providing domain name registration services. It does not apply to entities generally. The first task is therefore to determine whether the entity is one of those; where it is not, the recorded determination and its basis are the whole of this control.",
+    "tasks": [
+      {
+        "title": {
+          "en": "Determine whether the entity operates a TLD registry or provides domain registration services"
+        },
+        "description": {
+          "en": "Test the entity's actual services against the two categories, not against its self-description — a hosting or reseller arrangement can amount to providing registration services. Record the conclusion, the services examined, and who reached it. For most entities the answer is no, and that recorded no is a complete and correct outcome."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "suggestedRole": "Legal/DPO"
+      },
+      {
+        "title": {
+          "en": "Record the domain registration data held where the determination brings the entity into scope"
+        },
+        "description": {
+          "en": "If the entity is in scope, describe the registration database: what data is collected per domain, how registrant identity is verified, and where the data is held. If it is out of scope, this task is closed by the determination above and says so. Attach either the data description or the determination."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "suggestedRole": "IT Operations"
+      },
+      {
+        "title": {
+          "en": "Verify the domain registration records held are accurate and complete"
+        },
+        "description": {
+          "en": "Sample the registration database and check each sampled record for the required data and for an identifiable registrant, recording every incomplete or inaccurate entry with the correction made. Out of scope, the deliverable is the standing determination rather than a sample. Attach whichever applies."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 2,
+        "suggestedRole": "IT Operations",
+        "evidenceHint": {
+          "en": "Registration-data accuracy check for the period listing the records sampled and each correction made, or the recorded out-of-scope determination"
+        }
+      },
+      {
+        "title": {
+          "en": "Review the scope determination when the entity changes the services it offers"
+        },
+        "description": {
+          "en": "A new hosting, reseller or DNS offering can bring the entity into Article 28 for the first time. Re-run the test against the current service catalogue and re-date the determination. Attach the reviewed determination naming the services examined."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 3,
+        "suggestedRole": "Legal/DPO"
+      }
     ]
   },
   {
     "code": "NIS2-IS",
-    "title": "Information sharing arrangements",
+    "title": "Information-sharing participation decision (Article 29 is voluntary)",
     "category": "NIS2",
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.29(1)"
+    ],
+    "description": "Article 29 is voluntary: Member States must ensure entities MAY exchange cybersecurity information among themselves, and an entity that joins such an arrangement notifies the competent authority. Choosing not to participate is fully compliant. What this control records is the decision itself, and the arrangement where one is entered.",
+    "tasks": [
+      {
+        "title": {
+          "en": "Determine whether the entity will join a cybersecurity information-sharing arrangement"
+        },
+        "description": {
+          "en": "Weigh the arrangements actually open to the entity — sectoral ISACs, national CSIRT communities, trust groups — against what it can contribute and consume. Record the decision either way with its reasoning and the date. A recorded decision not to participate is a complete outcome, not a gap."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "suggestedRole": "Management"
+      },
+      {
+        "title": {
+          "en": "Record the sharing arrangement terms and the authority notification where the entity joins"
+        },
+        "description": {
+          "en": "For an arrangement the entity enters, capture what may be shared, with whom, under what confidentiality marking, who may release information on the entity's behalf, and the notification made to the competent authority. Where the entity has not joined, this is closed by the recorded decision. Attach whichever applies."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "suggestedRole": "Legal/DPO"
+      },
+      {
+        "title": {
+          "en": "Log each item of cybersecurity information exchanged under the arrangement"
+        },
+        "description": {
+          "en": "One row per exchange: the date, the counterparty or community, the direction, what was shared or received, its confidentiality marking, and who authorised the release. This log is what shows the arrangement is real rather than nominal. Where the entity does not participate, the standing decision is the artifact instead."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 2,
+        "suggestedRole": "Security engineering",
+        "evidenceHint": {
+          "en": "Information-sharing log for the period (date, counterparty, direction, content, marking, releaser), or the recorded decision not to participate"
+        }
+      },
+      {
+        "title": {
+          "en": "Review the participation decision against what the arrangement has actually delivered"
+        },
+        "description": {
+          "en": "Re-take the decision on evidence rather than inertia: what the entity received that changed a control or an investigation, what it contributed, and whether the confidentiality terms held. Record the decision to continue, leave or join, with the reasoning. Attach the reviewed decision."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 3,
+        "suggestedRole": "Management"
+      }
     ]
   },
   {
     "code": "NIS2-NS2",
-    "title": "National cybersecurity strategy compliance",
+    "title": "National strategy and CSIRT contact points (Article 7 binds Member States)",
     "category": "NIS2",
     "defaultFrequency": "QUARTERLY",
     "requirements": [
       "Art.7(1)"
+    ],
+    "description": "Article 7 requires each MEMBER STATE to adopt a national cybersecurity strategy and designate its competent authorities and CSIRTs. It places no obligation on an entity, and an entity cannot satisfy it. What an entity can do — and what the Article 23 reporting duties depend on — is know which authority and CSIRT it must deal with in each jurisdiction it operates in, and keep those contact points current.",
+    "tasks": [
+      {
+        "title": {
+          "en": "Identify the competent authority and CSIRT for each jurisdiction the entity operates in"
+        },
+        "description": {
+          "en": "Work from where the entity is actually established and provides services, not from where it is headquartered — NIS2 attaches per Member State. For each, name the competent authority, the CSIRT, and the national law transposing NIS2. Attach the list with the source consulted for each entry."
+        },
+        "phase": "SCOPE",
+        "sortOrder": 0,
+        "suggestedRole": "Legal/DPO"
+      },
+      {
+        "title": {
+          "en": "Record the notification channel and format each authority and CSIRT requires"
+        },
+        "description": {
+          "en": "For every entry on the jurisdiction list, capture how a report is actually submitted: the portal, address or form, the language accepted, and any registration that must exist BEFORE a first report can be filed. A channel discovered during an incident is a channel discovered too late. Attach the completed channel record."
+        },
+        "phase": "IMPLEMENT",
+        "sortOrder": 1,
+        "suggestedRole": "Legal/DPO"
+      },
+      {
+        "title": {
+          "en": "Confirm each recorded authority and CSIRT contact point is still reachable"
+        },
+        "description": {
+          "en": "Check every entry against the authority's current published details and, where a registration is required, that the entity's registration is still active. Record the date checked and the outcome per entry; a contact that has changed is the finding, and the correction goes in the same pass."
+        },
+        "phase": "OPERATE",
+        "sortOrder": 2,
+        "suggestedRole": "Legal/DPO",
+        "evidenceHint": {
+          "en": "Contact-point verification record: per jurisdiction, the authority and CSIRT checked, the source consulted, the date, and any correction made"
+        }
+      },
+      {
+        "title": {
+          "en": "Review the jurisdiction list against where the entity now operates"
+        },
+        "description": {
+          "en": "Compare the list against the entity's current establishments, services and customers, and add any jurisdiction that has come into scope since the last review. Note that entering a new Member State can also change whether the entity is essential or important there. Attach the reviewed list with additions and removals marked."
+        },
+        "phase": "REVIEW",
+        "sortOrder": 3,
+        "suggestedRole": "Legal/DPO"
+      }
     ]
   }
 ]
