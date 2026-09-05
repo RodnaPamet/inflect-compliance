@@ -363,6 +363,15 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // Not used in any WHERE/orderBy — the register filters on
     // tenantId/status/riskTier and sorts on createdAt.
     RegisteredAgent: ['description'],
+    // Agent risk assessment (Epic Agentic 3) — the per-question rationale an
+    // operator writes to justify a NO/PARTIALLY. It is where the honest answer
+    // lives: which guardrail is missing, which tool the agent should not have,
+    // which approver is not really reading the proposals. A register of an
+    // agent's own unmitigated weaknesses is exactly the document an attacker
+    // would ask for, so it is sanitised at the single write seam
+    // (`saveAgentAssessmentAnswer`) and encrypted here at rest. Not used in any
+    // WHERE/orderBy — answers are read by (tenantId, assessmentId).
+    AgentRiskAssessmentAnswer: ['note'],
 
     // ─── Epic G-7 risk treatment plans ─────────────────
     //  Both columns can name internal systems / vendors / users:

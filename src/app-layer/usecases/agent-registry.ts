@@ -19,6 +19,15 @@
  *    as "deny". An agent nobody has assessed is exactly the one that should not
  *    be running, so `createRegisteredAgent` deliberately leaves the tier NULL
  *    and the status DRAFT rather than seeding a plausible-looking low tier.
+ *  • THE SCORED TIER CAPS AUTONOMY, AND THE CAP IS ENFORCED HERE AS WELL AS AT
+ *    THE TOOL BOUNDARY. `updateRegisteredAgent` refuses to RAISE an agent's
+ *    registered autonomy above what its tier permits, and
+ *    `activateRegisteredAgent` refuses an agent nobody has scored. Neither is
+ *    the primary control — `resolveAutonomyCeiling` is, on every single tool
+ *    call — but a register that records authority an agent provably cannot
+ *    exercise is a register that lies to the person reading it, and the two
+ *    refusals are the ones that put the fix in front of an operator at the
+ *    moment they are asking for the thing.
  */
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
@@ -27,6 +36,8 @@ import { badRequest, conflict, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
 import { RegisteredAgentRepository } from '../repositories/RegisteredAgentRepository';
+import { reassessAgentAfterChangeInTx } from './agent-risk-assessment';
+import { ceilingForRiskTier, DENY_CEILING } from '@/lib/agentic/autonomy-ceiling';
 import { authorAiSystemEntry } from './ai-system';
 import { assertOwnerInTenant } from './vendor-link-targets';
 import {
@@ -45,6 +56,22 @@ function sanitizeOptional(value: string | null | undefined): string | null | und
     if (value === undefined) return undefined;
     if (value === null) return null;
     return sanitizePlainText(value);
+}
+
+/**
+ * The declared model reference, as it goes to the column.
+ *
+ * Sanitised because it is operator free text that the register export and the
+ * assessment surface both render, and folded to `null` when it is empty:
+ * "declared as nothing" and "never declared" are one fact, and the staleness
+ * comparison normalises the same way, so a save of `''` over a NULL column must
+ * not read back as a model change.
+ */
+function normalizeModelRef(value: string | null | undefined): string | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    const clean = sanitizePlainText(value).trim();
+    return clean === '' ? null : clean;
 }
 
 /**
@@ -119,6 +146,7 @@ export async function createRegisteredAgent(ctx: RequestContext, input: unknown)
             dataAccessScope: parsed.dataAccessScope,
             reversibility: parsed.reversibility,
             provenance: parsed.provenance,
+            modelRef: normalizeModelRef(parsed.modelRef) ?? null,
             ownerUserId: parsed.ownerUserId,
             vendorId: parsed.vendorId ?? null,
         });
@@ -149,6 +177,53 @@ export async function createRegisteredAgent(ctx: RequestContext, input: unknown)
     });
 }
 
+/**
+ * Refuse a RAISE of the registered autonomy level beyond what the assessed tier
+ * permits.
+ *
+ * ## Why a RAISE and not the resulting VALUE
+ *
+ * An agent declared at rung 6 and later scored HIGH (cap 2) is an ordinary,
+ * expected state: registration is a declaration, scoring is a judgement about
+ * it, and the judgement is allowed to disagree. Requiring every update to land
+ * at or below the cap would then refuse an operator LOWERING 6 → 4, which is a
+ * move toward the cap — the check would be fighting the person fixing the
+ * thing. So the rule is one-directional, exactly as the staleness triggers are:
+ * moving toward more authority is checked, moving away from it never is.
+ *
+ * ## Why an UNSCORED agent cannot be raised at all
+ *
+ * `ceilingForRiskTier(null)` is `DENY_CEILING`, which is below rung 0, so every
+ * raise fails the comparison. That is the intended reading and not an accident
+ * of the arithmetic: an agent nobody has assessed has no established authority
+ * for a raise to be relative to. The refusal names the assessment as the fix,
+ * because raising a number that the tool boundary is already ignoring would
+ * leave the operator convinced they had changed something.
+ */
+function assertRaiseWithinTier(
+    current: { autonomyLevel: number; riskTier: Parameters<typeof ceilingForRiskTier>[0] },
+    next: number,
+): void {
+    if (next <= current.autonomyLevel) return; // lowering, or no change
+
+    const cap = ceilingForRiskTier(current.riskTier);
+    if (next <= cap) return;
+
+    if (cap === DENY_CEILING) {
+        throw badRequest(
+            `This agent has not been risk-assessed, so its autonomy cannot be raised ` +
+                `from ${current.autonomyLevel} to ${next}. Complete its agent risk ` +
+                `assessment first — the assessed tier is what decides how far it may go.`,
+        );
+    }
+    throw badRequest(
+        `Autonomy ${next} is above what this agent's assessed risk tier ` +
+            `(${current.riskTier}) permits, which is ${cap}. Lower the request, or ` +
+            `re-assess the agent — reducing its data access or making its actions ` +
+            `reversible is what lowers the tier, and the tier is what lifts the cap.`,
+    );
+}
+
 export async function updateRegisteredAgent(ctx: RequestContext, id: string, input: unknown) {
     assertCanWrite(ctx);
     const parsed = UpdateRegisteredAgentSchema.parse(input);
@@ -158,6 +233,14 @@ export async function updateRegisteredAgent(ctx: RequestContext, id: string, inp
         // ownership to a non-member is the same hole arrived at later.
         if (parsed.ownerUserId !== undefined) await assertAgentOwner(db, ctx, parsed.ownerUserId);
         if (parsed.vendorId) await assertVendorInTenant(db, ctx, parsed.vendorId);
+
+        // Read the live row BEFORE the write, in the same transaction, so the
+        // tier the cap is computed from is the one the update lands against.
+        if (parsed.autonomyLevel !== undefined) {
+            const current = await RegisteredAgentRepository.getScoringState(db, ctx, id);
+            if (!current) throw notFound('Registered agent not found');
+            assertRaiseWithinTier(current, parsed.autonomyLevel);
+        }
 
         const count = await RegisteredAgentRepository.update(db, ctx, id, {
             ...(parsed.name !== undefined ? { name: parsed.name } : {}),
@@ -170,6 +253,9 @@ export async function updateRegisteredAgent(ctx: RequestContext, id: string, inp
                 : {}),
             ...(parsed.reversibility !== undefined ? { reversibility: parsed.reversibility } : {}),
             ...(parsed.provenance !== undefined ? { provenance: parsed.provenance } : {}),
+            ...(parsed.modelRef !== undefined
+                ? { modelRef: normalizeModelRef(parsed.modelRef) ?? null }
+                : {}),
             ...(parsed.ownerUserId !== undefined ? { ownerUserId: parsed.ownerUserId } : {}),
             ...(parsed.vendorId !== undefined ? { vendorId: parsed.vendorId ?? null } : {}),
         });
@@ -190,7 +276,27 @@ export async function updateRegisteredAgent(ctx: RequestContext, id: string, inp
             },
         });
 
-        return { id, updated: true };
+        // An amendment can move a scorer input, so the standing assessment is
+        // reconciled HERE rather than by a nightly sweep — and reconciling
+        // means two things, not one:
+        //
+        //   • the tier is RE-SCORED from the answers already on file, so a
+        //     widening of any axis the scorer reads narrows the ceiling in the
+        //     SAME transaction that recorded it. Without this an agent could
+        //     move READ_TENANT_DATA → EXTERNAL_EGRESS, keep a LOW tier and the
+        //     full ladder, and be running at an authority a fresh score of the
+        //     very same agent would have refused;
+        //   • the run is stamped STALE, which now means only "the questionnaire
+        //     answers may be out of date" — a genuine warning rather than a
+        //     euphemism for "the tier is wrong".
+        //
+        // Same transaction on both counts: a sweep leaves a window in which the
+        // register says an assessment is current when it is not, and opening a
+        // second transaction from inside this one would hold two connections
+        // against a transaction-mode pooler.
+        const staleness = await reassessAgentAfterChangeInTx(db, ctx, id);
+
+        return { id, updated: true, staleness };
     });
 }
 
@@ -252,12 +358,48 @@ export async function suspendRegisteredAgent(ctx: RequestContext, id: string) {
 }
 
 /**
- * Move an agent into service. This is the moment the MCP gate begins letting its
- * credentials through, so it is a deliberate human act and never a side effect
- * of registration — `createRegisteredAgent` and `registerAgent` both land DRAFT.
+ * Move an agent into service — and REFUSE while nobody has risk-assessed it.
+ *
+ * This is the moment the MCP gate begins letting its credentials through, so it
+ * is a deliberate human act and never a side effect of registration —
+ * `createRegisteredAgent` and `registerAgent` both land DRAFT.
+ *
+ * ## Why the score is required HERE and not at registration
+ *
+ * Registration deliberately leaves the tier NULL: an agent arrives unassessed,
+ * and a tier invented at insert time would be a judgement nobody made. But
+ * activation is the act that makes the agent's credentials LIVE, and an agent
+ * nobody has assessed becoming live is the state this whole subsystem exists to
+ * prevent. Putting the requirement at the transition rather than at the insert
+ * keeps both true: an operator can register, describe, own and prepare an agent
+ * without being interrogated, and cannot switch it on without an assessment.
+ *
+ * ## What this buys over the tool-boundary deny
+ *
+ * `riskTierCeilingFor` already refuses an unscored agent every tool. That
+ * refusal is correct and is the enforcement; it is also invisible until
+ * somebody's integration starts failing. This one arrives at the moment the
+ * operator is asking for the thing, names the fix, and means the ACTIVE state
+ * in the register stops containing agents that provably cannot act.
+ *
+ * SUSPEND and RETIRE carry no such precondition, and must not: taking authority
+ * away is never the move to refuse.
  */
 export async function activateRegisteredAgent(ctx: RequestContext, id: string) {
-    return setRegisteredAgentStatus(ctx, id, 'ACTIVE', 'AGENT_ACTIVATED');
+    assertCanWrite(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const agent = await RegisteredAgentRepository.getScoringState(db, ctx, id);
+        if (!agent) throw notFound('Registered agent not found');
+        if (agent.riskTier === null) {
+            throw conflict(
+                'This agent has not been risk-assessed. Complete its agent risk ' +
+                    'assessment before activating it — an unassessed agent is refused ' +
+                    'every tool at the boundary anyway, so activating it would put a ' +
+                    'row in the register that cannot act.',
+            );
+        }
+        return applyRegisteredAgentStatus(db, ctx, id, 'ACTIVE', 'AGENT_ACTIVATED');
+    });
 }
 
 /**
@@ -305,6 +447,7 @@ export async function registerAgent(ctx: RequestContext, input: unknown) {
             dataAccessScope: parsed.dataAccessScope,
             reversibility: parsed.reversibility,
             provenance: parsed.provenance,
+            modelRef: normalizeModelRef(parsed.modelRef) ?? null,
             ownerUserId: parsed.ownerUserId,
             vendorId: parsed.vendorId ?? null,
         });

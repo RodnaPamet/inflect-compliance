@@ -80,6 +80,8 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
         'FK — User id, not content (heuristic matched "answer").',
     'Nis2SelfAssessmentAnswer.answeredById':
         'FK — User id, not content (heuristic matched "answer").',
+    'AgentRiskAssessmentAnswer.answeredById':
+        'FK — User id, not content (heuristic matched "answer").',
     'FindingEvidence.findingId':
         'FK — Finding id, not content (heuristic matched "finding").',
     'FindingRisk.findingId':
@@ -107,6 +109,8 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
         'Structured answer value (YES/NO/PARTIALLY); rationale is `note` (encrypted).',
     'Nis2SelfAssessmentAnswer.answer':
         'Structured answer value (YES/NO/PARTIALLY); rationale is `note` (encrypted).',
+    'AgentRiskAssessmentAnswer.answer':
+        'Structured answer value (NA/NO/PARTIALLY/YES); rationale is `note` (encrypted).',
 
     // ── Deliberately plaintext to preserve substring search. Each is
     //    the documented "searched via <Repo> contains" carve-out in

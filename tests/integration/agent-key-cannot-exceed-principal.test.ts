@@ -77,6 +77,10 @@ describeFn('an agent-bound key cannot exceed its principal', () => {
                 provenance: 'FIRST_PARTY',
                 ownerUserId: OWNER,
                 status: 'ACTIVE',
+                // Scored LOW so the TIER term is never what refuses here — an
+                // UNSCORED agent is denied every tool from Agentic 3/10.
+                riskTier: 'LOW',
+                riskTierScoredAt: new Date(),
             },
         });
         agentId = agent.id;

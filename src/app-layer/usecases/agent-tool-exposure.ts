@@ -12,7 +12,7 @@
  * writes a hash-chained `AUTHZ_DENIED` row — a usecase throw records nothing,
  * which is the whole of Epic D.3.
  *
- * ## Three refusals, and why each is here rather than in the database
+ * ## Four refusals, and why each is here rather than in the database
  *
  *   • UNKNOWN TOOL. Validated against the live catalogue
  *     (`src/lib/mcp/tool-catalogue.ts`) rather than a DB enum, because a tool is
@@ -30,15 +30,25 @@
  *     deliberate. SUSPENDED is deliberately still grantable: suspension is a
  *     reversible kill switch, and an operator preparing an agent to come back
  *     should not have to un-suspend it first to fix its tool list.
+ *   • A TOOL THE ASSESSED TIER CANNOT REACH. See `assertGrantWithinTier` below.
+ *     The granted-tool count is NOT a scorer input, so a grant cannot be
+ *     answered by re-scoring the agent the way an axis widening is — the rung
+ *     the tool requires, against the rung the tier permits, is what bounds it.
  */
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, notFound } from '@/lib/errors/types';
-import { isKnownMcpTool, MCP_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
+import { isKnownMcpTool, mcpToolCapabilityClass, MCP_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
+import {
+    AUTONOMY_REQUIRED_BY_CAPABILITY,
+    ceilingForRiskTier,
+    DENY_CEILING,
+} from '@/lib/agentic/autonomy-ceiling';
 import type { PrismaTx } from '@/lib/db-context';
 
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
 import { RegisteredAgentToolRepository } from '../repositories/RegisteredAgentToolRepository';
+import { reassessAgentAfterChangeInTx } from './agent-risk-assessment';
 import { AgentToolGrantSchema } from '../schemas/agent-registry.schemas';
 import type { RequestContext } from '../types';
 
@@ -49,7 +59,7 @@ import type { RequestContext } from '../types';
 async function assertAgentGrantable(db: PrismaTx, ctx: RequestContext, agentId: string) {
     const agent = await db.registeredAgent.findFirst({
         where: { id: agentId, tenantId: ctx.tenantId, deletedAt: null },
-        select: { id: true, status: true },
+        select: { id: true, status: true, riskTier: true },
     });
     // Same shape whether absent or foreign, so a caller learns nothing about
     // another tenant's id space.
@@ -76,6 +86,53 @@ export async function listAgentTools(ctx: RequestContext, agentId: string) {
     });
 }
 
+/**
+ * ── A GRANT THE TIER COULD NEVER EXERCISE IS REFUSED ────────────────
+ *
+ * A granted tool is NOT an input to the risk score. `scoreAgentRisk` reads four
+ * declared axes and the questionnaire; `RegisteredAgentTool` appears in none of
+ * them, which is why widening the tool list — unlike widening an axis — cannot
+ * be answered by re-scoring the agent. There is nothing to recompute.
+ *
+ * What bounds a grant instead is the rung. Every tool call goes through
+ * `min(key max, registered autonomy, tier cap)` on every request, and each tool
+ * declares the rung it requires. So the assessed tier already decides HOW FAR a
+ * grant can reach; the grant only decides WHICH tools within that reach. That
+ * is what makes granting safe without a re-score — the tier is not being
+ * bypassed, it is being spent.
+ *
+ * This refusal closes the remaining gap, which is a configuration error rather
+ * than an escalation: granting a PROPOSE tool to an agent capped at READ writes
+ * a row that looks deliberate in the register and refuses at the boundary
+ * forever. Same shape as the RETIRED refusal above and as
+ * `assertRaiseWithinTier` in the register usecase — the error arrives where the
+ * operator is asking for the thing.
+ *
+ * An UNSCORED agent is deliberately NOT refused here. Its ceiling is
+ * `DENY_CEILING`, so on this rule every grant would fail — and preparing a
+ * DRAFT agent's tool list before assessing it is an ordinary, correct workflow.
+ * Activation is where the score is demanded; making the register's own
+ * preparation the outage is the failure mode this subsystem keeps naming.
+ */
+function assertGrantWithinTier(
+    agent: { riskTier: Parameters<typeof ceilingForRiskTier>[0] },
+    toolName: string,
+): void {
+    if (agent.riskTier === null || agent.riskTier === undefined) return;
+
+    const cap = ceilingForRiskTier(agent.riskTier);
+    const required = AUTONOMY_REQUIRED_BY_CAPABILITY[mcpToolCapabilityClass(toolName)];
+    if (cap !== DENY_CEILING && required <= cap) return;
+
+    throw badRequest(
+        `"${toolName}" needs autonomy ${required}, and this agent's assessed risk ` +
+            `tier (${agent.riskTier}) caps it at ${cap}. Granting it would write a ` +
+            `permission the tool boundary refuses on every call. Re-assess the agent ` +
+            `— reducing its data access or making its actions reversible is what ` +
+            `lowers the tier, and the tier is what lifts the cap.`,
+    );
+}
+
 export async function grantAgentTool(ctx: RequestContext, agentId: string, input: unknown) {
     assertCanWrite(ctx);
     const { toolName } = AgentToolGrantSchema.parse(input);
@@ -84,7 +141,8 @@ export async function grantAgentTool(ctx: RequestContext, agentId: string, input
     }
 
     return runInTenantContext(ctx, async (db) => {
-        await assertAgentGrantable(db, ctx, agentId);
+        const agent = await assertAgentGrantable(db, ctx, agentId);
+        assertGrantWithinTier(agent, toolName);
         const granted = await RegisteredAgentToolRepository.grant(db, ctx, agentId, toolName);
 
         await logEvent(db, ctx, {
@@ -100,7 +158,22 @@ export async function grantAgentTool(ctx: RequestContext, agentId: string, input
             },
         });
 
-        return { agentId, toolName, grantedAt: granted.createdAt };
+        // A grant is one of the assessment's staleness triggers — the agent can
+        // now reach something it could not when somebody scored it. Re-evaluated
+        // in THIS transaction so the note commits with the grant that caused it,
+        // and so the register never shows a fresh assessment beside a tool it
+        // never saw.
+        //
+        // It WARNS; it does not block, and here the warning is the whole of the
+        // remedy available: the tool count is not a scorer input, so unlike an
+        // axis widening there is no tier to recompute (the reconcile below will
+        // find the axes unchanged and re-score nothing). The rung check above is
+        // what bounds the grant; this records that the ANSWERS — "is every tool
+        // this agent holds within its reviewed blast radius" — were given before
+        // it held this one.
+        const staleness = await reassessAgentAfterChangeInTx(db, ctx, agentId);
+
+        return { agentId, toolName, grantedAt: granted.createdAt, staleness };
     });
 }
 

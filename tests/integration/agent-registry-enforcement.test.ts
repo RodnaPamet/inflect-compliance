@@ -91,6 +91,12 @@ async function seedAgent(name: string, status: 'ACTIVE' | 'SUSPENDED'): Promise<
             provenance: 'FIRST_PARTY',
             ownerUserId: USER,
             status,
+            // Scored LOW so the TIER term is never what refuses here — an
+            // UNSCORED agent is denied every tool from Agentic 3/10, which
+            // would make these assertions pass for the wrong reason. LOW leaves
+            // the ladder whole, so the arithmetic below is unchanged.
+            riskTier: 'LOW',
+            riskTierScoredAt: new Date(),
         },
     });
     return agent.id;
@@ -435,6 +441,12 @@ describeFn('the agent-registration gate', () => {
                     provenance: 'FIRST_PARTY',
                     ownerUserId: USER,
                     status: 'ACTIVE',
+                    // Scored LOW so the TIER term is never what refuses
+                    // here — an UNSCORED agent is denied every tool from
+                    // Agentic 3/10, which would make these assertions pass for
+                    // the wrong reason. LOW leaves the ladder whole.
+                    riskTier: 'LOW',
+                    riskTierScoredAt: new Date(),
                 },
             });
 

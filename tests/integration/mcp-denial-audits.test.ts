@@ -228,6 +228,12 @@ describeFn('every agent denial writes exactly one hash-chained AUTHZ_DENIED row'
                     provenance: 'FIRST_PARTY',
                     ownerUserId: ownerId,
                     status: 'ACTIVE',
+                    // Scored LOW so the TIER term is never what refuses
+                    // here — an UNSCORED agent is denied every tool from
+                    // Agentic 3/10, which would make these assertions pass for
+                    // the wrong reason. LOW leaves the ladder whole.
+                    riskTier: 'LOW',
+                    riskTierScoredAt: new Date(),
                 },
             })
         ).id;
@@ -254,6 +260,12 @@ describeFn('every agent denial writes exactly one hash-chained AUTHZ_DENIED row'
                     provenance: 'FIRST_PARTY',
                     ownerUserId: ownerId,
                     status: 'ACTIVE',
+                    // Scored LOW so the TIER term is never what refuses
+                    // here — an UNSCORED agent is denied every tool from
+                    // Agentic 3/10, which would make these assertions pass for
+                    // the wrong reason. LOW leaves the ladder whole.
+                    riskTier: 'LOW',
+                    riskTierScoredAt: new Date(),
                 },
             })
         ).id;

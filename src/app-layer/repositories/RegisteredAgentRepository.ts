@@ -14,6 +14,7 @@ import type {
     AgentDataAccessScope,
     AgentProvenance,
     AgentReversibility,
+    AgentRiskTier,
 } from '@prisma/client';
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
@@ -55,6 +56,13 @@ export interface RegisteredAgentWriteFields {
     dataAccessScope: AgentDataAccessScope;
     reversibility: AgentReversibility;
     provenance: AgentProvenance;
+    /**
+     * The declared underlying model. Present here because `MODEL_CHANGED` is an
+     * assessment staleness trigger and a trigger with no write path can never
+     * fire — this field was missing from the write shape, so the column was
+     * permanently NULL and the comparison behind it permanently false.
+     */
+    modelRef: string | null;
     ownerUserId: string;
     vendorId: string | null;
 }
@@ -87,7 +95,9 @@ export class RegisteredAgentRepository {
     static async getById(db: PrismaTx, ctx: RequestContext, id: string) {
         return db.registeredAgent.findFirst({
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
-            select: { ...listSelect, description: true, updatedAt: true },
+            // `modelRef` is on the DETAIL read, not `listSelect`: it is one
+            // agent's declaration, not a column any register list renders.
+            select: { ...listSelect, description: true, modelRef: true, updatedAt: true },
         });
     }
 
@@ -120,6 +130,57 @@ export class RegisteredAgentRepository {
         const res = await db.registeredAgent.updateMany({
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
             data,
+        });
+        return res.count;
+    }
+
+    /**
+     * The five scorer inputs plus the granted-tool count — everything the agent
+     * risk assessment needs to score and to detect staleness, in ONE read.
+     *
+     * A separate selection from `listSelect` on purpose: that one is the
+     * OPERATOR's view of an agent (owner name, AI-Act tier, credential count)
+     * and this one is the SCORER's. Widening `listSelect` to serve both would
+     * mean every list page pays for columns it never renders, and — worse —
+     * that a future trim of a column nobody could see on a page would silently
+     * change what the scorer reads.
+     */
+    static async getScoringState(db: PrismaTx, ctx: RequestContext, id: string) {
+        return db.registeredAgent.findFirst({
+            where: { id, tenantId: ctx.tenantId, deletedAt: null },
+            select: {
+                id: true,
+                name: true,
+                autonomyLevel: true,
+                dataAccessScope: true,
+                reversibility: true,
+                provenance: true,
+                modelRef: true,
+                riskTier: true,
+                riskTierScoredAt: true,
+                _count: { select: { tools: true } },
+            },
+        });
+    }
+
+    /**
+     * Write a scored tier back onto the agent.
+     *
+     * The two columns move TOGETHER — a CHECK constraint pins
+     * `riskTier IS NULL` ⇔ `riskTierScoredAt IS NULL`, so a tier can never be
+     * read without knowing how old it is. That is why this takes both and why
+     * there is no method that sets one of them.
+     */
+    static async setRiskTier(
+        db: PrismaTx,
+        ctx: RequestContext,
+        id: string,
+        riskTier: AgentRiskTier,
+        scoredAt: Date,
+    ): Promise<number> {
+        const res = await db.registeredAgent.updateMany({
+            where: { id, tenantId: ctx.tenantId, deletedAt: null },
+            data: { riskTier, riskTierScoredAt: scoredAt },
         });
         return res.count;
     }

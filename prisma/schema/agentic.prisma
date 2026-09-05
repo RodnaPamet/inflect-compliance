@@ -174,6 +174,17 @@ model RegisteredAgent {
 
   status AgentStatus @default(DRAFT)
 
+  /// The underlying model this agent runs on, as the operator declares it
+  /// (e.g. a model id, or an internal build tag). Free-form and NULLABLE: the
+  /// platform cannot observe it, so a value here is a declaration, and an
+  /// invented default would be a declaration nobody made.
+  ///
+  /// It exists so "the underlying model changed" is a COMPARISON rather than a
+  /// notion — it is one of the agent-risk-assessment staleness triggers, and a
+  /// trigger with nothing to compare against never fires. NULL on both sides
+  /// (never declared, still not declared) is NOT a change.
+  modelRef String?
+
   /// The scored operational tier, and when it was scored.
   ///
   /// NULL means UNSCORED — the state between insert and the first scoring run.
@@ -220,6 +231,10 @@ model RegisteredAgent {
   /// The tools this agent is allowed to reach. EMPTY MEANS NONE — the list is
   /// an allowlist, and an agent nobody has granted anything to can call nothing.
   tools     RegisteredAgentTool[]
+  /// The agent-risk-assessment runs against this agent (Epic Agentic 3). Many,
+  /// not one: a re-score after a staleness trigger is a NEW run, so the
+  /// previous judgement and the basis it was true of stay legible.
+  assessments AgentRiskAssessment[]
 
   /// Composite parent key so the child tables that attribute work to an agent
   /// can never point cross-tenant. Mirrors AiSystem's own shape.
@@ -302,4 +317,191 @@ model RegisteredAgentTool {
   /// tenant-scoped lookup index.
   @@unique([tenantId, agentId, toolName])
   @@index([tenantId, agentId])
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// Epic Agentic 3 — the AGENT RISK ASSESSMENT.
+//
+// Singapore IMDA's Model AI Governance Framework for Agentic AI makes
+// "assess and bound the risks upfront" its first dimension, scored on
+// AUTONOMY × DATA ACCESS × ACTION REVERSIBILITY. NIST AI RMF, ISO/IEC 42001
+// and the EU AI Act contain no instrument for it, so a customer running agents
+// has nothing to fill in. These four tables are that instrument.
+//
+// The split is copied DELIBERATELY and EXACTLY from the AI-governance
+// self-assessment (`ai-governance.prisma`), because getting it backwards is the
+// expensive mistake in both directions:
+//
+//   • `AgentAssessmentDomain` / `AgentAssessmentQuestion` are GLOBAL REFERENCE
+//     CONTENT — no `tenantId`, no RLS, seeded from a fixture. Putting them
+//     behind RLS would mean every tenant needs its own copy of a question set
+//     that is identical for all of them, and an assessor citing "ara-1-03"
+//     would resolve to a different row per customer.
+//   • `AgentRiskAssessment` / `AgentRiskAssessmentAnswer` are TENANT-SCOPED
+//     RUNS with the canonical policy triple. They hold what one customer said
+//     about one of its agents; leaving them global would publish it.
+//
+// The answer's `note` is BOTH encrypted at rest (Epic B manifest) AND sanitised
+// on write (Epic D) — same as `AiGovSelfAssessmentAnswer.note`, for the same
+// reason: encryption protects confidentiality, sanitisation protects every
+// downstream renderer that decrypts and prints the field verbatim.
+// ═════════════════════════════════════════════════════════════════════
+
+/// Global reference: one dimension of the agent risk assessment.
+/// Not tenant-scoped (shared library content, no RLS).
+model AgentAssessmentDomain {
+  /// Stable domain id (1-4) from the fixture — the four IMDA dimensions.
+  id          Int    @id
+  /// Short stable code, e.g. "RISK_BOUNDING".
+  code        String @unique
+  name        String
+  /// What this dimension is asking about, in one sentence.
+  description String
+  sortOrder   Int    @default(0)
+
+  questions AgentAssessmentQuestion[]
+}
+
+/// Global reference: one agent-risk-assessment question.
+/// Not tenant-scoped (shared library content, no RLS).
+///
+/// `id` is the STABLE EXTERNAL KEY. An assessor citing a question in a report
+/// has to land on the same row forever, so these are authored ids from the
+/// fixture (`ara-<domain>-<nn>`) and never regenerated — which is also why the
+/// seed is an upsert keyed on `id` rather than a truncate-and-reload.
+model AgentAssessmentQuestion {
+  id       String @id
+  domainId Int
+
+  /// Paraphrased question text. References the OWASP Agentic Security
+  /// Initiative threat classes and the IMDA dimensions BY ID only, never
+  /// verbatim source prose — the same licensing posture as `AiGovQuestion`.
+  text     String
+  /// One line of "what a YES looks like", so the answer means the same thing to
+  /// two different assessors.
+  guidance String?
+
+  /// `{ asi: string[], imda: string[] }` — the external taxonomies this
+  /// question projects onto. JSON rather than a `String[]` because a second
+  /// taxonomy (an ISO 42001 agentic annex, a NIST profile) is a fixture edit
+  /// here and a migration there.
+  mappingsJson Json
+
+  /// String enum: CRITICAL | HIGH | MEDIUM (validated at the usecase). Drives
+  /// the answer weight in the scorer — see `agent-risk-scoring.ts`.
+  criticality String
+
+  domain  AgentAssessmentDomain      @relation(fields: [domainId], references: [id])
+  answers AgentRiskAssessmentAnswer[]
+
+  @@index([domainId])
+}
+
+/// Tenant-scoped: one run of the agent risk assessment against ONE agent.
+///
+/// ## Why the basis snapshot columns exist
+///
+/// A completed assessment writes a tier back to `RegisteredAgent.riskTier`, and
+/// that tier then CAPS how much authority the agent may hold. So the tier has to
+/// carry the state it was true of. The `basis*` columns are the four scorer
+/// inputs plus the tool count and the model reference, frozen at the moment of
+/// scoring — staleness is then a COMPARISON against the live agent rather than
+/// a flag somebody remembered to set. A flag can be forgotten; a comparison
+/// cannot, and it also survives a write path nobody thought to instrument.
+///
+/// They are nullable because a DRAFT run has not been scored yet, and a basis
+/// invented at insert time would be a snapshot of a state nobody assessed.
+model AgentRiskAssessment {
+  id       String @id @default(cuid())
+  tenantId String
+  /// The agent this run assesses. Composite FK to (id, tenantId) so an
+  /// assessment can never point at another tenant's agent.
+  agentId  String
+
+  /// Lifecycle: DRAFT | IN_PROGRESS | COMPLETED (String enum, validated at the
+  /// usecase). A String rather than a Postgres enum for the
+  /// same reason `RegisteredAgentTool.toolName` is: `ALTER TYPE` mid-rolling-
+  /// deploy makes still-running old containers fail with SQLSTATE 42704.
+  status String @default("DRAFT")
+
+  /// Pins the question-set version this run was started against, so a later
+  /// fixture revision does not silently rescore a completed assessment.
+  questionSetVersion Int @default(1)
+
+  /// The tier this run produced, kept HERE as well as on the agent. The agent
+  /// row holds the current answer; this column holds the history, so a re-score
+  /// that changes the tier leaves the previous judgement legible.
+  scoredTier         AgentRiskTier?
+  /// The raw additive score behind the tier, and the per-axis breakdown that
+  /// explains it. A tier nobody can explain is a tier nobody acts on.
+  score              Int?
+  scoreBreakdownJson Json?
+
+  // ── The basis: what the agent looked like when it was scored ──
+  basisAutonomyLevel   Int?
+  basisDataAccessScope AgentDataAccessScope?
+  basisReversibility   AgentReversibility?
+  basisProvenance      AgentProvenance?
+  /// How many tools were granted at scoring time. A grant added afterwards is
+  /// one of the four staleness triggers.
+  basisToolCount       Int?
+  /// Which underlying model the agent ran on at scoring time (see
+  /// `RegisteredAgent.modelRef`). NULL means never declared.
+  basisModelRef        String?
+
+  // ── Staleness ──
+  /// When the assessment was first observed to be stale. NULL means fresh.
+  /// Stale WARNS, it does not block — see the implementation note; "never
+  /// scored" (agent.riskTier IS NULL) is a DIFFERENT state and that one denies.
+  staleAt       DateTime?
+  /// Which triggers fired, as stable codes (AUTONOMY_RAISED, TOOL_GRANTED,
+  /// DATA_SCOPE_WIDENED, REVERSIBILITY_WORSENED, MODEL_CHANGED). Named
+  /// `staleTriggers` and not `staleReasons` on purpose: `reason` is in the
+  /// encryption-manifest sensitivity heuristic, and a column of enum codes
+  /// tripping a free-text detector teaches people to add exemptions.
+  staleTriggers String[]
+
+  createdById String?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant  Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent   RegisteredAgent             @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  answers AgentRiskAssessmentAnswer[]
+
+  /// Composite parent key so answers can never point cross-tenant.
+  @@unique([id, tenantId])
+  @@index([tenantId, agentId])
+  @@index([tenantId, updatedAt])
+  @@index([tenantId, status])
+}
+
+/// Tenant-scoped: one answer within an agent risk assessment.
+/// `note` is encrypted at rest (Epic B manifest) + sanitised on write (Epic D).
+model AgentRiskAssessmentAnswer {
+  id           String @id @default(cuid())
+  tenantId     String
+  assessmentId String
+  questionId   String
+
+  /// String enum: NA | NO | PARTIALLY | YES (validated at the usecase).
+  answer String
+  /// Free-text rationale — ENCRYPTED at rest (see encrypted-fields.ts) and
+  /// sanitised at the single `saveAgentAssessmentAnswer` write seam.
+  note   String?
+
+  answeredById String?
+  answeredAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant     Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assessment AgentRiskAssessment     @relation(fields: [assessmentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  question   AgentAssessmentQuestion @relation(fields: [questionId], references: [id])
+
+  @@unique([assessmentId, questionId])
+  @@index([tenantId, assessmentId])
+  @@index([questionId])
 }

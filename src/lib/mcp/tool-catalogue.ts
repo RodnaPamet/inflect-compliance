@@ -45,3 +45,27 @@ export const MCP_TOOL_NAMES: readonly string[] = [
 export function isKnownMcpTool(name: string): boolean {
     return MCP_TOOL_NAMES.includes(name);
 }
+
+/**
+ * Which AUTONOMY class a tool call falls in — `read` (rung 1) or `propose`
+ * (rung 2).
+ *
+ * Derived from list membership rather than imported from the registries,
+ * because that is exactly what the registries do: `runReadTool` passes
+ * `capabilityClass: 'read'` and `runProposeTool` passes `'propose'`, both as
+ * literals over the whole list. So the list a name is in IS its class, and
+ * `tests/guards/mcp-tools-use-shared-authz.test.ts` already pins each list
+ * against the registry it mirrors.
+ *
+ * An unknown name answers `propose` — the higher rung. Callers use this to
+ * decide whether an agent's tier could ever exercise a grant, and a name this
+ * build does not recognise must not be waved through as the cheaper class.
+ * `authorizeToolCall` remains the enforcement on every actual call; this is a
+ * pre-check at the moment a grant is written, and a tool that declares its own
+ * higher `autonomy` override is caught there rather than here.
+ */
+export function mcpToolCapabilityClass(name: string): 'read' | 'propose' {
+    return MCP_READ_TOOL_NAMES.includes(name as (typeof MCP_READ_TOOL_NAMES)[number])
+        ? 'read'
+        : 'propose';
+}

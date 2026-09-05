@@ -15,8 +15,8 @@ import { generateApiKey, validateScopes } from '@/lib/auth/api-key-auth';
 import {
     AUTONOMY_MAX,
     AUTONOMY_MIN,
-    RISK_TIER_CEILING_UNWIRED,
     resolveAutonomyCeiling,
+    riskTierCeilingFor,
 } from '@/lib/agentic/autonomy-ceiling';
 
 // ─── List API Keys ───
@@ -77,7 +77,20 @@ export async function listAgentCredentials(ctx: RequestContext) {
                 lastUsedAt: true,
                 maxAutonomyLevel: true,
                 agentId: true,
-                agent: { select: { id: true, name: true, status: true, autonomyLevel: true } },
+                agent: {
+                    select: {
+                        id: true,
+                        name: true,
+                        status: true,
+                        autonomyLevel: true,
+                        // The tier is a TERM in the ceiling below, so this
+                        // column is not decoration: omitting it would make the
+                        // reported number disagree with the one the tool
+                        // boundary enforces, which is the exact confusion the
+                        // `effectiveAutonomy` field exists to end.
+                        riskTier: true,
+                    },
+                },
             },
             orderBy: { createdAt: 'desc' },
             take: 200,
@@ -107,21 +120,30 @@ export async function listAgentCredentials(ctx: RequestContext) {
                       name: row.agent.name,
                       status: row.agent.status,
                       autonomyLevel: row.agent.autonomyLevel,
+                      riskTier: row.agent.riskTier,
                   }
                 : null,
             keyMaxAutonomy: row.maxAutonomyLevel,
             /**
              * The ceiling this credential actually exercises — the SAME `min`
-             * the tool funnel computes, from the same two terms. Shown rather
+             * the tool funnel computes, from the same three terms. Shown rather
              * than left for the reader to do in their head, because the whole
              * hazard the column exists for is somebody assuming the key's own
              * number is the answer.
+             *
+             * `DENY_CEILING` here is not a rendering bug: it means the agent
+             * has never been risk-assessed, and the credential can therefore
+             * call nothing. `unscored` says so in a word so a UI does not have
+             * to recognise a magic -1.
              */
             effectiveAutonomy: resolveAutonomyCeiling({
                 keyMax: row.maxAutonomyLevel,
                 agentAutonomy: row.agent?.autonomyLevel ?? null,
-                riskTierCeiling: RISK_TIER_CEILING_UNWIRED,
+                riskTierCeiling: riskTierCeilingFor(
+                    row.agent ? { riskTier: row.agent.riskTier } : null,
+                ),
             }),
+            unscored: row.agent !== null && row.agent.riskTier === null,
         }));
     });
 }

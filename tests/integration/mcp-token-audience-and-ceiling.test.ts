@@ -44,12 +44,8 @@ import { generateApiKey } from '@/lib/auth/api-key-auth';
 import { POST as MCP_POST } from '@/app/api/mcp/route';
 import { POST as TOKEN_POST } from '@/app/api/mcp/token/route';
 import {
-    ceilingForRiskTier,
-    resolveAutonomyCeiling,
-    withinCeiling,
     AUTONOMY_REQUIRED_BY_CAPABILITY,
     DENY_CEILING,
-    RISK_TIER_CEILING_UNWIRED,
 } from '@/lib/agentic/autonomy-ceiling';
 import { TOKEN_EXCHANGE_GRANT_TYPE, MCP_RESOURCES_AUDIENCE } from '@/lib/mcp/token-exchange';
 import { listRisksTool } from '@/lib/mcp/tools/risk-tools';
@@ -170,6 +166,12 @@ async function seedAgent(name: string, autonomyLevel: number): Promise<string> {
             provenance: 'FIRST_PARTY',
             ownerUserId: ownerId,
             status: 'ACTIVE',
+            // Scored LOW so the TIER term is never what refuses here — an
+            // UNSCORED agent is denied every tool from Agentic 3/10, which
+            // would make these assertions pass for the wrong reason. LOW leaves
+            // the ladder whole, so the arithmetic below is unchanged.
+            riskTier: 'LOW',
+            riskTierScoredAt: new Date(),
         },
     });
     for (const toolName of GRANTED_TOOLS) {
@@ -414,42 +416,67 @@ describeFn('audience-scoped tokens, the autonomy ceiling, and mid-run revocation
         });
     });
 
-    describe('the 3/10 risk-tier seam: an UNSCORED tier denies', () => {
-        it('the agents in this database really are unscored — which is why it is not wired', async () => {
+    describe('the risk-tier term is WIRED into the live funnel', () => {
+        it('the fixture agents are SCORED — which is why the suite above passes', async () => {
+            // Stated rather than assumed. From Agentic 3/10 an unscored agent
+            // is refused every tool, so if this fixture ever reverted to NULL
+            // every assertion in this file would fail for a reason that has
+            // nothing to do with audiences or ceilings.
             const agent = await prisma.registeredAgent.findUniqueOrThrow({
                 where: { id: agentRung2 },
                 select: { riskTier: true, riskTierScoredAt: true, autonomyLevel: true },
             });
-            expect(agent.riskTier).toBeNull();
-            expect(agent.riskTierScoredAt).toBeNull();
+            expect(agent.riskTier).toBe('LOW');
+            expect(agent.riskTierScoredAt).not.toBeNull();
             expect(agent.autonomyLevel).toBe(2);
         });
 
-        it('folding the tier term in refuses the agent the live ceiling admits', async () => {
-            const agent = await prisma.registeredAgent.findUniqueOrThrow({
+        it('unscoring the agent DENIES the read that same key just performed', async () => {
+            // The load-bearing pair, driven through the real HTTP surface
+            // rather than through the arithmetic: same agent, same key, same
+            // grants, same tool. The only thing that changes is whether anybody
+            // has assessed it.
+            const before = await callTool(keyNoCeiling, 'list_risks');
+            expect(errorMessageOf(before.json)).toBeUndefined();
+
+            await prisma.registeredAgent.update({
                 where: { id: agentRung2 },
-                select: { riskTier: true, autonomyLevel: true },
+                data: { riskTier: null, riskTierScoredAt: null },
             });
+            try {
+                const after = await callTool(keyNoCeiling, 'list_risks');
+                // The refusal names the ASSESSMENT, not the registered autonomy
+                // level — an operator sent to raise that number would be
+                // editing the term that is not binding.
+                expect(errorMessageOf(after.json)).toMatch(/risk-assessed/i);
+                expect(resultOf(after.json)).toBeUndefined();
 
-            // The ceiling the funnel computes TODAY — and it admits a read,
-            // which is why `list_risks` succeeded for `keyNoCeiling` above.
-            const live = resolveAutonomyCeiling({
-                keyMax: null,
-                agentAutonomy: agent.autonomyLevel,
-                riskTierCeiling: RISK_TIER_CEILING_UNWIRED,
-            });
-            expect(withinCeiling(AUTONOMY_REQUIRED_BY_CAPABILITY.read, live)).toBe(true);
-
-            // The same arithmetic once 3/10 supplies the tier term. Same agent,
-            // same key, same grants — refused, because nobody has scored it.
-            const wired = resolveAutonomyCeiling({
-                keyMax: null,
-                agentAutonomy: agent.autonomyLevel,
-                riskTierCeiling: ceilingForRiskTier(agent.riskTier),
-            });
-            expect(wired).toBe(DENY_CEILING);
-            expect(withinCeiling(AUTONOMY_REQUIRED_BY_CAPABILITY.read, wired)).toBe(false);
+                const denial = await prisma.auditLog.findFirst({
+                    where: { tenantId: TENANT, action: 'AUTHZ_DENIED', entityId: 'list_risks' },
+                    orderBy: { createdAt: 'desc' },
+                });
+                expect(denial?.detailsJson).toMatchObject({
+                    reason: 'autonomy_denied',
+                    ceiling: DENY_CEILING,
+                    unscored: true,
+                    riskTier: null,
+                });
+            } finally {
+                await prisma.registeredAgent.update({
+                    where: { id: agentRung2 },
+                    data: { riskTier: 'LOW', riskTierScoredAt: new Date() },
+                });
+            }
         });
+
+        it('and scoring it again restores exactly the authority it had', async () => {
+            // The other half of the pair. Without this, "the tier denies" is
+            // indistinguishable from "something else broke and stayed broken".
+            const { json } = await callTool(keyNoCeiling, 'list_risks');
+            expect(errorMessageOf(json)).toBeUndefined();
+            expect(resultOf(json)).toBeDefined();
+        });
+
     });
 
     describe('revocation lands inside a run already in flight', () => {

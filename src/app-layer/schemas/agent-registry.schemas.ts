@@ -42,6 +42,24 @@ const autonomyLevel = z
     .max(AGENT_AUTONOMY_MAX);
 
 /**
+ * The underlying model the agent runs on, as the operator DECLARES it.
+ *
+ * Optional and nullable on every schema here, and the two states are different:
+ * omitting the key leaves the column alone, `null` clears the declaration.
+ * `''` normalises to `null` at the usecase, because "declared as nothing" and
+ * "never declared" are the same fact and the staleness comparison must not see
+ * them as a model change.
+ *
+ * It exists because `MODEL_CHANGED` is one of the assessment's staleness
+ * triggers, and a trigger whose input has no write path is a trigger that
+ * cannot fire. It shipped without one — absent from both schemas, which are
+ * strict objects, so a caller supplying `modelRef` had it silently STRIPPED and
+ * the column stayed NULL for the life of every agent. Every test of the trigger
+ * hand-built two values no product surface could produce, and they all passed.
+ */
+const modelRef = z.string().max(200).trim().optional().nullable();
+
+/**
  * The one cross-field rule: a THIRD_PARTY agent must name its supplier.
  * Expressed as a predicate rather than a shared refinement callback so neither
  * schema has to name Zod's context type.
@@ -66,6 +84,7 @@ export const CreateRegisteredAgentSchema = z
         dataAccessScope: z.enum(AGENT_DATA_ACCESS_SCOPES),
         reversibility: z.enum(AGENT_REVERSIBILITIES),
         provenance: z.enum(AGENT_PROVENANCES),
+        modelRef,
         // The accountable human. Required, so the two-person rule downstream
         // compares a value rather than guessing about a null.
         ownerUserId: z.string().min(1, 'An accountable owner is required'),
@@ -97,6 +116,7 @@ export const UpdateRegisteredAgentSchema = z
         dataAccessScope: z.enum(AGENT_DATA_ACCESS_SCOPES).optional(),
         reversibility: z.enum(AGENT_REVERSIBILITIES).optional(),
         provenance: z.enum(AGENT_PROVENANCES).optional(),
+        modelRef,
         ownerUserId: z.string().min(1).optional(),
         vendorId: z.string().optional().nullable(),
     })
@@ -155,6 +175,7 @@ export const RegisterAgentSchema = z
         dataAccessScope: z.enum(AGENT_DATA_ACCESS_SCOPES),
         reversibility: z.enum(AGENT_REVERSIBILITIES),
         provenance: z.enum(AGENT_PROVENANCES),
+        modelRef,
         ownerUserId: z.string().min(1, 'An accountable owner is required'),
         vendorId: z.string().optional().nullable(),
 

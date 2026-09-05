@@ -103,6 +103,9 @@ function invocationFor(
         grantedTools: new Set(['list_risks', 'list_controls']),
         audience,
         autonomyCeiling: 6,
+        // A scored agent, so the tier term is never what refuses here — these
+        // assertions are about audience, liveness and the ceiling arithmetic.
+        riskTier: 'LOW' as const,
         credential: { apiKeyId: API_KEY_ID, tokenExpiresAt: null },
         now: () => T0,
         ...overrides,

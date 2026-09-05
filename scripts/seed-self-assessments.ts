@@ -4,14 +4,15 @@
  *
  * Why this exists as its own script (not just `prisma/seed.ts`):
  * these question sets live in dedicated global reference tables
- * (`Nis2GapDomain`/`Nis2GapQuestion`, `AiGovDomain`/`AiGovQuestion`) that are
+ * (`Nis2GapDomain`/`Nis2GapQuestion`, `AiGovDomain`/`AiGovQuestion`,
+ * `AgentAssessmentDomain`/`AgentAssessmentQuestion`) that are
  * populated by the fixtures, NOT by migrations. Migrations create the tables;
  * they carry no data. `prisma/seed.ts` DOES seed them, but the full seed also
  * provisions demo tenants/users and is unsafe to run against production. When
  * these question sets were added after the initial prod seed, the tables stayed
  * empty and the wizard's self-assessment steps rendered zero questions.
  *
- * This script seeds ONLY the two global question sets, via upsert, so it is safe
+ * This script seeds ONLY the global question sets, via upsert, so it is safe
  * to run on any environment (including production) and safe to re-run. Run with:
  *   tsx scripts/seed-self-assessments.ts        (npm run db:seed-self-assessments)
  */
@@ -79,10 +80,28 @@ async function seedAiGovAssessment(): Promise<void> {
     console.log(`✅ AI-governance self-assessment v${aiGov.questionSetVersion} — ${aiGov.domains.length} domains + ${aiGov.questions.length} questions seeded`);
 }
 
+async function seedAgentRiskAssessment(): Promise<void> {
+    const agentRisk = require('../prisma/fixtures/agent-risk-assessment.json') as {
+        questionSetVersion: number;
+        domains: Array<{ id: number; code: string; name: string; description: string; sortOrder: number }>;
+        questions: Array<{ id: string; domainId: number; criticality: string; text: string; guidance: string | null; mappings: { asi: string[]; imda: string[] } }>;
+    };
+    for (const d of agentRisk.domains) {
+        const data = { code: d.code, name: d.name, description: d.description, sortOrder: d.sortOrder };
+        await prisma.agentAssessmentDomain.upsert({ where: { id: d.id }, update: data, create: { id: d.id, ...data } });
+    }
+    for (const q of agentRisk.questions) {
+        const data = { domainId: q.domainId, text: q.text, guidance: q.guidance ?? null, mappingsJson: q.mappings, criticality: q.criticality };
+        await prisma.agentAssessmentQuestion.upsert({ where: { id: q.id }, update: data, create: { id: q.id, ...data } });
+    }
+    console.log(`✅ Agent risk assessment v${agentRisk.questionSetVersion} — ${agentRisk.domains.length} domains + ${agentRisk.questions.length} questions seeded`);
+}
+
 async function main(): Promise<void> {
-    console.log('🌱 Seeding self-assessment library content (NIS2 gap + AI governance)...');
+    console.log('🌱 Seeding self-assessment library content (NIS2 gap + AI governance + agent risk)...');
     await seedNis2GapAssessment();
     await seedAiGovAssessment();
+    await seedAgentRiskAssessment();
     console.log('✅ Self-assessment library content seeded.');
 }
 
