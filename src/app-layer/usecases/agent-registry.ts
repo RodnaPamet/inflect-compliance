@@ -42,7 +42,9 @@ import { authorAiSystemEntry } from './ai-system';
 import { assertOwnerInTenant } from './vendor-link-targets';
 import {
     CreateRegisteredAgentSchema,
+    isUnattributedThirdParty,
     RegisterAgentSchema,
+    THIRD_PARTY_VENDOR_MESSAGE,
     UpdateRegisteredAgentSchema,
 } from '../schemas/agent-registry.schemas';
 import type { RequestContext } from '../types';
@@ -234,12 +236,46 @@ export async function updateRegisteredAgent(ctx: RequestContext, id: string, inp
         if (parsed.ownerUserId !== undefined) await assertAgentOwner(db, ctx, parsed.ownerUserId);
         if (parsed.vendorId) await assertVendorInTenant(db, ctx, parsed.vendorId);
 
+        // The supplier attribution is a MERGED-ROW rule, and the schema can only
+        // see a PAYLOAD.
+        //
+        // `UpdateRegisteredAgentSchema`'s refinement asks "does what the caller
+        // sent describe an unattributed third party". `{ vendorId: null }` names
+        // no provenance, so the answer is no — and the row it lands on can be
+        // THIRD_PARTY. The DB's CHECK constraint asks the other question, about
+        // the row that results, and it was the ONLY thing asking it: an edit
+        // that stripped the supplier off a third-party agent passed validation
+        // and surfaced as a raw constraint violation, which is a 500 where the
+        // create path gives a 400 naming the field.
+        //
+        // So the same predicate is applied here to the merge, inside the
+        // transaction the write lands in, and the DDL goes back to being the
+        // backstop it was meant to be rather than the enforcement.
+        const touchesAttribution =
+            parsed.provenance !== undefined || parsed.vendorId !== undefined;
+
         // Read the live row BEFORE the write, in the same transaction, so the
-        // tier the cap is computed from is the one the update lands against.
-        if (parsed.autonomyLevel !== undefined) {
+        // tier the cap is computed from — and the attribution the merge is
+        // computed against — is the one the update lands against.
+        if (parsed.autonomyLevel !== undefined || touchesAttribution) {
             const current = await RegisteredAgentRepository.getScoringState(db, ctx, id);
             if (!current) throw notFound('Registered agent not found');
-            assertRaiseWithinTier(current, parsed.autonomyLevel);
+            if (parsed.autonomyLevel !== undefined) {
+                assertRaiseWithinTier(current, parsed.autonomyLevel);
+            }
+            if (
+                touchesAttribution &&
+                isUnattributedThirdParty({
+                    provenance: parsed.provenance ?? current.provenance,
+                    // `undefined` is "not in the payload"; an explicit `null` is
+                    // "clear it". Those are different edits and the merge has to
+                    // keep them apart, which `??` would not.
+                    vendorId:
+                        parsed.vendorId !== undefined ? parsed.vendorId : current.vendorId,
+                })
+            ) {
+                throw badRequest(THIRD_PARTY_VENDOR_MESSAGE);
+            }
         }
 
         const count = await RegisteredAgentRepository.update(db, ctx, id, {

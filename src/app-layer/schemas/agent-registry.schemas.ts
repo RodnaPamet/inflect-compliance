@@ -63,15 +63,25 @@ const modelRef = z.string().max(200).trim().optional().nullable();
  * The one cross-field rule: a THIRD_PARTY agent must name its supplier.
  * Expressed as a predicate rather than a shared refinement callback so neither
  * schema has to name Zod's context type.
+ *
+ * EXPORTED because it answers the question at two different scopes, and only one
+ * of them is a payload. Here it judges what the caller SENT; `updateRegisteredAgent`
+ * applies the same predicate to the MERGED row — the payload laid over the
+ * stored one — because that is what the DB's CHECK constraint judges. An edit
+ * that only nulls `vendorId` names no provenance at all, so this call site
+ * cannot see that the row it lands on is THIRD_PARTY, and without the second
+ * application the first thing to notice would be Postgres.
  */
-function isUnattributedThirdParty(value: {
-    provenance?: string;
+export function isUnattributedThirdParty(value: {
+    provenance?: string | null;
     vendorId?: string | null;
 }): boolean {
     return value.provenance === 'THIRD_PARTY' && !value.vendorId;
 }
 
-const THIRD_PARTY_VENDOR_MESSAGE = 'A THIRD_PARTY agent must name the vendor that supplies it';
+/** One wording for one rule, wherever it is applied. */
+export const THIRD_PARTY_VENDOR_MESSAGE =
+    'A THIRD_PARTY agent must name the vendor that supplies it';
 
 export const CreateRegisteredAgentSchema = z
     .object({

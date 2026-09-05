@@ -748,3 +748,77 @@ model AgentPolicyCardVersion {
   @@unique([tenantId, cardId, version])
   @@index([tenantId, cardId])
 }
+
+// ═════════════════════════════════════════════════════════════════════
+// Tool-manifest pinning — the supply-chain control over tool DEFINITIONS
+// (OWASP ASI04, "tool poisoning").
+//
+// A tool definition is three fields the model reads — name, DESCRIPTION and
+// parameter schema — and only the first is ever visible in a normal session.
+// The description is instruction text delivered straight into the agent's
+// context by `tools/list`, which makes it the field an attacker edits and
+// expects nobody to look at. One row here is the tenant's statement that it has
+// SEEN a particular definition of one tool; the boundary refuses the tool when
+// the build no longer matches, until a named human re-approves.
+//
+// See src/lib/mcp/tool-manifest.ts for why the description is hashed verbatim
+// while the schema is canonicalised first.
+// ═════════════════════════════════════════════════════════════════════
+
+/// Tenant-scoped: the tool DEFINITION a tenant has on file for one MCP tool.
+model McpToolManifestPin {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// The MCP tool name exactly as `tools/list` advertises it, e.g. `list_risks`.
+  /// A plain String and not an enum, for the reason `RegisteredAgentTool.toolName`
+  /// is one: a tool ships with a deploy, and an `ALTER TYPE` mid-rolling-deploy
+  /// makes still-running old containers fail with SQLSTATE 42704.
+  toolName String
+
+  /// SHA-256 of the description's EXACT bytes — no trimming, no whitespace
+  /// collapsing, no Unicode normalisation. Every one of those would create a
+  /// class of edits that changes what the model reads while leaving the hash
+  /// alone, and zero-width characters are how instruction text hides.
+  descriptionHash String
+  /// SHA-256 of the canonicalised (sorted-key, no-whitespace) input schema. Key
+  /// order is not semantic in JSON Schema, so a formatter must not alarm.
+  schemaHash      String
+  /// SHA-256 over the domain-separated triple. What the boundary compares.
+  manifestHash    String
+
+  /// `BASELINE` — the first definition the boundary ever observed for this tool
+  /// (trust-on-first-use, no human involved). `APPROVED` — a named human
+  /// accepted a definition that had CHANGED. The two must stay distinguishable
+  /// forever: an auditor asking "did a person accept this description" must get
+  /// a straight answer rather than one inferred from a timestamp. A String
+  /// rather than a Postgres enum, same rolling-deploy argument as `toolName`.
+  approvalSource String
+
+  /// The human who approved. NULL on, and ONLY on, a `BASELINE` row — a plain
+  /// String with no FK, matching `RegisteredAgentTool.grantedByUserId`: the
+  /// approval must survive the approver's account being deleted, and a
+  /// `RESTRICT` FK would block that deletion while a `SET NULL` one would erase
+  /// the accountability this column exists for.
+  approvedByUserId String?
+  approvedAt       DateTime @default(now())
+
+  /// 1 for the baseline, +1 on every re-approval. The count an operator reads
+  /// as "how many times has this tool's definition moved under us".
+  revision Int @default(1)
+
+  /// The manifest hash this row REPLACED. NULL on a baseline row. Kept so an
+  /// incident review can tell which definition was displaced without
+  /// reconstructing it from the audit trail.
+  previousManifestHash String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// One pin per (tenant, tool). Tenant-leading, so it doubles as the
+  /// tenant-scoped lookup index and no separate `@@index([tenantId])` is needed:
+  /// every query this table serves is `tenantId` alone or `tenantId + toolName`.
+  @@unique([tenantId, toolName])
+}

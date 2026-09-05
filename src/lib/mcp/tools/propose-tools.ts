@@ -43,7 +43,12 @@ import {
     type AgentProposalKind,
 } from '@/app-layer/usecases/agent-proposals';
 
-import { authorizeToolCall, isToolExposed, type McpInvocation } from '../authorize';
+import {
+    authorizeToolCall,
+    isToolLoadable,
+    resolveOfferedTool,
+    type McpInvocation,
+} from '../authorize';
 import { RpcErrorCode, type McpToolDescriptor, type McpToolResult } from '../protocol';
 import type { McpToolAuthorization } from './types';
 
@@ -162,8 +167,9 @@ export const PROPOSE_TOOLS: McpProposeTool[] = [
 
 /**
  * `tools/list` descriptors for the propose surface, filtered to what this
- * invocation could actually call — the agent's granted tools, and only when the
- * credential carries `mcp:propose`. Same reasoning as the read registry's
+ * invocation could actually call — the tools it may LOAD (offered at assembly,
+ * granted in the register AND permitted by the agent's policy card), and only
+ * when the credential carries `mcp:propose`. Same reasoning as the read registry's
  * filter: a catalogue of tools that will 403 turns ordinary planning into a
  * stream of `AUTHZ_DENIED` rows and buries the signal they exist for.
  *
@@ -180,7 +186,7 @@ export function listProposeToolDescriptors(inv: McpInvocation): McpToolDescripto
         scopes.includes('mcp:*') ||
         scopes.includes('mcp:propose');
     if (!mayPropose) return [];
-    return PROPOSE_TOOLS.filter((t) => isToolExposed(inv, t.name)).map((t) => ({
+    return PROPOSE_TOOLS.filter((t) => isToolLoadable(inv, t.name)).map((t) => ({
         name: t.name,
         description: t.description,
         inputSchema: t.inputSchema,
@@ -210,7 +216,10 @@ export async function runProposeTool(
     name: string,
     rawArgs: unknown,
 ): Promise<McpToolResult> {
-    const tool = PROPOSE_TOOLS.find((t) => t.name === name);
+    // 0. LOAD the tool through this invocation's pinned manifest rather than
+    //    straight out of `PROPOSE_TOOLS` — the same door `runReadTool` uses, for
+    //    the same reason. See `resolveOfferedTool` and `loadable-tools.ts`.
+    const tool = await resolveOfferedTool(inv, PROPOSE_TOOLS, name);
     if (!tool) throw new McpProposeToolNotFoundError(name);
 
     const ctx = inv.ctx;

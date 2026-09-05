@@ -33,6 +33,7 @@ import { createHash, createPublicKey, verify as cryptoVerify, type KeyObject } f
 import { z } from 'zod';
 
 import { redactSensitiveFields } from '@/lib/audit-redact';
+import { canonicalJson } from '@/lib/canonical-json';
 
 // ── Receipt shape (pipelock CORE) ──────────────────────────────────────────
 
@@ -75,22 +76,14 @@ export interface ExtractedReceiptFields {
  * Deterministic canonical JSON: recursively sorts object keys, no whitespace.
  * Arrays keep order (order is semantic). This is the documented assumption for
  * pipelock's "canonical JSON of action_record" — see the module header.
+ *
+ * The body is `canonicalJson` from `@/lib/canonical-json` and not a copy of it,
+ * because the tool-manifest pin hashes schemas through the same form. Two
+ * implementations that merely look alike drift on the first edit, and the drift
+ * would surface here as a receipt signature that stops verifying.
  */
 export function canonicalizeActionRecord(actionRecord: unknown): string {
-    return canonicalStringify(actionRecord);
-}
-
-function canonicalStringify(value: unknown): string {
-    if (value === null || typeof value !== 'object') {
-        return JSON.stringify(value ?? null);
-    }
-    if (Array.isArray(value)) {
-        return `[${value.map((v) => canonicalStringify(v)).join(',')}]`;
-    }
-    const obj = value as Record<string, unknown>;
-    const keys = Object.keys(obj).sort();
-    const entries = keys.map((k) => `${JSON.stringify(k)}:${canonicalStringify(obj[k])}`);
-    return `{${entries.join(',')}}`;
+    return canonicalJson(actionRecord);
 }
 
 /**

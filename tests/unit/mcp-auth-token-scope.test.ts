@@ -34,7 +34,19 @@
 
 jest.mock('@/lib/prisma', () => {
     const tenantApiKey = { findFirst: jest.fn() };
-    return { __esModule: true, default: { tenantApiKey }, prisma: { tenantApiKey } };
+    // The tool-manifest pin, doubled as "nothing pinned yet". This suite is
+    // about audience, liveness and the ceiling; a tool on its first observation
+    // is trust-on-first-use and contributes no term, so the manifest step never
+    // decides anything here.
+    const mcpToolManifestPin = {
+        findUnique: jest.fn().mockResolvedValue(null),
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+    };
+    return {
+        __esModule: true,
+        default: { tenantApiKey, mcpToolManifestPin },
+        prisma: { tenantApiKey, mcpToolManifestPin },
+    };
 });
 
 jest.mock('@/lib/audit', () => ({
@@ -55,6 +67,7 @@ import {
 } from '@/lib/mcp/token-exchange';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { makeRequestContext } from '../helpers/make-context';
+import { MCP_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
 
 const findFirst = (prisma as any).tenantApiKey.findFirst as jest.Mock;
 const auditRows = appendAuditEntry as unknown as jest.Mock;
@@ -73,6 +86,11 @@ const at = (seconds: number) => new Date(T0.getTime() + seconds * 1000);
  */
 const TOOL_X = {
     name: 'list_risks',
+    // The definition fields the manifest pin covers. Present because
+    // `authorizeToolCall` requires them — a funnel that could omit the
+    // description would skip the one field tool poisoning actually edits.
+    description: 'List risks. Read-only, tenant-scoped.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     authorize: { basis: 'effective' as const, mirrors: 'GET /api/t/:slug/risks' },
     resourceScope: { resource: 'risks', action: 'read' as const },
     capabilityClass: 'read' as const,
@@ -101,6 +119,7 @@ function invocationFor(
         },
         agentId: 'agent-1',
         grantedTools: new Set(['list_risks', 'list_controls']),
+        offeredTools: [...MCP_TOOL_NAMES],
         audience,
         autonomyCeiling: 6,
         // A scored agent, so the tier term is never what refuses here — these

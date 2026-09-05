@@ -30,9 +30,12 @@ import {
     applyRedaction,
     applyRowRedaction,
     authorizeToolCall,
-    isToolExposed,
+    isToolLoadable,
+    resolveOfferedTool,
+    loadableSetOf,
     type McpInvocation,
 } from '../authorize';
+import { loadableToolsDigest } from '../loadable-tools';
 import { RpcErrorCode, type McpToolDescriptor, type McpToolResult } from '../protocol';
 import { buildProvenanceEnvelope } from '@/lib/agentic/content-provenance';
 
@@ -68,8 +71,15 @@ export const READ_TOOLS = [
 
 /**
  * MCP `tools/list` descriptors, filtered to what THIS invocation could actually
- * call: the agent's granted tools, and only those whose permission keys the
- * acting context holds.
+ * call: the tools it may LOAD — offered at assembly, granted in the register AND
+ * permitted by the agent's policy card — and, of those, only the ones whose
+ * permission keys the acting context holds.
+ *
+ * The card term is the one that was missing. This filter applied the grants and
+ * stopped there, so an agent whose card narrowed its grants was still advertised
+ * the wider list, and every call it planned against the difference 403'd — which
+ * is the exact failure the next paragraph describes, arriving through the door
+ * the filter was built to close.
  *
  * Advertising a tool an agent cannot call is not a security hole — the funnel
  * refuses it — but it is a correctness one: an agent plans against `tools/list`,
@@ -79,7 +89,7 @@ export const READ_TOOLS = [
  * ordinary planning is a design that trains operators to ignore it.
  */
 export function listReadToolDescriptors(inv: McpInvocation): McpToolDescriptor[] {
-    return READ_TOOLS.filter((t) => isToolExposed(inv, t.name))
+    return READ_TOOLS.filter((t) => isToolLoadable(inv, t.name))
         .filter((t) => canSee(inv, t.authorize.keys))
         .map((t) => ({
             name: t.name,
@@ -131,7 +141,12 @@ export async function runReadTool(
     name: string,
     rawArgs: unknown,
 ): Promise<McpToolResult> {
-    const tool = READ_TOOLS.find((t) => t.name === name);
+    // 0. LOAD the tool — through this invocation's pinned manifest, never
+    //    straight out of `READ_TOOLS`. A name this build does not know at all is
+    //    a protocol error (`null` below); a name the registry holds but this
+    //    invocation's manifest never offered is a refusal with its own audit
+    //    row. See `resolveOfferedTool` and `loadable-tools.ts`.
+    const tool = await resolveOfferedTool(inv, READ_TOOLS, name);
     if (!tool) throw new McpToolNotFoundError(name);
 
     const ctx = inv.ctx;
@@ -168,7 +183,12 @@ export async function runReadTool(
 
     // 5. Audit the invocation as an API_KEY actor, naming the card version that
     //    allowed it.
-    await auditToolCall(ctx, name, inv.policyCard?.inForce.version ?? null);
+    await auditToolCall(
+        ctx,
+        name,
+        inv.policyCard?.inForce.version ?? null,
+        loadableToolsDigest(loadableSetOf(inv)),
+    );
 
     // 6. Label the payload with its PROVENANCE. Appended as a SECOND content
     //    block, never wrapped around the data: `content[0]` is the exact JSON
@@ -195,6 +215,7 @@ async function auditToolCall(
     ctx: RequestContext,
     tool: string,
     policyCardVersion: number | null,
+    manifestDigest: string,
 ): Promise<void> {
     await appendAuditEntry({
         tenantId: ctx.tenantId,
@@ -213,6 +234,12 @@ async function auditToolCall(
             // were does not have to infer the allow case from the absence of a
             // denial. `null` means the agent has no card.
             policyCardVersion,
+            // A fingerprint of the SET of tools this invocation could load when
+            // it made this call. Two calls in one run reporting different
+            // digests is the rug-pull signal: the loadable set moved underneath
+            // the agent. A digest and not the list — an audit row answers "same
+            // or different", it is not a place to accumulate payload.
+            toolManifestDigest: manifestDigest,
         },
         metadataJson: { apiKeyId: ctx.apiKeyId ?? null, scopes: ctx.apiKeyScopes ?? [] },
     }).catch(() => undefined);

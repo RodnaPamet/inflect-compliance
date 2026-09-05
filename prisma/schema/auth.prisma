@@ -190,6 +190,7 @@ model Tenant {
   agentRiskAssessmentAnswers        AgentRiskAssessmentAnswer[]
   agentPolicyCards                  AgentPolicyCard[]
   agentPolicyCardVersions           AgentPolicyCardVersion[]
+  mcpToolManifestPins               McpToolManifestPin[]
   tenantFrameworkDeltas             TenantFrameworkDelta[]
   riskMatrixConfig                  RiskMatrixConfig?
   riskAppetiteConfig                RiskAppetiteConfig?
