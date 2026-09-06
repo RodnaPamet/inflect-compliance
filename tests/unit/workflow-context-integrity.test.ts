@@ -105,6 +105,10 @@ function makeDb() {
                     summary: null,
                     errorMessage: null,
                     completedAt: null,
+                    // `@default(now())` in the schema, so the real create
+                    // returns it and `resumeWorkflowRun` reads it to give the
+                    // wall-clock cap the RUN's start rather than the resume's.
+                    startedAt: new Date(),
                     ...data,
                 };
                 store.runs.set(id, row);
@@ -138,6 +142,19 @@ function makeDb() {
                 store.steps.push(row);
                 return { ...row };
             },
+            // Read by `proposedItemsSoFar`, which seeds the run's PROPOSAL
+            // budget from the append-only ledger so a resumed run does not get
+            // a fresh budget per segment.
+            findMany: async ({ where }: any) =>
+                store.steps
+                    .filter(
+                        (s) =>
+                            s.runId === where.runId &&
+                            s.tenantId === where.tenantId &&
+                            (where.kind === undefined || s.kind === where.kind) &&
+                            (where.status === undefined || s.status === where.status),
+                    )
+                    .map((s) => ({ ...s })),
             findFirst: async ({ where }: any) => {
                 const hits = store.steps.filter(
                     (s) => s.runId === where.runId && s.tenantId === where.tenantId && s.status === where.status,
@@ -286,6 +303,7 @@ describe('a context that fails schema validation', () => {
             summary: null,
             errorMessage: null,
             completedAt: null,
+            startedAt: new Date(),
             agentId: null,
         });
         return id;

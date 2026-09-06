@@ -1232,3 +1232,71 @@ export function recordWorkflowContextIntegrityHalt(attrs: { code: string }): voi
 export function recordWorkflowContextBytes(bytes: number): void {
     getWorkflowContextBytes().record(bytes);
 }
+
+// ════════════════════════════════════════════════════════════════════════
+// AGENTIC RUN CAPS — OWASP ASI08 (cascading failures)
+// ════════════════════════════════════════════════════════════════════════
+//
+// Two instruments, and the split is the same one the context-integrity pair
+// makes, for the same reason. The counter answers "did a run STOP because it
+// hit a ceiling?", which is an incident. The histogram answers "how close are
+// healthy runs to their ceiling?", which is the question you want answered
+// BEFORE the counter moves — a cap that only ever shows up as halts is a cap
+// nobody can plan around, and the first time anyone learns the number is too
+// low is when a customer's run dies.
+//
+// SPIKE ANNOTATIONS, in the shape the identity subsystem's gate metrics use:
+//
+//   • a spike on `cap=PROPOSALS` is proposal flooding — one agent emitting
+//     items faster than a queue can be reviewed. Read the agent label first;
+//     one agent means a bad workflow definition or a compromised one, several
+//     means a shared upstream (a schedule, a seeded template).
+//   • a spike on `cap=TOOL_CALLS` with `source=POLICY_CARD` is an agent
+//     operating outside the envelope somebody wrote for it. With
+//     `source=ENGINE` it is this deployment's global ceiling binding, which is
+//     a capacity decision, not a security one.
+//   • a spike on `cap=RUNTIME_MS` alongside a flat `TOOL_CALLS` is a run
+//     BLOCKED, not a run running away — look at tool latency, not the agent.
+//   • ANY movement at all on a tenant that has never seen one is worth a look:
+//     these caps are ceilings, not budgets anybody is expected to spend.
+//
+// Cardinality: two labels, both closed sets — five cap kinds
+// (`RUN_CAP_KINDS`) and two sources (`RUN_CAP_SOURCES`). No run id, no tenant
+// id, no agent id.
+
+let _agentRunCapHalts: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+let _agentRunCapUtilisation:
+    | ReturnType<ReturnType<typeof getMeter>['createHistogram']>
+    | null = null;
+
+function getAgentRunCapHalts() {
+    if (!_agentRunCapHalts) {
+        _agentRunCapHalts = getMeter().createCounter('agentic.run.cap.halt', {
+            description:
+                'Agent runs HALTED at a cap. Labelled by which cap fired and which declaration set it. A halt means the remaining work was not done — it was never trimmed to fit.',
+            unit: '1',
+        });
+    }
+    return _agentRunCapHalts;
+}
+
+function getAgentRunCapUtilisation() {
+    if (!_agentRunCapUtilisation) {
+        _agentRunCapUtilisation = getMeter().createHistogram('agentic.run.cap.utilisation', {
+            description:
+                'Percent of a run cap spent by a run that did NOT halt, recorded per axis when the run ends. Watch the upper percentiles: a p99 near 100 means the next workflow change halts runs.',
+            unit: '%',
+        });
+    }
+    return _agentRunCapUtilisation;
+}
+
+/** One agent run halted at a cap. */
+export function recordAgentRunCapHalt(attrs: { cap: string; source: string }): void {
+    getAgentRunCapHalts().add(1, { cap: attrs.cap, source: attrs.source });
+}
+
+/** How much of one axis a run that finished had spent, as a percentage. */
+export function recordAgentRunCapUtilisation(attrs: { cap: string; percent: number }): void {
+    getAgentRunCapUtilisation().record(attrs.percent, { cap: attrs.cap });
+}

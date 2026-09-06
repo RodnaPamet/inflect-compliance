@@ -22,7 +22,7 @@ import * as path from 'node:path';
 
 import { VALID_SCOPES } from '@/lib/auth/api-key-auth';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -30,6 +30,7 @@ const read = (rel: string) => codeOf(readRaw(rel));
 
 const engine = read('src/app-layer/usecases/workflow-runs.ts');
 const types = read('src/lib/agentic/workflow-types.ts');
+const runCaps = read('src/lib/agentic/run-caps.ts');
 
 describe('Agentic engine — propose-not-commit across steps', () => {
     it('composes the existing MCP tools (runReadTool + runProposeTool)', () => {
@@ -54,14 +55,29 @@ describe('Agentic engine — propose-not-commit across steps', () => {
 });
 
 describe('Agentic engine — guardrails', () => {
-    it('enforces per-run step + token + wall-clock caps', () => {
+    it('enforces per-run caps, composed with the agent policy card', () => {
         expect(types).toMatch(/MAX_STEPS/);
         expect(types).toMatch(/MAX_TOKENS/);
         expect(types).toMatch(/WALL_CLOCK_MS/);
-        expect(engine).toMatch(/ENGINE_CAPS\.MAX_STEPS/);
-        expect(engine).toMatch(/ENGINE_CAPS\.MAX_TOKENS/);
-        expect(engine).toMatch(/ENGINE_CAPS\.WALL_CLOCK_MS/);
-        // A breach fails the run (not a half-applied mess).
+        // The three engine ceilings are still declared exactly ONCE, in
+        // `ENGINE_CAPS`, and DERIVED into the composed budget rather than
+        // restated there — so `run-caps.ts` cannot drift from the engine's own
+        // numbers. Bound to the declaration rather than grepped over the whole
+        // file: `ENGINE_CAPS.MAX_STEPS` occurs twice in that module (the step
+        // ceiling and the tool-call ceiling are deliberately the same number),
+        // and a whole-file needle satisfied by either would go on passing with
+        // the one it names deleted.
+        const engineCeiling = declarationOf(runCaps, 'ENGINE_RUN_CAPS');
+        expect(engineCeiling).toMatch(/ENGINE_CAPS\.MAX_STEPS/);
+        expect(engineCeiling).toMatch(/ENGINE_CAPS\.MAX_TOKENS/);
+        expect(engineCeiling).toMatch(/ENGINE_CAPS\.WALL_CLOCK_MS/);
+        // The engine REACHES them through one budget rather than three inline
+        // comparisons, so a fourth axis cannot be added without one.
+        expect(engine).toMatch(/createRunBudget\(/);
+        // A breach HALTS and says which cap fired — it never trims the work to
+        // fit. The behaviour is tests/unit/agent-caps.test.ts; this only pins
+        // that the halt path exists and is distinct from an ordinary failure.
+        expect(engine).toMatch(/async function haltRunAtCap\(/);
         expect(engine).toMatch(/failRun\(/);
     });
 
