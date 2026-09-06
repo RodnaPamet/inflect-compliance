@@ -59,15 +59,29 @@ const POLICY_MAP = fixtureObject<{ policies: PolicyFrameworkMap }>(
 ).policies;
 
 /**
- * Framework fixtures whose templates ALREADY exist in every environment (they
- * come from seed-catalog.ts / framework-import), so only their authored tasks
- * need delivering. Add a fixture here the moment it gains authored tasks —
- * otherwise the content sits in the repo reaching nothing, which is the exact
- * failure this file was written for.
+ * Fixtures whose TASKS are delivered here because their TEMPLATES arrive by
+ * some other route.
+ *
+ * IT IS EMPTY, and reaching empty is the point rather than an accident.
+ *
+ * Its docblock used to say these were fixtures "whose templates ALREADY exist
+ * in every environment", and that sentence was the defect. It was true of the
+ * environments anyone looked at — production had DORA's and NIS2's templates,
+ * put there by a one-off backfill years after this file was written — and
+ * false of a fresh database, where the templates do not exist, this seeder
+ * finds nothing to attach to, prints "N template(s) absent", and exits 0. 238
+ * authored tasks were in that state.
+ *
+ * Both left by being given a real delivery path: reshaped into CatalogFiles
+ * and applied by `scripts/seed-framework-catalogs.ts`, which creates the
+ * templates and reconciles the tasks together, so the two cannot come apart.
+ *
+ * The seam is kept because it is still the honest answer for a fixture whose
+ * templates genuinely come from elsewhere. But prefer a CatalogFile: an entry
+ * here is a promise about another environment, and this list is where that
+ * promise went unchecked.
  */
-const TASK_ONLY_FIXTURES: Array<{ label: string; data: unknown }> = [
-    { label: 'NIS2', data: require('../prisma/fixtures/nis2-control-templates.json') as unknown },
-];
+const TASK_ONLY_FIXTURES: Array<{ label: string; data: unknown }> = [];
 
 async function main(): Promise<void> {
     console.log('🌱 Seeding authored control-template tasks...');

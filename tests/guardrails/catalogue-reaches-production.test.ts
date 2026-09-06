@@ -17,27 +17,28 @@
  *   FrameworkRequirement            dev 1134 prod 262
  *   ControlTemplateRequirementLink  dev 1912 prod 287
  *
- * `nis2-control-templates.json` is named by the task seeder, so the wiring
- * guard is green for it. Its templates are created by neither production
- * seeder, so on a FRESH database the task seeder finds nothing to attach to
- * and says so, while still exiting 0:
+ * Both fixtures that proved the point have since left. `dora-` and `nis2-`
+ * were each named by the task seeder, so the wiring guard was green for them,
+ * while their templates were created by neither production seeder — on a fresh
+ * database the task seeder found nothing to attach to and said so, still
+ * exiting 0:
  *
+ *   DORA: 133 authored -> created 0 ⚠ 24 template(s) absent
  *   NIS2: 105 authored -> created 0 ⚠ 20 template(s) absent
  *
- * That is the same defect the neighbouring guard exists to prevent, committed
- * one level up by the guard itself — it proved the reference and not the
- * consequence.
+ * 238 authored tasks, zero rows, exit code 0. That is the same defect the
+ * neighbouring guard exists to prevent, committed one level up by the guard
+ * itself — it proved the reference and not the consequence.
  *
- * Read "fresh database" strictly. Live production HAS those 105 rows, because
- * its NIS2 templates were put there by a one-off backfill years after the
- * seeders were written, so the task seeder found them. The exposure is a
- * fresh deploy or a restore — the catalogue is not reproducible from the
- * repo, only recoverable from a database that already has it.
+ * Read "fresh database" strictly. Live production HELD those 238 rows, because
+ * its templates were put there by a one-off backfill years after the seeders
+ * were written, so the task seeder found them. The exposure was never today's
+ * data; it was a fresh deploy or a restore. The catalogue was not reproducible
+ * from the repo, only recoverable from a database that already had it.
  *
- * DORA was the first framework off this path: it was reshaped into a
- * CatalogFile and wired into CATALOG_FIXTURES, so `applyCatalogFile` now
- * creates its templates and reconciles its 133 authored tasks in one place,
- * for both dev and production.
+ * Both are now CatalogFiles applied by scripts/seed-framework-catalogs.ts, so
+ * one writer creates the templates and reconciles the tasks together and they
+ * cannot come apart again.
  *
  * ═══ WHAT DELIVERS A TEMPLATE IN PRODUCTION ═══
  *
@@ -88,8 +89,6 @@ const INTERNAL_CONTROLS = 'internal-controls.json';
  * delivery path is the bug this file is named for.
  */
 const TEMPLATES_UNDELIVERED: Record<string, string> = {
-    'nis2-control-templates.json':
-        'NIS2. Same shape and same story; 105 authored tasks create zero rows in prod.',
     'iso9001-control-templates.json':
         'ISO 9001. Bare-array fixture, no prod path. Frozen for content (no source library) but the DELIVERY gap is independent of that.',
     'iso28000-control-templates.json': 'ISO 28000. As ISO 9001.',
@@ -184,14 +183,21 @@ describe('the shipped catalogue can reach production', () => {
     });
 
     it('records how many templates cannot reach production, so it stays visible', () => {
-        // 74 across four fixtures. Was 98 across five until DORA was reshaped
-        // into a CatalogFile and wired into CATALOG_FIXTURES. Only ever down.
+        // 54 across three fixtures — the frozen ISO 9001 / 28000 / 39001 sets.
+        // Was 98 across five; DORA (24) and NIS2 (20) left by being reshaped
+        // into CatalogFiles and wired into CATALOG_FIXTURES. Only ever down.
+        //
+        // What remains is a different problem from the one this ratchet
+        // measures. Those three have no source library, so they are frozen for
+        // CONTENT in control-task-actionability; delivering them would ship 54
+        // templates whose every task is a generic placeholder. Delivery and
+        // content are separate axes and this number speaks only to the first.
         const carry = new Map(fixtures.map((f) => [f.file, f.codes]));
         const undelivered = Object.keys(TEMPLATES_UNDELIVERED).reduce(
             (n, f) => n + (carry.get(f) ?? 0),
             0,
         );
-        expect(Object.keys(TEMPLATES_UNDELIVERED).length).toBeLessThanOrEqual(4);
-        expect(undelivered).toBeLessThanOrEqual(74);
+        expect(Object.keys(TEMPLATES_UNDELIVERED).length).toBeLessThanOrEqual(3);
+        expect(undelivered).toBeLessThanOrEqual(54);
     });
 });

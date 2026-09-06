@@ -241,16 +241,53 @@ describe('Framework Coverage & Templates', () => {
         });
     });
 
-    // ─── Seed file has all 5 frameworks ───
-    describe('Seed covers all frameworks', () => {
+    // ─── The five frameworks are declared somewhere that gets applied ───
+    describe('the catalogue declares all 5 frameworks', () => {
+        /**
+         * This read `prisma/seed.ts` alone until 2026-09-06, and that made it a
+         * claim about the IMPLEMENTATION rather than the catalogue: seed.ts is
+         * not run on production deploys, so a pack key appearing there proved
+         * the pack reached DEV and said nothing about a customer ever seeing it.
+         *
+         * DORA and NIS2 have since moved onto the shared `applyCatalogFile`
+         * writer, which is what finally delivers them to production — and this
+         * check read that as a regression, failing on NIS2_BASELINE because the
+         * key now lives in the CatalogFile that the production seeder applies.
+         *
+         * So both sources count. A CatalogFile wired into CATALOG_FIXTURES is
+         * the stronger of the two, because that list is what
+         * scripts/entrypoint.sh actually runs.
+         */
         const seed = readFileSync(join(basePath, 'prisma/seed.ts'), 'utf-8');
+        const catalogSeeder = readFileSync(
+            join(basePath, 'scripts/seed-framework-catalogs.ts'),
+            'utf-8',
+        );
+        const wiredCatalogs = [...catalogSeeder.matchAll(/prisma\/fixtures\/([A-Za-z0-9._-]+\.json)/g)]
+            .map((m) => {
+                try {
+                    return readFileSync(join(basePath, 'prisma/fixtures', m[1]), 'utf-8');
+                } catch {
+                    return '';
+                }
+            })
+            .join('\n');
+        const applied = `${seed}\n${wiredCatalogs}`;
 
-        it.each(['ISO27001', 'NIS2', 'ISO9001', 'ISO28000', 'ISO39001'])('seed references %s', (key) => {
-            expect(seed).toContain(key);
+        it('the catalog read found real wired fixtures (denominator)', () => {
+            // `applied` falls back to seed.ts, so a broken catalog read would
+            // leave every assertion below passing on the weaker source —
+            // silently reverting this to the implementation question it used
+            // to ask, with nothing to show for it.
+            expect(wiredCatalogs.length).toBeGreaterThan(10_000);
         });
 
-        it.each(['ISO27001_2022_BASE', 'NIS2_BASELINE', 'ISO9001_CORE', 'ISO28000_CORE', 'ISO39001_CORE'])('seed creates pack %s', (packKey) => {
-            expect(seed).toContain(packKey);
+        it.each(['ISO27001', 'NIS2', 'ISO9001', 'ISO28000', 'ISO39001'])('catalogue references %s', (key) => {
+            expect(applied).toContain(key);
+        });
+
+        it.each(['ISO27001_2022_BASE', 'NIS2_BASELINE', 'ISO9001_CORE', 'ISO28000_CORE', 'ISO39001_CORE'])('catalogue declares pack %s', (packKey) => {
+            expect(applied).toContain(packKey);
         });
 
         it.each(['NIS2-', 'QMS-', 'SCS-', 'RTS-'])('the catalogue carries templates with prefix %s', (prefix) => {
