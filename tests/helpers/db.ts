@@ -187,6 +187,314 @@ export function adminConnectionString(): string {
     return u.toString();
 }
 
+// --- One Jest run at a time, per (checkout, base database) (2026-09-06) ---
+//
+// The tag above keeps two CHECKOUTS apart. It does nothing for two
+// CONCURRENT RUNS in ONE checkout: both derive the same tag, the same base
+// name, and therefore the same `_w1` / `_w2` databases. globalSetup then
+// DROPs those `WITH (FORCE)` and TEMPLATE-clones them, while
+// `resetDatabase()` TRUNCATEs CASCADE inside the other run's `beforeEach`.
+// Neither run is told anything. What surfaces is a deadlock, an FK
+// violation, or a suite whose population vanished between its setup and its
+// assertion -- failures that read as PRODUCT bugs, in files neither run
+// touched, in whichever suite happened to be mid-transaction. That is not
+// hypothetical: two agents sharing one worktree hit exactly this, and the
+// time went into the product code before anyone suspected the harness.
+//
+// WHY A REFUSAL RATHER THAN A PER-RUN DATABASE NAME
+//
+// Folding a per-run discriminator (a pid, say) into the name would let both
+// runs proceed -- but only for as long as teardown is reliable, and it
+// demonstrably is not. globalTeardown does not run when a run is hard-killed
+// (Ctrl-C, the OOM killer, an agent harness stopping a task), and the
+// databases that run created outlive it. The cluster this was written
+// against was already carrying nine such orphans, named for checkouts that
+// no longer exist on the machine. A per-run discriminator multiplies that
+// leak by every abandoned run, and the cost is paid later by somebody with
+// no way to tell which orphan is still in use.
+//
+// A SESSION advisory lock has the opposite property: it is held by a
+// connection, so the kernel releases it when the process dies. There is no
+// state to clean up and nothing to orphan -- a killed run frees the lock on
+// its way out. The price is that a second concurrent run is refused, which
+// is the trade this repo takes elsewhere too: a loud stop beats a silent
+// corruption.
+//
+// WHY THE KEY IS THE PAIR AND NOT EITHER HALF
+//
+// The key is (checkout tag, base database name) -- exactly the pair the
+// database names are built from, so the lock is contended precisely when the
+// names would collide.
+//   - NOT the tag alone: a second run pointed at another base via
+//     DATABASE_URL_TEST collides with nothing, and refusing it would make the
+//     escape hatch the refusal message offers a lie.
+//   - NOT the base alone: separate git worktrees derive different tags and
+//     therefore different databases. They are the workflow this repo actually
+//     uses to run agents in parallel, and refusing them would be a
+//     regression. (Two worktrees still share the BASE/template database for
+//     the brief pg_terminate_backend + TEMPLATE clone -- the residual
+//     documented at the top of this section, unchanged and out of scope.)
+//
+// The lock is taken on the `postgres` database (`adminConnectionString()`),
+// because Postgres advisory locks are scoped per database and every run has
+// to contend in the same one.
+
+/** The `(int4, int4)` pair `pg_try_advisory_lock` is called with. */
+export type TestDbRunLockKey = readonly [number, number];
+
+/** Who is holding the lock, as far as `pg_stat_activity` can say. */
+export interface TestDbRunLockHolder {
+    /** The other run's `application_name` -- `inflect-jest-run:<its OS pid>`. */
+    applicationName: string;
+    /** The POSTGRES backend pid, not the other run's process id. */
+    backendPid: number;
+    /** ISO timestamp of when that connection opened. */
+    backendStart: string;
+    /** Null for a unix-socket or loopback-local connection. */
+    clientAddr: string | null;
+}
+
+export type TestDbRunLockOutcome =
+    | { status: 'acquired'; key: TestDbRunLockKey; release: () => Promise<void> }
+    | {
+          status: 'conflict';
+          key: TestDbRunLockKey;
+          holder: TestDbRunLockHolder | null;
+          message: string;
+      }
+    /**
+     * The check could not be made -- no reachable Postgres, or an unusable
+     * URL. Its own state on purpose: "did not check" and "checked, found
+     * nothing" are the same silence otherwise, and this repo has been bitten
+     * by that shape before. Callers must SAY so rather than proceed quietly.
+     */
+    | { status: 'unchecked'; key: TestDbRunLockKey; reason: string };
+
+/** Prefix of the `application_name` every run advertises itself under. */
+export const RUN_LOCK_LABEL_PREFIX = 'inflect-jest-run:';
+
+/**
+ * The lock key for a (checkout, base database) pair.
+ *
+ * Pure, and takes both inputs explicitly, so the property that matters --
+ * different pairs never collide -- is testable without a repo on disk. It
+ * deliberately does NOT mention `JEST_WORKER_ID`: the lock is per RUN, and
+ * the workers of one run are covered by the run that took it.
+ *
+ * Two signed int4s rather than one bigint: `pg_try_advisory_lock` accepts
+ * both, and the int4 pair keeps the key out of JS `BigInt` entirely.
+ */
+export function testDbRunLockKey(repoRoot: string, baseName: string): TestDbRunLockKey {
+    const digest = crypto
+        .createHash('sha256')
+        .update(`inflect-test-db-run-lock ${tagForRoot(repoRoot)} ${baseName}`)
+        .digest();
+    return [digest.readInt32BE(0), digest.readInt32BE(4)];
+}
+
+/** `testDbRunLockKey` for THIS checkout and the base DB it would use. */
+export function currentTestDbRunLockKey(): TestDbRunLockKey {
+    return testDbRunLockKey(path.resolve(__dirname, '../..'), currentBaseNameOrUnknown());
+}
+
+function currentBaseNameOrUnknown(): string {
+    try {
+        return getDbName(getBaseTestDatabaseUrl());
+    } catch {
+        // An unusable URL still needs a key, so the caller reaches the
+        // 'unchecked' branch below with a reason rather than crashing here.
+        return '<unresolved>';
+    }
+}
+
+function describeError(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * The refusal text. Split out from the acquisition so it can be read and
+ * asserted on without a database, and so the operator advice sits next to
+ * the reasoning that produced it rather than inside a query handler.
+ */
+export function runLockConflictMessage(
+    key: TestDbRunLockKey,
+    holder: TestDbRunLockHolder | null,
+    scope: string,
+): string {
+    const who = holder
+        ? [
+              `  holder:    ${holder.applicationName}  (the digits are that run's process id)`,
+              `             postgres backend pid ${holder.backendPid}, connected ${holder.backendStart}` +
+                  (holder.clientAddr ? `, from ${holder.clientAddr}` : ''),
+          ]
+        : [
+              '  holder:    a session holds the lock but pg_stat_activity did not name it',
+              '             (it ended mid-query, or this role cannot see other backends).',
+          ];
+    return [
+        "Refusing to start: another Jest run already holds this checkout's test databases.",
+        '',
+        `  this run:  ${RUN_LOCK_LABEL_PREFIX}${process.pid}`,
+        ...who,
+        `  lock:      key ${key[0]}/${key[1]} -- ${scope}`,
+        '',
+        'Both runs derive the SAME per-worker database names, and both are',
+        'destructive to them: globalSetup DROPs them WITH (FORCE) and TEMPLATE-clones',
+        'them, and resetDatabase() TRUNCATEs CASCADE in every beforeEach. Continuing',
+        'would demolish the other run mid-test, and the damage would surface as',
+        'deadlocks, FK violations and empty tables in suites neither run changed --',
+        'i.e. as product bugs that are not there.',
+        '',
+        'Do one of these instead:',
+        '  - wait for the other run to finish. The lock is released when its process',
+        '    exits, including when it is killed, so nothing has to be cleaned up;',
+        '  - give this run its own database:',
+        '        CREATE DATABASE inflect_test_scratch TEMPLATE inflect_test;',
+        '        DATABASE_URL_TEST=postgresql://test:test@127.0.0.1:5434/inflect_test_scratch \\',
+        '            node_modules/.bin/jest <paths>',
+        '  - or run it from a separate git worktree, which derives its own tag.',
+    ].join('\n');
+}
+
+/**
+ * Try to take the run lock. Never throws: every failure is a named outcome,
+ * because the caller (globalSetup) has to distinguish "somebody else is
+ * running" from "there is no database here at all" and act differently.
+ */
+export async function acquireTestDbRunLock(
+    opts: { key?: TestDbRunLockKey; adminUrl?: string; label?: string } = {},
+): Promise<TestDbRunLockOutcome> {
+    const key = opts.key ?? currentTestDbRunLockKey();
+    const scope = `checkout ${checkoutTag()}, base "${currentBaseNameOrUnknown()}"`;
+
+    let connectionString: string;
+    try {
+        connectionString = opts.adminUrl ?? adminConnectionString();
+    } catch (err) {
+        return {
+            status: 'unchecked',
+            key,
+            reason: `test database URL is unusable: ${describeError(err)}`,
+        };
+    }
+
+    // Lazy require, mirroring the pii-middleware require below: this module is
+    // imported by every integration suite, and `pg` is only needed here.
+    const { Client }: typeof import('pg') = require('pg');
+    // The label is how the OTHER run gets named in the refusal. Postgres
+    // truncates application_name at NAMEDATALEN-1, so keep it short.
+    const applicationName = (opts.label ?? `${RUN_LOCK_LABEL_PREFIX}${process.pid}`).slice(0, 63);
+    const client = new Client({ connectionString, application_name: applicationName });
+
+    try {
+        await client.connect();
+    } catch (err) {
+        await client.end().catch(() => {});
+        return { status: 'unchecked', key, reason: `cannot reach Postgres (${describeError(err)})` };
+    }
+
+    try {
+        const got = await client.query<{ locked: boolean }>(
+            'SELECT pg_try_advisory_lock($1::int4, $2::int4) AS locked',
+            [key[0], key[1]],
+        );
+        if (got.rows[0]?.locked === true) {
+            return {
+                status: 'acquired',
+                key,
+                release: async () => {
+                    // Both are best-effort. Ending the connection releases a
+                    // SESSION lock on its own, which is the property this
+                    // design stands on -- the explicit unlock is only so a
+                    // pooled or reused connection would also be correct.
+                    await client
+                        .query('SELECT pg_advisory_unlock($1::int4, $2::int4)', [key[0], key[1]])
+                        .catch(() => {});
+                    await client.end().catch(() => {});
+                },
+            };
+        }
+        const holder = await describeRunLockHolder(client, key);
+        await client.end().catch(() => {});
+        return {
+            status: 'conflict',
+            key,
+            holder,
+            message: runLockConflictMessage(key, holder, scope),
+        };
+    } catch (err) {
+        await client.end().catch(() => {});
+        return {
+            status: 'unchecked',
+            key,
+            reason: `advisory-lock query failed (${describeError(err)})`,
+        };
+    }
+}
+
+async function describeRunLockHolder(
+    client: import('pg').Client,
+    key: TestDbRunLockKey,
+): Promise<TestDbRunLockHolder | null> {
+    try {
+        // classid/objid are `oid` (unsigned); the key halves are signed int4.
+        // Widen both sides to bigint rather than casting a negative int4 to
+        // oid and relying on the wrap.
+        const res = await client.query<{
+            application_name: string | null;
+            pid: number;
+            backend_start: Date | string | null;
+            client_addr: string | null;
+        }>(
+            `SELECT a.application_name, a.pid, a.backend_start, host(a.client_addr) AS client_addr
+               FROM pg_locks l
+               JOIN pg_stat_activity a ON a.pid = l.pid
+              WHERE l.locktype = 'advisory'
+                AND l.granted
+                AND l.classid::bigint = $1
+                AND l.objid::bigint = $2
+              LIMIT 1`,
+            [key[0] >>> 0, key[1] >>> 0],
+        );
+        const row = res.rows[0];
+        if (!row) return null;
+        return {
+            applicationName: row.application_name || '(unnamed session)',
+            backendPid: row.pid,
+            backendStart: row.backend_start
+                ? new Date(row.backend_start).toISOString()
+                : '(unknown)',
+            clientAddr: row.client_addr,
+        };
+    } catch {
+        // Naming the holder is a nicety; refusing is the guarantee.
+        return null;
+    }
+}
+
+/**
+ * globalSetup takes the lock and globalTeardown releases it, and they are two
+ * separately-required modules -- so the handle is parked on `globalThis`
+ * (the idiom teardown.ts already uses) rather than in module state. Both
+ * halves live here so the key is spelled in exactly one place.
+ */
+type RunLockGlobals = typeof globalThis & {
+    __inflectTestDbRunLock?: { release: () => Promise<void> };
+};
+
+export function rememberTestDbRunLock(outcome: TestDbRunLockOutcome): void {
+    if (outcome.status !== 'acquired') return;
+    (globalThis as RunLockGlobals).__inflectTestDbRunLock = { release: outcome.release };
+}
+
+export async function releaseTestDbRunLock(): Promise<void> {
+    const g = globalThis as RunLockGlobals;
+    const held = g.__inflectTestDbRunLock;
+    if (!held) return;
+    delete g.__inflectTestDbRunLock;
+    await held.release().catch(() => {});
+}
+
 let _perWorker: PerWorkerInfo | undefined;
 function readPerWorker(): PerWorkerInfo {
     if (_perWorker !== undefined) return _perWorker;

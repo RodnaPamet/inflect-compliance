@@ -17,6 +17,8 @@ import {
     getDbName,
     adminConnectionString,
     perWorkerDbName,
+    acquireTestDbRunLock,
+    rememberTestDbRunLock,
     PER_WORKER_MARKER,
 } from '../helpers/db';
 import type { PerWorkerInfo } from '../helpers/db';
@@ -28,6 +30,39 @@ export default async function globalSetup(globalConfig?: GlobalConfig) {
     const baseName = getDbName(base);
 
     console.log(`\n[test-setup] Database URL: ${base.replace(/:[^@]*@/, ':***@')}`);
+
+    // ── One run at a time for this (checkout, base database) pair ──
+    //
+    // Everything from here on is destructive to databases a SECOND concurrent
+    // run in this checkout would derive the very same names for: the migrate,
+    // the pg_terminate_backend sweep, the DROP ... WITH (FORCE), the TEMPLATE
+    // clone, and then every resetDatabase() TRUNCATE for the rest of the run.
+    // Without the lock the two runs demolish each other silently and the
+    // wreckage is reported as failing product tests in files neither run
+    // touched. So the lock is taken BEFORE the first destructive statement and
+    // held (by an open connection) until globalTeardown releases it.
+    //
+    // Three outcomes, three different responses, and the third is the point:
+    // a run that could not CHECK must not be mistaken for a run that checked
+    // and found nothing. 'unchecked' is only safe to continue from because it
+    // means no database was reachable to corrupt in the first place -- and it
+    // still says so, loudly, rather than passing in silence.
+    const runLock = await acquireTestDbRunLock();
+    if (runLock.status === 'conflict') {
+        throw new Error(runLock.message);
+    }
+    if (runLock.status === 'unchecked') {
+        console.warn(
+            `[test-setup] Concurrent-run check DID NOT RUN: ${runLock.reason}.\n` +
+                `[test-setup] Nothing was reachable to corrupt, so this run continues -- but it is ` +
+                `NOT protected against a second concurrent run.`,
+        );
+    } else {
+        rememberTestDbRunLock(runLock);
+        console.log(
+            `[test-setup] Holding the concurrent-run lock (key ${runLock.key[0]}/${runLock.key[1]})`,
+        );
+    }
 
     // CI already applied the schema ONCE per job (`prisma migrate deploy`,
     // before Jest starts). This hook runs on every Jest process boot, so
