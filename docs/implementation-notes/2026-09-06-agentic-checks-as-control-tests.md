@@ -1,6 +1,6 @@
 # 2026-09-06 — the four agentic checks, as automated control tests
 
-**Commit:** `<pending>` feat(agentic): four agentic checks as automated control tests
+**Commit:** `8cb619717 feat(agentic): the four agentic checks, as automated control tests`
 
 ## Design
 
