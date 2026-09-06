@@ -38,11 +38,35 @@ import {
     analyzeGaps,
     strengthToConfidence,
     isActionableCoverage,
+    frameworkFamilyKeys,
+    type FrameworkIdentityRegistry,
     type TraceabilityReport,
     type GapAnalysisResult,
     type CoverageConfidence,
 } from '../services/cross-framework-traceability';
 import { logger } from '@/lib/observability/logger';
+
+// ─── Framework Identity Registry ─────────────────────────────────────
+
+/** The framework catalogue is a small GLOBAL table (tens of rows, no tenantId). */
+const FRAMEWORK_CATALOGUE_CAP = 500;
+
+/**
+ * `Framework.key` → `sourceUrn` for the whole catalogue.
+ *
+ * The traceability service is pure and sees only framework KEYS, but a
+ * framework can exist twice in `Framework` under two different keys (seed row
+ * vs library row — `key` is `@unique`). `sourceUrn` is what ties them, so the
+ * caller has to supply it or the service can only reconcile the seeded keys
+ * `LEGACY_KEY_FAMILY_URNS` happens to name.
+ */
+async function loadFrameworkIdentityRegistry(db: PrismaTx): Promise<FrameworkIdentityRegistry> {
+    const rows = await db.framework.findMany({
+        select: { key: true, sourceUrn: true },
+        take: FRAMEWORK_CATALOGUE_CAP,
+    });
+    return new Map(rows.map((f) => [f.key, f.sourceUrn]));
+}
 
 // ─── Edge Loader Factory ─────────────────────────────────────────────
 
@@ -226,18 +250,22 @@ export async function getRequirementTraceability(
 
     const run = async (dbCtx: PrismaTx) => {
         const loader = createDbEdgeLoader(dbCtx);
+        const frameworks = await loadFrameworkIdentityRegistry(dbCtx);
 
         // Use the resolution engine + traceability service
         const trace = await resolveMapping(
             {
                 sourceRequirementId: input.sourceRequirementId,
-                targetFrameworkKeys: [input.targetFrameworkKey],
+                // Every key in the target's family: the BFS filters candidate
+                // paths by framework key, so asking for one representation
+                // discards the paths that land on the other.
+                targetFrameworkKeys: frameworkFamilyKeys(input.targetFrameworkKey, frameworks),
                 maxDepth: input.maxDepth,
             },
             loader,
         );
 
-        const report = buildTraceabilityReport(trace, input.targetFrameworkKey);
+        const report = buildTraceabilityReport(trace, input.targetFrameworkKey, frameworks);
 
         logger.info('Requirement traceability resolved', {
             component,
@@ -502,13 +530,18 @@ export async function performGapAnalysis(
             frameworkName: targetFw.name,
         }));
 
+        // The catalogue, so the target framework is matched as a FAMILY: a
+        // mapping authored against the library representation has to answer
+        // for a tenant whose requirement rows are the seeded one.
+        const frameworks = await loadFrameworkIdentityRegistry(dbCtx);
+
         const result = await analyzeGaps(
             sourceIds,
             targetReqInputs,
             sourceFw.key,
             targetFw.key,
             loader,
-            { maxDepth: input.maxDepth },
+            { maxDepth: input.maxDepth, frameworks },
         );
 
         logger.info('Gap analysis completed', {

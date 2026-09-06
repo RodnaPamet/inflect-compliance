@@ -33,6 +33,10 @@ import type {
     TraceabilityQuery,
 } from './mapping-resolution';
 import { resolveMapping, resolveMappingBatch } from './mapping-resolution';
+import {
+    canonicalRequirementCode,
+    frameworkFamilyId,
+} from '../domain/framework-representation';
 
 // ─── Coverage Confidence ─────────────────────────────────────────────
 
@@ -406,6 +410,63 @@ export function generateExplanation(path: MappingPath): TraceabilityExplanation 
     }
 }
 
+// ─── Framework Identity ──────────────────────────────────────────────
+//
+// Every framework in this repo can exist TWICE in `Framework` — the row
+// `prisma/seed.ts` writes and the row `library-importer.ts` writes — with
+// DIFFERENT `key` values, because `Framework.key` is `@unique`. Mapping sets
+// are authored against the library representation (the importer resolves refs
+// against library keys), while a seeded tenant's requirement rows are the
+// other one. Comparing `path.target.frameworkKey === targetFrameworkKey`
+// therefore drops every path for a tenant holding the other representation,
+// and matching target requirements by `requirementId` misses them again even
+// when the path survives.
+//
+// Both halves live in `domain/framework-representation.ts` and both are
+// needed: the family collapses the two rows, and the canonical code collapses
+// the two spellings of one obligation (ISO 27001 Annex A is `A.5.15` in the
+// library and `5.15` in the seed). The failure this closes is a WRONG NUMBER —
+// a requirement that IS mapped reported as a gap, indistinguishable from a
+// framework nobody has worked on.
+
+/**
+ * `Framework.key` → that row's `sourceUrn`, for every framework row the caller
+ * has loaded. The caller owns the query; this service stays pure.
+ *
+ * ABSENT is a legitimate state and degrades safely rather than to the old
+ * behaviour: without it a key still resolves through `LEGACY_KEY_FAMILY_URNS`,
+ * so a seeded key whose family is known still collapses. What an absent
+ * registry cannot do is recognise a LIBRARY key as a second representation,
+ * because nothing but the row's own `sourceUrn` says so.
+ */
+export type FrameworkIdentityRegistry = ReadonlyMap<string, string | null>;
+
+/** The family a framework key belongs to, across representations. */
+function familyOf(frameworkKey: string, frameworks?: FrameworkIdentityRegistry): string {
+    return frameworkFamilyId({ key: frameworkKey, sourceUrn: frameworks?.get(frameworkKey) ?? null });
+}
+
+/**
+ * Every `Framework.key` in the same family as `frameworkKey`.
+ *
+ * The BFS in `mapping-resolution.ts` filters candidate paths by target
+ * framework KEY, so a family-aware consumer has to hand it every key in the
+ * family or the paths it wants are discarded before it ever sees them.
+ */
+export function frameworkFamilyKeys(
+    frameworkKey: string,
+    frameworks?: FrameworkIdentityRegistry,
+): string[] {
+    const family = familyOf(frameworkKey, frameworks);
+    const keys = new Set<string>([frameworkKey]);
+    if (frameworks) {
+        for (const key of frameworks.keys()) {
+            if (familyOf(key, frameworks) === family) keys.add(key);
+        }
+    }
+    return [...keys];
+}
+
 // ─── Traceability Service ────────────────────────────────────────────
 
 /**
@@ -417,12 +478,16 @@ export function generateExplanation(path: MappingPath): TraceabilityExplanation 
 export function buildTraceabilityReport(
     trace: MappingTraceResult,
     targetFrameworkKey: string,
+    frameworks?: FrameworkIdentityRegistry,
 ): TraceabilityReport {
     const findings: TraceabilityFinding[] = [];
+    const targetFamily = familyOf(targetFrameworkKey, frameworks);
 
     for (const path of trace.paths) {
-        // Only include paths targeting the specified framework
-        if (path.target.frameworkKey !== targetFrameworkKey) continue;
+        // Only include paths targeting the specified framework — as a FAMILY,
+        // so a mapping authored against the library representation still
+        // answers for a caller asking about the seeded one.
+        if (familyOf(path.target.frameworkKey, frameworks) !== targetFamily) continue;
 
         const confidence = strengthToConfidence(path.effectiveStrength);
 
@@ -490,18 +555,20 @@ export async function resolveTraceability(
     sourceRequirementId: string,
     targetFrameworkKey: string,
     loadEdges: MappingEdgeLoader,
-    options: { maxDepth?: number } = {},
+    options: { maxDepth?: number; frameworks?: FrameworkIdentityRegistry } = {},
 ): Promise<TraceabilityReport> {
     const trace = await resolveMapping(
         {
             sourceRequirementId,
-            targetFrameworkKeys: [targetFrameworkKey],
+            // Every key in the family, not just the one asked for — the BFS
+            // discards non-matching targets before this function sees them.
+            targetFrameworkKeys: frameworkFamilyKeys(targetFrameworkKey, options.frameworks),
             maxDepth: options.maxDepth,
         },
         loadEdges,
     );
 
-    return buildTraceabilityReport(trace, targetFrameworkKey);
+    return buildTraceabilityReport(trace, targetFrameworkKey, options.frameworks);
 }
 
 // ─── Gap Analysis Service ────────────────────────────────────────────
@@ -556,7 +623,9 @@ function gapStatusExplanation(status: GapStatus, bestConfidence: CoverageConfide
  * @param sourceFrameworkKey - Source framework key (for reporting)
  * @param targetFrameworkKey - Target framework key (for filtering)
  * @param loadEdges - Edge loader function
- * @param options - Optional configuration
+ * @param options - `maxDepth`, plus the `frameworks` identity registry that
+ *                  lets the target framework be matched as a FAMILY rather
+ *                  than a single `Framework.key` (see above)
  * @returns Gap analysis result with per-requirement status
  */
 export async function analyzeGaps(
@@ -571,18 +640,36 @@ export async function analyzeGaps(
     sourceFrameworkKey: string,
     targetFrameworkKey: string,
     loadEdges: MappingEdgeLoader,
-    options: { maxDepth?: number } = {},
+    options: { maxDepth?: number; frameworks?: FrameworkIdentityRegistry } = {},
 ): Promise<GapAnalysisResult> {
+    const targetFamily = familyOf(targetFrameworkKey, options.frameworks);
+
+    /**
+     * The obligation a requirement code names, independent of which
+     * representation spelled it. Both sides below are already filtered to
+     * `targetFamily`, so one canonicalisation settles the join.
+     */
+    const obligationOf = (code: string) => canonicalRequirementCode(targetFamily, code);
+
+    // The whole family — the BFS filters by target framework KEY, so passing
+    // only the requested key discards the paths that reach the other
+    // representation of it before this function can look at them.
+    const targetFrameworkKeys = frameworkFamilyKeys(targetFrameworkKey, options.frameworks);
+
     // Resolve all mappings from source requirements
     const queries: TraceabilityQuery[] = sourceRequirementIds.map(id => ({
         sourceRequirementId: id,
-        targetFrameworkKeys: [targetFrameworkKey],
+        targetFrameworkKeys,
         maxDepth: options.maxDepth,
     }));
 
     const traces = await resolveMappingBatch(queries, loadEdges);
 
-    // Build a map: targetRequirementId → best coverage info
+    // Build a map: target OBLIGATION → best coverage info. Keyed by canonical
+    // code rather than requirement id: a mapping authored against the library
+    // representation lands on ITS requirement rows, which carry different ids
+    // (and, for ISO 27001 Annex A, a different spelling) from the ones the
+    // caller is reporting on.
     const targetCoverage = new Map<string, {
         bestConfidence: CoverageConfidence;
         bestStrength: MappingStrengthValue;
@@ -593,14 +680,14 @@ export async function analyzeGaps(
 
     for (const trace of traces) {
         for (const path of trace.paths) {
-            if (path.target.frameworkKey !== targetFrameworkKey) continue;
+            if (familyOf(path.target.frameworkKey, options.frameworks) !== targetFamily) continue;
 
-            const targetReqId = path.target.requirementId;
+            const obligation = obligationOf(path.target.requirementCode);
             const confidence = strengthToConfidence(path.effectiveStrength);
-            const existing = targetCoverage.get(targetReqId);
+            const existing = targetCoverage.get(obligation);
 
             if (!existing || CONFIDENCE_RANK[confidence] > CONFIDENCE_RANK[existing.bestConfidence]) {
-                targetCoverage.set(targetReqId, {
+                targetCoverage.set(obligation, {
                     bestConfidence: confidence,
                     bestStrength: path.effectiveStrength,
                     bestSource: trace.source,
@@ -608,7 +695,7 @@ export async function analyzeGaps(
                     sourceCount: (existing?.sourceCount ?? 0) + 1,
                 });
             } else {
-                targetCoverage.set(targetReqId, {
+                targetCoverage.set(obligation, {
                     ...existing,
                     sourceCount: existing.sourceCount + 1,
                 });
@@ -618,7 +705,7 @@ export async function analyzeGaps(
 
     // Build gap analysis entries for each target requirement
     const entries: GapAnalysisEntry[] = targetRequirements.map(target => {
-        const coverage = targetCoverage.get(target.requirementId);
+        const coverage = targetCoverage.get(obligationOf(target.requirementCode));
 
         if (!coverage) {
             return {
