@@ -1340,6 +1340,9 @@ model AgentBehaviourWindow {
   /// second one as the first.
   verdict String?
 
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   agent  RegisteredAgent @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
