@@ -1,6 +1,6 @@
 # 2026-09-06 — The agent kill switch, at three scopes, and the drill that proves it
 
-**Commit:** `e8f6e7675` feat(agentic): a kill switch at the tool boundary, and a scheduled drill
+**Commit:** `0de956276` feat(agentic): a kill switch at the tool boundary, and the drill that proves it
 
 OWASP **ASI08** (cascading failure) and **ASI10** (rogue agent) both end in the
 same operator sentence: *make it stop*. Propose-not-commit already caps what a
