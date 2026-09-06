@@ -45,9 +45,18 @@
  * is the load-bearing half — a mutation that reddens everything separates
  * nothing. Measured against this file, not asserted from the design:
  *
- *   emptying `LEGACY_KEY_FAMILY_URNS` reddens every ISO 27001 and SOC 2
- *       assertion and leaves BOTH ISO 42001 ones green: those two rows carry
- *       the urn, so no legacy key was ever in play for them.
+ *   emptying `LEGACY_KEY_FAMILY_URNS` reddens 9 of the 14 — every assertion
+ *       that needs a SEEDED row to reach its library sibling — and leaves 5
+ *       green. BOTH ISO 42001 ones are in that five, which is the separating
+ *       half: those two rows carry the urn, so no legacy key was ever in play
+ *       for them. The other three are green for a duller reason and NOT
+ *       because the family collapsed — nothing in them depends on the seeded
+ *       row being reached at all. `a control linked to BOTH representations`
+ *       and `the SoA honours the override` both read the A-DUAL control's own
+ *       library-side link, which this framework declares directly; `a tenant
+ *       that holds no controls` is the negative control, and no mutation that
+ *       narrows reach can turn it red. So do not read this as "every ISO
+ *       27001 assertion reddens" — three of them do not.
  *   neutering `canonicalRequirementCode` to the identity leaves the clause `7`
  *       assertion green — `7` is spelled the same in both representations, so
  *       that one and only that one isolates identity from spelling. (It does
