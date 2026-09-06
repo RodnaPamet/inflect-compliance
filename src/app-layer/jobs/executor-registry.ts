@@ -694,6 +694,18 @@ executorRegistry.register('sla-monitor', async (payload) => {
     return result;
 });
 
+// ── agent-run-reaper (Agentic — ASI08 failure isolation) ─────────────
+//
+// Settles agentic workflow runs left RUNNING by an executor that died. The
+// sweep is cross-tenant; `payload.tenantId` narrows it to one tenant for an
+// operator re-run after an incident.
+
+executorRegistry.register('agent-run-reaper', async (payload) => {
+    const { runAgentRunReaperJob } = await import('./agent-run-reaper');
+    const { result } = await runAgentRunReaperJob({ tenantId: payload.tenantId });
+    return result;
+});
+
 // ── rule-chain-dispatch (Automation Epic 7) ──────────────────────────
 
 executorRegistry.register('rule-chain-dispatch', async (payload) => {

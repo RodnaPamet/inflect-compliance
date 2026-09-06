@@ -78,6 +78,17 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'agent-run-reaper',
+        // Hourly, at :37. Off the hour and off every quarter, so it does not
+        // land with the `*/15` automation tick, the `*/5` SLA monitor or the
+        // on-the-hour jobs. Hourly rather than daily because the thing it
+        // settles is a run that is already an hour past its own wall-clock cap:
+        // waiting until tomorrow would leave an agent reading as busy for a day.
+        pattern: '37 * * * *',
+        description: 'Settle agentic workflow runs left RUNNING by an executor that died (pod eviction, OOM, rolling deploy). Each agent and each run is isolated, so one bad row does not stop the sweep; runs waiting on a human (AWAITING_APPROVAL / PAUSED) are never touched.',
+        defaultPayload: {},
+    },
+    {
         name: 'sharepoint-delta-sync-dispatch',
         pattern: '0 */4 * * *',   // every 4 hours
         description: 'Fan out a SharePoint delta sync per enabled connection (auto-import changed evidence files)',
