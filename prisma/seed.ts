@@ -7,6 +7,7 @@ import { createTenantWithOwner } from '@/app-layer/usecases/tenant-lifecycle';
 import { hashForLookup } from '@/lib/security/encryption';
 import { seedDefaultOrgDashboard } from '@/app-layer/usecases/org-dashboard-presets';
 import { seedInternalControls, type PolicyFrameworkMap } from './control-template-seed';
+import { fixtureArray, fixtureObject } from './fixture-io';
 
 // Prisma 7 — adapter is required for PrismaClient construction.
 const prisma = new PrismaClient({
@@ -723,12 +724,16 @@ Reviewed at least annually.` },
     // ('Information Security Policy', 'Risk Management Policy') by title,
     // while the other 13 are added new. Attribution rides the `source`
     // column (see prisma/fixtures/policy-templates-ciso-toolkit.LICENSE.md).
-    const cisoToolkit = require('./fixtures/policy-templates-ciso-toolkit.json') as {
+    const cisoToolkit = fixtureObject<{
         templates: Array<{
             externalRef: string; title: string; category: string; language: string;
             contentType: string; contentText: string; tags: string; source: string;
         }>;
-    };
+    }>(
+        'fixtures/policy-templates-ciso-toolkit',
+        require('./fixtures/policy-templates-ciso-toolkit.json'),
+        'templates',
+    );
     for (const t of cisoToolkit.templates) {
         const data = {
             title: t.title,
@@ -760,12 +765,16 @@ Reviewed at least annually.` },
     // Policy" / "Risk Management Policy", the expanded-starter originals)
     // rather than creating a duplicate card. The imported externalRefs are
     // mapped to the same frameworks in policy-template-framework-map.json.
-    const importedPolicies = require('./fixtures/policy-templates-imported.json') as {
+    const importedPolicies = fixtureObject<{
         templates: Array<{
             externalRef: string; title: string; category: string; language: string;
             contentType: string; contentText: string; tags: string; source: string;
         }>;
-    };
+    }>(
+        'fixtures/policy-templates-imported',
+        require('./fixtures/policy-templates-imported.json'),
+        'templates',
+    );
     for (const t of importedPolicies.templates) {
         const data = {
             title: t.title,
@@ -794,12 +803,16 @@ Reviewed at least annually.` },
     // governance, data classification & handling, MDM/BYOD). Original prose in
     // IC house style; framework refs live in policy-template-framework-map.json
     // keyed by these externalRefs. Same upsert-by-(externalRef|title) shape.
-    const originalGapPolicies = require('./fixtures/policy-templates-original-gaps.json') as {
+    const originalGapPolicies = fixtureObject<{
         templates: Array<{
             externalRef: string; title: string; category: string; language: string;
             contentType: string; contentText: string; tags: string; source: string;
         }>;
-    };
+    }>(
+        'fixtures/policy-templates-original-gaps',
+        require('./fixtures/policy-templates-original-gaps.json'),
+        'templates',
+    );
     for (const t of originalGapPolicies.templates) {
         const data = {
             title: t.title,
@@ -824,9 +837,12 @@ Reviewed at least annually.` },
     console.log(`✅ IC original gap-fill policy templates seeded (${originalGapPolicies.templates.length})`);
 
     // ─── Frameworks & Requirements ───
-    const annexAData = require('./fixtures/iso27001_2022_annexA.json') as Array<{
+    const annexAData = fixtureArray<{
         key: string; theme: string; themeNumber: number; sortOrder: number; title: string; summary?: string;
-    }>;
+    }>(
+        'fixtures/iso27001_2022_annexA',
+        require('./fixtures/iso27001_2022_annexA.json'),
+    );
 
     // ISO 27001:2022
     // `sourceUrn` ties this row to `src/data/libraries/iso27001-2022.yaml`, the
@@ -910,13 +926,17 @@ Reviewed at least annually.` },
     // became an object the cast still compiled and `for...of` threw at
     // runtime — taking the entire seed down and failing E2E specs that have
     // nothing to do with SOC 2. A cast is a claim the compiler stops checking.
-    const soc2Catalog = require('./fixtures/soc2-control-templates.json') as {
+    const soc2Catalog = fixtureObject<{
         templates: Array<{
             code: string; title: string; description: string; category: string;
             defaultFrequency: string; requirementCodes: string[];
             tasks: Array<{ title: { en: string }; description: { en: string } }>;
         }>;
-    };
+    }>(
+        'fixtures/soc2-control-templates',
+        require('./fixtures/soc2-control-templates.json'),
+        'templates',
+    );
     const soc2StarterControls = soc2Catalog.templates;
     for (const c of soc2StarterControls) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
@@ -955,7 +975,10 @@ Reviewed at least annually.` },
     console.log(`✅ SOC 2 + ${soc2Reqs.length} criteria + SOC 2 Starter Pack (${soc2StarterControls.length} curated controls) seeded`);
 
     // NIS2 — full fixture-driven
-    const nis2Data = require('./fixtures/nis2_requirements.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
+    const nis2Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
+        'fixtures/nis2_requirements',
+        require('./fixtures/nis2_requirements.json'),
+    );
     const nis2 = await prisma.framework.upsert({
         where: { key_version: { key: 'NIS2', version: '2022/2555' } },
         update: { name: 'NIS2 Directive', kind: 'EU_DIRECTIVE', description: 'Directive (EU) 2022/2555 on cybersecurity' },
@@ -983,7 +1006,10 @@ Reviewed at least annually.` },
     // (directly applicable), so kind=REGULATION (vs NIS2's EU_DIRECTIVE).
     // Requirement codes follow the official article structure (DORA.Art.N),
     // matching the dora-2022.yaml library ref_ids.
-    const doraData = require('./fixtures/dora_requirements.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
+    const doraData = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
+        'fixtures/dora_requirements',
+        require('./fixtures/dora_requirements.json'),
+    );
     const dora = await prisma.framework.upsert({
         where: { key_version: { key: 'DORA', version: '2022/2554' } },
         update: { name: 'Digital Operational Resilience Act', kind: 'REGULATION', description: 'Regulation (EU) 2022/2554 on digital operational resilience for the financial sector' },
@@ -1006,7 +1032,7 @@ Reviewed at least annually.` },
     // normative framework requirements, so they live in their own
     // Nis2GapDomain / Nis2GapQuestion reference tables side by side.
     // See prisma/fixtures/nis2-gap-assessment.LICENSE.md for attribution.
-    const nis2Gap = require('./fixtures/nis2-gap-assessment.json') as {
+    const nis2Gap = fixtureObject<{
         version: string;
         domains: Array<{
             id: number;
@@ -1029,7 +1055,11 @@ Reviewed at least annually.` },
             day: number;
             dependsOn: string[];
         }>;
-    };
+    }>(
+        'fixtures/nis2-gap-assessment',
+        require('./fixtures/nis2-gap-assessment.json'),
+        'version', 'domains', 'questions',
+    );
     for (const d of nis2Gap.domains) {
         await prisma.nis2GapDomain.upsert({
             where: { id: d.id },
@@ -1066,11 +1096,15 @@ Reviewed at least annually.` },
     // mirrors the NIS2 gap-assessment seed. One 30-question set whose answers
     // project onto three standards via mappingsJson. Paraphrased questions
     // (AISVS CC-BY-SA-4.0; ISO 42001 clause refs only; EU AI Act public domain).
-    const aiGov = require('./fixtures/ai-governance-self-assessment.json') as {
+    const aiGov = fixtureObject<{
         questionSetVersion: number;
         domains: Array<{ id: number; code: string; name: string }>;
         questions: Array<{ id: string; domainId: number; criticality: string; conditional: string | null; text: string; mappings: { aisvs: string[]; iso42001: string[]; euAiAct: string[] } }>;
-    };
+    }>(
+        'fixtures/ai-governance-self-assessment',
+        require('./fixtures/ai-governance-self-assessment.json'),
+        'questionSetVersion', 'domains', 'questions',
+    );
     for (const d of aiGov.domains) {
         await prisma.aiGovDomain.upsert({
             where: { id: d.id },
@@ -1100,11 +1134,15 @@ Reviewed at least annually.` },
     // The ids (`ara-<domain>-<nn>`) are STABLE EXTERNAL KEYS: an assessor citing
     // a question in a report has to resolve to the same row forever, which is
     // why this is an upsert and never a truncate-and-reload.
-    const agentRisk = require('./fixtures/agent-risk-assessment.json') as {
+    const agentRisk = fixtureObject<{
         questionSetVersion: number;
         domains: Array<{ id: number; code: string; name: string; description: string; sortOrder: number }>;
         questions: Array<{ id: string; domainId: number; criticality: string; text: string; guidance: string | null; mappings: { asi: string[]; imda: string[] } }>;
-    };
+    }>(
+        'fixtures/agent-risk-assessment',
+        require('./fixtures/agent-risk-assessment.json'),
+        'questionSetVersion', 'domains', 'questions',
+    );
     for (const d of agentRisk.domains) {
         const domainData = { code: d.code, name: d.name, description: d.description, sortOrder: d.sortOrder };
         await prisma.agentAssessmentDomain.upsert({
@@ -1130,7 +1168,10 @@ Reviewed at least annually.` },
     console.log(`✅ Agent risk assessment v${agentRisk.questionSetVersion} — ${agentRisk.domains.length} domains + ${agentRisk.questions.length} questions seeded`);
 
     // ISO 9001
-    const iso9001Data = require('./fixtures/iso9001_clauses.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
+    const iso9001Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
+        'fixtures/iso9001_clauses',
+        require('./fixtures/iso9001_clauses.json'),
+    );
     const iso9001 = await prisma.framework.upsert({
         where: { key_version: { key: 'ISO9001', version: '2015' } },
         update: { name: 'ISO 9001', description: 'ISO 9001:2015 Quality Management Systems' },
@@ -1148,7 +1189,10 @@ Reviewed at least annually.` },
     console.log(`✅ ISO 9001 framework + ${iso9001Data.length} requirements seeded`);
 
     // ISO 28000
-    const iso28000Data = require('./fixtures/iso28000_clauses.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
+    const iso28000Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
+        'fixtures/iso28000_clauses',
+        require('./fixtures/iso28000_clauses.json'),
+    );
     const iso28000 = await prisma.framework.upsert({
         where: { key_version: { key: 'ISO28000', version: '2022' } },
         update: { name: 'ISO 28000', description: 'ISO 28000:2022 Supply Chain Security Management' },
@@ -1166,7 +1210,10 @@ Reviewed at least annually.` },
     console.log(`✅ ISO 28000 framework + ${iso28000Data.length} requirements seeded`);
 
     // ISO 39001
-    const iso39001Data = require('./fixtures/iso39001_clauses.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
+    const iso39001Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
+        'fixtures/iso39001_clauses',
+        require('./fixtures/iso39001_clauses.json'),
+    );
     const iso39001 = await prisma.framework.upsert({
         where: { key_version: { key: 'ISO39001', version: '2012' } },
         update: { name: 'ISO 39001', description: 'ISO 39001:2012 Road Traffic Safety Management' },
@@ -1209,7 +1256,10 @@ Reviewed at least annually.` },
     console.log(`✅ ISO 27001 control templates seeded (${templatesCreated} new)`);
 
     // ─── NIS2 Control Templates ───
-    const nis2Templates = require('./fixtures/nis2-control-templates.json') as Array<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>;
+    const nis2Templates = fixtureArray<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>(
+        'fixtures/nis2-control-templates',
+        require('./fixtures/nis2-control-templates.json'),
+    );
     for (const t of nis2Templates) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: t.code } });
         if (!existing) {
@@ -1233,7 +1283,10 @@ Reviewed at least annually.` },
     // requirement. Stable codes (DORA-<article>) keep the pack + install
     // flow idempotent. Rides the generic ControlTemplate/Pack machinery —
     // no DORA-specific install path.
-    const doraTemplates = require('./fixtures/dora-control-templates.json') as Array<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>;
+    const doraTemplates = fixtureArray<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>(
+        'fixtures/dora-control-templates',
+        require('./fixtures/dora-control-templates.json'),
+    );
     for (const t of doraTemplates) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: t.code } });
         if (!existing) {
@@ -1253,7 +1306,10 @@ Reviewed at least annually.` },
     console.log('✅ DORA control templates seeded');
 
     // ─── ISO 9001 Control Templates ───
-    const iso9001Templates = require('./fixtures/iso9001-control-templates.json') as Array<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>;
+    const iso9001Templates = fixtureArray<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>(
+        'fixtures/iso9001-control-templates',
+        require('./fixtures/iso9001-control-templates.json'),
+    );
     for (const t of iso9001Templates) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: t.code } });
         if (!existing) {
@@ -1273,7 +1329,10 @@ Reviewed at least annually.` },
     console.log('✅ ISO 9001 control templates seeded');
 
     // ─── ISO 28000 Control Templates ───
-    const iso28000Templates = require('./fixtures/iso28000-control-templates.json') as Array<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>;
+    const iso28000Templates = fixtureArray<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>(
+        'fixtures/iso28000-control-templates',
+        require('./fixtures/iso28000-control-templates.json'),
+    );
     for (const t of iso28000Templates) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: t.code } });
         if (!existing) {
@@ -1293,7 +1352,10 @@ Reviewed at least annually.` },
     console.log('✅ ISO 28000 control templates seeded');
 
     // ─── ISO 39001 Control Templates ───
-    const iso39001Templates = require('./fixtures/iso39001-control-templates.json') as Array<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>;
+    const iso39001Templates = fixtureArray<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>(
+        'fixtures/iso39001-control-templates',
+        require('./fixtures/iso39001-control-templates.json'),
+    );
     for (const t of iso39001Templates) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: t.code } });
         if (!existing) {
@@ -1362,7 +1424,10 @@ Reviewed at least annually.` },
     // prose; the full text stays at the OWASP source. metadataJson carries the
     // OWASP attribution + license the framework picker surfaces. Rides the
     // generic framework/pack machinery — no AISVS-specific code paths.
-    const aisvsData = require('./fixtures/owasp_aisvs_requirements.json') as Array<{ key: string; section: string; level: string; sortOrder: number; title: string }>;
+    const aisvsData = fixtureArray<{ key: string; section: string; level: string; sortOrder: number; title: string }>(
+        'fixtures/owasp_aisvs_requirements',
+        require('./fixtures/owasp_aisvs_requirements.json'),
+    );
     const aisvsMeta = JSON.stringify({
         locale: 'en',
         provider: 'OWASP',
@@ -1434,7 +1499,10 @@ Reviewed at least annually.` },
     // COPYRIGHTED ISO standard: IC stores a structural outline (clause + Annex A
     // control numbers + paraphrased titles), NOT the verbatim ISO text — mirrors
     // the ISO 27001 handling. Rides the generic framework/pack machinery.
-    const iso42001Data = require('./fixtures/iso_42001_requirements.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
+    const iso42001Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
+        'fixtures/iso_42001_requirements',
+        require('./fixtures/iso_42001_requirements.json'),
+    );
     const iso42001Meta = JSON.stringify({
         locale: 'en',
         provider: 'ISO/IEC',
@@ -1506,7 +1574,10 @@ Reviewed at least annually.` },
     // Modelled risk-tiered (prohibited / high-risk / limited / GPAI / minimal);
     // tier classification is a tenant + counsel decision, NOT legal advice.
     // Rides the generic framework/pack machinery.
-    const euAiActData = require('./fixtures/eu_ai_act_requirements.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
+    const euAiActData = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
+        'fixtures/eu_ai_act_requirements',
+        require('./fixtures/eu_ai_act_requirements.json'),
+    );
     const euAiActMeta = JSON.stringify({
         locale: 'en',
         provider: 'European Union',
@@ -1579,7 +1650,10 @@ Reviewed at least annually.` },
     // reference INDEX (canonical ASI ids + short titles) + Inflect-authored
     // governance summaries, never the verbatim OWASP prose. Rides the generic
     // framework/pack machinery: one control template per risk.
-    const asiData = require('./fixtures/owasp_asi_requirements.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
+    const asiData = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
+        'fixtures/owasp_asi_requirements',
+        require('./fixtures/owasp_asi_requirements.json'),
+    );
     const asiMeta = JSON.stringify({
         locale: 'en',
         provider: 'OWASP',
@@ -1647,7 +1721,10 @@ Reviewed at least annually.` },
     // the MGF-<dimension>.<n> requirement keys are INFLECT-ASSIGNED (the MGF
     // publishes narrative guidance, not numbered clauses) — see
     // docs/implementation-notes/2026-09-05-agentic-frameworks.md.
-    const mgfData = require('./fixtures/imda_mgf_requirements.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
+    const mgfData = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
+        'fixtures/imda_mgf_requirements',
+        require('./fixtures/imda_mgf_requirements.json'),
+    );
     const mgfMeta = JSON.stringify({
         locale: 'en',
         provider: 'IMDA Singapore',
@@ -1722,7 +1799,10 @@ Reviewed at least annually.` },
     // public information and may be distributed or copied." The privacy
     // companion to NIST CSF 2.0 (same Function/Category/Subcategory structure).
     // Rides the generic framework/pack machinery — no special-casing.
-    const nistPrivacyData = require('./fixtures/nist_privacy_framework_requirements.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
+    const nistPrivacyData = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
+        'fixtures/nist_privacy_framework_requirements',
+        require('./fixtures/nist_privacy_framework_requirements.json'),
+    );
     const nistPrivacyMeta = JSON.stringify({
         locale: 'en',
         provider: 'NIST',
@@ -1792,7 +1872,10 @@ Reviewed at least annually.` },
     // Development Framework — four practice groups (PO/PS/PW/RV) → practices →
     // tasks. Underpins US federal secure-software self-attestation (EO 14028 /
     // OMB M-22-18). Rides the generic framework/pack machinery — no special-casing.
-    const nistSsdfData = require('./fixtures/nist_ssdf_requirements.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
+    const nistSsdfData = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
+        'fixtures/nist_ssdf_requirements',
+        require('./fixtures/nist_ssdf_requirements.json'),
+    );
     const nistSsdfMeta = JSON.stringify({
         locale: 'en',
         provider: 'NIST',
@@ -1871,11 +1954,15 @@ Reviewed at least annually.` },
         // `as Array<...>` cast over the whole file: that cast compiled after the
         // fixture became an object and `for...of` threw at runtime, taking the
         // whole seed down.
-    const ssdfStarterControls = (require('./fixtures/ssdf-control-templates.json') as {
+    const ssdfStarterControls = (fixtureObject<{
         templates: Array<{
         code: string; title: string; description: string; defaultFrequency: string; requirementCodes: string[]; tasks: Array<{ title: { en: string }; description: { en: string } }>;
         }>;
-    }).templates;
+    }>(
+        'fixtures/ssdf-control-templates',
+        require('./fixtures/ssdf-control-templates.json'),
+        'templates',
+    )).templates;
     for (const c of ssdfStarterControls) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
         if (!existing) {
@@ -1920,7 +2007,10 @@ Reviewed at least annually.` },
     // and the IG1/IG2/IG3 structure. All descriptive text is our own paraphrase.
     // Full CIS Controls: https://www.cisecurity.org/controls. Rides the generic
     // framework/pack machinery — no special-casing.
-    const cisData = require('./fixtures/cis-v8-requirements.json') as Array<{ key: string; section: string; category: string; sortOrder: number; title: string }>;
+    const cisData = fixtureArray<{ key: string; section: string; category: string; sortOrder: number; title: string }>(
+        'fixtures/cis-v8-requirements',
+        require('./fixtures/cis-v8-requirements.json'),
+    );
     const cisMeta = JSON.stringify({
         locale: 'en',
         provider: 'Center for Internet Security',
@@ -1957,11 +2047,15 @@ Reviewed at least annually.` },
         // `as Array<...>` cast over the whole file: that cast compiled after the
         // fixture became an object and `for...of` threw at runtime, taking the
         // whole seed down.
-    const cisIg1Controls = (require('./fixtures/cis-v8-ig1-control-templates.json') as {
+    const cisIg1Controls = (fixtureObject<{
         templates: Array<{
         code: string; title: string; description: string; defaultFrequency: string; requirementCodes: string[]; tasks: Array<{ title: { en: string }; description: { en: string } }>;
         }>;
-    }).templates;
+    }>(
+        'fixtures/cis-v8-ig1-control-templates',
+        require('./fixtures/cis-v8-ig1-control-templates.json'),
+        'templates',
+    )).templates;
     for (const c of cisIg1Controls) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
         if (!existing) {
@@ -2007,7 +2101,10 @@ Reviewed at least annually.` },
     // verification-level structure. All descriptive text is our own paraphrase.
     // Full standard: https://owasp.org/www-project-application-security-verification-standard/
     // Rides the generic framework/pack machinery — no special-casing.
-    const asvsData = require('./fixtures/asvs-requirements.json') as Array<{ key: string; section: string; category: string; sortOrder: number; title: string }>;
+    const asvsData = fixtureArray<{ key: string; section: string; category: string; sortOrder: number; title: string }>(
+        'fixtures/asvs-requirements',
+        require('./fixtures/asvs-requirements.json'),
+    );
     const asvsMeta = JSON.stringify({
         locale: 'en',
         provider: 'OWASP Foundation',
@@ -2044,11 +2141,15 @@ Reviewed at least annually.` },
         // `as Array<...>` cast over the whole file: that cast compiled after the
         // fixture became an object and `for...of` threw at runtime, taking the
         // whole seed down.
-    const asvsL1Controls = (require('./fixtures/asvs-l1-control-templates.json') as {
+    const asvsL1Controls = (fixtureObject<{
         templates: Array<{
         code: string; title: string; description: string; defaultFrequency: string; requirementCodes: string[]; tasks: Array<{ title: { en: string }; description: { en: string } }>;
         }>;
-    }).templates;
+    }>(
+        'fixtures/asvs-l1-control-templates',
+        require('./fixtures/asvs-l1-control-templates.json'),
+        'templates',
+    )).templates;
     for (const c of asvsL1Controls) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
         if (!existing) {
@@ -2090,7 +2191,10 @@ Reviewed at least annually.` },
     // processor Annex B). Requirement descriptions are OURS (clause-ref only — ISO
     // text is copyrighted). Ships a curated privacy starter pack so an adopter gets
     // mapped coverage on day one, not a bare 0%. Rides the generic pack machinery.
-    const iso27701Data = require('./fixtures/iso27701_requirements.json') as Array<{ key: string; section: string; sortOrder: number; title: string }>;
+    const iso27701Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
+        'fixtures/iso27701_requirements',
+        require('./fixtures/iso27701_requirements.json'),
+    );
     const iso27701Meta = JSON.stringify({
         locale: 'en',
         provider: 'ISO/IEC',
@@ -2120,11 +2224,15 @@ Reviewed at least annually.` },
         // `as Array<...>` cast over the whole file: that cast compiled after the
         // fixture became an object and `for...of` threw at runtime, taking the
         // whole seed down.
-    const iso27701Controls = (require('./fixtures/iso27701-control-templates.json') as {
+    const iso27701Controls = (fixtureObject<{
         templates: Array<{
         code: string; title: string; description: string; defaultFrequency: string; requirementCodes: string[]; tasks: Array<{ title: { en: string }; description: { en: string } }>;
         }>;
-    }).templates;
+    }>(
+        'fixtures/iso27701-control-templates',
+        require('./fixtures/iso27701-control-templates.json'),
+        'templates',
+    )).templates;
     for (const c of iso27701Controls) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
         if (!existing) {
@@ -2184,9 +2292,13 @@ Reviewed at least annually.` },
     // populates the internal controls whose policies map to that framework, plus
     // their policy links (see usecases/framework/install.ts).
     const internalControlsFixture = require('./fixtures/internal-controls.json') as unknown;
-    const icPolicyFwMap = (require('./fixtures/internal-controls-policy-framework-map.json') as {
+    const icPolicyFwMap = (fixtureObject<{
         policies: PolicyFrameworkMap;
-    }).policies;
+    }>(
+        'fixtures/internal-controls-policy-framework-map',
+        require('./fixtures/internal-controls-policy-framework-map.json'),
+        'policies',
+    )).policies;
 
     // Templates, policy-mediated requirement links AND authored tasks, through
     // the same function the prod seeder and the delivery test call.
@@ -2246,7 +2358,10 @@ Reviewed at least annually.` },
     console.log('✅ All Framework Packs seeded');
 
     // ─── Legacy Control Templates ───
-    const legacyTemplates = require('./fixtures/legacy-control-templates.json') as Array<{ code: string; title: string; category: string; description: string; defaultFrequency: ControlFrequency }>;
+    const legacyTemplates = fixtureArray<{ code: string; title: string; category: string; description: string; defaultFrequency: ControlFrequency }>(
+        'fixtures/legacy-control-templates',
+        require('./fixtures/legacy-control-templates.json'),
+    );
     for (const tpl of legacyTemplates) {
         const existing = await prisma.controlTemplate.findUnique({ where: { code: tpl.code } });
         if (!existing) {
@@ -2512,11 +2627,15 @@ Reviewed at least annually.` },
     // (referenced by ID); CC-BY-SA-4.0, attribution to OWASP. VendorAssessment-
     // Template is RLS-tenant-scoped, so the global baseline is seeded per-tenant
     // (here, the demo tenant); tenants clone+customise via the existing flow.
-    const aisvsVendorQ = require('./fixtures/aisvs-vendor-questionnaire.json') as {
+    const aisvsVendorQ = fixtureObject<{
         key: string; name: string; description: string; attribution: string;
         sections: Array<{ title: string; weight: number; conditional: boolean; appliesTo?: string;
             questions: Array<{ aisvsId: string; level: string; weight: number; prompt: string; type?: string }> }>;
-    };
+    }>(
+        'fixtures/aisvs-vendor-questionnaire',
+        require('./fixtures/aisvs-vendor-questionnaire.json'),
+        'key', 'name', 'description', 'attribution', 'sections',
+    );
     const existingAisvsTpl = await prisma.vendorAssessmentTemplate.findUnique({
         where: { tenantId_key_version: { tenantId: tenant.id, key: aisvsVendorQ.key, version: 1 } },
     });
@@ -2616,8 +2735,16 @@ Reviewed at least annually.` },
         }>;
     };
     const vendorQFixtures: VendorQFixture[] = [
-        require('./fixtures/vendor-questionnaire-supplier-due-diligence.json') as VendorQFixture,
-        require('./fixtures/vendor-questionnaire-supplier-security-assessment.json') as VendorQFixture,
+        fixtureObject<VendorQFixture>(
+            'fixtures/vendor-questionnaire-supplier-due-diligence',
+            require('./fixtures/vendor-questionnaire-supplier-due-diligence.json'),
+            'sections',
+        ),
+        fixtureObject<VendorQFixture>(
+            'fixtures/vendor-questionnaire-supplier-security-assessment',
+            require('./fixtures/vendor-questionnaire-supplier-security-assessment.json'),
+            'sections',
+        ),
     ];
     for (const fixture of vendorQFixtures) {
         const existingVq = await prisma.vendorAssessmentTemplate.findUnique({
