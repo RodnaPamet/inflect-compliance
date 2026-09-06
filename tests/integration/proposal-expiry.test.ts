@@ -394,7 +394,14 @@ describeFn('agent proposals expire, and an expired one cannot be approved', () =
             // pre-existing proposal has NULL. Computing a deadline from
             // `createdAt` would mass-expire the backlog on the first run after
             // deploy — an outage wearing the costume of a control.
-            const legacy = await createAgentProposal(ctxFor(secondApproverAgentId), {
+            // The SINGLE-approver agent, deliberately. This test is about the
+            // expiry WINDOW — that a pre-`expiresAt` row is granted one rather
+            // than retired by one — and it closes by proving the row is still
+            // approvable. Under review tiering a two-approver agent's proposal
+            // is correctly NOT approvable by one person, which would make the
+            // closing assertion fail for a reason that has nothing to do with
+            // expiry. Tiering has its own tests.
+            const legacy = await createAgentProposal(ctxFor(singleApproverAgentId), {
                 kind: 'RISK',
                 payload: PAYLOAD,
                 policyCardVersion: 1,
@@ -417,6 +424,7 @@ describeFn('agent proposals expire, and an expired one cannot be approved', () =
             // And it is still approvable, which is the whole point of granting
             // the window rather than closing it.
             const approved = await approveAgentProposal(ctxFor(), legacy.id);
+            if (!wasApplied(approved)) throw new Error('expected the proposal to be applied');
             expect(approved.createdEntityId).toBeTruthy();
         });
     });

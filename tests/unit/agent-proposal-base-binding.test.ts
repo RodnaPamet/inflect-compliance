@@ -24,11 +24,32 @@
  */
 const db = {
     agentProposal: { findFirst: jest.fn(), updateMany: jest.fn() },
+    // The signature ledger. Every approval writes one BEFORE claiming the
+    // proposal, so a double that omits it makes the approve path throw on a
+    // table rather than exercise the base-binding this file is about.
+    // STATEFUL, because the approve path writes a signature and then COUNTS the
+    // signatures back to decide whether the requirement is met. A `findMany`
+    // stub returning [] makes every approval read as zero-signatures and apply
+    // nothing, so every assertion in this file would fail for a reason that has
+    // nothing to do with base binding.
+    agentProposalApproval: {
+        create: jest.fn(async ({ data }: { data: { approverUserId: string; outcome: string } }) => {
+            signatureLedger.push({ approverUserId: data.approverUserId, outcome: data.outcome });
+            return { id: `sig-${signatureLedger.length}` };
+        }),
+        findMany: jest.fn(async () =>
+            signatureLedger
+                .filter((r) => r.outcome === 'ACCEPTED' || r.outcome === 'EDITED')
+                .map((r) => ({ approverUserId: r.approverUserId })),
+        ),
+    },
     risk: { findMany: jest.fn() },
     control: { findMany: jest.fn() },
     policy: { findMany: jest.fn() },
     finding: { findMany: jest.fn() },
 };
+
+const signatureLedger: Array<{ approverUserId: string; outcome: string }> = [];
 
 const createRisk = jest.fn(async () => ({ id: 'risk-new' }));
 const updateRisk = jest.fn(async () => ({ id: 'risk-77' }));
@@ -81,6 +102,13 @@ function updateProposal() {
         targetEntityId: 'risk-77',
         payloadJson: JSON.stringify(PROPOSED),
         proposedViaKeyId: 'k1',
+        // PINNED at one approver. This file is about BASE BINDING — that an
+        // approval names the diff it read — and review tiering would otherwise
+        // resolve this fixture (no agent, proposed via an API key) to the
+        // strictest rung, so the approve path would record a signature and apply
+        // nothing, and every assertion here would fail for an unrelated reason.
+        // Tiering has its own tests.
+        requiredApprovals: 1,
     };
 }
 
@@ -94,6 +122,7 @@ function digestAgainst(target: Record<string, unknown> | null): string | null {
 }
 
 beforeEach(() => {
+    signatureLedger.length = 0;
     jest.clearAllMocks();
     db.agentProposal.findFirst.mockResolvedValue(updateProposal());
     db.agentProposal.updateMany.mockResolvedValue({ count: 1 });
@@ -185,6 +214,7 @@ describe('a CREATE proposal is exempt, because it has no base', () => {
             id: 'p-create',
             tenantId: 't1',
             status: 'PENDING',
+            requiredApprovals: 1,
             kind: 'RISK',
             operation: 'CREATE',
             targetEntityId: null,
