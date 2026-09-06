@@ -349,8 +349,18 @@ const jsdomProject = {
         // to map `react-grid-layout/legacy` → `dist/legacy.js`. Jest's
         // CJS resolver doesn't honour subpath exports under all
         // tsconfigs, so map the subpath to the resolved file directly.
-        '^react-grid-layout/legacy$':
-            '<rootDir>/node_modules/react-grid-layout/dist/legacy.js',
+        //
+        // Resolved by NODE, not spelled as `<rootDir>/node_modules/…`. This
+        // config is a CommonJS module Node loads, so `require.resolve` here
+        // uses Node's own resolver — which both honours the `exports` map
+        // (the entire reason this mapping exists; the literal
+        // `dist/legacy.js` subpath is NOT exported and would fail) and walks
+        // up the directory chain. `<rootDir>` is the CHECKOUT, and a
+        // `.claude/worktrees/<id>/` checkout has no `node_modules` of its
+        // own, so the spelled path resolved to nothing there and every
+        // rendered suite touching DashboardGrid failed for worktree users
+        // while passing in CI's single checkout.
+        '^react-grid-layout/legacy$': require.resolve('react-grid-layout/legacy'),
         '^react-grid-layout/css/styles\\.css$':
             '<rootDir>/tests/rendered/style-mock.ts',
         '^react-resizable/css/styles\\.css$':

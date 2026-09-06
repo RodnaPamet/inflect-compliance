@@ -55,12 +55,30 @@ describe('Prisma major pin — one major across the repo', () => {
         expect(new Set(majors)).toEqual(new Set([PINNED_MAJOR]));
     });
 
-    it('the installed prisma engine matches the pinned major (lockfile ↔ node_modules)', () => {
-        // Best-effort: if node_modules is present (CI + local), the resolved
-        // version must also be on the pinned major — catches a lockfile that
-        // resolved a caret range across a major boundary.
-        const installedPath = path.join(REPO_ROOT, 'node_modules', 'prisma', 'package.json');
-        if (!fs.existsSync(installedPath)) return; // no install (skip gracefully)
+    it('the installed prisma engine matches the pinned major (lockfile ↔ installed)', () => {
+        // Resolve, rather than joining `node_modules` onto the repo root. The
+        // join was a literal string concatenation with no upward walk, so in a
+        // `.claude/worktrees/<id>/` checkout — which has no `node_modules` of
+        // its own and resolves upward to the primary clone — it named a path
+        // that never exists.
+        //
+        // That mattered MORE here than in the two sites that went red, because
+        // this one went GREEN. The `existsSync` guard below it turned the
+        // wrong path into a silent skip, so the only assertion in this file
+        // that reads what is actually INSTALLED stopped running for every
+        // worktree user while reporting a pass. A check that did not run looks
+        // exactly like one that passed.
+        //
+        // The skip is kept — a fresh clone before `npm install` genuinely has
+        // nothing to read — but it is now keyed on Node failing to resolve the
+        // package, which is the real "not installed" condition, instead of on
+        // a guessed directory being absent.
+        let installedPath: string;
+        try {
+            installedPath = require.resolve('prisma/package.json', { paths: [REPO_ROOT] });
+        } catch {
+            return; // genuinely not installed (fresh clone, no `npm install`) — skip
+        }
         const installed = JSON.parse(fs.readFileSync(installedPath, 'utf-8')) as { version?: string };
         expect(installed.version).toBeDefined();
         expect(majorOf(installed.version!)).toBe(PINNED_MAJOR);

@@ -21,6 +21,8 @@
 import * as path from 'path';
 import * as fs from 'fs';
 
+import { REPO_ROOT } from '../helpers/repo-files';
+
 const FILTER_DIR = path.resolve(__dirname, '../../src/components/ui/filter');
 const ANIMATED_CONTAINER = path.resolve(
     __dirname,
@@ -57,11 +59,55 @@ describe('Epic 53 foundation — dependency layer', () => {
         expect(deps['framer-motion']).toBeUndefined();
     });
 
-    it('resolves both dependencies from disk (installed, not just declared)', () => {
-        const cmdkPkg = path.resolve(__dirname, '../../node_modules/cmdk/package.json');
-        const motionPkg = path.resolve(__dirname, '../../node_modules/motion/package.json');
-        expect(fs.existsSync(cmdkPkg)).toBe(true);
-        expect(fs.existsSync(motionPkg)).toBe(true);
+    // The specifier the APP actually imports, per dependency — not a guessed
+    // directory. `src/` writes `import { Command } from 'cmdk'` and
+    // `from 'motion/react'`; resolving those is the property this test claims.
+    it.each([
+        ['cmdk', 'cmdk'],
+        ['motion', 'motion/react'],
+    ])('resolves %s from disk (installed, not just declared)', (name, specifier) => {
+        // Ask NODE to resolve it, rather than joining `node_modules` onto this
+        // file's own directory. The join was a literal string concatenation and
+        // did no upward walk, so it named a path that exists only in a checkout
+        // owning its install. This repo is routinely checked out into
+        // `.claude/worktrees/<id>/`, which has NO `node_modules` of its own —
+        // it resolves upward to the primary clone at require time — so the
+        // assertion false-failed for everyone using a worktree while passing in
+        // CI's single checkout. Same defect, and the same fix, as
+        // `tests/guardrails/next-image-optimizer-disabled.test.ts`.
+        //
+        // Resolving is also the better test of the stated property. "Installed,
+        // not just declared" means Node can RESOLVE the package — which is what
+        // the app does at runtime — not that a directory sits at a guessed
+        // path. It additionally covers a case the directory check could not
+        // see: an upgrade that keeps the files but narrows the `exports` map so
+        // the entry point `src/` imports stops resolving.
+        //
+        // RESOLVE THE ENTRY POINT, NOT `<pkg>/package.json`. That subpath is
+        // itself gated by `exports`, and cmdk's map declares only `"."` — so
+        // `require.resolve('cmdk/package.json')` throws on a perfectly healthy
+        // install. (motion, prisma and tsx all export `./package.json`, which
+        // is why the same spelling is fine at those call sites. swagger-ui-dist
+        // has no map at all.) Measured here, not assumed.
+        //
+        // `paths` is INERT under jest — jest-resolve ignores it and resolves
+        // from THIS module, which walks up and finds the parent checkout
+        // anyway. It is kept for a non-jest caller and because the precedent
+        // guard spells it; see the header of
+        // `tests/guardrails/vendored-swagger-ui-matches-dependency.test.ts`,
+        // where that was measured. Do not rely on `paths` to redirect it.
+        try {
+            require.resolve(specifier, { paths: [REPO_ROOT] });
+        } catch {
+            // `require.resolve` THROWS rather than returning null, so the
+            // message this assertion exists to deliver has to live here.
+            throw new Error(
+                `${name} is declared in package.json but Node cannot resolve ` +
+                    `'${specifier}' from ${REPO_ROOT}. Either it is not installed ` +
+                    '(run `npm install`), or an upgrade narrowed its `exports` map ' +
+                    'and the entry point src/ imports no longer resolves.',
+            );
+        }
     });
 });
 
