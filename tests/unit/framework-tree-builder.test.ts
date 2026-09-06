@@ -219,33 +219,73 @@ describe('buildFrameworkTree', () => {
             expect(large.nodes.length).toBeGreaterThan(0);
         });
 
-        it('builds in roughly linear time (no O(n^2) blow-up)', () => {
-            // Scaling guard, NOT an absolute wall-clock budget. The old
-            // `elapsed < 500ms` form flaked on loaded CI runners (a 25x
-            // scheduler slowdown blew the fixed ceiling even though the
-            // algorithm was unchanged). Measuring a RATIO across two
-            // input sizes is immune to absolute machine speed: load
-            // slows both builds proportionally, so the assertion stays
-            // stable, while an accidental O(n^2) regression — which
-            // costs ~16x for a 4x input rather than the ~linear ~4x —
-            // still trips it. Warm up first so JIT/allocation overhead
-            // doesn't skew the smaller (baseline) measurement.
-            const small = genFlat(500);
-            const large = genFlat(2000); // 4x the input
-            buildFrameworkTree(FW, small); // warm-up
+        it('does not read the input quadratically (no O(n^2) blow-up)', () => {
+            // Counts WORK, not milliseconds. Every input row is wrapped in
+            // a Proxy that tallies property reads, so the measurement is a
+            // pure function of the algorithm: 35,968 reads at n=2000, the
+            // same integer on every run, on any machine, under any load.
+            //
+            // This replaced a wall-clock assertion
+            // (`largeMs <= smallMs * 10 + 50`) that was removed for cause
+            // on 2026-09-06. That assertion had it exactly backwards — it
+            // failed when nothing was broken and passed when something
+            // was:
+            //
+            //   * It reddened main at ddbf0cc14 (CI run 34022003061,
+            //     `Expected: <= 860 / Received: 894`) on a commit touching
+            //     only prisma/catalog-*, taking `Test` and `Coverage` down
+            //     with it as cascades.
+            //   * Against two REAL O(n^2) regressions it passed 20/20 each.
+            //     Both were behaviour-preserving (byte-identical output at
+            //     n=2000), so the sibling correctness test above cannot see
+            //     them either — this assertion was the only thing standing
+            //     between the subsystem and a silent quadratic rewrite, and
+            //     it was not standing.
+            //
+            // It also could not be recalibrated: a quadratic regression
+            // slows the SMALL build too, and with 10x leverage that RAISES
+            // the ceiling — the threshold was inflated by the very defect
+            // it was meant to catch. Same defect class, and same remedy, as
+            // tests/unit/password-check.test.ts:183-197, where a wall-clock
+            // `expect(elapsed).toBeLessThan(400)` guarding the HIBP abort
+            // path was replaced by asserting the abort's own observable
+            // outcome — it was called out there as "both weak and flaky",
+            // for the same two reasons.
+            //
+            // KNOWN BLIND SPOT, stated so nobody over-trusts this: the
+            // Proxy observes reads of INPUT rows only. It catches the
+            // classic naive parent search (scan all requirements per
+            // requirement) at ratio 13.3 vs 4.0 — the regression the
+            // `nodesByCode` prefix index exists to prevent. It is blind to
+            // a quadratic scan over internal WorkNodes, which touches no
+            // input row. Detecting that would mean instrumenting
+            // production code, which pins the mechanism and fails any
+            // legitimate refactor (CLAUDE.md, "Epic-ratchet lifecycle").
+            const tally = { reads: 0 };
+            const counted = (rows: BuildableRequirement[]) =>
+                rows.map(
+                    (row) =>
+                        new Proxy(row, {
+                            get(target, prop, receiver) {
+                                tally.reads += 1;
+                                return Reflect.get(target, prop, receiver);
+                            },
+                        }),
+                );
 
-            const t0 = Date.now();
-            buildFrameworkTree(FW, small);
-            const smallMs = Date.now() - t0;
+            tally.reads = 0;
+            buildFrameworkTree(FW, counted(genFlat(500)));
+            const smallReads = tally.reads;
 
-            const t1 = Date.now();
-            buildFrameworkTree(FW, large);
-            const largeMs = Date.now() - t1;
+            tally.reads = 0;
+            buildFrameworkTree(FW, counted(genFlat(2000))); // 4x the input
+            const largeReads = tally.reads;
 
-            // 4x the input should cost well under 10x the time. The
-            // additive term absorbs sub-millisecond timer resolution at
-            // tiny durations so the ratio never divides by ~0.
-            expect(largeMs).toBeLessThanOrEqual(smallMs * 10 + 50);
+            // 4x the input reads 4.011x as much. A naive quadratic parent
+            // search reads 13.3x. 6x separates them with room on both
+            // sides. Assert the RATIO, never the absolute integer: sort
+            // comparator counts are V8-version-dependent.
+            expect(largeReads / smallReads).toBeLessThanOrEqual(6);
         });
     });
 });
