@@ -2357,19 +2357,6 @@ Reviewed at least annually.` },
 
     console.log('✅ All Framework Packs seeded');
 
-    // ─── Legacy Control Templates ───
-    const legacyTemplates = fixtureArray<{ code: string; title: string; category: string; description: string; defaultFrequency: ControlFrequency }>(
-        'fixtures/legacy-control-templates',
-        require('./fixtures/legacy-control-templates.json'),
-    );
-    for (const tpl of legacyTemplates) {
-        const existing = await prisma.controlTemplate.findUnique({ where: { code: tpl.code } });
-        if (!existing) {
-            await prisma.controlTemplate.create({ data: tpl });
-        }
-    }
-    console.log('✅ Legacy control templates seeded');
-
     // ─── Tasks (E2E: tasks list + CopyText(task.key) flow) ───
     // Seeds three tasks with deterministic keys (TSK-1/2/3) so the tasks
     // list is never empty and the task-key CopyText affordance always

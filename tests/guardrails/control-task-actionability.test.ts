@@ -36,17 +36,22 @@ const FIXTURE_DIR = path.join(REPO_ROOT, 'prisma/fixtures');
  * SHRINK THIS. Each content PR removes its own prefix in the same diff that
  * authors the content; when it is empty, every shipped template is actionable.
  */
-const LEGACY_GENERIC_ALLOWLIST: Record<string, string> = {
-    'AC-': 'Legacy starter templates. Belong to no framework and carry ZERO tasks — the worst current state of any population.',
-    'IR-': 'Legacy starter templates.',
-    'RA-': 'Legacy starter templates.',
-    'CM-': 'Legacy starter templates.',
-    'SC-': 'Legacy starter templates.',
-    'BC-': 'Legacy starter templates.',
-    'SA-': 'Legacy starter templates.',
-    'AU-': 'Legacy starter templates.',
-    'VN-': 'Legacy starter templates.',
-};
+/**
+ * Populations not yet held to the actionability bar.
+ *
+ * IT IS EMPTY, and that is the ratchet arriving where it was pointed rather
+ * than an accident. It held nineteen prefixes when this file was written. Each
+ * left by having its content AUTHORED — ICN, DORA, NIS2, SOC 2, SSDF, CIS v8,
+ * ASVS and ISO 27701 — or, for the three with no source library to author
+ * from, by moving to FROZEN_UNGROUNDED_POPULATIONS where the refusal names its
+ * own precondition. The last nine were the legacy starter templates, retired
+ * outright.
+ *
+ * Kept as an empty record rather than deleted, because the assertions below are
+ * what stop a new one appearing. A population added here is a population
+ * shipping generic tasks, and the entry would be the only thing saying so.
+ */
+const LEGACY_GENERIC_ALLOWLIST: Record<string, string> = {};
 
 /**
  * Populations that CANNOT be authored, and the precondition to unfreeze each.
@@ -327,9 +332,16 @@ describe('the allowlist is honest', () => {
     });
 
     it('sees the population it claims to guard', () => {
-        // 345 across twelve fixture files, after the five inline frameworks and
-        // the legacy starter set were extracted. Was 237 across six.
-        expect(allTemplates().length).toBeGreaterThanOrEqual(340);
+        // 335 across eleven fixture files. Was 345 across twelve until the ten
+        // legacy starter templates were retired — they belonged to no
+        // framework and no pack, and carried no tasks at all.
+        //
+        // This floor is a DENOMINATOR guard: it exists so the scan cannot
+        // quietly stop seeing templates and report a clean bar for the subset
+        // it still finds. So it moves only for a deliberate deletion, and the
+        // reason goes here when it does. If it fails and nothing was deleted on
+        // purpose, the scan broke — do not lower the number to make it pass.
+        expect(allTemplates().length).toBeGreaterThanOrEqual(330);
     });
 
     it('the phase-spread exceptions are real and are not growing', () => {
@@ -345,7 +357,7 @@ describe('the allowlist is honest', () => {
         // A downward ratchet. Each content PR deletes its prefix here in the
         // same diff that authors the content; at zero, every shipped template
         // is held to the bar and this whole allowlist is deleted.
-        expect(Object.keys(LEGACY_GENERIC_ALLOWLIST)).toHaveLength(9);
+        expect(Object.keys(LEGACY_GENERIC_ALLOWLIST)).toHaveLength(0);
     });
 
     it('a frozen population is not also allowlisted', () => {
