@@ -1147,7 +1147,29 @@ jobs:
         # --webpack: match the deployed bundler (nonce strict-CSP chunks).
         run: npx next build --webpack
         env:
-          # 6144 PER PROCESS — see the identical note on the `build` job.
+          # 7168 PER PROCESS, raised from 6144 on 2026-09-06 WITH DATA, because
+          # the note below is explicit that reasoning alone is how this got here.
+          #
+          # The data: this job aborted twice on the same commit at
+          # `Mark-Compact 6112.4 -> 6101.9 MB` against the 6144 ceiling — 0.5%
+          # headroom, reproducible, not a loaded runner. The branch that tipped
+          # it adds sixty files of server code and ZERO client components or
+          # pages, so this is build-process memory rather than bundle growth,
+          # and the ceiling was already exhausted before it arrived.
+          #
+          # Why 7168 specifically: the `build` job compiles the SAME app with the
+          # SAME `npx next build --webpack` at 7168 and passes. The note below
+          # calls the 6144/7168 split "unexplained, not justified" — this removes
+          # the split rather than inventing a third number.
+          #
+          # The risk it names is real and is accepted knowingly: 7168 x 2 = 14 GB
+          # worst case on a 16 GB runner, which trades a legible V8 abort for a
+          # possible silent kernel kill. 14 GB is NOT the 8192-era band that
+          # measured 15783 MB / 206 MB free — it leaves ~2 GB — and the sampler
+          # above is what will show if that judgement is wrong.
+          #
+          # Original note follows, unchanged, because its history is the reason
+          # this comment exists at all — see the identical note on `build`.
           #
           # The previous comment ("8192 stays, 6144 OOM'd deterministically at
           # Mark-Compact 6133.6 MB") was TRUE WHEN WRITTEN and is now stale:
@@ -1156,7 +1178,7 @@ jobs:
           # AND a worker the 8192 became a 16 GB effective ceiling on a 16 GB
           # runner. This job's own sampler measured the result: 15783 MB used /
           # 206 MB available at peak, on a run that passed.
-          NODE_OPTIONS: "--max-old-space-size=6144"
+          NODE_OPTIONS: "--max-old-space-size=7168"
           NODE_ENV: production
           NEXT_TEST_MODE: "1"
           # NEXT_PUBLIC_* is inlined at BUILD time, so it must be set on
