@@ -154,10 +154,20 @@ export type InstructionBearingSourceId = {
  * instruction-sensitive control.
  *
  * This is the type an agent-facing seam takes. `guardAgentProposal` is the
- * first user: `mayCarryInstruction` is the term that decides whether a
- * malicious verdict quarantines, so a seam that accepted `'platform.aggregate'`
- * accepted an argument that turns quarantine off. Narrowing the parameter makes
- * that call unwriteable rather than merely discouraged.
+ * first user, and it is worth being exact about what the narrowing buys there,
+ * because the answer CHANGED. `mayCarryInstruction` used to be a term in that
+ * guard's quarantine rung, so a parameter accepting `'platform.aggregate'`
+ * accepted an argument that turned quarantine off. The rung no longer reads
+ * provenance at all — `resolveProposalProvenance` clamps an instruction-bearing
+ * claim first, which made the operand unreachable, and an unreachable operand
+ * in a security ladder was deleted rather than kept. What the claim still
+ * decides is the label the guard REPORTS, which `createAgentProposal` writes
+ * onto three durable records: `AgentProposal.guardProvenance`, the
+ * `AiDecisionLog` verdict string, and the audit entry's `detailsJson`.
+ *
+ * So the narrowing is no longer holding a kill-switch shut; it makes a claim
+ * the durable record would have to carry unwriteable rather than merely
+ * discouraged. `isDataOnlySourceId` below is the runtime half of the same rule.
  */
 export type DataOnlySourceId = Exclude<ContentSourceId, InstructionBearingSourceId>;
 
