@@ -166,7 +166,17 @@ export async function reconcileTemplateTasks(
 export interface ApplyCatalogResult {
     framework: { id: string; key: string; created: boolean };
     requirements: { upserted: number };
-    templates: { created: number; existing: number };
+    templates: { created: number; existing: number; ownerHintsFilled: number };
+    /**
+     * Authored tasks reconciled by this apply.
+     *
+     * Accumulated all along and then DISCARDED before this file returned, so
+     * the seeder that applies hundreds of authored tasks on every production
+     * start printed no number for any of them. An unreported write is
+     * indistinguishable from no write, which is the failure this whole area
+     * keeps producing.
+     */
+    tasks: TaskReconcileResult;
     pack?: { id: string; key: string; created: boolean; templatesLinked: number };
 }
 
@@ -267,6 +277,7 @@ export async function applyCatalogFile(
     let templatesCreated = 0;
     let templatesExisting = 0;
     let tasksReconciled: TaskReconcileResult = { created: 0, updated: 0, deprecated: 0, unchanged: 0 };
+    let ownerHintsFilled = 0;
     const templateMap: Record<string, string> = {};
 
     /**
@@ -307,6 +318,22 @@ export async function applyCatalogFile(
             // shipped control is a decision, not a sync. Its TASKS reconcile,
             // because authored content is the thing this file now carries and
             // an existing template is exactly where re-authored content lands.
+            // ...with ONE exception, and it is not a hole in that rule.
+            // `defaultOwnerHint` was authored on all 86 templates across every
+            // shipped CatalogFile, accepted by the loader, and given a column
+            // at controls.prisma:249 specifically to receive it — and written
+            // by nothing, so it read NULL on all 522 rows. Filling a column
+            // that was never populated is not re-titling a shipped control;
+            // it is finishing a row. The `?? undefined` guard keeps it a
+            // one-way fill: an operator's own value is never overwritten, and
+            // a fixture that drops the key does not blank an existing hint.
+            if (existing.defaultOwnerHint == null && t.defaultOwnerHint) {
+                await prisma.controlTemplate.update({
+                    where: { id: existing.id },
+                    data: { defaultOwnerHint: t.defaultOwnerHint },
+                });
+                ownerHintsFilled++;
+            }
             tasksReconciled = addReconcile(
                 tasksReconciled,
                 await reconcileTemplateTasks(prisma, existing.id, t.tasks),
@@ -321,6 +348,7 @@ export async function applyCatalogFile(
                 description: t.description ?? null,
                 category: t.category,
                 defaultFrequency: t.defaultFrequency,
+                defaultOwnerHint: t.defaultOwnerHint ?? null,
             },
         });
         templateMap[t.code] = tmpl.id;
@@ -401,7 +429,12 @@ export async function applyCatalogFile(
             created: !fwBefore,
         },
         requirements: { upserted: file.requirements.length },
-        templates: { created: templatesCreated, existing: templatesExisting },
+        templates: {
+            created: templatesCreated,
+            existing: templatesExisting,
+            ownerHintsFilled,
+        },
+        tasks: tasksReconciled,
         pack: packResult,
     };
 }

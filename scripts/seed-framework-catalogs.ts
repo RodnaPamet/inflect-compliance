@@ -62,6 +62,7 @@ const CATALOG_FIXTURES = [
     'prisma/fixtures/cis-v8-ig1-control-templates.json',
     'prisma/fixtures/asvs-l1-control-templates.json',
     'prisma/fixtures/iso27701-control-templates.json',
+    'prisma/fixtures/dora-control-templates.json',
 ];
 
 const DRY_RUN = process.argv.includes('--dry-run');
@@ -96,6 +97,14 @@ async function main(): Promise<void> {
             `  ✓ ${rel}: framework ${r.framework.key} (${r.framework.created ? 'created' : 'existing'}), ` +
                 `${r.requirements.upserted} requirements, ` +
                 `${r.templates.created} templates created / ${r.templates.existing} existing` +
+                (r.templates.ownerHintsFilled > 0
+                    ? `, ${r.templates.ownerHintsFilled} owner hints filled`
+                    : '') +
+                // Printed unconditionally. A run that reconciles nothing is a
+                // fact worth seeing: this seeder applied hundreds of authored
+                // tasks on every production start and reported none of them,
+                // so "no number" has meant both "none" and "not looked at".
+                `, tasks ${r.tasks.created}c/${r.tasks.updated}u/${r.tasks.unchanged}=/${r.tasks.deprecated}d` +
                 (r.pack ? `, pack ${r.pack.key} (${r.pack.templatesLinked} linked)` : ''),
         );
     }

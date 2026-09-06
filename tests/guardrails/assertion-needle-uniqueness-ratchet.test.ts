@@ -132,7 +132,6 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
 // stayed green. The cause is not attributed here on purpose: the improvement
 // arrived with somebody else's merge, and inventing a story for it would be
 // worse than recording that the number was measured rather than reasoned.
-const AMBIGUOUS_NEEDLE_BASELINE = 1460;
 
 /** At or above this many satisfying positions, the needle names nothing. */
 const HIGH_MULTIPLICITY = 5;
@@ -162,6 +161,12 @@ const HIGH_MULTIPLICITY = 5;
  */
 //   • 250 (2026-09-06): −1, measured on a pristine base commit exactly as the
 //     parent count above was. Same reading, same refusal to invent a cause.
+// MEASURED on the merged tree, 2026-09-06: 1457. This branch drained two and
+// main's DORA work drained one more, so neither side's number (1459 and 1458)
+// describes the result of putting them together. DRIFT_ALLOWANCE is 0 here, so
+// the higher of the two would have left a ratchet that cannot see the next
+// regression — which is the whole reason it is measured rather than merged.
+const AMBIGUOUS_NEEDLE_BASELINE = 1457;
 const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 250;
 
 /**
