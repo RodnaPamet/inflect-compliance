@@ -1158,9 +1158,14 @@ jobs:
           # and the ceiling was already exhausted before it arrived.
           #
           # Why 7168 specifically: the `build` job compiles the SAME app with the
-          # SAME `npx next build --webpack` at 7168 and passes. The note below
-          # calls the 6144/7168 split "unexplained, not justified" — this removes
-          # the split rather than inventing a third number.
+          # SAME bundler invocation (see its own `run:` line) at 7168 and passes.
+          # The note below calls the 6144/7168 split "unexplained, not justified"
+          # — this removes the split rather than inventing a third number.
+          #
+          # The command is deliberately NOT spelled out in this comment:
+          # `tests/guards/webpack-bundler-pinning.test.ts` COUNTS occurrences of
+          # it in this file and expects exactly three, so quoting it here reads as
+          # a fourth build step. Prose is inside that guard's population.
           #
           # The risk it names is real and is accepted knowingly: 7168 x 2 = 14 GB
           # worst case on a 16 GB runner, which trades a legible V8 abort for a
