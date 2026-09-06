@@ -12,7 +12,10 @@
  *     canonical link, NOT verbatim OWASP requirement prose (a length/word
  *     ceiling catches accidental verbatim pasting);
  *   - the seed fixture codes match the library assessable ref_ids (the two
- *     representations stay in sync) and the seed upserts the framework + pack;
+ *     representations stay in sync), and `prisma/seed.ts` upserts the framework
+ *     + pack — which is a DEV fact only. AISVS has no CatalogFile, so no
+ *     production seeder applies it; see the docblock on the delivery describe
+ *     below for why that could not be repointed instead of relabelled;
  *   - the aisvs-to-nist-csf + aisvs-to-iso27001 mapping sets exist and every
  *     mapped requirement resolves against the YAML libraries (no dangling
  *     refs), marked [curated] (our judgement, not OWASP);
@@ -27,6 +30,11 @@ import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { parseMappingSetFile } from '@/app-layer/services/mapping-set-importer';
+import {
+    appliedCatalogFor,
+    declaringSources,
+    productionDeclaringSources,
+} from '../helpers/applied-catalogue';
 import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -158,16 +166,72 @@ describe('AISVS seed fixture', () => {
     });
 });
 
-describe('AISVS seed wiring (seed.ts)', () => {
+describe('AISVS delivery — DEV-ONLY today (prisma/seed.ts)', () => {
+    /**
+     * WHAT WAS WRONG HERE — and what could NOT be fixed.
+     *
+     * This block was titled "seed wiring" but read as availability: it asked
+     * whether `prisma/seed.ts` mentions the AISVS framework and pack. No deploy
+     * runs `prisma/seed.ts` (`npm run db:seed` only, and it creates demo
+     * tenants, so it cannot be pointed at production). An assertion of that
+     * shape cannot fail while the thing it names is undeliverable, and it DOES
+     * fail on the change that fixes delivery, because the declaration moves
+     * into a CatalogFile.
+     *
+     * For SOC 2 / SSDF / CIS v8 / ASVS L1 / ISO 27701 / DORA / NIS2 the fix is
+     * to repoint at that CatalogFile. AISVS HAS NONE: the seven fixtures
+     * `scripts/seed-framework-catalogs.ts` applies contain no OWASP-AISVS
+     * framework, so `appliedCatalogFor('OWASP-AISVS')` is null and there is
+     * nothing honest to repoint these at. They are therefore KEPT — renamed to
+     * say what they actually cover (dev seeding, not availability) and bound to
+     * the declarations they name so none can pass on a neighbour's. Asserting a
+     * production reading that does not exist would be worse than a weak
+     * assertion that is labelled weak.
+     *
+     * (`scripts/backfill-framework-catalog.mjs` does write AISVS_BASELINE, and
+     * production may hold rows from a hand-run of it. It is still not a
+     * delivery path: nothing in `scripts/entrypoint.sh` invokes it, so no
+     * deploy re-applies it and no new environment gets it.)
+     */
     const seed = read('prisma/seed.ts');
+    // Throws — loudly, naming the declaration — if the AISVS block is renamed
+    // or removed, rather than leaving the cases below matching against ''.
+    const aisvsUpsert = declarationOf(seed, 'aisvs');
+
+    it('DENOMINATOR: the dev seeder declares AISVS; nothing a deploy runs does', () => {
+        // Every case below is a read of seed.ts. If the AISVS declarations ever
+        // leave it, this fails first and says why, instead of four regexes
+        // failing about their own needles.
+        expect(declaringSources('AISVS_BASELINE')).toContain('prisma/seed.ts');
+
+        const catalog = appliedCatalogFor('OWASP-AISVS');
+        if (catalog) {
+            // AISVS gained a production catalogue after this was written. Check
+            // it rather than ignore it, and move the cases below onto it — the
+            // seed.ts reads are then the stale copy, not the source of truth.
+            expect(catalog.framework.version).toBe('1.0');
+            expect(catalog.framework.kind).toBe('INDUSTRY_STANDARD');
+            expect(catalog.requirements.length).toBeGreaterThanOrEqual(150);
+        } else {
+            // Today's honest answer: no automated path puts AISVS in a
+            // production database, so nothing below is evidence that it is
+            // installable by a customer.
+            expect(productionDeclaringSources('AISVS_BASELINE')).toEqual([]);
+        }
+    });
 
     it('reads the AISVS requirements fixture', () => {
         expect(seed).toContain('owasp_aisvs_requirements.json');
     });
 
     it('upserts the AISVS framework (key OWASP-AISVS, version 1.0, kind INDUSTRY_STANDARD)', () => {
-        expect(seed).toMatch(/key:\s*'OWASP-AISVS',\s*version:\s*'1\.0'/);
-        expect(seed).toMatch(/key:\s*'OWASP-AISVS'[\s\S]{0,200}kind:\s*'INDUSTRY_STANDARD'/);
+        // Bound to the `const aisvs = …` upsert. The kind assertion used to be
+        // `key: 'OWASP-AISVS'` … `{0,200}` … `kind: 'INDUSTRY_STANDARD'` over
+        // the whole of seed.ts: an interior any-char span re-forms across a
+        // sibling block, so a NEIGHBOURING INDUSTRY_STANDARD framework could
+        // satisfy it with the AISVS kind deleted.
+        expect(aisvsUpsert).toMatch(/key:\s*'OWASP-AISVS',\s*version:\s*'1\.0'/);
+        expect(aisvsUpsert).toContain("kind: 'INDUSTRY_STANDARD'");
     });
 
     it('persists OWASP attribution + CC-BY-SA-4.0 in framework metadata', () => {
@@ -180,9 +244,14 @@ describe('AISVS seed wiring (seed.ts)', () => {
         expect(meta).toContain('CC-BY-SA-4.0');
     });
 
-    it('seeds an AISVS framework pack (idempotent upsert)', () => {
-        expect(seed).toContain("'AISVS_BASELINE'");
-        expect(seed).toMatch(/frameworkPack\.upsert/);
+    it('declares an AISVS baseline pack bound to the AISVS framework', () => {
+        // Bound to `const aisvsPack = …`. `AISVS_BASELINE` is the key the
+        // one-off backfill also writes, so it is the key production would hold
+        // — but read it here as a DEV declaration, because that is all seed.ts
+        // proves.
+        const pack = declarationOf(seed, 'aisvsPack');
+        expect(pack).toContain("key: 'AISVS_BASELINE'");
+        expect(pack).toContain('frameworkId: aisvs.id');
     });
 });
 

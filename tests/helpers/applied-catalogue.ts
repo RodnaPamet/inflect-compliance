@@ -145,6 +145,54 @@ export function appliedCatalogueText(): string {
         .join('\n');
 }
 
+/** The parsed CatalogFile a production seeder applies for `frameworkKey`. */
+export interface AppliedCatalog {
+    readonly file: string;
+    readonly framework: Record<string, unknown>;
+    readonly requirements: Array<Record<string, unknown>>;
+    readonly templates: Array<Record<string, unknown>>;
+    readonly pack?: Record<string, unknown>;
+}
+
+/**
+ * The CatalogFile production applies for a framework, or null if none does.
+ *
+ * Null is a real answer, not an error: most frameworks are still hand-rolled
+ * in `prisma/seed.ts` and have no CatalogFile yet. A caller that needs one
+ * should say so with its own assertion rather than have this throw, so the
+ * failure names the framework instead of the helper.
+ */
+export function appliedCatalogFor(frameworkKey: string): AppliedCatalog | null {
+    for (const s of appliedSources()) {
+        if (!s.reachesProduction || !s.file.endsWith('.json')) continue;
+        let doc: unknown;
+        try {
+            doc = JSON.parse(s.text);
+        } catch {
+            continue;
+        }
+        const obj = (doc ?? {}) as {
+            framework?: { key?: unknown };
+            requirements?: unknown;
+            templates?: unknown;
+            pack?: unknown;
+        };
+        if (obj.framework?.key !== frameworkKey) continue;
+        return {
+            file: s.file,
+            framework: obj.framework as Record<string, unknown>,
+            requirements: (Array.isArray(obj.requirements) ? obj.requirements : []) as Array<
+                Record<string, unknown>
+            >,
+            templates: (Array.isArray(obj.templates) ? obj.templates : []) as Array<
+                Record<string, unknown>
+            >,
+            pack: obj.pack as Record<string, unknown> | undefined,
+        };
+    }
+    return null;
+}
+
 /** Denominator facts, asserted by applied-catalogue-helper.test.ts. */
 export function appliedCatalogueStats(): {
     seeders: string[];

@@ -1,18 +1,49 @@
 /**
  * NIST Privacy Framework v1.0 framework-content coverage ratchet.
  *
- * The NIST Privacy Framework ships as framework CONTENT on IC's existing
- * data-driven library machinery (no new code paths) — the privacy companion to
- * NIST CSF 2.0, cloned from nist-csf-2.0.yaml. This guard locks:
+ * ═══ WHAT WAS WRONG ═══
+ *
+ * This guard decided the framework was AVAILABLE by grepping `prisma/seed.ts`
+ * for `'NIST_PRIVACY_BASELINE'`. `prisma/seed.ts` is not run on production
+ * deploys, so an assertion of that shape cannot fail while the thing it names
+ * is undeliverable — and it DOES fail the day somebody fixes the delivery,
+ * because the declaration moves into a CatalogFile. Five guards in this suite
+ * have already gone red exactly that way, each on the change that made its
+ * framework reachable for the first time.
+ *
+ * ═══ AND HERE THE ANSWER IS THAT THERE IS NO DELIVERY ═══
+ *
+ * NIST-PRIVACY has no CatalogFile and no production writer of ANY kind.
+ * `scripts/seed-framework-catalogs.ts` applies seven fixtures (soc2, ssdf,
+ * cis-v8-ig1, asvs-l1, iso27701, dora, nis2) and this is not one of them; the
+ * runtime library provider reads `nist-privacy-framework-1.0.yaml` for lookup
+ * shapes but writes no `Framework` and no `FrameworkPack` row, and pack
+ * install reads `frameworkPack` from the database. Production therefore has no
+ * NIST Privacy framework, and `NIST_PRIVACY_BASELINE` names a pack row no
+ * customer has.
+ *
+ * So the seed cases below are deliberately NOT repointed at a delivery path.
+ * Inventing one would make this guard assert something false, which is a worse
+ * outcome than a weak assertion. Instead:
+ *   - the availability question is asked SOURCE-AGNOSTICALLY, through
+ *     `declaringSources`, so the day a CatalogFile lands and the declaration
+ *     leaves `seed.ts` this guard stays green rather than reddening on the fix;
+ *   - the remaining `seed.ts` cases are relabelled for what they actually check
+ *     — the content of a DEV-ONLY seeder — and rebound to the declarations they
+ *     name instead of scanning the whole file;
+ *   - the gap itself is NOT asserted. A case pinning "nothing production-side
+ *     declares this" would be the same defect mirrored: red on the fix.
+ *
+ * ═══ WHAT THIS LOCKS ═══
  *   - nist-privacy-framework-1.0.yaml validates against the library schema
  *     (NIST_FRAMEWORK);
  *   - all 5 privacy Functions (IDENTIFY-P/GOVERN-P/CONTROL-P/COMMUNICATE-P/
  *     PROTECT-P) and their Categories are represented as grouping nodes;
  *   - assessable ref_ids follow the Subcategory numbering (e.g. ID.IM-P1);
- *   - PUBLIC DOMAIN (NIST): the copyright line is the NIST public-information
- *     notice (no license friction, unlike the copyrighted ISO standards);
- *   - the seed fixture codes match the library assessable ref_ids (in sync) and
- *     the seed upserts the framework + NIST_PRIVACY_BASELINE pack;
+ *   - PUBLIC DOMAIN (NIST): the copyright is the NIST public-information
+ *     notice (no license friction, unlike the copyrighted ISO standards), and
+ *     the library and the dev seed agree on it;
+ *   - the seed fixture codes match the library assessable ref_ids (in sync);
  *   - the CSF + ISO 27001 crosswalks exist, declare the right frameworks, and
  *     have no dangling refs;
  *   - the framework rides the GENERIC framework-install machinery (no
@@ -21,6 +52,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { appliedCatalogueStats, declaringSources } from '../helpers/applied-catalogue';
 import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
@@ -90,10 +122,13 @@ describe('NIST Privacy Framework library — nist-privacy-framework-1.0.yaml', (
     });
 
     it('carries the NIST public-domain copyright (not a copyrighted standard)', () => {
-        const yaml = readRaw(`${LIB}/nist-privacy-framework-1.0.yaml`);
-        const copyrightBlock = yaml.slice(yaml.indexOf('copyright:'));
-        expect(copyrightBlock).toMatch(/public information/i);
-        expect(copyrightBlock).toMatch(/distributed or copied/i);
+        // Was a raw-YAML tail slice — `yaml.slice(yaml.indexOf('copyright:'))`
+        // runs to EOF, so ANY later line in the file could satisfy these two
+        // patterns while `copyright:` itself said something else. The parser
+        // already exposes the field; read it.
+        expect(pf.provider).toBe('NIST');
+        expect(pf.copyright ?? '').toMatch(/public information/i);
+        expect(pf.copyright ?? '').toMatch(/distributed or copied/i);
     });
 });
 
@@ -121,13 +156,51 @@ describe('NIST Privacy Framework seed fixture', () => {
     });
 });
 
-describe('NIST Privacy Framework seed wiring (seed.ts)', () => {
+describe('NIST Privacy Framework declaration (source-agnostic)', () => {
+    /**
+     * The availability question, asked of the APPLIED corpus rather than of one
+     * file. `declaringSources` spans `prisma/seed.ts` AND every fixture a
+     * production seeder names, so this case is satisfied today by the dev
+     * seeder and would still be satisfied by a CatalogFile that replaced it —
+     * which is the whole point, since the previous `expect(seed).toContain(…)`
+     * would have gone red on precisely that improvement.
+     *
+     * It is not a claim that the framework reaches production. It does not; see
+     * the file docblock. Asserting the gap is deliberately omitted.
+     */
+    it('the applied-catalogue scan has a real corpus to answer from', () => {
+        // DENOMINATOR. Without it, a missing declaration and a broken scan are
+        // the same observation: both return an empty array, and the case below
+        // would then be reporting on a corpus it never actually read.
+        const stats = appliedCatalogueStats();
+        expect(stats.seeders.length).toBeGreaterThan(0);
+        expect(stats.fixtures.length).toBeGreaterThan(0);
+        expect(stats.bytes).toBeGreaterThan(0);
+    });
+
+    it('something applied declares the NIST-PRIVACY framework and its baseline pack', () => {
+        expect(declaringSources('NIST-PRIVACY').length).toBeGreaterThan(0);
+        expect(declaringSources('NIST_PRIVACY_BASELINE').length).toBeGreaterThan(0);
+    });
+});
+
+describe('NIST Privacy Framework dev seed content (prisma/seed.ts — reaches no production database)', () => {
     const seed = read('prisma/seed.ts');
 
     it('reads the fixture + upserts the framework', () => {
-        expect(seed).toContain('nist_privacy_framework_requirements.json');
-        expect(seed).toMatch(/key:\s*'NIST-PRIVACY',\s*version:\s*'1\.0'/);
-        expect(seed).toMatch(/key:\s*'NIST-PRIVACY'[\s\S]{0,200}kind:\s*'NIST_FRAMEWORK'/);
+        // Bound to the declarations rather than scanned across the whole file.
+        // The framework case previously carried an interior any-char span,
+        // `/key: 'NIST-PRIVACY'[\s\S]{0,200}kind: 'NIST_FRAMEWORK'/`, which
+        // re-forms across a SIBLING upsert — the file holds dozens — so the
+        // NIST-PRIVACY block could lose its `kind` and a neighbour's would
+        // satisfy the match. Two field-shaped assertions inside one bounded
+        // declaration cannot do that.
+        expect(declarationOf(seed, 'nistPrivacyData')).toContain(
+            'nist_privacy_framework_requirements.json',
+        );
+        const fw = declarationOf(seed, 'nistPrivacy');
+        expect(fw).toMatch(/key:\s*'NIST-PRIVACY',\s*version:\s*'1\.0'/);
+        expect(fw).toMatch(/kind:\s*'NIST_FRAMEWORK'/);
     });
 
     it('persists NIST provider + public-domain notice in framework metadata', () => {
@@ -146,9 +219,16 @@ describe('NIST Privacy Framework seed wiring (seed.ts)', () => {
         );
     });
 
-    it('seeds a NIST Privacy Framework pack (idempotent upsert)', () => {
-        expect(seed).toContain("'NIST_PRIVACY_BASELINE'");
-        expect(seed).toMatch(/frameworkPack\.upsert/);
+    it('the dev pack row names the framework and the 1.0 version', () => {
+        // `expect(seed).toContain("'NIST_PRIVACY_BASELINE'")` moved up to the
+        // source-agnostic describe. `expect(seed).toMatch(/frameworkPack\.upsert/)`
+        // was DELETED rather than repointed: 16 positions in `prisma/seed.ts`
+        // satisfy it, so it was already a tautology — the whole NIST Privacy
+        // block could be deleted and it would still pass.
+        const pack = declarationOf(seed, 'nistPrivacyPack');
+        expect(pack).toMatch(/key:\s*'NIST_PRIVACY_BASELINE'/);
+        expect(pack).toMatch(/frameworkId:\s*nistPrivacy\.id/);
+        expect(pack).toMatch(/version:\s*'1\.0'/);
     });
 });
 

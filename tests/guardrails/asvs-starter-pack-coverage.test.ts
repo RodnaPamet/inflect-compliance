@@ -8,10 +8,12 @@
  *     verbatim ASVS text) and every requirement description is short/original.
  *     ASVS is CC BY-SA 4.0 (ShareAlike) — embedding its text is incompatible
  *     with a proprietary product, so only identifiers/titles/structure are used;
- *   - the L1 Starter Pack fixture ships curated control templates, each fully
- *     specified and linked to real L1 requirement codes;
- *   - seed.ts wires the ASVS framework (key OWASP-ASVS), the L1 pack
- *     (ASVS_L1_PACK), and the application-security risk templates;
+ *   - the L1 Starter Pack CATALOGUE — the CatalogFile a production seeder
+ *     applies — ships curated control templates, each fully specified and
+ *     linked to real L1 requirement codes, plus the framework (key OWASP-ASVS)
+ *     and the pack production has (ASVS_L1, not seed.ts's ASVS_L1_PACK);
+ *   - seed.ts still owns the ASVS application-security risk templates, which
+ *     have no production writer at all — see that describe's note;
  *   - the two mapping sets resolve on BOTH sides (source refs exist in the ASVS
  *     library, target refs exist in the ISO 27001 / NIST SSDF libraries) and
  *     together cover every L1 requirement.
@@ -22,6 +24,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { appliedCatalogFor, declaringSources } from '../helpers/applied-catalogue';
 import { codeOf } from '../helpers/source-blocks';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
@@ -116,7 +119,24 @@ describe('ASVS 4.0.3 — licensing discipline (no verbatim ASVS text)', () => {
     });
 });
 
-describe('ASVS 4.0.3 — L1 Starter Pack fixture', () => {
+describe('ASVS 4.0.3 — L1 delivery (the catalogue production applies)', () => {
+    /**
+     * WHAT WAS WRONG HERE
+     *
+     * These cases read `prisma/fixtures/asvs-l1-control-templates.json` straight
+     * off disk, and the describe that followed asked `prisma/seed.ts` whether
+     * the framework and its pack were wired. Neither question is about
+     * DELIVERY. `prisma/seed.ts` is not run on a production deploy, so
+     * `toContain("'ASVS_L1_PACK'")` could not fail while ASVS was unreachable —
+     * and it named a pack key no customer database carries: production has
+     * `ASVS_L1`, declared by the CatalogFile. A fixture merely present on disk
+     * is likewise not one any seeder applies.
+     *
+     * The catalogue is now reached the way production reaches it — through the
+     * `CATALOG_FIXTURES` list that `scripts/entrypoint.sh` runs — so a fixture
+     * dropped from that list fails here instead of passing quietly, and the
+     * structured document is read by FIELD rather than grepped for substrings.
+     */
     interface StarterControl {
         code: string;
         title: string;
@@ -127,27 +147,68 @@ describe('ASVS 4.0.3 — L1 Starter Pack fixture', () => {
         tasks: Array<{ title: { en: string }; description: { en: string } }>;
     }
     const FREQUENCIES = new Set(['AD_HOC', 'DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUALLY']);
+
+    const catalog = appliedCatalogFor('OWASP-ASVS');
+    const controls = (catalog?.templates ?? []) as unknown as StarterControl[];
     /**
-     * The fixture is a CatalogFile — `{ framework, requirements, templates,
-     * pack }` — since its templates gained authored task sets and a delivery
-     * path through `applyCatalogFile`. Only the reader moved; every assertion
-     * below is unchanged, because they were always about RESOLUTION, not shape.
+     * The requirement rows production actually creates. Stricter than the
+     * library's 259: a template link to an L2/L3 code would resolve in the
+     * yaml and dangle in every customer database.
      */
-    const controlsFixture = (JSON.parse(
-        readRaw('prisma/fixtures/asvs-l1-control-templates.json'),
-    ) as { templates: StarterControl[] }).templates;
+    const delivered = new Set((catalog?.requirements ?? []).map((r) => String(r.code)));
     const L1_REFS = new Set(requirements.filter((r) => r.category === 'L1').map((r) => r.refId));
-    const REQ_REFS = new Set(requirements.map((r) => r.refId));
+
+    it('a production seeder applies an ASVS catalogue at all', () => {
+        // DENOMINATOR. Every case below is vacuous on a null catalogue or an
+        // empty templates/requirements array.
+        expect(catalog).not.toBeNull();
+        expect(catalog?.file).toBe('prisma/fixtures/asvs-l1-control-templates.json');
+        expect(controls.length).toBeGreaterThanOrEqual(10);
+        expect(delivered.size).toBeGreaterThanOrEqual(100);
+    });
+
+    it('declares the framework as OWASP-ASVS 4.0.3, kind INDUSTRY_STANDARD', () => {
+        expect(catalog?.framework.key).toBe('OWASP-ASVS');
+        expect(catalog?.framework.version).toBe('4.0.3');
+        expect(catalog?.framework.kind).toBe('INDUSTRY_STANDARD');
+        expect(catalog?.framework.sourceUrn).toBe('urn:inflect:library:owasp-asvs-4.0.3');
+    });
+
+    it('carries the OWASP provider + CC BY-SA notice in framework metadata', () => {
+        // The licensing posture travels WITH the catalogue now, so a customer
+        // database records the attribution — it is not only a yaml comment.
+        const meta = (catalog?.framework.metadata ?? {}) as Record<string, unknown>;
+        expect(meta.provider).toBe('OWASP Foundation');
+        expect(meta.license).toBe('CC-BY-SA-4.0');
+        expect(String(meta.copyright)).toContain('OWASP Foundation');
+        expect(String(meta.note)).toContain('Structural outline only');
+    });
+
+    it('delivers exactly the library L1 tier — nothing missing, no L2/L3 rows', () => {
+        expect([...delivered].sort()).toEqual([...L1_REFS].sort());
+    });
+
+    it('declares the pack production actually has', () => {
+        // ASVS_L1 is the key in the live database. seed.ts builds ASVS_L1_PACK,
+        // which reaches dev only — asserted here so the split stays visible.
+        expect(catalog?.pack?.key).toBe('ASVS_L1');
+        expect(declaringSources('ASVS_L1_PACK')).toEqual(['prisma/seed.ts']);
+    });
+
+    it('the pack links every shipped template, and only shipped templates', () => {
+        const packCodes = [...((catalog?.pack?.templateCodes ?? []) as string[])].sort();
+        expect(packCodes.length).toBeGreaterThan(0);
+        expect(packCodes).toEqual(controls.map((c) => c.code).sort());
+    });
 
     it('ships a curated set of controls with unique ASVS- codes', () => {
-        expect(controlsFixture.length).toBeGreaterThanOrEqual(10);
-        const codes = controlsFixture.map((c) => c.code);
+        const codes = controls.map((c) => c.code);
         expect(new Set(codes).size).toBe(codes.length);
-        for (const c of controlsFixture) expect(c.code).toMatch(/^ASVS-/);
+        for (const c of controls) expect(c.code).toMatch(/^ASVS-/);
     });
 
     it('every control is fully specified (title, description, frequency, owner, tasks)', () => {
-        for (const c of controlsFixture) {
+        for (const c of controls) {
             expect(c.title).toBeTruthy();
             expect(c.description.length).toBeGreaterThan(20);
             expect(FREQUENCIES.has(c.defaultFrequency)).toBe(true);
@@ -160,38 +221,48 @@ describe('ASVS 4.0.3 — L1 Starter Pack fixture', () => {
         }
     });
 
-    it('every requirement link resolves to a real ASVS requirement (no dangling refs)', () => {
+    it('every requirement link resolves to a requirement the catalogue delivers', () => {
         const dangling: string[] = [];
-        for (const c of controlsFixture) {
+        for (const c of controls) {
             expect(c.requirementCodes.length).toBeGreaterThanOrEqual(1);
             for (const r of c.requirementCodes) {
-                if (!REQ_REFS.has(r)) dangling.push(`${c.code} → ${r}`);
+                if (!delivered.has(r)) dangling.push(`${c.code} → ${r}`);
             }
         }
         expect(dangling).toEqual([]);
     });
 
     it('the pack covers every L1 requirement', () => {
-        const covered = new Set(controlsFixture.flatMap((c) => c.requirementCodes));
+        const covered = new Set(controls.flatMap((c) => c.requirementCodes));
         const missing = [...L1_REFS].filter((r) => !covered.has(r));
         expect(missing).toEqual([]);
     });
+
+    it('is registered in the framework starter-pack completeness ratchet', () => {
+        // The registry's pack-key SPELLING is that guard's business (both keys
+        // are declared somewhere today); what matters here is that ASVS is
+        // accounted for rather than silently bare.
+        const completeness = read('tests/guardrails/framework-starter-pack-completeness.test.ts');
+        const entry = completeness.match(/'OWASP-ASVS-4\.0\.3':\s*\{([^}]*)\}/)?.[1] ?? '';
+        expect(entry).toContain("frameworkKey: 'OWASP-ASVS'");
+        const packKey = entry.match(/packKey:\s*'([A-Z0-9_]+)'/)?.[1] ?? '';
+        // Shape first: a failed extraction would hand declaringSources('') the
+        // empty literal, which every source contains — a vacuous pass.
+        expect(packKey).toMatch(/^[A-Z0-9_]+$/);
+        expect(declaringSources(packKey).length).toBeGreaterThan(0);
+    });
 });
 
-describe('ASVS 4.0.3 — seed wiring (seed.ts)', () => {
+describe('ASVS 4.0.3 — application-security risk templates (seed.ts only)', () => {
+    /**
+     * DELIBERATELY still about `prisma/seed.ts`. RiskTemplate has no production
+     * writer: no seeder `scripts/entrypoint.sh` runs touches it, and no
+     * CatalogFile carries risk templates. Repointing these at the applied
+     * catalogue would assert something false, so the weaker question stays —
+     * and the honest reading of a green run here is "seeded in dev", not
+     * "available to a customer".
+     */
     const seed = read('prisma/seed.ts');
-
-    it('reads the ASVS requirement + L1 control fixtures', () => {
-        expect(seed).toContain('asvs-requirements.json');
-        expect(seed).toContain('asvs-l1-control-templates.json');
-    });
-
-    it('seeds the OWASP-ASVS framework and the ASVS_L1_PACK (idempotent upsert)', () => {
-        expect(seed).toContain("'OWASP-ASVS'");
-        expect(seed).toContain("'ASVS_L1_PACK'");
-        expect(seed).toMatch(/startsWith:\s*'ASVS-'/);
-        expect(seed).toMatch(/frameworkPack\.upsert/);
-    });
 
     it('seeds ASVS application-security risk templates on the shared RiskTemplate path', () => {
         const block = seed.slice(seed.indexOf('asvsRiskTemplates'));
@@ -199,11 +270,6 @@ describe('ASVS 4.0.3 — seed wiring (seed.ts)', () => {
         const ids = [...block.matchAll(/id:\s*'(asvs-[a-z-]+)'/g)].map((m) => m[1]);
         expect(new Set(ids).size).toBeGreaterThanOrEqual(7);
         expect(seed).toMatch(/for \(const t of asvsRiskTemplates\)[\s\S]{0,120}riskTemplate\.upsert/);
-    });
-
-    it('is registered in the framework starter-pack completeness ratchet', () => {
-        const completeness = read('tests/guardrails/framework-starter-pack-completeness.test.ts');
-        expect(completeness).toMatch(/'OWASP-ASVS-4\.0\.3':\s*\{\s*frameworkKey:\s*'OWASP-ASVS',\s*packKey:\s*'ASVS_L1_PACK'\s*\}/);
     });
 });
 

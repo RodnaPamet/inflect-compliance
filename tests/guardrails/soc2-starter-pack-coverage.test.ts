@@ -1,34 +1,56 @@
 /**
- * SOC 2 Starter Pack — fixture ⇄ criteria integrity.
+ * SOC 2 — what production applies, and whether it resolves.
  *
- * The failure mode this exists for is SILENT. `prisma/seed.ts` links each
- * curated control to its criteria with
+ * ═══ THE PROXY THIS FILE CARRIED ═══
  *
- *     if (soc2ReqMap[rk]) { …create the link… }
+ * The last block used to be:
  *
- * so a control that references a criterion the seed does not carry — a typo,
- * a criterion that was renamed, a control written against the real AICPA
- * numbering (CC6.6) rather than the criteria this product seeds — produces NO
- * link and NO error. The pack installs, the controls appear, and the coverage
- * number is quietly lower than it should be. Nothing in the product says why.
+ *     const seed = read('prisma/seed.ts');
+ *     expect(seed).toContain("'SOC2_STARTER_PACK'");
+ *
+ * `prisma/seed.ts` is not run on a production deploy, so that assertion could
+ * not fail while the SOC 2 pack was undeliverable — and it named the wrong key
+ * besides. Verified against the live production database: production has
+ * SOC2_BASELINE. SOC2_STARTER_PACK is a row no customer has ever seen. The
+ * catalogue reuses SOC2_BASELINE deliberately (see the fixture's `_meta`), so
+ * a tenant is not offered two competing SOC 2 packs.
+ *
+ * Everything below therefore reads the CatalogFile that a seeder in
+ * `scripts/entrypoint.sh` actually applies — discovered through
+ * `appliedCatalogFor('SOC2')`, not by a hard-coded fixture path — and the
+ * seed.ts arm survives only where the claim is genuinely about seed.ts.
+ *
+ * ═══ THE ORIGINAL FAILURE MODE, STILL GUARDED ═══
+ *
+ * A control that references a criterion its catalogue does not carry — a typo,
+ * a renamed criterion, a control written against the real AICPA numbering
+ * (CC6.6) rather than the criteria this product ships — used to produce NO
+ * link and NO error: `prisma/seed.ts` links through
+ * `if (soc2ReqMap[rk]) { …create the link… }`. The pack installed, the
+ * controls appeared, and coverage was quietly lower than it should be.
+ * `applyCatalogFile` aborts on such a ref instead (`assertCatalogConsistency`),
+ * which turns a silent under-count into a failed deploy seeder — worth
+ * catching here, at fixture-edit time, rather than on a container start.
  *
  * So the assertions here are about resolution, not shape:
- *   - every requirement ref in the fixture resolves against BOTH the seed's
- *     `soc2Reqs` (which is what the link actually looks up) and the library
- *     (src/data/libraries/soc2-2017.yaml, which is what the framework means);
- *   - the two lists agree, so a criterion cannot be added to one alone;
+ *   - every requirement ref in the applied catalogue resolves against BOTH its
+ *     own requirement set and the library (src/data/libraries/soc2-2017.yaml,
+ *     which is what the framework means);
+ *   - the declarations agree, so a criterion cannot be added to one alone;
  *   - the pack spans CC1–CC9 — a starter pack missing a Common Criteria
  *     category installs to a permanently-uncoverable requirement;
- *   - every seeded criterion is targeted by at least one control, which is
+ *   - every declared criterion is targeted by at least one control, which is
  *     what makes the day-one baseline 100% rather than partial;
- *   - the codes do not collide with the 'SOC2-' prefix owned by
- *     SOC2_BASELINE in scripts/backfill-framework-catalog.mjs — sharing it
- *     would make each pack swallow the other's templates.
+ *   - the codes keep the 'TSC-' prefix and stay out of the 'SOC2-' namespace
+ *     held by the seven placeholder templates that SOC2_BASELINE
+ *     transitionally still carries (scripts/backfill-framework-catalog.mjs
+ *     packs those by code prefix, and `ControlTemplate.code` is unique).
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
+import { appliedCatalogFor, productionDeclaringSources } from '../helpers/applied-catalogue';
 import { declarationOf, braceBlockAfter } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -53,20 +75,20 @@ interface StarterControl {
 }
 
 /**
- * The fixture is now a CatalogFile — `{ framework, requirements, templates,
- * pack }` — rather than the bare array this guard was written against, so that
- * `applyCatalogFile` can create the framework, its criteria, the templates,
- * their links and the pack together. Every assertion below is unchanged; only
- * the reader moved, which is the right split: the docblock above says these
- * assertions are about RESOLUTION, not shape, and that stayed true.
+ * The catalogue a production seeder applies for SOC 2, found by framework key.
+ *
+ * This used to be `JSON.parse(read('prisma/fixtures/soc2-control-templates.json'))`
+ * — a path, which says nothing about whether anything applies it. Going
+ * through the helper means the file has to be named by a seeder that
+ * `scripts/entrypoint.sh` runs, so unwiring the fixture reddens this file
+ * instead of leaving it green over a document nobody reads.
  */
-const catalog = JSON.parse(read('prisma/fixtures/soc2-control-templates.json')) as {
-    requirements: Array<{ code: string }>;
-    templates: StarterControl[];
-};
-const controls = catalog.templates;
+const applied = appliedCatalogFor('SOC2');
+const controls = (applied?.templates ?? []) as unknown as StarterControl[];
+const CATALOG_CRITERIA = (applied?.requirements ?? []).map((r) => String(r.code));
+const pack = (applied?.pack ?? {}) as { key?: string; templateCodes?: string[] };
 
-/** The criterion codes the seed actually creates — the link lookup's domain. */
+/** The criterion codes a seed program creates — that link lookup's domain. */
 function seededCriterionCodes(rel: string): string[] {
     const block = declarationOf(read(rel), 'soc2Reqs');
     return [...block.matchAll(/code:\s*'([^']+)'/g)].map((m) => m[1]);
@@ -81,6 +103,45 @@ const soc2 = loadLibrary(
 const LIBRARY_ASSESSABLE = soc2.framework.nodes
     .filter((n) => n.assessable)
     .map((n) => n.refId);
+
+describe('SOC 2 delivery', () => {
+    it('a production seeder applies a SOC 2 catalogue at all', () => {
+        // DENOMINATOR. `appliedCatalogFor` returns null when nothing production
+        // runs names a CatalogFile with this framework key, and every case in
+        // this file is vacuous on null — `controls` becomes [], so each `for`
+        // loop below iterates nothing and each `toEqual([])` passes.
+        expect(applied).not.toBeNull();
+        expect(applied?.file).toBe('prisma/fixtures/soc2-control-templates.json');
+        expect(applied?.requirements.length).toBeGreaterThanOrEqual(10);
+        expect(applied?.templates.length).toBeGreaterThanOrEqual(20);
+    });
+
+    it('declares the framework as SOC2 2017, kind SOC_CRITERIA', () => {
+        expect(applied?.framework.key).toBe('SOC2');
+        expect(applied?.framework.version).toBe('2017');
+        expect(applied?.framework.kind).toBe('SOC_CRITERIA');
+    });
+
+    it('declares the pack production actually has', () => {
+        // SOC2_BASELINE, not seed.ts's SOC2_STARTER_PACK — checked against the
+        // live production database. Reused on purpose: a second SOC 2 pack
+        // would make a tenant choose between two offerings of the same thing.
+        expect(pack.key).toBe('SOC2_BASELINE');
+        expect(productionDeclaringSources('SOC2_BASELINE')).toContain(
+            'prisma/fixtures/soc2-control-templates.json',
+        );
+        // And the dev-only key stays dev-only. If this ever fails, the pack a
+        // customer installs has been renamed to one production has never had.
+        expect(productionDeclaringSources('SOC2_STARTER_PACK')).toEqual([]);
+    });
+
+    it('links every curated template into that pack by explicit code', () => {
+        // `applyCatalogFile` links `pack.templateCodes`, not a code prefix, so
+        // a template added to the catalogue and forgotten here ships as an
+        // unpacked control: installable one at a time, absent from the pack.
+        expect([...(pack.templateCodes ?? [])].sort()).toEqual(controls.map((c) => c.code).sort());
+    });
+});
 
 describe('SOC 2 Starter Pack — curated control templates', () => {
     it('ships a substantive set of uniquely-coded controls', () => {
@@ -109,13 +170,13 @@ describe('SOC 2 Starter Pack — curated control templates', () => {
         }
     });
 
-    it('every requirement ref resolves against the criteria the seed creates', () => {
-        const seeded = new Set(SEEDED);
+    it('every requirement ref resolves against the criteria the catalogue creates', () => {
+        const declared = new Set(CATALOG_CRITERIA);
         const dangling: string[] = [];
         for (const c of controls) {
             expect(c.requirementCodes.length).toBeGreaterThanOrEqual(1);
             for (const r of c.requirementCodes) {
-                if (!seeded.has(r)) dangling.push(`${c.code} → ${r}`);
+                if (!declared.has(r)) dangling.push(`${c.code} → ${r}`);
             }
         }
         expect(dangling).toEqual([]);
@@ -140,9 +201,9 @@ describe('SOC 2 Starter Pack — curated control templates', () => {
         expect(missing).toEqual([]);
     });
 
-    it('leaves no seeded criterion uncovered — the day-one baseline is 100%, not partial', () => {
+    it('leaves no declared criterion uncovered — the day-one baseline is 100%, not partial', () => {
         const targeted = new Set(controls.flatMap((c) => c.requirementCodes));
-        const uncovered = SEEDED.filter((code) => !targeted.has(code));
+        const uncovered = CATALOG_CRITERIA.filter((code) => !targeted.has(code));
         expect(uncovered).toEqual([]);
     });
 });
@@ -159,6 +220,10 @@ describe('the seed consumes the fixture in the shape it actually has', () => {
      * A shape mismatch between a fixture and its consumer is invisible to
      * every test that reads the fixture — this file included, which was green
      * throughout. So the assertion has to be about the CONSUMER.
+     *
+     * These are claims about seed.ts AS A PROGRAM — its cast, its field reads
+     * — not proxies for what production ships, so they stay bound to seed.ts.
+     * Dev and CI seed through this block; production does not.
      */
     const seedSource = read('prisma/seed.ts');
 
@@ -199,33 +264,26 @@ describe('the seed consumes the fixture in the shape it actually has', () => {
 });
 
 describe('SOC 2 criteria — every declaration agrees', () => {
-    it("the catalog file's own requirements match the criteria the seed creates", () => {
-        // The CatalogFile now declares the criteria itself, so they are stated
-        // in THREE places: prisma/seed.ts's soc2Reqs, this fixture, and
-        // src/data/libraries/soc2-2017.yaml. Two of the three were already
-        // cross-checked below; leaving the third unchecked would let the
-        // catalog seeder create a criterion set the seed's link lookup does
-        // not know, which is exactly the silent no-link failure this file was
-        // written to prevent — one source further out.
-        expect(catalog.requirements.map((r) => r.code).sort()).toEqual([...SEEDED].sort());
+    it("the applied catalogue carries exactly the library's assessable Common Criteria", () => {
+        const libraryCC = LIBRARY_ASSESSABLE.filter((r) => r.startsWith('CC')).sort();
+        expect([...CATALOG_CRITERIA].sort()).toEqual(libraryCC);
     });
 
-    it('the seed carries exactly the library\'s assessable Common Criteria', () => {
-        const libraryCC = LIBRARY_ASSESSABLE.filter((r) => r.startsWith('CC')).sort();
-        expect([...SEEDED].sort()).toEqual(libraryCC);
+    it('prisma/seed.ts creates the same criteria the applied catalogue declares', () => {
+        // The criteria are stated in THREE places: this catalogue (what
+        // production creates), `soc2Reqs` in prisma/seed.ts (what the dev
+        // seed's link lookup resolves against), and
+        // src/data/libraries/soc2-2017.yaml (what the framework means). Let
+        // the dev seed drift and a control that resolves in production silently
+        // fails to link locally — the silent no-link failure this file exists
+        // for, reproduced only on the machine writing the fixture.
+        expect([...SEEDED].sort()).toEqual([...CATALOG_CRITERIA].sort());
     });
 
     it('prisma/seed-catalog.ts seeds the same criteria as prisma/seed.ts', () => {
+        // Both are dev-only programs; neither reaches a production database.
+        // This is a lockstep check between them, kept because seed-catalog.ts
+        // says in a comment that it is one.
         expect(seededCriterionCodes('prisma/seed-catalog.ts')).toEqual(SEEDED);
-    });
-});
-
-describe('SOC 2 Starter Pack — seed wiring', () => {
-    const seed = read('prisma/seed.ts');
-
-    it('reads the curated control fixture and packages it as SOC2_STARTER_PACK', () => {
-        expect(seed).toContain('soc2-control-templates.json');
-        expect(seed).toContain("'SOC2_STARTER_PACK'");
-        expect(seed).toMatch(/startsWith:\s*'TSC-'/);
     });
 });

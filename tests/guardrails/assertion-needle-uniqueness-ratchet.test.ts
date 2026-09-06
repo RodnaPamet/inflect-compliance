@@ -166,9 +166,34 @@ const HIGH_MULTIPLICITY = 5;
 // describes the result of putting them together. DRIFT_ALLOWANCE is 0 here, so
 // the higher of the two would have left a ratchet that cannot see the next
 // regression — which is the whole reason it is measured rather than merged.
-const AMBIGUOUS_NEEDLE_BASELINE = 1457;
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 249;
+const AMBIGUOUS_NEEDLE_BASELINE = 1433;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 240;
 
+/**
+ * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
+ * here is a finding rather than a formality.
+ *
+ * The catalogue-guard sweep repointed 68 assertions off `prisma/seed.ts`
+ * source and onto structured data. Net effect on this file's other numbers:
+ * 44 fewer whole-file reads, 24 fewer ambiguous needles, 6 fewer interior
+ * spans — four baselines came DOWN in the same diff.
+ *
+ * The five that arrived are all of one shape:
+ *
+ *     for (const code of packTemplateCodes) expect(code).toMatch(/^SDLC-/);
+ *
+ * A loop variable over an array. The analyser tries to resolve the binding to
+ * a file read, cannot, and books it as `binding-not-resolvable` — but there is
+ * no file behind it and therefore no ambiguous-needle risk to hide. The
+ * correct bucket would be the uncapped `not-a-file-read`; teaching the
+ * analyser that distinction touches every file in the population, so it is not
+ * done here as a side effect of a test sweep.
+ *
+ * What was NOT done: contorting those assertions into a shape the detector
+ * likes. `expect(c).toMatch(/^CIS-/)` over each pack code is the right
+ * assertion, and a guard that makes tests worse to keep its own number down
+ * has stopped being a guard.
+ */
 /**
  * Sites this detector could NOT analyse, having established they read a file.
  *
@@ -246,7 +271,7 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 249;
  *     gets far enough to be classified by its PATH instead of dropping out
  *     one step earlier.
  */
-const UNANALYSABLE_READ_BASELINE = 1444;
+const UNANALYSABLE_READ_BASELINE = 1449;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
