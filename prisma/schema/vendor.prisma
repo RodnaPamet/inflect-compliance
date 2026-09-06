@@ -67,6 +67,13 @@ model Vendor {
   subprocessorOf           VendorRelationship[]   @relation("SubprocessorRelation")
   registeredAgents         RegisteredAgent[]      @relation("RegisteredAgentVendor")
 
+  /// The target of composite, tenant-carrying foreign keys. Postgres runs FK
+  /// checks as the table owner, which BYPASSES row-level security — so RLS does
+  /// not constrain what a single-column FK will accept, and a cross-tenant
+  /// vendorId is representable at the database. Referencing rows point at
+  /// (id, tenantId) so that becomes unrepresentable rather than merely
+  /// forbidden by application code. Same reason `AiSystem` carries one.
+  @@unique([id, tenantId])
   @@unique([tenantId, name])
   @@index([tenantId])
   @@index([tenantId, createdAt])
