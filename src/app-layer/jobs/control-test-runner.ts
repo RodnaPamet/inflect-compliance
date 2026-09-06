@@ -29,9 +29,13 @@
  *
  *   SCRIPT / INTEGRATION  (handler seam)
  *     • Create the run as PLANNED, same as above.
- *     • Look up an executor in `runnerHandlerRegistry`. The registry
- *       is empty today (no real SCRIPT/INTEGRATION engine exists yet).
- *       When NO handler is registered, the branch delegates to the
+ *     • Look up an executor in `runnerHandlerRegistry`. One handler is
+ *       registered today — the agentic control tests, on INTEGRATION
+ *       (`services/agent-control-tests.ts`) — and it DECLINES (returns
+ *       `null`) for any plan whose `automationConfig` does not name one
+ *       of its checks, which routes that plan down the manual path
+ *       exactly as an unregistered type does.
+ *       When NO handler is registered, or the handler declines, the branch delegates to the
  *       MANUAL path — the run stays PLANNED "awaiting manual
  *       completion" instead of completing as a misleading INCONCLUSIVE
  *       no-op. A no-engine run never reaches COMPLETED, so it never
@@ -91,7 +95,7 @@
 import type { ControlTestRunnerPayload, JobRunResult } from './types';
 import { runJob } from '@/lib/observability/job-runner';
 import { logger } from '@/lib/observability/logger';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { prisma } from '@/lib/prisma';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { RequestContext } from '../types';
@@ -143,11 +147,37 @@ export interface AutomationHandlerInput {
     automationType: 'SCRIPT' | 'INTEGRATION';
     automationConfig: unknown;
     scheduledFor: Date;
+    /**
+     * The tenant transaction the runner has ALREADY opened, with `app_user` and
+     * `app.tenant_id` set. A handler reads through this rather than opening its
+     * own context: a nested `$transaction` would take a second pool connection
+     * to read rows this one can already see, under the outer transaction's own
+     * timeout, and it would read them outside the RLS context the runner
+     * established. Handlers that need to write go through the repositories with
+     * this same handle.
+     */
+    db: PrismaTx;
 }
 
+/**
+ * A registered handler, or a DECLINE.
+ *
+ * `null` means "this plan's `automationConfig` names no engine I own" and is
+ * NOT a verdict. The runner routes a decline exactly where it routes an
+ * unregistered automationType — to the manual path, as a PLANNED
+ * "awaiting manual completion" run — so a handler registered for one FAMILY of
+ * INTEGRATION plans cannot silently answer for every other plan in the product.
+ *
+ * That distinction is the whole reason the return type is a union. The registry
+ * is keyed by `automationType`, so registering an INTEGRATION handler claims
+ * every INTEGRATION plan in every tenant; without a decline the first narrow
+ * engine to land would have had to invent a verdict for plans it knows nothing
+ * about, and `INCONCLUSIVE` is exactly the "jargon no-op" this file's header
+ * already rejected once.
+ */
 export type AutomationHandler = (
     input: AutomationHandlerInput,
-) => Promise<AutomationHandlerResult>;
+) => Promise<AutomationHandlerResult | null>;
 
 const handlers = new Map<'SCRIPT' | 'INTEGRATION', AutomationHandler>();
 
@@ -399,14 +429,21 @@ async function handleAutomatedPlan(
 
     let outcome: AutomationHandlerResult;
     try {
-        outcome = await handler({
+        const declared = await handler({
             tenantId: plan.tenantId,
             planId: plan.id,
             controlId: plan.controlId,
             automationType: plan.automationType,
             automationConfig: plan.automationConfig,
             scheduledFor,
+            db,
         });
+        if (declared === null) {
+            // The handler owns this automationType but not this plan's config.
+            // Same disposition as no handler at all — see `AutomationHandler`.
+            return await handleManualPlan(db, ctx, plan, runId, scheduledFor, jobRunId);
+        }
+        outcome = declared;
     } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         logger.error('control-test-runner: handler threw', {
@@ -633,6 +670,27 @@ async function createFindingForFailedRun(
 export async function controlTestRunnerExecutor(
     payload: ControlTestRunnerPayload,
 ): Promise<JobRunResult> {
+    // The automation ENGINES are registered here — at the production entry
+    // point, on the first pickup — rather than at module load.
+    //
+    // Two reasons, and the second is the load-bearing one. A worker that never
+    // runs a control test does not pull the agentic service into its import
+    // graph. And a registration performed by the module that OWNS the registry
+    // is one a guard can bind to: `executor-registry.ts` registers its
+    // executors by string key, and a bounded source read cannot anchor on a
+    // string literal (the extractors mask literals before they scan), so a
+    // registration placed there could only be checked by grepping the whole
+    // file — which is satisfied by the same call sitting in any other
+    // executor. Anchored on this named function it cannot be.
+    //
+    // The import is DYNAMIC because the service imports this module for the
+    // registry and the handler types; a static import here would close the
+    // cycle at module scope.
+    const { registerAgenticControlTestHandler } = await import(
+        '../services/agent-control-tests'
+    );
+    registerAgenticControlTestHandler();
+
     const startedAt = new Date().toISOString();
     const startMs = performance.now();
     const r = await runControlTestRunner(payload);

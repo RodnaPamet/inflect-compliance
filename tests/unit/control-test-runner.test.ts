@@ -357,6 +357,47 @@ describe('runControlTestRunner — SCRIPT/INTEGRATION without handler', () => {
     });
 });
 
+// ─── 3b. A registered handler that DECLINES ───────────────────────
+//
+// The registry is keyed by `automationType`, so one INTEGRATION handler claims
+// every INTEGRATION plan in the product. A narrow engine must therefore be able
+// to say "not mine" without inventing a verdict — `null` routes the plan to the
+// manual path, exactly where an UNREGISTERED type goes. Without this the first
+// narrow engine to land would have had to answer INCONCLUSIVE for every other
+// tenant's connector plan, which is the jargon no-op the runner already rejected
+// once.
+
+describe('runControlTestRunner — handler declines with null', () => {
+    test('routes to the manual path: PLANNED, no completion, no attestation', async () => {
+        runnerHandlerRegistry.register('INTEGRATION', async () => null);
+
+        mockPlanFindFirst.mockResolvedValueOnce(
+            makePlan({
+                automationType: 'INTEGRATION',
+                automationConfig: { engine: 'somebody-elses-connector' },
+            }),
+        );
+        mockTestRunCreate.mockResolvedValueOnce({ id: 'run-1' });
+        mockTx.evidence.create.mockResolvedValueOnce({ id: 'ev-1' });
+
+        const result = await runControlTestRunner(PAYLOAD_BASE);
+
+        expect(result).toMatchObject({
+            runStatus: 'PLANNED',
+            runResult: null,
+            evidenceAttached: true,
+            findingCreated: false,
+        });
+        // A declined plan is NOT a completed run: it must not reach the
+        // completion side effects, or a plan nobody could execute would stamp
+        // the control as tested and roll its cadence.
+        expect(mockTestRunComplete).not.toHaveBeenCalled();
+        expect(mockAttestControlTested).not.toHaveBeenCalled();
+        expect(mockUpdateNextDueAt).not.toHaveBeenCalled();
+        expect(mockFindingCreate).not.toHaveBeenCalled();
+    });
+});
+
 // ─── 4. SCRIPT branch — registered handler returns PASS ────────────
 
 describe('runControlTestRunner — SCRIPT handler PASS', () => {
@@ -591,6 +632,11 @@ describe('runControlTestRunner — INTEGRATION uses the same handler seam', () =
 
         await runControlTestRunner(PAYLOAD_BASE);
 
+        // `db` is the tenant transaction the runner already opened. It is in the
+        // input so a handler reads through the RLS context the runner
+        // established rather than opening a second one; asserted by identity
+        // against the mocked tx so a handler that got some OTHER client would
+        // fail here rather than silently read past the tenant boundary.
         expect(seenInput).toHaveBeenCalledWith({
             tenantId: 'tenant-1',
             planId: 'plan-1',
@@ -598,6 +644,7 @@ describe('runControlTestRunner — INTEGRATION uses the same handler seam', () =
             automationType: 'INTEGRATION',
             automationConfig: { connectorId: 'aws-1' },
             scheduledFor: SCHEDULED_FOR_DATE,
+            db: mockTx,
         });
     });
 });
