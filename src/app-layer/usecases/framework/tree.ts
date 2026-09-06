@@ -35,6 +35,10 @@ import {
     type OrderedSection,
 } from '@/lib/framework-tree/reorder';
 import type { FrameworkTreePayload } from '@/lib/framework-tree/types';
+import {
+    collapseLinksToOwnRequirements,
+    resolveFamilyRequirementAliases,
+} from '../../services/framework-representation-aliases';
 import { logEvent } from '../../events/audit';
 
 export async function getFrameworkTree(
@@ -89,17 +93,32 @@ export async function getFrameworkTree(
     // tenant RLS context so the join is provably scoped to the
     // calling tenant. Frameworks themselves are global, but
     // ControlRequirementLink.tenantId is the load-bearing scope.
-    const reqIds = requirements.map((r) => r.id);
-    const links = reqIds.length
-        ? await runInTenantContext(ctx, (tdb) =>
-              tdb.controlRequirementLink.findMany({
-                  where: { tenantId: ctx.tenantId, requirementId: { in: reqIds } },
+    //
+    // Read across BOTH representations of this framework, then collapsed back
+    // onto its own requirement rows. A framework can exist twice in
+    // `Framework` (the seed row and the library row, under different `key`s)
+    // and a tenant's links hang off whichever one its database got, so joining
+    // on this framework's own requirement ids alone decorated every node as
+    // uncovered for such a tenant — while `computeCoverage` reported a
+    // percentage for the same tenant off the same links. `control.id` is
+    // selected because the collapse keys the dedupe on it. That dedupe cannot
+    // change THIS surface's verdict today — the decorator below reads
+    // `Control.applicability`, the global column, so two links for one control
+    // carry identical values — which is precisely why it is the seam's job and
+    // not this file's assumption. See
+    // `services/framework-representation-aliases.ts`.
+    const links = requirements.length
+        ? await runInTenantContext(ctx, async (tdb) => {
+              const aliases = await resolveFamilyRequirementAliases(tdb, fw, requirements);
+              const rows = await tdb.controlRequirementLink.findMany({
+                  where: { tenantId: ctx.tenantId, requirementId: { in: aliases.lookupIds } },
                   select: {
                       requirementId: true,
-                      control: { select: { status: true, applicability: true } },
+                      control: { select: { id: true, status: true, applicability: true } },
                   },
-              }),
-          )
+              });
+              return collapseLinksToOwnRequirements(rows, aliases);
+          })
         : [];
 
     // Group by requirementId for the compliance decorator.

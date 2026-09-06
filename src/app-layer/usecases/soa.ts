@@ -28,6 +28,10 @@ import { TaskStatus } from '@prisma/client';
 import { isImplemented, rollUpRequirementVerdict } from '@/lib/compliance/requirement-status-rollup';
 import { TERMINAL_TASK_STATUSES } from '../domain/task-status';
 import { coverageQualifyingEvidenceWhere } from '@/lib/compliance/coverage-evidence';
+import {
+    collapseLinksToOwnRequirements,
+    resolveFamilyRequirementAliases,
+} from '../services/framework-representation-aliases';
 import type {
     SoAReportDTO,
     SoAEntryDTO,
@@ -142,8 +146,6 @@ export async function getSoA(ctx: RequestContext, options: SoAOptions = {}): Pro
 
     if (requirements.length === 0) throw notFound('No requirements found for this framework');
 
-    const reqIds = requirements.map((r) => r.id);
-
     // 2. Load all ControlRequirementLinks for this tenant + framework
     interface ControlLinkRow {
         requirementId: string;
@@ -169,11 +171,22 @@ export async function getSoA(ctx: RequestContext, options: SoAOptions = {}): Pro
     // expiry is automatic (the exception-expiry-monitor also flips
     // APPROVED→EXPIRED, but keying on live status here needs no scheduling).
     const now = new Date();
-    const links: ControlLinkRow[] = await runInTenantContext(ctx, (db) =>
-        db.controlRequirementLink.findMany({
+
+    // The links are read across BOTH representations of this framework, then
+    // collapsed back onto its own requirement rows. A framework can exist
+    // twice in `Framework` (seed row vs library row, different `key`s), and a
+    // tenant's links hang off whichever one its database got. Joining on this
+    // framework's OWN requirement ids alone reported every requirement
+    // unmapped for such a tenant, beside a coverage page already taught to
+    // reconcile them — so the SoA and the coverage percent contradicted each
+    // other about one tenant at one moment. See
+    // `services/framework-representation-aliases.ts`.
+    const { rawLinks, aliases } = await runInTenantContext(ctx, async (db) => {
+        const resolved = await resolveFamilyRequirementAliases(db, fw, requirements);
+        const rows = (await db.controlRequirementLink.findMany({
             where: {
                 tenantId: ctx.tenantId,
-                requirementId: { in: reqIds },
+                requirementId: { in: resolved.lookupIds },
             },
             include: {
                 control: {
@@ -201,8 +214,14 @@ export async function getSoA(ctx: RequestContext, options: SoAOptions = {}): Pro
                     },
                 },
             },
-        })
-    ) as ControlLinkRow[];
+        })) as ControlLinkRow[];
+        return { rawLinks: rows, aliases: resolved };
+    });
+
+    // At most one link per (requirement, control) survives the collapse — a
+    // control linked to BOTH representations of one obligation would otherwise
+    // appear twice in that requirement's `mappedControls`.
+    const links = collapseLinksToOwnRequirements(rawLinks, aliases);
 
     // Filter out deleted controls
     const activeLinks = links.filter((l) => !l.control.deletedAt);

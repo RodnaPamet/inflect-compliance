@@ -47,6 +47,16 @@ beforeEach(() => {
             upsert: jest.fn().mockImplementation(({ create }: any) => Promise.resolve({ id: `ord-${create.requirementId}` })),
         },
         controlRequirementLink: { findMany: jest.fn().mockResolvedValue([]) },
+        // A framework can exist twice in `Framework` under two keys, so the
+        // links query is widened to the whole family first
+        // (`services/framework-representation-aliases.ts`). Both reads are
+        // GLOBAL-table reads made inside the SAME tenant transaction as the
+        // links query, which is why they are mocked here and not on the
+        // module-level `prisma` mock above. Empty: this suite is about tree
+        // assembly, and the DB-backed proof that the collapse works lives in
+        // `tests/integration/framework-representation-coverage.test.ts`.
+        framework: { findMany: jest.fn().mockResolvedValue([]) },
+        frameworkRequirement: { findMany: jest.fn().mockResolvedValue([]) },
     };
 });
 
@@ -67,7 +77,7 @@ describe('getFrameworkTree', () => {
         p.frameworkRequirement.findMany.mockResolvedValue(REQS);
         // Branch: reqIds.length > 0 → links query returns a control for r1.
         tctx.db.controlRequirementLink.findMany.mockResolvedValue([
-            { requirementId: 'r1', control: { status: 'IMPLEMENTED', applicability: 'APPLICABLE' } },
+            { requirementId: 'r1', control: { id: 'c1', status: 'IMPLEMENTED', applicability: 'APPLICABLE' } },
         ]);
         const tree = await getFrameworkTree(ctx, 'ISO27001');
         expect(p.framework.findFirst).toHaveBeenCalled();

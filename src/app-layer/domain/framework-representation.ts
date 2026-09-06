@@ -45,17 +45,35 @@
 /** ISO/IEC 27001:2022 — the one family whose two representations differ on code shape. */
 export const ISO27001_FAMILY_URN = 'urn:inflect:library:iso27001-2022';
 
+/** SOC 2 (2017 TSC). Both representations spell every criterion the same way. */
+export const SOC2_FAMILY_URN = 'urn:inflect:library:soc2-2017';
+
 /**
  * Seeded `Framework.key` → the library urn it is a second representation of,
- * for rows written before `prisma/seed.ts` carried `sourceUrn`.
+ * for rows an existing database holds without a `sourceUrn`.
  *
- * ONE entry, deliberately. `ISO27001` is the only seeded key that both lacks
- * the urn today and sits on a mapping edge into an agentic framework. Adding a
- * key here asserts that two rows describe one framework; assert it only where
- * the requirement codes have actually been compared.
+ * TWO entries, and each one asserts that two `Framework` rows describe one
+ * framework. Assert it only where the requirement codes have actually been
+ * compared — `tests/unit/framework-representation.test.ts` recomputes both
+ * comparisons from the shipped YAML and the seeded code lists, so a library
+ * revision that breaks either one turns red rather than joining silently.
+ *
+ *   ISO27001  `prisma/seed.ts` writes the urn today, but a database seeded
+ *             before it did is NOT re-seeded on deploy, so the fallback is
+ *             what makes the join true for tenants that already exist. The two
+ *             representations also spell Annex A differently, which
+ *             `canonicalRequirementCode` handles separately.
+ *   SOC2      the seed wrote NO urn at all until this entry landed beside it,
+ *             so EVERY database has this row urn-less until it is re-seeded.
+ *             The seeded criteria (`CC1.1` … `CC9.1`) are a strict subset of
+ *             the library's `ref_id`s, spelled identically, so no code
+ *             canonicalisation is needed or wanted here. Three shipped mapping
+ *             sets target `SOC2-2017` (from ISO 27001, NIST CSF and the SSDF)
+ *             and reached nothing a seeded tenant held.
  */
 export const LEGACY_KEY_FAMILY_URNS: Readonly<Record<string, string>> = {
     ISO27001: ISO27001_FAMILY_URN,
+    SOC2: SOC2_FAMILY_URN,
 };
 
 /** The minimum a caller must know about a `Framework` row to place it in a family. */

@@ -92,6 +92,11 @@ const mockDb = {
             if (where.key) return mockFrameworks.get(where.key) ?? null;
             return null;
         }),
+        // The framework-identity registry the usecase hands to the traceability
+        // service so it can collapse the two representations of one framework
+        // (seed row vs library row — `Framework.key` is `@unique`, so they
+        // carry different keys and only `sourceUrn` ties them).
+        findMany: jest.fn(async () => [...mockFrameworks.values()]),
     },
     frameworkRequirement: {
         findMany: jest.fn(async ({ where }: any) => {

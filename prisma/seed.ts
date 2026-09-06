@@ -872,10 +872,20 @@ Reviewed at least annually.` },
     console.log(`✅ ISO 27001:2022 framework + ${annexAData.length} Annex A requirements seeded`);
 
     // SOC2
+    // `sourceUrn` ties this row to `src/data/libraries/soc2-2017.yaml`, the
+    // OTHER representation of the same framework, exactly as the ISO 27001 row
+    // above does. Three shipped mapping sets target the library key
+    // (`SOC2-2017`) — from ISO 27001, NIST CSF and the SSDF — and reached
+    // nothing a tenant held against THESE rows until the two were tied.
+    // Unlike ISO 27001 the two representations agree on the code spelling
+    // (`CC6.1` here and there), so no canonicalisation is involved; the
+    // seeded criteria are a strict subset of the library's. An existing
+    // database is not re-seeded on deploy, which is why `SOC2` is also in
+    // `LEGACY_KEY_FAMILY_URNS` (src/app-layer/domain/framework-representation.ts).
     const soc2 = await prisma.framework.upsert({
         where: { key: 'SOC2' },
-        update: { name: 'SOC 2', description: 'SOC 2 Trust Services Criteria' },
-        create: { key: 'SOC2', name: 'SOC 2', description: 'SOC 2 Trust Services Criteria' },
+        update: { name: 'SOC 2', description: 'SOC 2 Trust Services Criteria', sourceUrn: 'urn:inflect:library:soc2-2017' },
+        create: { key: 'SOC2', name: 'SOC 2', description: 'SOC 2 Trust Services Criteria', sourceUrn: 'urn:inflect:library:soc2-2017' },
     });
     // The assessable Common Criteria the library (src/data/libraries/soc2-2017.yaml)
     // declares — one criterion per CC category, plus CC1.2. The three added on

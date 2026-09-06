@@ -22,9 +22,12 @@ import {
     isActionableCoverage,
     hasAnyCoverage,
     generateExplanation,
+    buildTraceabilityReport,
+    frameworkFamilyKeys,
     resolveTraceability,
     determineGapStatus,
     analyzeGaps,
+    type FrameworkIdentityRegistry,
 } from '@/app-layer/services/cross-framework-traceability';
 import { resolveMapping, type MappingEdgeLoader } from '@/app-layer/services/mapping-resolution';
 import type { ResolvedMappingEdge, MappingStrengthValue } from '@/app-layer/domain/requirement-mapping.types';
@@ -73,6 +76,13 @@ const ISO_A515 = { reqId: 'req-a515', code: 'A.5.15', title: 'Access Control', .
 const NIST_GVOC01 = { reqId: 'req-gvoc01', code: 'GV.OC-01', title: 'Org Context', ...NIST };
 const NIST_GVRM01 = { reqId: 'req-gvrm01', code: 'GV.RM-01', title: 'Risk Management', ...NIST };
 
+// The LIBRARY representation of the two frameworks above: same standards,
+// different `Framework.key` (the column is `@unique`, so they must differ).
+const ISO_LIB = { fwKey: 'ISO27001-2022', fwName: 'ISO/IEC 27001:2022' };
+const SOC2_LIB = { fwKey: 'SOC2-2017', fwName: 'SOC 2 (2017 TSC)' };
+const ISO_LIB_A515 = { reqId: 'req-lib-a515', code: 'A.5.15', title: 'Access Control', ...ISO_LIB };
+const SOC2_LIB_CC61 = { reqId: 'req-lib-cc61', code: 'CC6.1', title: 'Logical Access', ...SOC2_LIB };
+
 const SOC2_CC1 = { reqId: 'req-cc1', code: 'CC1', title: 'Control Environment', ...SOC2 };
 const SOC2_CC5 = { reqId: 'req-cc5', code: 'CC5', title: 'Control Activities', ...SOC2 };
 const SOC2_CC6 = { reqId: 'req-cc6', code: 'CC6', title: 'Logical Access', ...SOC2 };
@@ -96,7 +106,26 @@ const EDGES: Record<string, ResolvedMappingEdge[]> = {
     'req-gvoc01': [
         makeEdge('e5', NIST_GVOC01, SOC2_CC5, 'SUPERSET', 'NIST broader than SOC2'),
     ],
+    // Authored the way every shipped mapping set is: against the LIBRARY
+    // representation of BOTH frameworks. `ISO27001` above is the SEEDED
+    // representation of the same framework, under a different `Framework.key`.
+    'req-lib-cc61': [
+        makeEdge('e6', SOC2_LIB_CC61, ISO_LIB_A515, 'EQUAL', 'Semantically equivalent'),
+    ],
 };
+
+/**
+ * `Framework.key` → `sourceUrn`, the registry the pure service cannot look up
+ * for itself. The seeded rows carry NO urn, which is the deployed state: both
+ * resolve through `LEGACY_KEY_FAMILY_URNS`.
+ */
+const FRAMEWORK_REGISTRY: FrameworkIdentityRegistry = new Map<string, string | null>([
+    ['ISO27001', null],
+    ['ISO27001-2022', 'urn:inflect:library:iso27001-2022'],
+    ['SOC2', null],
+    ['SOC2-2017', 'urn:inflect:library:soc2-2017'],
+    ['NIST-CSF', null],
+]);
 
 const testLoader: MappingEdgeLoader = async (id) => EDGES[id] ?? [];
 
@@ -623,5 +652,84 @@ describe('Gap Analysis', () => {
             );
             expect(supersetResult.entries[0].status).toBe('COVERED');
         });
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// Framework identity — one framework, two `Framework.key`s
+// ═════════════════════════════════════════════════════════════════════
+
+/**
+ * A framework exists TWICE in `Framework`: the row `prisma/seed.ts` writes and
+ * the row `library-importer.ts` writes, under different keys. Mapping sets are
+ * authored against the LIBRARY keys, so a caller asking about the SEEDED key
+ * got an empty report — a requirement that IS mapped, reported as a gap.
+ *
+ * The filter these cover lives in `buildTraceabilityReport`, and it is reached
+ * only when the BFS was asked for the whole family, so both halves get their
+ * own test: neither one alone makes the report non-empty.
+ */
+describe('framework identity across representations', () => {
+    it('frameworkFamilyKeys hands the BFS every key in the family', () => {
+        // `resolveMapping` discards candidate paths whose target framework key
+        // is not in the requested list, BEFORE the report filter ever sees
+        // them. Asking for one representation drops the other's paths there.
+        expect(frameworkFamilyKeys('ISO27001', FRAMEWORK_REGISTRY).sort()).toEqual([
+            'ISO27001',
+            'ISO27001-2022',
+        ]);
+        // Without the registry only `LEGACY_KEY_FAMILY_URNS` is available, and
+        // nothing but a row's own `sourceUrn` identifies a LIBRARY key — so
+        // the fallback is a missing sibling, never a wrong one.
+        expect(frameworkFamilyKeys('ISO27001')).toEqual(['ISO27001']);
+    });
+
+    it('buildTraceabilityReport keeps a path whose target is the other representation', async () => {
+        const trace = await resolveMapping(
+            {
+                sourceRequirementId: 'req-lib-cc61',
+                targetFrameworkKeys: frameworkFamilyKeys('ISO27001', FRAMEWORK_REGISTRY),
+                maxDepth: 1,
+            },
+            testLoader,
+        );
+        // The BFS did its job — the path exists and lands on the LIBRARY row.
+        expect(trace.paths).toHaveLength(1);
+        expect(trace.paths[0].target.frameworkKey).toBe('ISO27001-2022');
+
+        // …and the caller asked about the SEEDED key. A key-equality filter
+        // here discards the only path there is and reports "no coverage".
+        const report = buildTraceabilityReport(trace, 'ISO27001', FRAMEWORK_REGISTRY);
+
+        expect(report.findings).toHaveLength(1);
+        expect(report.findings[0].confidence).toBe('FULL');
+        expect(report.findings[0].target.requirementCode).toBe('A.5.15');
+        expect(report.summary.bestConfidence).toBe('FULL');
+    });
+
+    it('buildTraceabilityReport still discards a path targeting a DIFFERENT framework', async () => {
+        // The negative half: collapsing representations must not collapse
+        // frameworks. `req-a51` maps to NIST CSF and to SOC 2; asking about
+        // the ISO 27001 family must yield neither.
+        const trace = await resolveMapping(
+            { sourceRequirementId: 'req-a51', targetFrameworkKeys: ['NIST-CSF', 'SOC2'], maxDepth: 1 },
+            testLoader,
+        );
+        expect(trace.paths.length).toBeGreaterThan(0);
+
+        const report = buildTraceabilityReport(trace, 'ISO27001', FRAMEWORK_REGISTRY);
+
+        expect(report.findings).toEqual([]);
+        expect(report.summary.bestConfidence).toBe('NONE');
+    });
+
+    it('resolveTraceability wires both halves together', async () => {
+        const report = await resolveTraceability('req-lib-cc61', 'ISO27001', testLoader, {
+            maxDepth: 1,
+            frameworks: FRAMEWORK_REGISTRY,
+        });
+
+        expect(report.findings).toHaveLength(1);
+        expect(report.findings[0].target.frameworkKey).toBe('ISO27001-2022');
     });
 });
