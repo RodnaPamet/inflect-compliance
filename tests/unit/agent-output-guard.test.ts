@@ -83,6 +83,7 @@ import {
     summarizeWithoutContent,
 } from '@/app-layer/ai/guard/proposal-guard';
 import { makeRequestContext } from '../helpers/make-context';
+import type { DataOnlySourceId } from '@/lib/agentic/content-provenance';
 import { NO_POLICY_CARD } from '@/lib/agentic/policy-card';
 import { CLEAN_PROPOSAL, INJECTION_CASES } from '../fixtures/prompt-injection-corpus';
 
@@ -140,7 +141,16 @@ describe('the verdict', () => {
         const result = guardAgentProposal({
             kind: 'RISK',
             payload: INJECTION_CASES[0].obeyedProposal,
-            sourceId: 'integration.some-connector-added-next-quarter',
+            // Deliberately outside `DataOnlySourceId`, and the cast IS the test.
+            // Narrowing the parameter stops a TypeScript caller writing this,
+            // but a type is erased at runtime and this id can still arrive from
+            // an untyped boundary — a connector id read from the database, a
+            // JSON payload, a JS caller. What must hold there is that an id the
+            // allowlist has never heard of falls CLOSED rather than defaulting
+            // to something trusted. Without the cast this case becomes
+            // unwriteable and the runtime half of the guarantee goes untested,
+            // which is the failure mode the narrow type could otherwise hide.
+            sourceId: 'integration.some-connector-added-next-quarter' as DataOnlySourceId,
         });
         expect(result.provenance).toBe('THIRD_PARTY_INGESTED');
         expect(result.verdict).toBe('QUARANTINED');
