@@ -41,10 +41,17 @@ jest.mock('@/lib/prisma', () => {
         findUnique: jest.fn().mockResolvedValue(null),
         createMany: jest.fn().mockResolvedValue({ count: 1 }),
     };
+    // No kill switch is in force in these suites. The boundary's step 0 asks
+    // ONE `$queryRaw` (see `agentic/kill-switch.ts`) and reads an empty result
+    // as "not killed" — the mock has to answer it, exactly as it has to answer
+    // `tenantApiKey.findFirst` for the liveness step next to it. Returning `[]`
+    // rather than omitting the method is deliberate: an absent `$queryRaw`
+    // makes every call throw, which would look like a refusal.
+    const $queryRaw = jest.fn().mockResolvedValue([]);
     return {
         __esModule: true,
-        default: { tenantApiKey, mcpToolManifestPin },
-        prisma: { tenantApiKey, mcpToolManifestPin },
+        default: { tenantApiKey, mcpToolManifestPin, $queryRaw },
+        prisma: { tenantApiKey, mcpToolManifestPin, $queryRaw },
     };
 });
 
