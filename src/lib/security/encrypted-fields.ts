@@ -1,23 +1,43 @@
 /**
- * # Performance expectations (Epic B.1 — pinned by perf test)
+ * # Performance expectations (Epic B.1)
  *
- * Measured in `tests/unit/encryption-middleware.perf.test.ts`. These
- * are the numbers that matter for production sizing — reach for the
- * runbook (`docs/epic-a-security.md` cross-references this layer) if
- * a regression investigation needs them.
+ * The numbers that matter for production sizing. Reach for the runbook
+ * (`docs/epic-a-security.md` cross-references this layer) if a
+ * regression investigation needs them.
  *
- * | Scenario                                     | Observed | Threshold |
- * |----------------------------------------------|---------:|----------:|
- * | Raw `encryptField` / `decryptField`          |  <10 µs |     100 µs|
- * | Single-row detail (3 fields)                 |  <0.1 ms|       5 ms|
- * | List of 100 rows × 2 encrypted fields        |   ~3 ms |      50 ms|
- * | List + 10 nested comments per row (1000 ops) |  ~16 ms |     120 ms|
- * | Write with nested `createMany` of 50         | ~0.8 ms |      80 ms|
- * | Walk 100 rows of a NON-encrypted model       |  <0.5 ms|      15 ms|
- * | Middleware overhead vs raw decrypt (100×2)   |     17% |      100% |
+ * These are a RECORD, not a gate. `tests/unit/encryption-middleware.perf.test.ts`
+ * asserts the WORK each shape costs — one decryption per encrypted
+ * field, zero crypto for a model with no manifest fields — because the
+ * latency ceilings it used to carry were measured, on 2026-09-06, to
+ * return a LOAD-DEPENDENT verdict on a 10x regression in the decrypt
+ * hot path: the same mutation passed every ceiling on an idle box and
+ * failed one of them on a contended one. The mutation runs are written
+ * up in that file's header.
  *
- * **Expected overhead:** ~15–20% above bare AES-GCM cost on realistic
- * list workloads. The traversal + per-value guard (`isEncryptedValue`)
+ * Ranges below are what an 8-core dev box read across several
+ * `--runInBand` runs of the pre-2026-09-06 benchmarks. They are given
+ * as ranges because that spread — on one machine, on one commit — is
+ * the whole reason the ceilings went. A shared CI runner is several
+ * times slower again, and that is not a regression.
+ *
+ * | Scenario                                     | Observed |
+ * |----------------------------------------------|---------:|
+ * | Raw `encryptField` / `decryptField`          | 20-45 µs / 12-36 µs |
+ * | Single-row detail (3 fields)                 | 0.04-0.09 ms |
+ * | List of 100 rows × 2 encrypted fields        |  2.4-3.6 ms |
+ * | List + 10 nested comments per row (1000 ops) |    15-22 ms |
+ * | Write with nested `createMany` of 50         |  0.9-1.3 ms |
+ * | Walk 100 rows of a NON-encrypted model       |  0.7-1.5 ms |
+ * | Middleware overhead vs raw decrypt (100×2)   |     11-46% |
+ *
+ * **Expected overhead:** the traversal costs a fraction again on top of
+ * the bare AES-GCM work on realistic list workloads — the samples above
+ * ranged 11-46%, which is itself a reminder not to read a single
+ * reading as a number. A later sample on the same box came out at
+ * -10%: the figure is a difference of two separately-timed runs, so it
+ * can go negative, and no floor should be read into the low end of that
+ * range. Every row here can be exceeded on a busier machine without
+ * anything having regressed. The traversal + per-value guard (`isEncryptedValue`)
  * fits comfortably inside the headroom of a typical request, and the
  * fast-path early-exit on nodes with no manifest field names means
  * included `User` / `Tenant` / framework-library relations cost

@@ -306,7 +306,7 @@ Grep the structured log stream for these keys when troubleshooting:
 | Test | What it guarantees |
 |---|---|
 | `tests/unit/encryption-middleware.test.ts` (29) | Manifest, write path, read path, nested relations, idempotency, null/empty safety |
-| `tests/unit/encryption-middleware.perf.test.ts` (11) | Measured perf budget: <50ms for 100-row list, <120ms with 1000 nested nodes, <20% overhead vs raw AES-GCM |
+| `tests/unit/encryption-middleware.perf.test.ts` (8) | Work per query shape, counted not timed: one decryption per encrypted field on detail / list / list+includes reads, one encryption per field on a nested `createMany`, zero crypto for a model with no manifest fields, and decryption count linear in row count |
 | `tests/unit/encryption-middleware.tenant-dek.test.ts` (21) | Tenant-DEK write/read, v1/v2 dispatch, cross-tenant isolation, bypass-source fallback, recursion guard |
 | `tests/unit/encryption-dual-key.test.ts` (9) | Dual-KEK fallback during master-key rotation, three-generation round-trip |
 | `tests/unit/tenant-keys.test.ts` (20) | DEK primitives: generate/wrap/unwrap, round-trip, length + privacy invariants |

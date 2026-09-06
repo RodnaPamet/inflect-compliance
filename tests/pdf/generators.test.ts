@@ -129,11 +129,56 @@ describe('PDF document factory', () => {
     });
 });
 
-describe('Large dataset performance', () => {
-    // PERF_CEILING_MS below is the real regression bar; the Jest
-    // async-test timeout is bumped to 60s (above PERF_CEILING_MS) so
-    // the assertion fires the failure (not the test timeout).
-    it('generates a 1000-row table within the perf ceiling', (done) => {
+/**
+ * ─── Removed 2026-09-06: the 1000-row wall-clock ceiling ─────────────
+ *
+ * This block asserted `expect(Date.now() - startTime).toBeLessThan(30_000)`
+ * over a 1000-row render, and its own comment conceded where the number
+ * came from: "under the full-suite parallel run, CPU contention pushes
+ * this far beyond the 5 s headline". That is the defect in one
+ * sentence — the ceiling was sized by the runner rather than by the
+ * subject. Measured on an 8-core box, `--runInBand`: the render costs
+ * 1126-1357 ms, so the ceiling sat 22-27x above it, and the entire slack
+ * was there to absorb contention.
+ *
+ * That slack is bigger than the regression. Making `renderTable`
+ * re-measure every row inside the draw loop — the exact thing its own
+ * "Pre-measure all row heights (O(n) — avoids re-measuring)" comment
+ * says it does not do, and a doubling of the measuring pass — moved the
+ * render to 1428 ms. Inside the healthy band, and 21x under the ceiling.
+ * So: could fail with nothing broken, could not fail with something
+ * broken.
+ *
+ * The replacement asserts the same claim as WORK. `doc.heightOfString`
+ * is reached from exactly one place, `measureRowHeight`, once per cell,
+ * so the count is `(rows + totals row) x columns` — the same integer on
+ * any machine under any load. Two mutations, each the sole assertion
+ * that fires (1 failed, 4 passed):
+ *
+ *   * re-measure every row in the draw loop — 6006 → 12006 calls
+ *   * re-measure once per page break — 6006 → 6378 calls
+ *
+ * The second is a 6% increase in work. No wall-clock ceiling wide
+ * enough to survive a shared runner could ever see it; an exact count
+ * sees it without a clock. This table renders 65 pages, which the
+ * `pageCount` assertion pins so that second case stays in scope.
+ *
+ * Same defect class and same remedy as the sites retired alongside it:
+ * tests/unit/encryption-middleware.perf.test.ts,
+ * tests/unit/observability/shutdown-helpers.test.ts,
+ * tests/unit/framework-tree-builder.test.ts.
+ *
+ * KNOWN BLIND SPOT, and it is the same trade as the encryption file: a
+ * count sees REDUNDANT work, not SLOWER work. A `heightOfString` that
+ * became 4x more expensive per call is invisible here. The 30 s ceiling
+ * could not see that on this hardware either — 4x of 1.2 s is still
+ * 6x under it — but on a runner slow enough to make the ceiling tight
+ * it could have, and that is what is given up.
+ */
+describe('Large dataset rendering', () => {
+    const PERF_ROWS = 1000;
+
+    it('measures each cell exactly once across a 1000-row, many-page table', (done) => {
         const meta: ReportMeta = {
             tenantName: 'Perf Corp',
             reportTitle: 'Performance Test',
@@ -141,40 +186,16 @@ describe('Large dataset performance', () => {
             watermark: 'DRAFT',
         };
 
-        const doc = createPdfDocument(meta);
-        const chunks: Buffer[] = [];
-        const startTime = Date.now();
-
-        // Under the full-suite parallel run, CPU contention pushes this
-        // far beyond the 5s headline. The 30s ceiling is the real
-        // regression bar — it catches algorithmic slowdowns
-        // (O(n²) inserts, missed buffer reuse) without flaking on
-        // worker scheduling.
-        const PERF_CEILING_MS = 30_000;
-
-        doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-        doc.on('end', () => {
-            const elapsed = Date.now() - startTime;
-            const pdf = Buffer.concat(chunks);
-
-            // Valid PDF
-            expect(pdf.slice(0, 5).toString()).toBe('%PDF-');
-            // Should be substantial (1000 rows = many pages)
-            expect(pdf.length).toBeGreaterThan(10000);
-            // Should complete within the perf ceiling
-            expect(elapsed).toBeLessThan(PERF_CEILING_MS);
-
-            done();
-        });
-
-        addCoverPage(doc, meta);
-        addMetadataPage(doc, meta, [
-            { source: 'Performance Test', description: '1000 rows of synthetic data' },
-        ]);
-        doc.addPage();
-
         const widths = autoColumnWidths([0.5, 2, 1, 1, 1.5, 2]);
-        const rows = Array.from({ length: 1000 }, (_, i) => ({
+        const columns = [
+            { key: 'num', header: '#', width: widths[0], align: 'center' as const },
+            { key: 'title', header: 'Risk', width: widths[1] },
+            { key: 'likelihood', header: 'L', width: widths[2], align: 'center' as const },
+            { key: 'impact', header: 'I', width: widths[3], align: 'center' as const },
+            { key: 'treatment', header: 'Treatment', width: widths[4] },
+            { key: 'notes', header: 'Notes', width: widths[5] },
+        ];
+        const rows = Array.from({ length: PERF_ROWS }, (_, i) => ({
             num: String(i + 1),
             title: `Risk item ${i + 1} — description with enough text to test multi-line cell wrapping behavior`,
             likelihood: String(Math.ceil(Math.random() * 5)),
@@ -183,20 +204,57 @@ describe('Large dataset performance', () => {
             notes: i % 3 === 0 ? 'This is a longer note that should wrap across multiple lines in the cell' : '—',
         }));
 
-        renderTable(doc, [
-            { key: 'num', header: '#', width: widths[0], align: 'center' },
-            { key: 'title', header: 'Risk', width: widths[1] },
-            { key: 'likelihood', header: 'L', width: widths[2], align: 'center' },
-            { key: 'impact', header: 'I', width: widths[3], align: 'center' },
-            { key: 'treatment', header: 'Treatment', width: widths[4] },
-            { key: 'notes', header: 'Notes', width: widths[5] },
-        ], rows, undefined, {
-            values: { num: '', title: '1000 risks total', likelihood: '', impact: '', treatment: '', notes: '' },
+        // One `measureRowHeight` pass per data row plus the totals row,
+        // one `heightOfString` inside it per column. Derived from the
+        // fixture rather than typed as a literal, so adding a column
+        // moves the expectation because the table moved.
+        const expectedMeasuredCells = (rows.length + 1) * columns.length;
+
+        const doc = createPdfDocument(meta);
+        const chunks: Buffer[] = [];
+        let pageCount = 0;
+
+        // Spy the document INSTANCE, not the prototype: this counts the
+        // work that this render asked for and nothing else.
+        const heightOfString = jest.spyOn(doc, 'heightOfString');
+
+        doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+        doc.on('end', () => {
+            const pdf = Buffer.concat(chunks);
+
+            try {
+                // Valid PDF
+                expect(pdf.slice(0, 5).toString()).toBe('%PDF-');
+                // Should be substantial (1000 rows = many pages)
+                expect(pdf.length).toBeGreaterThan(10000);
+                // The table really does span many pages, so a
+                // re-measure driven by page breaks is in scope here.
+                expect(pageCount).toBeGreaterThan(10);
+
+                expect(heightOfString).toHaveBeenCalledTimes(expectedMeasuredCells);
+            } catch (err) {
+                heightOfString.mockRestore();
+                done(err as Error);
+                return;
+            }
+
+            heightOfString.mockRestore();
+            done();
+        });
+
+        addCoverPage(doc, meta);
+        addMetadataPage(doc, meta, [
+            { source: 'Performance Test', description: `${PERF_ROWS} rows of synthetic data` },
+        ]);
+        doc.addPage();
+
+        renderTable(doc, columns, rows, undefined, {
+            values: { num: '', title: `${PERF_ROWS} risks total`, likelihood: '', impact: '', treatment: '', notes: '' },
         });
 
         applyHeadersAndFooters(doc, meta);
+        pageCount = doc.bufferedPageRange().count;
+
         doc.end();
-    }, 60_000); // 60s jest timeout — above PERF_CEILING_MS so the
-                // perf-ceiling assertion fires the failure (not the
-                // test timeout).
+    }, 60_000); // Liveness only — nothing here asserts on elapsed time.
 });

@@ -123,18 +123,27 @@ auto-virtualizes for free when an org has >50 members.
 
 ## Performance budget
 
-The benchmark test in `tests/rendered/combobox-virtualize.test.tsx::"1000-option
-mount stays under a sane wall-clock budget AND DOM stays small"`
-guards two invariants:
+The test in `tests/rendered/combobox-virtualize.test.tsx::"mounts and
+opens rendering at most 30 option nodes"` guards one invariant:
 
-1. **DOM count** — for any list above the threshold, the visible
-   option/row count is `<= 30`. This is the load-bearing perf win;
-   if it regresses (e.g. accidental `data` prop carrying all rows),
-   the test fails.
-2. **Wall-clock initial render** — 1000-option mount + open completes
-   in `<2s` on the CI runner. Generous to absorb jitter; the point is
-   to catch order-of-magnitude regressions, not to enforce a tight
-   budget.
+**DOM count** — for any list above the threshold, the visible
+option/row count is `<= 30`. This is the load-bearing perf win; if it
+regresses (e.g. accidental `data` prop carrying all rows), the test
+fails. The count is a pure function of the windowing maths, so it
+reads the same integer on any machine under any load.
+
+That test also carried a `<2s` wall-clock budget over the same
+render+open until 2026-09-06. It was removed rather than widened,
+because its verdict on the regression it named was a coin flip. With
+`overscanCount` raised so every row renders, eight samples on one
+8-core box measured 1318 / 1405 / 1839 / 1917 / 2192 / 2303 / 2334 /
+2397 ms — four over the ceiling, four under — while the DOM-count
+assertion read 1000 against `<=30` on all eight. Healthy on the same
+box is 284-329 ms, so in the passing case the budget carried ~6x of
+slack that only a loaded runner could spend.
+
+What the DOM count gives up in exchange: it sees the wrong *number* of
+nodes, not nodes that each became more expensive to build.
 
 The DataTable side has its own DOM-count test
 (`tests/rendered/data-table-virtualize.test.tsx::"5000-row virtualized
@@ -178,4 +187,4 @@ When NOT to virtualize:
 | `src/components/ui/combobox/virtualized-options.tsx` | Combobox's virtualized option list with bespoke keyboard layer |
 | `tests/rendered/virtualized-list.test.tsx` | 11-case primitive contract |
 | `tests/rendered/data-table-virtualize.test.tsx` | 22-case DataTable rollout |
-| `tests/rendered/combobox-virtualize.test.tsx` | 14-case Combobox rollout (threshold + DOM-count + keyboard + perf benchmark + visual parity) |
+| `tests/rendered/combobox-virtualize.test.tsx` | 14-case Combobox rollout (threshold + DOM-count + keyboard + visual parity). The DOM count is the perf assertion; the `<2s` wall-clock budget that sat beside it was removed 2026-09-06 — see "Performance budget" above |
