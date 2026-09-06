@@ -114,6 +114,9 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     'agent-proposal-expiry',
     'agent-proposal-sample-audit',
     'agent-run-reaper',
+    // The evidence chain — receipts and decision records become artefacts
+    // attached to the agentic controls they discharge.
+    'agentic-evidence-emission',
     'automation-runner',
     // C-roadmap — cross-tenant fan-out for the per-user calendar
     // push. The child (calendar-push-tenant) is enqueued, not

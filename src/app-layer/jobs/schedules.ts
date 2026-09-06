@@ -155,6 +155,23 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'agentic-evidence-emission',
+        pattern: '30 6 * * *',    // daily at 06:30 UTC
+        // NO tenantId and NO asOf: absent means "every tenant holding a live
+        // agentic control, for the month containing this tick". See
+        // `AgenticEvidenceEmissionPayload`.
+        //
+        // The half-hour after the kill-switch drill (06:00) and not beside it,
+        // because the drill WRITES an Evidence row per tenant and this pass reads
+        // the month's records to count them. Running them in the same minute
+        // would make whether today's drill is inside today's artefact depend on
+        // which finished first — a difference nobody could explain from the
+        // artefact. Declaration order in this array is NOT execution order; only
+        // the cron pattern is.
+        description: 'Emit the month\'s agent-action-receipt and AI-decision-record evidence onto the agentic controls that discharge those obligations, and withdraw artefacts whose control has been removed. Idempotent on (tenant, control, kind, period): a daily tick inside one month rewrites the same rows rather than adding new ones.',
+        defaultPayload: {},
+    },
+    {
         name: 'calendar-push-dispatch',
         pattern: '0 3 * * *',     // daily at 03:00 UTC
         // NO `tz`. The bucket guard's parser reads only `pattern` and ignores

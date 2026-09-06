@@ -1432,3 +1432,117 @@ model AgentCircuitBreaker {
   @@unique([agentId, tenantId])
   @@index([closedByUserId])
 }
+
+// ═════════════════════════════════════════════════════════════════════
+// The EVIDENCE LEDGER — receipts and decision records become audit artefacts.
+//
+// Everything upstream of this file produces RECORDS: mediator-signed action
+// receipts, hash-chained audit entries, one `AiDecisionLog` row per AI
+// invocation. None of that is EVIDENCE until it is attached to the control it
+// discharges, and until this file existed that attachment was a person with a
+// spreadsheet in the week before an audit.
+//
+// This table is the identity of an emitted artefact, and the identity is the
+// whole design. It is `(tenant, control, kind, period)` — NOT a receipt id and
+// NOT a content digest:
+//
+//   • A RECEIPT ID would make one evidence row per agent action. That is not an
+//     artefact, it is a second copy of the receipt ledger with a wider read
+//     surface, and it puts an unbounded row count in front of an assessor.
+//   • A CONTENT DIGEST re-runs safely only while nothing changes. The moment one
+//     more receipt lands inside the period the digest moves and the same period
+//     acquires a SECOND artefact — duplication by construction, and two
+//     artefacts for one quarter that nobody can rank.
+//   • `(control, kind, period)` is the unit the question is actually asked in:
+//     "show me your ASI02 evidence for August". Re-running recomputes the same
+//     identity and UPDATES in place, which is what makes an emitter safe to
+//     schedule. The content digest is kept as a FIELD so "did the population
+//     change" is still answerable — it just does not multiply rows.
+//
+// The artefact itself carries COUNTS, VOCABULARY AND POINTERS. It never inlines
+// `scannedSummary`, `outputSummary` or `inputDigest`: `AiDecisionLog` holds a
+// digest instead of the prompt on purpose and `AgentActionReceipt.scannedSummary`
+// is bounded and scrubbed on purpose, and `Evidence.content` is a WIDER surface
+// than either (unencrypted at rest, PDF-exported, reachable through an audit-pack
+// share link). Copying into it what those two were careful to exclude would undo
+// both decisions at once. `src/lib/agentic/evidence-artefact.ts` builds the body.
+// ═════════════════════════════════════════════════════════════════════
+
+/// Tenant-scoped: ONE emitted evidence artefact — the join between a period of
+/// agentic records and the control they discharge.
+///
+/// A row is never deleted when its basis stops holding. Two failure modes, and
+/// they are opposite mistakes: DELETING the evidence destroys something an audit
+/// pack may already cite, which is the shape of evidence tampering; LEAVING IT
+/// STALE lets a control go on claiming coverage it no longer has. So the row is
+/// kept and told the truth — `status = 'WITHDRAWN'` with a reason, and its
+/// `Evidence` archived with a withdrawal notice in place of the counts.
+model AgenticEvidenceArtefact {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// The agentic control this artefact discharges. Resolved from the control's
+  /// `ControlRequirementLink` to an OWASP-ASI (or EU AI Act) requirement — see
+  /// `EVIDENCE_TARGETS` in `src/lib/agentic/evidence-artefact.ts`.
+  controlId String
+
+  /// `AGENT_ACTION_RECEIPTS` | `AI_DECISION_RECORDS`. TEXT + CHECK rather than a
+  /// Postgres enum, for the reason the `@@map("WorkItem*")` pins record: an
+  /// `ALTER TYPE` mid-rolling-deploy makes still-running old containers fail
+  /// with SQLSTATE 42704, and this vocabulary is one a follow-up will widen.
+  kind String
+
+  /// UTC month boundaries — `periodStart` inclusive, `periodEnd` exclusive.
+  /// Part of the identity; `periodEnd` is derived from it and stored so a reader
+  /// never has to know the period arithmetic to interpret a row.
+  periodStart DateTime
+  periodEnd   DateTime
+
+  /// The `Evidence` row this artefact IS. Composite FK to `Evidence(id,
+  /// tenantId)` so RLS chains through the parent, matching `EvidenceControlLink`.
+  evidenceId String
+
+  /// SHA-256 over the sorted ids of the records this artefact counted. NOT part
+  /// of the identity — it is how a re-run knows whether anything moved, and how a
+  /// reader knows two renderings of "August" describe the same population.
+  sourceDigest String
+
+  /// How many source records the artefact counted. Zero is a real value and is
+  /// emitted: "this control produced no agentic activity in August" is a finding
+  /// an assessor wants, and an absent row would be indistinguishable from a
+  /// worker that never ran.
+  recordCount Int @default(0)
+
+  /// `CURRENT` | `WITHDRAWN`. See the model header for why nothing is deleted.
+  status String @default("CURRENT")
+
+  /// `CONTROL_REMOVED` | `SOURCE_UNVERIFIABLE`. Both NULL iff `CURRENT`, and the
+  /// pairing is a CHECK rather than a convention: a withdrawn artefact that does
+  /// not say why is indistinguishable from an emitter that stopped running.
+  withdrawnAt     DateTime?
+  withdrawnReason String?
+
+  /// The last run that recomputed this artefact — distinct from `updatedAt`,
+  /// which does not move when a run finds the population unchanged. An operator
+  /// asking "is the emitter alive" reads this one.
+  lastEmittedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  control  Control  @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  evidence Evidence @relation(fields: [evidenceId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// THE IDENTITY. A unique index rather than a read-then-write in the usecase,
+  /// because two ticks that overlap (a retry racing a schedule) would otherwise
+  /// both read "absent" and both insert — the exact duplication the identity
+  /// exists to prevent. Tenant-leading, so it doubles as the tenant-scoped index
+  /// and as `controlId`'s foreign-key index.
+  @@unique([tenantId, controlId, kind, periodStart])
+  /// "The artefacts for this period" — the assessor-facing query.
+  @@index([tenantId, periodStart])
+  /// `evidenceId`'s foreign-key index, and the reverse lookup an evidence detail
+  /// page needs to say "this row was emitted, it was not uploaded".
+  @@index([tenantId, evidenceId])
+}

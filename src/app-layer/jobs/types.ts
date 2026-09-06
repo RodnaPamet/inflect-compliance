@@ -721,6 +721,7 @@ export interface JobPayloadMap {
     'agent-kill-switch-drill': AgentKillSwitchDrillPayload;
     'agent-proposal-expiry': AgentProposalExpiryPayload;
     'agent-proposal-sample-audit': AgentProposalSampleAuditPayload;
+    'agentic-evidence-emission': AgenticEvidenceEmissionPayload;
 }
 
 /**
@@ -738,6 +739,26 @@ export interface JobPayloadMap {
  */
 export interface AgentKillSwitchDrillPayload {
     tenantId?: string;
+}
+
+/**
+ * agentic-evidence-emission — turn agent receipts and AI decision records into
+ * evidence attached to the agentic controls they discharge.
+ *
+ * `tenantId` absent is the scheduled sweep, which DISCOVERS the tenants holding
+ * a live control linked to a target requirement. Present emits for exactly that
+ * tenant, which is what an operator wants after installing the ASI pack and what
+ * the integration test drives.
+ *
+ * `asOf` names the period rather than reading the clock. Emission is idempotent
+ * on `(tenant, control, kind, period)`, so a backfill for an earlier month is an
+ * ordinary re-run rather than a special path — and a test can emit for a named
+ * month without depending on when it runs. ISO-8601, because a job payload is
+ * serialised through BullMQ and a `Date` would arrive as a string anyway.
+ */
+export interface AgenticEvidenceEmissionPayload {
+    tenantId?: string;
+    asOf?: string;
 }
 
 /** aws-posture connector — run one tenant connection's benchmark + collect evidence. */
@@ -895,6 +916,17 @@ export const JOB_DEFAULTS: Record<JobName, {
         // try, and the second and third could not tell their own predecessors'
         // rows from a real unconfirmed write. Retrying here destroys the
         // evidence the retry would need. Tomorrow's dispatch picks it up.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 1000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'agentic-evidence-emission': {
+        // ONE attempt. Not for safety — the artefact identity makes a re-run a
+        // no-op — but because a retry within the same minute would recompute an
+        // identical population and rewrite the same rows, which is work that
+        // proves nothing. The sweep is daily and every failure it logs is
+        // retried by tomorrow's tick, on a population that has actually moved.
         attempts: 1,
         backoff: { type: 'fixed', delay: 1000 },
         removeOnComplete: 100,

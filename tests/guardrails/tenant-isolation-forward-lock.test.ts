@@ -52,6 +52,7 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     AgentKillSwitchDrill: "tests/integration/kill-switch-drill.test.ts",
     AgentBehaviourWindow: "tests/integration/agent-circuit-breaker-isolation.test.ts",
     AgentCircuitBreaker: "tests/integration/agent-circuit-breaker-isolation.test.ts",
+    AgenticEvidenceArtefact: "tests/integration/agentic-evidence-isolation.test.ts",
 };
 
 /**
