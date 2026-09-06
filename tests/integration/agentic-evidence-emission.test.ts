@@ -440,6 +440,45 @@ describe('a decision-log record produces an Art 12 artefact', () => {
         ...overrides,
     });
 
+
+    it('re-renders when a human REVIEWS a decision the artefact already counted', async () => {
+        // The Art 14 outcome is stamped PENDING → terminal by the real feedback
+        // path, LONG after the row is written and counted. The digest covered
+        // record IDs only, so that stamp changed nothing the change-detector
+        // could see: the `unchanged` branch skipped rewriting the body while
+        // `lastEmittedAt` advanced and made it look freshly emitted.
+        //
+        // With a daily tick the first tick of a month captures nearly everything
+        // as PENDING, so the Art 12 / ASI09 record then said PERMANENTLY that
+        // nobody had reviewed anything — freezing the accept-without-change rate,
+        // which is the measurable form of automation bias this artefact exists
+        // to carry.
+        const row = await prisma.aiDecisionLog.create({ data: decisionRow() });
+
+        await emitAgenticEvidence(ctx(), { asOf: AS_OF });
+        const before = await prisma.evidence.findFirstOrThrow({
+            where: { tenantId: TENANT, content: { contains: 'Art 12' } },
+            select: { id: true, content: true },
+        });
+        expect(before.content).toMatch(/still pending review: 1/);
+
+        // What the product does when a human accepts a suggestion.
+        await prisma.aiDecisionLog.update({
+            where: { id: row.id },
+            data: { humanOutcome: 'ACCEPTED' },
+        });
+
+        await emitAgenticEvidence(ctx(), { asOf: AS_OF });
+        const after = await prisma.evidence.findFirstOrThrow({
+            where: { id: before.id },
+            select: { content: true },
+        });
+
+        expect(after.content).not.toBe(before.content);
+        expect(after.content).toMatch(/\(Art 14\): 1/);
+        expect(after.content).toMatch(/still pending review: 0/);
+    });
+
     it('attaches to the EU AI Act Art 12 control', async () => {
         await prisma.aiDecisionLog.create({ data: decisionRow() });
         await prisma.aiDecisionLog.create({

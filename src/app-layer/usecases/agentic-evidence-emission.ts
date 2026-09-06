@@ -513,12 +513,12 @@ export async function emitAgenticEvidence(
         const receiptDigest = sourcePopulationDigest(
             ARTEFACT_KIND_RECEIPTS,
             period.start,
-            receipts.map((r) => r.id),
+            receipts,
         );
         const decisionDigest = sourcePopulationDigest(
             ARTEFACT_KIND_DECISIONS,
             period.start,
-            decisions.map((d) => d.id),
+            decisions,
         );
         const receiptBody = buildReceiptArtefact(period, receipts, receiptDigest);
         const decisionBody = buildDecisionArtefact(period, decisions, decisionDigest);

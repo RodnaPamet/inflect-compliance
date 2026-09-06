@@ -18,6 +18,7 @@ import {
     monthlyPeriod,
     sourcePopulationDigest,
     targetsForKind,
+    type ReceiptFact,
 } from '@/lib/agentic/evidence-artefact';
 
 describe('the period is the UTC month containing the instant', () => {
@@ -49,6 +50,18 @@ describe('the period is the UTC month containing the instant', () => {
     });
 });
 
+
+/** A minimal receipt fact, so the digest tests name a fact rather than an id. */
+const rf = (id: string, over: Partial<ReceiptFact> = {}): ReceiptFact => ({
+    id,
+    toolName: 'list_risks',
+    decisionVerdict: 'allow',
+    verified: true,
+    auditLogId: `audit-${id}`,
+    toolProvenance: 'inflect:builtin',
+    ...over,
+});
+
 describe('the population digest identifies a set, not a sequence', () => {
     const start = new Date('2026-08-01T00:00:00.000Z');
 
@@ -56,19 +69,19 @@ describe('the population digest identifies a set, not a sequence', () => {
         // Row order is not a fact about the population. Without the sort, two
         // runs that read the same month would digest differently and every tick
         // would look like a change.
-        const a = sourcePopulationDigest(ARTEFACT_KIND_RECEIPTS, start, ['c', 'a', 'b']);
-        const b = sourcePopulationDigest(ARTEFACT_KIND_RECEIPTS, start, ['a', 'b', 'c']);
+        const a = sourcePopulationDigest(ARTEFACT_KIND_RECEIPTS, start, [rf('c'), rf('a'), rf('b')]);
+        const b = sourcePopulationDigest(ARTEFACT_KIND_RECEIPTS, start, [rf('a'), rf('b'), rf('c')]);
         expect(a).toBe(b);
     });
 
     it('changes when the population changes', () => {
-        const before = sourcePopulationDigest(ARTEFACT_KIND_RECEIPTS, start, ['a', 'b']);
-        const after = sourcePopulationDigest(ARTEFACT_KIND_RECEIPTS, start, ['a', 'b', 'c']);
+        const before = sourcePopulationDigest(ARTEFACT_KIND_RECEIPTS, start, [rf('a'), rf('b')]);
+        const after = sourcePopulationDigest(ARTEFACT_KIND_RECEIPTS, start, [rf('a'), rf('b'), rf('c')]);
         expect(after).not.toBe(before);
     });
 
     it('is bound to the kind and the period', () => {
-        const ids = ['a', 'b'];
+        const ids = [rf('a'), rf('b')];
         const receipts = sourcePopulationDigest(ARTEFACT_KIND_RECEIPTS, start, ids);
         const decisions = sourcePopulationDigest(ARTEFACT_KIND_DECISIONS, start, ids);
         const nextMonth = sourcePopulationDigest(

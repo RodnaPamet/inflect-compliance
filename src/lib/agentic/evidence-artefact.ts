@@ -206,12 +206,32 @@ export function monthlyPeriod(asOf: Date): ArtefactPeriod {
 export function sourcePopulationDigest(
     kind: AgenticArtefactKind,
     periodStart: Date,
-    ids: readonly string[],
+    facts: readonly (ReceiptFact | DecisionFact)[],
 ): string {
+    // THE RENDERED FACTS, not the population.
+    //
+    // This digested ids alone, and the `unchanged` branch it drives skips
+    // rewriting `Evidence.content`. But the body renders fields that MUTATE
+    // after the row is written — `AiDecisionLog.humanOutcome` is stamped
+    // PENDING → terminal by the real Art 14 feedback path, and a receipt's
+    // `verified` / `auditLogId` are set when its signature is checked. The id
+    // set does not change when they do, so the digest did not change, so the
+    // body was never rewritten while `lastEmittedAt` advanced and made it look
+    // freshly emitted.
+    //
+    // The consequence was the exact opposite of this artefact's purpose: with a
+    // daily tick, the first tick of a month captures nearly everything as
+    // PENDING, and the Art 12 / ASI09 record then says PERMANENTLY that nobody
+    // reviewed anything — while the accept-without-change rate, which is the
+    // measurable form of automation bias, is the number frozen.
+    //
+    // Digesting every rendered field makes "has the body changed" the question
+    // the branch actually asks. Sorted by the canonical form of each fact so the
+    // digest does not depend on row order.
     const payload = canonicalJson({
         kind,
         periodStart: periodStart.toISOString(),
-        ids: [...ids].sort(),
+        facts: facts.map((f) => canonicalJson({ ...f })).sort(),
     });
     return createHash('sha256').update(payload, 'utf8').digest('hex');
 }
