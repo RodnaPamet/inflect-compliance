@@ -193,6 +193,8 @@ model Tenant {
   mcpToolManifestPins               McpToolManifestPin[]
   agentKillSwitches                 AgentKillSwitch[]
   agentKillSwitchDrills             AgentKillSwitchDrill[]
+  agentBehaviourWindows             AgentBehaviourWindow[]
+  agentCircuitBreakers              AgentCircuitBreaker[]
   tenantFrameworkDeltas             TenantFrameworkDelta[]
   riskMatrixConfig                  RiskMatrixConfig?
   riskAppetiteConfig                RiskAppetiteConfig?
@@ -1053,6 +1055,7 @@ model User {
   /// Epic Agentic — agents this user is the accountable owner of. The FK is
   /// NOT NULL on the agent side, so every registered agent appears here.
   registeredAgentsOwned         RegisteredAgent[]               @relation("RegisteredAgentOwner")
+  agentCircuitBreakersClosed    AgentCircuitBreaker[]           @relation("AgentCircuitBreakerClosedBy")
 }
 
 model Account {

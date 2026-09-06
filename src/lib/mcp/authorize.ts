@@ -12,6 +12,11 @@
  *      (RFC 8693; `null` for a caller holding the long-lived key itself.)
  *   2. LIVENESS — is the credential still live RIGHT NOW? Re-read per tool
  *      call, never cached, so a revoke lands inside a run in flight.
+ *  2b. CIRCUIT BREAKER — is this agent LATCHED OPEN by its own behaviour? A
+ *      lettered sub-step and not a renumbering, because it belongs WITH
+ *      liveness: both ask "may this agent be running at all, right now", both
+ *      are agent-level rather than call-level, and both change their answer
+ *      DURING a run. See `assertCircuitBreakerClosed`.
  *   3. TOOL MANIFEST — is the tool's DEFINITION (name + description + parameter
  *      schema) the one this tenant approved? Deny on any drift, until a named
  *      human re-approves. See `assertToolManifestPinned`.
@@ -27,6 +32,11 @@
  *      function `requirePermission` calls on the equivalent human route.
  *  10. POLICY — the shared `assertCanRead` / `assertCanWrite` the mirrored route
  *      applies, where `PermissionSet` has no key to name.
+ *  11. OBSERVE — record the call against the agent's behavioural ledger. NOT a
+ *      gate: it runs only once every gate above has passed, and it is the only
+ *      step here that writes something other than a denial. Deliberately last —
+ *      see `circuit-breaker-store.ts` for why recording refused calls would let
+ *      a caller steer its own baseline with calls that never execute.
  *
  * Cheapest and least-revealing first, and CREDENTIAL checks before PRINCIPAL
  * checks. Step 3 is the exception to "cheapest first" and is placed on purpose:
@@ -101,6 +111,12 @@ import {
 import { reserveDailyAction } from '@/lib/agentic/policy-card-store';
 import {
     recordAgentKillRefusal,
+    openBreakerGate,
+    recordAuthorizedCall,
+    type BreakerLatch,
+} from '@/lib/agentic/circuit-breaker-store';
+import {
+    recordAgentBreakerRefusal,
     recordPolicyCardEvaluation,
     recordPolicyCardRefusal,
     recordToolManifestDrift,
@@ -259,6 +275,7 @@ export type McpDenialReason =
     | 'tool_not_offered'
     | 'tool_not_granted'
     | 'tool_manifest_unapproved'
+    | 'circuit_breaker_open'
     | 'autonomy_denied'
     | 'policy_card_denied'
     | 'capability_denied'
@@ -886,6 +903,52 @@ async function assertToolManifestPinned(
 }
 
 /**
+ * Is this agent LATCHED OPEN by its own behaviour?
+ *
+ * The breaker is an AGENT-LEVEL halt, and it halts everything — reads included.
+ * A half-stopped agent that may still read is still reading a tenant's whole
+ * compliance posture on its own initiative, which is the exfiltration half of
+ * the rogue-agent case; "stopped" has to mean stopped or the word is doing no
+ * work.
+ *
+ * `null` from the gate is NOT a refusal, for the same reason an absent policy
+ * card is not: the breaker is a control that LEARNS, and an agent it has never
+ * observed must be able to act. Deny-by-default lives in the tool grants, which
+ * already are.
+ *
+ * The refusal message names the STATE and the remedy, never the signal that
+ * fired. What tripped a breaker is a fact about how the detector reads this
+ * agent, and handing it to the caller is handing an attacker the shape of the
+ * threshold to stay under. It is on the latch row and in the audit entry, where
+ * the operator reads it.
+ */
+async function assertCircuitBreakerClosed(
+    inv: McpInvocation,
+    toolName: string,
+): Promise<BreakerLatch | null> {
+    if (inv.agentId === null) return null;
+    const latch = await openBreakerGate(inv.ctx.tenantId, inv.agentId);
+
+    if (latch !== null && latch.state === 'OPEN') {
+        recordAgentBreakerRefusal({ agentId: inv.agentId });
+        await denyToolCall(inv.ctx, 'circuit_breaker_open', {
+            tool: toolName,
+            agentId: inv.agentId,
+            message:
+                'This agent is stopped: its behaviour diverged from its own established ' +
+                'pattern and its circuit breaker latched open. An administrator must ' +
+                'review and close it before it can call any tool again.',
+            extra: {
+                breakerSignals: [...latch.trippedSignals],
+                trippedAt: latch.trippedAt === null ? null : latch.trippedAt.toISOString(),
+            },
+        });
+    }
+
+    return latch;
+}
+
+/**
  * The gate. Throws `forbidden` — after exactly one audit row — when this
  * invocation may not call this tool.
  */
@@ -934,6 +997,12 @@ export async function authorizeToolCall(
 
     // 2. Is the credential still live, right now?
     await assertCredentialLive(inv, tool.name);
+
+    // 2b. Is this agent latched open by its own behaviour? The latch it read is
+    //     threaded to step 11 rather than re-read there: two point lookups per
+    //     tool call to learn the same fact is the cost that gets a control
+    //     removed for being expensive.
+    const breakerLatch = await assertCircuitBreakerClosed(inv, tool.name);
 
     // 3. Is the tool DEFINITION the one this tenant approved? Supply chain
     //    before authority: a poisoned description is not a question about who
@@ -1031,6 +1100,26 @@ export async function authorizeToolCall(
                 extra: { policy: authorize.policy, basis: authorize.basis },
             });
         }
+    }
+
+    // 11. Observe. Not a gate — every gate has passed, and this is the only step
+    //     that writes something other than a denial. It never throws: the store
+    //     swallows its own failure, because turning an observability write into
+    //     an outage for a call ten checks have already allowed is the wrong
+    //     trade in the only direction that matters.
+    if (inv.agentId !== null) {
+        await recordAuthorizedCall(
+            inv.ctx.tenantId,
+            inv.agentId,
+            breakerLatch,
+            tool.capabilityClass,
+            tool.name,
+            // The invocation's OWN clock, the one `assertCredentialLive` and the
+            // daily budget already read. A second, independent `new Date()` here
+            // would put the observation in a different window from the
+            // reservation that admitted it whenever a call straddles the hour.
+            inv.now(),
+        );
     }
 }
 

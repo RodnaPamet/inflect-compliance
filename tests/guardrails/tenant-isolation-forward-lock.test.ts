@@ -48,6 +48,8 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     McpToolManifestPin: "tests/integration/tool-manifest-pin-isolation.test.ts",
     AgentKillSwitch: "tests/integration/agent-kill-switch.test.ts",
     AgentKillSwitchDrill: "tests/integration/kill-switch-drill.test.ts",
+    AgentBehaviourWindow: "tests/integration/agent-circuit-breaker-isolation.test.ts",
+    AgentCircuitBreaker: "tests/integration/agent-circuit-breaker-isolation.test.ts",
 };
 
 /**
