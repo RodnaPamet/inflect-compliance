@@ -16,7 +16,7 @@
     {
       "code": "6",
       "title": "PIMS-specific guidance (extends the controls)",
-      "summary": "Apply the ISO 27002 control themes with privacy-specific implementation guidance across policies, HR, access, crypto, operations, supplier and incident management. (Paraphrase) depth: 1 assessable: false category: PIMS Controls artifacts: \"Privacy-extended control set, Supplier privacy clauses\"",
+      "summary": "Apply the ISO 27002 control themes with privacy-specific implementation guidance across policies, HR, access, crypto, operations, supplier and incident management. (Paraphrase)",
       "category": "PIMS Controls",
       "sortOrder": 1
     },
