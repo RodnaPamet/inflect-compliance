@@ -37,6 +37,13 @@
  * through the kill switch" — from a tenant that has never run a drill. It
  * reports NO_POPULATION instead.
  *
+ * An empty list is not the only way to get that zero, and the second way
+ * survived the first fix: an ERRORED drill is a ROW, so the emptiness guard
+ * never fires, and it contributes the `@default(0)` no failed run overwrote.
+ * The sum therefore runs over drills that MEASURED something, and a tenant
+ * whose every drill errored reports NOT_ASSESSED / ALL_DRILLS_ERRORED — a
+ * different fact from never having drilled, and a different thing to go fix.
+ *
  * ── WHY THERE IS NO PAGE ─────────────────────────────────────────────
  *
  * The pack is exposed as ONE read-only API route and no new UI surface. It is
@@ -524,6 +531,17 @@ export interface DrillHistoryRow {
     findingId: string | null;
 }
 
+/**
+ * The drill outcomes that PRODUCED a measurement, as an allowlist.
+ *
+ * Written as "which outcomes count" rather than as `!== 'ERROR'` for the reason
+ * the identity write-ladder records: a fourth outcome added later inherits
+ * nothing by falling through. It would land outside this list and be excluded,
+ * which is the fail-closed direction — a drill nobody has classified must not
+ * be able to buy the pack's strongest claim before somebody classifies it.
+ */
+const MEASURING_DRILL_OUTCOMES: readonly string[] = ['PASSED', 'FAILED'];
+
 export interface BreakerTripRow {
     agentId: string;
     agentName: string | null;
@@ -631,6 +649,8 @@ export async function buildIncidentHistoryReport(
     const inForceReal = loaded.inForceRows.filter((r) => !isCanary(r.agentId));
 
     const drills: DrillHistoryRow[] = loaded.drillRows;
+    /** The subset a sum may run over — see `incidents.tool_calls_after_kill`. */
+    const measuringDrills = drills.filter((d) => MEASURING_DRILL_OUTCOMES.includes(d.outcome));
     const breakers: BreakerTripRow[] = loaded.breakerRows.map((b) => ({
         agentId: b.agentId,
         agentName: nameById.get(b.agentId) ?? null,
@@ -666,13 +686,32 @@ export async function buildIncidentHistoryReport(
             'incidents.drills_errored': measured(
                 drills.filter((d) => d.outcome === 'ERROR').length,
             ),
-            // THE ONE THAT MUST NOT BE ZERO. Summing an empty list gives 0,
-            // which is the strongest claim the product can make — made by a
-            // tenant that has never tested its stop control.
+            // THE ONE THAT MUST NOT BE ZERO, and the guard on it was one step
+            // too shallow for its whole life.
+            //
+            // `drills.length === 0` catches the tenant that never drilled. It
+            // does NOT catch the tenant whose drill ERRORED, because that is a
+            // row: the denominator is not empty, so the sum ran — over a
+            // `toolCallsAfterKill` still sitting at its schema `@default(0)`,
+            // which an errored run never overwrites. So a drill the schema
+            // itself describes as having "proved nothing" rendered byte-for-byte
+            // what a PASSED drill earns: MEASURED 0, the strongest claim in the
+            // pack. The population that matters is not "drills", it is "drills
+            // that measured something", and the two are only equal when nothing
+            // went wrong — which is precisely the case this metric exists for.
+            //
+            // Three outcomes, three renderings, because they demand three
+            // different actions: never drilled → go drill; drilled and every
+            // drill broke → fix the harness, the control is still unproven;
+            // drilled and measured → the number.
             'incidents.tool_calls_after_kill':
                 drills.length === 0
                     ? noPopulation('NO_DRILLS_RUN')
-                    : measured(drills.reduce((sum, d) => sum + d.toolCallsAfterKill, 0)),
+                    : measuringDrills.length === 0
+                      ? notAssessed('ALL_DRILLS_ERRORED')
+                      : measured(
+                            measuringDrills.reduce((sum, d) => sum + d.toolCallsAfterKill, 0),
+                        ),
             'incidents.breaker_trips': measured(trippedInWindow.length),
             'incidents.breakers_open_now': measured(
                 breakers.filter((b) => b.state === 'OPEN').length,

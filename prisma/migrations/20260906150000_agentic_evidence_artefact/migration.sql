@@ -50,7 +50,16 @@ ALTER TABLE "AgenticEvidenceArtefact"
 ALTER TABLE "AgenticEvidenceArtefact"
     ADD CONSTRAINT "AgenticEvidenceArtefact_withdrawn_reason_known"
     CHECK ("withdrawnReason" IS NULL
-           OR "withdrawnReason" IN ('CONTROL_REMOVED', 'SOURCE_UNVERIFIABLE'));
+           OR "withdrawnReason" IN (
+                'CONTROL_REMOVED',
+                'SOURCE_UNVERIFIABLE',
+                -- The control still exists and no longer discharges this
+                -- obligation: the requirement link was removed, or the framework
+                -- was uninstalled. Distinct from CONTROL_REMOVED because an
+                -- assessor reading the notice needs to know which of the two
+                -- happened.
+                'OBLIGATION_UNMAPPED'
+           ));
 
 -- A count is a count.
 ALTER TABLE "AgenticEvidenceArtefact"

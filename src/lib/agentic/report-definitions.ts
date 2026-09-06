@@ -428,7 +428,10 @@ export const METRIC_DEFINITIONS = {
     'incidents.tool_calls_after_kill': {
         id: 'incidents.tool_calls_after_kill',
         label: 'Tool calls that got through after a kill',
-        population: 'sum of AgentKillSwitchDrill.toolCallsAfterKill over the drills above',
+        population:
+            'sum of AgentKillSwitchDrill.toolCallsAfterKill over the drills above ' +
+            'that actually MEASURED something — a drill whose outcome is ERROR ' +
+            'could not run and measured nothing',
         moment: 'OVER_WINDOW',
         includes: [
             'every call the boundary admitted while a kill was in force; anything ' +
@@ -438,6 +441,14 @@ export const METRIC_DEFINITIONS = {
             'any figure at all when no drill ran — summing an empty list to zero ' +
                 'would make a tenant that never tested its stop control ' +
                 'indistinguishable from one whose control is proven',
+            'drills whose outcome is ERROR. Such a drill is a ROW but not a ' +
+                'MEASUREMENT: it could not run, so it proves nothing either way, ' +
+                'and `toolCallsAfterKill` is left at its column default of 0. ' +
+                'Counting it summed that default into the strongest claim this ' +
+                'product makes, so a tenant whose only drill BROKE read exactly ' +
+                'like one whose stop control is proven. "Never drilled" and ' +
+                '"drilled and the drill broke" demand different actions and now ' +
+                'carry different bases',
         ],
     },
     'incidents.breaker_trips': {

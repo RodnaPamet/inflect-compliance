@@ -26,6 +26,15 @@
  * zero. `T2` runs one drill that let nothing through (MEASURED 0) and `T3` has
  * run none (NO_POPULATION), and those two are asserted side by side.
  *
+ * The fourth, `T4`, exists because that pair was not enough, and the way it was
+ * not enough is worth stating. `T2` and `T3` disagree, so they look like a test
+ * of the distinction — but they disagree about whether any drill row EXISTS,
+ * and the guard they were checking was `drills.length === 0`. Every case where
+ * a row exists but proved nothing fell in the gap between them, and the pack's
+ * flagship claim was being handed out there. `T4` has run exactly one drill and
+ * it ERRORED: a row, so not empty, and `toolCallsAfterKill` still on its schema
+ * default of 0. It must render as neither of the other two.
+ *
  * ## The fixture is written with raw Prisma, deliberately
  *
  * Agents go in through `createRegisteredAgent` so the encryption and
@@ -61,7 +70,8 @@ jest.setTimeout(60_000);
 const T1 = 'agrep-tenant-one';
 const T2 = 'agrep-tenant-two';
 const T3 = 'agrep-tenant-empty';
-const TENANTS = [T1, T2, T3] as const;
+const T4 = 'agrep-tenant-errored-drill';
+const TENANTS = [T1, T2, T3, T4] as const;
 
 const DAY = 24 * 60 * 60 * 1000;
 /**
@@ -208,6 +218,7 @@ beforeAll(async () => {
 
     await seedTenantOne();
     await seedTenantTwo();
+    await seedTenantFour();
     // T3 is deliberately left with a tenant, users and NOTHING else.
 });
 
@@ -543,6 +554,31 @@ async function seedTenantTwo(): Promise<void> {
             tenantId: T2, jobRunId: 'run-t2', outcome: 'PASSED', startedAt: ago(1),
             completedAt: ago(1), toolCallsAfterKill: 0, scopesHonoured: ['TENANT'],
             scopesFailed: [], boundaryRefusalReason: 'tenant_killed', detail: 'clean',
+        },
+    });
+}
+
+/**
+ * T4 — one drill, and it ERRORED. Nothing else at all.
+ *
+ * Every field is left exactly as a run that died would leave it: no
+ * `completedAt`, neither scope list touched, no `boundaryRefusalReason`, and —
+ * the load-bearing one — `toolCallsAfterKill` NOT PASSED, so the row carries the
+ * schema's `@default(0)`. Writing `toolCallsAfterKill: 0` here would look
+ * identical in the database and would be a different fixture: it would assert
+ * that somebody measured zero. The point is that nobody measured anything.
+ */
+async function seedTenantFour(): Promise<void> {
+    await prisma.agentKillSwitchDrill.create({
+        data: {
+            tenantId: T4,
+            jobRunId: 'run-t4',
+            outcome: 'ERROR',
+            startedAt: ago(1),
+            completedAt: null,
+            scopesHonoured: [],
+            scopesFailed: [],
+            detail: 'could not run',
         },
     });
 }
@@ -984,6 +1020,65 @@ describe('incident and kill-switch history', () => {
             'NO_POPULATION',
             'NO_KILLS_ENGAGED',
         );
+    });
+
+    it('and refuses it AGAIN for a tenant whose only drill errored', async () => {
+        const report = await buildIncidentHistoryReport(ctxFor(T4));
+
+        // The row exists and is counted — T4 is not T3, and the pack says so.
+        expectMeasured(report.metrics['incidents.drills_run'], 1);
+        expectMeasured(report.metrics['incidents.drills_errored'], 1);
+        // ERROR is not FAILED, so nothing here raises a Finding either.
+        expectMeasured(report.metrics['incidents.drills_failed'], 0);
+
+        // AND YET NOTHING WAS MEASURED. `toolCallsAfterKill` is on its schema
+        // `@default(0)`, which a run that never reached the boundary never
+        // overwrites, so summing this drill yields the pack's strongest claim
+        // from a drill the schema itself calls "could not run". The population
+        // a sum may run over is the drills that measured something; here that
+        // population is empty while the drill population is not, which is
+        // NOT_ASSESSED — the rows exist, the judgement does not.
+        expectAbsent(
+            report.metrics['incidents.tool_calls_after_kill'],
+            'NOT_ASSESSED',
+            'ALL_DRILLS_ERRORED',
+        );
+    });
+
+    it('renders the three ways of arriving at zero as three different things', async () => {
+        // The pair this suite shipped with — measured-zero vs never-drilled —
+        // agreed that a drill ROW existed or did not, which is the question the
+        // old `drills.length === 0` guard asked. Two cases that agree on the
+        // predicate under test cannot detect it being the wrong predicate, and
+        // that is exactly how the errored drill got through. So the assertion
+        // is pairwise: all three renderings, compared to each other.
+        const [proven, never, errored] = await Promise.all([
+            buildIncidentHistoryReport(ctxFor(T2)), // drilled, measured 0
+            buildIncidentHistoryReport(ctxFor(T3)), // never drilled
+            buildIncidentHistoryReport(ctxFor(T4)), // drilled, every drill errored
+        ]);
+        type Incidents = Awaited<ReturnType<typeof buildIncidentHistoryReport>>;
+        const claim = (r: Incidents): Measure | undefined =>
+            r.metrics['incidents.tool_calls_after_kill'];
+
+        expect(claim(proven)).toEqual({ state: 'MEASURED', value: 0, basis: null });
+        expect(claim(never)).toEqual({
+            state: 'NO_POPULATION',
+            value: null,
+            basis: 'NO_DRILLS_RUN',
+        });
+        expect(claim(errored)).toEqual({
+            state: 'NOT_ASSESSED',
+            value: null,
+            basis: 'ALL_DRILLS_ERRORED',
+        });
+
+        // Three distinct renderings, stated as a count so a future collapse of
+        // ANY pair fails here — including one this file forgot to name.
+        const renderings = [claim(proven), claim(never), claim(errored)].map((c) =>
+            JSON.stringify(c),
+        );
+        expect(new Set(renderings).size).toBe(3);
     });
 });
 

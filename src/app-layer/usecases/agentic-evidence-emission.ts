@@ -601,7 +601,6 @@ export interface WithdrawnArtefact {
     readonly evidenceId: string;
     readonly reason: ArtefactWithdrawalReason;
 }
-
 /**
  * Withdraw the artefacts whose basis no longer holds.
  *
@@ -618,7 +617,53 @@ export interface WithdrawnArtefact {
  * from "the emitter died", which is the ambiguity that makes an empty page
  * unreadable.
  *
- * `SOURCE_UNVERIFIABLE` is the second trigger: an artefact that counted receipts
+ * ── WHY THE PREDICATE IS THE TARGET SET AND NOT `deletedAt` ────────────────
+ *
+ * This looked ONLY for `control: { deletedAt: { not: null } }`, and that is a
+ * strictly narrower question than the one the doc-comment above asks. There are
+ * two ways a control stops discharging an obligation and only one of them
+ * touches the control:
+ *
+ *   • the control is soft-deleted           → `CONTROL_REMOVED`
+ *   • the control is ALIVE, and its         → was invisible here
+ *     `ControlRequirementLink` to ASI02
+ *     (or the framework itself) is gone
+ *
+ * `resolveTargetControls` already stops emitting in the second case — it
+ * resolves through the link — so the artefact simply stopped being recomputed,
+ * with `status` left at `CURRENT`, the `Evidence` un-archived and still joined
+ * to the control, and the counts still standing on the control's evidence tab.
+ * That is exactly the "control goes on claiming coverage it no longer has"
+ * failure the two paragraphs above say this function exists to prevent, and it
+ * was reachable by deleting one join row.
+ *
+ * So the predicate is now the SAME resolution the emitter runs, inverted: a
+ * CURRENT artefact whose `(controlId, kind)` is absent from the resolved target
+ * set no longer has a basis. Three things about that are load-bearing:
+ *
+ *   1. `(controlId, kind)` — NOT `controlId`. One control can target one kind
+ *      and not the other (a control mapped to ASI02 collects receipts; the same
+ *      control unmapped from ASI09 must lose only its decision artefact). A
+ *      controlId-only membership test would withdraw both or neither.
+ *   2. `anyInstalled === false` withdraws NOTHING for this reason. That flag
+ *      means no `Framework` row in the whole catalogue carries a target family
+ *      urn — a statement about the deployment, not about the tenant, and it is
+ *      indistinguishable from a catalogue the read did not see (the read is
+ *      capped and unordered). Acting on it would archive every tenant's entire
+ *      history on one pass of a job that runs unattended. `CONTROL_REMOVED`
+ *      still applies, because a soft-delete is a per-row fact this pass
+ *      observed directly.
+ *   3. A `kind` this build does not know is skipped. "Absent from the target
+ *      set" carries no information about a kind that has no `EVIDENCE_TARGETS`
+ *      entry here, and the schema comment on `kind` says the vocabulary is one
+ *      a follow-up widens — so during a rolling deploy an older container would
+ *      otherwise withdraw everything a newer one had just emitted.
+ *
+ * The soft-delete check runs FIRST, so a control that is both deleted and
+ * unmapped reports `CONTROL_REMOVED`: they are different facts and the notice
+ * text says which happened.
+ *
+ * `SOURCE_UNVERIFIABLE` is the third trigger: an artefact that counted receipts
  * which have since been found unverifiable. Re-emission fixes the ORDINARY case
  * (the counts recompute and the artefact keeps going), so withdrawal is reserved
  * for the case where the whole population is gone.
@@ -630,28 +675,54 @@ export async function withdrawStaleAgenticEvidence(
 
     const withdrawn: WithdrawnArtefact[] = [];
 
-    const stale = await runInTenantContext(ctx, (db) =>
-        db.agenticEvidenceArtefact.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                status: 'CURRENT',
-                control: { deletedAt: { not: null } },
-            },
+    const { candidates, targetKeys, anyInstalled } = await runInTenantContext(ctx, async (db) => {
+        // The same resolution the emitter runs, in the same pass, so the two
+        // cannot disagree about what a control currently discharges.
+        const resolved = await resolveTargetControls(db, ctx);
+        const keys = new Set<string>();
+        for (const [kind, targets] of resolved.byKind) {
+            for (const target of targets) keys.add(targetKey(target.id, kind));
+        }
+
+        const rows = await db.agenticEvidenceArtefact.findMany({
+            where: { tenantId: ctx.tenantId, status: 'CURRENT' },
             select: {
                 id: true,
                 evidenceId: true,
+                controlId: true,
+                kind: true,
                 sourceDigest: true,
                 periodStart: true,
                 periodEnd: true,
+                // Read through the relation in the SAME query — the deleted
+                // state is per-row, and a read per row in the loop below would
+                // be an N+1 over a population capped at 20k.
+                control: { select: { deletedAt: true } },
             },
             take: POPULATION_CAP,
-        }),
-    );
+        });
 
-    for (const row of stale) {
+        return { candidates: rows, targetKeys: keys, anyInstalled: resolved.anyInstalled };
+    });
+
+    if (!anyInstalled && candidates.length > 0) {
+        // Loud, because the artefacts are now frozen: nothing recomputes them
+        // and nothing withdraws them either. That is the safe answer to an
+        // ambiguous catalogue, but it is not a healthy steady state.
+        log(
+            'warn',
+            'Agentic evidence withdrawal skipped the unmapped sweep — no target framework installed',
+            { tenantId: ctx.tenantId, currentArtefacts: candidates.length },
+        );
+    }
+
+    for (const row of candidates) {
+        const reason = withdrawalReasonFor(row, targetKeys, anyInstalled);
+        if (reason === null) continue;
+
         const at = new Date();
         const period = monthlyPeriod(row.periodStart);
-        const notice = buildWithdrawalNotice(period, 'CONTROL_REMOVED', at, row.sourceDigest);
+        const notice = buildWithdrawalNotice(period, reason, at, row.sourceDigest);
         await runInTenantContext(ctx, async (db) => {
             await db.evidence.update({
                 where: { id: row.evidenceId },
@@ -664,16 +735,43 @@ export async function withdrawStaleAgenticEvidence(
                 data: {
                     status: 'WITHDRAWN',
                     withdrawnAt: at,
-                    withdrawnReason: 'CONTROL_REMOVED',
+                    withdrawnReason: reason,
                 },
             });
         });
         withdrawn.push({
             artefactId: row.id,
             evidenceId: row.evidenceId,
-            reason: 'CONTROL_REMOVED',
+            reason,
         });
     }
 
     return withdrawn;
+}
+
+/** Membership key for the resolved target set. `kind` is TEXT in the DB, so both sides are strings. */
+function targetKey(controlId: string, kind: string): string {
+    return `${controlId}::${kind}`;
+}
+
+/**
+ * Why this artefact's basis no longer holds, or `null` to leave it CURRENT.
+ *
+ * Extracted so the ORDER of the two questions is one readable thing: a
+ * soft-deleted control is `CONTROL_REMOVED` even though it is also, necessarily,
+ * absent from the target set (`resolveTargetControls` filters `deletedAt: null`).
+ * Reversing these two lines would report every removed control as
+ * `OBLIGATION_UNMAPPED` and the notice would tell an assessor the wrong story.
+ */
+function withdrawalReasonFor(
+    row: { controlId: string; kind: string; control: { deletedAt: Date | null } },
+    targetKeys: ReadonlySet<string>,
+    anyInstalled: boolean,
+): ArtefactWithdrawalReason | null {
+    if (row.control.deletedAt !== null) return 'CONTROL_REMOVED';
+    if (!anyInstalled) return null;
+    // A kind with no target declaration in THIS build cannot be judged absent —
+    // see point 3 in the function docstring above.
+    if (!AGENTIC_ARTEFACT_KINDS.some((k) => k === row.kind)) return null;
+    return targetKeys.has(targetKey(row.controlId, row.kind)) ? null : 'OBLIGATION_UNMAPPED';
 }

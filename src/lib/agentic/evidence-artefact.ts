@@ -67,7 +67,18 @@ export const AGENTIC_ARTEFACT_KINDS: readonly AgenticArtefactKind[] = [
     ARTEFACT_KIND_DECISIONS,
 ];
 
-export type ArtefactWithdrawalReason = 'CONTROL_REMOVED' | 'SOURCE_UNVERIFIABLE';
+export type ArtefactWithdrawalReason =
+    | 'CONTROL_REMOVED'
+    | 'SOURCE_UNVERIFIABLE'
+    /**
+     * The control still exists, but it no longer discharges this obligation —
+     * its `ControlRequirementLink` was removed, or the framework was uninstalled.
+     *
+     * A separate reason from `CONTROL_REMOVED` because the two are different
+     * facts and an assessor reading the notice needs to know which: the control
+     * is gone, versus the control is still there and no longer claims this.
+     */
+    | 'OBLIGATION_UNMAPPED';
 
 // ── Which control does an artefact attach to ────────────────────────────────
 
@@ -394,6 +405,11 @@ export function buildWithdrawalNotice(
             ? 'The control this artefact discharged has been removed from the tenant, so ' +
               'nothing re-computes it. The artefact is retained because it was true when ' +
               'written and may already be cited.'
+            : reason === 'OBLIGATION_UNMAPPED'
+            ? 'The control still exists, but it no longer discharges this obligation — the ' +
+              'requirement link was removed or the framework was uninstalled — so nothing ' +
+              're-computes this artefact. It is retained because it was true when written ' +
+              'and may already be cited.'
             : 'One or more of the records this artefact counted can no longer be verified, ' +
               'so the counts below it are no longer supportable. The artefact is retained ' +
               'because deleting evidence on the discovery of a problem is the shape of the ' +

@@ -79,6 +79,8 @@ let privateKey: KeyObject;
 
 /** Control ids, keyed by the requirement each discharges. */
 const controls: Record<string, string> = {};
+/** Requirement ids, keyed by their own code — the join `beforeEach` reconciles. */
+const requirements: Record<string, string> = {};
 
 const ctx = () =>
     makeRequestContext('OWNER', { tenantId: TENANT, tenantSlug: TENANT, userId: ownerUserId });
@@ -155,6 +157,7 @@ async function installFrameworks(): Promise<void> {
             data: { tenantId: TENANT, controlId: control.id, requirementId: requirement.id },
         });
         controls[code] = control.id;
+        requirements[code] = requirement.id;
     }
 }
 
@@ -211,6 +214,17 @@ beforeEach(async () => {
     await prisma.agentActionReceipt.deleteMany({ where: { tenantId: TENANT } });
     await prisma.aiDecisionLog.deleteMany({ where: { tenantId: TENANT } });
     await prisma.control.updateMany({ where: { tenantId: TENANT }, data: { deletedAt: null } });
+    // Reconcile the control -> requirement mapping back to the canonical one.
+    // The un-mapping tests below delete and add links on purpose, and the whole
+    // point of those tests is that the CONTROL survives the operation — so the
+    // link is the piece that has to be restored, and restoring it here rather
+    // than in each test means a failure mid-test cannot cascade into a sibling.
+    await prisma.controlRequirementLink.deleteMany({ where: { tenantId: TENANT } });
+    for (const [code, controlId] of Object.entries(controls)) {
+        await prisma.controlRequirementLink.create({
+            data: { tenantId: TENANT, controlId, requirementId: requirements[code] },
+        });
+    }
 });
 
 /** Every artefact the tenant holds, newest identity last. */
@@ -661,6 +675,196 @@ describe('when the basis stops holding', () => {
         expect(evidence.isArchived).toBe(false);
         expect(evidence.content).toContain('Mediated agent actions recorded: 1');
         expect(evidence.content).not.toContain('WITHDRAWN');
+    });
+
+    /**
+     * The control is ALIVE and no longer discharges the obligation.
+     *
+     * This is the case `Control.deletedAt` cannot see, and it is reachable by
+     * deleting one join row — un-mapping a control from ASI02, or uninstalling
+     * the framework the requirement belongs to. `resolveTargetControls` resolves
+     * THROUGH that link, so emission stops for the control immediately; the
+     * withdrawal predicate asked only about `deletedAt`, so the ledger row stayed
+     * CURRENT, the Evidence stayed un-archived and still joined to the control,
+     * and the counts went on standing on the control's evidence tab. A control
+     * claiming coverage it no longer has is the exact failure this pass exists to
+     * prevent, and it survived the pass entirely.
+     */
+    it('withdraws an un-mapped obligation and leaves the still-mapped one alone', async () => {
+        await ingestReceipt(ctx(), signedReceipt(receiptRecord()));
+        await emitAgenticEvidence(ctx(), { asOf: AS_OF });
+
+        const emitted = await artefacts();
+        const unmappedBefore = emitted.find(
+            (a) => a.kind === ARTEFACT_KIND_RECEIPTS && a.controlId === controls.ASI02,
+        );
+        const survivorBefore = emitted.find(
+            (a) => a.kind === ARTEFACT_KIND_RECEIPTS && a.controlId === controls.ASI04,
+        );
+        expect(unmappedBefore!.status).toBe('CURRENT');
+        expect(survivorBefore!.status).toBe('CURRENT');
+
+        // ONE join row. The control keeps existing, keeps its code, keeps every
+        // other property — it simply no longer claims ASI02.
+        await prisma.controlRequirementLink.deleteMany({
+            where: { tenantId: TENANT, controlId: controls.ASI02 },
+        });
+        const stillAlive = await prisma.control.findUniqueOrThrow({
+            where: { id: controls.ASI02 },
+            select: { deletedAt: true },
+        });
+        expect(stillAlive.deletedAt).toBeNull();
+
+        const withdrawn = await withdrawStaleAgenticEvidence(ctx());
+
+        expect(withdrawn.find((w) => w.artefactId === unmappedBefore!.id)?.reason).toBe(
+            'OBLIGATION_UNMAPPED',
+        );
+        const after = await artefacts();
+        const unmappedAfter = after.find((a) => a.id === unmappedBefore!.id);
+        expect(unmappedAfter!.status).toBe('WITHDRAWN');
+        expect(unmappedAfter!.withdrawnReason).toBe('OBLIGATION_UNMAPPED');
+
+        // Retained, not deleted; archived, with the counts replaced by a notice
+        // that names WHICH of the two facts happened — "the control is gone" and
+        // "the control is still here and no longer claims this" are different
+        // stories to tell an assessor.
+        const evidence = await prisma.evidence.findUniqueOrThrow({
+            where: { id: unmappedBefore!.evidenceId },
+            select: { content: true, isArchived: true, deletedAt: true },
+        });
+        expect(evidence.deletedAt).toBeNull();
+        expect(evidence.isArchived).toBe(true);
+        expect(evidence.content).toContain('OBLIGATION_UNMAPPED');
+        expect(evidence.content).toContain('no longer discharges this obligation');
+        expect(evidence.content).not.toContain('CONTROL_REMOVED');
+        // NOT LEFT STALE — the counts it used to assert are gone.
+        expect(evidence.content).not.toContain('Mediated agent actions recorded');
+
+        // THE NEGATIVE, in the SAME pass. ASI04 is still mapped, so its artefact
+        // is untouched. An implementation that swept every CURRENT row, rather
+        // than the ones missing from the resolved target set, would take this one
+        // too and satisfy every assertion above.
+        expect(withdrawn.map((w) => w.artefactId)).not.toContain(survivorBefore!.id);
+        const survivorAfter = after.find((a) => a.id === survivorBefore!.id);
+        expect(survivorAfter!.status).toBe('CURRENT');
+        expect(survivorAfter!.withdrawnReason).toBeNull();
+        const survivorEvidence = await prisma.evidence.findUniqueOrThrow({
+            where: { id: survivorBefore!.evidenceId },
+            select: { content: true, isArchived: true },
+        });
+        expect(survivorEvidence.isArchived).toBe(false);
+        expect(survivorEvidence.content).toContain('Mediated agent actions recorded: 1');
+    });
+
+    it('withdraws only the KIND that was un-mapped, not the control\'s other artefact', async () => {
+        // One control can discharge obligations of BOTH kinds — ASI02 (receipts)
+        // and ASI09 (decision records). "Absent from the target set" is therefore
+        // a `(controlId, kind)` question: a membership test keyed on controlId
+        // alone would withdraw the receipts artefact as well, on a mapping that
+        // is still there and still emitting.
+        await prisma.controlRequirementLink.create({
+            data: {
+                tenantId: TENANT,
+                controlId: controls.ASI02,
+                requirementId: requirements.ASI09,
+            },
+        });
+        await ingestReceipt(ctx(), signedReceipt(receiptRecord()));
+        await prisma.aiDecisionLog.create({
+            data: {
+                tenantId: TENANT,
+                feature: 'risk-suggestions',
+                provider: 'anthropic',
+                inputDigest: 'b'.repeat(64),
+                createdAt: new Date(INSIDE(2)),
+            },
+        });
+        await emitAgenticEvidence(ctx(), { asOf: AS_OF });
+
+        const emitted = await artefacts();
+        const receiptsBefore = emitted.find(
+            (a) => a.controlId === controls.ASI02 && a.kind === ARTEFACT_KIND_RECEIPTS,
+        );
+        const decisionsBefore = emitted.find(
+            (a) => a.controlId === controls.ASI02 && a.kind === ARTEFACT_KIND_DECISIONS,
+        );
+        expect(receiptsBefore).toBeDefined();
+        expect(decisionsBefore).toBeDefined();
+
+        // Only the ASI09 claim goes. The ASI02 one stays.
+        await prisma.controlRequirementLink.delete({
+            where: {
+                controlId_requirementId: {
+                    controlId: controls.ASI02,
+                    requirementId: requirements.ASI09,
+                },
+            },
+        });
+
+        const withdrawn = await withdrawStaleAgenticEvidence(ctx());
+
+        expect(withdrawn.find((w) => w.artefactId === decisionsBefore!.id)?.reason).toBe(
+            'OBLIGATION_UNMAPPED',
+        );
+        expect(withdrawn.map((w) => w.artefactId)).not.toContain(receiptsBefore!.id);
+
+        const after = await artefacts();
+        expect(after.find((a) => a.id === decisionsBefore!.id)!.status).toBe('WITHDRAWN');
+        expect(after.find((a) => a.id === receiptsBefore!.id)!.status).toBe('CURRENT');
+    });
+
+    it('withdraws nothing for un-mapping when no target framework is in the catalogue', async () => {
+        // `anyTargetInstalled: false` is a statement about the DEPLOYMENT — no
+        // `Framework` row anywhere carries a target family urn — and it is
+        // indistinguishable from a catalogue read that did not see one. This pass
+        // runs unattended on a schedule, so reading that as "every obligation is
+        // unmapped" would archive a tenant's entire history on one tick, before
+        // their framework was ever installed. A soft-deleted control is still
+        // withdrawn: that fact was observed per row rather than inferred from an
+        // empty resolution.
+        await ingestReceipt(ctx(), signedReceipt(receiptRecord()));
+        await emitAgenticEvidence(ctx(), { asOf: AS_OF });
+        const before = await artefacts();
+        expect(before.length).toBeGreaterThan(1);
+        expect(before.every((a) => a.status === 'CURRENT')).toBe(true);
+
+        await prisma.control.update({
+            where: { id: controls.ASI04 },
+            data: { deletedAt: new Date() },
+        });
+        // The frameworks stop being recognisable as the ASI / EU AI Act families,
+        // which is what an un-seeded (or unread) catalogue looks like from here.
+        await prisma.framework.updateMany({
+            where: { key: { startsWith: 'TEST-' } },
+            data: { sourceUrn: null },
+        });
+
+        try {
+            const report = await emitAgenticEvidence(ctx(), { asOf: AS_OF });
+            expect(report.anyTargetInstalled).toBe(false);
+
+            const withdrawn = await withdrawStaleAgenticEvidence(ctx());
+
+            // Exactly one, and it is the per-row fact — not the whole ledger.
+            expect(withdrawn.map((w) => w.reason)).toEqual(['CONTROL_REMOVED']);
+            const after = await artefacts();
+            expect(after.filter((a) => a.status === 'CURRENT').map((a) => a.id).sort()).toEqual(
+                before
+                    .filter((a) => a.controlId !== controls.ASI04)
+                    .map((a) => a.id)
+                    .sort(),
+            );
+        } finally {
+            await prisma.framework.updateMany({
+                where: { key: 'TEST-ASI-LIBRARY-REPRESENTATION' },
+                data: { sourceUrn: ASI_LIBRARY_URN },
+            });
+            await prisma.framework.updateMany({
+                where: { key: 'TEST-EU-AI-ACT-LIBRARY-REPRESENTATION' },
+                data: { sourceUrn: EU_AI_ACT_LIBRARY_URN },
+            });
+        }
     });
 });
 

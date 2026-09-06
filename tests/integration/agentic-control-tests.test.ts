@@ -354,6 +354,246 @@ describeFn('the four agentic checks run as control tests, and can fail', () => {
     });
 
     // ─────────────────────────────────────────────────────────────────
+    // 1b. The head-version read is one row PER CARD, not a cross product
+    // ─────────────────────────────────────────────────────────────────
+
+    describe('policy-card conformance on a tenant big enough to fill a page', () => {
+        // `checkPolicyCardConformance` resolves every card's head version in one
+        // query. That query used to be keyed on `cardId IN (…) AND version IN
+        // (…)` — the CROSS PRODUCT of the two sets, not one row per card — and
+        // capped at the same 500 the agent scan uses. So a tenant with 23 cards,
+        // each holding 23 versions, with `currentVersion` staggered 1..23 across
+        // them, matched 23 × 23 = 529 EXISTING rows against that cap: 29 rows
+        // fell off the page, and the cards whose OWN head row was among them
+        // came back HEAD_UNRESOLVABLE.
+        //
+        // Nothing in this fixture is unhealthy — and that is the whole point.
+        // Its shape is "a customer who adopted agents and has edited their cards
+        // a few times", so the check was likeliest to fabricate a HIGH-severity
+        // NONCONFORMITY against the tenants using most of the product. FAIL is an
+        // attesting verdict, so it also stamped `Control.lastTested` and rolled
+        // the cadence on the invented result, while the evidence row said
+        // `Truncated: no` — the only cap anything watched was the agent scan's.
+        const CARDS = 23;
+        const VERSIONS_PER_CARD = 23;
+        /** The service's own `AGENT_SCAN_CAP`. Restated: it is not exported. */
+        const SCAN_CAP = 500;
+
+        const BIG_TENANT = `tb-${SUITE}`;
+        let planId = '';
+        let controlId = '';
+
+        beforeAll(async () => {
+            await seedTenant(BIG_TENANT);
+            await prisma.tenantMembership.upsert({
+                where: { tenantId_userId: { tenantId: BIG_TENANT, userId: USER } },
+                update: { role: 'OWNER', status: 'ACTIVE' },
+                create: { tenantId: BIG_TENANT, userId: USER, role: 'OWNER', status: 'ACTIVE' },
+            });
+
+            const ids = Array.from({ length: CARDS }, (_, i) => ({
+                systemId: `${SUITE}-bsys-${i}`,
+                agentId: `${SUITE}-bagt-${i}`,
+                cardId: `${SUITE}-bcrd-${i}`,
+                // Staggered, so the DISTINCT set of head version numbers is as
+                // wide as the set of cards. Equal `currentVersion`s would give a
+                // cross product of 23 × 1 and the cap would never have bitten.
+                head: i + 1,
+            }));
+
+            await prisma.aiSystem.createMany({
+                data: ids.map((x) => ({
+                    id: x.systemId,
+                    tenantId: BIG_TENANT,
+                    name: `${SUITE} host ${x.systemId}`,
+                    ownerUserId: USER,
+                })),
+            });
+            await prisma.registeredAgent.createMany({
+                data: ids.map((x) => ({
+                    id: x.agentId,
+                    tenantId: BIG_TENANT,
+                    aiSystemId: x.systemId,
+                    name: `${SUITE} agent ${x.agentId}`,
+                    autonomyLevel: CARD_AUTONOMY,
+                    dataAccessScope: HEALTHY_SCOPE,
+                    reversibility: 'REVERSIBLE' as const,
+                    provenance: 'FIRST_PARTY' as const,
+                    ownerUserId: USER,
+                    status: 'ACTIVE' as const,
+                    riskTier: HEALTHY_TIER,
+                    riskTierScoredAt: new Date(),
+                })),
+            });
+            await prisma.agentPolicyCard.createMany({
+                data: ids.map((x) => ({
+                    id: x.cardId,
+                    tenantId: BIG_TENANT,
+                    agentId: x.agentId,
+                    currentVersion: x.head,
+                    createdByUserId: USER,
+                })),
+            });
+            // EVERY version of every card carries the healthy declaration, so
+            // whichever one is head, the card conforms. The failure this guards
+            // against is about which ROW the query can reach — never about what
+            // the row says.
+            await prisma.agentPolicyCardVersion.createMany({
+                data: ids.flatMap((x) =>
+                    Array.from({ length: VERSIONS_PER_CARD }, (_, v) => ({
+                        tenantId: BIG_TENANT,
+                        cardId: x.cardId,
+                        version: v + 1,
+                        permittedTools: [CARD_TOOL],
+                        maxDataScope: HEALTHY_SCOPE,
+                        maxAutonomyLevel: CARD_AUTONOMY,
+                        maxActionsPerRun: 10,
+                        maxActionsPerDay: 100,
+                        escalationTriggers: [],
+                        approvalRung: 'SINGLE_APPROVER',
+                        seeded: v === 0,
+                        seededFromTier: v === 0 ? HEALTHY_TIER : null,
+                        createdByUserId: USER,
+                    })),
+                ),
+            });
+
+            const seeded = await seedPlan(BIG_TENANT, 'AGENTIC_POLICY_CARD_CONFORMANCE');
+            planId = seeded.planId;
+            controlId = seeded.controlId;
+        }, 180_000);
+
+        it('the fixture really does overflow the page the old query was capped at', async () => {
+            // Stated rather than assumed, in both directions: the cross product
+            // has to EXCEED the cap for the regression to be reachable, and the
+            // version rows have to actually EXIST for the cross product to match
+            // them. A fixture that quietly stopped doing either would leave the
+            // PASS below passing for the wrong reason.
+            expect(CARDS * VERSIONS_PER_CARD).toBeGreaterThan(SCAN_CAP);
+            await expect(
+                prisma.agentPolicyCardVersion.count({ where: { tenantId: BIG_TENANT } }),
+            ).resolves.toBe(CARDS * VERSIONS_PER_CARD);
+            await expect(
+                prisma.agentPolicyCard.count({ where: { tenantId: BIG_TENANT } }),
+            ).resolves.toBe(CARDS);
+        });
+
+        it('PASSES every conformant card even though their version rows outnumber the page', async () => {
+            const result = await runPlan(BIG_TENANT, planId);
+
+            expect(result.runResult).toBe('PASS');
+            expect(result.findingCreated).toBe(false);
+
+            const body = await evidenceBodyFor(result.evidenceId);
+            expect(body).toContain('Basis: ALL_CARDS_CONFORMANT');
+            expect(body).toContain(`Examined: ${CARDS}`);
+            expect(body).toContain('Breaches: 0');
+            // The two claims that were both false before the fix: no card was
+            // reported unresolvable, and nothing was silently dropped.
+            expect(body).not.toContain('HEAD_UNRESOLVABLE');
+            expect(body).toContain('Truncated: no');
+
+            // A PASS attests, so this is also the assertion that the cadence
+            // moved on a real reading rather than an invented one.
+            const control = await prisma.control.findUnique({
+                where: { id: controlId },
+                select: { lastTested: true },
+            });
+            expect(control?.lastTested).not.toBeNull();
+        });
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // 1c. …and a head row that is genuinely gone is still caught
+    // ─────────────────────────────────────────────────────────────────
+
+    describe('a card pointing at a version row that does not exist', () => {
+        // The companion to the case above, and the reason it is a separate
+        // tenant: a fix that made HEAD_UNRESOLVABLE unreachable would satisfy
+        // every assertion in that block. `HEAD_UNRESOLVABLE` has to keep meaning
+        // "the head row does not exist" — the narrowing was to stop it ALSO
+        // meaning "the head row did not fit in the page", not to retire it.
+        const GONE_TENANT = `tg-${SUITE}`;
+        const GONE_HEAD = 2;
+        let planId = '';
+
+        beforeAll(async () => {
+            await seedTenant(GONE_TENANT);
+            await prisma.tenantMembership.upsert({
+                where: { tenantId_userId: { tenantId: GONE_TENANT, userId: USER } },
+                update: { role: 'OWNER', status: 'ACTIVE' },
+                create: { tenantId: GONE_TENANT, userId: USER, role: 'OWNER', status: 'ACTIVE' },
+            });
+
+            const system = await prisma.aiSystem.create({
+                data: { tenantId: GONE_TENANT, name: `${SUITE} gone host`, ownerUserId: USER },
+            });
+            const agent = await prisma.registeredAgent.create({
+                data: {
+                    tenantId: GONE_TENANT,
+                    aiSystemId: system.id,
+                    name: `${SUITE} gone agent`,
+                    autonomyLevel: CARD_AUTONOMY,
+                    dataAccessScope: HEALTHY_SCOPE,
+                    reversibility: 'REVERSIBLE',
+                    provenance: 'FIRST_PARTY',
+                    ownerUserId: USER,
+                    status: 'ACTIVE',
+                    riskTier: HEALTHY_TIER,
+                    riskTierScoredAt: new Date(),
+                },
+            });
+            const card = await prisma.agentPolicyCard.create({
+                // The pointer says version 2 is in force. Only version 1 was
+                // ever written, so the authority the boundary would read is not
+                // there — a card that declares nothing anyone can check.
+                data: {
+                    tenantId: GONE_TENANT,
+                    agentId: agent.id,
+                    currentVersion: GONE_HEAD,
+                    createdByUserId: USER,
+                },
+            });
+            await prisma.agentPolicyCardVersion.create({
+                data: {
+                    tenantId: GONE_TENANT,
+                    cardId: card.id,
+                    version: 1,
+                    permittedTools: [CARD_TOOL],
+                    maxDataScope: HEALTHY_SCOPE,
+                    maxAutonomyLevel: CARD_AUTONOMY,
+                    maxActionsPerRun: 10,
+                    maxActionsPerDay: 100,
+                    escalationTriggers: [],
+                    approvalRung: 'SINGLE_APPROVER',
+                    seeded: true,
+                    seededFromTier: HEALTHY_TIER,
+                    createdByUserId: USER,
+                },
+            });
+
+            planId = (await seedPlan(GONE_TENANT, 'AGENTIC_POLICY_CARD_CONFORMANCE')).planId;
+        }, 180_000);
+
+        it('FAILS with HEAD_UNRESOLVABLE, and does not dress the absence up as a truncation', async () => {
+            const result = await runPlan(GONE_TENANT, planId);
+
+            expect(result.runResult).toBe('FAIL');
+            expect(result.findingCreated).toBe(true);
+
+            const body = await evidenceBodyFor(result.evidenceId);
+            expect(body).toContain('Basis: CARD_OUTSIDE_DECLARATION');
+            expect(body).toContain(`code=HEAD_UNRESOLVABLE version=${GONE_HEAD}`);
+            expect(body).toContain('Breaches: 1');
+            // The distinction the fix turns on: this row IS missing, so it is a
+            // breach and the run is NOT truncated. The other reading — "missing
+            // from the page" — has its own code and costs zero breaches.
+            expect(body).toContain('Truncated: no');
+            expect(body).not.toContain('HEAD_PAGE_TRUNCATED');
+        });
+    });
+
+    // ─────────────────────────────────────────────────────────────────
     // 2. Tool-manifest integrity
     // ─────────────────────────────────────────────────────────────────
 

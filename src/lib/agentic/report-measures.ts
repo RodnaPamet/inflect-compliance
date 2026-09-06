@@ -34,6 +34,15 @@
  * drill produces exactly the same zero by summing an empty list. That one is
  * `NO_POPULATION`.
  *
+ * There is a THIRD way to arrive at that same zero, and it is the one that got
+ * past the first fix: a drill that ERRORED. It is a row, so the denominator is
+ * not empty and `NO_POPULATION` does not fire — but `toolCallsAfterKill` carries
+ * `@default(0)` and a run that never reached the boundary never overwrites it,
+ * so the pack's flagship claim was being earned by a drill the schema itself
+ * describes as having "proved nothing". Rows existing while the judgement they
+ * would carry does not is exactly `NOT_ASSESSED`, and it is why the population
+ * a sum runs over must be "the rows that measured something", never "the rows".
+ *
  * ## `basis` is a CODE, never prose
  *
  * A non-measured state carries a stable code saying which absence it is. Codes
@@ -78,6 +87,15 @@ export const MEASURE_BASES = [
     'NO_ANSWERED_SAMPLE_AUDITS',
     /** No kill-switch drill has run, so nothing was measured after a kill. */
     'NO_DRILLS_RUN',
+    /**
+     * Drills ran and every one of them ERRORED, so none produced a measurement.
+     *
+     * Distinct from `NO_DRILLS_RUN` because the two demand different actions:
+     * that one says "go run a drill", this one says "your drills are running
+     * and breaking — fix the harness". Collapsing them would hide the second
+     * behind advice that has already been taken.
+     */
+    'ALL_DRILLS_ERRORED',
     /** No kill switch was ever engaged in the window. */
     'NO_KILLS_ENGAGED',
     /** No vendor supplies an agent here, so vendor assurance has no subject. */

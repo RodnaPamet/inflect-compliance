@@ -58,10 +58,11 @@
  * What one FIRING costs, per check, all inside the transaction the runner has
  * already opened:
  *
- *   POLICY_CARD_CONFORMANCE   3 queries — agents, their cards, the head
- *                             versions of those cards. Bounded by
- *                             `AGENT_SCAN_CAP`, and `truncated` says so when
- *                             the cap bites.
+ *   POLICY_CARD_CONFORMANCE   3 queries — agents, their cards, and one exact
+ *                             (cardId, version) pair per card. The first two
+ *                             are bounded by `AGENT_SCAN_CAP` and the third by
+ *                             the card count; `truncated` says so when either
+ *                             bites, and no cap is ever reported as a breach.
  *   TOOL_MANIFEST_INTEGRITY   1 query, bounded by `PIN_SCAN_CAP`. The live
  *                             hashes are computed ONCE per process
  *                             (`liveManifestsByName`) — the definitions ship
@@ -288,8 +289,8 @@ export async function checkPolicyCardConformance(
         orderBy: { id: 'asc' },
         take: AGENT_SCAN_CAP + 1,
     });
-    const truncated = scanned.length > AGENT_SCAN_CAP;
-    const agents = truncated ? scanned.slice(0, AGENT_SCAN_CAP) : scanned;
+    const agentScanTruncated = scanned.length > AGENT_SCAN_CAP;
+    const agents = agentScanTruncated ? scanned.slice(0, AGENT_SCAN_CAP) : scanned;
     const agentIds = agents.map((a) => a.id);
 
     const cards =
@@ -301,21 +302,45 @@ export async function checkPolicyCardConformance(
                   take: AGENT_SCAN_CAP,
               });
 
-    // Head versions in ONE query keyed on the distinct version NUMBERS the
-    // cards named, then paired in memory. A per-card lookup would be an N+1
-    // over the whole register; a `take: 1` ordered by version descending would
-    // read "the newest version" while meaning "the version in force", which is
-    // the coincidence `policy-card-store.ts` refuses for the same reason.
-    const headVersionNumbers = [...new Set(cards.map((c) => c.currentVersion))];
+    // Head versions in ONE query, keyed on the EXACT (cardId, version) PAIR each
+    // card names. A per-card lookup would be an N+1 over the whole register; a
+    // `take: 1` ordered by version descending would read "the newest version"
+    // while meaning "the version in force", which is the coincidence
+    // `policy-card-store.ts` refuses for the same reason.
+    //
+    // ── THE TRAP THE PAIR PREDICATE REPLACED ────────────────────────
+    //
+    // This used to filter `cardId IN (…) AND version IN (…)`, which is the
+    // CROSS PRODUCT of the two sets and not one row per card, and then cap the
+    // result at AGENT_SCAN_CAP. A tenant with 23 perfectly conformant cards
+    // whose `currentVersion`s happened to be 23 distinct numbers, each card
+    // holding all 23 of its versions, matched 23 × 23 = 529 rows against a take
+    // of 500. Twenty-nine rows fell off the page, and the two cards whose OWN
+    // head row was among them were counted as HEAD_UNRESOLVABLE breaches.
+    //
+    // Nothing in that tenant was wrong. FAIL is an attesting verdict, so the
+    // fabricated result stamped `Control.lastTested`, rolled the cadence and
+    // raised a HIGH-severity NONCONFORMITY Finding — and the evidence row said
+    // `Truncated: no`, because the only cap anything watched was the AGENT
+    // scan's and that one had not bitten. The bigger and healthier the tenant,
+    // the likelier it fired.
+    //
+    // The pair form cannot do this: `@@unique([tenantId, cardId, version])`
+    // means each OR arm matches AT MOST ONE row, so a take of exactly
+    // `headPairs.length` can never elide a head row that exists.
+    //
+    // Bind-parameter budget, since the OR list grows with the tenant: `cards` is
+    // bounded by the same AGENT_SCAN_CAP that bounds `agents`, because a card
+    // belongs to exactly one agent (`@@unique([tenantId, agentId])`). Worst case
+    // is 500 arms ≈ 1,001 parameters against Postgres's 65,535 — 1.5% of the
+    // ceiling. Hence one query and no chunk loop: chunking would put a read
+    // inside a loop to respect a bound the cap already makes unreachable.
+    const headPairs = cards.map((c) => ({ cardId: c.id, version: c.currentVersion }));
     const versions =
-        cards.length === 0
+        headPairs.length === 0
             ? []
             : await db.agentPolicyCardVersion.findMany({
-                  where: {
-                      tenantId,
-                      cardId: { in: cards.map((c) => c.id) },
-                      version: { in: headVersionNumbers },
-                  },
+                  where: { tenantId, OR: headPairs },
                   select: {
                       cardId: true,
                       version: true,
@@ -323,19 +348,41 @@ export async function checkPolicyCardConformance(
                       maxDataScope: true,
                       maxAutonomyLevel: true,
                   },
-                  take: AGENT_SCAN_CAP,
+                  take: headPairs.length,
               });
     const headByCard = new Map(versions.map((v) => [`${v.cardId}:${v.version}`, v] as const));
     const agentById = new Map(agents.map((a) => [a.id, a] as const));
 
+    // A head row missing from a page that came back FULL was not necessarily
+    // missing at all — it may simply not have fitted. That is a fact about the
+    // QUERY; only the other case is a fact about the tenant, and the two must
+    // never share a code. `HEAD_UNRESOLVABLE` means "the head row does not
+    // exist", never "the head row did not fit in the page".
+    //
+    // Under the pair predicate above this branch is unreachable (each arm
+    // matches at most one row and the take equals the arm count), which is
+    // exactly why it is written down: it is the tripwire for a future
+    // re-widening of that predicate, so the next person who reaches for an `in:`
+    // gets `truncated: true` and a count of zero breaches instead of a Finding
+    // against a healthy tenant.
+    const headPageWasFull = versions.length >= headPairs.length;
+
     const facts: string[] = [];
     let breachedCards = 0;
+    let headsLostToCap = 0;
 
     for (const card of cards) {
         const agent = agentById.get(card.agentId);
         if (!agent) continue;
         const head = headByCard.get(`${card.id}:${card.currentVersion}`);
         if (!head) {
+            if (headPageWasFull) {
+                headsLostToCap += 1;
+                facts.push(
+                    `agent=${card.agentId} code=HEAD_PAGE_TRUNCATED version=${card.currentVersion}`,
+                );
+                continue;
+            }
             breachedCards += 1;
             facts.push(
                 `agent=${card.agentId} code=HEAD_UNRESOLVABLE version=${card.currentVersion}`,
@@ -390,7 +437,7 @@ export async function checkPolicyCardConformance(
             vacuous: true,
             population: 0,
             breaches: 0,
-            truncated,
+            truncated: agentScanTruncated,
             facts: [`agents=${agents.length}`, 'cards=0'],
         };
     }
@@ -402,11 +449,14 @@ export async function checkPolicyCardConformance(
         vacuous: false,
         population,
         breaches: breachedCards,
-        truncated,
+        // Either cap biting means the numbers cover a subset, and a head lost to
+        // the version page is reported HERE rather than as a breach.
+        truncated: agentScanTruncated || headsLostToCap > 0,
         facts: bounded([
             `agents=${agents.length}`,
             `cards=${population}`,
             `uncarded=${agents.length - population}`,
+            `headsLostToCap=${headsLostToCap}`,
             ...facts,
         ]),
     };
