@@ -221,6 +221,30 @@ export async function applyCatalogFile(
     // `version` moves into the payload, where it belongs: it is data about the
     // framework, not part of its identity.
     const fwBefore = await prisma.framework.findFirst({ where: { key: file.framework.key } });
+    // Provenance travels with the content, on both paths.
+    //
+    // `metadata` and `sourceUrn` carry the licensing statements that make
+    // shipping a standard's structure lawful — "© OWASP Foundation, licensed
+    // CC-BY-SA-4.0", and for the ISO sets `referenceIndexOnly: true` with "NOT
+    // a reproduction of the standard". prisma/seed.ts has written them for
+    // eleven frameworks since those libraries landed; this applier wrote
+    // neither, so any framework moved onto a CatalogFile lost its attribution
+    // on a database built from the repo. Nothing compared the two writers, so
+    // nothing said so.
+    //
+    // Written on BOTH arms deliberately, unlike the template-level fields
+    // below. A licence that changes is a correction to a legal statement, and
+    // the reason template titles are skipped — "re-titling a shipped control
+    // is a decision, not a sync" — argues the other way here: an out-of-date
+    // attribution is the thing you want overwritten.
+    const metadataJson = file.framework.metadata
+        ? JSON.stringify(file.framework.metadata)
+        : undefined;
+    const provenance = {
+        ...(metadataJson !== undefined ? { metadataJson } : {}),
+        ...(file.framework.sourceUrn ? { sourceUrn: file.framework.sourceUrn } : {}),
+    };
+
     const framework = await prisma.framework.upsert({
         where: { key: file.framework.key },
         update: {
@@ -230,6 +254,7 @@ export async function applyCatalogFile(
             ...(file.framework.description !== undefined
                 ? { description: file.framework.description }
                 : {}),
+            ...provenance,
         },
         create: {
             key: file.framework.key,
@@ -239,6 +264,7 @@ export async function applyCatalogFile(
             ...(file.framework.description !== undefined
                 ? { description: file.framework.description }
                 : {}),
+            ...provenance,
         },
     });
 

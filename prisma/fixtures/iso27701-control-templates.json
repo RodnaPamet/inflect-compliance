@@ -10,7 +10,17 @@
     "name": "ISO/IEC 27701:2019",
     "version": "2019",
     "kind": "ISO_STANDARD",
-    "description": "ISO/IEC 27701:2019 — privacy information management extension to ISO 27001/27002."
+    "description": "ISO/IEC 27701:2019 — privacy information management extension to ISO 27001/27002.",
+    "metadata": {
+      "locale": "en",
+      "provider": "ISO/IEC",
+      "packager": "inflect",
+      "publicationDate": "2019-08-06",
+      "license": "iso-copyright",
+      "sourceUrl": "https://www.iso.org/standard/71670.html",
+      "copyright": "Structural clause-reference outline; ISO/IEC 27701:2019 normative text is ISO-copyrighted."
+    },
+    "sourceUrn": "urn:inflect:library:iso27701-2019"
   },
   "requirements": [
     {
