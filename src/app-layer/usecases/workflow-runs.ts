@@ -56,11 +56,18 @@ import { runProposeTool } from '@/lib/mcp/tools/propose-tools';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
 import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
 import {
-    ENGINE_CAPS,
     estimateTokens,
     type WorkflowContext,
     type WorkflowDefinition,
 } from '@/lib/agentic/workflow-types';
+import {
+    createRunBudget,
+    ENGINE_RUN_CAPS,
+    resolveRunCaps,
+    RUN_CAP_KINDS,
+    type RunBudget,
+    type RunCapHalt,
+} from '@/lib/agentic/run-caps';
 import {
     ContextIntegrityError,
     describeContextHalt,
@@ -71,6 +78,8 @@ import {
 import {
     recordAgenticFanOutHalt,
     recordAgenticMemberFailure,
+    recordAgentRunCapHalt,
+    recordAgentRunCapUtilisation,
     recordWorkflowContextBytes,
     recordWorkflowContextIntegrityHalt,
 } from '@/lib/observability/metrics';
@@ -201,11 +210,24 @@ export async function resumeWorkflowRun(
         requestId: ctx.requestId, detailsJson: { category: 'access' },
     }).catch(() => undefined);
 
-    // The count is for THIS SEGMENT, and that is the honest scope: a resume
-    // re-enters the executor at the next step, so it can only speak for the
-    // steps it ran. The durable, whole-run answer is the `FAILED` WorkflowStep
-    // rows, which `getWorkflowRun` returns.
-    const { status, stepFailures } = await executeFrom(ctx, runId, def, resumedFrom + 1, Date.now());
+    // THE RUN'S OWN START, not this resume's. `Date.now()` here handed every
+    // resumed run a fresh wall clock, so the hour-long `RUNTIME_MS` cap bounded
+    // a SEGMENT and not a run — and a workflow with two checkpoints could span
+    // three hours while every segment reported itself well inside the ceiling.
+    // The same defect `actionsAlready` already fixed for the action budget, on
+    // the one axis where the wrong answer looks most like the right one,
+    // because a paused run genuinely is not spending anything.
+    //
+    // A run that sat at a checkpoint for a day has spent a day, and that is the
+    // intended reading: `WALL_CLOCK_MS` is documented as "max wall-clock a run
+    // may span (ACROSS RESUMES)".
+    const { status, stepFailures } = await executeFrom(
+        ctx,
+        runId,
+        def,
+        resumedFrom + 1,
+        run.startedAt.getTime(),
+    );
     return { status, stepFailures };
 }
 
@@ -268,15 +290,29 @@ export async function listWorkflowRuns(
 
 /**
  * Execute steps from `fromSeq` until completion or a HUMAN_CHECKPOINT. Returns
- * the run's resulting status. Enforces the per-run step / token / wall-clock
- * caps. A thrown step marks the run FAILED (never a half-applied mutation —
- * writes are proposals).
+ * the run's resulting status. A thrown step marks the run FAILED (never a
+ * half-applied mutation — writes are proposals).
  *
- * It also enforces the FOURTH cap, which is not in `ENGINE_CAPS` because it
- * bounds a different thing: the other three bound what a run may SPEND, this
- * one bounds what a single persisted context may WEIGH. A run can sit far
- * inside its token budget while one tool output makes its memory unbounded.
- * Over the cap the run HALTS — see `commitContext`; nothing is trimmed to fit.
+ * ## The five SPEND caps, and the one WEIGH cap
+ *
+ * Five axes bound what a run may spend — steps, tool calls, proposed items,
+ * tokens and wall clock — and all five are resolved once into a `RunBudget`
+ * (`src/lib/agentic/run-caps.ts`) rather than checked inline. The budget is the
+ * composition of the engine's global ceiling with this agent's own policy card,
+ * strictest wins; an agent with NO card gets the engine ceiling rather than no
+ * ceiling at all, which is the hole that composition closes.
+ *
+ * EVERY ONE OF THEM HALTS. None trims and continues. A run given the first
+ * hundred of five hundred proposals, or the first forty of sixty steps, is a
+ * run that looks like it finished and reasoned over a subset nobody chose —
+ * and nothing downstream can tell it apart, because the evidence that would say
+ * so is the evidence that was dropped. So a breach returns through
+ * `haltRunAtCap`, which records WHICH cap fired and HOW MUCH work was left.
+ *
+ * The SIXTH cap is not a spend cap and is enforced elsewhere: it bounds what a
+ * single persisted context may WEIGH. A run can sit far inside its token budget
+ * while one tool output makes its memory unbounded. Over the cap the run HALTS
+ * too — see `commitContext`.
  */
 interface ExecuteOutcome {
     status: string;
@@ -350,18 +386,46 @@ async function executeFrom(
     // checkpoint — and a run with three checkpoints would quietly get four.
     const invocation = await resolveMcpInvocation(ctx, { actionsAlready: fromSeq });
 
+    // The run's budget, composed from the engine's global ceiling and this
+    // agent's own policy card — strictest wins, and an agent with NO card gets
+    // the engine ceiling rather than no ceiling. See `run-caps.ts`.
+    //
+    // Seeded from what earlier SEGMENTS of this run already spent, for the
+    // reason `actionsAlready` above exists: a counter that starts at zero here
+    // hands a run one full budget per human checkpoint, so a workflow with
+    // three checkpoints would quietly get four.
+    const budget = createRunBudget({
+        caps: resolveRunCaps(invocation.policyCard?.inForce.value ?? null),
+        now: () => Date.now(),
+        // The RUN's start, not this segment's: a run that sat at a checkpoint
+        // for a day has spent a day of its wall clock.
+        startedAtMs: runStartMs,
+        spent: {
+            STEPS: fromSeq,
+            // At most one tool call per step, and the same proxy
+            // `resolveMcpInvocation` is handed — so the engine's budget and the
+            // card's bind on the same call rather than one call apart.
+            TOOL_CALLS: fromSeq,
+            PROPOSALS: await proposedItemsSoFar(ctx, runId),
+            TOKENS: costTokens,
+        },
+    });
+
     for (let seq = fromSeq; seq < def.steps.length; seq++) {
-        // ── Guardrails ──
-        if (seq >= ENGINE_CAPS.MAX_STEPS) {
-            const status = await failRun(ctx, runId, `step cap (${ENGINE_CAPS.MAX_STEPS}) exceeded`);
+        // ── Caps. Every one of them HALTS — nothing here trims and continues. ──
+        //
+        // Charged BEFORE the step so a refusal means the step was never
+        // entered, which is the same pre-execution property the policy card
+        // has at the tool boundary: "the tool function was never called" is a
+        // testable claim; "it returned an error" is not.
+        const runtimeHalt = budget.charge('RUNTIME_MS', 0);
+        if (runtimeHalt) {
+            const status = await haltRunAtCap(ctx, runId, runtimeHalt, def.steps.length - seq);
             return { status, stepFailures };
         }
-        if (Date.now() - runStartMs > ENGINE_CAPS.WALL_CLOCK_MS) {
-            const status = await failRun(ctx, runId, 'wall-clock timeout exceeded');
-            return { status, stepFailures };
-        }
-        if (costTokens > ENGINE_CAPS.MAX_TOKENS) {
-            const status = await failRun(ctx, runId, `token budget (${ENGINE_CAPS.MAX_TOKENS}) exceeded`);
+        const stepHalt = budget.charge('STEPS', 1);
+        if (stepHalt) {
+            const status = await haltRunAtCap(ctx, runId, stepHalt, def.steps.length - seq);
             return { status, stepFailures };
         }
         // Abort/pause may have been requested between steps.
@@ -408,6 +472,13 @@ async function executeFrom(
             }
 
             if (step.kind === 'READ') {
+                // RETURNED, NOT AWAITED, here and at every cap halt inside this
+                // `try`: a `return` inside a `try` is not routed to the `catch`
+                // below, so a halt cannot be re-reported as a step failure —
+                // which would overwrite the cap an operator needs to read with
+                // a tool error that did not happen.
+                const readHalt = budget.charge('TOOL_CALLS', 1);
+                if (readHalt) return haltRunAtCap(ctx, runId, readHalt, def.steps.length - seq);
                 const args = step.args ? step.args(context) : {};
                 const result = await runReadTool(invocation, step.tool, args);
                 const output = parseToolResult(result);
@@ -419,6 +490,24 @@ async function executeFrom(
                 if (items.length === 0) {
                     await recordStep(ctx, runId, seq, 'PROPOSE', { toolCalled: step.tool, status: 'SKIPPED', label: step.label }, chainSeq);
                 } else {
+                    // BOTH axes, and both before the tool runs. The proposal
+                    // budget is charged for every ITEM, because one propose
+                    // call carrying five hundred items is one tool call — so a
+                    // per-call cap bounds proposal flooding not at all.
+                    //
+                    // `items.length` is charged whole. There is deliberately no
+                    // `items.slice(0, remaining)` here: a run given the first
+                    // hundred of five hundred proposals produces a review queue
+                    // that reads as the agent's considered output, and nobody
+                    // chose that subset.
+                    const proposalHalt = budget.charge('PROPOSALS', items.length);
+                    if (proposalHalt) {
+                        return haltRunAtCap(ctx, runId, proposalHalt, def.steps.length - seq);
+                    }
+                    const proposeHalt = budget.charge('TOOL_CALLS', 1);
+                    if (proposeHalt) {
+                        return haltRunAtCap(ctx, runId, proposeHalt, def.steps.length - seq);
+                    }
                     const rationale = step.rationale ? step.rationale(context) : undefined;
                     const result = await runProposeTool(invocation, step.tool, { items, rationale });
                     const output = parseToolResult(result);
@@ -440,6 +529,16 @@ async function executeFrom(
             });
             chainSeq = committed.seq;
             chainHash = committed.hash;
+
+            // Tokens are charged AFTER the commit, and that ordering is the
+            // whole difference between halting and truncating. The step has
+            // already run; its output is real and is now durably recorded.
+            // Charging before the commit and halting would throw away work that
+            // was actually done — which is a silent loss wearing a cap's
+            // clothes. So the completed step keeps its output, and the run
+            // stops before the next one.
+            const tokenHalt = budget.charge('TOKENS', costTokens - budget.used('TOKENS'));
+            if (tokenHalt) return haltRunAtCap(ctx, runId, tokenHalt, def.steps.length - seq - 1);
         } catch (err) {
             // An integrity failure is NOT a step failure and must not be
             // recorded as one: the step ran, the context it produced is the
@@ -535,6 +634,7 @@ async function executeFrom(
         }
         throw err;
     }
+    recordRunCapUtilisation(budget);
     return { status: 'COMPLETED', stepFailures };
 }
 
@@ -611,6 +711,133 @@ async function updateRun(
     await runInTenantContext(ctx, (db) =>
         db.workflowRun.update({ where: { id: runId }, data: data as never }),
     );
+}
+
+/**
+ * Mark a run HALTED AT A CAP, and record WHICH cap and how much work is left.
+ *
+ * Separate from `failRun` on purpose, and the separation is the requirement
+ * rather than tidiness. `failRun` says a step went wrong; this says nothing
+ * went wrong at all — the run was working exactly as designed and was stopped
+ * because it reached a ceiling somebody set. Those are different operator
+ * actions (debug the workflow vs. decide whether the ceiling is right), and an
+ * `errorMessage` that reads like a tool error sends people to the first one.
+ *
+ * `stepsNotRun` is the part that makes this a halt rather than a trim. Without
+ * it a halted run is indistinguishable from a completed one to anything reading
+ * the row: same `FAILED` status a broken step leaves, same absent tail. With
+ * it, the remaining work is a recorded number in a hash-chained row that is
+ * never deleted — visibly not-done rather than quietly gone.
+ *
+ * The run stays `FAILED` rather than gaining a `HALTED` status of its own.
+ * Adding an enum value is safe to WRITE under a rolling deploy and unsafe to
+ * READ: a container still running the old build would fail to deserialise a
+ * status its client does not know, taking the whole run list down for the
+ * duration of the rollout. The cap is carried by the audit action, the details
+ * and the message instead — all three of which an old build reads as strings.
+ */
+async function haltRunAtCap(
+    ctx: RequestContext,
+    runId: string,
+    halt: RunCapHalt,
+    stepsNotRun: number,
+): Promise<string> {
+    await updateRun(ctx, runId, {
+        status: 'FAILED',
+        completedAt: new Date(),
+        errorMessage: halt.message,
+    });
+    recordAgentRunCapHalt({ cap: halt.kind, source: halt.source });
+    await appendAuditEntry({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
+        entity: 'WorkflowRun',
+        entityId: runId,
+        // A distinct action, not a `WORKFLOW_RUN_FAILED` with a special
+        // message. An operator filtering the trail for cap halts must not have
+        // to grep prose to find them.
+        action: 'WORKFLOW_RUN_CAP_HALTED',
+        requestId: ctx.requestId,
+        // Every field named at the sink, none spread. All six are structural
+        // facts about the ceiling — a cap kind, two integers, a source, and how
+        // much work stopped. None of them is content, and none of them can
+        // become content when the halt type grows a field.
+        detailsJson: {
+            category: 'access',
+            cap: halt.kind,
+            capSource: halt.source,
+            limit: halt.limit,
+            used: halt.used,
+            refused: halt.refused,
+            stepsNotRun,
+        },
+        metadataJson: { apiKeyId: ctx.apiKeyId ?? null, agentId: ctx.agentId ?? null },
+    }).catch(() => undefined);
+    return 'FAILED';
+}
+
+/**
+ * How many items this run has ALREADY proposed, across every segment.
+ *
+ * Read from the append-only step ledger rather than accumulated in memory,
+ * because `executeFrom` is re-entered after every human checkpoint: a counter
+ * seeded at zero would hand a run with three checkpoints four proposal budgets,
+ * which is the exact defect `resolveMcpInvocation`'s `actionsAlready` comment
+ * already records for the card's per-run budget.
+ *
+ * An unreadable or absent count reads as ZERO, not as the cap. A run whose
+ * PROPOSE steps predate the recorded count would otherwise halt on resume
+ * having done nothing wrong — the same direction `highestRecordedContextSeq`
+ * takes for its own missing lower bound.
+ */
+async function proposedItemsSoFar(ctx: RequestContext, runId: string): Promise<number> {
+    const steps = await runInTenantContext(ctx, (db) =>
+        db.workflowStep.findMany({
+            where: { runId, tenantId: ctx.tenantId, kind: 'PROPOSE', status: 'DONE' },
+            select: { inputJson: true },
+            // A run cannot execute more steps than the engine's step cap, so
+            // this is the tightest honest bound rather than a round number.
+            take: ENGINE_RUN_CAPS.STEPS,
+        }),
+    );
+    let total = 0;
+    for (const step of steps) total += proposedItemCount(step.inputJson);
+    return total;
+}
+
+/** The `{ count }` a PROPOSE step recorded, or 0 when it cannot be read. */
+function proposedItemCount(inputJson: string | null): number {
+    if (inputJson === null) return 0;
+    try {
+        const parsed: unknown = JSON.parse(inputJson);
+        if (typeof parsed !== 'object' || parsed === null) return 0;
+        const count = (parsed as { count?: unknown }).count;
+        return typeof count === 'number' && Number.isFinite(count) && count > 0
+            ? Math.floor(count)
+            : 0;
+    } catch {
+        return 0;
+    }
+}
+
+/**
+ * How close a run that did NOT halt came to each of its ceilings.
+ *
+ * Recorded on the way out of a completed run, because a cap that only ever
+ * shows up as halts is a cap nobody can plan around — the first time anyone
+ * learns the number is too low is when a customer's run dies. A p99 near 100 on
+ * any axis is the warning that the next workflow change halts runs.
+ */
+function recordRunCapUtilisation(budget: RunBudget): void {
+    for (const kind of RUN_CAP_KINDS) {
+        const limit = budget.caps[kind].limit;
+        if (limit <= 0) continue;
+        recordAgentRunCapUtilisation({
+            cap: kind,
+            percent: Math.min(100, (budget.used(kind) / limit) * 100),
+        });
+    }
 }
 
 async function failRun(ctx: RequestContext, runId: string, message: string): Promise<string> {

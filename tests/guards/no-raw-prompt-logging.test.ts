@@ -247,6 +247,10 @@ const SINK_FLOOR = 30;
  *   MOST_OPAQUE_SINGLE_CALL                 the worst single call on it, 6
  *
  * The ceiling is `(99 + 6) / 51`. In words: the path may absorb ONE more sink
+ *   MEASURED_HOLES / MEASURED_SINKS         the path today, 99 / 46 = 2.152
+ *   MOST_OPAQUE_SINGLE_CALL                 the worst single call on it, 6
+ *
+ * The ceiling is `(99 + 6) / 46`. In words: the path may absorb ONE more sink
  * call as opaque as the most opaque one it already has before somebody has to
  * look. Two such calls fail. Seven more opaque fields on the EXISTING calls,
  * with no new sink, fail. That is the sensitivity this cap is for — it moves
@@ -276,6 +280,17 @@ const SINK_FLOOR = 30;
 const MEASURED_HOLES = 113;
 const MEASURED_HOLES = 99;
 const MEASURED_SINKS = 51;
+// 2026-09-06 (ASI08 run caps): +2 holes, +1 sink. `haltRunAtCap` in
+// `workflow-runs.ts` writes the `WORKFLOW_RUN_CAP_HALTED` row, and its two
+// opaque positions are `entityId: runId` — which every audit call in that file
+// already carries — and `stepsNotRun`, an integer count of steps that did not
+// execute. Every other field on that row is a member access the rule resolves
+// (`halt.kind`, `halt.limit`, `halt.source`, `halt.used`, `halt.refused`), so
+// the bag is named at the sink rather than spread. Neither opaque value is
+// content, and neither can become content: one is a cuid, the other is derived
+// from `def.steps.length`.
+const MEASURED_HOLES = 99;
+const MEASURED_SINKS = 46;
 /** `src/lib/mcp/auth.ts` — a six-field `detailsJson` bag built out of locals. */
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
