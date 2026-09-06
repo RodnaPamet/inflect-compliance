@@ -57,6 +57,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 
+import { listMcpResources } from '@/lib/mcp/resources';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { getPermissionsForRole } from '@/lib/permissions';
@@ -221,6 +222,22 @@ async function callProbeTool(ctx: RequestContext): Promise<string | null> {
     try {
         const inv = await resolveMcpInvocation(ctx);
         await runReadTool(inv, PROBE_TOOL, {});
+        return null;
+    } catch (err) {
+        return err instanceof Error ? err.message : String(err);
+    }
+}
+
+/**
+ * The OTHER door. `listMcpResources` reaches tenant data without going through
+ * `runReadTool`, so a stop wired only into the tool funnel leaves it open — and
+ * nothing pinned that half, which is how a guarantee stated in a docstring
+ * becomes decoration.
+ */
+async function callProbeResource(ctx: RequestContext): Promise<string | null> {
+    try {
+        const inv = await resolveMcpInvocation(ctx);
+        await listMcpResources(inv);
         return null;
     } catch (err) {
         return err instanceof Error ? err.message : String(err);
@@ -632,4 +649,29 @@ describeFn('the agent kill switch stops a run already in flight (real DB)', () =
             await prisma.agentKillSwitch.count({ where: { tenantId: TENANT_B, agentId: agentA1 } }),
         ).toBe(0);
     });
+
+    describe('the stop covers BOTH doors, not just the tool funnel', () => {
+        it('a killed agent cannot read through the resources surface either', async () => {
+            // Deleting `assertNotKilled` from `authorizeResourceRead` left the whole
+            // kill suite green, so this half of the guarantee was untested. A stop
+            // that covers one of two doors is a stop somebody walks around.
+            expect(await callProbeResource(agentCtx(TENANT_A, agentA1))).toBeNull();
+
+            await engageKillSwitch(ownerCtx(TENANT_A), {
+                agentId: agentA1,
+                reason: 'Resources-door coverage — integration test',
+            });
+
+            expect(await callProbeResource(agentCtx(TENANT_A, agentA1))).toBe(
+                killRefusalMessage('AGENT'),
+            );
+            // …and the tool door agrees, so this is not a resources-only artefact.
+            expect(await callProbeTool(agentCtx(TENANT_A, agentA1))).toBe(
+                killRefusalMessage('AGENT'),
+            );
+            // The neighbour is untouched on BOTH doors.
+            expect(await callProbeResource(agentCtx(TENANT_A, agentA2))).toBeNull();
+        });
+    });
 });
+

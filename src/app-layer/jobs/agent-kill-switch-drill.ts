@@ -302,7 +302,16 @@ export async function runKillSwitchDrill(
         ];
 
         const outcome = scopesFailed.length === 0 ? 'PASSED' : 'FAILED';
-        return recordDrill(tenantId, jobRunId, startedAt, {
+        // AWAITED, not returned. A bare `return recordDrill(...)` inside a `try`
+        // hands the promise back before it settles, so the `catch` below never
+        // sees a rejection from the Evidence/Finding/drill-row WRITE — it
+        // propagates out of this function, out of the per-tenant loop, and every
+        // tenant after the failing one goes undrilled. With `attempts: 1` there
+        // is no retry to cover it, and the sweep's own claim is that "across
+        // tenants a throw becomes that tenant's own recorded ERROR row rather
+        // than aborting the sweep". Any transient DB, RLS or encryption failure
+        // during the write reaches this.
+        return await recordDrill(tenantId, jobRunId, startedAt, {
             outcome,
             scopesHonoured,
             scopesFailed,
@@ -321,18 +330,43 @@ export async function runKillSwitchDrill(
             // no spread — this file is on the agentic path.
             errorMessage: message,
         });
-        return recordDrill(tenantId, jobRunId, startedAt, {
-            outcome: 'ERROR',
-            scopesHonoured: [],
-            scopesFailed: [],
-            toolCallsAfterKill: 0,
-            boundaryRefusalReason: null,
-            detail:
-                'Drill could not run to completion, so it proves nothing about the ' +
-                `kill switch either way. Cause: ${message}`,
-            drillId: null,
-            findingId: null,
-        });
+        // The catch's own write can fail too, and if it does there is nothing
+        // left to record with — so it must not become the exception that aborts
+        // the sweep either. An in-memory ERROR result is the honest answer: this
+        // tenant was not drilled AND we could not write down why.
+        try {
+            return await recordDrill(tenantId, jobRunId, startedAt, {
+                outcome: 'ERROR',
+                scopesHonoured: [],
+                scopesFailed: [],
+                toolCallsAfterKill: 0,
+                boundaryRefusalReason: null,
+                detail:
+                    'Drill could not run to completion, so it proves nothing about the ' +
+                    `kill switch either way. Cause: ${message}`,
+                drillId: null,
+                findingId: null,
+            });
+        } catch (writeErr) {
+            logger.error('agentic: kill-switch drill could not be recorded', {
+                tenantId,
+                jobRunId,
+                errorMessage: writeErr instanceof Error ? writeErr.message : String(writeErr),
+            });
+            return {
+                outcome: 'ERROR' as const,
+                scopesHonoured: [],
+                scopesFailed: [],
+                toolCallsAfterKill: 0,
+                boundaryRefusalReason: null,
+                detail:
+                    'The drill failed AND its own record could not be written, so this ' +
+                    'tenant is undrilled and there is no row saying so. The sweep ' +
+                    'continued to the next tenant.',
+                drillId: null,
+                findingId: null,
+            };
+        }
     } finally {
         if (canaryId) {
             // ALWAYS lifted, including when the drill failed or threw. A drill

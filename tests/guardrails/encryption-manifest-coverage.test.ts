@@ -71,6 +71,14 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    'AgentCircuitBreaker.closeReason':
+        'One of exactly two codes — ACCEPTED_NEW_BASELINE or RESOLVED ' +
+        '(BREAKER_CLOSE_REASONS). It is caught by the *Reason name heuristic, ' +
+        'but it is a closed vocabulary rather than an operator\'s words: there ' +
+        'is no tenant content in it, and encrypting a two-value enum would ' +
+        'defeat the equality read the admin surface makes while protecting ' +
+        'nothing. The free-text sibling on this path IS encrypted — see ' +
+        'AgentKillSwitch.reason / liftReason.',
     'AgentKillSwitchDrill.detail': 'Machine-generated from source constants — scope names, counts and a fixed explanation of which arm proved what. It carries no tenant content by construction. Deliberately plaintext: it is the drill\'s own evidence, and a KEK failure is one of the things a drill would have to report from behind the key that failed.',
     'AgentKillSwitchDrill.boundaryRefusalReason': "One of three fixed literals ('agent_killed' | 'refused_for_another_reason' | 'not_refused') written by the drill, never by a user.",
     'AgentKillSwitchDrill.findingId': 'A cuid pointing at the Finding this drill raised. An identifier, not content.',

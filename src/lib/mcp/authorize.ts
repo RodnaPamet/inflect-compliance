@@ -804,6 +804,19 @@ export async function authorizeResourceRead(inv: McpInvocation): Promise<void> {
     // spends the agent's day like any tool call, and a stop that covered one of
     // the two doors would be a stop somebody could walk around.
     await assertNotKilled(inv, MCP_RESOURCES_AUDIENCE);
+    // …and the breaker, for the same reason and by the same argument its own
+    // docstring makes: "it halts everything — reads included… 'stopped' has to
+    // mean stopped or the word is doing no work." That sentence was true of the
+    // TOOL door only — this one was never gated, so a tripped agent could still
+    // read a tenant's whole compliance posture through resources, which is the
+    // exfiltration half of the rogue-agent case the breaker exists to stop.
+    //
+    // The return is discarded here on purpose. `recordAuthorizedCall` feeds the
+    // behavioural baseline from the TOOL door, where a call has a capability
+    // class to be counted under; a resource read has none, and inventing one
+    // would let the resources surface steer the very baseline that judges it.
+    // The gate reads the latch; it does not write history.
+    await assertCircuitBreakerClosed(inv, MCP_RESOURCES_AUDIENCE);
     await assertAudience(inv, MCP_RESOURCES_AUDIENCE);
     await assertCredentialLive(inv, MCP_RESOURCES_AUDIENCE);
     await assertAutonomy(inv, MCP_RESOURCES_AUDIENCE, 'read', undefined);

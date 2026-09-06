@@ -86,6 +86,21 @@ const ctx = (agentId?: string) =>
 /** Registered agents seeded in `beforeAll`, in creation order. */
 const agentIds: string[] = [];
 
+/**
+ * Backdate a run's LAST PROGRESS. `updatedAt` is `@updatedAt`, so Prisma
+ * overwrites it on every write — raw SQL is the only way to say "this run has
+ * not moved since". The reaper selects on progress rather than birth, so this is
+ * what makes a fixture wedged.
+ */
+async function backdateProgress(ids: string[], at: Date): Promise<void> {
+    if (ids.length === 0) return;
+    await prisma.$executeRawUnsafe(
+        `UPDATE "WorkflowRun" SET "updatedAt" = $1 WHERE "id" = ANY($2::text[])`,
+        at,
+        ids,
+    );
+}
+
 describeFn('agentic failure isolation (real DB)', () => {
     beforeAll(async () => {
         await prisma.$connect();
@@ -336,6 +351,7 @@ describeFn('agentic failure isolation (real DB)', () => {
             });
             wedged.push(row.id);
         }
+        await backdateProgress(wedged, wedgedAt);
         // Two rows that must survive: one parked for a human however old it is,
         // one genuinely in flight.
         const parked = await prisma.workflowRun.create({
@@ -396,6 +412,7 @@ describeFn('agentic failure isolation (real DB)', () => {
             });
             ids.push(row.id);
         }
+        await backdateProgress(ids, wedgedAt);
 
         // A page size SMALLER than the result set. A `take:` cap here would
         // settle two rows and report a clean pass; the cursor walk settles all
@@ -409,4 +426,46 @@ describeFn('agentic failure isolation (real DB)', () => {
         });
         expect(left).toBe(0);
     }, 90_000);
+
+    describe('the reaper asks about PROGRESS, not about birth', () => {
+        it('leaves a resumed run alone, however old its startedAt is', async () => {
+            // The reaper used to select on `startedAt`, which never moves — a resume
+            // flips the row back to RUNNING and deliberately leaves it, because
+            // WALL_CLOCK_MS spans resumes and an audit reads that field as when the
+            // run began. So a run that parked at a checkpoint longer than the cutoff
+            // was reapable from the FIRST MILLISECOND of its post-approval segment,
+            // and both shipped workflows carry a HUMAN_CHECKPOINT. The sweep settled
+            // live, executing runs and wrote a permanent hash-chained row asserting
+            // they had no executor.
+            const now = new Date();
+            const longAgo = new Date(now.getTime() - ENGINE_CAPS.WALL_CLOCK_MS - 3 * 60 * 60 * 1000);
+
+            // A run BORN long ago that is making progress right now: exactly the
+            // shape a resume produces.
+            const resumed = await prisma.workflowRun.create({
+                data: {
+                    tenantId: TENANT,
+                    workflowKey: CLEAN_WF,
+                    status: 'RUNNING',
+                    startedAt: longAgo,
+                    agentId: agentIds[0],
+                },
+            });
+            // `updatedAt` is `@updatedAt`, so touching the row is what a step does.
+            await prisma.workflowRun.update({
+                where: { id: resumed.id },
+                data: { stepCount: 1 },
+            });
+
+            const { outcome } = await runAgentRunReaperJob({ tenantId: TENANT, now });
+
+            expect(outcome.runsFound).toBe(0);
+            expect(outcome.runsReaped).toBe(0);
+
+            const after = await prisma.workflowRun.findFirstOrThrow({ where: { id: resumed.id } });
+            expect(after.status).toBe('RUNNING');
+            expect(after.errorMessage).toBeNull();
+        }, 60_000);
+    });
 });
+

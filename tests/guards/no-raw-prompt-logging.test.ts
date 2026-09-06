@@ -314,8 +314,8 @@ const SINK_FLOOR = 30;
 // and all wrong here. Taking any one of them would have produced a green ratchet
 // describing a codebase that does not exist, which is the failure this ratchet is
 // for. Re-derived by zeroing both and reading the failure message.
-const MEASURED_HOLES = 128;
-const MEASURED_SINKS = 61;
+const MEASURED_HOLES = 131;
+const MEASURED_SINKS = 62;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

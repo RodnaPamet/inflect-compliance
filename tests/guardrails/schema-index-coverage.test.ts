@@ -401,6 +401,19 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // ASI08 run caps — `proposedItemsSoFar` counts what a run has already
+    // proposed, so a resumed segment cannot restart the PROPOSALS budget at zero
+    // and hand one run a fresh cap per human checkpoint.
+    //
+    // Filters (tenantId, runId) then narrows on kind + status with NO sort, and
+    // is bounded by `take: ENGINE_RUN_CAPS.STEPS` — a run cannot execute more
+    // steps than the engine's own ceiling, which is the tightest honest bound
+    // rather than a round number. The tenantId-leading @@index([tenantId, runId])
+    // serves the selective half; kind and status discriminate within ONE run's
+    // steps, which is at most that ceiling, so a composite would index a set the
+    // planner has already reduced to tens of rows.
+    WorkflowStep:
+        'proposedItemsSoFar filters (tenantId, runId) + kind/status with no sort — covered by @@index([tenantId, runId]); bounded take = ENGINE_RUN_CAPS.STEPS, and the residual is one run\'s steps.',
     AgentBehaviourWindow:
         'Every read filters (tenantId, agentId) and either orders by windowStart desc (the operator surface, take ≤ 48) or ranges on it (the baseline load the MCP tool boundary makes once per active window, take ≤ 169) — covered exactly by the tenant-leading @@unique([tenantId, agentId, windowStart]), which is also the ON CONFLICT target of the per-call upsert and so cannot be dropped as merely a read optimisation. It sits HERE rather than in LIST_QUERY_INDEXES because that layer matches @@index blocks only, and adding a duplicate @@index over the same three columns would put a second B-tree on a table written once per tool call to satisfy a matcher.',
     AiSystemRequirementLink: 'computeAgentRiskCoverage reads the agent\'s own scope by (tenantId, aiSystemId, requirementId IN [ten ASI rows]) \u2014 covered by @@index([tenantId, aiSystemId]); bounded by the framework\'s requirement count, not by tenant data.',

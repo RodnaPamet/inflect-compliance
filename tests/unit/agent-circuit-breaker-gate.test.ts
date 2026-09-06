@@ -40,6 +40,10 @@ jest.mock('@/lib/prisma', () => {
     };
     const agentProposal = { count: jest.fn().mockResolvedValue(0) };
     const $executeRaw = jest.fn().mockResolvedValue(1);
+    // No kill switch in force. Step 0 of the boundary asks ONE `$queryRaw` and
+    // reads an empty result as "not killed"; an absent method throws, which
+    // would look exactly like a refusal and mask what this file measures.
+    const $queryRaw = jest.fn().mockResolvedValue([]);
     const client = {
         tenantApiKey,
         mcpToolManifestPin,
@@ -47,6 +51,7 @@ jest.mock('@/lib/prisma', () => {
         agentBehaviourWindow,
         agentProposal,
         $executeRaw,
+        $queryRaw,
     };
     return { __esModule: true, default: client, prisma: client };
 });
@@ -69,6 +74,7 @@ jest.mock('@/lib/observability/integration-metrics', () => ({
 import prisma from '@/lib/prisma';
 import { type McpInvocation } from '@/lib/mcp/authorize';
 import { runReadTool } from '@/lib/mcp/tools/registry';
+import { listMcpResources } from '@/lib/mcp/resources';
 import { listRisksTool } from '@/lib/mcp/tools/risk-tools';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { makeRequestContext } from '../helpers/make-context';
@@ -164,6 +170,19 @@ describe('an OPEN breaker stops the agent', () => {
                 trippedSignals: ['TOOL_MIX'],
             }),
         );
+    });
+
+    it('stops the RESOURCES door too — the other way to read tenant data', async () => {
+        // The gate's own docstring says it "halts everything — reads included…
+        // 'stopped' has to mean stopped or the word is doing no work." That was
+        // true of the TOOL funnel only: `authorizeResourceRead` was never gated,
+        // so a tripped agent could still read a tenant's whole compliance
+        // posture through resources — the exfiltration half of the rogue-agent
+        // case the breaker exists to stop. Deleting the gate from that door left
+        // this whole file green.
+        const message = await refusalOf(() => listMcpResources(invocationFor()));
+
+        expect(message).toMatch(/circuit breaker latched open/i);
     });
 
     it('refuses the call, and the tool function is never entered', async () => {

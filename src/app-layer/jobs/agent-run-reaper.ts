@@ -88,6 +88,8 @@ interface StalledRun {
     tenantId: string;
     agentId: string | null;
     startedAt: Date;
+    /** When the run last made progress — the field the sweep selects on. */
+    updatedAt: Date;
 }
 
 export interface AgentRunReaperOutcome {
@@ -141,10 +143,32 @@ export async function runAgentRunReaperJob(options?: {
             prisma.workflowRun.findMany({
                 where: {
                     status: 'RUNNING',
-                    startedAt: { lt: cutoff },
+                    // PROGRESS, not birth. `startedAt` is the run's ORIGIN and
+                    // never moves — `resumeWorkflowRun` flips the row back to
+                    // RUNNING without touching it, because `WALL_CLOCK_MS` is
+                    // documented as spanning resumes and an audit reads that
+                    // field as when the run began. So selecting on `startedAt`
+                    // made every resumed run reapable from the first millisecond
+                    // of its post-approval segment, for any run that had parked
+                    // at a checkpoint longer than the cutoff — and BOTH shipped
+                    // workflows carry a HUMAN_CHECKPOINT. The reaper settled
+                    // live, actively-executing runs and wrote a permanent
+                    // hash-chained row asserting they had no executor.
+                    //
+                    // `updatedAt` is `@updatedAt` and `commitContext` writes the
+                    // row at every step, so it is exactly "when did this run last
+                    // make progress" — which is the question the reaper is
+                    // actually asking.
+                    updatedAt: { lt: cutoff },
                     ...(tenantId ? { tenantId } : {}),
                 },
-                select: { id: true, tenantId: true, agentId: true, startedAt: true },
+                select: {
+                    id: true,
+                    tenantId: true,
+                    agentId: true,
+                    startedAt: true,
+                    updatedAt: true,
+                },
                 orderBy: { id: 'asc' },
                 take: pageSize,
                 ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
