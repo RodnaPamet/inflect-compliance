@@ -103,6 +103,12 @@ const RICH_TEXT_COVERAGE: Readonly<
     // agent-registry write seam before the Epic B middleware encrypts it — the
     // register export and the operator surface both decrypt and render it.
     RegisteredAgent: { usecases: ['src/app-layer/usecases/agent-registry.ts'], sanitizer: 'sanitizePlainText' },
+    // The kill switch's `reason` / `liftReason` — operator free text written
+    // during an incident, sanitised at the single write seam (`requireReason`)
+    // before the Epic B middleware encrypts it. Read back by the operator
+    // surface and by the drill's evidence record, so render-time sanitising
+    // alone would leave the row dangerous to every other consumer.
+    AgentKillSwitch: { usecases: ['src/app-layer/usecases/agent-kill-switch.ts'], sanitizer: 'sanitizePlainText' },
     Finding: { usecases: ['src/app-layer/usecases/finding.ts'], sanitizer: 'sanitizePlainText' },
     Risk: { usecases: ['src/app-layer/usecases/risk.ts'], sanitizer: 'sanitizePlainText' },
     // MCP agent proposals — payloadJson (proposed entity content) + rationale

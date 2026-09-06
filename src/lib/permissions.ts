@@ -165,6 +165,41 @@ export type PermissionSet = {
          * a policy its own subject can rewrite is not a policy.
          */
         agent_policy_card: boolean;
+        /**
+         * THE KILL SWITCH: stop one agent, or every agent in the tenant, at the
+         * tool boundary — including runs already in flight.
+         *
+         * ## Why it is not `admin.agent_registry`
+         *
+         * `agent_registry` already carries "suspend", and on a first read that
+         * looks like the same authority. It is not, in the direction that
+         * matters: `agent_registry` BUNDLES suspend with activate, so a tenant
+         * cannot delegate the authority to STOP without also delegating the
+         * authority to ADMIT an agent nobody has scored. Those two have opposite
+         * risk profiles — a wrong stop is bounded, reversible and audited; a
+         * wrong start is the thing every other key in this block exists to
+         * prevent — and a permission model that cannot separate them forces the
+         * dangerous half onto whoever needs the safe one.
+         *
+         * The separation is the point of the key, and it is the widening this
+         * subsystem expects a tenant to make: an on-call rota that holds
+         * `agent_kill_switch` through a custom role and holds none of the other
+         * three is a sensible configuration, and it is unspellable without this
+         * flag.
+         *
+         * Granted to OWNER and ADMIN by default, like its three neighbours. The
+         * default is not the argument; the grantability is.
+         *
+         * ## What no tenant key can express
+         *
+         * The PLATFORM-wide kill has no tenant to scope a permission to, and
+         * `requirePermission` resolves a tenant role. It is gated by
+         * `PLATFORM_ADMIN_API_KEY` through `verifyPlatformApiKey` instead — the
+         * same credential that creates tenants and transfers their ownership. A
+         * tenant administrator can neither pull it nor lift it, which is correct:
+         * stopping every deployment is not an authority a customer holds.
+         */
+        agent_kill_switch: boolean;
     };
 };
 
@@ -224,6 +259,7 @@ export const PERMISSION_SCHEMA: Record<keyof PermissionSet, string[]> = {
         'tenant_lifecycle', 'owner_management',
         'compliance_dsar_view', 'compliance_dsar_manage',
         'agent_registry', 'agent_tool_exposure', 'agent_policy_card',
+        'agent_kill_switch',
     ],
 };
 
@@ -263,6 +299,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     compliance_dsar_view: true, compliance_dsar_manage: true,
                     agent_registry: true, agent_tool_exposure: true,
                     agent_policy_card: true,
+                    agent_kill_switch: true,
                 },
             };
         case 'ADMIN':
@@ -301,6 +338,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                     // operational administration of an already-approved agent,
                     // not the authority to admit new ones.
                     agent_policy_card: true,
+                    agent_kill_switch: true,
                 },
             };
         case 'EDITOR':
@@ -322,7 +360,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false },
             };
         case 'AUDITOR':
             return {
@@ -344,7 +382,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 // Auditors can view and maybe export/share depending on policy, but let's keep view/share
                 audits: { view: true, manage: false, freeze: false, share: true },
                 reports: { view: true, export: true, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: true, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false },
             };
         case 'READER':
         default:
@@ -364,7 +402,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 frameworks: { view: true, install: false },
                 audits: { view: true, manage: false, freeze: false, share: false },
                 reports: { view: true, export: false, schedule_external: false },
-                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false },
+                admin: { view: false, manage: false, members: false, sso: false, scim: false, tenant_lifecycle: false, owner_management: false, compliance_dsar_view: false, compliance_dsar_manage: false, agent_registry: false, agent_tool_exposure: false, agent_policy_card: false, agent_kill_switch: false },
             };
     }
 }

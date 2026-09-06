@@ -71,6 +71,10 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    'AgentKillSwitchDrill.detail': 'Machine-generated from source constants — scope names, counts and a fixed explanation of which arm proved what. It carries no tenant content by construction. Deliberately plaintext: it is the drill\'s own evidence, and a KEK failure is one of the things a drill would have to report from behind the key that failed.',
+    'AgentKillSwitchDrill.boundaryRefusalReason': "One of three fixed literals ('agent_killed' | 'refused_for_another_reason' | 'not_refused') written by the drill, never by a user.",
+    'AgentKillSwitchDrill.findingId': 'A cuid pointing at the Finding this drill raised. An identifier, not content.',
+
     'AgentActionReceipt.toolDescriptionHash': 'A SHA-256 DIGEST of the MCP tool description in force when the mediated action happened — never the description itself, and the description is our own published tool documentation carrying no tenant data. It exists so an audit can tell WHICH definition produced an action after a poisoned one is found; encrypting it would defeat the equality comparison that is its only use.',
     'McpToolManifestPin.descriptionHash': 'A SHA-256 DIGEST of an MCP tool s description, never the description itself — the description is our own published tool documentation and carries no tenant data at all. The column exists so the boundary can detect that the text CHANGED, which is an equality comparison; encrypting it would defeat the comparison and protect a value that is already public in the tool catalogue.',
     'TenantCalendarConsent.revokedReason': 'A fixed operator-facing phrase written by our own code and capped at 200 chars ("withdrawn by administrator"), shown on the admin settings page — never a provider body and never user text. Encrypting it would hide the one field that page exists to display.',

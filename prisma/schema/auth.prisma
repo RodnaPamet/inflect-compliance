@@ -191,6 +191,8 @@ model Tenant {
   agentPolicyCards                  AgentPolicyCard[]
   agentPolicyCardVersions           AgentPolicyCardVersion[]
   mcpToolManifestPins               McpToolManifestPin[]
+  agentKillSwitches                 AgentKillSwitch[]
+  agentKillSwitchDrills             AgentKillSwitchDrill[]
   tenantFrameworkDeltas             TenantFrameworkDelta[]
   riskMatrixConfig                  RiskMatrixConfig?
   riskAppetiteConfig                RiskAppetiteConfig?

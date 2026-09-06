@@ -4,6 +4,10 @@
  *
  * ## What runs, in order, and why that order
  *
+ *   0. KILL SWITCH — has a human already decided nothing further runs, at
+ *      any of three scopes (this agent / this tenant / the platform)? Ahead
+ *      of everything else because the answer does not depend on whether
+ *      this caller is correctly configured — see `assertNotKilled`.
  *   1. AUDIENCE — was the token the caller presented minted FOR this tool?
  *      (RFC 8693; `null` for a caller holding the long-lived key itself.)
  *   2. LIVENESS — is the credential still live RIGHT NOW? Re-read per tool
@@ -39,6 +43,14 @@
  * was only pointed at the wrong tool. An agent probing for reach it does not
  * have is the whole reason these rows exist; burying that in routine
  * misconfiguration is how a security signal stops being read.
+ *
+ * THE KILL SWITCH SITS AT 0 for a third reason beyond the two liveness has:
+ * it is the only step whose answer was decided by a PERSON rather than by
+ * configuration, and a refusal it does not get to state is a stop control an
+ * operator cannot see working. Suspension in the agent register is not this
+ * check's equivalent and never was — it is read once per invocation inside
+ * `resolveMcpInvocation`, so it refuses the next REQUEST and does nothing to a
+ * run already in flight.
  *
  * LIVENESS sits at 2 rather than later for two reasons. It is the check whose
  * ANSWER CHANGES DURING A RUN — every other term was fixed when the invocation
@@ -88,6 +100,7 @@ import {
 } from '@/lib/agentic/policy-card-evaluation';
 import { reserveDailyAction } from '@/lib/agentic/policy-card-store';
 import {
+    recordAgentKillRefusal,
     recordPolicyCardEvaluation,
     recordPolicyCardRefusal,
     recordToolManifestDrift,
@@ -97,6 +110,11 @@ import type { ToolDefinition } from './tool-manifest';
 import { RESOURCE_READ_DATA_SCOPE, dataScopeForToolCall } from './tool-data-scope';
 import type { AgentDataAccessScope } from '@prisma/client';
 import { checkCredentialLiveness } from '@/lib/agentic/agent-credential-state';
+import {
+    KILL_SWITCH_DRILL_AGENT_ID,
+    killRefusalMessage,
+    resolveKillState,
+} from '@/lib/agentic/kill-switch';
 import {
     audienceCovers,
     isTokenLive,
@@ -233,6 +251,8 @@ export interface PolicyCardBinding {
 
 /** Why a tool call was refused, for the audit row an operator reads. */
 export type McpDenialReason =
+    /** A kill switch is in force at one of the three scopes. See step 0. */
+    | 'agent_killed'
     | 'audience_denied'
     | 'credential_revoked'
     | 'credential_expired'
@@ -410,6 +430,77 @@ export async function resolveOfferedTool<T extends { name: string }>(
         },
     });
     return null;
+}
+
+/**
+ * Step 0 — THE KILL SWITCH. Is anything stopping this agent RIGHT NOW?
+ *
+ * ## Why it is step 0 and not step 3
+ *
+ * Every other step in this gate asks whether the caller is correctly
+ * CONFIGURED — the right audience, a live key, an approved definition, a grant,
+ * a rung, a budget, a permission. This one asks whether a human has already
+ * decided that nothing further runs, and that decision does not become
+ * conditional on the answers to the other seven.
+ *
+ * Concretely: a killed agent presenting a mis-scoped token must be refused for
+ * being KILLED. If this sat below the audience check it would be told
+ * "audience", and the operator watching the trail during an incident would see
+ * the wrong reason for the refusal — and would have no row saying the kill was
+ * doing anything at all. `AGENT_KILLED` is the row that says the stop control
+ * worked; making it reachable only through a valid configuration is how a stop
+ * control becomes deniable.
+ *
+ * It also short-circuits the other seven, which matters most in exactly the
+ * situation it exists for: during an incident the system is already under load,
+ * and a killed fleet retrying should cost one indexed lookup per call rather
+ * than the whole funnel.
+ *
+ * The one thing that runs AHEAD of it is `resolveOfferedTool`, in the two
+ * runners, and that is fine: it neither reads state nor executes anything — a
+ * killed agent naming an unknown tool gets a protocol error and nothing runs,
+ * which is the same outcome by a shorter path.
+ *
+ * ## The refusal is loud
+ *
+ * `escalate: true`, unconditionally, like a manifest drift. A policy-card
+ * refusal escalates only when the card asked for it, because a mis-scoped
+ * integration is routine. A tool call arriving after somebody pulled the stop
+ * switch is not routine under any configuration: either a client has not
+ * noticed, or a run nobody accounted for is still going.
+ *
+ * ## Uncached, per call
+ *
+ * See `agentic/kill-switch.ts`. A cached kill state that lags by one execution
+ * cycle is this control failing at the one moment it matters.
+ */
+async function assertNotKilled(inv: McpInvocation, target: string): Promise<void> {
+    const kill = await resolveKillState(inv.ctx.tenantId, inv.agentId);
+    if (kill === null) return;
+
+    // The nightly drill drives this same gate against a canary agent id, and its
+    // refusals must not be counted with real ones — a steady synthetic stream in
+    // the same series is how operators learn to ignore it. The label is derived
+    // from the target agent id rather than passed in, so no caller can mark a
+    // real refusal as a drill.
+    const drill = inv.agentId === KILL_SWITCH_DRILL_AGENT_ID;
+    recordAgentKillRefusal({ scope: kill.scope, drill });
+
+    await denyToolCall(inv.ctx, 'agent_killed', {
+        tool: target,
+        agentId: inv.agentId,
+        // Names WHAT is stopped and WHO lifts it. It does NOT echo the reason
+        // text an administrator typed: that is tenant content, and the caller in
+        // the scenario this defends against is the thing that was just stopped.
+        message: killRefusalMessage(kill.scope),
+        extra: {
+            killScope: kill.scope,
+            killSwitchId: kill.switchId,
+            killEngagedAt: kill.engagedAt.toISOString(),
+            drill,
+            escalate: true,
+        },
+    });
 }
 
 /**
@@ -691,6 +782,11 @@ async function assertWithinPolicyCard(
  * audience-gated, ceiling-gated and audited, but not allowlisted.
  */
 export async function authorizeResourceRead(inv: McpInvocation): Promise<void> {
+    // Step 0, here too. A killed agent must not read tenant data through the
+    // other door either — the resources surface is a tenant-data read that
+    // spends the agent's day like any tool call, and a stop that covered one of
+    // the two doors would be a stop somebody could walk around.
+    await assertNotKilled(inv, MCP_RESOURCES_AUDIENCE);
     await assertAudience(inv, MCP_RESOURCES_AUDIENCE);
     await assertCredentialLive(inv, MCP_RESOURCES_AUDIENCE);
     await assertAutonomy(inv, MCP_RESOURCES_AUDIENCE, 'read', undefined);
@@ -828,6 +924,11 @@ export async function authorizeToolCall(
      */
     rawArgs?: unknown,
 ): Promise<void> {
+    // 0. Is a kill switch in force? Ahead of everything, including the
+    //    credential checks — a stop somebody already pulled is not conditional on
+    //    this caller being correctly configured. See `assertNotKilled`.
+    await assertNotKilled(inv, tool.name);
+
     // 1. Was this token minted for this tool?
     await assertAudience(inv, tool.name);
 

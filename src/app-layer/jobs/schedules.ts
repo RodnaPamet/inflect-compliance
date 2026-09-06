@@ -128,6 +128,22 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'agent-kill-switch-drill',
+        pattern: '0 6 * * *',     // daily at 06:00 UTC
+        // NO tenantId in the payload: absent means "discover the tenants that
+        // run agents and drill each one". See `AgentKillSwitchDrillPayload`.
+        //
+        // The hour is not arbitrary and it is not sequencing, because nothing
+        // here depends on another job — a warning worth keeping, since
+        // declaration order in this array is NOT execution order and only the
+        // cron pattern is. 06:00 UTC puts the drill AFTER the 03:00/05:00
+        // identity chain rather than beside it, so a failing drill's CRITICAL
+        // Finding does not arrive inside the same minute as an unrelated
+        // directory incident and get triaged as part of it.
+        description: 'Pull the agent kill switch for real, per tenant that runs agents, and check the MCP tool boundary refuses. AGENT scope end-to-end against a committed kill on a canary target; TENANT and PLATFORM scopes at the predicate level inside a rolled-back transaction. Records an AgentKillSwitchDrill row + Evidence every run, and raises a CRITICAL Finding on FAILED.',
+        defaultPayload: {},
+    },
+    {
         name: 'calendar-push-dispatch',
         pattern: '0 3 * * *',     // daily at 03:00 UTC
         // NO `tz`. The bucket guard's parser reads only `pattern` and ignores

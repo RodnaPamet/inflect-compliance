@@ -822,3 +822,218 @@ model McpToolManifestPin {
   /// every query this table serves is `tenantId` alone or `tenantId + toolName`.
   @@unique([tenantId, toolName])
 }
+
+// ═════════════════════════════════════════════════════════════════════
+// Epic Agentic 9 — THE KILL SWITCH (OWASP ASI08 cascading failure,
+// ASI10 rogue agent).
+//
+// ## Why this is not `RegisteredAgent.status = SUSPENDED`
+//
+// Suspension already exists and it is a DISPATCH control. `evaluateAgentRegistration`
+// reads the agent's status once, inside `resolveMcpInvocation`, and the workflow
+// engine resolves ONE invocation per execution and then drives every step on it.
+// So suspending an agent refuses the next REQUEST and does nothing at all to a
+// run already in flight — which is the case a stop control exists for. It is
+// also inert for a tenant with `requireRegisteredAgent` off, and it has no
+// tenant-wide or platform-wide form: an incident affecting a fleet would be
+// answered one row at a time.
+//
+// These tables are read at the TOOL BOUNDARY instead, uncached, once per tool
+// call, beside the credential-liveness re-read that closed the same gap for
+// revocation. See `src/lib/agentic/kill-switch.ts`.
+//
+// ## Why TWO tables rather than one with a nullable tenantId
+//
+// A platform-wide kill has no tenant, and a nullable `tenantId` on a
+// tenant-scoped table forces the asymmetric single-policy RLS shape `UserSession`
+// needs (`USING (tenantId IS NULL OR own) WITH CHECK (own)`) — a form this
+// subsystem would then have to justify per reader. The split is the one
+// `ai-governance.prisma` and this file's own assessment tables already make:
+// tenant-scoped rows behind the canonical policy triple, global rows in their
+// own table with no RLS and no `app_user` write grant.
+//
+// ## Why no Postgres enums
+//
+// Same reason `McpToolManifestPin.approvalSource` and
+// `AgentPolicyCardVersion.approvalRung` are TEXT with CHECK constraints: an
+// `ALTER TYPE` mid-rolling-deploy makes still-running old containers fail with
+// SQLSTATE 42704 (the lesson the `@@map("WorkItem*")` pins record). A kill scope
+// and a drill outcome are both vocabularies that could plausibly grow, so
+// neither becomes a type somebody has to recreate the table to widen. The
+// vocabularies are pinned in `src/lib/agentic/kill-switch.ts` and by CHECK
+// constraints in the migration.
+// ═════════════════════════════════════════════════════════════════════
+
+/// Tenant-scoped: a kill in force for ONE agent, or for the WHOLE tenant.
+///
+/// ## The scope is DERIVED, never stored
+///
+/// `agentId IS NULL` ⇔ TENANT scope; `agentId IS NOT NULL` ⇔ AGENT scope. A
+/// stored `scope` column beside a nullable `agentId` would be two encodings of
+/// one fact, and two encodings can disagree — at which point the boundary has to
+/// pick one and whichever it picks is wrong half the time. There is nothing to
+/// keep in step because there is only one field.
+///
+/// ## `agentId` carries NO foreign key, and that is deliberate
+///
+/// Three reasons, each of which would be enough on its own:
+///
+///   • A kill must be recordable for an agent the register cannot resolve. The
+///     whole point of an emergency stop is that it works when the register is in
+///     a bad state; an FK makes a healthy register a PRECONDITION for stopping.
+///   • A kill row is HISTORY — the record that somebody stopped something at a
+///     time, for a reason. `RegisteredAgentTool` argues the opposite way for its
+///     grants ("a grant is authority, not history") and CASCADEs; the same
+///     argument run the other direction says a kill must OUTLIVE its agent,
+///     because deleting the agent is exactly when the record matters most.
+///   • It lets the scheduled drill (`agent-kill-switch-drill`) engage and lift a
+///     real, committed kill against a canary id that no credential can ever
+///     resolve to — so the drill exercises the whole write → enforce → lift
+///     lifecycle without ever stopping a production agent.
+///
+/// A row naming an agent id that does not exist is INERT: the boundary reads
+/// `(tenantId, agentId)`, so an unmatched id simply never matches.
+model AgentKillSwitch {
+  id       String  @id @default(cuid())
+  tenantId String
+  /// NULL = every agent in this tenant. Non-NULL = that one agent.
+  agentId  String?
+
+  /// Why somebody pulled it. Sanitised on write (`sanitizePlainText`) — it is
+  /// read back by an operator surface and by the drill's evidence record.
+  /// REQUIRED: a kill with no stated reason is an outage nobody can review.
+  reason          String
+  engagedByUserId String
+  engagedAt       DateTime @default(now())
+
+  /// NULL while the kill is IN FORCE. Lifting is an UPDATE, not a DELETE: the
+  /// row is the evidence that agents were stopped between two timestamps, and
+  /// an incident review that cannot see the window cannot review the incident.
+  liftedAt       DateTime?
+  liftedByUserId String?
+  liftReason     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// THE HOT-PATH INDEX. Every tool call asks
+  /// `(tenantId = ?, liftedAt IS NULL, agentId IN (?, NULL))`, and this composite
+  /// serves it leftmost-first. Tenant-leading, so it also satisfies the
+  /// tenant-scoped lookup every model must have.
+  @@index([tenantId, agentId, liftedAt])
+  /// The operator surface: "what has been killed here, most recent first".
+  @@index([tenantId, engagedAt])
+}
+
+/// GLOBAL: the platform-wide stop. Not tenant-scoped, and therefore no RLS.
+///
+/// ## Why it is global content rather than a tenant row
+///
+/// There is no tenant to scope it to. The authority to stop every agent in the
+/// deployment is not a tenant role — no tenant admin may hold it, and no
+/// `PermissionSet` key can express it, because `requirePermission` resolves a
+/// TENANT role. It is gated by `PLATFORM_ADMIN_API_KEY` through
+/// `verifyPlatformApiKey`, the same credential that creates tenants and
+/// transfers their ownership.
+///
+/// `app_user` gets SELECT and nothing else in the migration. The boundary reads
+/// this table on the superuser session (the base Prisma client, like
+/// `policy-card-store.ts`); the grant exists so a read from inside a tenant
+/// transaction cannot silently return zero rows and report "not killed".
+///
+/// ## `engagedByRef` is a free-text operator reference, not a user id
+///
+/// The platform-admin key is not a person. Storing a `User` id would invent an
+/// actor; storing NULL would make the row unattributable. A ref the operator
+/// supplies (a change ticket, an incident id, a pager handle) is the honest
+/// record, and it is REQUIRED for the same reason `reason` is.
+model PlatformAgentKillSwitch {
+  id String @id @default(cuid())
+
+  reason       String
+  engagedByRef String
+  engagedAt    DateTime @default(now())
+
+  liftedAt   DateTime?
+  liftedByRef String?
+  liftReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The boundary's only question: is there an unlifted row? A partial unique
+  /// index in the migration additionally holds "at most one".
+  @@index([liftedAt])
+}
+
+/// Tenant-scoped: ONE RUN of the scheduled kill-switch drill.
+///
+/// An untested stop control is an assumption. This row is the record that the
+/// assumption was checked, when, against which scopes, and what happened — and
+/// it is shaped to be read as EVIDENCE rather than as a log line: every column
+/// is a fact an auditor asks for, and none of it has to be reconstructed from
+/// free text.
+///
+/// `evidenceId` and `findingId` are plain Strings with NO foreign key, matching
+/// `RegisteredAgentTool.grantedByUserId`'s reasoning: the drill record must
+/// survive the Finding being resolved and purged, a RESTRICT FK would block that
+/// purge, and a SET NULL one would erase the very link the record exists for.
+model AgentKillSwitchDrill {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// The BullMQ job-run id, so a drill row joins back to the tick that produced
+  /// it the way `control-test-runner` threads its `jobRunId`.
+  jobRunId String
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  /// `PASSED` | `FAILED` | `ERROR`. TEXT + CHECK, not an enum — see the header.
+  /// `ERROR` is NOT `FAILED`: a drill that could not run has proved nothing, and
+  /// collapsing it into "the control is broken" would raise a Finding about the
+  /// wrong thing. Both are non-PASSED and both are visible; only FAILED raises.
+  outcome String
+
+  /// Which scopes were exercised and honoured, and which were not. Arrays rather
+  /// than three boolean columns because the scope vocabulary is code, not schema
+  /// — a fourth scope must not need a migration to be drillable.
+  scopesHonoured String[] @default([])
+  scopesFailed   String[] @default([])
+
+  /// THE MEASUREMENT. How many tool calls the boundary let through AFTER the
+  /// kill was in force. Anything other than 0 is the control failing, and it is
+  /// stored as the number rather than as a verdict so a partial failure ("one
+  /// call slipped through") is distinguishable from a total one.
+  toolCallsAfterKill Int @default(0)
+
+  /// The refusal reason the boundary actually gave, e.g. `agent_killed`. Stored
+  /// because a refusal for the WRONG reason is a failure that a pass/fail column
+  /// cannot show: if the kill check is moved below the credential check, the
+  /// call is still refused — by something else — and the stop control is dead
+  /// while every status code looks right.
+  boundaryRefusalReason String?
+
+  /// Operator-readable summary. Sanitised on write. Digest-level only — it never
+  /// carries tool arguments, prompts or proposal payloads.
+  detail String
+
+  /// The `Evidence` row this drill produced, and the `Finding` a FAILED drill
+  /// raised. Both nullable: a PASSED drill raises nothing, and an ERROR drill
+  /// may not get as far as either.
+  evidenceId String?
+  findingId  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// "The most recent drills for this tenant" — the operator surface and the
+  /// evidence query are the same shape.
+  @@index([tenantId, startedAt])
+  /// "Has any drill failed?" — the alert query.
+  @@index([tenantId, outcome])
+}

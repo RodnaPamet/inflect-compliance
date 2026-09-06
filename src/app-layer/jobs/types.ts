@@ -674,6 +674,24 @@ export interface JobPayloadMap {
     'hris-sync': HrisSyncPayload;
     'hris-sync-dispatch': HrisSyncDispatchPayload;
     'av-rescan': AvRescanPayload;
+    'agent-kill-switch-drill': AgentKillSwitchDrillPayload;
+}
+
+/**
+ * agent-kill-switch-drill — prove the agent kill switch still stops an agent.
+ *
+ * `tenantId` is OPTIONAL and the two shapes mean different things. Absent is the
+ * scheduled sweep: it DISCOVERS the tenants that run agents and drills each one.
+ * Present drills exactly that tenant, which is what an operator wants after
+ * changing anything on the boundary and what the integration test drives.
+ *
+ * Optional rather than a second job name, because a fan-out job and a per-tenant
+ * job here would differ only in one `if` — and `SCHEDULED_JOBS` declaration order
+ * is not execution order, so two entries would be two places to read the wrong
+ * sequence from.
+ */
+export interface AgentKillSwitchDrillPayload {
+    tenantId?: string;
 }
 
 /** aws-posture connector — run one tenant connection's benchmark + collect evidence. */
@@ -831,6 +849,20 @@ export const JOB_DEFAULTS: Record<JobName, {
         // try, and the second and third could not tell their own predecessors'
         // rows from a real unconfirmed write. Retrying here destroys the
         // evidence the retry would need. Tomorrow's dispatch picks it up.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 1000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'agent-kill-switch-drill': {
+        // ONE attempt, and it is a correctness constraint rather than courtesy.
+        // Each run WRITES: a drill row, an Evidence row, and — when it fails — a
+        // Finding. Three attempts in ~35 seconds against a genuinely broken kill
+        // switch would raise three CRITICAL Findings for one fault, which is how
+        // a real signal becomes noise people close in bulk. The drill is also
+        // idempotent only in the sense that it lifts its own canary first; a
+        // retry racing the previous attempt's `finally` would fight over that
+        // row. Tomorrow's tick is the retry.
         attempts: 1,
         backoff: { type: 'fixed', delay: 1000 },
         removeOnComplete: 100,

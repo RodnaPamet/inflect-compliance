@@ -198,6 +198,19 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // position, which is the class this guard deliberately started counting
     // rather than pretending it could see through. Naming them differently
     // would not make them readable; it would only make the code worse.
+    // ASI08/ASI10 kill-switch sinks. Both files were read line by line: neither
+    // carries a prompt, a tool argument, a workflow context or a proposal
+    // payload. The opaque values are a tenant id, a job-run id, a kill-switch
+    // id, a derived scope name ('AGENT' | 'TENANT'), an actor id and an
+    // `err.message` — all bound to locals one or two lines above their sink,
+    // which is the class this guard counts rather than pretends to see through.
+    // Naming them differently would not make them readable; it would only make
+    // the code worse. Note what is deliberately NOT here: a HELPER or SPREAD
+    // kind. `killScopeOf(...)` was inline at both audit sinks and produced one;
+    // it is now bound to a `const scope` first, which is the fix this list's own
+    // header prescribes rather than an entry.
+    'src/app-layer/jobs/agent-kill-switch-drill.ts — identifier bound elsewhere',
+    'src/app-layer/usecases/agent-kill-switch.ts — identifier bound elsewhere',
     'src/lib/agentic/bounded-exec.ts — identifier bound elsewhere',
     'src/lib/agentic/tool-manifest-store.ts — call to a helper this rule cannot open',
     'src/lib/agentic/tool-manifest-store.ts — identifier bound elsewhere',
@@ -226,10 +239,10 @@ const SINK_FLOOR = 30;
  * So the number is read as OPAQUE VALUE POSITIONS PER RECOGNISED SINK CALL, and
  * the ceiling is derived from two measured quantities rather than picked:
  *
- *   MEASURED_HOLES / MEASURED_SINKS         the path today, 97 / 45 = 2.156
+ *   MEASURED_HOLES / MEASURED_SINKS         the path today, 113 / 51 = 2.216
  *   MOST_OPAQUE_SINGLE_CALL                 the worst single call on it, 6
  *
- * The ceiling is `(97 + 6) / 45`. In words: the path may absorb ONE more sink
+ * The ceiling is `(113 + 6) / 51`. In words: the path may absorb ONE more sink
  * call as opaque as the most opaque one it already has before somebody has to
  * look. Two such calls fail. Seven more opaque fields on the EXISTING calls,
  * with no new sink, fail. That is the sensitivity this cap is for — it moves
@@ -243,8 +256,8 @@ const SINK_FLOOR = 30;
  * have been choosing the denominator that keeps the number green, which is the
  * defect this cap exists to catch, one level up.
  */
-const MEASURED_HOLES = 97;
-const MEASURED_SINKS = 45;
+const MEASURED_HOLES = 113;
+const MEASURED_SINKS = 51;
 /** `src/lib/mcp/auth.ts` — a six-field `detailsJson` bag built out of locals. */
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =

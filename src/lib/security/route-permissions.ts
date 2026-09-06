@@ -218,6 +218,20 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'widely the credential is scoped.',
     },
     {
+        path: new RegExp(`^${T}\\/admin\\/agents\\/kill-switch$`),
+        permission: 'admin.agent_kill_switch',
+        note:
+            "Stop one agent, or every agent in the tenant, at the MCP tool " +
+            'boundary — including runs already in flight. Its own key, and NOT ' +
+            'admin.agent_registry even though the register already carries ' +
+            '"suspend": agent_registry bundles suspend with ACTIVATE, so a ' +
+            'tenant cannot delegate the authority to stop without also ' +
+            'delegating the authority to admit an agent nobody has scored, and ' +
+            'those two have opposite risk profiles. Platform-wide has no tenant ' +
+            'to scope a key to and lives at /api/admin/agent-kill-switch behind ' +
+            'PLATFORM_ADMIN_API_KEY.',
+    },
+    {
         path: new RegExp(`^${T}\\/admin\\/agents(\\/.*)?$`),
         permission: 'admin.agent_registry',
         note:

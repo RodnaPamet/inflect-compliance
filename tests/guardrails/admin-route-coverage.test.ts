@@ -64,6 +64,13 @@ const ADMIN_ONLY_ROUTES = [
     'admin/agents/route.ts',
     'admin/agents/[agentId]/route.ts',
     'admin/agents/[agentId]/status/route.ts',
+    // The kill switch's two TENANT scopes (one agent / this tenant) — its own
+    // key, `admin.agent_kill_switch`. Separate from the register's because
+    // agent_registry bundles suspend with ACTIVATE, and stopping must be
+    // delegable without admitting. The PLATFORM scope is not here at all: it has
+    // no tenant, and lives at /api/admin/agent-kill-switch behind
+    // PLATFORM_ADMIN_API_KEY.
+    'admin/agents/kill-switch/route.ts',
     // Deny-by-default MCP tool exposure — its own key,
     // `admin.agent_tool_exposure`, narrower than the register's.
     'admin/agents/[agentId]/tools/route.ts',

@@ -46,6 +46,8 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     AgentPolicyCard: "tests/integration/policy-card-isolation.test.ts",
     AgentPolicyCardVersion: "tests/integration/policy-card-isolation.test.ts",
     McpToolManifestPin: "tests/integration/tool-manifest-pin-isolation.test.ts",
+    AgentKillSwitch: "tests/integration/agent-kill-switch.test.ts",
+    AgentKillSwitchDrill: "tests/integration/kill-switch-drill.test.ts",
 };
 
 /**

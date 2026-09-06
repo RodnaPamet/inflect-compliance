@@ -633,6 +633,8 @@ export function recordSyncLock(attrs: {
 let _policyCardEvaluation: Counter | null = null;
 let _policyCardRefusal: Counter | null = null;
 let _toolManifestDrift: Counter | null = null;
+let _agentKillRefusal: Counter | null = null;
+let _agentKillDrill: Counter | null = null;
 
 /**
  * One policy-card evaluation at the MCP tool boundary.
@@ -753,4 +755,71 @@ export function recordToolManifestDrift(attrs: { tool: string; status: string })
         });
     }
     _toolManifestDrift.add(1, { tool: attrs.tool, status: attrs.status });
+}
+
+// ── The kill switch, and its drill (OWASP ASI08 / ASI10) ───────────────────
+
+/**
+ * A tool call refused because a kill switch is in force.
+ *
+ * `scope` is the label and the agent id is NOT. Two reasons, and the second is
+ * the one that matters: an agent id is unbounded cardinality, and the shape an
+ * operator reads during an incident is "is anything still trying" — a per-scope
+ * count answers that, and the per-call detail is already on the hash-chained
+ * `AUTHZ_DENIED` row where a responder can join it to the agent.
+ *
+ * `drill` separates the nightly synthetic refusal from a real one. Without it
+ * every deployment would show a small steady stream of `agent_killed` denials
+ * and operators would learn to ignore the series — which is how a security
+ * signal stops being read, one level up from the alert this counter exists for.
+ *
+ * ALERT ON — `drill="false"` and any non-zero rate that OUTLIVES the kill it
+ * belongs to. A burst at the moment of a kill is the control working: it is the
+ * agents being stopped. A burst that is still going an hour later means
+ * something is retrying against a stop nobody has lifted, and the run behind it
+ * needs killing at a wider scope or the client needs turning off.
+ *
+ * A ZERO rate while a kill is in force is NOT reassurance and must not be
+ * alerted as such — it is indistinguishable from "no agent tried". The
+ * scheduled drill is what turns that absence into a positive signal; see
+ * `recordKillSwitchDrill`.
+ */
+export function recordAgentKillRefusal(attrs: { scope: string; drill: boolean }): void {
+    if (!_agentKillRefusal) {
+        _agentKillRefusal = getMeter().createCounter('agentic.kill_switch.refusal', {
+            description:
+                'MCP tool calls refused at the tool boundary because a kill switch is in force',
+            unit: '1',
+        });
+    }
+    _agentKillRefusal.add(1, { scope: attrs.scope, drill: String(attrs.drill) });
+}
+
+/**
+ * One scheduled kill-switch drill, by outcome.
+ *
+ * This is the counter that makes a SILENT kill switch detectable. Every other
+ * signal here fires when the control ACTS; a stop control that has quietly
+ * stopped working emits nothing at all, and looks exactly like a quiet week.
+ *
+ * `PASSED` / `FAILED` / `ERROR` are three different states and are deliberately
+ * three labels rather than a boolean: a drill that could not RUN has proved
+ * nothing, and folding it into FAILED would page somebody about a broken kill
+ * switch when the fault is a database timeout.
+ *
+ * ALERT ON — any `outcome="FAILED"`, immediately: the drill only fails when a
+ * kill was in force and the boundary let a tool call through, or refused it for
+ * the wrong reason. Also alert on the ABSENCE of `outcome="PASSED"` for longer
+ * than two scheduled intervals — a drill that stopped running is the same
+ * evidence gap as a drill that never existed, and an absence is ambiguous unless
+ * something asserts the positive.
+ */
+export function recordKillSwitchDrill(attrs: { outcome: string }): void {
+    if (!_agentKillDrill) {
+        _agentKillDrill = getMeter().createCounter('agentic.kill_switch.drill', {
+            description: 'Scheduled kill-switch drills, by recorded outcome',
+            unit: '1',
+        });
+    }
+    _agentKillDrill.add(1, { outcome: attrs.outcome });
 }
