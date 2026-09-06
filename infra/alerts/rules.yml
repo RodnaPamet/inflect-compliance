@@ -561,3 +561,90 @@ groups:
             4. CONTEXT_SIZE_CAP_EXCEEDED is the benign one: the run outgrew the
                cap. Check the context-size panel before treating it as an attack.
             5. Rule out a database restore or a manual UPDATE before escalating.
+
+      # The scheduled kill-switch drill did not pass.
+      #
+      # An untested stop control is an assumption, which is why the drill exists;
+      # a FAILED drill means the assumption is now known to be wrong. This is the
+      # one alert on this path that says a SAFETY CONTROL is broken rather than
+      # that it fired.
+      - alert: AgenticKillSwitchDrillNotPassing
+        expr: |
+          increase(agentic_kill_switch_drill_total{outcome!="PASSED"}[24h]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          service: inflect-compliance
+        annotations:
+          summary: "Agent kill-switch drill did not pass ({{ $labels.outcome }})"
+          description: |
+            The scheduled drill pulls the kill switch for real and checks the MCP
+            tool boundary refuses. It did not report PASSED.
+
+            FAILED means the boundary did NOT refuse a killed agent — the stop
+            control is not stopping. ERROR means the drill could not run, so it
+            proves nothing either way and the control is UNVERIFIED rather than
+            known-broken.
+
+            Runbook:
+            1. Read the newest AgentKillSwitchDrill row: outcome, scopesHonoured,
+               scopesFailed, boundaryRefusalReason.
+            2. A CRITICAL Finding is raised on FAILED — it carries the same detail.
+            3. Do not wait for the next drill to re-test; engage a kill on a canary
+               agent by hand and confirm the boundary refuses.
+
+      # An agent's behavioural circuit breaker latched OPEN.
+      #
+      # Not a volume ceiling — this is the ASI10 rogue-agent signal: the agent is
+      # doing something DIFFERENT (proposal rate, rejection rate, or tool mix),
+      # which a budget set high enough to be quiet will never catch.
+      - alert: AgenticCircuitBreakerTripped
+        expr: |
+          increase(agentic_circuit_breaker_trip_total[1h]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          service: inflect-compliance
+        annotations:
+          summary: "An agent's behavioural circuit breaker tripped"
+          description: |
+            The agent's recent behaviour diverged from its own baseline and the
+            breaker latched OPEN, halting it at the tool boundary — reads included.
+
+            This is a claim about CHANGE, not about volume, so the first question
+            is what changed: a new workflow, a new tool grant, a widened policy
+            card, or an actual compromise.
+
+            Runbook:
+            1. GET /api/t/:slug/admin/agents/:agentId/circuit-breaker — the latch,
+               the last 48 windows and the signals that fired.
+            2. Closing the breaker is a deliberate act with two meanings:
+               ACCEPTED_NEW_BASELINE adopts the behaviour as normal, RESOLVED keeps
+               the old baseline. They are not interchangeable.
+
+      # A fan-out stopped with members unattempted.
+      #
+      # The whole point of the isolation work is that one failure does not become
+      # a cascade. A HALT means the sweep stopped anyway, so some agents or runs
+      # were never reached — silent work loss, which is the failure mode this
+      # subsystem exists to prevent.
+      - alert: AgenticFanOutHalted
+        expr: |
+          increase(agentic_fanout_halted_total[1h]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          service: inflect-compliance
+        annotations:
+          summary: "An agentic fan-out halted with members unattempted ({{ $labels.component }})"
+          description: |
+            A per-item fan-out stopped on a fatal failure rather than isolating it,
+            so the members behind it were never attempted. The count of members
+            that DID fail individually is a different series
+            (agentic_fanout_member_failed_total) and is expected to be non-zero.
+
+            Runbook:
+            1. The halt kind is on the `kind` label — it distinguishes "this item
+               failed" from "this sweep must not continue".
+            2. Members behind a halt are not retried by the same tick; the next
+               scheduled run reaches them.

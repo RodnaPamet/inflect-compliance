@@ -66,6 +66,24 @@ describe('Epic 19 Coherence: metric names', () => {
         //   tracing layer; it shows up as span attributes in OTel traces and is
         //   used ad-hoc when chasing slow queries, not on the SLO board.
         const diagnosticOnly = new Set([
+            // ─── ASI08/ASI10 agentic controls ───
+            //
+            // The three that say a CONTROL FAILED have alerts:
+            // kill_switch.drill (the stop control is broken or unverified),
+            // circuit_breaker.trip (the rogue-agent signal fired), and
+            // fanout.halted (a sweep stopped with members unattempted). The rest
+            // are the controls WORKING, and an alert on a control working is how
+            // an on-call learns to ignore the page.
+            //
+            // Each is read from the admin surfaces named beside it, and each is
+            // the denominator or the detail for one of the three above.
+            'agentic.circuit_breaker.verdict',   // per-evaluation; the trip is the event
+            'agentic.circuit_breaker.refusal',   // a tripped agent being refused — expected while latched
+            'agentic.circuit_breaker.close',     // an operator closing a breaker, by reason
+            'agentic.kill_switch.refusal',       // a killed agent being refused — expected, and the point
+            'agentic.fanout.member_failed',      // isolation working: one member failed, the sweep continued
+            'agentic.run.cap.halt',              // a run hit a declared ceiling — a capacity fact, not an incident
+            'agentic.run.cap.utilisation',       // how close healthy runs run to their caps; the leading indicator
             // Size of each sealed workflow-context envelope. The SLO signal for
             // this subsystem is the HALT counter, which has its own critical
             // alert; the size distribution is what an operator reads *after*
@@ -227,6 +245,12 @@ describe('Epic 19 Coherence: alert rules', () => {
         // while an agent's memory stops being trustworthy, which is exactly the
         // condition this tier exists for.
         'AgenticWorkflowContextIntegrityHalt',
+        // ASI08/ASI10 stop controls. Same tier and same reason: each fires when a
+        // SAFETY CONTROL failed or a rogue signal tripped, while the system stays
+        // otherwise healthy — which is exactly the condition nothing else surfaces.
+        'AgenticKillSwitchDrillNotPassing',
+        'AgenticCircuitBreakerTripped',
+        'AgenticFanOutHalted',
     ];
 
     const ALL_ALERT_NAMES = [

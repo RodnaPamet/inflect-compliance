@@ -77,6 +77,7 @@ jest.mock('@/lib/prisma', () => {
         agentCircuitBreaker,
         agentBehaviourWindow,
         $executeRaw,
+        $queryRaw,
     };
     return { __esModule: true, default: client, prisma: client };
 });
