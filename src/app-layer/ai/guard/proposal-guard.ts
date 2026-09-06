@@ -42,6 +42,8 @@ import { createHash } from 'node:crypto';
 
 import {
     type ContentProvenance,
+    type DataOnlySourceId,
+    UNTRUSTED_PROVENANCE,
     mayCarryInstruction,
     resolveContentProvenance,
 } from '@/lib/agentic/content-provenance';
@@ -55,6 +57,12 @@ export type AgentGuardVerdict = 'CLEAN' | 'FLAGGED' | 'QUARANTINED';
 /** Bounded summary length — mirrors `AiDecisionLog`'s own cap. */
 export const GUARD_SUMMARY_MAX = 500;
 
+/**
+ * The ingestion path an agent proposal is assumed to have arrived by when the
+ * caller names none. `THIRD_PARTY_INGESTED` in the allowlist.
+ */
+export const DEFAULT_PROPOSAL_SOURCE: DataOnlySourceId = 'agent.proposal';
+
 export interface GuardAgentProposalInput {
     /** The proposal kind (RISK / CONTROL / POLICY / FINDING). */
     kind: string;
@@ -67,8 +75,21 @@ export interface GuardAgentProposalInput {
      * path, which the allowlist resolves to `THIRD_PARTY_INGESTED` — an
      * external agent's output is untrusted by construction. Passed explicitly
      * only where a caller genuinely knows better.
+     *
+     * TYPED AS `DataOnlySourceId`, WHICH IS THE POINT. It used to be `string |
+     * null`, and that made it a QUARANTINE KILL-SWITCH: `'platform.aggregate'`
+     * (or any other `SYSTEM` id) resolves to a provenance for which
+     * `mayCarryInstruction` is true, and the ladder below only quarantines when
+     * that is false. One argument, on the one function that decides whether
+     * injected content becomes a compliance record, and the failure is SILENT —
+     * proposals stop being quarantined and the queue looks healthy.
+     *
+     * No caller passed one, so it was latent rather than live; nothing stopped
+     * the next caller. The union is DERIVED from the allowlist (every id whose
+     * label may not carry instruction), so it needs no maintenance and a new
+     * `SYSTEM` entry drops out of it automatically.
      */
-    sourceId?: string | null;
+    sourceId?: DataOnlySourceId | null;
 }
 
 export interface AgentProposalGuardResult {
@@ -135,26 +156,6 @@ export function summarizeWithoutContent(
 }
 
 /**
- * Guard one agent proposal before it is written.
- *
- * PURE — no DB, no clock, no tenant read. Given the same content it returns the
- * same verdict, which is what makes the injection corpus a regression suite
- * rather than a mood.
- *
- * The ladder:
- *   • a HIGH-severity injection rule, or any egress/secret hit, on content whose
- *     provenance may NOT carry instruction  → `QUARANTINED`;
- *   • anything else non-clean                → `FLAGGED` (queued, but the row
- *     carries the verdict so the reviewer is told);
- *   • nothing fired                          → `CLEAN`.
- *
- * The provenance term is the whole reason a single scan can produce two
- * different answers. Untrusted content that reads as an instruction is an
- * INJECTION; the identical string in platform-generated scaffolding is IC's own
- * prompt. `mayCarryInstruction` is the only thing that can tell them apart, and
- * it fails closed.
- */
-/**
  * Every string leaf of the payload, in traversal order.
  *
  * Joining these with a real newline gives the rules the line structure they are
@@ -168,10 +169,68 @@ function payloadTextLeaves(value: unknown, out: string[] = []): string[] {
     return out;
 }
 
+/**
+ * The trust label for one proposal's content, and the SECOND half of the
+ * kill-switch fix.
+ *
+ * `DataOnlySourceId` makes the dangerous call a compile error. This makes it a
+ * no-op, because a type is not a runtime property: an `as` cast, an id read out
+ * of a row, or a JS caller all reach this function with whatever string they
+ * like. So a resolved label that MAY CARRY INSTRUCTION is clamped back to
+ * `UNTRUSTED_PROVENANCE` here.
+ *
+ * The clamp is not a repair of untrusted content — it is a refusal of an
+ * unearned trust CLAIM. Everything reaching this module is, by construction, an
+ * agent's output: `guardAgentProposal` is called from exactly one place
+ * (`createAgentProposal`), and its three upstream sources are an MCP propose
+ * tool, the assistant and the AI-conformity drafter — model output in all three
+ * cases, and model output is never platform-authored. There is therefore no
+ * legitimate `SYSTEM` proposal for the clamp to get wrong.
+ *
+ * It clamps rather than throws: the caller's next move on a quarantine is to
+ * WRITE the row as evidence of the attempt, and a throw here would delete that
+ * evidence to report a programming error the compiler has already refused.
+ * The clamped label is what the result reports, so nothing downstream is told
+ * a provenance the guard did not use.
+ */
+function resolveProposalProvenance(
+    sourceId: GuardAgentProposalInput['sourceId'],
+): ContentProvenance {
+    const resolved = resolveContentProvenance(sourceId ?? DEFAULT_PROPOSAL_SOURCE);
+    return mayCarryInstruction(resolved) ? UNTRUSTED_PROVENANCE : resolved;
+}
+
+/**
+ * Guard one agent proposal before it is written.
+ *
+ * PURE — no DB, no clock, no tenant read. Given the same content it returns the
+ * same verdict, which is what makes the injection corpus a regression suite
+ * rather than a mood.
+ *
+ * The ladder:
+ *   • a HIGH-severity injection rule, or any egress/secret hit, on content whose
+ *     provenance may NOT carry instruction  → `QUARANTINED`;
+ *   • anything else non-clean                → `FLAGGED` (queued, but the row
+ *     carries the verdict so the reviewer is told);
+ *   • nothing fired                          → `CLEAN`.
+ *
+ * The provenance term is the reason a single scan can produce two different
+ * answers: untrusted content that reads as an instruction is an INJECTION,
+ * while the identical string in platform-generated scaffolding is IC's own
+ * prompt, and `mayCarryInstruction` is the only thing that can tell them apart.
+ *
+ * ON THIS PATH IT NEVER PRODUCES THE SECOND ANSWER, AND THAT IS DELIBERATE.
+ * The distinction belongs to `resolveContentProvenance`, which serves every
+ * content seam; a PROPOSAL is agent output by construction and can never be
+ * platform-authored, so `resolveProposalProvenance` refuses an
+ * instruction-bearing claim rather than honouring it. The parameter that could
+ * make one is typed out of existence as well — see
+ * `GuardAgentProposalInput.sourceId`.
+ */
 export function guardAgentProposal(
     input: GuardAgentProposalInput,
 ): AgentProposalGuardResult {
-    const provenance = resolveContentProvenance(input.sourceId ?? 'agent.proposal');
+    const provenance = resolveProposalProvenance(input.sourceId);
     const rationale = input.rationale ?? null;
 
     // The guarded text: the rationale the agent wrote plus the payload it

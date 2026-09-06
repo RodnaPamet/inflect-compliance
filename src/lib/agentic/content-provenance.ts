@@ -53,6 +53,15 @@ export type ContentProvenance = 'TENANT_AUTHORED' | 'THIRD_PARTY_INGESTED' | 'SY
  */
 export const UNTRUSTED_PROVENANCE: ContentProvenance = 'THIRD_PARTY_INGESTED';
 
+/**
+ * THE ONE LABEL that may be read as instruction. Named as a constant because
+ * `mayCarryInstruction` (runtime) and `InstructionBearingSourceId` (type) both
+ * have to mean the same thing; two spellings of the same rule is one of them
+ * being wrong later.
+ */
+export const INSTRUCTION_BEARING_PROVENANCE = 'SYSTEM';
+export type InstructionBearingProvenance = typeof INSTRUCTION_BEARING_PROVENANCE;
+
 /** Every label, in increasing order of trust. Order is used by `leastTrusted`. */
 export const PROVENANCE_ORDER: readonly ContentProvenance[] = [
     'THIRD_PARTY_INGESTED',
@@ -68,7 +77,7 @@ export const PROVENANCE_ORDER: readonly ContentProvenance[] = [
  * content entered IC, which is the only thing that can be checked; the path
  * names the specific seam.
  */
-export const CONTENT_SOURCE_PROVENANCE: Readonly<Record<string, ContentProvenance>> = {
+export const CONTENT_SOURCE_PROVENANCE = {
     // ── SYSTEM — IC generated it. No human and no third party typed any of it.
     // Counts, percentages and derived aggregates: numbers computed from rows,
     // carrying no free text of their own.
@@ -109,7 +118,57 @@ export const CONTENT_SOURCE_PROVENANCE: Readonly<Record<string, ContentProvenanc
     'webhook.inbound': 'THIRD_PARTY_INGESTED',
     'agent.proposal': 'THIRD_PARTY_INGESTED',
     'agent.tool-result': 'THIRD_PARTY_INGESTED',
-};
+} as const satisfies Readonly<Record<string, ContentProvenance>>;
+
+/**
+ * The lookup view of the allowlist, for the resolver below.
+ *
+ * `as const satisfies` is what makes the KEYS and the VALUES literal types, and
+ * that is the only reason the ids below can be filtered at the type level. The
+ * cost is that the object no longer carries a `string` index signature, so a
+ * lookup by an arbitrary runtime string needs this widened alias. It is an
+ * assignment and not a cast: nothing here can claim a source id is known when
+ * the table does not name it.
+ */
+const SOURCE_LOOKUP: Readonly<Record<string, ContentProvenance | undefined>> =
+    CONTENT_SOURCE_PROVENANCE;
+
+/** Every source id the allowlist names. */
+export type ContentSourceId = keyof typeof CONTENT_SOURCE_PROVENANCE;
+
+/**
+ * The source ids whose content MAY BE READ AS INSTRUCTION — derived from the
+ * table above and from `INSTRUCTION_BEARING_PROVENANCE`, never listed a second
+ * time. Adding a `SYSTEM` row to the allowlist adds it here automatically, and
+ * removes it from `DataOnlySourceId` in the same edit.
+ */
+export type InstructionBearingSourceId = {
+    [K in ContentSourceId]: (typeof CONTENT_SOURCE_PROVENANCE)[K] extends InstructionBearingProvenance
+        ? K
+        : never;
+}[ContentSourceId];
+
+/**
+ * Every source id EXCEPT the instruction-bearing ones — i.e. the ids a caller
+ * may claim WITHOUT that claim being able to switch off an
+ * instruction-sensitive control.
+ *
+ * This is the type an agent-facing seam takes. `guardAgentProposal` is the
+ * first user: `mayCarryInstruction` is the term that decides whether a
+ * malicious verdict quarantines, so a seam that accepted `'platform.aggregate'`
+ * accepted an argument that turns quarantine off. Narrowing the parameter makes
+ * that call unwriteable rather than merely discouraged.
+ */
+export type DataOnlySourceId = Exclude<ContentSourceId, InstructionBearingSourceId>;
+
+/**
+ * Runtime companion to `DataOnlySourceId`, for the values a type cannot reach —
+ * an `as` cast, a string read out of a row, a JS caller. Fails closed on an id
+ * the table does not name (an unknown id is untrusted, so it is data-only).
+ */
+export function isDataOnlySourceId(sourceId: string | null | undefined): boolean {
+    return !mayCarryInstruction(resolveContentProvenance(sourceId));
+}
 
 /**
  * Resolve a source id to its trust label. FAIL-CLOSED: anything this table does
@@ -126,7 +185,7 @@ export function resolveContentProvenance(
     if (typeof sourceId !== 'string') return UNTRUSTED_PROVENANCE;
     const trimmed = sourceId.trim();
     if (!trimmed) return UNTRUSTED_PROVENANCE;
-    return CONTENT_SOURCE_PROVENANCE[trimmed] ?? UNTRUSTED_PROVENANCE;
+    return SOURCE_LOOKUP[trimmed] ?? UNTRUSTED_PROVENANCE;
 }
 
 /**
@@ -138,8 +197,10 @@ export function resolveContentProvenance(
  * corpus, and the corpus is data. Treating it as instruction is how a legitimate
  * user with write access becomes an unlogged privilege-escalation path.
  */
-export function mayCarryInstruction(provenance: ContentProvenance): boolean {
-    return provenance === 'SYSTEM';
+export function mayCarryInstruction(
+    provenance: ContentProvenance,
+): provenance is InstructionBearingProvenance {
+    return provenance === INSTRUCTION_BEARING_PROVENANCE;
 }
 
 /** The least-trusted label among the inputs — the worst case for a mixed payload. */
@@ -268,9 +329,17 @@ export function provenanceOfTool(toolName: string | null | undefined): ContentPr
     return MCP_TOOL_CORPUS[toolName]?.provenance ?? UNTRUSTED_PROVENANCE;
 }
 
+/**
+ * The envelope's discriminator. A constant rather than two string literals so
+ * the builder and `parseProvenanceEnvelope` cannot drift: a reader that no
+ * longer recognises what the writer emits fails closed and silently, which
+ * looks exactly like a tool that stopped labelling its output.
+ */
+export const PROVENANCE_ENVELOPE_KIND = 'content-provenance';
+
 /** The provenance envelope appended to every MCP read-tool result. */
 export interface ProvenanceEnvelope {
-    kind: 'content-provenance';
+    kind: typeof PROVENANCE_ENVELOPE_KIND;
     tool: string;
     provenance: ContentProvenance;
     /** True only for SYSTEM content. */
@@ -294,18 +363,120 @@ const SYSTEM_HANDLING =
  * block rather than wrapped around the data, so `content[0]` stays the exact
  * JSON payload every existing agent and test parses.
  *
- * It is advisory — a model can ignore a banner. The load-bearing enforcement is
- * `guardAgentProposal` at the propose seam, which does not ask the model
- * anything.
+ * It is advisory TO A MODEL — a model can ignore a banner. The load-bearing
+ * enforcement is `guardAgentProposal` at the propose seam, which does not ask
+ * the model anything.
+ *
+ * It is NOT advisory to IC's own workflow engine, which is a program and does
+ * not get to ignore it: `parseProvenanceEnvelope` below is the reader that
+ * takes it back off the wire, and `workflow-runs.ts` records the label on every
+ * step. A builder with no reader is a label that exists only for external
+ * clients — which is what this pair exists to stop being true.
  */
 export function buildProvenanceEnvelope(toolName: string): ProvenanceEnvelope {
     const provenance = provenanceOfTool(toolName);
     const instruction = mayCarryInstruction(provenance);
     return {
-        kind: 'content-provenance',
+        kind: PROVENANCE_ENVELOPE_KIND,
         tool: toolName,
         provenance,
         mayCarryInstruction: instruction,
         handling: instruction ? SYSTEM_HANDLING : DATA_ONLY_HANDLING,
     };
+}
+
+/**
+ * The content block a tool result carries its envelope in — the WRITER half of
+ * the wire format, so `registry.ts` does not spell the shape out itself and
+ * `provenanceOfToolResult` does not have to guess at a second spelling.
+ *
+ * Appended AFTER the payload block, never wrapped around it: `content[0]` stays
+ * the exact JSON every existing agent and test parses.
+ */
+export function provenanceContentBlock(toolName: string): { type: 'text'; text: string } {
+    return { type: 'text', text: JSON.stringify(buildProvenanceEnvelope(toolName), null, 2) };
+}
+
+/**
+ * The trust label of a whole tool result — the READER half, and the one IC's
+ * own workflow engine calls.
+ *
+ * SEARCHES the blocks rather than indexing `content[1]`, so appending another
+ * block later cannot silently unhook the label. It starts at index 1 and that
+ * exclusion is deliberate, not an off-by-one: `content[0]` is the tool's
+ * PAYLOAD — untrusted tenant text by construction — and a reader that would
+ * accept an envelope found there is a reader an injected payload can hand its
+ * own trust label to.
+ *
+ * FAIL-CLOSED: no envelope block, an unparseable one, or a label this build
+ * does not know all read as `THIRD_PARTY_INGESTED`.
+ */
+export function provenanceOfToolResult(result: {
+    content?: ReadonlyArray<{ text?: string }> | null;
+}): ContentProvenance {
+    const blocks = result.content;
+    if (!Array.isArray(blocks)) return UNTRUSTED_PROVENANCE;
+    for (let i = 1; i < blocks.length; i++) {
+        const label = parseProvenanceEnvelope(blocks[i]?.text);
+        // `parseProvenanceEnvelope` cannot distinguish "not an envelope" from
+        // "an envelope saying untrusted", so a block that is not an envelope at
+        // all must not end the search. Only a block that IS one decides.
+        if (isProvenanceEnvelopeBlock(blocks[i]?.text)) return label;
+    }
+    return UNTRUSTED_PROVENANCE;
+}
+
+/** Is this block an envelope at all? Structure only — says nothing about trust. */
+function isProvenanceEnvelopeBlock(text: string | null | undefined): boolean {
+    if (typeof text !== 'string') return false;
+    let raw: unknown;
+    try {
+        raw = JSON.parse(text);
+    } catch {
+        return false;
+    }
+    return (
+        !!raw &&
+        typeof raw === 'object' &&
+        !Array.isArray(raw) &&
+        (raw as { kind?: unknown }).kind === PROVENANCE_ENVELOPE_KIND
+    );
+}
+
+/**
+ * Read a provenance envelope back off ONE MCP content block — the decode half
+ * of `buildProvenanceEnvelope`. Most callers want `provenanceOfToolResult`,
+ * which knows which blocks to look in.
+ *
+ * FAIL-CLOSED, in the same direction and for the same reason as
+ * `resolveContentProvenance`: a block that is absent, unparseable, not an
+ * envelope, or carrying a label this build does not know returns
+ * `UNTRUSTED_PROVENANCE`. A tool result whose label cannot be read is a tool
+ * result whose contents cannot be vouched for, and the honest answer to that is
+ * the untrusted one — never "assume it was fine".
+ *
+ * Takes the raw `text` of a content block rather than a parsed object, because
+ * the caller reading `content[1]?.text` should not have to do the JSON parse,
+ * the shape check and the enum check itself and get one of the three wrong.
+ */
+export function parseProvenanceEnvelope(
+    text: string | null | undefined,
+): ContentProvenance {
+    if (typeof text !== 'string') return UNTRUSTED_PROVENANCE;
+    let raw: unknown;
+    try {
+        raw = JSON.parse(text);
+    } catch {
+        return UNTRUSTED_PROVENANCE;
+    }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return UNTRUSTED_PROVENANCE;
+    const candidate = raw as { kind?: unknown; provenance?: unknown };
+    if (candidate.kind !== PROVENANCE_ENVELOPE_KIND) return UNTRUSTED_PROVENANCE;
+    const label = candidate.provenance;
+    // The label is checked against `PROVENANCE_ORDER`, not merely against
+    // `typeof === 'string'`. An envelope claiming a label this build has never
+    // heard of must not be carried through as if it were one.
+    return PROVENANCE_ORDER.includes(label as ContentProvenance)
+        ? (label as ContentProvenance)
+        : UNTRUSTED_PROVENANCE;
 }

@@ -36,6 +36,16 @@
  * error and carried on with `{ input: {}, outputs: {} }`, which is a silent
  * memory reset — the worst available outcome and the one this closes.
  *
+ * A TOOL RESULT'S PROVENANCE IS READ, NOT DROPPED. `runReadTool` labels every
+ * payload with what it is made of and appends that label as a SECOND MCP
+ * content block, so `content[0]` stays the exact JSON an external agent parses.
+ * This engine used to take `content[0]` and return — so the tagging worked for
+ * external clients and did nothing for the surface the product actually runs.
+ * `parseToolResult` now returns both halves, the payload still goes into the
+ * context unchanged, and the label lands on the step's audit row. It is
+ * fail-closed: an absent, unreadable or unrecognised envelope reads as
+ * `THIRD_PARTY_INGESTED`.
+ *
  * REVOCATION IS CHECKED AT THE TOOL BOUNDARY, NOT AT DISPATCH. `authorizeToolCall`
  * re-reads the credential's live state before EVERY step's tool call, so revoking
  * a key stops a run already in flight at its next step. A status code cannot tell
@@ -54,6 +64,11 @@ import { enforceMcpCapability, resolveMcpInvocation } from '@/lib/mcp/auth';
 import { runReadTool } from '@/lib/mcp/tools/registry';
 import { runProposeTool } from '@/lib/mcp/tools/propose-tools';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
+import {
+    provenanceOfToolResult,
+    UNTRUSTED_PROVENANCE,
+    type ContentProvenance,
+} from '@/lib/agentic/content-provenance';
 import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
 import {
     estimateTokens,
@@ -484,10 +499,14 @@ async function executeFrom(
                 }
                 const args = step.args ? step.args(context) : {};
                 const result = await runReadTool(invocation, step.tool, args);
-                const output = parseToolResult(result);
+                // `output` is content[0] and ONLY content[0] — the context keeps
+                // the exact shape every workflow definition's `args(context)`
+                // and `buildItems(context)` already indexes into. The label
+                // rides alongside it into the step record instead.
+                const { output, provenance } = parseToolResult(result);
                 context.outputs[step.label] = output;
                 costTokens += estimateTokens(output);
-                await recordStep(ctx, runId, seq, 'READ', { toolCalled: step.tool, input: args, output, status: 'DONE', label: step.label }, chainSeq);
+                await recordStep(ctx, runId, seq, 'READ', { toolCalled: step.tool, input: args, output, provenance, status: 'DONE', label: step.label }, chainSeq);
             } else if (step.kind === 'PROPOSE') {
                 const items = step.buildItems(context);
                 if (items.length === 0) {
@@ -515,10 +534,10 @@ async function executeFrom(
                     }
                     const rationale = step.rationale ? step.rationale(context) : undefined;
                     const result = await runProposeTool(invocation, step.tool, { items, rationale });
-                    const output = parseToolResult(result);
+                    const { output, provenance } = parseToolResult(result);
                     context.outputs[step.label] = output;
                     costTokens += estimateTokens(output);
-                    await recordStep(ctx, runId, seq, 'PROPOSE', { toolCalled: step.tool, input: { count: items.length }, output, status: 'DONE', label: step.label }, chainSeq);
+                    await recordStep(ctx, runId, seq, 'PROPOSE', { toolCalled: step.tool, input: { count: items.length }, output, provenance, status: 'DONE', label: step.label }, chainSeq);
                 }
             } else if (step.kind === 'SYNTHESIS') {
                 const syn = step.synthesize(context);
@@ -655,6 +674,15 @@ interface StepRecord {
     status: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'SKIPPED';
     label: string;
     actorUserId?: string;
+    /**
+     * What the step's output is made of. Set on the steps that CALL A TOOL;
+     * absent on a checkpoint or a synthesis, which read no external content.
+     *
+     * A label and nothing else — one of three enum values. It carries no
+     * excerpt, no field name and no length, so it is safe in the plaintext,
+     * hash-chained, never-deleted audit row where `recordStep` puts it.
+     */
+    provenance?: ContentProvenance;
 }
 
 /**
@@ -706,7 +734,25 @@ async function recordStep(
         entityId: `${runId}:${seq}`,
         action: 'WORKFLOW_STEP',
         requestId: ctx.requestId,
-        detailsJson: { category: 'access', kind, label: rec.label, tool: rec.toolCalled ?? null, status: rec.status },
+        detailsJson: {
+            category: 'access',
+            kind,
+            label: rec.label,
+            tool: rec.toolCalled ?? null,
+            status: rec.status,
+            // WHAT THIS STEP READ, not just which tool it called. The two are
+            // not the same question: `get_compliance_posture` returns platform
+            // arithmetic, every other read tool returns tenant free text, and a
+            // run that only ever touched the first has no injection surface at
+            // all. Recorded here because the audit trail is the durable record
+            // of what a run did — `WorkflowStep` has no column for it, and
+            // adding one is a schema change this change does not make.
+            //
+            // `null` on the steps that call no tool. That is "not applicable",
+            // and it is distinguishable from the untrusted label because the
+            // untrusted label is spelled out.
+            provenance: rec.provenance ?? null,
+        },
         metadataJson: { apiKeyId: ctx.apiKeyId ?? null, runId },
     }).catch(() => undefined);
 }
@@ -1051,10 +1097,47 @@ async function loadRunAndDef(ctx: RequestContext, runId: string) {
     return { run, def };
 }
 
-function parseToolResult(result: { content: Array<{ text: string }> }): unknown {
+/** What one tool call handed back: its payload, and what that payload is made of. */
+interface ParsedToolResult {
+    /**
+     * `content[0]`, parsed. THE CONTRACT: this is the exact JSON every external
+     * MCP agent already parses, and it is what goes into the run context and
+     * the step row. Nothing below wraps, shifts or annotates it.
+     */
+    output: unknown;
+    /**
+     * The trust label the tool stamped on that payload, read back off the
+     * envelope block beside it.
+     *
+     * This block existed and this engine dropped it. `runReadTool` appends a
+     * provenance envelope as a SECOND content block precisely so `content[0]`
+     * can stay untouched — which works for an external client that reads the
+     * whole result, and did nothing at all for the engine the product actually
+     * runs, because this function took `content[0]` and returned. The tagging
+     * was real for the surface it was built against and absent for the one that
+     * executes workflows.
+     *
+     * FAIL-CLOSED: no block, an unparseable one, or a label this build does not
+     * know all read as `THIRD_PARTY_INGESTED` — see `provenanceOfToolResult`.
+     * A propose tool emits no envelope at all, so a PROPOSE step lands here
+     * legitimately, and untrusted is the right answer for it too.
+     */
+    provenance: ContentProvenance;
+}
+
+/**
+ * Split a tool result into its payload and its provenance.
+ *
+ * A parse failure on `content[0]` yields `null`, which is the pre-existing
+ * behaviour and is left alone: the run carries on with an empty output and the
+ * step row records it. The provenance of an unreadable payload is untrusted,
+ * which is what the reader returns for a missing block anyway.
+ */
+function parseToolResult(result: { content: Array<{ text: string }> }): ParsedToolResult {
+    const provenance = provenanceOfToolResult(result);
     try {
-        return JSON.parse(result.content[0]?.text ?? 'null');
+        return { output: JSON.parse(result.content[0]?.text ?? 'null'), provenance };
     } catch {
-        return null;
+        return { output: null, provenance: UNTRUSTED_PROVENANCE };
     }
 }
