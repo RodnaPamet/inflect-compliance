@@ -33,6 +33,36 @@ const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8
 const LIB_DIR = path.join(ROOT, 'src/data/libraries');
 const seed = read('prisma/seed.ts');
 
+/**
+ * Where a framework's keys may legitimately live.
+ *
+ * They used to have to be in `prisma/seed.ts`, and that was a question about
+ * the IMPLEMENTATION rather than the outcome: seed.ts is not run on production
+ * deploys, so a key appearing there proved a framework reached DEV and said
+ * nothing about whether a customer ever sees it. DORA was the first framework
+ * to move onto the shared `applyCatalogFile` writer, and this check read that
+ * as a regression while the change was making DORA reach production for the
+ * first time.
+ *
+ * So the question is now "is this framework declared somewhere a writer will
+ * apply it?", and a CatalogFile wired into CATALOG_FIXTURES is the stronger
+ * answer of the two — that list is what `scripts/entrypoint.sh` runs.
+ */
+const catalogSeeder = read('scripts/seed-framework-catalogs.ts');
+const wiredCatalogs = [...catalogSeeder.matchAll(/prisma\/fixtures\/([A-Za-z0-9._-]+\.json)/g)]
+    .map((m) => {
+        try {
+            return fs.readFileSync(path.join(ROOT, 'prisma/fixtures', m[1]), 'utf8');
+        } catch {
+            return '';
+        }
+    })
+    .join('\n');
+
+/** Does any applied source declare this key? */
+const declaredSomewhere = (key: string): boolean =>
+    seed.includes(`'${key}'`) || wiredCatalogs.includes(`"${key}"`);
+
 /** Library framework ref_id → seed wiring proof (framework key + pack key). */
 const STARTER_PACKS: Record<string, { frameworkKey: string; packKey: string }> = {
     'ISO27001-2022': { frameworkKey: 'ISO27001', packKey: 'ISO27001_2022_BASE' },
@@ -95,11 +125,19 @@ describe('Framework starter-pack completeness', () => {
         expect(both).toEqual([]);
     });
 
-    it('every starter-pack entry wires its framework + pack keys in seed.ts', () => {
+    it('the catalog scan reads real wired fixtures (denominator)', () => {
+        // declaredSomewhere falls back to seed.ts, so a broken catalog read
+        // would leave every assertion below still passing on the weaker
+        // source — silently reverting this check to the implementation
+        // question it used to ask.
+        expect(wiredCatalogs.length).toBeGreaterThan(10_000);
+    });
+
+    it('every starter-pack entry declares its framework + pack keys somewhere applied', () => {
         const missing: string[] = [];
         for (const [refId, { frameworkKey, packKey }] of Object.entries(STARTER_PACKS)) {
-            if (!seed.includes(`'${frameworkKey}'`)) missing.push(`${refId}: framework key ${frameworkKey}`);
-            if (!seed.includes(`'${packKey}'`)) missing.push(`${refId}: pack key ${packKey}`);
+            if (!declaredSomewhere(frameworkKey)) missing.push(`${refId}: framework key ${frameworkKey}`);
+            if (!declaredSomewhere(packKey)) missing.push(`${refId}: pack key ${packKey}`);
         }
         expect(missing).toEqual([]);
     });

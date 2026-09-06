@@ -17,17 +17,27 @@
  *   FrameworkRequirement            dev 1134 prod 262
  *   ControlTemplateRequirementLink  dev 1912 prod 287
  *
- * `dora-control-templates.json` and `nis2-control-templates.json` are both
- * named by the task seeder, so the wiring guard is green for them. Their
- * templates are created by neither production seeder, so the task seeder finds
- * nothing to attach to and says so:
+ * `nis2-control-templates.json` is named by the task seeder, so the wiring
+ * guard is green for it. Its templates are created by neither production
+ * seeder, so on a FRESH database the task seeder finds nothing to attach to
+ * and says so, while still exiting 0:
  *
- *   DORA: 133 authored -> created 0 ⚠ 24 template(s) absent
  *   NIS2: 105 authored -> created 0 ⚠ 20 template(s) absent
  *
- * 238 authored tasks, zero rows, exit code 0. That is the same defect the
- * neighbouring guard exists to prevent, committed one level up by the guard
- * itself — it proved the reference and not the consequence.
+ * That is the same defect the neighbouring guard exists to prevent, committed
+ * one level up by the guard itself — it proved the reference and not the
+ * consequence.
+ *
+ * Read "fresh database" strictly. Live production HAS those 105 rows, because
+ * its NIS2 templates were put there by a one-off backfill years after the
+ * seeders were written, so the task seeder found them. The exposure is a
+ * fresh deploy or a restore — the catalogue is not reproducible from the
+ * repo, only recoverable from a database that already has it.
+ *
+ * DORA was the first framework off this path: it was reshaped into a
+ * CatalogFile and wired into CATALOG_FIXTURES, so `applyCatalogFile` now
+ * creates its templates and reconciles its 133 authored tasks in one place,
+ * for both dev and production.
  *
  * ═══ WHAT DELIVERS A TEMPLATE IN PRODUCTION ═══
  *
@@ -78,8 +88,6 @@ const INTERNAL_CONTROLS = 'internal-controls.json';
  * delivery path is the bug this file is named for.
  */
 const TEMPLATES_UNDELIVERED: Record<string, string> = {
-    'dora-control-templates.json':
-        'DORA. Bare-array fixture; templates created only by prisma/seed.ts. Its 133 authored tasks create zero rows in prod.',
     'nis2-control-templates.json':
         'NIS2. Same shape and same story; 105 authored tasks create zero rows in prod.',
     'iso9001-control-templates.json':
@@ -176,13 +184,14 @@ describe('the shipped catalogue can reach production', () => {
     });
 
     it('records how many templates cannot reach production, so it stays visible', () => {
-        // 98 across five fixtures on 2026-09-06. Only ever down.
+        // 74 across four fixtures. Was 98 across five until DORA was reshaped
+        // into a CatalogFile and wired into CATALOG_FIXTURES. Only ever down.
         const carry = new Map(fixtures.map((f) => [f.file, f.codes]));
         const undelivered = Object.keys(TEMPLATES_UNDELIVERED).reduce(
             (n, f) => n + (carry.get(f) ?? 0),
             0,
         );
-        expect(Object.keys(TEMPLATES_UNDELIVERED).length).toBeLessThanOrEqual(5);
-        expect(undelivered).toBeLessThanOrEqual(98);
+        expect(Object.keys(TEMPLATES_UNDELIVERED).length).toBeLessThanOrEqual(4);
+        expect(undelivered).toBeLessThanOrEqual(74);
     });
 });

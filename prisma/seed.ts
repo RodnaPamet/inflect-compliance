@@ -7,6 +7,8 @@ import { createTenantWithOwner } from '@/app-layer/usecases/tenant-lifecycle';
 import { hashForLookup } from '@/lib/security/encryption';
 import { seedDefaultOrgDashboard } from '@/app-layer/usecases/org-dashboard-presets';
 import { seedInternalControls, type PolicyFrameworkMap } from './control-template-seed';
+import { applyCatalogFile } from './catalog-applier';
+import { loadCatalogFile } from './catalog-loader';
 import { fixtureArray, fixtureObject } from './fixture-io';
 
 // Prisma 7 — adapter is required for PrismaClient construction.
@@ -1002,29 +1004,31 @@ Reviewed at least annually.` },
     console.log(`✅ NIS2 framework + ${nis2Data.length} requirements seeded`);
 
     // DORA — Digital Operational Resilience Act (Regulation (EU) 2022/2554).
-    // Fixture-driven, mirroring the NIS2 pattern above. DORA is a Regulation
-    // (directly applicable), so kind=REGULATION (vs NIS2's EU_DIRECTIVE).
-    // Requirement codes follow the official article structure (DORA.Art.N),
-    // matching the dora-2022.yaml library ref_ids.
-    const doraData = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/dora_requirements',
-        require('./fixtures/dora_requirements.json'),
+    //
+    // ONE writer, shared with production. This block used to hand-roll the
+    // framework upsert, the requirement loop, the template loop and the pack
+    // — four spans scattered across 400 lines — and production ran none of
+    // them, because prisma/seed.ts is not run on deploys. The two paths could
+    // not agree because they were two implementations.
+    //
+    // They also disagreed in a way nobody could see: the template loop wrote
+    // GENERIC_TEMPLATE_TASKS, so all 24 DORA controls carried the five
+    // placeholder strings in dev while the fixture's 133 AUTHORED tasks went
+    // nowhere at all — discarded here, and absent in prod because the
+    // templates were never created there.
+    //
+    // applyCatalogFile is now the only writer for DORA, exactly as it is for
+    // SOC 2, SSDF, CIS v8, ASVS and ISO 27701.
+    const doraResult = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/dora-control-templates.json'),
+        'prisma/fixtures/dora-control-templates.json',
     );
-    const dora = await prisma.framework.upsert({
-        where: { key_version: { key: 'DORA', version: '2022/2554' } },
-        update: { name: 'Digital Operational Resilience Act', kind: 'REGULATION', description: 'Regulation (EU) 2022/2554 on digital operational resilience for the financial sector' },
-        create: { key: 'DORA', name: 'Digital Operational Resilience Act', version: '2022/2554', kind: 'REGULATION', description: 'Regulation (EU) 2022/2554 on digital operational resilience for the financial sector' },
-    });
-    const doraReqMap: Record<string, string> = {};
-    for (const req of doraData) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: dora.id, code: req.key } },
-            update: { title: req.title, section: req.section, sortOrder: req.sortOrder },
-            create: { frameworkId: dora.id, code: req.key, title: req.title, section: req.section, category: req.section, sortOrder: req.sortOrder },
-        });
-        doraReqMap[req.key] = r.id;
-    }
-    console.log(`✅ DORA framework + ${doraData.length} requirements seeded`);
+    console.log(
+        `✅ DORA: ${doraResult.requirements.upserted} requirements, ` +
+            `${doraResult.templates.created} templates, ` +
+            `tasks ${doraResult.tasks.created}c/${doraResult.tasks.unchanged}=`,
+    );
 
     // NIS2 gap-assessment question set — imported open-data (CC BY 4.0).
     // SEPARATE artifact from the NIS2 framework requirements above: the
@@ -1278,32 +1282,6 @@ Reviewed at least annually.` },
     }
     console.log('✅ NIS2 control templates seeded');
 
-    // ─── DORA Control Templates ───
-    // One starter control per assessable DORA article, linked to its
-    // requirement. Stable codes (DORA-<article>) keep the pack + install
-    // flow idempotent. Rides the generic ControlTemplate/Pack machinery —
-    // no DORA-specific install path.
-    const doraTemplates = fixtureArray<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>(
-        'fixtures/dora-control-templates',
-        require('./fixtures/dora-control-templates.json'),
-    );
-    for (const t of doraTemplates) {
-        const existing = await prisma.controlTemplate.findUnique({ where: { code: t.code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
-            }
-            for (const rk of t.requirements) {
-                if (doraReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: doraReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    console.log('✅ DORA control templates seeded');
 
     // ─── ISO 9001 Control Templates ───
     const iso9001Templates = fixtureArray<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>(
@@ -1404,19 +1382,6 @@ Reviewed at least annually.` },
         });
     }
 
-    // DORA Pack
-    const doraTmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'DORA-' } } });
-    const doraPack = await prisma.frameworkPack.upsert({
-        where: { key: 'DORA_BASELINE' },
-        update: { name: 'DORA Baseline Pack', frameworkId: dora.id, version: '2022/2554' },
-        create: { key: 'DORA_BASELINE', name: 'DORA Baseline Pack', frameworkId: dora.id, version: '2022/2554', description: 'DORA digital operational resilience baseline controls across the five pillars.' },
-    });
-    for (const tmpl of doraTmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: doraPack.id, templateId: tmpl.id } },
-            create: { packId: doraPack.id, templateId: tmpl.id }, update: {},
-        });
-    }
 
     // ─── OWASP AISVS v1.0 — AI Security Verification Standard ───
     // CC-BY-SA-4.0 (OWASP). Inflect stores a REFERENCE INDEX (canonical IDs +

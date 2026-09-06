@@ -122,7 +122,7 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
 // itself an instance of the defect this ratchet exists to catch: adding a second
 // framework to a file made three existing guards stop naming the thing they were
 // written for, with no test edited.
-const AMBIGUOUS_NEEDLE_BASELINE = 1462;
+const AMBIGUOUS_NEEDLE_BASELINE = 1459;
 
 /** At or above this many satisfying positions, the needle names nothing. */
 const HIGH_MULTIPLICITY = 5;
@@ -150,7 +150,7 @@ const HIGH_MULTIPLICITY = 5;
  *     with the OWASP-privacy guard's rebinding; the two `CC-BY-SA` needles that
  *     the second OWASP framework pushed to five went with it.
  */
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 251;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 250;
 
 /**
  * Sites this detector could NOT analyse, having established they read a file.
