@@ -10,7 +10,18 @@
     "name": "OWASP Application Security Verification Standard 4.0.3",
     "version": "4.0.3",
     "kind": "INDUSTRY_STANDARD",
-    "description": "OWASP ASVS 4.0.3 Level 1 — the verification requirements applicable to all applications."
+    "description": "OWASP ASVS 4.0.3 Level 1 — the verification requirements applicable to all applications.",
+    "metadata": {
+      "locale": "en",
+      "provider": "OWASP Foundation",
+      "packager": "inflect",
+      "publicationDate": "2021-10-01",
+      "license": "CC-BY-SA-4.0",
+      "sourceUrl": "https://owasp.org/www-project-application-security-verification-standard/",
+      "note": "Structural outline only — identifiers, titles, and L1/L2/L3 structure reused under CC BY-SA 4.0; all descriptions are original paraphrases because the share-alike term is incompatible with embedding the text in a proprietary product.",
+      "copyright": "OWASP Application Security Verification Standard 4.0.3 is (c) the OWASP Foundation and licensed CC BY-SA 4.0."
+    },
+    "sourceUrn": "urn:inflect:library:owasp-asvs-4.0.3"
   },
   "requirements": [
     {

@@ -158,6 +158,60 @@ describe('a CatalogFile fixture reaches the database', () => {
         expect(rows[0]!.version).toBe(file.framework.version); // and updated
     });
 
+    it('carries the framework provenance onto the row', async () => {
+        // The licensing statements — "© OWASP Foundation, licensed
+        // CC-BY-SA-4.0", and for the ISO sets `referenceIndexOnly: true` with
+        // "NOT a reproduction of the standard" — are what make shipping a
+        // standard's structure lawful. prisma/seed.ts has written them since
+        // those libraries landed; applyCatalogFile wrote neither them nor
+        // sourceUrn, so a framework moved onto a CatalogFile lost its
+        // attribution on any database built from the repo.
+        //
+        // Asserted HERE rather than by the structural guard next door, and the
+        // reason is worth recording. catalog-schema-fields-are-written asks
+        // whether the applier REFERENCES each schema field, and that question
+        // cannot separate referencing from writing: deleting both writes left
+        // it green, because the lines that BUILD the payload still name
+        // `file.framework.metadata`. Only a row read distinguishes the two.
+        const ssdf = path.join(REPO_ROOT, 'prisma/fixtures/ssdf-control-templates.json');
+        const withMeta = loadAndValidateCatalogFile(ssdf);
+        expect(withMeta.framework.metadata).toBeDefined();
+        expect(withMeta.framework.sourceUrn).toBeDefined();
+
+        await applyCatalogFile(prisma, withMeta, ssdf);
+
+        const row = await prisma.framework.findUnique({
+            where: { key: withMeta.framework.key },
+            select: { metadataJson: true, sourceUrn: true },
+        });
+        expect(row?.sourceUrn).toBe(withMeta.framework.sourceUrn);
+        expect(row?.metadataJson).not.toBeNull();
+        expect(JSON.parse(row?.metadataJson ?? '{}')).toEqual(withMeta.framework.metadata);
+    });
+
+    it('a later apply corrects provenance rather than preserving a stale licence', async () => {
+        // Deliberately unlike the template-level fields, which skip on an
+        // existing row because "re-titling a shipped control is a decision,
+        // not a sync". That argument inverts for attribution: an out-of-date
+        // licence is exactly the thing you want overwritten.
+        const ssdf = path.join(REPO_ROOT, 'prisma/fixtures/ssdf-control-templates.json');
+        const file2 = loadAndValidateCatalogFile(ssdf);
+        await applyCatalogFile(prisma, file2, ssdf);
+
+        await prisma.framework.update({
+            where: { key: file2.framework.key },
+            data: { metadataJson: '{"license":"STALE"}', sourceUrn: 'urn:stale' },
+        });
+        await applyCatalogFile(prisma, file2, ssdf);
+
+        const row = await prisma.framework.findUnique({
+            where: { key: file2.framework.key },
+            select: { metadataJson: true, sourceUrn: true },
+        });
+        expect(row?.sourceUrn).toBe(file2.framework.sourceUrn);
+        expect(JSON.parse(row?.metadataJson ?? '{}')).toEqual(file2.framework.metadata);
+    });
+
     it('re-running is idempotent — no duplicates, no churn', async () => {
         // The seeder runs on EVERY production deploy. A second pass that
         // created rows would grow the catalogue without bound.

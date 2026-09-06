@@ -10,7 +10,18 @@
     "name": "NIST SSDF (SP 800-218) v1.1",
     "version": "1.1",
     "kind": "NIST_FRAMEWORK",
-    "description": "NIST Secure Software Development Framework — practices for producing software with fewer vulnerabilities."
+    "description": "NIST Secure Software Development Framework — practices for producing software with fewer vulnerabilities.",
+    "metadata": {
+      "locale": "en",
+      "provider": "NIST",
+      "packager": "inflect",
+      "publicationDate": "2022-02-03",
+      "license": "public-domain",
+      "sourceUrl": "https://csrc.nist.gov/Projects/ssdf",
+      "selfAttestation": "US federal secure-software self-attestation (EO 14028 / OMB M-22-18)",
+      "copyright": "Information presented on NIST sites is considered public information and may be distributed or copied."
+    },
+    "sourceUrn": "urn:inflect:library:nist-ssdf-800-218"
   },
   "requirements": [
     {

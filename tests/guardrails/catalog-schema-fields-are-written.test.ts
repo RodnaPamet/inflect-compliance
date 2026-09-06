@@ -30,7 +30,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { REPO_ROOT } from '../helpers/repo-files';
-import { declarationOf, functionBodyOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf, functionBodyOf } from '../helpers/source-blocks';
 
 const LOADER = path.join(REPO_ROOT, 'prisma/catalog-loader.ts');
 const APPLIER = path.join(REPO_ROOT, 'prisma/catalog-applier.ts');
@@ -57,7 +57,14 @@ function schemaFields(schemaName: string): string[] {
 }
 
 describe('the CatalogFile format keeps its promises', () => {
-    const applier = fs.readFileSync(APPLIER, 'utf8');
+    // codeOf strips comments FIRST, and that is load-bearing rather than
+    // tidy. Without it this guard is satisfied by prose: when `metadata` and
+    // `sourceUrn` were added to the format, the applier gained a docblock
+    // explaining why they matter — and a mutation that deleted both WRITES
+    // left the guard green, because the comment still said the words. A
+    // needle satisfied by a comment is the same defect this file exists to
+    // catch, one level up.
+    const applier = codeOf(fs.readFileSync(APPLIER, 'utf8'));
     const SCHEMAS = [
         'CatalogFrameworkSchema',
         'CatalogRequirementSchema',

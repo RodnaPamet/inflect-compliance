@@ -120,12 +120,33 @@ const CONTROL_FREQUENCIES = [
     'ANNUALLY',
 ] as const;
 
+/**
+ * Provenance and licensing for a framework's content.
+ *
+ * Not decoration. `prisma/seed.ts` writes this for eleven frameworks and it
+ * carries the statements that make shipping a standard's structure lawful:
+ * "OWASP AISVS v1.0 © OWASP Foundation, licensed CC-BY-SA-4.0", and for the
+ * ISO sets `referenceIndexOnly: true` with "NOT a reproduction of the
+ * standard". `applyCatalogFile` wrote neither this nor `sourceUrn`, so a
+ * framework converted to a CatalogFile lost its attribution on any database
+ * built from the repo — silently, because no gate compared the two writers.
+ *
+ * Open-ended on purpose: the shape differs per provider (`notLegalAdvice` for
+ * the EU AI Act, `referenceIndexOnly` for ISO) and a closed schema here would
+ * force every future licence into fields chosen for today's eleven.
+ */
+export const CatalogFrameworkMetadataSchema = z.record(z.string(), z.unknown());
+
 export const CatalogFrameworkSchema = z.object({
     key: z.string().min(1),
     name: z.string().min(1),
     version: z.string().min(1).optional(),
     kind: z.enum(FRAMEWORK_KINDS).optional(),
     description: z.string().optional(),
+    /** Provenance + licensing. Lands on Framework.metadataJson. */
+    metadata: CatalogFrameworkMetadataSchema.optional(),
+    /** Stable identifier for the source library. Lands on Framework.sourceUrn. */
+    sourceUrn: z.string().min(1).optional(),
 });
 
 export const CatalogRequirementSchema = z.object({

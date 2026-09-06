@@ -10,7 +10,18 @@
     "name": "CIS Critical Security Controls v8",
     "version": "8",
     "kind": "INDUSTRY_STANDARD",
-    "description": "CIS Critical Security Controls v8, Implementation Group 1 — the essential cyber hygiene baseline."
+    "description": "CIS Critical Security Controls v8, Implementation Group 1 — the essential cyber hygiene baseline.",
+    "metadata": {
+      "locale": "en",
+      "provider": "Center for Internet Security",
+      "packager": "inflect",
+      "publicationDate": "2021-05-18",
+      "license": "CC-BY-NC-SA-4.0",
+      "sourceUrl": "https://www.cisecurity.org/controls",
+      "note": "Structural outline only — identifiers, titles, and IG structure reused under CC BY-NC-SA 4.0; all descriptions are original paraphrases.",
+      "copyright": "CIS Critical Security Controls v8 are (c) Center for Internet Security and licensed CC BY-NC-SA 4.0."
+    },
+    "sourceUrn": "urn:inflect:library:cis-controls-v8"
   },
   "requirements": [
     {
