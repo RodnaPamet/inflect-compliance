@@ -16,896 +16,896 @@
     {
       "code": "V2.1.1",
       "title": "Minimum Password Length",
-      "summary": "Require passwords of at least twelve characters so that short, easily guessed secrets are rejected. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Require passwords of at least twelve characters so that short, easily guessed secrets are rejected.",
       "category": "L1",
       "sortOrder": 1
     },
     {
       "code": "V2.1.2",
       "title": "Long Passwords Permitted",
-      "summary": "Permit long passwords of at least sixty-four characters so users can choose strong passphrases. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Permit long passwords of at least sixty-four characters so users can choose strong passphrases.",
       "category": "L1",
       "sortOrder": 2
     },
     {
       "code": "V2.1.3",
       "title": "No Silent Truncation",
-      "summary": "Do not silently truncate passwords; accept the full secret the user typed or reject it clearly. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Do not silently truncate passwords; accept the full secret the user typed or reject it clearly.",
       "category": "L1",
       "sortOrder": 3
     },
     {
       "code": "V2.1.4",
       "title": "Unicode and Spaces Allowed",
-      "summary": "Allow spaces and printable Unicode, including emoji, within passwords without stripping meaningful characters. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Allow spaces and printable Unicode, including emoji, within passwords without stripping meaningful characters.",
       "category": "L1",
       "sortOrder": 4
     },
     {
       "code": "V2.1.5",
       "title": "Users Can Change Password",
-      "summary": "Let authenticated users change their password through a supported, self-service flow. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Let authenticated users change their password through a supported, self-service flow.",
       "category": "L1",
       "sortOrder": 5
     },
     {
       "code": "V2.1.6",
       "title": "Change Requires Current Password",
-      "summary": "Require the current password when changing to a new one so a hijacked session cannot lock out the owner. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Require the current password when changing to a new one so a hijacked session cannot lock out the owner.",
       "category": "L1",
       "sortOrder": 6
     },
     {
       "code": "V2.1.7",
       "title": "Breached Password Screening",
-      "summary": "Check chosen passwords against a set of known-breached values and refuse those that appear in it. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Check chosen passwords against a set of known-breached values and refuse those that appear in it.",
       "category": "L1",
       "sortOrder": 7
     },
     {
       "code": "V2.1.8",
       "title": "Password Strength Guidance",
-      "summary": "Provide a strength meter or guidance to help users choose stronger passwords. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Provide a strength meter or guidance to help users choose stronger passwords.",
       "category": "L1",
       "sortOrder": 8
     },
     {
       "code": "V2.1.9",
       "title": "No Arbitrary Composition Rules",
-      "summary": "Do not impose composition rules such as mandatory symbol mixes that push users toward predictable patterns. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Do not impose composition rules such as mandatory symbol mixes that push users toward predictable patterns.",
       "category": "L1",
       "sortOrder": 9
     },
     {
       "code": "V2.1.10",
       "title": "No Forced Periodic Rotation",
-      "summary": "Do not force periodic password rotation in the absence of evidence of compromise. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Do not force periodic password rotation in the absence of evidence of compromise.",
       "category": "L1",
       "sortOrder": 10
     },
     {
       "code": "V2.1.11",
       "title": "Password Managers Supported",
-      "summary": "Allow pasting and browser or password-manager autofill so that strong, unique secrets are practical. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Allow pasting and browser or password-manager autofill so that strong, unique secrets are practical.",
       "category": "L1",
       "sortOrder": 11
     },
     {
       "code": "V2.1.12",
       "title": "Reveal or Show Last Character",
-      "summary": "Offer an option to view the entered password or its last character to reduce entry errors. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Offer an option to view the entered password or its last character to reduce entry errors.",
       "category": "L1",
       "sortOrder": 12
     },
     {
       "code": "V2.2.1",
       "title": "Anti-Automation on Login",
-      "summary": "Apply anti-automation controls such as rate limiting and lockout so that credential guessing is impractical. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Apply anti-automation controls such as rate limiting and lockout so that credential guessing is impractical.",
       "category": "L1",
       "sortOrder": 13
     },
     {
       "code": "V2.2.2",
       "title": "Restrict Weak Authenticators",
-      "summary": "Limit weak authenticators such as SMS and favour stronger factors, offering users at least one strong option. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Limit weak authenticators such as SMS and favour stronger factors, offering users at least one strong option.",
       "category": "L1",
       "sortOrder": 14
     },
     {
       "code": "V2.2.3",
       "title": "Secure Authentication Notifications",
-      "summary": "Notify users through a secure channel after significant authentication events such as password or factor changes. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Notify users through a secure channel after significant authentication events such as password or factor changes.",
       "category": "L1",
       "sortOrder": 15
     },
     {
       "code": "V2.3.1",
       "title": "Random Initial Secrets",
-      "summary": "Generate initial or temporary passwords with sufficient randomness and expire them after first use. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Generate initial or temporary passwords with sufficient randomness and expire them after first use.",
       "category": "L1",
       "sortOrder": 16
     },
     {
       "code": "V2.5.1",
       "title": "No Vendor Default Recovery Secret",
-      "summary": "Do not ship default or shared recovery secrets that would grant access out of the box. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Do not ship default or shared recovery secrets that would grant access out of the box.",
       "category": "L1",
       "sortOrder": 17
     },
     {
       "code": "V2.5.2",
       "title": "No Password Hints",
-      "summary": "Do not store or expose password hints or knowledge-based answers that ease guessing. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Do not store or expose password hints or knowledge-based answers that ease guessing.",
       "category": "L1",
       "sortOrder": 18
     },
     {
       "code": "V2.5.3",
       "title": "Recovery Does Not Reveal Password",
-      "summary": "Ensure account recovery never discloses the current password to the requester. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Ensure account recovery never discloses the current password to the requester.",
       "category": "L1",
       "sortOrder": 19
     },
     {
       "code": "V2.5.4",
       "title": "No Shared or Default Accounts",
-      "summary": "Avoid shared or built-in default accounts such as generic administrator logins. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Avoid shared or built-in default accounts such as generic administrator logins.",
       "category": "L1",
       "sortOrder": 20
     },
     {
       "code": "V2.5.5",
       "title": "Notify on Factor Change",
-      "summary": "Notify the user when an authentication factor is added, changed, or removed. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Notify the user when an authentication factor is added, changed, or removed.",
       "category": "L1",
       "sortOrder": 21
     },
     {
       "code": "V2.5.6",
       "title": "Secure Recovery Mechanism",
-      "summary": "Provide a secure recovery mechanism that does not rely on an insecure channel or weak secret. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Provide a secure recovery mechanism that does not rely on an insecure channel or weak secret.",
       "category": "L1",
       "sortOrder": 22
     },
     {
       "code": "V2.6.1",
       "title": "One-Time Lookup Secrets",
-      "summary": "Ensure lookup or backup codes can each be used only once. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Ensure lookup or backup codes can each be used only once.",
       "category": "L1",
       "sortOrder": 23
     },
     {
       "code": "V2.7.1",
       "title": "No Cleartext Out-of-Band",
-      "summary": "Do not use unencrypted out-of-band mechanisms as a primary factor for sensitive accounts. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Do not use unencrypted out-of-band mechanisms as a primary factor for sensitive accounts.",
       "category": "L1",
       "sortOrder": 24
     },
     {
       "code": "V2.7.2",
       "title": "Out-of-Band Expiry",
-      "summary": "Expire out-of-band verification codes after a short validity window. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Expire out-of-band verification codes after a short validity window.",
       "category": "L1",
       "sortOrder": 25
     },
     {
       "code": "V2.7.3",
       "title": "Single-Use Out-of-Band",
-      "summary": "Ensure an out-of-band code can only be consumed once. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Ensure an out-of-band code can only be consumed once.",
       "category": "L1",
       "sortOrder": 26
     },
     {
       "code": "V2.7.4",
       "title": "Authenticated Out-of-Band Delivery",
-      "summary": "Deliver out-of-band codes only over a channel bound to the correct user. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Deliver out-of-band codes only over a channel bound to the correct user.",
       "category": "L1",
       "sortOrder": 27
     },
     {
       "code": "V2.8.1",
       "title": "Time-Based One-Time Passwords",
-      "summary": "Support time-based one-time password authenticators as a recognised second factor. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V2 depth: 2 assessable: true",
+      "summary": "Support time-based one-time password authenticators as a recognised second factor.",
       "category": "L1",
       "sortOrder": 28
     },
     {
       "code": "V3.1.1",
       "title": "No Session Tokens in URLs",
-      "summary": "Never place session tokens in URLs where they can leak through logs, history, or referrers. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "summary": "Never place session tokens in URLs where they can leak through logs, history, or referrers.",
       "category": "L1",
       "sortOrder": 29
     },
     {
       "code": "V3.2.1",
       "title": "New Token After Authentication",
-      "summary": "Issue a fresh session token upon authentication to prevent fixation of a pre-login value. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "summary": "Issue a fresh session token upon authentication to prevent fixation of a pre-login value.",
       "category": "L1",
       "sortOrder": 30
     },
     {
       "code": "V3.2.2",
       "title": "Sufficient Token Entropy",
-      "summary": "Generate session tokens with enough entropy that they cannot be guessed or enumerated. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "summary": "Generate session tokens with enough entropy that they cannot be guessed or enumerated.",
       "category": "L1",
       "sortOrder": 31
     },
     {
       "code": "V3.2.3",
       "title": "Secure Token Storage",
-      "summary": "Store session tokens in the client using secure, tamper-resistant cookie mechanisms. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "summary": "Store session tokens in the client using secure, tamper-resistant cookie mechanisms.",
       "category": "L1",
       "sortOrder": 32
     },
     {
       "code": "V3.3.1",
       "title": "Logout Invalidates Session",
-      "summary": "Fully invalidate the session server-side on logout so the token cannot be reused. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "summary": "Fully invalidate the session server-side on logout so the token cannot be reused.",
       "category": "L1",
       "sortOrder": 33
     },
     {
       "code": "V3.3.2",
       "title": "Inactivity and Absolute Timeout",
-      "summary": "Expire sessions after a period of inactivity and enforce a reasonable absolute lifetime. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "summary": "Expire sessions after a period of inactivity and enforce a reasonable absolute lifetime.",
       "category": "L1",
       "sortOrder": 34
     },
     {
       "code": "V3.4.1",
       "title": "Secure Cookie Attribute",
-      "summary": "Set the Secure attribute on session cookies so they are sent only over encrypted connections. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "summary": "Set the Secure attribute on session cookies so they are sent only over encrypted connections.",
       "category": "L1",
       "sortOrder": 35
     },
     {
       "code": "V3.4.2",
       "title": "HttpOnly Cookie Attribute",
-      "summary": "Set the HttpOnly attribute so session cookies are not readable from client scripts. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "summary": "Set the HttpOnly attribute so session cookies are not readable from client scripts.",
       "category": "L1",
       "sortOrder": 36
     },
     {
       "code": "V3.4.3",
       "title": "SameSite Cookie Attribute",
-      "summary": "Set an appropriate SameSite attribute to reduce cross-site request risk. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "summary": "Set an appropriate SameSite attribute to reduce cross-site request risk.",
       "category": "L1",
       "sortOrder": 37
     },
     {
       "code": "V3.4.4",
       "title": "Host-Prefixed Cookies",
-      "summary": "Use the __Host- cookie prefix where possible to constrain scope and origin. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "summary": "Use the __Host- cookie prefix where possible to constrain scope and origin.",
       "category": "L1",
       "sortOrder": 38
     },
     {
       "code": "V3.4.5",
       "title": "Path-Scoped Cookies",
-      "summary": "Scope session cookies to the narrowest path the application needs. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V3 depth: 2 assessable: true",
+      "summary": "Scope session cookies to the narrowest path the application needs.",
       "category": "L1",
       "sortOrder": 39
     },
     {
       "code": "V4.1.1",
       "title": "Server-Side Access Enforcement",
-      "summary": "Enforce access control on a trusted server layer, never solely in client-side code. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V4 depth: 2 assessable: true",
+      "summary": "Enforce access control on a trusted server layer, never solely in client-side code.",
       "category": "L1",
       "sortOrder": 40
     },
     {
       "code": "V4.1.2",
       "title": "Non-Manipulable Access Metadata",
-      "summary": "Ensure the attributes used for access decisions cannot be tampered with by the requester. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V4 depth: 2 assessable: true",
+      "summary": "Ensure the attributes used for access decisions cannot be tampered with by the requester.",
       "category": "L1",
       "sortOrder": 41
     },
     {
       "code": "V4.1.3",
       "title": "Principle of Least Privilege",
-      "summary": "Grant each user and process only the access their function requires. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V4 depth: 2 assessable: true",
+      "summary": "Grant each user and process only the access their function requires.",
       "category": "L1",
       "sortOrder": 42
     },
     {
       "code": "V4.1.5",
       "title": "Fail Securely on Access Errors",
-      "summary": "Make access-control checks deny by default and fail closed when an error occurs. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V4 depth: 2 assessable: true",
+      "summary": "Make access-control checks deny by default and fail closed when an error occurs.",
       "category": "L1",
       "sortOrder": 43
     },
     {
       "code": "V4.2.1",
       "title": "Protect Against Object Reference Abuse",
-      "summary": "Verify the caller is authorised for each object so identifiers cannot be swapped to reach others' data. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V4 depth: 2 assessable: true",
+      "summary": "Verify the caller is authorised for each object so identifiers cannot be swapped to reach others' data.",
       "category": "L1",
       "sortOrder": 44
     },
     {
       "code": "V4.2.2",
       "title": "Anti-CSRF for State Changes",
-      "summary": "Protect state-changing requests with anti-CSRF measures or equivalent controls. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V4 depth: 2 assessable: true",
+      "summary": "Protect state-changing requests with anti-CSRF measures or equivalent controls.",
       "category": "L1",
       "sortOrder": 45
     },
     {
       "code": "V4.3.1",
       "title": "Multi-Factor Admin Access",
-      "summary": "Require multi-factor authentication for administrative interfaces. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V4 depth: 2 assessable: true",
+      "summary": "Require multi-factor authentication for administrative interfaces.",
       "category": "L1",
       "sortOrder": 46
     },
     {
       "code": "V4.3.2",
       "title": "Directory Browsing Disabled",
-      "summary": "Disable directory listing and block access to backup or system files under the web root. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V4 depth: 2 assessable: true",
+      "summary": "Disable directory listing and block access to backup or system files under the web root.",
       "category": "L1",
       "sortOrder": 47
     },
     {
       "code": "V5.1.1",
       "title": "HTTP Parameter Pollution",
-      "summary": "Defend against HTTP parameter pollution by handling duplicated parameters predictably. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Defend against HTTP parameter pollution by handling duplicated parameters predictably.",
       "category": "L1",
       "sortOrder": 48
     },
     {
       "code": "V5.1.2",
       "title": "Mass Assignment Protection",
-      "summary": "Guard against mass assignment by binding only the fields a request is permitted to set. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Guard against mass assignment by binding only the fields a request is permitted to set.",
       "category": "L1",
       "sortOrder": 49
     },
     {
       "code": "V5.1.3",
       "title": "Validate All Input",
-      "summary": "Validate all input against expected type, length, and range on the server. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Validate all input against expected type, length, and range on the server.",
       "category": "L1",
       "sortOrder": 50
     },
     {
       "code": "V5.1.4",
       "title": "Allowlist Structured Data",
-      "summary": "Validate structured data such as identifiers and enums against a strict allowlist. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Validate structured data such as identifiers and enums against a strict allowlist.",
       "category": "L1",
       "sortOrder": 51
     },
     {
       "code": "V5.1.5",
       "title": "Validate Redirect Targets",
-      "summary": "Validate redirect and forward destinations so they cannot be steered to attacker-controlled sites. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Validate redirect and forward destinations so they cannot be steered to attacker-controlled sites.",
       "category": "L1",
       "sortOrder": 52
     },
     {
       "code": "V5.2.1",
       "title": "Sanitize Untrusted HTML",
-      "summary": "Sanitize user-supplied HTML with a well-tested library before it is stored or rendered. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Sanitize user-supplied HTML with a well-tested library before it is stored or rendered.",
       "category": "L1",
       "sortOrder": 53
     },
     {
       "code": "V5.2.2",
       "title": "Sanitize Unstructured Data",
-      "summary": "Sanitize unstructured user content so that control characters cannot alter downstream processing. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Sanitize unstructured user content so that control characters cannot alter downstream processing.",
       "category": "L1",
       "sortOrder": 54
     },
     {
       "code": "V5.2.3",
       "title": "Prevent Mail Injection",
-      "summary": "Neutralise mail-header and message injection when user input feeds email generation. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Neutralise mail-header and message injection when user input feeds email generation.",
       "category": "L1",
       "sortOrder": 55
     },
     {
       "code": "V5.2.4",
       "title": "Avoid Dynamic Code Evaluation",
-      "summary": "Avoid evaluating user input as code and remove dynamic eval-style execution paths. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Avoid evaluating user input as code and remove dynamic eval-style execution paths.",
       "category": "L1",
       "sortOrder": 56
     },
     {
       "code": "V5.2.5",
       "title": "Prevent Template Injection",
-      "summary": "Prevent template injection by keeping user input out of template syntax. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Prevent template injection by keeping user input out of template syntax.",
       "category": "L1",
       "sortOrder": 57
     },
     {
       "code": "V5.2.6",
       "title": "Mitigate SSRF",
-      "summary": "Protect server-side requests by validating and restricting user-supplied URLs and destinations. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Protect server-side requests by validating and restricting user-supplied URLs and destinations.",
       "category": "L1",
       "sortOrder": 58
     },
     {
       "code": "V5.2.7",
       "title": "Neutralize Scriptable SVG",
-      "summary": "Sanitize or reject scriptable content in uploaded SVG or similar files. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Sanitize or reject scriptable content in uploaded SVG or similar files.",
       "category": "L1",
       "sortOrder": 59
     },
     {
       "code": "V5.2.8",
       "title": "Sanitize Scriptable Markup",
-      "summary": "Sanitize scriptable content in formats such as Markdown or CSS before rendering. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Sanitize scriptable content in formats such as Markdown or CSS before rendering.",
       "category": "L1",
       "sortOrder": 60
     },
     {
       "code": "V5.3.1",
       "title": "Context-Aware Output Encoding",
-      "summary": "Apply output encoding appropriate to each rendering context to stop injection. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Apply output encoding appropriate to each rendering context to stop injection.",
       "category": "L1",
       "sortOrder": 61
     },
     {
       "code": "V5.3.2",
       "title": "Unicode-Safe Encoding",
-      "summary": "Handle Unicode correctly during encoding so normalisation tricks cannot bypass filters. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Handle Unicode correctly during encoding so normalisation tricks cannot bypass filters.",
       "category": "L1",
       "sortOrder": 62
     },
     {
       "code": "V5.3.3",
       "title": "Context-Aware XSS Defense",
-      "summary": "Defend against cross-site scripting with context-aware encoding and safe sinks. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Defend against cross-site scripting with context-aware encoding and safe sinks.",
       "category": "L1",
       "sortOrder": 63
     },
     {
       "code": "V5.3.4",
       "title": "Parameterized Database Queries",
-      "summary": "Use parameterized queries or safe ORM methods to prevent SQL injection. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Use parameterized queries or safe ORM methods to prevent SQL injection.",
       "category": "L1",
       "sortOrder": 64
     },
     {
       "code": "V5.3.5",
       "title": "Prevent OS Command Injection",
-      "summary": "Avoid building shell commands from input and use safe APIs to prevent command injection. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Avoid building shell commands from input and use safe APIs to prevent command injection.",
       "category": "L1",
       "sortOrder": 65
     },
     {
       "code": "V5.3.6",
       "title": "Prevent XML Injection",
-      "summary": "Protect XML processing from injection through validation and safe construction. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Protect XML processing from injection through validation and safe construction.",
       "category": "L1",
       "sortOrder": 66
     },
     {
       "code": "V5.3.7",
       "title": "Prevent LDAP Injection",
-      "summary": "Escape or parameterize LDAP queries to prevent injection. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Escape or parameterize LDAP queries to prevent injection.",
       "category": "L1",
       "sortOrder": 67
     },
     {
       "code": "V5.3.9",
       "title": "Prevent File Inclusion",
-      "summary": "Prevent local and remote file inclusion driven by user input. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Prevent local and remote file inclusion driven by user input.",
       "category": "L1",
       "sortOrder": 68
     },
     {
       "code": "V5.3.10",
       "title": "Prevent XPath Injection",
-      "summary": "Protect XPath and similar query languages from injection via user input. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Protect XPath and similar query languages from injection via user input.",
       "category": "L1",
       "sortOrder": 69
     },
     {
       "code": "V5.5.1",
       "title": "Safe Deserialization",
-      "summary": "Do not deserialize untrusted data with mechanisms that can instantiate arbitrary types. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Do not deserialize untrusted data with mechanisms that can instantiate arbitrary types.",
       "category": "L1",
       "sortOrder": 70
     },
     {
       "code": "V5.5.2",
       "title": "Hardened XML Parsing",
-      "summary": "Configure XML parsers to disable external entities and prevent XXE. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Configure XML parsers to disable external entities and prevent XXE.",
       "category": "L1",
       "sortOrder": 71
     },
     {
       "code": "V5.5.3",
       "title": "Deserialization Integrity Checks",
-      "summary": "Apply integrity checks and type restrictions when serialized data must be accepted. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true",
+      "summary": "Apply integrity checks and type restrictions when serialized data must be accepted.",
       "category": "L1",
       "sortOrder": 72
     },
     {
       "code": "V5.5.4",
       "title": "Strict JSON Parsing",
-      "summary": "Parse JSON with strict, well-tested parsers and reject malformed structures. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V5 depth: 2 assessable: true category: L1",
+      "summary": "Parse JSON with strict, well-tested parsers and reject malformed structures.",
       "category": "L1",
       "sortOrder": 73
     },
     {
       "code": "V6.2.1",
       "title": "Fail Securely in Crypto Modules",
-      "summary": "Ensure cryptographic operations fail closed and never fall back to processing data unprotected. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V6 depth: 2 assessable: true",
+      "summary": "Ensure cryptographic operations fail closed and never fall back to processing data unprotected.",
       "category": "L1",
       "sortOrder": 74
     },
     {
       "code": "V7.4.1",
       "title": "Generic Error Messages",
-      "summary": "Return generic error messages to users and keep diagnostic detail server-side. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V7 depth: 2 assessable: true",
+      "summary": "Return generic error messages to users and keep diagnostic detail server-side.",
       "category": "L1",
       "sortOrder": 75
     },
     {
       "code": "V8.2.1",
       "title": "Anti-Caching Response Headers",
-      "summary": "Set anti-caching headers on responses containing sensitive data. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V8 depth: 2 assessable: true",
+      "summary": "Set anti-caching headers on responses containing sensitive data.",
       "category": "L1",
       "sortOrder": 76
     },
     {
       "code": "V8.2.2",
       "title": "Limit Client-Side Storage",
-      "summary": "Avoid storing sensitive data in browser storage that persists beyond the session. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V8 depth: 2 assessable: true",
+      "summary": "Avoid storing sensitive data in browser storage that persists beyond the session.",
       "category": "L1",
       "sortOrder": 77
     },
     {
       "code": "V8.2.3",
       "title": "Clear Data on Logout",
-      "summary": "Clear client-side sensitive data when the user logs out. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V8 depth: 2 assessable: true",
+      "summary": "Clear client-side sensitive data when the user logs out.",
       "category": "L1",
       "sortOrder": 78
     },
     {
       "code": "V8.3.1",
       "title": "Sensitive Data in Request Body",
-      "summary": "Send sensitive data in the request body or headers, not in the query string. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V8 depth: 2 assessable: true",
+      "summary": "Send sensitive data in the request body or headers, not in the query string.",
       "category": "L1",
       "sortOrder": 79
     },
     {
       "code": "V8.3.2",
       "title": "User Data Export and Removal",
-      "summary": "Allow users to export and remove their personal data on request. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V8 depth: 2 assessable: true",
+      "summary": "Allow users to export and remove their personal data on request.",
       "category": "L1",
       "sortOrder": 80
     },
     {
       "code": "V8.3.3",
       "title": "Privacy Notice and Consent",
-      "summary": "Present clear terms and obtain consent before collecting personal data. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V8 depth: 2 assessable: true",
+      "summary": "Present clear terms and obtain consent before collecting personal data.",
       "category": "L1",
       "sortOrder": 81
     },
     {
       "code": "V8.3.4",
       "title": "Sensitive Data Inventory",
-      "summary": "Identify and document the sensitive data the application collects and processes. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V8 depth: 2 assessable: true",
+      "summary": "Identify and document the sensitive data the application collects and processes.",
       "category": "L1",
       "sortOrder": 82
     },
     {
       "code": "V9.1.1",
       "title": "TLS for All Connections",
-      "summary": "Require TLS for all client connections and never fall back to unencrypted transport. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V9 depth: 2 assessable: true",
+      "summary": "Require TLS for all client connections and never fall back to unencrypted transport.",
       "category": "L1",
       "sortOrder": 83
     },
     {
       "code": "V9.1.2",
       "title": "Strong Cipher Configuration",
-      "summary": "Configure only strong, current cipher suites and disable weak ones. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V9 depth: 2 assessable: true",
+      "summary": "Configure only strong, current cipher suites and disable weak ones.",
       "category": "L1",
       "sortOrder": 84
     },
     {
       "code": "V9.1.3",
       "title": "Current TLS Versions",
-      "summary": "Support only current TLS versions and disable obsolete protocols. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V9 depth: 2 assessable: true",
+      "summary": "Support only current TLS versions and disable obsolete protocols.",
       "category": "L1",
       "sortOrder": 85
     },
     {
       "code": "V10.3.1",
       "title": "Integrity-Checked Updates",
-      "summary": "Verify the integrity and authenticity of application updates before applying them. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V10 depth: 2 assessable: true",
+      "summary": "Verify the integrity and authenticity of application updates before applying them.",
       "category": "L1",
       "sortOrder": 86
     },
     {
       "code": "V10.3.2",
       "title": "Signed Code and Dependencies",
-      "summary": "Use signing and integrity checks so that tampered code or dependencies are rejected. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V10 depth: 2 assessable: true",
+      "summary": "Use signing and integrity checks so that tampered code or dependencies are rejected.",
       "category": "L1",
       "sortOrder": 87
     },
     {
       "code": "V10.3.3",
       "title": "Protection Against Subdomain Takeover",
-      "summary": "Guard against subdomain takeover and stale references that attackers could claim. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V10 depth: 2 assessable: true category: L1",
+      "summary": "Guard against subdomain takeover and stale references that attackers could claim.",
       "category": "L1",
       "sortOrder": 88
     },
     {
       "code": "V11.1.1",
       "title": "Enforce Sequential Steps",
-      "summary": "Enforce that multi-step workflows are completed in order and cannot be skipped. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V11 depth: 2 assessable: true",
+      "summary": "Enforce that multi-step workflows are completed in order and cannot be skipped.",
       "category": "L1",
       "sortOrder": 89
     },
     {
       "code": "V11.1.2",
       "title": "Realistic Timing Limits",
-      "summary": "Reject workflow submissions that arrive faster than a genuine human could produce them. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V11 depth: 2 assessable: true",
+      "summary": "Reject workflow submissions that arrive faster than a genuine human could produce them.",
       "category": "L1",
       "sortOrder": 90
     },
     {
       "code": "V11.1.3",
       "title": "Enforce Usage Limits",
-      "summary": "Apply per-user limits so that a single actor cannot abuse a feature at scale. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V11 depth: 2 assessable: true",
+      "summary": "Apply per-user limits so that a single actor cannot abuse a feature at scale.",
       "category": "L1",
       "sortOrder": 91
     },
     {
       "code": "V11.1.4",
       "title": "Anti-Automation for Aggregation",
-      "summary": "Apply anti-automation to actions an attacker could script to harvest data or resources. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V11 depth: 2 assessable: true",
+      "summary": "Apply anti-automation to actions an attacker could script to harvest data or resources.",
       "category": "L1",
       "sortOrder": 92
     },
     {
       "code": "V11.1.5",
       "title": "Enforce Business Rule Limits",
-      "summary": "Enforce business-rule limits such as maximum values or quantities server-side. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V11 depth: 2 assessable: true",
+      "summary": "Enforce business-rule limits such as maximum values or quantities server-side.",
       "category": "L1",
       "sortOrder": 93
     },
     {
       "code": "V11.1.6",
       "title": "Prevent Logic Race Conditions",
-      "summary": "Protect high-value operations from race conditions that could bypass business rules. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V11 depth: 2 assessable: true",
+      "summary": "Protect high-value operations from race conditions that could bypass business rules.",
       "category": "L1",
       "sortOrder": 94
     },
     {
       "code": "V12.1.1",
       "title": "Reject Oversized Uploads",
-      "summary": "Reject uploads larger than the application expects to avoid denial of service. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "summary": "Reject uploads larger than the application expects to avoid denial of service.",
       "category": "L1",
       "sortOrder": 95
     },
     {
       "code": "V12.3.1",
       "title": "Validate Submitted Filenames",
-      "summary": "Validate and normalise user-submitted filenames to prevent path traversal. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "summary": "Validate and normalise user-submitted filenames to prevent path traversal.",
       "category": "L1",
       "sortOrder": 96
     },
     {
       "code": "V12.3.2",
       "title": "Guard File Metadata",
-      "summary": "Prevent user-controlled file metadata from steering unsafe processing. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "summary": "Prevent user-controlled file metadata from steering unsafe processing.",
       "category": "L1",
       "sortOrder": 97
     },
     {
       "code": "V12.3.3",
       "title": "Prevent Path Manipulation",
-      "summary": "Block path manipulation so file operations cannot escape their intended directory. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "summary": "Block path manipulation so file operations cannot escape their intended directory.",
       "category": "L1",
       "sortOrder": 98
     },
     {
       "code": "V12.3.4",
       "title": "Restrict Executable Extensions",
-      "summary": "Reject or neutralise dangerous, executable file extensions on upload. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "summary": "Reject or neutralise dangerous, executable file extensions on upload.",
       "category": "L1",
       "sortOrder": 99
     },
     {
       "code": "V12.3.5",
       "title": "Distrust File Metadata",
-      "summary": "Do not make trust decisions based on user-supplied file metadata. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "summary": "Do not make trust decisions based on user-supplied file metadata.",
       "category": "L1",
       "sortOrder": 100
     },
     {
       "code": "V12.4.1",
       "title": "Store Files Outside Web Root",
-      "summary": "Store uploaded files outside the web root or on a storage service so they cannot be executed. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "summary": "Store uploaded files outside the web root or on a storage service so they cannot be executed.",
       "category": "L1",
       "sortOrder": 101
     },
     {
       "code": "V12.4.2",
       "title": "Scan Uploads for Malware",
-      "summary": "Scan uploaded files for malware before they are made available. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "summary": "Scan uploaded files for malware before they are made available.",
       "category": "L1",
       "sortOrder": 102
     },
     {
       "code": "V12.5.1",
       "title": "Do Not Serve Source Files",
-      "summary": "Configure the web tier so that source and configuration files are never served. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "summary": "Configure the web tier so that source and configuration files are never served.",
       "category": "L1",
       "sortOrder": 103
     },
     {
       "code": "V12.5.2",
       "title": "Control Access to Uploaded Files",
-      "summary": "Serve uploaded files through access-controlled, safe delivery paths. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true",
+      "summary": "Serve uploaded files through access-controlled, safe delivery paths.",
       "category": "L1",
       "sortOrder": 104
     },
     {
       "code": "V12.6.1",
       "title": "Prevent File-Based Redirects",
-      "summary": "Prevent file features from being used for open redirect or server-side request forgery. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V12 depth: 2 assessable: true category: L1",
+      "summary": "Prevent file features from being used for open redirect or server-side request forgery.",
       "category": "L1",
       "sortOrder": 105
     },
     {
       "code": "V13.1.1",
       "title": "Consistent API Validation",
-      "summary": "Apply the same validation and encoding rules to API endpoints as to the user interface. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V13 depth: 2 assessable: true",
+      "summary": "Apply the same validation and encoding rules to API endpoints as to the user interface.",
       "category": "L1",
       "sortOrder": 106
     },
     {
       "code": "V13.1.3",
       "title": "No Sensitive Data in API URLs",
-      "summary": "Keep sensitive data out of API URLs where it could be logged or cached. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V13 depth: 2 assessable: true",
+      "summary": "Keep sensitive data out of API URLs where it could be logged or cached.",
       "category": "L1",
       "sortOrder": 107
     },
     {
       "code": "V13.1.5",
       "title": "Reject Unexpected Content Types",
-      "summary": "Reject requests whose content type is not one the endpoint expects. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V13 depth: 2 assessable: true",
+      "summary": "Reject requests whose content type is not one the endpoint expects.",
       "category": "L1",
       "sortOrder": 108
     },
     {
       "code": "V13.2.1",
       "title": "Allowlist HTTP Methods",
-      "summary": "Allow only the HTTP methods each API resource is designed to accept. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V13 depth: 2 assessable: true",
+      "summary": "Allow only the HTTP methods each API resource is designed to accept.",
       "category": "L1",
       "sortOrder": 109
     },
     {
       "code": "V13.2.2",
       "title": "Schema-Validate API Payloads",
-      "summary": "Validate API request bodies against a defined schema and reject malformed input. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V13 depth: 2 assessable: true",
+      "summary": "Validate API request bodies against a defined schema and reject malformed input.",
       "category": "L1",
       "sortOrder": 110
     },
     {
       "code": "V13.2.3",
       "title": "Anti-CSRF for Cookie APIs",
-      "summary": "Protect cookie-authenticated API calls against cross-site request forgery. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V13 depth: 2 assessable: true",
+      "summary": "Protect cookie-authenticated API calls against cross-site request forgery.",
       "category": "L1",
       "sortOrder": 111
     },
     {
       "code": "V13.2.5",
       "title": "Verify Request Content Type",
-      "summary": "Verify that request content types match what the API contract specifies. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V13 depth: 2 assessable: true",
+      "summary": "Verify that request content types match what the API contract specifies.",
       "category": "L1",
       "sortOrder": 112
     },
     {
       "code": "V13.3.1",
       "title": "Validate SOAP Payloads",
-      "summary": "Validate SOAP requests against their schema to prevent malformed or malicious input. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V13 depth: 2 assessable: true",
+      "summary": "Validate SOAP requests against their schema to prevent malformed or malicious input.",
       "category": "L1",
       "sortOrder": 113
     },
     {
       "code": "V14.2.1",
       "title": "Up-to-Date Dependencies",
-      "summary": "Keep components and dependencies current with security updates. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "summary": "Keep components and dependencies current with security updates.",
       "category": "L1",
       "sortOrder": 114
     },
     {
       "code": "V14.2.2",
       "title": "Remove Unneeded Features",
-      "summary": "Remove unused features, sample content, and default files from deployments. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "summary": "Remove unused features, sample content, and default files from deployments.",
       "category": "L1",
       "sortOrder": 115
     },
     {
       "code": "V14.2.3",
       "title": "Verify Third-Party Asset Integrity",
-      "summary": "Verify the integrity of third-party assets, for example with subresource integrity. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "summary": "Verify the integrity of third-party assets, for example with subresource integrity.",
       "category": "L1",
       "sortOrder": 116
     },
     {
       "code": "V14.3.2",
       "title": "Disable Debug Modes",
-      "summary": "Disable debug modes and developer consoles in production. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "summary": "Disable debug modes and developer consoles in production.",
       "category": "L1",
       "sortOrder": 117
     },
     {
       "code": "V14.3.3",
       "title": "No Version Disclosure",
-      "summary": "Suppress framework and server version information in responses. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "summary": "Suppress framework and server version information in responses.",
       "category": "L1",
       "sortOrder": 118
     },
     {
       "code": "V14.4.1",
       "title": "Charset in Content-Type",
-      "summary": "Specify a safe character set in the Content-Type header of responses. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "summary": "Specify a safe character set in the Content-Type header of responses.",
       "category": "L1",
       "sortOrder": 119
     },
     {
       "code": "V14.4.2",
       "title": "Content-Disposition for Downloads",
-      "summary": "Set a Content-Disposition header so downloads are handled safely by browsers. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "summary": "Set a Content-Disposition header so downloads are handled safely by browsers.",
       "category": "L1",
       "sortOrder": 120
     },
     {
       "code": "V14.4.3",
       "title": "Content Security Policy",
-      "summary": "Deploy a Content-Security-Policy header to reduce the impact of injection. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "summary": "Deploy a Content-Security-Policy header to reduce the impact of injection.",
       "category": "L1",
       "sortOrder": 121
     },
     {
       "code": "V14.4.4",
       "title": "No MIME Sniffing",
-      "summary": "Set X-Content-Type-Options to nosniff to stop content-type guessing. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "summary": "Set X-Content-Type-Options to nosniff to stop content-type guessing.",
       "category": "L1",
       "sortOrder": 122
     },
     {
       "code": "V14.4.5",
       "title": "Strict Transport Security",
-      "summary": "Send an HTTP Strict-Transport-Security header to enforce HTTPS. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "summary": "Send an HTTP Strict-Transport-Security header to enforce HTTPS.",
       "category": "L1",
       "sortOrder": 123
     },
     {
       "code": "V14.4.6",
       "title": "Referrer Policy",
-      "summary": "Set a Referrer-Policy header to limit leakage of URLs to other origins. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "summary": "Set a Referrer-Policy header to limit leakage of URLs to other origins.",
       "category": "L1",
       "sortOrder": 124
     },
     {
       "code": "V14.4.7",
       "title": "Anti-Clickjacking Controls",
-      "summary": "Restrict framing with frame-ancestors or equivalent to prevent clickjacking. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "summary": "Restrict framing with frame-ancestors or equivalent to prevent clickjacking.",
       "category": "L1",
       "sortOrder": 125
     },
     {
       "code": "V14.5.1",
       "title": "Validate HTTP Methods at Edge",
-      "summary": "Reject unsupported HTTP methods at the server so only intended verbs are processed. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "summary": "Reject unsupported HTTP methods at the server so only intended verbs are processed.",
       "category": "L1",
       "sortOrder": 126
     },
     {
       "code": "V14.5.2",
       "title": "Do Not Trust Origin for Auth",
-      "summary": "Do not use the Origin header alone to make authentication decisions. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "summary": "Do not use the Origin header alone to make authentication decisions.",
       "category": "L1",
       "sortOrder": 127
     },
     {
       "code": "V14.5.3",
       "title": "Strict CORS Configuration",
-      "summary": "Configure cross-origin resource sharing with a strict, explicit allowlist of origins. parent_urn: urn:inflect:req:owasp-asvs-4.0.3:V14 depth: 2 assessable: true",
+      "summary": "Configure cross-origin resource sharing with a strict, explicit allowlist of origins.",
       "category": "L1",
       "sortOrder": 128
     }

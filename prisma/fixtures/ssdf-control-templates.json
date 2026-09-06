@@ -15,295 +15,253 @@
   "requirements": [
     {
       "code": "PO.1.1",
-      "title": "PO.1.1",
-      "summary": "Identify and document all security requirements for the organization’s software development infrastructure and processes, and maintain the requirements over time. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.1 depth: 3 assessable: true",
+      "title": "Identify and document all security requirements for the organization’s software development infrastructure and processes, and maintain the requirements over time.",
       "category": "Prepare the Organization",
       "sortOrder": 1
     },
     {
       "code": "PO.1.2",
-      "title": "PO.1.2",
-      "summary": "Identify and document all security requirements for organization-developed software, and maintain the requirements over time. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.1 depth: 3 assessable: true",
+      "title": "Identify and document all security requirements for organization-developed software, and maintain the requirements over time.",
       "category": "Prepare the Organization",
       "sortOrder": 2
     },
     {
       "code": "PO.1.3",
-      "title": "PO.1.3",
-      "summary": "Communicate requirements to all third parties who provide commercial software components for reuse, and collect and maintain provenance data for those components. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.1 depth: 3 assessable: true",
+      "title": "Communicate requirements to all third parties who provide commercial software components for reuse, and collect and maintain provenance data for those components.",
       "category": "Prepare the Organization",
       "sortOrder": 3
     },
     {
       "code": "PO.2.1",
-      "title": "PO.2.1",
-      "summary": "Create new roles and alter responsibilities for existing roles as needed to encompass all parts of the SDLC, and periodically review and maintain the defined roles and responsibilities. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.2 depth: 3 assessable: true",
+      "title": "Create new roles and alter responsibilities for existing roles as needed to encompass all parts of the SDLC, and periodically review and maintain the defined roles and responsibilities.",
       "category": "Prepare the Organization",
       "sortOrder": 4
     },
     {
       "code": "PO.2.2",
-      "title": "PO.2.2",
-      "summary": "Provide role-based training for all personnel with responsibilities that contribute to secure development, and periodically review and update the training. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.2 depth: 3 assessable: true",
+      "title": "Provide role-based training for all personnel with responsibilities that contribute to secure development, and periodically review and update the training.",
       "category": "Prepare the Organization",
       "sortOrder": 5
     },
     {
       "code": "PO.2.3",
-      "title": "PO.2.3",
-      "summary": "Obtain upper management or authorizing official commitment to secure development, and convey that commitment to all with development-related roles and responsibilities. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.2 depth: 3 assessable: true",
+      "title": "Obtain upper management or authorizing official commitment to secure development, and convey that commitment to all with development-related roles and responsibilities.",
       "category": "Prepare the Organization",
       "sortOrder": 6
     },
     {
       "code": "PO.3.1",
-      "title": "PO.3.1",
-      "summary": "Specify which tools or tool types must or should be included in each toolchain to mitigate identified risks, as well as how the toolchain components are to be integrated. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.3 depth: 3 assessable: true",
+      "title": "Specify which tools or tool types must or should be included in each toolchain to mitigate identified risks, as well as how the toolchain components are to be integrated.",
       "category": "Prepare the Organization",
       "sortOrder": 7
     },
     {
       "code": "PO.3.2",
-      "title": "PO.3.2",
-      "summary": "Follow recommended security practices to deploy, operate, and maintain tools and toolchains. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.3 depth: 3 assessable: true",
+      "title": "Follow recommended security practices to deploy, operate, and maintain tools and toolchains.",
       "category": "Prepare the Organization",
       "sortOrder": 8
     },
     {
       "code": "PO.3.3",
-      "title": "PO.3.3",
-      "summary": "Configure tools to generate artifacts of their support of secure software development practices as defined by the organization. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.3 depth: 3 assessable: true",
+      "title": "Configure tools to generate artifacts of their support of secure software development practices as defined by the organization.",
       "category": "Prepare the Organization",
       "sortOrder": 9
     },
     {
       "code": "PO.4.1",
-      "title": "PO.4.1",
-      "summary": "Define criteria for software security checks and track throughout the SDLC. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.4 depth: 3 assessable: true",
+      "title": "Define criteria for software security checks and track throughout the SDLC.",
       "category": "Prepare the Organization",
       "sortOrder": 10
     },
     {
       "code": "PO.4.2",
-      "title": "PO.4.2",
-      "summary": "Implement processes, mechanisms, etc. to gather and safeguard the necessary information and provide it to the personnel who need it to make informed decisions. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.4 depth: 3 assessable: true",
+      "title": "Implement processes, mechanisms, etc. to gather and safeguard the necessary information and provide it to the personnel who need it to make informed decisions.",
       "category": "Prepare the Organization",
       "sortOrder": 11
     },
     {
       "code": "PO.5.1",
-      "title": "PO.5.1",
-      "summary": "Separate and protect each environment involved in software development. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.5 depth: 3 assessable: true",
+      "title": "Separate and protect each environment involved in software development.",
       "category": "Prepare the Organization",
       "sortOrder": 12
     },
     {
       "code": "PO.5.2",
-      "title": "PO.5.2",
-      "summary": "Secure and harden development endpoints, including software development, build, and test systems, to perform development-related tasks using a risk-based approach. parent_urn: urn:inflect:req:nist-ssdf-800-218:po.5 depth: 3 assessable: true category: Prepare the Organization",
+      "title": "Secure and harden development endpoints, including software development, build, and test systems, to perform development-related tasks using a risk-based approach.",
       "category": "Prepare the Organization",
       "sortOrder": 13
     },
     {
       "code": "PS.1.1",
-      "title": "PS.1.1",
-      "summary": "Store all forms of code — including source code, executable code, and configuration-as-code — based on the principle of least privilege so that only authorized personnel, tools, services, etc. have access. parent_urn: urn:inflect:req:nist-ssdf-800-218:ps.1 depth: 3 assessable: true",
+      "title": "Store all forms of code — including source code, executable code, and configuration-as-code — based on the principle of least privilege so that only authorized personnel, tools, services, etc. have access.",
       "category": "Protect the Software",
       "sortOrder": 14
     },
     {
       "code": "PS.2.1",
-      "title": "PS.2.1",
-      "summary": "Make software integrity verification information available to software acquirers, such as cryptographic hashes and digital signatures for release files. parent_urn: urn:inflect:req:nist-ssdf-800-218:ps.2 depth: 3 assessable: true",
+      "title": "Make software integrity verification information available to software acquirers, such as cryptographic hashes and digital signatures for release files.",
       "category": "Protect the Software",
       "sortOrder": 15
     },
     {
       "code": "PS.3.1",
-      "title": "PS.3.1",
-      "summary": "Securely archive the necessary files and supporting data (e.g., integrity verification information, provenance data) to be retained for each software release. parent_urn: urn:inflect:req:nist-ssdf-800-218:ps.3 depth: 3 assessable: true",
+      "title": "Securely archive the necessary files and supporting data (e.g., integrity verification information, provenance data) to be retained for each software release.",
       "category": "Protect the Software",
       "sortOrder": 16
     },
     {
       "code": "PS.3.2",
-      "title": "PS.3.2",
-      "summary": "Collect, safeguard, maintain, and share provenance data for all components of each software release (e.g., in a software bill of materials). parent_urn: urn:inflect:req:nist-ssdf-800-218:ps.3 depth: 3 assessable: true category: Protect the Software",
+      "title": "Collect, safeguard, maintain, and share provenance data for all components of each software release (e.g., in a software bill of materials).",
       "category": "Protect the Software",
       "sortOrder": 17
     },
     {
       "code": "PW.1.1",
-      "title": "PW.1.1",
-      "summary": "Use forms of risk modeling — such as threat modeling, attack modeling, or attack surface mapping — to help assess the security risk for the software. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.1 depth: 3 assessable: true",
+      "title": "Use forms of risk modeling — such as threat modeling, attack modeling, or attack surface mapping — to help assess the security risk for the software.",
       "category": "Produce Well-Secured Software",
       "sortOrder": 18
     },
     {
       "code": "PW.1.2",
-      "title": "PW.1.2",
-      "summary": "Track and maintain the software’s security requirements, risks, and design decisions. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.1 depth: 3 assessable: true",
+      "title": "Track and maintain the software’s security requirements, risks, and design decisions.",
       "category": "Produce Well-Secured Software",
       "sortOrder": 19
     },
     {
       "code": "PW.1.3",
-      "title": "PW.1.3",
-      "summary": "Where appropriate, build in support for using standardized security features and services (e.g., enabling log integration and single sign-on) rather than creating proprietary implementations of security features and services. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.1 depth: 3 assessable: true",
+      "title": "Where appropriate, build in support for using standardized security features and services (e.g., enabling log integration and single sign-on) rather than creating proprietary implementations of security features and services.",
       "category": "Produce Well-Secured Software",
       "sortOrder": 20
     },
     {
       "code": "PW.2.1",
-      "title": "PW.2.1",
-      "summary": "Have a qualified person (or people) who were not involved with the design and/or a set of automated processes review the software design to confirm and enforce that it meets all of the security requirements and satisfactorily addresses the identified risk information. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.2 depth: 3 assessable: true",
+      "title": "Have a qualified person (or people) who were not involved with the design and/or a set of automated processes review the software design to confirm and enforce that it meets all of the security requirements and satisfactorily addresses the identified risk information.",
       "category": "Produce Well-Secured Software",
       "sortOrder": 21
     },
     {
       "code": "PW.4.1",
-      "title": "PW.4.1",
-      "summary": "Acquire and maintain well-secured software components (e.g., software libraries, modules, middleware, frameworks) from commercial, open-source, and other third-party developers for use by the organization’s software. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.4 depth: 3 assessable: true",
+      "title": "Acquire and maintain well-secured software components (e.g., software libraries, modules, middleware, frameworks) from commercial, open-source, and other third-party developers for use by the organization’s software.",
       "category": "Produce Well-Secured Software",
       "sortOrder": 22
     },
     {
       "code": "PW.4.2",
-      "title": "PW.4.2",
-      "summary": "Create and maintain well-secured software components in-house following SDLC processes to meet common internal software development needs that cannot be better met by third-party software components. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.4 depth: 3 assessable: true",
+      "title": "Create and maintain well-secured software components in-house following SDLC processes to meet common internal software development needs that cannot be better met by third-party software components.",
       "category": "Produce Well-Secured Software",
       "sortOrder": 23
     },
     {
       "code": "PW.4.4",
-      "title": "PW.4.4",
-      "summary": "Verify that acquired commercial, open-source, and all other third-party software components comply with the requirements, as defined by the organization, throughout their life cycles. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.4 depth: 3 assessable: true",
+      "title": "Verify that acquired commercial, open-source, and all other third-party software components comply with the requirements, as defined by the organization, throughout their life cycles.",
       "category": "Produce Well-Secured Software",
       "sortOrder": 24
     },
     {
       "code": "PW.5.1",
-      "title": "PW.5.1",
-      "summary": "Follow all secure coding practices that are appropriate to the development languages and environment to meet the organization’s requirements. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.5 depth: 3 assessable: true",
+      "title": "Follow all secure coding practices that are appropriate to the development languages and environment to meet the organization’s requirements.",
       "category": "Produce Well-Secured Software",
       "sortOrder": 25
     },
     {
       "code": "PW.6.1",
-      "title": "PW.6.1",
-      "summary": "Use compiler, interpreter, and build tools that offer features to improve executable security. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.6 depth: 3 assessable: true",
+      "title": "Use compiler, interpreter, and build tools that offer features to improve executable security.",
       "category": "Produce Well-Secured Software",
       "sortOrder": 26
     },
     {
       "code": "PW.6.2",
-      "title": "PW.6.2",
-      "summary": "Determine which compiler, interpreter, and build tool features should be used and how each should be configured, then implement and use the approved configurations. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.6 depth: 3 assessable: true",
+      "title": "Determine which compiler, interpreter, and build tool features should be used and how each should be configured, then implement and use the approved configurations.",
       "category": "Produce Well-Secured Software",
       "sortOrder": 27
     },
     {
       "code": "PW.7.1",
-      "title": "PW.7.1",
-      "summary": "Determine whether code review (a person directly looks at the code to find issues) and/or code analysis (tools are used to find issues in code, either in a fully automated way or in conjunction with a person) should be used, as defined by the organization. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.7 depth: 3 assessable: true",
+      "title": "Determine whether code review (a person directly looks at the code to find issues) and/or code analysis (tools are used to find issues in code, either in a fully automated way or in conjunction with a person) should be used, as defined by the organization.",
       "category": "Produce Well-Secured Software",
       "sortOrder": 28
     },
     {
       "code": "PW.7.2",
-      "title": "PW.7.2",
-      "summary": "Perform the code review and/or code analysis based on the organization’s secure coding standards, and record and triage all discovered issues and recommended remediations in the development team’s workflow or issue tracking system. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.7 depth: 3 assessable: true",
+      "title": "Perform the code review and/or code analysis based on the organization’s secure coding standards, and record and triage all discovered issues and recommended remediations in the development team’s workflow or issue tracking system.",
       "category": "Produce Well-Secured Software",
       "sortOrder": 29
     },
     {
       "code": "PW.8.1",
-      "title": "PW.8.1",
-      "summary": "Determine whether executable code testing should be performed to find vulnerabilities not identified by previous reviews, analysis, or testing and, if so, which types of testing should be used. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.8 depth: 3 assessable: true",
+      "title": "Determine whether executable code testing should be performed to find vulnerabilities not identified by previous reviews, analysis, or testing and, if so, which types of testing should be used.",
       "category": "Produce Well-Secured Software",
       "sortOrder": 30
     },
     {
       "code": "PW.8.2",
-      "title": "PW.8.2",
-      "summary": "Scope the testing, design the tests, perform the testing, and document the results, including recording and triaging all discovered issues and recommended remediations in the development team’s workflow or issue tracking system. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.8 depth: 3 assessable: true",
+      "title": "Scope the testing, design the tests, perform the testing, and document the results, including recording and triaging all discovered issues and recommended remediations in the development team’s workflow or issue tracking system.",
       "category": "Produce Well-Secured Software",
       "sortOrder": 31
     },
     {
       "code": "PW.9.1",
-      "title": "PW.9.1",
-      "summary": "Define a secure baseline by determining how to configure each setting that has an effect on security or a security-related setting so that the default settings are secure and do not weaken the security functions provided by the platform, network infrastructure, or services. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.9 depth: 3 assessable: true",
+      "title": "Define a secure baseline by determining how to configure each setting that has an effect on security or a security-related setting so that the default settings are secure and do not weaken the security functions provided by the platform, network infrastructure, or services.",
       "category": "Produce Well-Secured Software",
       "sortOrder": 32
     },
     {
       "code": "PW.9.2",
-      "title": "PW.9.2",
-      "summary": "Implement the default settings (or groups of default settings, if applicable), and document each setting for software administrators. parent_urn: urn:inflect:req:nist-ssdf-800-218:pw.9 depth: 3 assessable: true category: Produce Well-Secured Software",
+      "title": "Implement the default settings (or groups of default settings, if applicable), and document each setting for software administrators.",
       "category": "Produce Well-Secured Software",
       "sortOrder": 33
     },
     {
       "code": "RV.1.1",
-      "title": "RV.1.1",
-      "summary": "Gather information from software acquirers, users, and public sources on potential vulnerabilities in the software and third-party components that the software uses, and investigate all credible reports. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.1 depth: 3 assessable: true",
+      "title": "Gather information from software acquirers, users, and public sources on potential vulnerabilities in the software and third-party components that the software uses, and investigate all credible reports.",
       "category": "Respond to Vulnerabilities",
       "sortOrder": 34
     },
     {
       "code": "RV.1.2",
-      "title": "RV.1.2",
-      "summary": "Review, analyze, and/or test the software’s code to identify or confirm the presence of previously undetected vulnerabilities. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.1 depth: 3 assessable: true",
+      "title": "Review, analyze, and/or test the software’s code to identify or confirm the presence of previously undetected vulnerabilities.",
       "category": "Respond to Vulnerabilities",
       "sortOrder": 35
     },
     {
       "code": "RV.1.3",
-      "title": "RV.1.3",
-      "summary": "Have a policy that addresses vulnerability disclosure and remediation, and implement the roles, responsibilities, and processes needed to support that policy. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.1 depth: 3 assessable: true",
+      "title": "Have a policy that addresses vulnerability disclosure and remediation, and implement the roles, responsibilities, and processes needed to support that policy.",
       "category": "Respond to Vulnerabilities",
       "sortOrder": 36
     },
     {
       "code": "RV.2.1",
-      "title": "RV.2.1",
-      "summary": "Analyze each vulnerability to gather sufficient information about risk to plan its remediation or other risk response. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.2 depth: 3 assessable: true",
+      "title": "Analyze each vulnerability to gather sufficient information about risk to plan its remediation or other risk response.",
       "category": "Respond to Vulnerabilities",
       "sortOrder": 37
     },
     {
       "code": "RV.2.2",
-      "title": "RV.2.2",
-      "summary": "Plan and implement risk responses for vulnerabilities. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.2 depth: 3 assessable: true",
+      "title": "Plan and implement risk responses for vulnerabilities.",
       "category": "Respond to Vulnerabilities",
       "sortOrder": 38
     },
     {
       "code": "RV.3.1",
-      "title": "RV.3.1",
-      "summary": "Analyze identified vulnerabilities to determine their root causes. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.3 depth: 3 assessable: true",
+      "title": "Analyze identified vulnerabilities to determine their root causes.",
       "category": "Respond to Vulnerabilities",
       "sortOrder": 39
     },
     {
       "code": "RV.3.2",
-      "title": "RV.3.2",
-      "summary": "Analyze the root causes over time to identify patterns, such as a particular secure coding practice not being followed consistently. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.3 depth: 3 assessable: true",
+      "title": "Analyze the root causes over time to identify patterns, such as a particular secure coding practice not being followed consistently.",
       "category": "Respond to Vulnerabilities",
       "sortOrder": 40
     },
     {
       "code": "RV.3.3",
-      "title": "RV.3.3",
-      "summary": "Review the software for similar vulnerabilities to eradicate a class of vulnerabilities, and proactively fix them rather than waiting for external reports. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.3 depth: 3 assessable: true",
+      "title": "Review the software for similar vulnerabilities to eradicate a class of vulnerabilities, and proactively fix them rather than waiting for external reports.",
       "category": "Respond to Vulnerabilities",
       "sortOrder": 41
     },
     {
       "code": "RV.3.4",
-      "title": "RV.3.4",
-      "summary": "Review the SDLC process, and update it if appropriate to prevent (or reduce the likelihood of) the root cause recurring in updates to the software or in new software that is created. parent_urn: urn:inflect:req:nist-ssdf-800-218:rv.3 depth: 3 assessable: true category: Respond to Vulnerabilities",
+      "title": "Review the SDLC process, and update it if appropriate to prevent (or reduce the likelihood of) the root cause recurring in updates to the software or in new software that is created.",
       "category": "Respond to Vulnerabilities",
       "sortOrder": 42
     }

@@ -16,392 +16,392 @@
     {
       "code": "1.1",
       "title": "Establish and Maintain Detailed Enterprise Asset Inventory",
-      "summary": "Keep an accurate, regularly refreshed record of every enterprise asset with enough detail to identify and locate it. parent_urn: urn:inflect:req:cis-controls-v8:1 depth: 2 assessable: true",
+      "summary": "Keep an accurate, regularly refreshed record of every enterprise asset with enough detail to identify and locate it.",
       "category": "IG1",
       "sortOrder": 1
     },
     {
       "code": "1.2",
       "title": "Address Unauthorized Assets",
-      "summary": "Define and follow a process to investigate and handle any asset discovered on the network that is not on the approved inventory. parent_urn: urn:inflect:req:cis-controls-v8:1 depth: 2 assessable: true",
+      "summary": "Define and follow a process to investigate and handle any asset discovered on the network that is not on the approved inventory.",
       "category": "IG1",
       "sortOrder": 2
     },
     {
       "code": "2.1",
       "title": "Establish and Maintain a Software Inventory",
-      "summary": "Maintain a current, detailed list of all software titles authorized to run on enterprise assets. parent_urn: urn:inflect:req:cis-controls-v8:2 depth: 2 assessable: true",
+      "summary": "Maintain a current, detailed list of all software titles authorized to run on enterprise assets.",
       "category": "IG1",
       "sortOrder": 3
     },
     {
       "code": "2.2",
       "title": "Ensure Authorized Software is Currently Supported",
-      "summary": "Confirm that software in use is still supported by its vendor and remove or plan for anything past end of life. parent_urn: urn:inflect:req:cis-controls-v8:2 depth: 2 assessable: true",
+      "summary": "Confirm that software in use is still supported by its vendor and remove or plan for anything past end of life.",
       "category": "IG1",
       "sortOrder": 4
     },
     {
       "code": "2.3",
       "title": "Address Unauthorized Software",
-      "summary": "Establish a process to detect software that is not authorized and remove or formally approve it. parent_urn: urn:inflect:req:cis-controls-v8:2 depth: 2 assessable: true",
+      "summary": "Establish a process to detect software that is not authorized and remove or formally approve it.",
       "category": "IG1",
       "sortOrder": 5
     },
     {
       "code": "3.1",
       "title": "Establish and Maintain a Data Management Process",
-      "summary": "Document how the enterprise handles data across its life cycle, covering sensitivity, ownership, retention, and disposal. parent_urn: urn:inflect:req:cis-controls-v8:3 depth: 2 assessable: true",
+      "summary": "Document how the enterprise handles data across its life cycle, covering sensitivity, ownership, retention, and disposal.",
       "category": "IG1",
       "sortOrder": 6
     },
     {
       "code": "3.2",
       "title": "Establish and Maintain a Data Inventory",
-      "summary": "Keep a record of the sensitive data the enterprise holds, including where it lives and who owns it. parent_urn: urn:inflect:req:cis-controls-v8:3 depth: 2 assessable: true",
+      "summary": "Keep a record of the sensitive data the enterprise holds, including where it lives and who owns it.",
       "category": "IG1",
       "sortOrder": 7
     },
     {
       "code": "3.3",
       "title": "Configure Data Access Control Lists",
-      "summary": "Apply access controls so that only authorized users and services can reach specific data stores. parent_urn: urn:inflect:req:cis-controls-v8:3 depth: 2 assessable: true",
+      "summary": "Apply access controls so that only authorized users and services can reach specific data stores.",
       "category": "IG1",
       "sortOrder": 8
     },
     {
       "code": "3.4",
       "title": "Enforce Data Retention",
-      "summary": "Retain data only for the period defined by policy and remove it once that period ends. parent_urn: urn:inflect:req:cis-controls-v8:3 depth: 2 assessable: true",
+      "summary": "Retain data only for the period defined by policy and remove it once that period ends.",
       "category": "IG1",
       "sortOrder": 9
     },
     {
       "code": "3.5",
       "title": "Securely Dispose of Data",
-      "summary": "Destroy or sanitize data and media so that discarded information cannot be recovered. parent_urn: urn:inflect:req:cis-controls-v8:3 depth: 2 assessable: true",
+      "summary": "Destroy or sanitize data and media so that discarded information cannot be recovered.",
       "category": "IG1",
       "sortOrder": 10
     },
     {
       "code": "3.6",
       "title": "Encrypt Data on End-User Devices",
-      "summary": "Apply encryption to information stored on laptops, phones, and other end-user devices. parent_urn: urn:inflect:req:cis-controls-v8:3 depth: 2 assessable: true",
+      "summary": "Apply encryption to information stored on laptops, phones, and other end-user devices.",
       "category": "IG1",
       "sortOrder": 11
     },
     {
       "code": "4.1",
       "title": "Establish and Maintain a Secure Configuration Process",
-      "summary": "Document and keep current a process for applying secure baseline settings to assets and software. parent_urn: urn:inflect:req:cis-controls-v8:4 depth: 2 assessable: true",
+      "summary": "Document and keep current a process for applying secure baseline settings to assets and software.",
       "category": "IG1",
       "sortOrder": 12
     },
     {
       "code": "4.2",
       "title": "Establish and Maintain a Secure Configuration Process for Network Infrastructure",
-      "summary": "Maintain a defined process for securely configuring routers, switches, firewalls, and similar devices. parent_urn: urn:inflect:req:cis-controls-v8:4 depth: 2 assessable: true",
+      "summary": "Maintain a defined process for securely configuring routers, switches, firewalls, and similar devices.",
       "category": "IG1",
       "sortOrder": 13
     },
     {
       "code": "4.3",
       "title": "Configure Automatic Session Locking on Enterprise Assets",
-      "summary": "Set devices to lock automatically after a period of inactivity to limit unattended access. parent_urn: urn:inflect:req:cis-controls-v8:4 depth: 2 assessable: true",
+      "summary": "Set devices to lock automatically after a period of inactivity to limit unattended access.",
       "category": "IG1",
       "sortOrder": 14
     },
     {
       "code": "4.4",
       "title": "Implement and Manage a Firewall on Servers",
-      "summary": "Run and maintain host-based or network firewalls that protect server assets. parent_urn: urn:inflect:req:cis-controls-v8:4 depth: 2 assessable: true",
+      "summary": "Run and maintain host-based or network firewalls that protect server assets.",
       "category": "IG1",
       "sortOrder": 15
     },
     {
       "code": "4.5",
       "title": "Implement and Manage a Firewall on End-User Devices",
-      "summary": "Enable and manage a firewall on laptops, desktops, and similar end-user devices. parent_urn: urn:inflect:req:cis-controls-v8:4 depth: 2 assessable: true",
+      "summary": "Enable and manage a firewall on laptops, desktops, and similar end-user devices.",
       "category": "IG1",
       "sortOrder": 16
     },
     {
       "code": "4.6",
       "title": "Securely Manage Enterprise Assets and Software",
-      "summary": "Administer assets and software through secure channels and vetted management tooling. parent_urn: urn:inflect:req:cis-controls-v8:4 depth: 2 assessable: true",
+      "summary": "Administer assets and software through secure channels and vetted management tooling.",
       "category": "IG1",
       "sortOrder": 17
     },
     {
       "code": "4.7",
       "title": "Manage Default Accounts on Enterprise Assets and Software",
-      "summary": "Disable or change built-in default accounts and credentials before assets enter use. parent_urn: urn:inflect:req:cis-controls-v8:4 depth: 2 assessable: true",
+      "summary": "Disable or change built-in default accounts and credentials before assets enter use.",
       "category": "IG1",
       "sortOrder": 18
     },
     {
       "code": "5.1",
       "title": "Establish and Maintain an Inventory of Accounts",
-      "summary": "Maintain a record of all user and administrator accounts, including owner and status. parent_urn: urn:inflect:req:cis-controls-v8:5 depth: 2 assessable: true",
+      "summary": "Maintain a record of all user and administrator accounts, including owner and status.",
       "category": "IG1",
       "sortOrder": 19
     },
     {
       "code": "5.2",
       "title": "Use Unique Passwords",
-      "summary": "Require a distinct, sufficiently strong password for every account. parent_urn: urn:inflect:req:cis-controls-v8:5 depth: 2 assessable: true",
+      "summary": "Require a distinct, sufficiently strong password for every account.",
       "category": "IG1",
       "sortOrder": 20
     },
     {
       "code": "5.3",
       "title": "Disable Dormant Accounts",
-      "summary": "Identify and disable accounts that have gone unused beyond a defined period. parent_urn: urn:inflect:req:cis-controls-v8:5 depth: 2 assessable: true",
+      "summary": "Identify and disable accounts that have gone unused beyond a defined period.",
       "category": "IG1",
       "sortOrder": 21
     },
     {
       "code": "5.4",
       "title": "Restrict Administrator Privileges to Dedicated Administrator Accounts",
-      "summary": "Perform privileged work only with separate administrator accounts, not everyday user accounts. parent_urn: urn:inflect:req:cis-controls-v8:5 depth: 2 assessable: true",
+      "summary": "Perform privileged work only with separate administrator accounts, not everyday user accounts.",
       "category": "IG1",
       "sortOrder": 22
     },
     {
       "code": "6.1",
       "title": "Establish an Access Granting Process",
-      "summary": "Follow a defined procedure to provision access rights when someone joins or changes role. parent_urn: urn:inflect:req:cis-controls-v8:6 depth: 2 assessable: true",
+      "summary": "Follow a defined procedure to provision access rights when someone joins or changes role.",
       "category": "IG1",
       "sortOrder": 23
     },
     {
       "code": "6.2",
       "title": "Establish an Access Revoking Process",
-      "summary": "Follow a defined procedure to remove access promptly when it is no longer needed. parent_urn: urn:inflect:req:cis-controls-v8:6 depth: 2 assessable: true",
+      "summary": "Follow a defined procedure to remove access promptly when it is no longer needed.",
       "category": "IG1",
       "sortOrder": 24
     },
     {
       "code": "6.3",
       "title": "Require MFA for Externally-Exposed Applications",
-      "summary": "Require multi-factor authentication for applications reachable from outside the enterprise. parent_urn: urn:inflect:req:cis-controls-v8:6 depth: 2 assessable: true",
+      "summary": "Require multi-factor authentication for applications reachable from outside the enterprise.",
       "category": "IG1",
       "sortOrder": 25
     },
     {
       "code": "6.4",
       "title": "Require MFA for Remote Network Access",
-      "summary": "Require multi-factor authentication for connections into the network from remote locations. parent_urn: urn:inflect:req:cis-controls-v8:6 depth: 2 assessable: true",
+      "summary": "Require multi-factor authentication for connections into the network from remote locations.",
       "category": "IG1",
       "sortOrder": 26
     },
     {
       "code": "6.5",
       "title": "Require MFA for Administrative Access",
-      "summary": "Require multi-factor authentication whenever administrative privileges are used. parent_urn: urn:inflect:req:cis-controls-v8:6 depth: 2 assessable: true",
+      "summary": "Require multi-factor authentication whenever administrative privileges are used.",
       "category": "IG1",
       "sortOrder": 27
     },
     {
       "code": "7.1",
       "title": "Establish and Maintain a Vulnerability Management Process",
-      "summary": "Document a repeatable process for finding and tracking vulnerabilities in enterprise assets. parent_urn: urn:inflect:req:cis-controls-v8:7 depth: 2 assessable: true",
+      "summary": "Document a repeatable process for finding and tracking vulnerabilities in enterprise assets.",
       "category": "IG1",
       "sortOrder": 28
     },
     {
       "code": "7.2",
       "title": "Establish and Maintain a Remediation Process",
-      "summary": "Define how identified vulnerabilities are prioritized and driven to closure. parent_urn: urn:inflect:req:cis-controls-v8:7 depth: 2 assessable: true",
+      "summary": "Define how identified vulnerabilities are prioritized and driven to closure.",
       "category": "IG1",
       "sortOrder": 29
     },
     {
       "code": "7.3",
       "title": "Perform Automated Operating System Patch Management",
-      "summary": "Automate the delivery of operating-system security updates on a regular cadence. parent_urn: urn:inflect:req:cis-controls-v8:7 depth: 2 assessable: true",
+      "summary": "Automate the delivery of operating-system security updates on a regular cadence.",
       "category": "IG1",
       "sortOrder": 30
     },
     {
       "code": "7.4",
       "title": "Perform Automated Application Patch Management",
-      "summary": "Automate the delivery of application security updates on a regular cadence. parent_urn: urn:inflect:req:cis-controls-v8:7 depth: 2 assessable: true",
+      "summary": "Automate the delivery of application security updates on a regular cadence.",
       "category": "IG1",
       "sortOrder": 31
     },
     {
       "code": "8.1",
       "title": "Establish and Maintain an Audit Log Management Process",
-      "summary": "Document what events are logged, how logs are handled, and how long they are kept. parent_urn: urn:inflect:req:cis-controls-v8:8 depth: 2 assessable: true",
+      "summary": "Document what events are logged, how logs are handled, and how long they are kept.",
       "category": "IG1",
       "sortOrder": 32
     },
     {
       "code": "8.2",
       "title": "Collect Audit Logs",
-      "summary": "Ensure logging is enabled and events are collected across enterprise assets. parent_urn: urn:inflect:req:cis-controls-v8:8 depth: 2 assessable: true",
+      "summary": "Ensure logging is enabled and events are collected across enterprise assets.",
       "category": "IG1",
       "sortOrder": 33
     },
     {
       "code": "8.3",
       "title": "Ensure Adequate Audit Log Storage",
-      "summary": "Provide enough storage so that logs are retained for the period the process requires. parent_urn: urn:inflect:req:cis-controls-v8:8 depth: 2 assessable: true",
+      "summary": "Provide enough storage so that logs are retained for the period the process requires.",
       "category": "IG1",
       "sortOrder": 34
     },
     {
       "code": "9.1",
       "title": "Ensure Use of Only Fully Supported Browsers and Email Clients",
-      "summary": "Permit only vendor-supported, up-to-date browsers and email clients on enterprise assets. parent_urn: urn:inflect:req:cis-controls-v8:9 depth: 2 assessable: true",
+      "summary": "Permit only vendor-supported, up-to-date browsers and email clients on enterprise assets.",
       "category": "IG1",
       "sortOrder": 35
     },
     {
       "code": "9.2",
       "title": "Use DNS Filtering Services",
-      "summary": "Use DNS filtering to block resolution of known malicious domains. parent_urn: urn:inflect:req:cis-controls-v8:9 depth: 2 assessable: true",
+      "summary": "Use DNS filtering to block resolution of known malicious domains.",
       "category": "IG1",
       "sortOrder": 36
     },
     {
       "code": "10.1",
       "title": "Deploy and Maintain Anti-Malware Software",
-      "summary": "Install and keep running anti-malware protection on enterprise assets. parent_urn: urn:inflect:req:cis-controls-v8:10 depth: 2 assessable: true",
+      "summary": "Install and keep running anti-malware protection on enterprise assets.",
       "category": "IG1",
       "sortOrder": 37
     },
     {
       "code": "10.2",
       "title": "Configure Automatic Anti-Malware Signature Updates",
-      "summary": "Configure anti-malware tools to update their detection data automatically. parent_urn: urn:inflect:req:cis-controls-v8:10 depth: 2 assessable: true",
+      "summary": "Configure anti-malware tools to update their detection data automatically.",
       "category": "IG1",
       "sortOrder": 38
     },
     {
       "code": "10.3",
       "title": "Disable Autorun and Autoplay for Removable Media",
-      "summary": "Turn off automatic execution of content from removable media. parent_urn: urn:inflect:req:cis-controls-v8:10 depth: 2 assessable: true",
+      "summary": "Turn off automatic execution of content from removable media.",
       "category": "IG1",
       "sortOrder": 39
     },
     {
       "code": "11.1",
       "title": "Establish and Maintain a Data Recovery Process",
-      "summary": "Document how the enterprise backs up and restores data after loss or compromise. parent_urn: urn:inflect:req:cis-controls-v8:11 depth: 2 assessable: true",
+      "summary": "Document how the enterprise backs up and restores data after loss or compromise.",
       "category": "IG1",
       "sortOrder": 40
     },
     {
       "code": "11.2",
       "title": "Perform Automated Backups",
-      "summary": "Run backups automatically on a defined schedule for in-scope assets. parent_urn: urn:inflect:req:cis-controls-v8:11 depth: 2 assessable: true",
+      "summary": "Run backups automatically on a defined schedule for in-scope assets.",
       "category": "IG1",
       "sortOrder": 41
     },
     {
       "code": "11.3",
       "title": "Protect Recovery Data",
-      "summary": "Secure backup data against unauthorized access and tampering, including via encryption. parent_urn: urn:inflect:req:cis-controls-v8:11 depth: 2 assessable: true",
+      "summary": "Secure backup data against unauthorized access and tampering, including via encryption.",
       "category": "IG1",
       "sortOrder": 42
     },
     {
       "code": "11.4",
       "title": "Establish and Maintain an Isolated Instance of Recovery Data",
-      "summary": "Keep at least one backup copy isolated so it survives an attack on production systems. parent_urn: urn:inflect:req:cis-controls-v8:11 depth: 2 assessable: true",
+      "summary": "Keep at least one backup copy isolated so it survives an attack on production systems.",
       "category": "IG1",
       "sortOrder": 43
     },
     {
       "code": "12.1",
       "title": "Ensure Network Infrastructure is Up-to-Date",
-      "summary": "Keep networking equipment firmware and software current with security updates. parent_urn: urn:inflect:req:cis-controls-v8:12 depth: 2 assessable: true",
+      "summary": "Keep networking equipment firmware and software current with security updates.",
       "category": "IG1",
       "sortOrder": 44
     },
     {
       "code": "14.1",
       "title": "Establish and Maintain a Security Awareness Program",
-      "summary": "Run an ongoing program that keeps the workforce aware of security responsibilities. parent_urn: urn:inflect:req:cis-controls-v8:14 depth: 2 assessable: true",
+      "summary": "Run an ongoing program that keeps the workforce aware of security responsibilities.",
       "category": "IG1",
       "sortOrder": 45
     },
     {
       "code": "14.2",
       "title": "Train Workforce Members to Recognize Social Engineering Attacks",
-      "summary": "Teach staff to spot phishing and other social-engineering attempts. parent_urn: urn:inflect:req:cis-controls-v8:14 depth: 2 assessable: true",
+      "summary": "Teach staff to spot phishing and other social-engineering attempts.",
       "category": "IG1",
       "sortOrder": 46
     },
     {
       "code": "14.3",
       "title": "Train Workforce Members on Authentication Best Practices",
-      "summary": "Train staff on strong password use and multi-factor authentication. parent_urn: urn:inflect:req:cis-controls-v8:14 depth: 2 assessable: true",
+      "summary": "Train staff on strong password use and multi-factor authentication.",
       "category": "IG1",
       "sortOrder": 47
     },
     {
       "code": "14.4",
       "title": "Train Workforce on Data Handling Best Practices",
-      "summary": "Train staff to store, share, and dispose of data according to its sensitivity. parent_urn: urn:inflect:req:cis-controls-v8:14 depth: 2 assessable: true",
+      "summary": "Train staff to store, share, and dispose of data according to its sensitivity.",
       "category": "IG1",
       "sortOrder": 48
     },
     {
       "code": "14.5",
       "title": "Train Workforce Members on Causes of Unintentional Data Exposure",
-      "summary": "Help staff understand common mistakes that lead to accidental data exposure. parent_urn: urn:inflect:req:cis-controls-v8:14 depth: 2 assessable: true",
+      "summary": "Help staff understand common mistakes that lead to accidental data exposure.",
       "category": "IG1",
       "sortOrder": 49
     },
     {
       "code": "14.6",
       "title": "Train Workforce Members on Recognizing and Reporting Security Incidents",
-      "summary": "Teach staff how to recognize and promptly report potential incidents. parent_urn: urn:inflect:req:cis-controls-v8:14 depth: 2 assessable: true",
+      "summary": "Teach staff how to recognize and promptly report potential incidents.",
       "category": "IG1",
       "sortOrder": 50
     },
     {
       "code": "14.7",
       "title": "Train Workforce on How to Identify and Report if Their Enterprise Assets are Missing Security Updates",
-      "summary": "Show staff how to notice and report devices that are missing security updates. parent_urn: urn:inflect:req:cis-controls-v8:14 depth: 2 assessable: true",
+      "summary": "Show staff how to notice and report devices that are missing security updates.",
       "category": "IG1",
       "sortOrder": 51
     },
     {
       "code": "14.8",
       "title": "Train Workforce on the Dangers of Connecting to and Transmitting Enterprise Data Over Insecure Networks",
-      "summary": "Warn staff about the risks of untrusted networks and how to use enterprise data safely on them. parent_urn: urn:inflect:req:cis-controls-v8:14 depth: 2 assessable: true",
+      "summary": "Warn staff about the risks of untrusted networks and how to use enterprise data safely on them.",
       "category": "IG1",
       "sortOrder": 52
     },
     {
       "code": "15.1",
       "title": "Establish and Maintain an Inventory of Service Providers",
-      "summary": "Maintain a record of third parties that hold enterprise data or run critical processes. parent_urn: urn:inflect:req:cis-controls-v8:15 depth: 2 assessable: true",
+      "summary": "Maintain a record of third parties that hold enterprise data or run critical processes.",
       "category": "IG1",
       "sortOrder": 53
     },
     {
       "code": "17.1",
       "title": "Designate Personnel to Manage Incident Handling",
-      "summary": "Assign responsibility for coordinating incident handling. parent_urn: urn:inflect:req:cis-controls-v8:17 depth: 2 assessable: true",
+      "summary": "Assign responsibility for coordinating incident handling.",
       "category": "IG1",
       "sortOrder": 54
     },
     {
       "code": "17.2",
       "title": "Establish and Maintain Contact Information for Reporting Security Incidents",
-      "summary": "Maintain current contacts, internal and external, for reporting incidents. parent_urn: urn:inflect:req:cis-controls-v8:17 depth: 2 assessable: true",
+      "summary": "Maintain current contacts, internal and external, for reporting incidents.",
       "category": "IG1",
       "sortOrder": 55
     },
     {
       "code": "17.3",
       "title": "Establish and Maintain an Enterprise Process for Reporting Incidents",
-      "summary": "Provide staff with a clear process for reporting suspected incidents. parent_urn: urn:inflect:req:cis-controls-v8:17 depth: 2 assessable: true",
+      "summary": "Provide staff with a clear process for reporting suspected incidents.",
       "category": "IG1",
       "sortOrder": 56
     }
