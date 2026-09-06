@@ -83,6 +83,7 @@ import {
     summarizeWithoutContent,
 } from '@/app-layer/ai/guard/proposal-guard';
 import { makeRequestContext } from '../helpers/make-context';
+import type { DataOnlySourceId } from '@/lib/agentic/content-provenance';
 import { NO_POLICY_CARD } from '@/lib/agentic/policy-card';
 import { CLEAN_PROPOSAL, INJECTION_CASES } from '../fixtures/prompt-injection-corpus';
 
@@ -125,25 +126,31 @@ describe('the verdict', () => {
         expect(result.ruleIds).toStrictEqual([]);
     });
 
-    it('the PROVENANCE term is load-bearing: the same text from a SYSTEM source is not quarantined', () => {
-        const payload = INJECTION_CASES[0].obeyedProposal;
-        const untrusted = guardAgentProposal({ kind: 'RISK', payload });
-        const system = guardAgentProposal({
-            kind: 'RISK',
-            payload,
-            sourceId: 'platform.prompt-scaffold',
-        });
-        expect(untrusted.verdict).toBe('QUARANTINED');
-        // Identical scan, identical rules — only the trust label differs.
-        expect(system.ruleIds).toStrictEqual(untrusted.ruleIds);
-        expect(system.verdict).toBe('FLAGGED');
-    });
+    // There used to be a case here asserting the mirror image — that the same
+    // text carrying `sourceId: 'platform.prompt-scaffold'` came back FLAGGED
+    // rather than QUARANTINED, to show the provenance term was load-bearing.
+    // It was: that argument switched quarantine off for the call, on the one
+    // function that decides whether injected content becomes a compliance
+    // record. The propose path can no longer make that claim at all — the
+    // parameter is typed to the data-only ids and an instruction-bearing label
+    // is clamped at runtime. The whole story, including the positive control
+    // that this is not "clamps everything", is in
+    // `tests/unit/agent-proposal-provenance-claim.test.ts`.
 
     it('an UNKNOWN source falls closed to the untrusted label and still quarantines', () => {
         const result = guardAgentProposal({
             kind: 'RISK',
             payload: INJECTION_CASES[0].obeyedProposal,
-            sourceId: 'integration.some-connector-added-next-quarter',
+            // Deliberately outside `DataOnlySourceId`, and the cast IS the test.
+            // Narrowing the parameter stops a TypeScript caller writing this,
+            // but a type is erased at runtime and this id can still arrive from
+            // an untyped boundary — a connector id read from the database, a
+            // JSON payload, a JS caller. What must hold there is that an id the
+            // allowlist has never heard of falls CLOSED rather than defaulting
+            // to something trusted. Without the cast this case becomes
+            // unwriteable and the runtime half of the guarantee goes untested,
+            // which is the failure mode the narrow type could otherwise hide.
+            sourceId: 'integration.some-connector-added-next-quarter' as DataOnlySourceId,
         });
         expect(result.provenance).toBe('THIRD_PARTY_INGESTED');
         expect(result.verdict).toBe('QUARANTINED');

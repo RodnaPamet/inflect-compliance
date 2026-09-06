@@ -37,7 +37,7 @@ import {
 } from '../authorize';
 import { loadableToolsDigest } from '../loadable-tools';
 import { RpcErrorCode, type McpToolDescriptor, type McpToolResult } from '../protocol';
-import { buildProvenanceEnvelope } from '@/lib/agentic/content-provenance';
+import { provenanceContentBlock } from '@/lib/agentic/content-provenance';
 
 import type { McpReadTool } from './types';
 import { getCompliancePostureTool } from './get-compliance-posture';
@@ -197,10 +197,15 @@ export async function runReadTool(
     //    can ignore it. What actually stops an injected instruction from
     //    becoming a compliance record is `guardAgentProposal` at the propose
     //    seam, which asks the model nothing.
+    //
+    //    Written through `provenanceContentBlock` so the wire format has ONE
+    //    spelling. IC's own workflow engine reads it back with that module's
+    //    `provenanceOfToolResult` — a label only external clients could see was
+    //    a label absent from the surface the product actually runs.
     return {
         content: [
             { type: 'text', text: JSON.stringify(visible, null, 2) },
-            { type: 'text', text: JSON.stringify(buildProvenanceEnvelope(name), null, 2) },
+            provenanceContentBlock(name),
         ],
     };
 }
