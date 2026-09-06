@@ -624,3 +624,58 @@ describe('when the basis stops holding', () => {
         expect(evidence.content).not.toContain('WITHDRAWN');
     });
 });
+
+describe('a foreign string cannot ride into the artefact body', () => {
+    it('strips markup and bounds the length of an attacker-chosen tool name', async () => {
+        // `extractReceiptFields` lifts `tool` and `verdict` out of an ARBITRARY
+        // `action_record` chosen by whoever signed the receipt — and this
+        // artefact deliberately counts UNVERIFIED receipts, so the Ed25519
+        // signature does not stand in front of these two fields. A tenant API
+        // key with write, or a hostile mediator, picks the bytes.
+        //
+        // `Evidence.content` is the widest surface in the product: not in the
+        // encryption manifest, PDF-exported, reachable through an audit-pack
+        // share link, read verbatim by SDK consumers. CLAUDE.md C.5 requires the
+        // sanitising to happen at the USECASE layer for that reason.
+        const XSS = '<img src=x onerror="alert(document.domain)">';
+        const LONG = 'A'.repeat(5_000);
+
+        await ingestReceipt(
+            ctx(),
+            signedReceipt(
+                receiptRecord({
+                    tool: XSS + LONG,
+                    verdict: '</p><script>steal()</script>',
+                }),
+            ),
+        );
+
+        const report = await emitAgenticEvidence(ctx(), { asOf: AS_OF });
+        expect(report.artefacts.length).toBeGreaterThan(0);
+
+        const bodies = await prisma.evidence.findMany({
+            where: { tenantId: TENANT },
+            select: { content: true },
+        });
+        const all = bodies.map((b) => b.content ?? '').join('\n');
+
+        // No markup survives…
+        expect(all).not.toContain('<img');
+        expect(all).not.toContain('onerror');
+        expect(all).not.toContain('<script>');
+        expect(all).not.toContain('steal()');
+        // …and one label cannot inflate the body without bound. 5 KB in, and the
+        // whole artefact stays far under it.
+        // eslint-disable-next-line no-console
+        // The LABEL, not the whole body. `all` is every artefact for the tenant
+        // joined together, so its total length says nothing about this defect —
+        // the claim is that ONE foreign label cannot inflate a body without
+        // bound. 5 KB went in; the longest run of it that survives is the cap.
+        const longestRun = Math.max(0, ...(all.match(/A+/g) ?? []).map((r) => r.length));
+        expect(longestRun).toBeLessThanOrEqual(120);
+        expect(longestRun).toBeGreaterThan(0);
+        // The artefact is still produced — sanitising is not silently dropping
+        // the record, which would lose the count an assessor is reading.
+        expect(all).toMatch(/Mediated agent actions recorded: 1/);
+    });
+});

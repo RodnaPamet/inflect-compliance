@@ -44,6 +44,7 @@ import { Prisma } from '@prisma/client';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { log } from '@/lib/observability';
 import { assertCanWrite } from '@/app-layer/policies/common';
+import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '@/app-layer/events/audit';
 import {
     AGENTIC_ARTEFACT_KINDS,
@@ -77,7 +78,8 @@ export interface EmittedArtefact {
     readonly artefactId: string;
     readonly evidenceId: string;
     readonly controlId: string;
-    readonly controlCode: string;
+    /** Nullable for the same reason `TargetControl.code` is — see there. */
+    readonly controlCode: string | null;
     readonly kind: AgenticArtefactKind;
     readonly periodLabel: string;
     readonly recordCount: number;
@@ -101,7 +103,15 @@ export interface EmissionReport {
 
 interface TargetControl {
     readonly id: string;
-    readonly code: string;
+    /**
+     * `Control.code` is OPTIONAL in the schema, so this is nullable and stays
+     * nullable — `null` rather than `''`. "This control has no code" and "its
+     * code is the empty string" are different facts, and an artefact that
+     * renders a blank where an identifier belongs is the kind of quiet
+     * wrongness an assessor cannot challenge. The same distinction the ASI
+     * coverage work drew for `CoveringControl.code`.
+     */
+    readonly code: string | null;
     readonly requirementCode: string;
 }
 
@@ -210,6 +220,39 @@ async function resolveTargetControls(
 
 // ── Populations ─────────────────────────────────────────────────────────────
 
+
+/**
+ * The longest a single externally-supplied label may be in an artefact body.
+ *
+ * `tally()` bounds the number of DISTINCT values it will render; it does not
+ * bound their LENGTH, so one 5 KB tool name inflates the body by 5 KB and forty
+ * of them by 200 KB. An `Evidence.content` row is PDF-exported and reachable
+ * through an audit-pack share link, so its size is somebody else's problem too.
+ */
+const LABEL_MAX = 120;
+
+/**
+ * Make one externally-supplied label safe to put in an artefact body.
+ *
+ * These strings are NOT ours. `extractReceiptFields` lifts `toolName` and
+ * `decisionVerdict` out of an arbitrary `action_record` supplied by whoever
+ * signed the receipt, and the artefact deliberately counts UNVERIFIED receipts —
+ * so the Ed25519 signature does not stand in front of this field. A tenant API
+ * key with write, or a hostile mediator, chooses these bytes.
+ *
+ * `Evidence.content` is the widest surface in the product: not in the
+ * field-encryption manifest, PDF-exported, reachable through an audit-pack share
+ * link, and read by SDK consumers verbatim. CLAUDE.md C.5 is explicit that a
+ * write path accepting free text sanitises at the USECASE layer for exactly that
+ * reason — render-time sanitisation alone leaves the row dangerous to every
+ * other consumer.
+ */
+function safeLabel(value: string | null | undefined): string {
+    const clean = sanitizePlainText(value ?? '').trim();
+    if (clean.length === 0) return 'unknown';
+    return clean.length > LABEL_MAX ? `${clean.slice(0, LABEL_MAX - 1)}…` : clean;
+}
+
 async function loadReceiptFacts(
     db: PrismaTx,
     ctx: RequestContext,
@@ -218,7 +261,7 @@ async function loadReceiptFacts(
     // Only the columns an artefact may render — see `ReceiptFact`. `scannedSummary`
     // and `signature` are not selected, so they cannot reach a body builder even
     // by accident.
-    return db.agentActionReceipt.findMany({
+    const rows = await db.agentActionReceipt.findMany({
         where: {
             tenantId: ctx.tenantId,
             occurredAt: { gte: period.start, lt: period.end },
@@ -234,6 +277,14 @@ async function loadReceiptFacts(
         orderBy: { occurredAt: 'asc' },
         take: POPULATION_CAP,
     });
+    // Sanitised and bounded HERE, at the seam between a foreign string and an
+    // artefact body — not at render time, which would leave the stored row
+    // dangerous to the PDF export and the share link.
+    return rows.map((r) => ({
+        ...r,
+        toolName: safeLabel(r.toolName),
+        decisionVerdict: safeLabel(r.decisionVerdict),
+    }));
 }
 
 async function loadDecisionFacts(
@@ -256,6 +307,12 @@ async function loadDecisionFacts(
         orderBy: { createdAt: 'asc' },
         take: POPULATION_CAP,
     });
+    return rows.map((r) => ({
+        ...r,
+        feature: safeLabel(r.feature),
+        provider: safeLabel(r.provider),
+        guardVerdict: r.guardVerdict === null ? null : safeLabel(r.guardVerdict),
+    }));
     return rows.map((r) => ({
         id: r.id,
         feature: r.feature,
