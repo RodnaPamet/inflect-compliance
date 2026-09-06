@@ -46,7 +46,7 @@
 | Layer | Source of truth | Companion tests |
 |---|---|---|
 | E.2 — retry + idempotency | `src/app-layer/events/audit-stream.ts` (retry loop around `postFn`), `src/app-layer/events/webhook-headers.ts` (`buildOutboundHeaders`, `computeBatchId`) | `tests/unit/audit-stream.test.ts` (cases A–D — happy retry, double-fail, network throw, kill-switch), `tests/unit/webhook-headers.test.ts` (header shape + determinism) |
-| E.3 — SIGTERM drain | `src/lib/observability/shutdown.ts` (`installShutdownHandlers`), `src/lib/observability/instrumentation.ts` (`shutdownTelemetry`), `src/lib/observability/sentry.ts` (`shutdownSentry`), `src/lib/observability/shutdown-budget.ts` | `tests/unit/observability/shutdown.test.ts` (order, idempotence, partial-failure isolation), `tests/unit/observability/shutdown-helpers.test.ts` (timeout + noop paths), `tests/guardrails/shutdown-budget-sanity.test.ts` (sum ≤ ceiling) |
+| E.3 — SIGTERM drain | `src/lib/observability/shutdown.ts` (`installShutdownHandlers`), `src/lib/observability/instrumentation.ts` (`shutdownTelemetry`), `src/lib/observability/sentry.ts` (`shutdownSentry`), `src/lib/observability/shutdown-budget.ts` | `tests/unit/observability/shutdown.test.ts` (order, idempotence, partial-failure isolation), `tests/unit/observability/shutdown-helpers.test.ts` (the never-initialised early return: settles on the microtask queue, arms no timer), `tests/unit/observability/instrumentation-enabled.test.ts` + `tests/unit/observability/sentry-redaction.test.ts` (drain, idempotence, rejection-swallowing and the `timeoutMs` bound, against a really-initialised module), `tests/guardrails/shutdown-budget-sanity.test.ts` (sum ≤ ceiling) |
 | E.4 — HIBP guardrail | `tests/guardrails/hibp-coverage.test.ts` + the curated `HIBP_REQUIRED_ROUTES` constant inside it | Self-contained; extends `src/app/api/auth/register/route.ts` as the seed entry |
 
 ## Why each design choice
@@ -127,8 +127,11 @@ node -e "process.env.AUDIT_STREAM_RETRY_ENABLED='0'; import('./src/env.ts').then
 # Unit — SIGTERM triggers ordered drain, idempotence, partial-failure isolation
 SKIP_ENV_VALIDATION=1 npx jest tests/unit/observability/shutdown.test.ts --no-coverage
 
-# Unit — paired shutdown helpers noop + timeout contracts
+# Unit — paired shutdown helpers, never-initialised early return
 SKIP_ENV_VALIDATION=1 npx jest tests/unit/observability/shutdown-helpers.test.ts --no-coverage
+
+# Unit — the same helpers against a real bootstrap: drain, idempotence, timeoutMs bound
+SKIP_ENV_VALIDATION=1 npx jest tests/unit/observability/instrumentation-enabled.test.ts tests/unit/observability/sentry-redaction.test.ts --no-coverage
 
 # Guardrail — sum of stage budgets stays under the ceiling
 SKIP_ENV_VALIDATION=1 npx jest tests/guardrails/shutdown-budget-sanity.test.ts --no-coverage

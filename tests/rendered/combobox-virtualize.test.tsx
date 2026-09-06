@@ -247,22 +247,39 @@ describe("Combobox — virtualized hover behaviour", () => {
     });
 });
 
-// ─── Performance benchmark ──────────────────────────────────────────
+// ─── Windowing contract at scale ────────────────────────────────────
 
-describe("Combobox — performance benchmark", () => {
-    it("1000-option mount stays under a sane wall-clock budget AND DOM stays small", async () => {
+describe("Combobox — windowing holds at 1000 options", () => {
+    it("mounts and opens rendering at most 30 option nodes", async () => {
+        // This test carried a companion `expect(elapsed).toBeLessThan(2_000)`
+        // over the same render+open. It was removed on 2026-09-06 because its
+        // verdict on the regression its own comment named ("accidentally
+        // rendering all 1000 items") is a coin flip.
+        //
+        // Measured on an 8-core box, `--runInBand`, with `overscanCount`
+        // raised so the virtualized branch renders every row — 8 samples:
+        //
+        //   1318 / 1405 / 1839 / 1917 / 2192 / 2303 / 2334 / 2397 ms
+        //
+        // Four over the 2000 ms ceiling, four under. The DOM-count assertion
+        // below reported 1000 against `<= 30` on all eight — it is the sole
+        // detector, and the only one whose answer does not depend on what
+        // else the machine was doing. Healthy on the same box is 284-329 ms,
+        // so in the passing case the budget carried ~6x of slack that only a
+        // loaded runner could spend.
+        //
+        // Same defect and same remedy as
+        // tests/unit/framework-tree-builder.test.ts and
+        // tests/unit/password-check.test.ts:183-197.
+        //
+        // KNOWN BLIND SPOT: the DOM count sees the wrong NUMBER of nodes, not
+        // nodes that each got more expensive to build. That is the trade.
         const user = userEvent.setup();
-        const start = performance.now();
         render(<Harness count={1_000} />);
         await user.click(screen.getByRole("combobox"));
-        const elapsed = performance.now() - start;
 
-        // Wall-clock budget — generous to absorb jitter on shared CI
-        // runners. The point is to catch order-of-magnitude regressions
-        // (e.g. accidentally rendering all 1000 items).
-        expect(elapsed).toBeLessThan(2_000);
-
-        // DOM-count contract — the actual perf win.
+        // The actual perf win, and a pure function of the windowing maths:
+        // the same integer on any machine under any load.
         const visible = document.querySelectorAll(
             "[data-virtualized-option-index]",
         );

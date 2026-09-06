@@ -1912,10 +1912,15 @@ Two production rollouts:
   virtualization for free.
 
 Performance contract: any list above the threshold renders ≤30 row /
-option nodes regardless of dataset size. The benchmark test in
-`tests/rendered/combobox-virtualize.test.tsx` locks both the
-DOM-count invariant AND a wall-clock budget (1000 options + open in
-<2s on CI) so accidental regressions are caught.
+option nodes regardless of dataset size. The test in
+`tests/rendered/combobox-virtualize.test.tsx` locks that DOM count at
+1000 options. It also carried a `<2s` wall-clock budget over the same
+render+open until 2026-09-06; that was removed because its verdict on
+the regression it named was a coin flip — with all 1000 items rendered,
+eight measured samples straddled the ceiling (1318-2397 ms, four over
+and four under), while the DOM count read 1000 against `<=30` every
+time. The count is the sole detector and the only machine-independent
+one; what it gives up is nodes that each got more expensive to build.
 
 See `docs/list-virtualization.md` for the rollout decision tree
 (when to use the primitive directly vs reach for `<DataTable>` /
