@@ -30,18 +30,51 @@ interface RunResult {
     stderr: string;
 }
 
-// Call the resolved `tsx` binary directly instead of `npx tsx`. `npx`
-// adds a binary-resolution layer (cache/registry lookup) that, under
-// full-suite parallel load, can add seconds of cold-start on top of
-// tsx's own TS compile — a real flake contributor. The direct bin
-// skips that layer.
-const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
+// Call the resolved `tsx` CLI directly instead of `npx tsx`. `npx` adds a
+// binary-resolution layer (cache/registry lookup) that, under full-suite
+// parallel load, can add seconds of cold-start on top of tsx's own TS
+// compile — a real flake contributor.
+//
+// ASK NODE WHERE TSX IS; do not join `node_modules/.bin` onto the repo root.
+// `path.join` is a literal string concatenation and does no upward walk, so
+// that spelling named a path which exists only in a checkout that owns its
+// install. This repo is routinely checked out into `.claude/worktrees/<id>/`,
+// which has no `node_modules` of its own, and there `spawnSync` failed ENOENT
+// — surfacing as `result.status === null`, i.e. every assertion in this file
+// reporting "expected 3, received null". That symptom points at the CLI's
+// exit codes and says nothing about the missing binary, which is what made it
+// expensive. Same defect as the old `node_modules/cmdk` join in
+// `tests/unit/filter-foundation.test.ts`.
+//
+// Spawning `node <cli.mjs>` rather than the `.bin/tsx` shim is deliberate: the
+// shim is a symlink whose existence and exec bit are an install detail, while
+// the `bin` field is the package's own declaration of its entry point. It is
+// also exactly what the shim does — `cli.mjs` starts `#!/usr/bin/env node`.
+const TSX_CLI: string = (() => {
+    let pkgJson: string;
+    try {
+        pkgJson = require.resolve('tsx/package.json', { paths: [REPO_ROOT] });
+    } catch {
+        throw new Error(
+            `tsx is not resolvable from ${REPO_ROOT}; the framework:import CLI cannot ` +
+                'be spawned. Run `npm install`.',
+        );
+    }
+    const bin = (
+        JSON.parse(fs.readFileSync(pkgJson, 'utf8')) as {
+            bin?: string | Record<string, string>;
+        }
+    ).bin;
+    const entry = typeof bin === 'string' ? bin : bin?.tsx;
+    if (!entry) throw new Error(`tsx@${pkgJson} declares no \`bin\` entry point.`);
+    return path.resolve(path.dirname(pkgJson), entry);
+})();
 
 function runCli(args: string[]): RunResult {
     const databaseUrl = getTestDatabaseUrl();
     const result = spawnSync(
-        TSX_BIN,
-        ['scripts/framework-import.ts', ...args],
+        process.execPath,
+        [TSX_CLI, 'scripts/framework-import.ts', ...args],
         {
             cwd: REPO_ROOT,
             encoding: 'utf8',
