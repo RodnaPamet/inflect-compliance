@@ -27,6 +27,7 @@ import * as path from 'node:path';
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 
 import { codeOf } from '../helpers/source-blocks';
+import { declaringSources, appliedCatalogueStats } from '../helpers/applied-catalogue';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
@@ -48,20 +49,13 @@ const seed = read('prisma/seed.ts');
  * apply it?", and a CatalogFile wired into CATALOG_FIXTURES is the stronger
  * answer of the two — that list is what `scripts/entrypoint.sh` runs.
  */
-const catalogSeeder = read('scripts/seed-framework-catalogs.ts');
-const wiredCatalogs = [...catalogSeeder.matchAll(/prisma\/fixtures\/([A-Za-z0-9._-]+\.json)/g)]
-    .map((m) => {
-        try {
-            return fs.readFileSync(path.join(ROOT, 'prisma/fixtures', m[1]), 'utf8');
-        } catch {
-            return '';
-        }
-    })
-    .join('\n');
-
+// Both arms now come from tests/helpers/applied-catalogue.ts. This file and
+// tests/integration/framework-coverage.test.ts each had their own copy of the
+// discovery, and BOTH swallowed read errors with `catch { return '' }` — so a
+// renamed fixture would have emptied the catalogue arm and left every
+// assertion below passing against seed.ts alone. The helper throws instead.
 /** Does any applied source declare this key? */
-const declaredSomewhere = (key: string): boolean =>
-    seed.includes(`'${key}'`) || wiredCatalogs.includes(`"${key}"`);
+const declaredSomewhere = (key: string): boolean => declaringSources(key).length > 0;
 
 /** Library framework ref_id → seed wiring proof (framework key + pack key). */
 const STARTER_PACKS: Record<string, { frameworkKey: string; packKey: string }> = {
@@ -125,12 +119,14 @@ describe('Framework starter-pack completeness', () => {
         expect(both).toEqual([]);
     });
 
-    it('the catalog scan reads real wired fixtures (denominator)', () => {
-        // declaredSomewhere falls back to seed.ts, so a broken catalog read
-        // would leave every assertion below still passing on the weaker
-        // source — silently reverting this check to the implementation
-        // question it used to ask.
-        expect(wiredCatalogs.length).toBeGreaterThan(10_000);
+    it('the applied-catalogue scan found real sources (denominator)', () => {
+        // declaredSomewhere falls back to the seed.ts arm, so a broken scan
+        // would leave every assertion below passing on the weaker source —
+        // silently reverting this check to the implementation question it used
+        // to ask. applied-catalogue-helper.test.ts pins the corpus in detail;
+        // this is the local restatement, so a caller cannot be read in
+        // isolation and believed.
+        expect(appliedCatalogueStats().bytes).toBeGreaterThan(1_000_000);
     });
 
     it('every starter-pack entry declares its framework + pack keys somewhere applied', () => {

@@ -9,6 +9,7 @@
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { appliedCatalogueText, appliedCatalogueStats } from '../helpers/applied-catalogue';
 
 describe('Framework Coverage & Templates', () => {
     const basePath = process.cwd();
@@ -258,28 +259,21 @@ describe('Framework Coverage & Templates', () => {
          * the stronger of the two, because that list is what
          * scripts/entrypoint.sh actually runs.
          */
-        const seed = readFileSync(join(basePath, 'prisma/seed.ts'), 'utf-8');
-        const catalogSeeder = readFileSync(
-            join(basePath, 'scripts/seed-framework-catalogs.ts'),
-            'utf-8',
-        );
-        const wiredCatalogs = [...catalogSeeder.matchAll(/prisma\/fixtures\/([A-Za-z0-9._-]+\.json)/g)]
-            .map((m) => {
-                try {
-                    return readFileSync(join(basePath, 'prisma/fixtures', m[1]), 'utf-8');
-                } catch {
-                    return '';
-                }
-            })
-            .join('\n');
-        const applied = `${seed}\n${wiredCatalogs}`;
+        // Both arms come from tests/helpers/applied-catalogue.ts. This file
+        // and framework-starter-pack-completeness.test.ts each carried their
+        // own copy of the discovery, and BOTH swallowed read errors with
+        // `catch { return '' }`, so a renamed fixture would have emptied the
+        // catalogue arm and left every case below passing against seed.ts
+        // alone — reverting them to the implementation question without a
+        // failing test to say so. The helper throws instead.
+        const applied = appliedCatalogueText();
 
-        it('the catalog read found real wired fixtures (denominator)', () => {
-            // `applied` falls back to seed.ts, so a broken catalog read would
-            // leave every assertion below passing on the weaker source —
-            // silently reverting this to the implementation question it used
-            // to ask, with nothing to show for it.
-            expect(wiredCatalogs.length).toBeGreaterThan(10_000);
+        it('the applied-catalogue scan found real sources (denominator)', () => {
+            // `applied` still contains the seed.ts arm, so a broken scan would
+            // leave every case below passing on the weaker source — silently
+            // reverting this to the implementation question it used to ask,
+            // with nothing to show for it.
+            expect(appliedCatalogueStats().bytes).toBeGreaterThan(1_000_000);
         });
 
         it.each(['ISO27001', 'NIS2', 'ISO9001', 'ISO28000', 'ISO39001'])('catalogue references %s', (key) => {
