@@ -167,7 +167,7 @@ const HIGH_MULTIPLICITY = 5;
 // the higher of the two would have left a ratchet that cannot see the next
 // regression — which is the whole reason it is measured rather than merged.
 const AMBIGUOUS_NEEDLE_BASELINE = 1457;
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 250;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 249;
 
 /**
  * Sites this detector could NOT analyse, having established they read a file.
