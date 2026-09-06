@@ -497,11 +497,13 @@ export async function createAgentProposal(
     // written as an ordinary PENDING row and reached the reviewer looking
     // exactly like a clean one.
     //
-    // `guardAgentProposal` is pure and reads the PROVENANCE instead of the
-    // tenant's appetite: an external agent's output is third-party content by
+    // `guardAgentProposal` is pure and reads the SCAN instead of the tenant's
+    // appetite: an external agent's output is third-party content by
     // construction, and third-party content that reads as an instruction is an
-    // injection whatever the tenant has configured for its model calls. See
-    // `ai/guard/proposal-guard.ts`.
+    // injection whatever the tenant has configured for its model calls. The
+    // content's provenance comes back on the result and is recorded below; it
+    // is not a term in the verdict, because a proposal has no way to be
+    // anything but third-party. See `ai/guard/proposal-guard.ts`.
     const guard = guardAgentProposal({ kind: input.kind, payload: sanitized, rationale });
 
     // A quarantine is strictly stronger than either outcome above (both fire on

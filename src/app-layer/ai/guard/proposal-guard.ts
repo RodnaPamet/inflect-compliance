@@ -29,8 +29,13 @@
  * for false positives on an LLM path. Quarantine is a different question:
  * whether untrusted text becomes a live compliance record. `audit` mode is a
  * deliberate opt-out of enforcement on the first question and must not be a
- * silent opt-out of the second, so this decision reads the PROVENANCE and the
- * scan, and nothing else. It is pure and it does not query the tenant.
+ * silent opt-out of the second, so this decision reads the SCAN and nothing
+ * else. It is pure: no tenant row, no clock, no I/O.
+ *
+ * The content's PROVENANCE is resolved here too, and is reported on the result
+ * for the decision log — but it is no longer a term in the verdict. A proposal
+ * is agent output by construction, so the only claim it could make about its
+ * own provenance is a false one; see `resolveProposalProvenance`.
  *
  * ## Nothing here handles raw content
  *
@@ -44,7 +49,7 @@ import {
     type ContentProvenance,
     type DataOnlySourceId,
     UNTRUSTED_PROVENANCE,
-    mayCarryInstruction,
+    isDataOnlySourceId,
     resolveContentProvenance,
 } from '@/lib/agentic/content-provenance';
 
@@ -77,17 +82,23 @@ export interface GuardAgentProposalInput {
      * only where a caller genuinely knows better.
      *
      * TYPED AS `DataOnlySourceId`, WHICH IS THE POINT. It used to be `string |
-     * null`, and that made it a QUARANTINE KILL-SWITCH: `'platform.aggregate'`
-     * (or any other `SYSTEM` id) resolves to a provenance for which
-     * `mayCarryInstruction` is true, and the ladder below only quarantines when
-     * that is false. One argument, on the one function that decides whether
-     * injected content becomes a compliance record, and the failure is SILENT —
-     * proposals stop being quarantined and the queue looks healthy.
+     * null`, and while the ladder below still carried a provenance term that
+     * made it a QUARANTINE KILL-SWITCH: `'platform.aggregate'` (or any other
+     * `SYSTEM` id) resolved to a provenance for which `mayCarryInstruction` is
+     * true, and the ladder only quarantined when that was false. One argument,
+     * on the one function that decides whether injected content becomes a
+     * compliance record, and the failure was SILENT — proposals stopped being
+     * quarantined and the queue looked healthy.
      *
      * No caller passed one, so it was latent rather than live; nothing stopped
      * the next caller. The union is DERIVED from the allowlist (every id whose
      * label may not carry instruction), so it needs no maintenance and a new
      * `SYSTEM` entry drops out of it automatically.
+     *
+     * The verdict no longer reads this at all — see the ladder. What it still
+     * decides is the label this guard REPORTS, which `createAgentProposal`
+     * writes onto the decision log and the audit row, so a claim of `SYSTEM`
+     * would still put a lie in the durable record of an agent's proposal.
      */
     sourceId?: DataOnlySourceId | null;
 }
@@ -176,8 +187,13 @@ function payloadTextLeaves(value: unknown, out: string[] = []): string[] {
  * `DataOnlySourceId` makes the dangerous call a compile error. This makes it a
  * no-op, because a type is not a runtime property: an `as` cast, an id read out
  * of a row, or a JS caller all reach this function with whatever string they
- * like. So a resolved label that MAY CARRY INSTRUCTION is clamped back to
- * `UNTRUSTED_PROVENANCE` here.
+ * like. So an id whose label MAY CARRY INSTRUCTION resolves to
+ * `UNTRUSTED_PROVENANCE` here instead of to what the allowlist says.
+ *
+ * The predicate is `isDataOnlySourceId`, from the module that owns the type —
+ * not a second reading of the table written out here. The type and the clamp
+ * are then one rule applied twice, rather than two rules that can disagree
+ * about which ids are dangerous.
  *
  * The clamp is not a repair of untrusted content — it is a refusal of an
  * unearned trust CLAIM. Everything reaching this module is, by construction, an
@@ -187,17 +203,23 @@ function payloadTextLeaves(value: unknown, out: string[] = []): string[] {
  * cases, and model output is never platform-authored. There is therefore no
  * legitimate `SYSTEM` proposal for the clamp to get wrong.
  *
+ * WHAT IT PROTECTS is the reported label, not the verdict: the ladder below no
+ * longer has a provenance term to switch off. `createAgentProposal` writes this
+ * label onto the `AiDecisionLog` row and the audit entry, so an honoured
+ * `SYSTEM` claim would leave the durable record of an agent's proposal saying
+ * the platform authored it.
+ *
  * It clamps rather than throws: the caller's next move on a quarantine is to
  * WRITE the row as evidence of the attempt, and a throw here would delete that
  * evidence to report a programming error the compiler has already refused.
- * The clamped label is what the result reports, so nothing downstream is told
- * a provenance the guard did not use.
  */
 function resolveProposalProvenance(
     sourceId: GuardAgentProposalInput['sourceId'],
 ): ContentProvenance {
-    const resolved = resolveContentProvenance(sourceId ?? DEFAULT_PROPOSAL_SOURCE);
-    return mayCarryInstruction(resolved) ? UNTRUSTED_PROVENANCE : resolved;
+    const claimed = sourceId ?? DEFAULT_PROPOSAL_SOURCE;
+    return isDataOnlySourceId(claimed)
+        ? resolveContentProvenance(claimed)
+        : UNTRUSTED_PROVENANCE;
 }
 
 /**
@@ -214,18 +236,23 @@ function resolveProposalProvenance(
  *     carries the verdict so the reviewer is told);
  *   • nothing fired                          → `CLEAN`.
  *
- * The provenance term is the reason a single scan can produce two different
- * answers: untrusted content that reads as an instruction is an INJECTION,
- * while the identical string in platform-generated scaffolding is IC's own
- * prompt, and `mayCarryInstruction` is the only thing that can tell them apart.
+ * THE LADDER HAS NO PROVENANCE TERM, AND THAT IS THE CHANGE. It used to read
+ * `worstIsMalicious && !mayCarryInstruction(provenance)`, which let untrusted
+ * content that reads as an instruction be an INJECTION while the identical
+ * string in platform-generated scaffolding stayed IC's own prompt. That
+ * distinction is real, it belongs to `resolveContentProvenance`, and it serves
+ * every content seam — but NOT THIS ONE. A proposal is agent output by
+ * construction, so `resolveProposalProvenance` refuses an instruction-bearing
+ * claim before the ladder sees it, and the second operand could then never be
+ * false. An unreachable operand in a security ladder is not defence in depth:
+ * nothing can test it, so nothing notices when it stops meaning what it says.
  *
- * ON THIS PATH IT NEVER PRODUCES THE SECOND ANSWER, AND THAT IS DELIBERATE.
- * The distinction belongs to `resolveContentProvenance`, which serves every
- * content seam; a PROPOSAL is agent output by construction and can never be
- * platform-authored, so `resolveProposalProvenance` refuses an
- * instruction-bearing claim rather than honouring it. The parameter that could
- * make one is typed out of existence as well — see
- * `GuardAgentProposalInput.sourceId`.
+ * The rule now lives in exactly one place. `resolveProposalProvenance` decides
+ * what this content is; the ladder decides what to do about a malicious scan of
+ * it, and for a proposal that answer is always QUARANTINE. Should a legitimately
+ * platform-authored proposal ever exist, the change is to that function — and
+ * whatever it is allowed to return, the ladder still quarantines a malicious
+ * scan unless somebody deliberately writes the exception back.
  */
 export function guardAgentProposal(
     input: GuardAgentProposalInput,
@@ -257,7 +284,7 @@ export function guardAgentProposal(
     const anythingFired = ruleIds.length > 0;
 
     let verdict: AgentGuardVerdict = 'CLEAN';
-    if (worstIsMalicious && !mayCarryInstruction(provenance)) {
+    if (worstIsMalicious) {
         verdict = 'QUARANTINED';
     } else if (anythingFired) {
         verdict = 'FLAGGED';

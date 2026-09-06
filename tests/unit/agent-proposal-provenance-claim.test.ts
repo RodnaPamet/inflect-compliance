@@ -1,10 +1,10 @@
 /**
- * A PROPOSAL CANNOT CLAIM A PROVENANCE THAT SWITCHES QUARANTINE OFF.
+ * A PROPOSAL CANNOT CLAIM A PROVENANCE IT HAS NOT EARNED.
  *
  * ═══ WHAT THIS LOCKS OUT ═══
  *
  * `guardAgentProposal` is the one decision that keeps injected content out of
- * the review queue, and its ladder has a provenance term:
+ * the review queue. Its ladder USED TO carry a provenance term:
  *
  *     if (worstIsMalicious && !mayCarryInstruction(provenance)) → QUARANTINED
  *
@@ -19,23 +19,42 @@
  * next one, and "no caller does this today" is a fact about the present, not a
  * property of the code.
  *
- * Two layers now, because neither alone is enough:
+ * ═══ WHAT REPLACED IT — three parts, and only two of them are enforced here ══
  *
- *   1. THE TYPE. `sourceId` is `DataOnlySourceId` — the allowlist minus every
- *      id whose label may carry instruction, derived from the table rather
- *      than listed a second time. A `platform.*` literal at that position is a
- *      compile error, which is stronger than any assertion here: the bad call
- *      cannot be WRITTEN. That is asserted below with `@ts-expect-error`, which
- *      `npm run typecheck` fails on if the parameter is ever widened back —
- *      an unused `@ts-expect-error` is itself an error.
+ *   1. THE LADDER LOST THE TERM. A proposal is agent output by construction, so
+ *      the second operand could never be false once (2) landed, and an operand
+ *      no test can reach is not defence in depth. `worstIsMalicious` alone now
+ *      quarantines. That is a REMOVAL, and the assertions below that a
+ *      malicious proposal is QUARANTINED no longer distinguish it from the
+ *      clamp — they pin the OUTCOME, which is what callers depend on.
  *
- *   2. THE CLAMP. A type is not a runtime property. An `as` cast, an id read
- *      out of a row, or a JS caller all arrive with whatever string they like,
- *      so `resolveProposalProvenance` refuses an instruction-bearing label and
- *      returns the untrusted one. Every assertion below drives the runtime.
+ *   2. THE CLAMP. `resolveProposalProvenance` refuses an instruction-bearing
+ *      claim and reports `THIRD_PARTY_INGESTED` instead. This is what the
+ *      runtime assertions below actually detect, and what they detect it
+ *      through is the REPORTED LABEL: `createAgentProposal` writes
+ *      `guard.provenance` onto the `AiDecisionLog` row and the audit entry, so
+ *      an honoured `SYSTEM` claim would leave the durable record of an agent's
+ *      proposal saying the platform authored it.
+ *
+ *   3. THE TYPE. `sourceId` is `DataOnlySourceId` — the allowlist minus every
+ *      id whose label may carry instruction, derived from the table rather than
+ *      listed a second time. A `platform.*` literal at that position is a
+ *      compile error, which is stronger than any runtime assertion: the bad
+ *      call cannot be WRITTEN. Asserted below with `@ts-expect-error`, which is
+ *      itself an error when unused.
+ *
+ * ═══ WHICH CHECK ENFORCES WHICH ═══
+ *
+ * The type-level assertions in this file are enforced by `npm run typecheck`
+ * ALONE, not by running it. `tsconfig.json` sets `isolatedModules`, so ts-jest
+ * transpiles without checking, and a widened `sourceId` leaves this file GREEN
+ * under jest while `tsc --noEmit` reports three unused `@ts-expect-error`
+ * directives. Measured, not assumed: widening the parameter was mutation-tested
+ * against this suite and all 34 tests still passed. Anything below that must
+ * fail under jest is written as a runtime `expect`.
  *
  * The positive control is the half that makes the rest mean anything: a guard
- * that quarantined EVERY proposal would satisfy the refusals and be useless.
+ * that clamped EVERY label would satisfy the refusals and be useless.
  */
 import {
     CONTENT_SOURCE_PROVENANCE,
@@ -75,9 +94,9 @@ it('the corpus this test needs is non-empty in both directions', () => {
     expect(mayCarryInstruction(INSTRUCTION_BEARING_PROVENANCE)).toBe(true);
 });
 
-describe('an instruction-bearing sourceId cannot disarm the quarantine', () => {
+describe('an instruction-bearing sourceId changes neither the verdict nor the label', () => {
     it.each(INSTRUCTION_BEARING_IDS)(
-        '%s — a malicious proposal claiming it is still QUARANTINED',
+        '%s — a malicious proposal claiming it is QUARANTINED, and reported untrusted',
         (sourceId) => {
             // The cast is the attack: it is what a caller who evaded the type
             // would have written, and the only way to reach the runtime clamp
@@ -87,19 +106,26 @@ describe('an instruction-bearing sourceId cannot disarm the quarantine', () => {
                 payload: OBEYED,
                 sourceId: sourceId as DataOnlySourceId,
             });
+            // The first two lines pin the OUTCOME and detect nothing on their
+            // own — the ladder no longer reads provenance, so they would hold
+            // with the clamp deleted. They are here because this is the
+            // property every caller depends on, and a change that broke it
+            // would have to break it in front of these lines.
             expect(result.verdict).toBe('QUARANTINED');
             expect(result.quarantined).toBe(true);
-            // The REPORTED label is the clamped one, not the claimed one.
-            // A result that quarantined while announcing `SYSTEM` would tell
-            // every downstream reader a provenance the guard did not use.
+            // THESE two are the clamp's detector. The REPORTED label is the
+            // clamped one, not the claimed one: `createAgentProposal` writes it
+            // to the decision log and the audit row, so a result announcing
+            // `SYSTEM` would put a false provenance in the durable record.
             expect(result.provenance).not.toBe(INSTRUCTION_BEARING_PROVENANCE);
             expect(mayCarryInstruction(result.provenance)).toBe(false);
         },
     );
 
     it('the claim is refused, not merely outvoted by the scan', () => {
-        // Same clamp on CLEAN content, where no rule fires at all — so the
-        // assertion above cannot be satisfied by "the scanner is strict".
+        // The same clamp on CLEAN content, where no rule fires at all and the
+        // verdict is not in question — so this cannot be satisfied by "the
+        // scanner is strict" or by "the ladder quarantines everything".
         const result = guardAgentProposal({
             kind: 'FINDING',
             payload: CLEAN_PROPOSAL,
@@ -150,7 +176,9 @@ describe('the type refuses the call the clamp catches', () => {
         // NOT a runtime assertion — the assertion is that this file COMPILES,
         // and it only does while `sourceId` excludes the instruction-bearing
         // ids. Widen the parameter back to `string | null` and tsc reports
-        // "Unused '@ts-expect-error' directive" on each line below.
+        // "Unused '@ts-expect-error' directive" on each line below. `tsc`, not
+        // jest: see the header — under `isolatedModules` this test body still
+        // passes, so do not read a green run here as the parameter being safe.
         guardAgentProposal({
             kind: 'RISK',
             payload: OBEYED,
@@ -178,20 +206,60 @@ describe('the type refuses the call the clamp catches', () => {
         );
     });
 
-    it('the data-only union is DERIVED from the allowlist, not a second list', () => {
-        // A hand-maintained enum drifts the moment somebody adds a row to the
-        // table. This asserts the two agree today, which is the property a
-        // derivation gives for free and a copy does not.
-        const derived = DATA_ONLY_IDS.slice().sort();
-        const fromTable = Object.keys(CONTENT_SOURCE_PROVENANCE)
-            .filter((id) => isDataOnlySourceId(id))
-            .sort();
-        expect(derived).toStrictEqual(fromTable);
+    it('the union names exactly the allowlist\'s non-instruction-bearing ids', () => {
+        // THE ORACLE IS HAND-WRITTEN ON PURPOSE, and it is the only thing in
+        // this file that is. It was a second expression computed from
+        // `CONTENT_SOURCE_PROVENANCE` by the same rule as the first, which
+        // cannot fail and never touched `DataOnlySourceId` at all.
+        //
+        // Two independent checks meet on this literal:
+        //
+        //   • THE COMPILER ties it to the TYPE. `Record<DataOnlySourceId, _>`
+        //     rejects a missing key (TS2741) and an excess one (TS2353), so the
+        //     literal is exactly the union's members. That half is `npm run
+        //     typecheck`, not this run — see the header.
+        //   • THE `expect` BELOW ties it to the TABLE, and that half is red
+        //     under jest.
+        //
+        // Together: the type names exactly the table's data-only ids. Add
+        // `'foo.bar': 'THIRD_PARTY_INGESTED'` to the allowlist and BOTH fire —
+        // the literal is missing a key of the union, and its keys no longer
+        // equal the table's. Flip an existing id off `SYSTEM` and both fire
+        // again. Neither can be satisfied by the other's mechanism.
+        const unionMembers: Record<DataOnlySourceId, true> = {
+            'ui.authenticated-form': true,
+            'ui.review-decision': true,
+            'api.authenticated-session': true,
+            'upload.evidence-file': true,
+            'upload.policy-document': true,
+            'upload.vendor-document': true,
+            'questionnaire.inbound-answer': true,
+            'questionnaire.vendor-response': true,
+            'scanner.vulnerability-import': true,
+            'integration.servicenow': true,
+            'integration.sharepoint': true,
+            'integration.github': true,
+            'integration.okta': true,
+            'integration.entra-id': true,
+            'integration.google-workspace': true,
+            'integration.active-directory': true,
+            'integration.workday': true,
+            'integration.bamboohr': true,
+            'webhook.inbound': true,
+            'agent.proposal': true,
+            'agent.tool-result': true,
+        };
+        expect(Object.keys(unionMembers).sort()).toStrictEqual(DATA_ONLY_IDS.slice().sort());
+        // And the exclusion is real in both directions: no member of the union
+        // is one of the ids the table calls instruction-bearing.
+        for (const id of INSTRUCTION_BEARING_IDS) {
+            expect(Object.keys(unionMembers)).not.toContain(id);
+        }
     });
 });
 
-describe('the clamp reads one rule, and it is the rule the ladder reads', () => {
-    it('every label the guard can report is one the ladder will quarantine on', () => {
+describe('no id in the whole allowlist can buy an instruction-bearing label', () => {
+    it('every label the guard can report is a data-only one', () => {
         const reported = new Set<ContentProvenance>();
         for (const sourceId of Object.keys(CONTENT_SOURCE_PROVENANCE)) {
             reported.add(

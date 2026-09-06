@@ -165,6 +165,12 @@ export type DataOnlySourceId = Exclude<ContentSourceId, InstructionBearingSource
  * Runtime companion to `DataOnlySourceId`, for the values a type cannot reach —
  * an `as` cast, a string read out of a row, a JS caller. Fails closed on an id
  * the table does not name (an unknown id is untrusted, so it is data-only).
+ *
+ * It is the CLAMP PREDICATE inside `resolveProposalProvenance`
+ * (`ai/guard/proposal-guard.ts`), which is the one production caller. The
+ * predicate and the type share this module and this rule, so a seam that types
+ * its parameter `DataOnlySourceId` and clamps with this function is enforcing
+ * one rule twice rather than two rules that can disagree.
  */
 export function isDataOnlySourceId(sourceId: string | null | undefined): boolean {
     return !mayCarryInstruction(resolveContentProvenance(sourceId));
@@ -331,7 +337,7 @@ export function provenanceOfTool(toolName: string | null | undefined): ContentPr
 
 /**
  * The envelope's discriminator. A constant rather than two string literals so
- * the builder and `parseProvenanceEnvelope` cannot drift: a reader that no
+ * the builder and `readProvenanceEnvelope` cannot drift: a reader that no
  * longer recognises what the writer emits fails closed and silently, which
  * looks exactly like a tool that stopped labelling its output.
  */
@@ -368,7 +374,7 @@ const SYSTEM_HANDLING =
  * the model anything.
  *
  * It is NOT advisory to IC's own workflow engine, which is a program and does
- * not get to ignore it: `parseProvenanceEnvelope` below is the reader that
+ * not get to ignore it: `provenanceOfToolResult` below is the reader that
  * takes it back off the wire, and `workflow-runs.ts` records the label on every
  * step. A builder with no reader is a label that exists only for external
  * clients — which is what this pair exists to stop being true.
@@ -408,70 +414,62 @@ export function provenanceContentBlock(toolName: string): { type: 'text'; text: 
  * accept an envelope found there is a reader an injected payload can hand its
  * own trust label to.
  *
- * FAIL-CLOSED: no envelope block, an unparseable one, or a label this build
- * does not know all read as `THIRD_PARTY_INGESTED`.
+ * FAIL-CLOSED, AND TOTAL. No envelope block, an unparseable one, a label this
+ * build does not know, a result with no `content` array, and a nullish result
+ * all read as `THIRD_PARTY_INGESTED`. "Fail-closed" has to include "does not
+ * throw", or the caller's fallback never runs and the failure is loud in a
+ * place that has nothing to do with trust.
  */
-export function provenanceOfToolResult(result: {
-    content?: ReadonlyArray<{ text?: string }> | null;
-}): ContentProvenance {
-    const blocks = result.content;
+export function provenanceOfToolResult(
+    result: { content?: ReadonlyArray<{ text?: string }> | null } | null | undefined,
+): ContentProvenance {
+    const blocks = result?.content;
     if (!Array.isArray(blocks)) return UNTRUSTED_PROVENANCE;
     for (let i = 1; i < blocks.length; i++) {
-        const label = parseProvenanceEnvelope(blocks[i]?.text);
-        // `parseProvenanceEnvelope` cannot distinguish "not an envelope" from
-        // "an envelope saying untrusted", so a block that is not an envelope at
-        // all must not end the search. Only a block that IS one decides.
-        if (isProvenanceEnvelopeBlock(blocks[i]?.text)) return label;
+        const label = readProvenanceEnvelope(blocks[i]?.text);
+        // ONE parse per block, and the reader's own return type carries the
+        // distinction that used to need a second function: `null` means "this
+        // block is not an envelope", so the search moves on, while a label —
+        // including the untrusted one — means an envelope decided. Two
+        // functions each JSON-parsing the same text had to agree forever on
+        // what an envelope is; one that cannot disagree with itself is the
+        // cheaper guarantee.
+        if (label !== null) return label;
     }
     return UNTRUSTED_PROVENANCE;
 }
 
-/** Is this block an envelope at all? Structure only — says nothing about trust. */
-function isProvenanceEnvelopeBlock(text: string | null | undefined): boolean {
-    if (typeof text !== 'string') return false;
-    let raw: unknown;
-    try {
-        raw = JSON.parse(text);
-    } catch {
-        return false;
-    }
-    return (
-        !!raw &&
-        typeof raw === 'object' &&
-        !Array.isArray(raw) &&
-        (raw as { kind?: unknown }).kind === PROVENANCE_ENVELOPE_KIND
-    );
-}
-
 /**
  * Read a provenance envelope back off ONE MCP content block — the decode half
- * of `buildProvenanceEnvelope`. Most callers want `provenanceOfToolResult`,
- * which knows which blocks to look in.
+ * of `buildProvenanceEnvelope`. Private: `provenanceOfToolResult` is the reader
+ * callers want, because it also knows which blocks are allowed to carry a
+ * label.
  *
- * FAIL-CLOSED, in the same direction and for the same reason as
- * `resolveContentProvenance`: a block that is absent, unparseable, not an
- * envelope, or carrying a label this build does not know returns
- * `UNTRUSTED_PROVENANCE`. A tool result whose label cannot be read is a tool
- * result whose contents cannot be vouched for, and the honest answer to that is
- * the untrusted one — never "assume it was fine".
+ * THE RETURN TYPE IS THE POINT. `null` is "not an envelope at all" — absent,
+ * unparseable, or carrying some other `kind`; that block is not this function's
+ * business and the caller keeps looking. A `ContentProvenance` is "an envelope
+ * decided", and for an envelope naming a label this build has never heard of
+ * that decision is `UNTRUSTED_PROVENANCE` — fail-closed, in the same direction
+ * and for the same reason as `resolveContentProvenance`. A tool result whose
+ * label cannot be read is a tool result whose contents cannot be vouched for.
  *
  * Takes the raw `text` of a content block rather than a parsed object, because
- * the caller reading `content[1]?.text` should not have to do the JSON parse,
+ * the caller reading `content[i]?.text` should not have to do the JSON parse,
  * the shape check and the enum check itself and get one of the three wrong.
  */
-export function parseProvenanceEnvelope(
+function readProvenanceEnvelope(
     text: string | null | undefined,
-): ContentProvenance {
-    if (typeof text !== 'string') return UNTRUSTED_PROVENANCE;
+): ContentProvenance | null {
+    if (typeof text !== 'string') return null;
     let raw: unknown;
     try {
         raw = JSON.parse(text);
     } catch {
-        return UNTRUSTED_PROVENANCE;
+        return null;
     }
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return UNTRUSTED_PROVENANCE;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const candidate = raw as { kind?: unknown; provenance?: unknown };
-    if (candidate.kind !== PROVENANCE_ENVELOPE_KIND) return UNTRUSTED_PROVENANCE;
+    if (candidate.kind !== PROVENANCE_ENVELOPE_KIND) return null;
     const label = candidate.provenance;
     // The label is checked against `PROVENANCE_ORDER`, not merely against
     // `typeof === 'string'`. An envelope claiming a label this build has never

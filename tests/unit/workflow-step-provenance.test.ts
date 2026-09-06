@@ -33,7 +33,12 @@
  *      payload block all read as `THIRD_PARTY_INGESTED`;
  *   4. a step that calls no tool records `null` — "not applicable", which is
  *      distinguishable from the untrusted label because the untrusted label is
- *      spelled out.
+ *      spelled out;
+ *   5. reading the label cannot END A RUN. Fail-closed has to include "does not
+ *      throw" — a result with no `content` at all used to leave a `null` output
+ *      and carry on, and the first draft of this change read the provenance
+ *      above `parseToolResult`'s `try`, where that shape threw past the
+ *      fallback and failed the whole run.
  */
 jest.mock('@/lib/db/rls-middleware', () => ({
     ...jest.requireActual('@/lib/db/rls-middleware'),
@@ -63,6 +68,7 @@ import { runProposeTool } from '@/lib/mcp/tools/propose-tools';
 import {
     provenanceContentBlock,
     provenanceOfTool,
+    provenanceOfToolResult,
     PROVENANCE_ENVELOPE_KIND,
 } from '@/lib/agentic/content-provenance';
 import { makeRequestContext } from '../helpers/make-context';
@@ -180,6 +186,19 @@ function labelledResult(tool: string, payload: unknown) {
             provenanceContentBlock(tool),
         ],
     };
+}
+
+/**
+ * One MCP text block, in the shape a tool really emits.
+ *
+ * A helper rather than an inline literal because `provenanceOfToolResult` takes
+ * the minimal structural type it reads (`{ text?: string }`), and TypeScript's
+ * excess-property check rejects a FRESH literal carrying `type` at that
+ * position. Widening the reader's parameter to make the literal legal would
+ * trade a real constraint for test convenience.
+ */
+function textBlock(text: string): { type: 'text'; text: string } {
+    return { type: 'text', text };
 }
 
 /** The `WORKFLOW_STEP` audit rows this run wrote, in order. */
@@ -384,5 +403,86 @@ describe('it fails closed', () => {
             'THIRD_PARTY_INGESTED',
             'THIRD_PARTY_INGESTED',
         ]);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+describe('reading the label cannot end a run', () => {
+    /**
+     * The pre-existing contract for a result this engine cannot read: `null`
+     * output, step DONE, run continues. `parseToolResult` swallowed a throw
+     * from `JSON.parse(result.content[0]?.text)` — including the TypeError from
+     * a result with no `content` — and adding the provenance read ABOVE that
+     * `try` moved the throw somewhere nothing catches it, where the outer
+     * handler records the step FAILED and fails the run.
+     *
+     * Two protections stand behind it now, and they overlap: the read is inside
+     * the `try`, and `provenanceOfToolResult` is total. Measured, so that the
+     * scope is stated rather than assumed — remove BOTH and the nullish case
+     * below goes red; remove only the reader's guard and the case below stays
+     * green while the unit test that follows goes red; remove only the `try`
+     * placement and NOTHING in this suite fails, because with a total reader
+     * the two spellings are equivalent today. That last one is why the
+     * placement is documented at `parseToolResult` as a rule for the next read
+     * added there, not claimed here as something a test is holding.
+     *
+     * Only the nullish case is a detector: `{}` and `{ content: null }` never
+     * threw, and they are here to pin the shapes the reader must survive.
+     */
+    const UNREADABLE: ReadonlyArray<[string, unknown]> = [
+        ['a nullish result', undefined],
+        ['a result with no content array', {}],
+        ['a result whose content is null', { content: null }],
+    ];
+
+    it.each(UNREADABLE)('%s leaves a null output and an untrusted label, and the run finishes', async (
+        _name,
+        result,
+    ) => {
+        mockReadTool.mockResolvedValue(result);
+        const started = await startWorkflowRun(ctx(), READ_WF, {});
+
+        expect(started.status).toBe('COMPLETED');
+        expect(store.steps.map((s: any) => s.status)).toStrictEqual(['DONE', 'DONE']);
+        expect(store.steps.map((s: any) => s.outputJson)).toStrictEqual(['null', 'null']);
+        expect(stepAuditRows().map((r: any) => r.provenance)).toStrictEqual([
+            'THIRD_PARTY_INGESTED',
+            'THIRD_PARTY_INGESTED',
+        ]);
+    });
+
+    it('a block appended between the payload and the envelope does not unhook it', () => {
+        // The reader SEARCHES from index 1 rather than indexing `content[1]`,
+        // and this is the case that tells the two apart. It is also the one
+        // that pins the collapsed parser's contract: `readProvenanceEnvelope`
+        // returns `null` for "not an envelope" so the search continues, and a
+        // LABEL — including the untrusted one — only when a block really is an
+        // envelope. Make it answer untrusted for a non-envelope instead and
+        // this reads THIRD_PARTY_INGESTED for a SYSTEM tool.
+        expect(
+            provenanceOfToolResult({
+                content: [
+                    textBlock('{\"rows\":[]}'),
+                    textBlock(JSON.stringify({ kind: 'something-else' })),
+                    textBlock('not json at all'),
+                    provenanceContentBlock(SYSTEM_TOOL),
+                ],
+            }),
+        ).toBe('SYSTEM');
+    });
+
+    it('the reader itself is total — it answers untrusted rather than throwing', () => {
+        // Directly on the exported reader, with no engine in the way: this is
+        // the assertion that fails if `provenanceOfToolResult` stops guarding
+        // its argument, whatever the caller's `try` happens to do.
+        expect(() => provenanceOfToolResult(undefined)).not.toThrow();
+        expect(provenanceOfToolResult(undefined)).toBe('THIRD_PARTY_INGESTED');
+        expect(provenanceOfToolResult(null)).toBe('THIRD_PARTY_INGESTED');
+        expect(provenanceOfToolResult({})).toBe('THIRD_PARTY_INGESTED');
+        expect(provenanceOfToolResult({ content: null })).toBe('THIRD_PARTY_INGESTED');
+        // Still not a constant: a well-formed result reads its real label.
+        expect(
+            provenanceOfToolResult(labelledResult(SYSTEM_TOOL, { rows: [] })),
+        ).toBe('SYSTEM');
     });
 });

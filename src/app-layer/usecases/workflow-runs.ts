@@ -1132,11 +1132,21 @@ interface ParsedToolResult {
  * behaviour and is left alone: the run carries on with an empty output and the
  * step row records it. The provenance of an unreadable payload is untrusted,
  * which is what the reader returns for a missing block anyway.
+ *
+ * BOTH READS SIT INSIDE THE `try`, and that is not tidiness. This function's
+ * whole contract is that a malformed result degrades to `{ null, untrusted }`
+ * instead of ending the run — a step that throws here is caught upstream,
+ * recorded FAILED and (absent `continueOnFailure`) fails the whole run. Reading
+ * the provenance above the `try`, where a result with no `content` at all would
+ * throw past the fallback, turned a shape the engine used to survive into a
+ * dead run. Adding a read to this function means adding it inside the `try`.
  */
 function parseToolResult(result: { content: Array<{ text: string }> }): ParsedToolResult {
-    const provenance = provenanceOfToolResult(result);
     try {
-        return { output: JSON.parse(result.content[0]?.text ?? 'null'), provenance };
+        return {
+            output: JSON.parse(result.content[0]?.text ?? 'null'),
+            provenance: provenanceOfToolResult(result),
+        };
     } catch {
         return { output: null, provenance: UNTRUSTED_PROVENANCE };
     }
