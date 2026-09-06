@@ -73,6 +73,13 @@ const ADMIN_ONLY_ROUTES = [
     // budgets, so sharing the tool-exposure key would make every routine grant
     // carry the authority to raise an agent's ceiling.
     'admin/agents/[agentId]/policy-card/route.ts',
+    // The behavioural circuit breaker (OWASP ASI08/ASI10) — the latch an agent's
+    // own divergence from its own history can throw, and the audited human act of
+    // closing it. Same `admin.agent_registry` key as the register, and for the
+    // register's reason: closing a breaker IS the authority to decide that an
+    // agent may act. A narrower key would let somebody who cannot activate an
+    // agent un-stop one that stopped itself.
+    'admin/agents/[agentId]/circuit-breaker/route.ts',
     // Tool-manifest pinning (OWASP ASI04) — the tenant's record of which tool
     // DEFINITION it has accepted, and the audited act of re-approving one that
     // changed. Same `admin.agent_registry` key as the register, and for the same

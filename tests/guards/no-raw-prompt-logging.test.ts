@@ -201,6 +201,19 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     'src/lib/agentic/bounded-exec.ts — identifier bound elsewhere',
     'src/lib/agentic/tool-manifest-store.ts — call to a helper this rule cannot open',
     'src/lib/agentic/tool-manifest-store.ts — identifier bound elsewhere',
+    // ASI08/ASI10 behavioural circuit breaker. Both files were read line by
+    // line: neither carries a prompt, a proposal payload, a rationale or any
+    // captured tool output. The opaque values are a tenant id, an agent id, a
+    // tool NAME, a close-reason code from `BREAKER_CLOSE_REASONS` and a boolean.
+    // They are holes because the rule counts a bare identifier at a value
+    // position, which is the class this guard deliberately started counting
+    // rather than pretending it could see through. Two fields that WOULD have
+    // been holes were removed instead of renamed — the capability class (a tool
+    // name implies it) and a repeat of the agent id inside a summary string
+    // (`entityId` already carries it); renaming the rest would not make them
+    // readable, only the code worse.
+    'src/app-layer/usecases/agent-circuit-breaker.ts — identifier bound elsewhere',
+    'src/lib/agentic/circuit-breaker-store.ts — identifier bound elsewhere',
 ];
 
 /**
@@ -226,10 +239,10 @@ const SINK_FLOOR = 30;
  * So the number is read as OPAQUE VALUE POSITIONS PER RECOGNISED SINK CALL, and
  * the ceiling is derived from two measured quantities rather than picked:
  *
- *   MEASURED_HOLES / MEASURED_SINKS         the path today, 97 / 45 = 2.156
+ *   MEASURED_HOLES / MEASURED_SINKS         the path today, 108 / 48 = 2.25
  *   MOST_OPAQUE_SINGLE_CALL                 the worst single call on it, 6
  *
- * The ceiling is `(97 + 6) / 45`. In words: the path may absorb ONE more sink
+ * The ceiling is `(108 + 6) / 48`. In words: the path may absorb ONE more sink
  * call as opaque as the most opaque one it already has before somebody has to
  * look. Two such calls fail. Seven more opaque fields on the EXISTING calls,
  * with no new sink, fail. That is the sensitivity this cap is for — it moves
@@ -243,8 +256,12 @@ const SINK_FLOOR = 30;
  * have been choosing the denominator that keeps the number green, which is the
  * defect this cap exists to catch, one level up.
  */
-const MEASURED_HOLES = 97;
-const MEASURED_SINKS = 45;
+// Re-MEASURED 2026-09-06, when the behavioural circuit breaker added its three
+// sink calls: 97 / 45 became 108 / 48. Both numbers come from running this
+// sweep with the constants zeroed so the failure message prints the real
+// counts — never from picking a pair that happens to pass.
+const MEASURED_HOLES = 108;
+const MEASURED_SINKS = 48;
 /** `src/lib/mcp/auth.ts` — a six-field `detailsJson` bag built out of locals. */
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =

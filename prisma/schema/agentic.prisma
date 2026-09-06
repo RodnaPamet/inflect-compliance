@@ -324,6 +324,11 @@ model RegisteredAgent {
   /// register's own governance artefact must never be the thing that takes a
   /// working agent dark.
   policyCard  AgentPolicyCard?
+  /// The agent's own behavioural history, and the latch it can throw. The
+  /// breaker is optional for the same reason the card is: an agent registered
+  /// before it existed has none, and an absent breaker refuses nothing.
+  behaviourWindows AgentBehaviourWindow[]
+  circuitBreaker   AgentCircuitBreaker?
 
   /// Composite parent key so the child tables that attribute work to an agent
   /// can never point cross-tenant. Mirrors AiSystem's own shape.
@@ -821,4 +826,166 @@ model McpToolManifestPin {
   /// tenant-scoped lookup index and no separate `@@index([tenantId])` is needed:
   /// every query this table serves is `tenantId` alone or `tenantId + toolName`.
   @@unique([tenantId, toolName])
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// The behavioural CIRCUIT BREAKER — anomaly, not volume (OWASP ASI08/ASI10).
+//
+// The action caps on a policy card answer "is this agent doing too MUCH". They
+// cannot answer "is this agent doing something DIFFERENT", which is the
+// rogue-agent question: an agent that has read framework status every night for
+// a month and starts calling propose tools has exceeded no budget and never
+// will. These two tables are the agent's own history and the latch that history
+// can throw.
+//
+// The judgement itself lives in `src/lib/agentic/circuit-breaker.ts`, which is a
+// pure function of its argument — no clock, no I/O — so a trip can be re-derived
+// from these rows during the review that follows it.
+// ═════════════════════════════════════════════════════════════════════
+
+/// Tenant-scoped: ONE HOUR of one agent's observed behaviour.
+///
+/// Written at the MCP tool boundary, on the call that was authorized, in one
+/// statement. The counters are by capability CLASS rather than by tool name
+/// because the class is the bounded dimension — three columns, whatever the
+/// catalogue grows to — and because "started proposing" is the fact worth
+/// stopping an agent for, while "called a different read tool" is not.
+///
+/// A row exists only for an hour in which the agent was OBSERVED. An hour with
+/// no row is ambiguous — idle agent, stopped worker, sleeping tenant — and a
+/// baseline that reads every such hour as a hard zero drifts to zero and then
+/// trips on the first ordinary hour. So the rate this feeds is "calls per ACTIVE
+/// window", which is a claim these rows can actually support.
+model AgentBehaviourWindow {
+  id       String @id @default(cuid())
+  tenantId String
+  agentId  String
+
+  /// The hour this row counts, truncated to the hour in UTC. UTC stated once,
+  /// for the reason `AgentPolicyCard.usageWindowDate` is a `@db.Date`: a window
+  /// whose boundary depends on the reader's timezone yields two different
+  /// histories from the same rows.
+  windowStart DateTime
+
+  readCalls        Int @default(0)
+  proposeCalls     Int @default(0)
+  orchestrateCalls Int @default(0)
+
+  /// The distinct tool names seen this hour. EVIDENCE, never a trip condition:
+  /// a tool name the agent has not used before is the most tempting signal here
+  /// and the worst one, because every routine grant produces it. It is carried
+  /// so a trip is legible to whoever reads it.
+  ///
+  /// A `String[]` and not a join table, and the write is `array_append` guarded
+  /// by `= ANY(...)` inside the same UPDATE — never a read-modify-write, which
+  /// on a per-call path is a lost update per concurrent call.
+  toolNames String[]
+
+  /// TRUE when this window's own verdict fired a signal.
+  ///
+  /// A DETECTOR MUST NOT LEARN FROM THE ANOMALY. Left in the history, the first
+  /// propose call from a read-only agent makes `propose` a class that agent has
+  /// used — so the strongest signal in the subsystem would extinguish itself one
+  /// window after firing, and the two-window persistence rule could never be
+  /// satisfied by it. `evaluateCircuitBreaker` drops these rows.
+  anomalous Boolean @default(false)
+
+  /// The verdict code recorded for this window. NULL means NOT YET JUDGED —
+  /// the window is still open, or the agent has not acted since it closed.
+  /// Distinct from `STEADY`: "nothing was found" and "nothing was looked at"
+  /// are different facts and a column that stores them identically stores the
+  /// second one as the first.
+  verdict String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent  RegisteredAgent @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// One row per (tenant, agent, hour). Tenant-leading, so it is also the
+  /// tenant-scoped lookup index and the `agentId` foreign-key index — every
+  /// query this table serves is a prefix of it.
+  @@unique([tenantId, agentId, windowStart])
+}
+
+/// Tenant-scoped: the LATCH, and the baseline it judges against.
+///
+/// One row per agent, created on first observation. `state = OPEN` is the
+/// electrical sense — the circuit is broken and nothing flows — and it is read
+/// at `authorizeToolCall` on every call, so an OPEN breaker stops a run already
+/// in flight rather than only the next dispatch.
+///
+/// NOTHING HERE CLOSES ITSELF. No half-open probe and no timeout, because both
+/// are auto-recovery and an agent that has gone rogue can wait one out. The
+/// close is `closeAgentCircuitBreaker`, gated by `admin.agent_registry`, audited,
+/// and it carries a reason that decides what happens to the baseline.
+model AgentCircuitBreaker {
+  id       String @id @default(cuid())
+  tenantId String
+  agentId  String
+
+  /// `CLOSED` | `OPEN` — `BREAKER_STATES` in `circuit-breaker.ts`.
+  ///
+  /// A String and NOT a Postgres enum, for the reason `RegisteredAgentTool.toolName`
+  /// and `AgentPolicyCardVersion.approvalRung` are: an `ALTER TYPE` mid-rolling-deploy
+  /// makes still-running old containers fail with SQLSTATE 42704. A CHECK
+  /// constraint pins the vocabulary instead, which can be widened by a plain
+  /// `ALTER TABLE`.
+  state String @default("CLOSED")
+
+  /// The window key (`YYYY-MM-DDTHH`) the last evaluation judged. The lazy
+  /// trigger: the boundary evaluates when the agent's current window is not
+  /// this one, so judgement happens once per active window per agent and is
+  /// driven by the agent's own traffic. An agent that stops calling is never
+  /// re-judged, which is correct — a silent agent needs no breaker.
+  lastEvaluatedWindow String?
+
+  /// Consecutive anomalous windows, and the signals that carried them.
+  /// Persistence is per SIGNAL: two windows firing DIFFERENT signals are two
+  /// unrelated oddities, and the claim worth stopping an agent for is that the
+  /// same thing is still true.
+  anomalousStreak Int      @default(0)
+  streakSignals   String[]
+
+  /// The last verdict recorded, so an operator surface can distinguish "steady"
+  /// from "refused to judge". `NO_BASELINE` is a verdict, not a silence.
+  lastVerdict   String?
+  lastVerdictAt DateTime?
+
+  trippedAt      DateTime?
+  trippedWindow  String?
+  trippedSignals String[]
+
+  /// Samples from before this instant are DISCARDED.
+  ///
+  /// The false-positive escape hatch that keeps the breaker survivable: an
+  /// operator who deliberately changes what an agent does advances the epoch and
+  /// the agent re-learns, rather than tripping and then being explained. Without
+  /// it, the only way to stop being paged for a change you made is to disable
+  /// the control.
+  baselineEpoch DateTime @default(now())
+
+  closedAt       DateTime?
+  closedByUserId String?
+  /// `ACCEPTED_NEW_BASELINE` | `RESOLVED` — `BREAKER_CLOSE_REASONS`. The two are
+  /// not interchangeable: the first says the anomaly WAS the new normal and
+  /// advances the epoch, the second says the agent was fixed and KEEPS the old
+  /// baseline. Collapsing them would silently adopt rogue behaviour as normal.
+  closeReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent  RegisteredAgent @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  closedBy User?         @relation("AgentCircuitBreakerClosedBy", fields: [closedByUserId], references: [id])
+
+  /// The pair `AgentPolicyCard` carries, and for the same two reasons: the
+  /// tenant-leading unique is the tenant-scoped lookup index every tenant model
+  /// must have, and Prisma needs a unique over the exact relation field list
+  /// before it will type the composite relation as 1:1.
+  @@unique([tenantId, agentId])
+  @@unique([agentId, tenantId])
+  @@index([closedByUserId])
 }

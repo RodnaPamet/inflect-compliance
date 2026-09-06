@@ -103,10 +103,23 @@ const pinTable = {
 
 const tenantApiKey = { findFirst: jest.fn() };
 
+// The behavioural circuit breaker's two tables. `findUnique` resolving to NULL
+// is "this agent has never been observed", which contributes no term at the
+// boundary — the same neutral default an unpinned tool manifest gets, so these
+// assertions stay about manifest drift.
+const breakerTables = {
+    agentCircuitBreaker: { findUnique: jest.fn().mockResolvedValue(null) },
+    agentBehaviourWindow: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    $executeRaw: jest.fn().mockResolvedValue(0),
+};
+
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { tenantApiKey, mcpToolManifestPin: pinTable },
-    prisma: { tenantApiKey, mcpToolManifestPin: pinTable },
+    default: { tenantApiKey, mcpToolManifestPin: pinTable, ...breakerTables },
+    prisma: { tenantApiKey, mcpToolManifestPin: pinTable, ...breakerTables },
 }));
 
 jest.mock('@/lib/db-context', () => ({

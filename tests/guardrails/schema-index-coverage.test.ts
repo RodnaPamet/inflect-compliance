@@ -401,6 +401,8 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    AgentBehaviourWindow:
+        'Every read filters (tenantId, agentId) and either orders by windowStart desc (the operator surface, take ≤ 48) or ranges on it (the baseline load the MCP tool boundary makes once per active window, take ≤ 169) — covered exactly by the tenant-leading @@unique([tenantId, agentId, windowStart]), which is also the ON CONFLICT target of the per-call upsert and so cannot be dropped as merely a read optimisation. It sits HERE rather than in LIST_QUERY_INDEXES because that layer matches @@index blocks only, and adding a duplicate @@index over the same three columns would put a second B-tree on a table written once per tool call to satisfy a matcher.',
     AiSystemRequirementLink: 'computeAgentRiskCoverage reads the agent\'s own scope by (tenantId, aiSystemId, requirementId IN [ten ASI rows]) \u2014 covered by @@index([tenantId, aiSystemId]); bounded by the framework\'s requirement count, not by tenant data.',
     AuditChecklistItem: 'updateAudit prefetches the touched checklist rows by (id IN […], tenantId) for FAIL-transition detection — a PK IN lookup + RLS-bound tenantId; @@index([tenantId, auditId]) is more than sufficient; bounded by the request payload size.',
     AuditPackItem: 'getPackByShareToken reads a pack\'s items by (tenantId, auditPackId) for the public share-page projection — covered by @@index([tenantId, auditPackId]); bounded take ≤2000.',

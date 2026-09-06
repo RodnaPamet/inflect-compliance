@@ -41,11 +41,24 @@ jest.mock('@/lib/prisma', () => {
         findUnique: jest.fn().mockResolvedValue(null),
         createMany: jest.fn().mockResolvedValue({ count: 1 }),
     };
-    return {
-        __esModule: true,
-        default: { tenantApiKey, mcpToolManifestPin },
-        prisma: { tenantApiKey, mcpToolManifestPin },
+    // The behavioural circuit breaker's two tables. `findUnique` resolving to
+    // NULL is "this agent has never been observed", which contributes no term at
+    // the boundary — the same neutral default an unpinned tool manifest and an
+    // absent policy card get, so these assertions stay about what they name.
+    const agentCircuitBreaker = { findUnique: jest.fn().mockResolvedValue(null) };
+    const agentBehaviourWindow = {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     };
+    const $executeRaw = jest.fn().mockResolvedValue(0);
+    const client = {
+        tenantApiKey,
+        mcpToolManifestPin,
+        agentCircuitBreaker,
+        agentBehaviourWindow,
+        $executeRaw,
+    };
+    return { __esModule: true, default: client, prisma: client };
 });
 
 jest.mock('@/lib/audit', () => ({
