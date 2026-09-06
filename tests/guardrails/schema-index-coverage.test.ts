@@ -427,6 +427,11 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         'Two reads, both tenant-leading. The emitter looks one artefact up by the full identity @@unique([tenantId, controlId, kind, periodStart]) — a point lookup, not a scan — and the withdrawal sweep filters (tenantId, status) with a relation predicate on the control\'s deletedAt, which the planner resolves against Control\'s own PK; @@index([tenantId, periodStart]) serves the assessor-facing "this period\'s artefacts" read. Row count is bounded by (agentic controls x kinds x months), i.e. tens per tenant per year, so a status-leading composite would index a set already reduced to that.',
     AiDecisionLog:
         'The Art 12 artefact reads one period by (tenantId, createdAt >= start AND < end) ordered by createdAt asc — covered EXACTLY by the existing @@index([tenantId, createdAt]), which is the shape the range and the sort both want; bounded take = POPULATION_CAP. This is the model\'s first findMany in src/app-layer, which is why it appears here now rather than earlier.',
+    AgentCircuitBreaker:
+        'The governance pack reads every breaker for a tenant (state, trippedAt, close reason) '
+        + 'with a bounded take and no sort \u2014 a tenantId-leading prefix of the '
+        + '@@unique([tenantId, agentId]) the model already carries for its 1:1 relation. '
+        + 'One row per agent, so the population is the register\u2019s size.',
     AgentKillSwitchDrill: 'The drill sweep and the evidence surface both read (tenantId, startedAt desc) \u2014 covered by @@index([tenantId, startedAt]), with @@index([tenantId, outcome]) for the "has any drill failed" alert query; one row per tenant per day, bounded take.',
     McpToolManifestPin: 'listToolManifests filters by tenantId alone and the row count is bounded by this build s tool catalogue (a dozen) — covered by the tenant-leading @@unique([tenantId, toolName]); bounded take ≤200. The boundary s own reads are point lookups on that same unique.',
     AuditorAccount: 'listAuditors filters by tenantId, orders by createdAt desc — covered by @@unique([tenantId, emailHash]) tenantId-leading composite; bounded take ≤500.',

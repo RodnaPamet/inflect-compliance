@@ -108,6 +108,9 @@ const ADMIN_ONLY_ROUTES = [
     // gate and deciding which agents may pass it are one authority, and the
     // surface names people rather than tools.
     'admin/agents/review-quality/route.ts',
+    // The assessor-facing governance pack — read-only, gated by the same
+    // `admin/agents` subtree rule as the register itself.
+    'admin/agents/reports/route.ts',
     'admin/device-tokens/route.ts',
     'admin/device-tokens/[tokenId]/route.ts',
     'admin/dsar-requests/route.ts',
