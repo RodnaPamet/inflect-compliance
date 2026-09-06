@@ -129,52 +129,138 @@ export async function computeAgentRiskCoverage(
         const agent = await RegisteredAgentRepository.getById(db, ctx, agentId);
         if (!agent) throw notFound('Registered agent not found');
 
-        const agentView = {
-            id: agent.id,
-            name: agent.name,
-            status: String(agent.status),
-            riskTier: agent.riskTier === null ? null : String(agent.riskTier),
-            aiSystemId: agent.aiSystemId,
-        };
+        const { agents } = await buildCoverageReports(db, ctx, [agent]);
+        return agents[0];
+    });
+}
 
-        const catalogue: CatalogueEntry[] = await db.framework.findMany({
-            select: { id: true, key: true, name: true, sourceUrn: true },
-            take: FRAMEWORK_CATALOGUE_CAP,
-        });
+/**
+ * The same question asked of EVERY registered agent at once — the matrix an
+ * assessor reads rather than the row an operator opens.
+ *
+ * It shares `buildCoverageReports` with the single-agent path above, and that
+ * sharing is the point rather than a tidiness. The family expansion this module
+ * carries (two representations of the framework, two spellings of a requirement
+ * code) is the hard-won part; a second copy of it computed per-agent in a loop
+ * would be both an N+1 and, far worse, a place where the two copies could
+ * disagree about what a tenant covers. The only per-agent input is the agent's
+ * own `AiSystemRequirementLink` scope, and that is loaded for all agents in one
+ * query.
+ *
+ * `agents` may legitimately be EMPTY, and an empty result is not zero coverage —
+ * it is no population. The caller distinguishes them; this function just
+ * returns nothing to classify.
+ */
+export async function computeTenantAgentRiskCoverage(
+    ctx: RequestContext,
+    opts: { take?: number } = {},
+): Promise<TenantAgentRiskCoverage> {
+    assertCanRead(ctx);
 
-        const asiFrameworks = catalogue.filter(
-            (f) => f.sourceUrn === ASI_LIBRARY_URN || ASI_FRAMEWORK_KEYS.includes(f.key),
-        );
-        if (asiFrameworks.length === 0) {
-            return {
-                agent: agentView,
+    return runInTenantContext(ctx, async (db) => {
+        const agents = await RegisteredAgentRepository.list(db, ctx, { take: opts.take });
+        return buildCoverageReports(db, ctx, agents);
+    });
+}
+
+/**
+ * The tenant-wide answer.
+ *
+ * `frameworkInstalled` and `risks` are properties of the CATALOGUE, not of the
+ * agent list, and they are returned separately for that reason: a tenant with no
+ * agents can still have the framework installed, and folding the two facts
+ * together made an agentless tenant report the framework as absent — which is a
+ * different finding, aimed at a different person, than "nobody has registered an
+ * agent yet".
+ */
+export interface TenantAgentRiskCoverage {
+    readonly frameworkInstalled: boolean;
+    readonly framework: { readonly key: string; readonly name: string } | null;
+    /** The distinct risk codes the installed framework carries, in sort order. */
+    readonly risks: readonly { readonly code: string; readonly title: string }[];
+    readonly agents: readonly AgentRiskCoverageReport[];
+}
+
+/** The shape both entry points hand in — a subset of the repository's select. */
+interface CoverageSubject {
+    id: string;
+    name: string;
+    status: unknown;
+    riskTier: unknown;
+    aiSystemId: string;
+}
+
+/**
+ * One coverage classification pass over N agents, inside an already-open tenant
+ * transaction. Every load below is tenant-wide except `loadAgentScopes`, which
+ * is batched over the agents' AI-system ids.
+ */
+async function buildCoverageReports(
+    db: PrismaTx,
+    ctx: RequestContext,
+    agents: readonly CoverageSubject[],
+): Promise<TenantAgentRiskCoverage> {
+    const views = agents.map((agent) => ({
+        id: agent.id,
+        name: agent.name,
+        status: String(agent.status),
+        riskTier: agent.riskTier === null || agent.riskTier === undefined
+            ? null
+            : String(agent.riskTier),
+        aiSystemId: agent.aiSystemId,
+    }));
+
+    const catalogue: CatalogueEntry[] = await db.framework.findMany({
+        select: { id: true, key: true, name: true, sourceUrn: true },
+        take: FRAMEWORK_CATALOGUE_CAP,
+    });
+
+    const asiFrameworks = catalogue.filter(
+        (f) => f.sourceUrn === ASI_LIBRARY_URN || ASI_FRAMEWORK_KEYS.includes(f.key),
+    );
+    if (asiFrameworks.length === 0) {
+        return {
+            frameworkInstalled: false,
+            framework: null,
+            risks: [],
+            agents: views.map((agent) => ({
+                agent,
                 frameworkInstalled: false,
                 framework: null,
                 entries: [],
                 summary: EMPTY_SUMMARY,
-            };
-        }
+            })),
+        };
+    }
 
-        const risks = await loadAgenticRisks(db, asiFrameworks.map((f) => f.id));
-        if (risks.length === 0) {
-            return {
-                agent: agentView,
+    const framework = { key: asiFrameworks[0].key, name: asiFrameworks[0].name };
+    const risks = await loadAgenticRisks(db, asiFrameworks.map((f) => f.id));
+    if (risks.length === 0) {
+        return {
+            frameworkInstalled: true,
+            framework,
+            risks: [],
+            agents: views.map((agent) => ({
+                agent,
                 frameworkInstalled: true,
-                framework: { key: asiFrameworks[0].key, name: asiFrameworks[0].name },
+                framework,
                 entries: [],
                 summary: EMPTY_SUMMARY,
-            };
-        }
+            })),
+        };
+    }
 
-        const riskRequirementIds = risks.flatMap((r) => r.requirementIds);
+    const riskRequirementIds = risks.flatMap((r) => r.requirementIds);
 
-        const [scopedRequirementIds, directControlsByRequirement, inheritedByRiskCode] =
-            await Promise.all([
-                loadAgentScope(db, ctx, agent.aiSystemId, riskRequirementIds),
-                loadControlsByRequirement(db, ctx, riskRequirementIds),
-                loadInheritedCoverage(db, ctx, catalogue, risks),
-            ]);
+    const [scopeByAiSystem, directControlsByRequirement, inheritedByRiskCode] =
+        await Promise.all([
+            loadAgentScopes(db, ctx, views.map((a) => a.aiSystemId), riskRequirementIds),
+            loadControlsByRequirement(db, ctx, riskRequirementIds),
+            loadInheritedCoverage(db, ctx, catalogue, risks),
+        ]);
 
+    const reports = views.map((agent) => {
+        const scopedRequirementIds = scopeByAiSystem.get(agent.aiSystemId) ?? new Set<string>();
         const entries = risks.map((risk) =>
             classifyAgentRiskCoverage({
                 code: risk.code,
@@ -189,13 +275,20 @@ export async function computeAgentRiskCoverage(
         );
 
         return {
-            agent: agentView,
+            agent,
             frameworkInstalled: true,
-            framework: { key: asiFrameworks[0].key, name: asiFrameworks[0].name },
+            framework,
             entries,
             summary: summariseAgentRiskCoverage(entries),
         };
     });
+
+    return {
+        frameworkInstalled: true,
+        framework,
+        risks: risks.map((r) => ({ code: r.code, title: r.title })),
+        agents: reports,
+    };
 }
 
 // ─── Loaders ─────────────────────────────────────────────────────────
@@ -243,18 +336,37 @@ async function loadAgenticRisks(db: PrismaTx, frameworkIds: string[]): Promise<A
     );
 }
 
-/** The agent's own scope: `AiSystemRequirementLink` rows for its AI system. */
-async function loadAgentScope(
+/**
+ * Each agent's own scope: `AiSystemRequirementLink` rows for its AI system.
+ *
+ * ONE query for every agent, keyed by AI-system id. A per-agent read here would
+ * be the N+1 the matrix exists to avoid, and two agents can legitimately share
+ * nothing — an AI-system id absent from the returned map has NO scoped
+ * requirements, which is a different fact from "not looked up".
+ */
+async function loadAgentScopes(
     db: PrismaTx,
     ctx: RequestContext,
-    aiSystemId: string,
+    aiSystemIds: readonly string[],
     requirementIds: string[],
-): Promise<Set<string>> {
+): Promise<Map<string, Set<string>>> {
+    const out = new Map<string, Set<string>>();
+    if (aiSystemIds.length === 0 || requirementIds.length === 0) return out;
+
     const links = await db.aiSystemRequirementLink.findMany({
-        where: { tenantId: ctx.tenantId, aiSystemId, requirementId: { in: requirementIds } },
-        select: { requirementId: true },
+        where: {
+            tenantId: ctx.tenantId,
+            aiSystemId: { in: [...new Set(aiSystemIds)] },
+            requirementId: { in: requirementIds },
+        },
+        select: { aiSystemId: true, requirementId: true },
     });
-    return new Set(links.map((l) => l.requirementId));
+    for (const link of links) {
+        const bucket = out.get(link.aiSystemId);
+        if (bucket) bucket.add(link.requirementId);
+        else out.set(link.aiSystemId, new Set([link.requirementId]));
+    }
+    return out;
 }
 
 /**

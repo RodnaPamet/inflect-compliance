@@ -40,7 +40,7 @@
 import { createHash } from 'node:crypto';
 
 import { appendAuditEntry } from '@/lib/audit';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { badRequest } from '@/lib/errors/types';
 import {
     computeReviewQuality,
@@ -124,89 +124,9 @@ export async function computeAgentReviewQuality(
     }
     const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
 
-    const { observations, truncated } = await runInTenantContext(ctx, async (db) => {
-        const rows = await db.agentProposal.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                status: { in: [...DECIDED_STATUSES] },
-                reviewedAt: { gte: since },
-                reviewedByUserId: { not: null },
-            },
-            select: {
-                id: true,
-                agentId: true,
-                reviewedByUserId: true,
-                reviewedAt: true,
-                createdAt: true,
-                status: true,
-                policyCardVersion: true,
-            },
-            orderBy: { reviewedAt: 'desc' },
-            take: MAX_REPORT_ROWS,
-        });
-
-        // ── Resolve the PINNED rung, in two bounded queries, never per row ──
-        //
-        // One `findMany` per proposal would be an N+1 over the whole queue.
-        // Both lookups below are `in` over the distinct keys the rows named,
-        // and both are capped: a tenant cannot have more cards than agents, and
-        // a card cannot have more versions than edits.
-        const agentIds = [...new Set(rows.map((r) => r.agentId).filter((a): a is string => !!a))];
-        const cards =
-            agentIds.length === 0
-                ? []
-                : await db.agentPolicyCard.findMany({
-                      where: { tenantId: ctx.tenantId, agentId: { in: agentIds } },
-                      select: { id: true, agentId: true },
-                      take: MAX_REPORT_ROWS,
-                  });
-        // Explicit generics + `as const` on both maps: without them TypeScript
-        // widens the pair to `(string | ApprovalRung)[]` and the Map constructor
-        // no longer sees a tuple.
-        const cardIdByAgent = new Map<string, string>(
-            cards.map((c) => [c.agentId, c.id] as const),
-        );
-        const versionNumbers = [
-            ...new Set(rows.map((r) => r.policyCardVersion).filter((v): v is number => v != null)),
-        ];
-        const versions =
-            cards.length === 0 || versionNumbers.length === 0
-                ? []
-                : await db.agentPolicyCardVersion.findMany({
-                      where: {
-                          tenantId: ctx.tenantId,
-                          cardId: { in: cards.map((c) => c.id) },
-                          version: { in: versionNumbers },
-                      },
-                      select: { cardId: true, version: true, approvalRung: true },
-                      take: MAX_REPORT_ROWS,
-                  });
-        const rungByCardVersion = new Map<string, ApprovalRung>(
-            versions.map(
-                (v) => [`${v.cardId}:${v.version}`, narrowApprovalRung(v.approvalRung)] as const,
-            ),
-        );
-
-        const mapped: ReviewObservation[] = rows.map((r) => {
-            const cardId = r.agentId ? cardIdByAgent.get(r.agentId) : undefined;
-            const rung =
-                cardId && r.policyCardVersion != null
-                    ? (rungByCardVersion.get(`${cardId}:${r.policyCardVersion}`) ?? null)
-                    : null;
-            return {
-                proposalId: r.id,
-                agentId: r.agentId,
-                // Non-null by the `where` above; narrowed here rather than cast.
-                reviewerUserId: r.reviewedByUserId ?? '',
-                proposedAtMs: r.createdAt.getTime(),
-                decidedAtMs: (r.reviewedAt ?? r.createdAt).getTime(),
-                approved: r.status !== 'REJECTED',
-                approvalRung: rung,
-            };
-        });
-
-        return { observations: mapped, truncated: rows.length === MAX_REPORT_ROWS };
-    });
+    const { observations, truncated } = await runInTenantContext(ctx, (db) =>
+        loadReviewObservations(db, ctx.tenantId, since),
+    );
 
     const report = computeReviewQuality(observations);
 
@@ -228,6 +148,109 @@ export async function computeAgentReviewQuality(
         },
         alerted,
     };
+}
+
+/**
+ * The observations one report stands on, read inside a tenant transaction the
+ * CALLER already opened.
+ *
+ * Extracted so the scheduled control test in
+ * `services/agent-control-tests.ts` reads the SAME rows through the SAME three
+ * bounded queries. Two loaders would be two denominators, and a report and a
+ * control test that disagree about what "decided in the window" means is the
+ * defect this module is about, one level up.
+ *
+ * Takes `db` rather than a `RequestContext` for the same reason the boundary
+ * stores do: the control-test runner is already inside a transaction, and a
+ * nested `$transaction` would take a second pool connection to read rows the
+ * outer one can already see.
+ */
+export async function loadReviewObservations(
+    db: PrismaTx,
+    tenantId: string,
+    since: Date,
+): Promise<{ observations: ReviewObservation[]; truncated: boolean }> {
+    const rows = await db.agentProposal.findMany({
+        where: {
+            tenantId,
+            status: { in: [...DECIDED_STATUSES] },
+            reviewedAt: { gte: since },
+            reviewedByUserId: { not: null },
+        },
+        select: {
+            id: true,
+            agentId: true,
+            reviewedByUserId: true,
+            reviewedAt: true,
+            createdAt: true,
+            status: true,
+            policyCardVersion: true,
+        },
+        orderBy: { reviewedAt: 'desc' },
+        take: MAX_REPORT_ROWS,
+    });
+
+    // ── Resolve the PINNED rung, in two bounded queries, never per row ──
+    //
+    // One `findMany` per proposal would be an N+1 over the whole queue.
+    // Both lookups below are `in` over the distinct keys the rows named,
+    // and both are capped: a tenant cannot have more cards than agents, and
+    // a card cannot have more versions than edits.
+    const agentIds = [...new Set(rows.map((r) => r.agentId).filter((a): a is string => !!a))];
+    const cards =
+        agentIds.length === 0
+            ? []
+            : await db.agentPolicyCard.findMany({
+                  where: { tenantId, agentId: { in: agentIds } },
+                  select: { id: true, agentId: true },
+                  take: MAX_REPORT_ROWS,
+              });
+    // Explicit generics + `as const` on both maps: without them TypeScript
+    // widens the pair to `(string | ApprovalRung)[]` and the Map constructor
+    // no longer sees a tuple.
+    const cardIdByAgent = new Map<string, string>(
+        cards.map((c) => [c.agentId, c.id] as const),
+    );
+    const versionNumbers = [
+        ...new Set(rows.map((r) => r.policyCardVersion).filter((v): v is number => v != null)),
+    ];
+    const versions =
+        cards.length === 0 || versionNumbers.length === 0
+            ? []
+            : await db.agentPolicyCardVersion.findMany({
+                  where: {
+                      tenantId,
+                      cardId: { in: cards.map((c) => c.id) },
+                      version: { in: versionNumbers },
+                  },
+                  select: { cardId: true, version: true, approvalRung: true },
+                  take: MAX_REPORT_ROWS,
+              });
+    const rungByCardVersion = new Map<string, ApprovalRung>(
+        versions.map(
+            (v) => [`${v.cardId}:${v.version}`, narrowApprovalRung(v.approvalRung)] as const,
+        ),
+    );
+
+    const mapped: ReviewObservation[] = rows.map((r) => {
+        const cardId = r.agentId ? cardIdByAgent.get(r.agentId) : undefined;
+        const rung =
+            cardId && r.policyCardVersion != null
+                ? (rungByCardVersion.get(`${cardId}:${r.policyCardVersion}`) ?? null)
+                : null;
+        return {
+            proposalId: r.id,
+            agentId: r.agentId,
+            // Non-null by the `where` above; narrowed here rather than cast.
+            reviewerUserId: r.reviewedByUserId ?? '',
+            proposedAtMs: r.createdAt.getTime(),
+            decidedAtMs: (r.reviewedAt ?? r.createdAt).getTime(),
+            approved: r.status !== 'REJECTED',
+            approvalRung: rung,
+        };
+    });
+
+    return { observations: mapped, truncated: rows.length === MAX_REPORT_ROWS };
 }
 
 /**

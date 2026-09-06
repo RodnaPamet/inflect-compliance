@@ -70,6 +70,7 @@ model Evidence {
   findingLinks         FindingEvidence[]
   incidentLinks        IncidentEvidence[]
   reminderHistories    ReminderHistory[]
+  agenticArtefacts     AgenticEvidenceArtefact[]
 
   @@unique([id, tenantId])
   @@index([tenantId])

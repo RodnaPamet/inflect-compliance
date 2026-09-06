@@ -31,6 +31,7 @@
     "db:seed-vendor-questionnaires": "tsx scripts/seed-vendor-questionnaires.ts",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset --force && tsx prisma/seed.ts",
+    "db:check-migration-drift": "node scripts/check-applied-migration-drift.mjs",
     "db:bootstrap-owners": "tsx scripts/bootstrap-tenant-owners.ts",
     "db:backfill-org-widgets": "tsx scripts/backfill-org-dashboard-widgets.ts",
     "db:reconcile-org-widgets": "tsx scripts/reconcile-org-dashboard-widgets.ts",

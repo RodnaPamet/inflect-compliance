@@ -71,6 +71,15 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    'AgenticEvidenceArtefact.withdrawnReason':
+        'One of three codes — CONTROL_REMOVED, SOURCE_UNVERIFIABLE or ' +
+        'OBLIGATION_UNMAPPED — pinned by a DB CHECK and by the ' +
+        'ArtefactWithdrawalReason union. Caught by the *Reason name heuristic, ' +
+        'but it is a closed vocabulary rather than anyone\'s words: there is no ' +
+        'tenant content in it, and encrypting a three-value enum would defeat ' +
+        'the equality read the withdrawal sweep makes while protecting nothing. ' +
+        'The free text on this path is Evidence.content, which is sanitised at ' +
+        'the usecase layer for the reasons in agentic-evidence-emission.ts.',
     'AgentCircuitBreaker.closeReason':
         'One of exactly two codes — ACCEPTED_NEW_BASELINE or RESOLVED ' +
         '(BREAKER_CLOSE_REASONS). It is caught by the *Reason name heuristic, ' +

@@ -197,6 +197,7 @@ model Tenant {
   agentKillSwitchDrills             AgentKillSwitchDrill[]
   agentBehaviourWindows             AgentBehaviourWindow[]
   agentCircuitBreakers              AgentCircuitBreaker[]
+  agenticEvidenceArtefacts          AgenticEvidenceArtefact[]
   tenantFrameworkDeltas             TenantFrameworkDelta[]
   riskMatrixConfig                  RiskMatrixConfig?
   riskAppetiteConfig                RiskAppetiteConfig?

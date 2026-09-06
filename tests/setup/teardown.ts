@@ -48,6 +48,22 @@ const teardown = async () => {
     } catch {
         /* marker absent / DB down — nothing to clean */
     }
+
+    // Release the concurrent-run lock LAST. The DROPs above are the most
+    // destructive thing this process does, so they belong inside the window
+    // the lock protects — a next run that started between the drop and the
+    // release would find its own databases being deleted underneath it.
+    //
+    // If this never runs (a hard-killed run), the lock still frees itself:
+    // it is a SESSION lock, so Postgres drops it when the connection dies.
+    // That self-cleaning property is the reason this is a lock and not a
+    // per-run database name.
+    try {
+        const { releaseTestDbRunLock } = await import('../helpers/db');
+        await releaseTestDbRunLock();
+    } catch {
+        /* never acquired, or the connection is already gone */
+    }
 };
 
 export default teardown;

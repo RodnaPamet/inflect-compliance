@@ -1177,6 +1177,16 @@ executorRegistry.register('agent-kill-switch-drill', async (payload) => {
     return runAgentKillSwitchDrillJob({ tenantId: payload.tenantId });
 });
 
+// agentic-evidence-emission: turn receipts + AI decision records into evidence
+// attached to the agentic controls they discharge. Payload passed THROUGH, both
+// fields NAMED: an absent tenantId is the scheduled sweep and an absent asOf is
+// the current month, and a payload forwarded opaquely is how a targeted backfill
+// silently becomes an all-tenant pass over the wrong period.
+executorRegistry.register('agentic-evidence-emission', async (payload) => {
+    const { runAgenticEvidenceEmissionJob } = await import('./agentic-evidence-emission');
+    return runAgenticEvidenceEmissionJob({ tenantId: payload.tenantId, asOf: payload.asOf });
+});
+
 // identity-leaver-dispatch: fan out a pass per (tenant, writable provider).
 executorRegistry.register('identity-leaver-dispatch', async () => {
     const startedAt = new Date().toISOString();
