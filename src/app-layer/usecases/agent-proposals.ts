@@ -22,9 +22,9 @@ import { SuggestionItemStatus } from '@prisma/client';
 
 import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
 
-import { runInTenantContext } from '@/lib/db/rls-middleware';
+import { runInTenantContext, type PrismaTx } from '@/lib/db/rls-middleware';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
-import { badRequest, forbidden, notFound } from '@/lib/errors/types';
+import { badRequest, forbidden, notFound, staleData } from '@/lib/errors/types';
 import { appendAuditEntry } from '@/lib/audit';
 import { logger } from '@/lib/observability/logger';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -34,19 +34,42 @@ import {
     type AgentProposalGuardResult,
 } from '@/app-layer/ai/guard/proposal-guard';
 import { logAiDecision } from '@/app-layer/ai/decision-log';
+import { NO_POLICY_CARD, narrowApprovalRung, type ApprovalRung } from '@/lib/agentic/policy-card';
+import {
+    resolveApprovalRequirement,
+    type ApprovalPinState,
+    type ApprovalRequirement,
+} from '@/lib/agentic/approval-tiering';
+import { isProposalExpired, proposalExpiresAt } from '@/lib/agentic/proposal-expiry';
 import {
     CreateRiskSchema,
     CreateControlSchema,
     CreatePolicySchema,
     CreateFindingSchema,
+    UpdateRiskSchema,
+    UpdateControlSchema,
+    UpdateFindingSchema,
 } from '@/lib/schemas';
-import { createRisk } from '@/app-layer/usecases/risk';
-import { createControl } from '@/app-layer/usecases/control/mutations';
+import { createRisk, updateRisk } from '@/app-layer/usecases/risk';
+import { createControl, updateControl } from '@/app-layer/usecases/control/mutations';
 import { createPolicy } from '@/app-layer/usecases/policy';
-import { createFinding } from '@/app-layer/usecases/finding';
+import { createFinding, updateFinding } from '@/app-layer/usecases/finding';
+import { buildProposalDiff } from '@/app-layer/usecases/agent-proposal-diff';
+import { isDiffReviewable } from '@/lib/agentic/proposal-diff';
 import type { RequestContext } from '@/app-layer/types';
 
 export type AgentProposalKind = 'RISK' | 'CONTROL' | 'POLICY' | 'FINDING';
+
+/**
+ * WHAT a proposal would do. Mirrors the `AgentProposalOperation` enum.
+ *
+ * Stored on the row rather than inferred from the payload, because the review
+ * UI's whole job depends on this answer: a CREATE is rendered as full content,
+ * an UPDATE as a field-level before/after against a base read at review time.
+ * Guessing it from payload shape ("it has an id, so probably an update") would
+ * put a guess in front of the human-oversight gate.
+ */
+export type AgentProposalOperation = 'CREATE' | 'UPDATE';
 
 /** The create-schema each proposal kind validates against at the boundary. */
 const SCHEMA_BY_KIND = {
@@ -55,6 +78,33 @@ const SCHEMA_BY_KIND = {
     POLICY: CreatePolicySchema,
     FINDING: CreateFindingSchema,
 } as const;
+
+/**
+ * The PARTIAL-update schema each kind validates an UPDATE proposal against.
+ *
+ * POLICY is deliberately ABSENT, and the omission is the feature. There is no
+ * `UpdatePolicySchema` in the contract: policy content moves through versions
+ * and approvals (`createPolicyVersion`, `updatePolicyMetadata`), which is a
+ * different shape from "merge these fields", and a policy edit approved as a
+ * flat field merge would bypass the version chain that makes policy history
+ * auditable. So `propose an update to a policy` is refused at the boundary
+ * rather than approximated - see `assertUpdateProposalIsWellFormed`.
+ *
+ * A kind added here without a matching arm in `applyProposedUpdate` fails to
+ * compile, because that switch is exhaustive over this table's keys.
+ */
+const UPDATE_SCHEMA_BY_KIND = {
+    RISK: UpdateRiskSchema,
+    CONTROL: UpdateControlSchema,
+    FINDING: UpdateFindingSchema,
+} as const;
+
+export type UpdatableProposalKind = keyof typeof UPDATE_SCHEMA_BY_KIND;
+
+/** Kinds an UPDATE proposal may name. Exported so the UI and tests read the same list. */
+export const UPDATABLE_PROPOSAL_KINDS = Object.keys(
+    UPDATE_SCHEMA_BY_KIND,
+) as UpdatableProposalKind[];
 
 /** Recursively sanitise every string in a validated payload (Epic D boundary). */
 function sanitizeDeep(value: unknown): unknown {
@@ -70,6 +120,15 @@ function sanitizeDeep(value: unknown): unknown {
 
 export interface ProposeInput {
     kind: AgentProposalKind;
+    /**
+     * CREATE (default) or UPDATE. An UPDATE additionally requires
+     * `targetEntityId`, and the pair is checked here AND by a database CHECK
+     * (`AgentProposal_update_requires_target`) - an update naming no target
+     * cannot be diffed, so it must not be storable.
+     */
+    operation?: AgentProposalOperation;
+    /** The id of the record an UPDATE would change. Must be null for a CREATE. */
+    targetEntityId?: string | null;
     payload: unknown;
     rationale?: string | null;
     proposedBySessionRef?: string | null;
@@ -93,6 +152,8 @@ export interface ProposeInput {
 export interface ProposalResult {
     id: string;
     kind: AgentProposalKind;
+    /** CREATE or UPDATE - see `AgentProposalOperation`. */
+    operation: AgentProposalOperation;
     /** `PENDING` when queued for review, `QUARANTINED` when the guard refused it. */
     status: string;
     /** The agentic output-guard verdict written on the row. */
@@ -146,6 +207,231 @@ async function refuseQuarantined(
 }
 
 /**
+ * HOW MANY DISTINCT HUMANS must sign this proposal — the same answer for the
+ * seam that writes the row and the seam that reads it back.
+ *
+ * ONE function, called from both, because the composition lives in
+ * `approval-tiering.ts` and a second copy of it would be the four-verbatim-copies
+ * failure the identity write-ladder already cost this repo. The DATABASE holds a
+ * third reading of the same number (the four-eyes trigger reads
+ * `AgentProposal.requiredApprovals`), and it reads the PINNED integer rather
+ * than re-deriving the ladder in plpgsql for exactly that reason.
+ *
+ * The card version read here is the PINNED one, never the one in force today.
+ * That distinction is the whole point of the pin: "what was this agent allowed
+ * to do when it proposed" and "what is it allowed to do now" differ precisely
+ * when somebody has edited the card, which is the case a review exists to find.
+ */
+async function resolveRequirementForRow(
+    ctx: RequestContext,
+    row: {
+        agentId: string | null;
+        policyCardVersion: number | null;
+        proposedViaKeyId: string | null;
+    },
+): Promise<ApprovalRequirement> {
+    return runInTenantContext(ctx, async (db) => {
+        const agent = row.agentId
+            ? await db.registeredAgent.findFirst({
+                  where: { id: row.agentId, tenantId: ctx.tenantId },
+                  select: { riskTier: true, autonomyLevel: true },
+              })
+            : null;
+
+        // The three states of `policyCardVersion`, kept apart. See
+        // `policy-card-pin.ts`: NULL is "we do not know", 0 is "asked, and the
+        // answer was none", >= 1 is a real version. Collapsing them is how a
+        // governance gap becomes a bypass.
+        const pinState: ApprovalPinState =
+            row.policyCardVersion === null
+                ? 'UNPINNED'
+                : row.policyCardVersion === NO_POLICY_CARD
+                  ? 'NO_CARD'
+                  : 'PINNED';
+
+        let pinnedRung: ApprovalRung | null = null;
+        if (pinState === 'PINNED' && row.agentId) {
+            const card = await db.agentPolicyCard.findFirst({
+                where: { tenantId: ctx.tenantId, agentId: row.agentId },
+                select: { id: true },
+            });
+            const version = card
+                ? await db.agentPolicyCardVersion.findFirst({
+                      where: {
+                          tenantId: ctx.tenantId,
+                          cardId: card.id,
+                          version: row.policyCardVersion ?? NO_POLICY_CARD,
+                      },
+                      select: { approvalRung: true },
+                  })
+                : null;
+            // A pin naming a version that cannot be read is a BROKEN policy, not
+            // an absent one — `null` here, which the resolver reads as the
+            // strictest rung. Same call `loadPolicyCardInForce` makes when a
+            // card's head points at a version row that is not there.
+            pinnedRung = version ? narrowApprovalRung(version.approvalRung) : null;
+        }
+
+        return resolveApprovalRequirement({
+            agent,
+            agentNamed: row.agentId !== null,
+            pinState,
+            pinnedRung,
+            viaApiKey: row.proposedViaKeyId !== null,
+        });
+    });
+}
+
+/**
+ * The refusal every review path shares for a CLOSED WINDOW.
+ *
+ * A 403 + `AUTHZ_DENIED` rather than a 400, and that is a claim about what kind
+ * of thing an expired proposal is. `Proposal is already REJECTED` is a 400
+ * about sequencing — the caller asked for a transition that does not exist from
+ * here. This is about AUTHORITY: the interval in which a human's consent could
+ * bind has closed, so there is no authority left to exercise, and an attempt to
+ * exercise it anyway is exactly the automation-bias signal worth keeping. It
+ * writes a row for the same reason the quarantine refusal does.
+ *
+ * The 403 body names the CONDITION and nothing else — no permission key, no
+ * deadline, no fragment of the payload.
+ *
+ * REJECTION IS REFUSED TOO, not only approval. An expired proposal is the
+ * record of something nobody agreed to; letting a reviewer move it to REJECTED
+ * would overwrite "nobody decided" with "somebody decided no", which is a
+ * different and false fact, and it would do so in the one direction that makes
+ * the queue look better than it was. "Dispose of it" and "improve the record"
+ * must not be the same click.
+ */
+async function refuseExpired(
+    ctx: RequestContext,
+    proposal: { id: string; status: string; expiresAt: Date | null },
+    attemptedAction: 'approve' | 'reject',
+): Promise<never> {
+    await appendAuditEntry({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
+        entity: 'AgentProposal',
+        entityId: proposal.id,
+        action: 'AUTHZ_DENIED',
+        requestId: ctx.requestId,
+        detailsJson: {
+            category: 'access',
+            event: 'authz_denied',
+            reason: 'agent_proposal_expired',
+            attemptedAction,
+            // The deadline and the status the row was in — both structural
+            // facts about the queue, neither of them content.
+            storedStatus: proposal.status,
+            expiredAt: proposal.expiresAt ? proposal.expiresAt.toISOString() : null,
+        },
+        metadataJson: {
+            role: ctx.role,
+            apiKeyId: ctx.apiKeyId ?? null,
+            storedStatus: proposal.status,
+        },
+    }).catch(() => undefined);
+
+    throw forbidden('agent_proposal_expired');
+}
+
+/**
+ * The approval rung the PINNED policy-card version declared, or `null` when no
+ * card governed this proposal.
+ *
+ * Reads the version the caller pinned, NOT the version in force right now.
+ * `policy-card-pin.ts` states the distinction and it applies here for the same
+ * reason: the window's length is part of the terms the proposal was made under,
+ * so it must come from the same row every other pinned fact comes from. Reading
+ * the CURRENT card would make the deadline depend on a card edit that happened
+ * after the proposal was written.
+ *
+ * A version this build cannot find — a card deleted between authorization and
+ * this line, or a pin of `NO_POLICY_CARD` — resolves to `null`, which
+ * `proposalWindowDays` maps to the SHORTEST window. Fail-closed here means less
+ * time, never more.
+ */
+async function pinnedApprovalRung(
+    db: PrismaTx,
+    ctx: RequestContext,
+    policyCardVersion: number,
+): Promise<ApprovalRung | null> {
+    if (!ctx.agentId || policyCardVersion < 1) return null;
+    const row = await db.agentPolicyCardVersion.findFirst({
+        where: {
+            tenantId: ctx.tenantId,
+            version: policyCardVersion,
+            card: { agentId: ctx.agentId, tenantId: ctx.tenantId },
+        },
+        select: { approvalRung: true },
+    });
+    return row ? narrowApprovalRung(row.approvalRung) : null;
+}
+
+/**
+ * The STRUCTURAL half of an UPDATE proposal's well-formedness - the two checks
+ * that must hold even for a row the guard is about to quarantine, because a
+ * quarantined row is still a row and the database CHECK
+ * (`AgentProposal_update_requires_target`) applies to it too.
+ *
+ *   1. the kind must be updatable at all (POLICY is not - see
+ *      `UPDATE_SCHEMA_BY_KIND`);
+ *   2. a target id must be present.
+ */
+function requireStorableUpdateTarget(
+    kind: AgentProposalKind,
+    targetEntityId: string | null | undefined,
+): string {
+    if (!(kind in UPDATE_SCHEMA_BY_KIND)) {
+        throw badRequest(
+            `Cannot propose an update to a ${kind}: only ${UPDATABLE_PROPOSAL_KINDS.join(', ')} support partial updates`,
+        );
+    }
+    if (!targetEntityId) {
+        throw badRequest('An UPDATE proposal must name the record it would change (targetEntityId)');
+    }
+    // RETURNED rather than asserted, so every caller holds a `string` the
+    // compiler can see. An `asserts` signature would narrow only at the call
+    // site and widen again at the next branch, which is how the later
+    // `as string` casts this replaces got there.
+    return targetEntityId;
+}
+
+/**
+ * The SEMANTIC half: the target must EXIST right now, in this tenant.
+ *
+ * Enforced at PROPOSE time, not only at approve time, because a proposal that
+ * can never be reviewed is worse than a rejected one - it sits in the queue
+ * looking actionable and consumes the reviewer attention this whole gate
+ * depends on. Checked by asking the diff builder for a diff and requiring it to
+ * be REVIEWABLE, the same predicate the approve control is gated on, so nothing
+ * can be queued in a state the review UI would have to refuse.
+ *
+ * It is a point-in-time check and makes no promise about approve time - the
+ * target can still be deleted afterwards. That is handled where it has to be:
+ * the diff resolves to TARGET_MISSING at review, and `approveAgentProposal`
+ * refuses. This check exists to keep the queue clean, not to be that guarantee.
+ */
+async function assertUpdateTargetIsDiffable(
+    ctx: RequestContext,
+    input: { kind: AgentProposalKind; targetEntityId: string; payloadJson: string },
+): Promise<void> {
+    const diff = await buildProposalDiff(ctx, {
+        id: 'unsaved',
+        kind: input.kind,
+        operation: 'UPDATE',
+        payloadJson: input.payloadJson,
+        targetEntityId: input.targetEntityId,
+    });
+    if (!isDiffReviewable(diff)) {
+        // The status names WHY, and it carries no proposal content - it is one
+        // of five fixed tokens. Safe to return to the proposing agent.
+        throw badRequest(`Cannot propose an update that cannot be diffed: ${diff.status}`);
+    }
+}
+
+/**
  * Create a PENDING proposal from an agent. Validates the payload against the
  * kind's create-schema, sanitises all free text, and writes ONE AgentProposal
  * row. Does NOT create the real entity. Attributed to the API key.
@@ -154,10 +440,32 @@ export async function createAgentProposal(
     ctx: RequestContext,
     input: ProposeInput,
 ): Promise<ProposalResult> {
-    const schema = SCHEMA_BY_KIND[input.kind];
+    const operation: AgentProposalOperation = input.operation ?? 'CREATE';
+    // Resolves to a `string` for an UPDATE (refusing POLICY and a missing id
+    // first) and to `null` for a CREATE. Runs before anything else so the two
+    // errors a proposing agent can actually act on come back first.
+    const targetEntityId =
+        operation === 'UPDATE'
+            ? requireStorableUpdateTarget(input.kind, input.targetEntityId)
+            : null;
+    if (operation !== 'UPDATE' && input.targetEntityId) {
+        // A CREATE that names a target is not a harmless extra field: it is a
+        // caller that believes it is proposing an edit. Approving it would
+        // silently create a SECOND record beside the one it meant to change.
+        throw badRequest('A CREATE proposal must not name a targetEntityId');
+    }
+
+    // 1. Validate against the SAME schema the equivalent REST route uses - the
+    // create-schema for a create, the PARTIAL update-schema for an update. The
+    // two differ in more than optionality: the update schemas accept explicit
+    // `null` on nullable columns ("clear this"), which a create schema rejects,
+    // and a proposal is exactly the place that distinction has to survive.
+    const schema =
+        operation === 'UPDATE'
+            ? UPDATE_SCHEMA_BY_KIND[input.kind as UpdatableProposalKind]
+            : SCHEMA_BY_KIND[input.kind];
     if (!schema) throw badRequest(`Unknown proposal kind: ${input.kind}`);
 
-    // 1. Validate against the SAME create-schema the REST route uses.
     const parsed = schema.safeParse(input.payload);
     if (!parsed.success) {
         throw badRequest(`Proposed ${input.kind} is invalid: ${parsed.error.message}`);
@@ -205,18 +513,68 @@ export async function createAgentProposal(
     if (!guard.quarantined) {
         assertGuardAllowed(inputOutcome);
         assertGuardAllowed(egressOutcome);
+        // Only for a row that is about to JOIN THE QUEUE. A quarantined
+        // proposal is written as evidence of the attempt and is never
+        // reviewable, so refusing it for naming a deleted record would delete
+        // the evidence instead of the proposal.
+        if (targetEntityId) {
+            await assertUpdateTargetIsDiffable(ctx, {
+                kind: input.kind,
+                targetEntityId,
+                payloadJson: JSON.stringify(sanitized),
+            });
+        }
     }
+
+    // 2d. HOW MANY HUMANS WILL HAVE TO SIGN THIS — resolved once, here, and
+    // PINNED onto the row. The composition (strictest of the pinned card rung,
+    // the scored risk tier and the registered autonomy) lives in
+    // `approval-tiering.ts`; nothing downstream recomputes it, because the card
+    // and the tier can both move between the proposal and the review, and the
+    // question a reviewer is answering is what was required when the work was
+    // proposed.
+    const requirement = await resolveRequirementForRow(ctx, {
+        agentId: ctx.agentId ?? null,
+        policyCardVersion: input.policyCardVersion,
+        proposedViaKeyId: ctx.apiKeyId ?? null,
+    });
 
     // 3. Persist the proposal (RLS-scoped). NOT the real entity — and, when the
     // guard quarantined it, not a queued one either.
     const proposal = await runInTenantContext(ctx, async (db) => {
+        // The REVIEW WINDOW, pinned now. Its LENGTH comes from the approval
+        // rung of the card version this call was authorized under — two humans
+        // to find is a longer window than one — and its START is this instant
+        // and nothing else. See `proposal-expiry.ts` for why the clock never
+        // restarts on partial progress: a window that can be extended by a
+        // first approver can be held open forever by one person, which turns
+        // the rung demanding the MOST scrutiny into the one with no deadline.
+        const expiresAt = proposalExpiresAt(
+            new Date(),
+            await pinnedApprovalRung(db, ctx, input.policyCardVersion),
+        );
+
         const row = await db.agentProposal.create({
             data: {
                 tenantId: ctx.tenantId,
                 kind: input.kind,
+                // WHAT this would do, and to WHICH row. Stored, never inferred:
+                // the review UI decides between "full proposed content" and
+                // "field-level before/after against a base" on this column, and
+                // a reviewer shown the wrong one of those is being asked to
+                // consent to something nobody rendered.
+                operation,
+                targetEntityId,
                 status: guard.quarantined ? 'QUARANTINED' : 'PENDING',
                 payloadJson: JSON.stringify(sanitized),
                 rationale,
+                // Written on a QUARANTINED row too. That row is already
+                // terminal and can never be approved, so the deadline changes
+                // nothing about it — but a column that is populated only on the
+                // rows that reached the queue would make "no window recorded"
+                // mean two things again, which is the ambiguity the nullable
+                // column's own doc comment exists to remove.
+                expiresAt,
                 // The verdict is a fact about the ROW, not a re-derivable
                 // opinion: the rule table moves, and a refusal that has to be
                 // recomputed at review time is a refusal that can evaporate
@@ -241,8 +599,15 @@ export async function createAgentProposal(
                 // pin already set, so approving or rejecting this proposal
                 // later cannot rewrite what the rules were when it was made.
                 policyCardVersion: input.policyCardVersion,
+                // …and HOW MANY HUMANS have to sign it. Written here rather
+                // than derived at review time so a card edit or a re-score
+                // between now and then cannot change what this proposal was
+                // queued under. The four-eyes database trigger reads this
+                // column, so it is also the reason the rule needs no second
+                // implementation in plpgsql.
+                requiredApprovals: requirement.requiredApprovals,
             },
-            select: { id: true, kind: true, status: true },
+            select: { id: true, kind: true, status: true, operation: true },
         });
 
         // The AI-FEATURE record, for the agentic path. Same three properties
@@ -281,8 +646,22 @@ export async function createAgentProposal(
         detailsJson: {
             category: 'access',
             kind: input.kind,
+            // Named fields, never a spread, and spelled as MEMBER READS of the
+            // input rather than as the locals holding the same values: a bare
+            // identifier at a sink is a name `local/no-raw-prompt-logging`
+            // cannot resolve, so it is counted as a hole in that rule's
+            // denominator. Both are a fixed token and an opaque id; nothing of
+            // the payload joins them.
+            operation: input.operation ?? 'CREATE',
+            targetEntityId: input.targetEntityId ?? null,
             agentId: ctx.agentId ?? null,
             policyCardVersion: input.policyCardVersion,
+            // The review requirement AND the term that set it. The basis is a
+            // propose-time fact and is recorded only here: by review time the
+            // tier may have moved, so re-deriving it would answer a different
+            // question than the one this row is evidence of.
+            requiredApprovals: requirement.requiredApprovals,
+            approvalBasis: requirement.decidedBy,
             guardVerdict: guard.verdict,
             // Rule ids carry no user content — that is the contract the whole
             // guard is built on (`patterns.ts`: "Rules never capture or return
@@ -301,6 +680,7 @@ export async function createAgentProposal(
     return {
         id: proposal.id,
         kind: proposal.kind as AgentProposalKind,
+        operation: proposal.operation as AgentProposalOperation,
         status: proposal.status,
         guardVerdict: guard.verdict,
     };
@@ -319,7 +699,16 @@ export async function createAgentProposal(
  * remembers to hide is caught by `REVIEWABLE_STATUSES` being wrong in a way the
  * quarantine tests notice.
  */
-export const NON_REVIEWABLE_STATUSES: readonly SuggestionItemStatus[] = ['QUARANTINED'];
+export const NON_REVIEWABLE_STATUSES: readonly SuggestionItemStatus[] = [
+    'QUARANTINED',
+    // EXPIRED joins it for a different reason, and the difference is worth
+    // keeping straight. A quarantined row is hidden because a reviewer must
+    // never be handed an injected proposal; an expired row is hidden because
+    // its window has CLOSED, so listing it would add depth to the very queue
+    // whose depth is the thing being bounded. Same exclusion, opposite
+    // motivation — and both are terminal, so neither is an invisible backlog.
+    'EXPIRED',
+];
 
 const REVIEWABLE_STATUSES: SuggestionItemStatus[] = Object.values(SuggestionItemStatus).filter(
     (s) => !NON_REVIEWABLE_STATUSES.includes(s),
@@ -399,8 +788,187 @@ const editsSchema = z.record(z.string(), z.unknown());
 export interface ApproveResult {
     proposalId: string;
     kind: AgentProposalKind;
+    operation: AgentProposalOperation;
+    /**
+     * The record this proposal resolved to: the row it CREATED, or - for an
+     * UPDATE - the row it changed. The column behind it is still named
+     * `createdEntityId` for the same reason the `@@map("WorkItem*")` pins
+     * survive: renaming it would be a migration for a word.
+     */
     createdEntityId: string;
     status: 'ACCEPTED' | 'EDITED';
+}
+
+/** Options a REVIEWER supplies with an approval. */
+export interface ApproveOptions {
+    /** Field-level edits merged over the proposed payload before it is applied. */
+    edits?: Record<string, unknown>;
+    /**
+     * The `baseDigest` of the diff the reviewer actually read.
+     *
+     * REQUIRED for an UPDATE proposal and meaningless for a CREATE. This is the
+     * whole anti-automation-bias contract expressed at the write seam: a
+     * reviewer consents to a specific delta from a specific base, so an
+     * approval that cannot name the base it read is not consent to this change,
+     * it is consent to whatever the row happens to say at the moment the button
+     * is pressed. A mismatch is a 409 telling the reviewer to look again.
+     */
+    baseDigest?: string | null;
+}
+
+/**
+ * Apply an approved UPDATE through the REAL update-usecase for the kind.
+ *
+ * The same rule the create path follows, for the same reason: the proposal is
+ * data until a human approves it, and the write that follows must be the write
+ * a human doing it by hand would make - same validation, same sanitisation,
+ * same cache invalidation, same audit event, same permission assertion inside
+ * the usecase. Nothing here reaches a repository or Prisma directly.
+ *
+ * POLICY is absent from the switch and cannot reach it: `UPDATE_SCHEMA_BY_KIND`
+ * has no POLICY key, so `assertUpdateShapeIsStorable` refuses a policy update
+ * at the propose boundary and no such row can exist to be approved.
+ */
+async function applyProposedUpdate(
+    ctx: RequestContext,
+    kind: AgentProposalKind,
+    targetEntityId: string,
+    merged: Record<string, unknown>,
+): Promise<string> {
+    switch (kind) {
+        case 'RISK':
+            await updateRisk(
+                ctx,
+                targetEntityId,
+                UpdateRiskSchema.parse(merged) as Parameters<typeof updateRisk>[2],
+            );
+            return targetEntityId;
+        case 'CONTROL':
+            await updateControl(
+                ctx,
+                targetEntityId,
+                UpdateControlSchema.parse(merged) as Parameters<typeof updateControl>[2],
+            );
+            return targetEntityId;
+        case 'FINDING':
+            await updateFinding(ctx, targetEntityId, UpdateFindingSchema.parse(merged));
+            return targetEntityId;
+        default:
+            throw badRequest(`Cannot apply an update to a ${kind}`);
+    }
+}
+
+/**
+ * What comes back when a human's approval was RECORDED but the proposal still
+ * needs another one. Nothing was created.
+ *
+ * A distinct shape rather than `ApproveResult` with a null entity id, because
+ * the two outcomes are different facts and a caller that reads them as one is
+ * the automation-bias failure in miniature: a reviewer told "approved" for a
+ * proposal that has not been approved learns that clicking the button is what
+ * approval means.
+ */
+export interface ApprovalRecordedResult {
+    proposalId: string;
+    kind: AgentProposalKind;
+    status: 'AWAITING_APPROVAL';
+    createdEntityId: null;
+    approvalsRecorded: number;
+    approvalsRequired: number;
+}
+
+export type ApproveOutcome = ApproveResult | ApprovalRecordedResult;
+
+/**
+ * Did this approval APPLY the proposal, or only record a signature?
+ *
+ * The distinction is the whole tiering contract, and `status` is the
+ * discriminant. A caller that reads `createdEntityId` without asking this
+ * question is the automation-bias failure in miniature — it treats "your
+ * signature was recorded" as "the change was made", which is exactly what a
+ * reviewer must not be told.
+ */
+export function wasApplied(outcome: ApproveOutcome): outcome is ApproveResult {
+    return outcome.status !== 'AWAITING_APPROVAL';
+}
+
+/**
+ * Which four-eyes constraint refused, as the database reported it.
+ *
+ * Both are DATABASE refusals and neither is a check this usecase performs, which
+ * is the point: counting approvals and then writing one is a read-then-write,
+ * and two concurrent requests both read "one signature so far" and both write
+ * the second. The unique index and the trigger have no window between the read
+ * and the write because they do not read.
+ *
+ * `null` means the failure was something else and must be rethrown — swallowing
+ * an unrelated error here would turn a broken database into a silent four-eyes
+ * refusal, which reads to an operator as the control working.
+ */
+function fourEyesRefusal(err: unknown): { rule: string; message: string } | null {
+    const text = err instanceof Error ? err.message : '';
+    if (text.includes('AGENT_PROPOSAL_APPROVAL_OWNER_SELF_REVIEW')) {
+        return {
+            rule: 'agent_owner_may_not_approve',
+            message:
+                'This proposal needs two independent approvers, and you are the ' +
+                'registered owner of the agent that made it. Someone else has to sign.',
+        };
+    }
+    if (text.includes('AGENT_PROPOSAL_APPROVAL_NO_PROPOSAL')) {
+        return {
+            rule: 'proposal_not_visible',
+            message: 'Proposal not found.',
+        };
+    }
+    if ((err as { code?: unknown } | null)?.code === 'P2002') {
+        return {
+            rule: 'approver_already_signed',
+            message:
+                'You have already approved this proposal. A second approval has ' +
+                'to come from a different person.',
+        };
+    }
+    return null;
+}
+
+/**
+ * The four-eyes refusal, audited then thrown. Same shape as
+ * `refuseQuarantined`: exactly one hash-chained `AUTHZ_DENIED` row, then a 403
+ * whose body names the CONDITION and nothing else — no permission key, no
+ * approver identity, no fragment of the payload.
+ */
+async function refuseFourEyes(
+    ctx: RequestContext,
+    proposal: { id: string; kind: string; agentId: string | null; requiredApprovals: number | null },
+    refusal: { rule: string; message: string },
+): Promise<never> {
+    await appendAuditEntry({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
+        entity: 'AgentProposal',
+        entityId: proposal.id,
+        action: 'AUTHZ_DENIED',
+        requestId: ctx.requestId,
+        detailsJson: {
+            category: 'access',
+            event: 'authz_denied',
+            reason: 'agent_proposal_four_eyes',
+            attemptedAction: 'approve',
+            // WHICH constraint refused goes in the TRAIL, never in the 403.
+            fourEyesRule: refusal.rule,
+            kind: proposal.kind,
+            approvalsRequired: proposal.requiredApprovals,
+        },
+        metadataJson: {
+            role: ctx.role,
+            agentId: proposal.agentId,
+            apiKeyId: ctx.apiKeyId ?? null,
+        },
+    }).catch(() => undefined);
+
+    throw forbidden('agent_proposal_four_eyes');
 }
 
 /**
@@ -412,10 +980,15 @@ export interface ApproveResult {
 export async function approveAgentProposal(
     ctx: RequestContext,
     id: string,
-    edits?: Record<string, unknown>,
-): Promise<ApproveResult> {
+    // The OPTIONS shape from the diff work (it already carries `edits`, plus the
+    // `baseDigest` a reviewer's consent is bound to) and the OUTCOME union from
+    // the tiering work (an approval may record a signature WITHOUT accepting the
+    // proposal). Neither supersedes the other: one says what a caller may ask
+    // for, the other what it may be told.
+    opts?: ApproveOptions,
+): Promise<ApproveOutcome> {
     assertCanWrite(ctx);
-    const parsedEdits = edits ? editsSchema.parse(edits) : undefined;
+    const parsedEdits = opts?.edits ? editsSchema.parse(opts.edits) : undefined;
 
     const proposal = await getAgentProposal(ctx, id);
     // ═══ QUARANTINE IS REFUSED BEFORE ANYTHING ELSE ═══
@@ -427,13 +1000,110 @@ export async function approveAgentProposal(
     if (proposal.status === 'QUARANTINED' || proposal.guardVerdict === 'QUARANTINED') {
         await refuseQuarantined(ctx, proposal, 'approve');
     }
+    // ═══ THE WINDOW IS CHECKED AGAINST THE CLOCK, NOT AGAINST THE STATUS ═══
+    //
+    // The sweep that stamps EXPIRED runs nightly, so between the instant a
+    // window closes and the instant the sweep notices there is a gap of up to a
+    // day in which the row still reads PENDING. A check that only looked at the
+    // status would let every one of those be approved, which is to say the
+    // deadline would be enforced by a cron's punctuality rather than by the
+    // deadline. So the clock is read here, before the status, and the sweep is
+    // bookkeeping rather than enforcement.
+    //
+    // Ahead of the PENDING check for the same reason quarantine is: this is a
+    // 403 about authority that writes a row, not a 400 about sequencing, and it
+    // must not be reachable by any ordering of the checks below.
+    if (isProposalExpired(proposal.expiresAt, new Date())) {
+        await refuseExpired(ctx, proposal, 'approve');
+    }
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);
+    }
+
+    // ═══ HOW MANY HUMANS THIS ONE NEEDS ═══
+    //
+    // Read from the PIN. `??` is not a convenience: a row written before this
+    // column existed had its requirement composed by nothing at all, and an
+    // uncomputed requirement must fail toward the expensive answer, so those
+    // rows are re-resolved from what they DO record (their pinned card version
+    // and their attribution) rather than defaulted to the cheap one. The
+    // re-resolution reads the PINNED version, which is immutable, so it is not
+    // the "re-derive against today's card" this module refuses to do.
+    const review = {
+        required:
+            proposal.requiredApprovals ??
+            (await resolveRequirementForRow(ctx, proposal)).requiredApprovals,
+    };
+
+    // ═══ A TWO-APPROVER PROPOSAL IS SIGNED AS PROPOSED ═══
+    //
+    // Edits are refused outright when a second approver is required, and this is
+    // the four-eyes bypass that is easiest to miss: approver one signs the
+    // content they read, approver two approves WITH EDITS, and the record that
+    // commits is one no two people ever agreed on. Merging the first approver's
+    // edits instead has the same defect pointing the other way.
+    //
+    // The alternative — re-arming the queue on every edit so both signatures
+    // reattach to the new content — is a real design and a larger one; refusing
+    // is the honest version of it until that exists. Rejecting and re-proposing
+    // costs one round trip and leaves both decisions legible.
+    if (review.required > 1 && parsedEdits) {
+        throw badRequest(
+            'This proposal needs two independent approvers, so it must be ' +
+                'approved exactly as proposed — an edit after the first signature ' +
+                'would commit content nobody signed twice. Reject it and propose ' +
+                'the corrected content instead.',
+        );
     }
 
     const base = JSON.parse(proposal.payloadJson) as Record<string, unknown>;
     const merged = parsedEdits ? { ...base, ...parsedEdits } : base;
     const kind = proposal.kind as AgentProposalKind;
+    const operation = (proposal.operation ?? 'CREATE') as AgentProposalOperation;
+
+    // ═══ THE REVIEWER MUST HAVE READ THE DIFF THEY ARE APPROVING ═══
+    //
+    // Re-derived here rather than trusted from the client, and required to
+    // MATCH what the client says it saw. Three failures are closed by the same
+    // check, and each is a way for an approval to mean less than it looks:
+    //
+    //   * the diff was never computed (the reviewer approved an opaque blob);
+    //   * the diff could not be computed - the target was deleted between
+    //     proposal and review, or the payload is not readable. `isDiffReviewable`
+    //     is false, and approving would apply a change nobody could render;
+    //   * the diff WAS computed, and the base has moved since. A diff against a
+    //     stale base is not a smaller lie than no diff - it is a worse one,
+    //     because it reads as authoritative. The reviewer consented to
+    //     `before -> after`; the row no longer says `before`.
+    //
+    // CREATE proposals are exempt because they have no base: `computeProposalDiff`
+    // returns `baseDigest: null` for one, so there is nothing to bind and
+    // demanding a token would be theatre.
+    if (operation === 'UPDATE') {
+        const diff = await buildProposalDiff(ctx, {
+            id: proposal.id,
+            kind: proposal.kind,
+            operation,
+            payloadJson: proposal.payloadJson,
+            targetEntityId: proposal.targetEntityId,
+        });
+        if (!isDiffReviewable(diff)) {
+            throw badRequest(`Cannot approve a proposal whose diff is ${diff.status}`);
+        }
+        if (!opts?.baseDigest) {
+            throw badRequest(
+                'Approving an update requires the baseDigest of the diff that was reviewed',
+            );
+        }
+        if (opts?.baseDigest !== diff.baseDigest) {
+            // 409 STALE_DATA, the same shape the rest of the product uses for
+            // "somebody moved this under you" - so the client can tell this
+            // apart from a malformed request and re-render the diff.
+            throw staleData(
+                'The record changed since this diff was reviewed - re-review before approving',
+            );
+        }
+    }
 
     // AI Guard — the load-bearing auto-commit-block invariant. This is the ONE
     // path where agent-proposed content becomes a live compliance record, so
@@ -450,6 +1120,134 @@ export async function approveAgentProposal(
     );
 
     const status: 'ACCEPTED' | 'EDITED' = parsedEdits ? 'EDITED' : 'ACCEPTED';
+
+    // ═══ A SIGNATURE IS A HUMAN'S. A CREDENTIAL IS NOT A HUMAN. ═══
+    //
+    // `ctx.userId` on an API-key request is the key's CREATOR, not somebody who
+    // looked at this proposal — `api-key-auth.ts` mints the context with
+    // `userId: apiKey.createdById`. So without this refusal the four-eyes rule
+    // counts distinct USER IDS and a machine supplies one: the key's creator
+    // signs, a human signs, and a proposal that required two independent people
+    // is applied having been read by one. Worse for the strictest case, because a
+    // proposal naming no registered agent is scored at the top rung AND has no
+    // owner for the trigger to exclude.
+    //
+    // The usecase already knew the difference and threw it away: `refuseExpired`
+    // and the four-eyes refusal both compute `actorType: ctx.apiKeyId ? 'API_KEY'
+    // : 'USER'` on their FAILURE paths, while the success path hardcoded 'USER'.
+    //
+    // Refused rather than recorded-and-not-counted, because a review queue that
+    // accepts machine approvals at all is a queue where the automation is doing
+    // the overseeing. If a machine-approval path is ever wanted for single-
+    // approver proposals, persist `viaApiKeyId` on the row and count only the
+    // NULLs — do not relax this into "count it but flag it".
+    if (ctx.apiKeyId) {
+        await appendAuditEntry({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            actorType: 'API_KEY',
+            entity: 'AgentProposal',
+            entityId: proposal.id,
+            action: 'AUTHZ_DENIED',
+            requestId: ctx.requestId,
+            detailsJson: {
+                category: 'access',
+                event: 'authz_denied',
+                reason: 'agent_proposal_human_review_required',
+                approvalsRequired: review.required,
+            },
+            metadataJson: { role: ctx.role, apiKeyId: ctx.apiKeyId },
+        }).catch(() => undefined);
+        throw forbidden('agent_proposal_human_review_required');
+    }
+
+    // ═══ RECORD THIS HUMAN'S SIGNATURE. THE DATABASE ARBITRATES. ═══
+    //
+    // The insert IS the check. Two constraints on `AgentProposalApproval` do the
+    // work, and neither is a read:
+    //
+    //   • `@@unique([tenantId, proposalId, approverUserId])` — the same person
+    //     cannot be both approvers. That is the classic four-eyes bypass, and a
+    //     usecase that counted first and wrote second would let two concurrent
+    //     requests from one reviewer both pass the count.
+    //   • the `agent_proposal_approval_four_eyes` trigger — the agent's
+    //     registered owner is not among the approvers of a proposal that needs
+    //     two. A CHECK cannot read `RegisteredAgent`; a trigger can.
+    //
+    // Written BEFORE the claim, so a signature that does not yet complete the
+    // requirement is still durable evidence that this person looked. A queue
+    // whose first approval leaves no trace cannot tell "one person approved" from
+    // "nobody has looked yet", and those are the two states the whole control is
+    // about.
+    try {
+        await runInTenantContext(ctx, (db) =>
+            db.agentProposalApproval.create({
+                data: {
+                    tenantId: ctx.tenantId,
+                    proposalId: proposal.id,
+                    approverUserId: ctx.userId,
+                    outcome: status,
+                    requiredApprovals: review.required,
+                },
+                select: { id: true },
+            }),
+        );
+    } catch (err) {
+        const refusal = fourEyesRefusal(err);
+        // Not a four-eyes refusal — a real failure. Rethrow rather than let a
+        // broken database read to an operator as the control working.
+        if (!refusal) throw err;
+        await refuseFourEyes(ctx, proposal, refusal);
+    }
+
+    // ═══ IS THE REQUIREMENT MET? ═══
+    //
+    // DISTINCT approvers, and only TERMINAL APPROVING outcomes. A `PENDING` row
+    // is not a signature — the column defaults to it precisely so that a writer
+    // which never stated an outcome grants nothing — and a `REJECTED` one is the
+    // opposite of a signature.
+    const signatures = await runInTenantContext(ctx, (db) =>
+        db.agentProposalApproval.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                proposalId: proposal.id,
+                outcome: { in: ['ACCEPTED', 'EDITED'] },
+            },
+            select: { approverUserId: true },
+            take: 32,
+        }),
+    );
+    const approvers = new Set(signatures.map((row) => row.approverUserId));
+
+    if (approvers.size < review.required) {
+        // Short of the requirement. NOTHING is created and the proposal stays
+        // PENDING for the next reviewer — the claim below is never reached.
+        await appendAuditEntry({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            actorType: 'USER',
+            entity: 'AgentProposal',
+            entityId: proposal.id,
+            action: 'AGENT_PROPOSAL_APPROVAL_RECORDED',
+            requestId: ctx.requestId,
+            detailsJson: {
+                category: 'access',
+                kind: proposal.kind,
+                approvalsRecorded: approvers.size,
+                approvalsRequired: review.required,
+            },
+            metadataJson: { agentId: proposal.agentId },
+        }).catch(() => undefined);
+
+        return {
+            proposalId: proposal.id,
+            kind,
+            status: 'AWAITING_APPROVAL',
+            createdEntityId: null,
+            approvalsRecorded: approvers.size,
+            approvalsRequired: review.required,
+        };
+    }
 
     // ═══ CLAIM BEFORE CREATING. THE ORDER IS THE WHOLE FIX. ═══
     //
@@ -468,9 +1266,22 @@ export async function approveAgentProposal(
     // Claiming first makes the database the arbiter: exactly one caller can
     // move the row out of PENDING, and only that caller proceeds to create.
     // Same shape as `redeemInvite` — claim, then act.
+    // The window is in the CLAIM PREDICATE as well as in the read above, and
+    // for the same reason the status is: the read is advisory, the predicate is
+    // the arbiter. Between the `isProposalExpired` check and this statement the
+    // deadline can pass, or the sweep can stamp EXPIRED — and a claim that only
+    // named the status would take a row whose window had closed a millisecond
+    // earlier and go on to create the record. Expressed as an OR because NULL
+    // means NO DEADLINE RECORDED, which is not expired; `expiresAt: { gt: now }`
+    // alone would drop every pre-migration row and refuse it as a lost race.
     const claim = await runInTenantContext(ctx, (db) =>
         db.agentProposal.updateMany({
-            where: { id, tenantId: ctx.tenantId, status: 'PENDING' },
+            where: {
+                id,
+                tenantId: ctx.tenantId,
+                status: 'PENDING',
+                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            },
             data: { status, reviewedByUserId: ctx.userId, reviewedAt: new Date() },
         }),
     );
@@ -488,29 +1299,44 @@ export async function approveAgentProposal(
     // would read as ACCEPTED with nothing created and no way to retry.
     let createdEntityId: string;
     try {
-        switch (kind) {
-            case 'RISK': {
-                const risk = await createRisk(ctx, CreateRiskSchema.parse(merged) as Parameters<typeof createRisk>[1]);
-                createdEntityId = risk.id;
-                break;
+        if (operation === 'UPDATE') {
+            // `targetEntityId` is NOT NULL for an UPDATE row by database CHECK
+            // (`AgentProposal_update_requires_target`); the guard below is the
+            // type-level acknowledgement of that, not a second opinion about it.
+            if (!proposal.targetEntityId) {
+                throw badRequest('This update proposal names no target record');
             }
-            case 'CONTROL': {
-                const control = await createControl(ctx, CreateControlSchema.parse(merged) as Parameters<typeof createControl>[1]);
-                createdEntityId = control.id;
-                break;
+            createdEntityId = await applyProposedUpdate(
+                ctx,
+                kind,
+                proposal.targetEntityId,
+                merged,
+            );
+        } else {
+            switch (kind) {
+                case 'RISK': {
+                    const risk = await createRisk(ctx, CreateRiskSchema.parse(merged) as Parameters<typeof createRisk>[1]);
+                    createdEntityId = risk.id;
+                    break;
+                }
+                case 'CONTROL': {
+                    const control = await createControl(ctx, CreateControlSchema.parse(merged) as Parameters<typeof createControl>[1]);
+                    createdEntityId = control.id;
+                    break;
+                }
+                case 'POLICY': {
+                    const policy = await createPolicy(ctx, CreatePolicySchema.parse(merged) as Parameters<typeof createPolicy>[1]);
+                    createdEntityId = policy.id;
+                    break;
+                }
+                case 'FINDING': {
+                    const finding = await createFinding(ctx, CreateFindingSchema.parse(merged));
+                    createdEntityId = finding.id;
+                    break;
+                }
+                default:
+                    throw badRequest(`Unknown proposal kind: ${kind}`);
             }
-            case 'POLICY': {
-                const policy = await createPolicy(ctx, CreatePolicySchema.parse(merged) as Parameters<typeof createPolicy>[1]);
-                createdEntityId = policy.id;
-                break;
-            }
-            case 'FINDING': {
-                const finding = await createFinding(ctx, CreateFindingSchema.parse(merged));
-                createdEntityId = finding.id;
-                break;
-            }
-            default:
-                throw badRequest(`Unknown proposal kind: ${kind}`);
         }
     } catch (err) {
         // ═══ THE CLAIM IS DELIBERATELY *NOT* HANDED BACK ═══
@@ -567,6 +1393,7 @@ export async function approveAgentProposal(
             detailsJson: {
                 category: 'access',
                 kind,
+                operation: proposal.operation ?? 'CREATE',
                 claimedStatus: status,
                 error: err instanceof Error ? err.message : String(err),
             },
@@ -593,11 +1420,31 @@ export async function approveAgentProposal(
         entityId: id,
         action: 'AGENT_PROPOSAL_APPROVED',
         requestId: ctx.requestId,
-        detailsJson: { category: 'access', kind, createdEntityId },
-        metadataJson: { proposedByApiKeyId: proposal.proposedViaKeyId, createdEntityId, edited: !!parsedEdits },
+        detailsJson: {
+            category: 'access',
+            kind,
+            operation: proposal.operation ?? 'CREATE',
+            createdEntityId,
+            // How many humans actually signed, and how many were required. The
+            // pair is the evidence: "approved" on its own is the claim this
+            // whole subsystem exists to stop taking on trust.
+            approvalsRecorded: approvers.size,
+            approvalsRequired: review.required,
+        },
+        metadataJson: {
+            proposedByApiKeyId: proposal.proposedViaKeyId,
+            createdEntityId,
+            edited: !!parsedEdits,
+            operation: proposal.operation ?? 'CREATE',
+            // The fingerprint of the base the reviewer read - null for a CREATE,
+            // which has no base. An id-shaped digest carrying no content: it is
+            // what makes "a human reviewed THIS delta" a checkable claim rather
+            // than a checkbox.
+            reviewedBaseDigest: opts?.baseDigest ?? null,
+        },
     }).catch(() => undefined);
 
-    return { proposalId: id, kind, createdEntityId, status };
+    return { proposalId: id, kind, operation, createdEntityId, status };
 }
 
 /** Reject a PENDING proposal — nothing is created. */
@@ -611,6 +1458,14 @@ export async function rejectAgentProposal(ctx: RequestContext, id: string): Prom
     // clear a quarantined row leaves a trail rather than a gap.
     if (proposal.status === 'QUARANTINED' || proposal.guardVerdict === 'QUARANTINED') {
         await refuseQuarantined(ctx, proposal, 'reject');
+    }
+    // And an EXPIRED proposal cannot be rejected either — see `refuseExpired`.
+    // Not symmetry for its own sake: moving the row to REJECTED would overwrite
+    // "nobody decided" with "somebody decided no", improving the record of a
+    // queue that was too slow, which is the one direction the evidence must
+    // never move on its own.
+    if (isProposalExpired(proposal.expiresAt, new Date())) {
+        await refuseExpired(ctx, proposal, 'reject');
     }
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);

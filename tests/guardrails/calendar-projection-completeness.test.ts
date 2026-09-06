@@ -68,6 +68,8 @@ const EXCLUSIONS: Record<string, string> = {
         'Device-token lifetime — credential rotation, surfaced with the device, not a compliance deadline.',
     'UserSession.expiresAt':
         'Session lifetime — Epic C.3 session hardening; expiry is enforced automatically and has no owner to remind.',
+    'AgentProposal.expiresAt':
+        'Review-window deadline for an agent proposal (ASI09). Deliberately NOT on the calendar: the window exists because an unbounded queue is itself a driver of rubber-stamping, so the remedy for a proposal nobody reached is that it EXPIRES unapproved — not that somebody is reminded to go and approve it before the clock runs out. Putting it on a compliance calendar would turn the anti-automation-bias control into a prompt to clear the queue, which is the behaviour it exists to discourage. The queue itself, and the review-quality report, are where the backlog is meant to be seen.',
     'TenantInvite.expiresAt':
         'Invite-token lifetime — a leaked-token bound, not work to be done; the admin members screen shows pending invites.',
     'AuditPackShare.expiresAt':

@@ -23,6 +23,13 @@
  */
 const db = {
     agentProposal: { findFirst: jest.fn(), updateMany: jest.fn(), create: jest.fn() },
+    // The four-eyes signature table. `approveAgentProposal` records the
+    // reviewer's signature and then counts DISTINCT approvers before it claims
+    // the row, so a mock without these two answers a different function.
+    agentProposalApproval: {
+        create: jest.fn(async () => ({ id: 'approval-1' })),
+        findMany: jest.fn(async () => [{ approverUserId: 'u1' }]),
+    },
 };
 
 // Mock param types are DECLARED, not inferred. `jest.fn(async () => …)` types
@@ -335,6 +342,13 @@ describe('a QUARANTINED proposal cannot be approved through the normal review pa
             guardRuleIds: [],
             payloadJson: JSON.stringify({ title: CLEAN_PROPOSAL.title }),
             proposedViaKeyId: 'k1',
+            agentId: null,
+            policyCardVersion: 0,
+            // One approver, so this reviewer's own signature completes it. The
+            // TIERED path (two approvers, owner excluded) is proved against a
+            // real database in `proposal-review-tiering.test.ts` — it is a set
+            // of DB constraints, and a mock cannot enforce them.
+            requiredApprovals: 1,
         });
         const result = await approveAgentProposal(ctx, 'p-clean');
         expect(result.createdEntityId).toBe('risk-1');

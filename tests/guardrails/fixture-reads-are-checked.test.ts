@@ -23,12 +23,17 @@
  * counts: it asserts NOTHING, so the value must be narrowed before use — which
  * is the safe form, not the bug.
  *
- * ═══ THE RESIDUAL IS DELIBERATE ═══
+ * ═══ THE BASELINE IS EMPTY ═══
  *
- * `prisma/seed.ts` still holds 38 of these. They are not converted here because
- * that file is under concurrent change and a 38-site edit across a moving
- * target is how the third incident happened. Recorded as a countable baseline
- * that only goes down, rather than left invisible.
+ * It held `prisma/seed.ts: 38` — deliberately, while that file was under
+ * concurrent change, because a 38-site edit across a moving target is exactly
+ * how the third incident happened. Those landed once it settled, and every
+ * fixture read in `prisma/` and `scripts/` now checks its shape.
+ *
+ * Kept as an empty record rather than deleted, because the assertions below are
+ * what stop the next one. Adding an entry here to silence a failure is the one
+ * move this file exists to prevent: `fixtureArray` and `fixtureObject` are a
+ * single call and give a located error.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -44,9 +49,10 @@ const UNCHECKED = /require\(\s*['"][^'"]*fixtures\/[^'"]+\.json['"]\s*\)\s*as\s+
  * A NEW fixture read has no reason to be here — `fixtureArray` and
  * `fixtureObject` are one call and give a located error.
  */
-const KNOWN_UNCHECKED: Record<string, number> = {
-    'prisma/seed.ts': 38,
-};
+const KNOWN_UNCHECKED: Record<string, number> = {};
+
+/** Files the scan examined — the denominator, asserted below. */
+const scanned: string[] = [];
 
 function uncheckedReads(): Map<string, number> {
     const found = new Map<string, number>();
@@ -58,6 +64,7 @@ function uncheckedReads(): Map<string, number> {
         } catch {
             continue;
         }
+        scanned.push(rel);
         const n = [...src.matchAll(UNCHECKED)].length;
         if (n > 0) found.set(rel, n);
     }
@@ -67,11 +74,17 @@ function uncheckedReads(): Map<string, number> {
 describe('fixture reads assert their shape', () => {
     const found = uncheckedReads();
 
-    it('the scan sees the seeders (not vacuous)', () => {
-        // Every assertion below passes on an empty scan — the shape of the bug
-        // one level up. `seed.ts` is the known population, so its absence means
-        // the scan broke rather than the debt cleared.
-        expect([...found.keys()]).toContain('prisma/seed.ts');
+    it('the scan actually reads the seeders (not vacuous)', () => {
+        // Every assertion below passes on an empty scan, which is the shape of
+        // the bug one level up: a check that examines nothing reports nothing
+        // wrong.
+        //
+        // This used to assert that `prisma/seed.ts` APPEARED in the findings,
+        // which worked only while it still carried casts. Now that it does not,
+        // the denominator has to be pinned instead: the files the scan
+        // examined, not the offences it found.
+        expect(scanned).toContain('prisma/seed.ts');
+        expect(scanned.length).toBeGreaterThanOrEqual(6);
     });
 
     it('no file outside the recorded baseline casts a fixture read', () => {

@@ -41,6 +41,7 @@ import {
     listAgentProposals,
     listQuarantinedAgentProposals,
     rejectAgentProposal,
+    wasApplied,
 } from '@/app-layer/usecases/agent-proposals';
 import { makeRequestContext } from '../helpers/make-context';
 import { getExecutiveDashboard } from '@/app-layer/usecases/dashboard';
@@ -63,6 +64,10 @@ let taskId = '';
 let questionnaireId = '';
 
 const humanCtx = () => makeRequestContext('ADMIN', { tenantId: TENANT, tenantSlug: TENANT, userId: USER });
+/** A SECOND reviewer — the approval queue is four-eyes for this principal. */
+const SECOND_USER = `u2-${SUITE}`;
+const secondHumanCtx = () =>
+    makeRequestContext('ADMIN', { tenantId: TENANT, tenantSlug: TENANT, userId: SECOND_USER });
 
 async function rpc(token: string, body: unknown): Promise<{ status: number; json: unknown }> {
     const req = new NextRequest('http://localhost/api/mcp', {
@@ -166,6 +171,20 @@ describeFn('prompt-injection corpus — an obeyed injection never reaches the re
             where: { tenantId_userId: { tenantId: TENANT, userId: USER } },
             update: { role: 'OWNER', status: 'ACTIVE' },
             create: { tenantId: TENANT, userId: USER, role: 'OWNER', status: 'ACTIVE' },
+        });
+
+        // A second human, so a proposal that needs two approvers has somebody
+        // to be the second. This suite's key names no registered agent, and an
+        // unregistered machine principal is scored at the strictest rung.
+        const secondEmail = `${SECOND_USER}@example.test`;
+        await prisma.user.upsert({
+            where: { id: SECOND_USER }, update: {},
+            create: { id: SECOND_USER, email: secondEmail, emailHash: hashForLookup(secondEmail) },
+        });
+        await prisma.tenantMembership.upsert({
+            where: { tenantId_userId: { tenantId: TENANT, userId: SECOND_USER } },
+            update: { role: 'ADMIN', status: 'ACTIVE' },
+            create: { tenantId: TENANT, userId: SECOND_USER, role: 'ADMIN', status: 'ACTIVE' },
         });
         await prisma.tenantSecuritySettings.upsert({
             where: { tenantId: TENANT },
@@ -336,8 +355,17 @@ describeFn('prompt-injection corpus — an obeyed injection never reaches the re
             expect(created).toBeTruthy();
             expect((created!.detailsJson as { guardVerdict?: string }).guardVerdict).toBe('CLEAN');
 
-            const approved = await approveAgentProposal(humanCtx(), id);
+            // FOUR EYES: the first signature records the review and creates
+            // nothing; the second, from a different human, commits.
+            const first = await approveAgentProposal(humanCtx(), id);
+            expect(first.status).toBe('AWAITING_APPROVAL');
+            expect(first.createdEntityId).toBeNull();
+
+            const approved = await approveAgentProposal(secondHumanCtx(), id);
             expect(approved.status).toBe('ACCEPTED');
+            // An approval that only RECORDED a signature applies nothing, so there is
+            // no row to look for — narrow before reading the id.
+            if (!wasApplied(approved)) throw new Error('expected the proposal to be applied');
             const risk = await prisma.risk.findFirst({ where: { id: approved.createdEntityId } });
             expect(risk?.tenantId).toBe(TENANT);
         }, 60_000);

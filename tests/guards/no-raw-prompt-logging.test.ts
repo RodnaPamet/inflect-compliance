@@ -178,7 +178,10 @@ const byId = (id: string) => FINDINGS.filter((f) => f.messageId === id);
  * name them at the sink.
  */
 const KNOWN_UNANALYSABLE: readonly string[] = [
+    'src/app-layer/jobs/agent-proposal-expiry.ts — identifier bound elsewhere',
+    'src/app-layer/jobs/agent-proposal-sample-audit.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-policy-card.ts — identifier bound elsewhere',
+    'src/app-layer/usecases/agent-proposal-sample-audit.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-proposals.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-registry.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-risk-assessment.ts — identifier bound elsewhere',
@@ -268,6 +271,10 @@ const SINK_FLOOR = 30;
  *   MOST_OPAQUE_SINGLE_CALL                 the worst single call on it, 6
  *
  * The ceiling is `(108 + 6) / 48`. In words: the path may absorb ONE more sink
+ *   MEASURED_HOLES / MEASURED_SINKS         the path today, 106 / 59 = 1.797
+ *   MOST_OPAQUE_SINGLE_CALL                 the worst single call on it, 6
+ *
+ * The ceiling is `(106 + 6) / 59`. In words: the path may absorb ONE more sink
  * call as opaque as the most opaque one it already has before somebody has to
  * look. Two such calls fail. Seven more opaque fields on the EXISTING calls,
  * with no new sink, fail. That is the sensitivity this cap is for — it moves
@@ -314,8 +321,8 @@ const SINK_FLOOR = 30;
 // and all wrong here. Taking any one of them would have produced a green ratchet
 // describing a codebase that does not exist, which is the failure this ratchet is
 // for. Re-derived by zeroing both and reading the failure message.
-const MEASURED_HOLES = 131;
-const MEASURED_SINKS = 62;
+const MEASURED_HOLES = 140;
+const MEASURED_SINKS = 76;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;
