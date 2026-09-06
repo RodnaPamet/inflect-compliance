@@ -27,6 +27,29 @@ export interface ReadStepDef {
     tool: string;
     /** Build the tool arguments from the accumulated context. */
     args?: (ctx: WorkflowContext) => Record<string, unknown>;
+    /**
+     * May this step FAIL WITHOUT ENDING THE RUN?
+     *
+     * Default `false`, which is the engine's original behaviour to the letter:
+     * a throw marks the run FAILED and the run is over — every step that had
+     * already succeeded is stranded in a terminal state `resumeWorkflowRun`
+     * refuses. Opting in says this step gathers something the later steps can
+     * do without (an optional enrichment read, a best-effort proposal), so its
+     * failure is recorded against the STEP and the run carries on.
+     *
+     * It is NOT a way to make a run quiet. An isolated failure still writes a
+     * `FAILED` WorkflowStep row carrying the reason, still emits a metric, and
+     * still counts into the `stepFailures` the run's own result reports. A run
+     * that completes with `stepFailures > 0` reasoned over less than it meant
+     * to, and its caller is handed the number rather than left to query for it.
+     *
+     * It is also NOT a way past a HALT. A `ContextIntegrityError`, or any error
+     * carrying the `agenticFatal` brand (an operator kill, a budget breach),
+     * ends the run whatever this flag says — see `isAgenticFatal` in
+     * `@/lib/agentic/failure-isolation`. A per-step flag that could override a
+     * kill would be the cascade it exists to prevent.
+     */
+    continueOnFailure?: boolean;
 }
 
 export interface ProposeStepDef {
@@ -37,11 +60,26 @@ export interface ProposeStepDef {
     /** Build the candidate items from the accumulated context. Empty ⇒ step skipped. */
     buildItems: (ctx: WorkflowContext) => Array<Record<string, unknown>>;
     rationale?: (ctx: WorkflowContext) => string;
+    /** See `ReadStepDef.continueOnFailure` — isolate this step's failure, never a halt. */
+    continueOnFailure?: boolean;
 }
 
 export interface CheckpointStepDef {
     kind: 'HUMAN_CHECKPOINT';
     label: string;
+    /**
+     * A checkpoint CANNOT opt into failure isolation, and `never` is how that is
+     * said to the compiler rather than to a reader.
+     *
+     * Declaring it (as an always-`undefined` optional) keeps the property
+     * readable across the `WorkflowStepDef` union — the executor asks every step
+     * the same question — while making `continueOnFailure: true` on a checkpoint
+     * a type error. The reason is that a checkpoint's failure is not a step
+     * failing at its work: the only things it does are record a PENDING row and
+     * park the run, so a throw there means the run could not be parked. Carrying
+     * on past that would run the steps a human was supposed to gate.
+     */
+    continueOnFailure?: never;
 }
 
 export interface SynthesisStepDef {
@@ -49,6 +87,8 @@ export interface SynthesisStepDef {
     label: string;
     /** Produce a summary (and optional structured data) from the context. */
     synthesize: (ctx: WorkflowContext) => { text: string; data?: Record<string, unknown> };
+    /** See `ReadStepDef.continueOnFailure` — isolate this step's failure, never a halt. */
+    continueOnFailure?: boolean;
 }
 
 export type WorkflowStepDef =

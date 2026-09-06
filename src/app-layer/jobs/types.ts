@@ -618,6 +618,22 @@ export interface AvRescanPayload {
     requestId?: string;
 }
 
+/**
+ * `agent-run-reaper` — settle agentic workflow runs left `RUNNING` by an
+ * executor that died (a pod eviction, an OOM kill, a rolling deploy).
+ *
+ * Cross-tenant by default: `tenantId` is OPTIONAL and narrows the sweep to one
+ * tenant for an operator re-run. It is present rather than absent because the
+ * job genuinely acts per tenant — every write goes through `withTenantDb` with
+ * the row's own tenant — so the payload can express that scope honestly instead
+ * of being exempted from carrying one.
+ */
+export interface AgentRunReaperPayload {
+    /** Narrow the sweep to one tenant. Absent ⇒ every tenant. */
+    tenantId?: string;
+    requestId?: string;
+}
+
 export interface JobPayloadMap {
     'health-check': HealthCheckPayload;
     'nvd-cve-sync': NvdCveSyncPayload;
@@ -636,6 +652,7 @@ export interface JobPayloadMap {
     'sync-pull': SyncPullPayload;
     'compliance-snapshot': ComplianceSnapshotPayload;
     'sla-monitor': SlaMonitorPayload;
+    'agent-run-reaper': AgentRunReaperPayload;
     'rule-chain-dispatch': RuleChainDispatchPayload;
     'subflow-dispatch': SubflowDispatchPayload;
     'schedule-trigger-sweep': ScheduleTriggerSweepPayload;
@@ -943,6 +960,16 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnFail: 1000,
     },
     'sla-monitor': {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 200,
+        removeOnFail: 500,
+    },
+    // Two attempts, not three. The sweep is idempotent (the reap is a
+    // conditional `updateMany` on `status: 'RUNNING'`), so a retry is safe —
+    // but the failures it can hit are a dead database or a halt somebody
+    // declared, and neither is fixed by a third go.
+    'agent-run-reaper': {
         attempts: 2,
         backoff: { type: 'exponential', delay: 5000 },
         removeOnComplete: 200,

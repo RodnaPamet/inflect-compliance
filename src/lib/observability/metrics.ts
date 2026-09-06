@@ -1232,3 +1232,61 @@ export function recordWorkflowContextIntegrityHalt(attrs: { code: string }): voi
 export function recordWorkflowContextBytes(bytes: number): void {
     getWorkflowContextBytes().record(bytes);
 }
+
+// ─── Agentic fan-out failure isolation (OWASP ASI08) ────────────────────
+//
+// Isolating a member's failure keeps the batch alive; it also makes the loss
+// invisible unless it is counted. These two counters are that count, and they
+// are deliberately SEPARATE series rather than one counter with an `outcome`
+// label, because they mean opposite things to whoever is paged:
+//
+//   `member_failed` rising  — the fan-out is working. One agent, one step or
+//                             one run is broken and the rest completed. Alert
+//                             on the RATE, and on a single `kind` dominating:
+//                             a spike concentrated in one kind is one fault
+//                             reaching many members, which is ASI08 starting.
+//
+//   `halted` rising         — the fan-out STOPPED. Members behind the halt were
+//                             never attempted. Any non-zero value deserves a
+//                             look, because the only errors that reach it are
+//                             the ones somebody declared must stop a run: a
+//                             context-integrity halt or a kill.
+//
+// `kind` is the failure's class or declared code — bounded, enum-shaped, and
+// never a message. `component` names the fan-out, not the member, so neither
+// series carries a tenant or agent id.
+
+let _agenticMemberFailures: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+let _agenticFanOutHalts: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+
+function getAgenticMemberFailures() {
+    if (!_agenticMemberFailures) {
+        _agenticMemberFailures = getMeter().createCounter('agentic.fanout.member_failed', {
+            description:
+                'One member of an agentic fan-out (a workflow step, an agent, a run) failed and was isolated; the fan-out continued. Labelled by component and failure kind.',
+            unit: '1',
+        });
+    }
+    return _agenticMemberFailures;
+}
+
+function getAgenticFanOutHalts() {
+    if (!_agenticFanOutHalts) {
+        _agenticFanOutHalts = getMeter().createCounter('agentic.fanout.halted', {
+            description:
+                'An agentic fan-out stopped on a fatal failure; members behind it were never attempted. Labelled by component and failure kind.',
+            unit: '1',
+        });
+    }
+    return _agenticFanOutHalts;
+}
+
+/** One isolated member failure. The fan-out continued past it. */
+export function recordAgenticMemberFailure(attrs: { component: string; kind: string }): void {
+    getAgenticMemberFailures().add(1, { component: attrs.component, kind: attrs.kind });
+}
+
+/** One fan-out halted on a fatal failure. Members behind it went unattempted. */
+export function recordAgenticFanOutHalt(attrs: { component: string; kind: string }): void {
+    getAgenticFanOutHalts().add(1, { component: attrs.component, kind: attrs.kind });
+}

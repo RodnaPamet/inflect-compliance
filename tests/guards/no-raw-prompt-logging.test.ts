@@ -243,10 +243,27 @@ const SINK_FLOOR = 30;
  *   MOST_OPAQUE_SINGLE_CALL                 the worst single call on it, 6
  *
  * The ceiling is `(113 + 6) / 51`. In words: the path may absorb ONE more sink
+ *   MEASURED_HOLES / MEASURED_SINKS         the path today, 99 / 51 = 1.941
+ *   MOST_OPAQUE_SINGLE_CALL                 the worst single call on it, 6
+ *
+ * The ceiling is `(99 + 6) / 51`. In words: the path may absorb ONE more sink
  * call as opaque as the most opaque one it already has before somebody has to
  * look. Two such calls fail. Seven more opaque fields on the EXISTING calls,
  * with no new sink, fail. That is the sensitivity this cap is for — it moves
  * when a field bag grows, which is the thing the exact set above cannot see.
+ *
+ * RE-MEASURED 2026-09-06, when the ASI08 failure-isolation work added the first
+ * `src/app-layer/jobs/agent-*.ts` file — the anticipatory glob doing exactly
+ * what it was written for. Sinks went 45 → 51 and holes 97 → 99, and note the
+ * direction that combination moves the ceiling: 2.156 → 1.941 for the observed
+ * ratio and 2.289 → 2.059 for the cap. Six new sink calls with two new opaque
+ * positions between them TIGHTENS the budget rather than buying headroom, which
+ * is the arithmetic working. The two new holes are both in
+ * `workflow-runs.ts` (`entityId: runId`, `stepSeq: seq` on the isolated-failure
+ * audit row) — a file already listed below, so the SET does not move. The new
+ * job contributes ZERO: its log lines spell `component` out as a literal and
+ * its audit row passes a timestamp rather than an inline subtraction, both
+ * changed deliberately so the rule can read them.
  *
  * A rejected alternative, recorded because the reasoning matters more than the
  * number: the rule could also census the NAMED POSITIONS it resolves (object
@@ -257,6 +274,7 @@ const SINK_FLOOR = 30;
  * defect this cap exists to catch, one level up.
  */
 const MEASURED_HOLES = 113;
+const MEASURED_HOLES = 99;
 const MEASURED_SINKS = 51;
 /** `src/lib/mcp/auth.ts` — a six-field `detailsJson` bag built out of locals. */
 const MOST_OPAQUE_SINGLE_CALL = 6;

@@ -69,9 +69,15 @@ import {
     type OpenedContext,
 } from '@/lib/agentic/context-integrity';
 import {
+    recordAgenticFanOutHalt,
+    recordAgenticMemberFailure,
     recordWorkflowContextBytes,
     recordWorkflowContextIntegrityHalt,
 } from '@/lib/observability/metrics';
+import {
+    describeFailure,
+    isAgenticFatal,
+} from '@/lib/agentic/failure-isolation';
 import type { RequestContext } from '@/app-layer/types';
 
 // ─── Public API ─────────────────────────────────────────────────────
@@ -80,6 +86,15 @@ export interface StartWorkflowResult {
     runId: string;
     status: string;
     workflowKey: string;
+    /**
+     * How many steps FAILED and were isolated (see `continueOnFailure`).
+     *
+     * On the result rather than left to a query, because a batch that does not
+     * say how many members failed is a batch that reports a partial pass as a
+     * clean one. Zero is the ordinary answer and the common case; anything else
+     * means this run reasoned over less than its definition asked for.
+     */
+    stepFailures: number;
 }
 
 /**
@@ -145,8 +160,8 @@ export async function startWorkflowRun(
         metadataJson: { apiKeyId: ctx.apiKeyId ?? null, agentId: ctx.agentId ?? null },
     }).catch(() => undefined);
 
-    const status = await executeFrom(ctx, run.id, def, 0, Date.now());
-    return { runId: run.id, status, workflowKey };
+    const { status, stepFailures } = await executeFrom(ctx, run.id, def, 0, Date.now());
+    return { runId: run.id, status, workflowKey, stepFailures };
 }
 
 /**
@@ -154,7 +169,10 @@ export async function startWorkflowRun(
  * its checkpoint. A privileged human action. Marks the pending checkpoint DONE
  * and continues from the next step.
  */
-export async function resumeWorkflowRun(ctx: RequestContext, runId: string): Promise<{ status: string }> {
+export async function resumeWorkflowRun(
+    ctx: RequestContext,
+    runId: string,
+): Promise<{ status: string; stepFailures: number }> {
     assertCanWrite(ctx);
     const { run, def } = await loadRunAndDef(ctx, runId);
     if (run.status !== 'AWAITING_APPROVAL' && run.status !== 'PAUSED') {
@@ -183,8 +201,12 @@ export async function resumeWorkflowRun(ctx: RequestContext, runId: string): Pro
         requestId: ctx.requestId, detailsJson: { category: 'access' },
     }).catch(() => undefined);
 
-    const status = await executeFrom(ctx, runId, def, resumedFrom + 1, Date.now());
-    return { status };
+    // The count is for THIS SEGMENT, and that is the honest scope: a resume
+    // re-enters the executor at the next step, so it can only speak for the
+    // steps it ran. The durable, whole-run answer is the `FAILED` WorkflowStep
+    // rows, which `getWorkflowRun` returns.
+    const { status, stepFailures } = await executeFrom(ctx, runId, def, resumedFrom + 1, Date.now());
+    return { status, stepFailures };
 }
 
 /** Abort a run (operator kill-switch). No mutation is left half-applied — writes
@@ -256,19 +278,29 @@ export async function listWorkflowRuns(
  * inside its token budget while one tool output makes its memory unbounded.
  * Over the cap the run HALTS — see `commitContext`; nothing is trimmed to fit.
  */
+interface ExecuteOutcome {
+    status: string;
+    /** Steps that failed and were ISOLATED in this segment. Never a silent zero. */
+    stepFailures: number;
+}
+
 async function executeFrom(
     ctx: RequestContext,
     runId: string,
     def: WorkflowDefinition,
     fromSeq: number,
     runStartMs: number,
-): Promise<string> {
+): Promise<ExecuteOutcome> {
     // ONE read for the run row, and it carries three things: the cost so far,
     // the sealed context, and its chain head. (It used to be two reads — one in
     // `loadContext`, one in `currentCost` — of the same row.)
     const initial = await getRunRow(ctx, runId);
     let stepCount = fromSeq;
     let costTokens = initial.costTokens ?? 0;
+    // Steps this segment failed on and CONTINUED past. Every early return below
+    // carries it, so no exit from this function can report a run without saying
+    // how much of it did not work.
+    let stepFailures = 0;
 
     // The run's memory, opened under verification. A failure here is a HALT,
     // not a reset: `openSealedContext` has no path that returns a context it
@@ -289,7 +321,9 @@ async function executeFrom(
     try {
         opened = openRunContext(ctx, runId, initial, minSeq);
     } catch (err) {
-        if (err instanceof ContextIntegrityError) return haltRun(ctx, runId, err);
+        if (err instanceof ContextIntegrityError) {
+            return { status: await haltRun(ctx, runId, err), stepFailures };
+        }
         throw err;
     }
     let context = opened.context;
@@ -319,17 +353,22 @@ async function executeFrom(
     for (let seq = fromSeq; seq < def.steps.length; seq++) {
         // ── Guardrails ──
         if (seq >= ENGINE_CAPS.MAX_STEPS) {
-            return failRun(ctx, runId, `step cap (${ENGINE_CAPS.MAX_STEPS}) exceeded`);
+            const status = await failRun(ctx, runId, `step cap (${ENGINE_CAPS.MAX_STEPS}) exceeded`);
+            return { status, stepFailures };
         }
         if (Date.now() - runStartMs > ENGINE_CAPS.WALL_CLOCK_MS) {
-            return failRun(ctx, runId, 'wall-clock timeout exceeded');
+            const status = await failRun(ctx, runId, 'wall-clock timeout exceeded');
+            return { status, stepFailures };
         }
         if (costTokens > ENGINE_CAPS.MAX_TOKENS) {
-            return failRun(ctx, runId, `token budget (${ENGINE_CAPS.MAX_TOKENS}) exceeded`);
+            const status = await failRun(ctx, runId, `token budget (${ENGINE_CAPS.MAX_TOKENS}) exceeded`);
+            return { status, stepFailures };
         }
         // Abort/pause may have been requested between steps.
         const live = await getRunRow(ctx, runId);
-        if (live.status === 'ABORTED' || live.status === 'PAUSED') return live.status;
+        if (live.status === 'ABORTED' || live.status === 'PAUSED') {
+            return { status: live.status, stepFailures };
+        }
 
         // RE-OPEN THE CONTEXT FROM THE ROW AT EVERY STEP, rather than trusting
         // the copy this function is holding. That is what makes "a tampered
@@ -349,7 +388,9 @@ async function executeFrom(
             chainSeq = reopened.seq;
             chainHash = reopened.hash;
         } catch (err) {
-            if (err instanceof ContextIntegrityError) return haltRun(ctx, runId, err);
+            if (err instanceof ContextIntegrityError) {
+                return { status: await haltRun(ctx, runId, err), stepFailures };
+            }
             throw err;
         }
 
@@ -363,7 +404,7 @@ async function executeFrom(
                     status: 'AWAITING_APPROVAL',
                     stepCount: seq + 1,
                 });
-                return 'AWAITING_APPROVAL';
+                return { status: 'AWAITING_APPROVAL', stepFailures };
             }
 
             if (step.kind === 'READ') {
@@ -405,10 +446,72 @@ async function executeFrom(
             // problem. It also must not fall through to `failRun`, which would
             // report a tool error where the finding is a poisoned or oversized
             // memory. Checked first, for both reasons.
-            if (err instanceof ContextIntegrityError) return haltRun(ctx, runId, err);
+            if (err instanceof ContextIntegrityError) {
+                return { status: await haltRun(ctx, runId, err), stepFailures };
+            }
             const message = err instanceof Error ? err.message : String(err);
+            // The step's own row records the failure either way — same row,
+            // same reason, in the encrypted `outputJson` where the reason
+            // belongs. What the two branches below decide is only whether the
+            // RUN survives it.
             await recordStep(ctx, runId, seq, step.kind, { status: 'FAILED', label: step.label, output: { error: message } }, chainSeq);
-            return failRun(ctx, runId, `step ${seq} (${step.kind}) failed: ${message}`);
+
+            // ── "This step failed" vs "this run must not continue" ──
+            //
+            // Two conditions, and neither is a message match. A FATAL error
+            // (`agenticFatal`, or a kill/budget error branded with it) ends the
+            // run no matter what the step declared — a per-step opt-in that
+            // could outrank a kill would be the cascade the opt-in exists to
+            // prevent. Absent a fatal, the step's OWN declaration decides, and
+            // its default is the engine's original behaviour: end the run.
+            const failure = describeFailure(`${runId}:${seq}`, err);
+            if (isAgenticFatal(err) || step.continueOnFailure !== true) {
+                if (failure.fatal) {
+                    recordAgenticFanOutHalt({ component: 'workflow-step', kind: failure.kind });
+                }
+                const status = await failRun(ctx, runId, `step ${seq} (${step.kind}) failed: ${message}`);
+                return { status, stepFailures };
+            }
+
+            // ISOLATED. Counted before anything else, because the whole risk of
+            // this branch is that continuing quietly makes the loss invisible:
+            // the metric fires, the audit row lands, and the count rides out on
+            // the run's own result.
+            stepFailures++;
+            recordAgenticMemberFailure({ component: 'workflow-step', kind: failure.kind });
+            await appendAuditEntry({
+                tenantId: ctx.tenantId,
+                userId: ctx.userId,
+                actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
+                entity: 'WorkflowRun',
+                entityId: runId,
+                action: 'WORKFLOW_STEP_ISOLATED_FAILURE',
+                requestId: ctx.requestId,
+                // DIGEST, never the message. A step's error text on this path
+                // can quote a tool argument or a model's own words, and this
+                // row is plaintext, hash-chained and never deleted.
+                detailsJson: {
+                    category: 'access',
+                    stepSeq: seq,
+                    stepKind: step.kind,
+                    failureKind: failure.kind,
+                    failureDigest: failure.digest,
+                },
+                metadataJson: { agentId: ctx.agentId ?? null },
+            }).catch(() => undefined);
+
+            // The run's PROGRESS is committed even though the step failed —
+            // this is the half that makes the abort recoverable rather than
+            // irrecoverable. The context is unchanged (the failed step wrote
+            // nothing into it), but `stepCount` advances, so a later resume or
+            // an operator reading the row sees exactly how far the run got.
+            stepCount = seq + 1;
+            const committed = await commitContext(ctx, runId, context, chainSeq + 1, chainHash, {
+                stepCount,
+                costTokens,
+            });
+            chainSeq = committed.seq;
+            chainHash = committed.hash;
         }
     }
 
@@ -427,10 +530,12 @@ async function executeFrom(
             summary: summaryText,
         });
     } catch (err) {
-        if (err instanceof ContextIntegrityError) return haltRun(ctx, runId, err);
+        if (err instanceof ContextIntegrityError) {
+            return { status: await haltRun(ctx, runId, err), stepFailures };
+        }
         throw err;
     }
-    return 'COMPLETED';
+    return { status: 'COMPLETED', stepFailures };
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
