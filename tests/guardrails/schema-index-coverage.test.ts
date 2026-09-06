@@ -401,6 +401,7 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    AgentProposalApproval: 'approveAgentProposal reads the signatures on ONE proposal by (tenantId, proposalId) plus a small outcome equality — covered by @@index([tenantId, proposalId]), which the @@unique([tenantId, proposalId, approverUserId]) four-eyes index also serves as a prefix of; bounded take \u2264 32 and, in practice, by requiredApprovals.',
     AiSystemRequirementLink: 'computeAgentRiskCoverage reads the agent\'s own scope by (tenantId, aiSystemId, requirementId IN [ten ASI rows]) \u2014 covered by @@index([tenantId, aiSystemId]); bounded by the framework\'s requirement count, not by tenant data.',
     AuditChecklistItem: 'updateAudit prefetches the touched checklist rows by (id IN […], tenantId) for FAIL-transition detection — a PK IN lookup + RLS-bound tenantId; @@index([tenantId, auditId]) is more than sufficient; bounded by the request payload size.',
     AuditPackItem: 'getPackByShareToken reads a pack\'s items by (tenantId, auditPackId) for the public share-page projection — covered by @@index([tenantId, auditPackId]); bounded take ≤2000.',
@@ -447,7 +448,17 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     // status), orders by createdAt desc; fully covered by
     // @@index([tenantId, status, createdAt]). Bounded take ≤100.
     AgentProposal:
-        'listAgentProposals filters by tenantId (+status), orders by createdAt — covered by @@index([tenantId, status, createdAt]); bounded take ≤100.',
+        'listAgentProposals filters by tenantId (+status), orders by createdAt — covered by @@index([tenantId, status, createdAt]); bounded take ≤100. The two ASI09 sweeps read this model too and neither needs a new registry entry: the expiry sweep is system-wide on (status, expiresAt) and has its own non-tenant-leading @@index for exactly that reason, and the sample-audit sweep filters (tenantId, status, reviewedAt) which the same tenant-leading composite serves. Both are bounded.',
+    // Policy cards — read by the review-quality report to resolve which CARD a
+    // proposal's pinned version belongs to. Filters by (tenantId, agentId IN …)
+    // with no sort, over at most one row per agent.
+    AgentPolicyCard:
+        'computeAgentReviewQuality filters by tenantId + agentId IN (…) and does not sort — covered by the tenantId-leading @@unique([tenantId, agentId]); at most one row per agent and bounded take ≤5000.',
+    // ASI09 sample audits — the reviewer queue filters (tenantId, outcome) and
+    // orders by sampledAt asc; the disagreement rate groups by outcome over the
+    // same key. Both are covered by @@index([tenantId, outcome, sampledAt]).
+    AgentProposalSampleAudit:
+        'listAgentProposalSampleAudits filters by (tenantId, outcome), orders by sampledAt — covered by @@index([tenantId, outcome, sampledAt]); bounded take ≤200. The sampler reads back by (proposalId, samplingEpoch) on the tenantId-leading @@unique([tenantId, proposalId]).',
     // Agent-action receipts — listReceipts filters by tenantId (+ optional
     // verified / toolName), orders by occurredAt desc; covered by
     // @@index([tenantId, occurredAt]) (tenantId is RLS-bound; verified/toolName

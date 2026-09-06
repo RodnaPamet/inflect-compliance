@@ -178,7 +178,10 @@ const byId = (id: string) => FINDINGS.filter((f) => f.messageId === id);
  * name them at the sink.
  */
 const KNOWN_UNANALYSABLE: readonly string[] = [
+    'src/app-layer/jobs/agent-proposal-expiry.ts — identifier bound elsewhere',
+    'src/app-layer/jobs/agent-proposal-sample-audit.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-policy-card.ts — identifier bound elsewhere',
+    'src/app-layer/usecases/agent-proposal-sample-audit.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-proposals.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-registry.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-risk-assessment.ts — identifier bound elsewhere',
@@ -226,10 +229,10 @@ const SINK_FLOOR = 30;
  * So the number is read as OPAQUE VALUE POSITIONS PER RECOGNISED SINK CALL, and
  * the ceiling is derived from two measured quantities rather than picked:
  *
- *   MEASURED_HOLES / MEASURED_SINKS         the path today, 97 / 45 = 2.156
+ *   MEASURED_HOLES / MEASURED_SINKS         the path today, 106 / 59 = 1.797
  *   MOST_OPAQUE_SINGLE_CALL                 the worst single call on it, 6
  *
- * The ceiling is `(97 + 6) / 45`. In words: the path may absorb ONE more sink
+ * The ceiling is `(106 + 6) / 59`. In words: the path may absorb ONE more sink
  * call as opaque as the most opaque one it already has before somebody has to
  * look. Two such calls fail. Seven more opaque fields on the EXISTING calls,
  * with no new sink, fail. That is the sensitivity this cap is for — it moves
@@ -243,8 +246,8 @@ const SINK_FLOOR = 30;
  * have been choosing the denominator that keeps the number green, which is the
  * defect this cap exists to catch, one level up.
  */
-const MEASURED_HOLES = 97;
-const MEASURED_SINKS = 45;
+const MEASURED_HOLES = 106;
+const MEASURED_SINKS = 59;
 /** `src/lib/mcp/auth.ts` — a six-field `detailsJson` bag built out of locals. */
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
