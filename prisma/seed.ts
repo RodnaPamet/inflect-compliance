@@ -976,32 +976,36 @@ Reviewed at least annually.` },
     }
     console.log(`✅ SOC 2 + ${soc2Reqs.length} criteria + SOC 2 Starter Pack (${soc2StarterControls.length} curated controls) seeded`);
 
-    // NIS2 — full fixture-driven
-    const nis2Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/nis2_requirements',
-        require('./fixtures/nis2_requirements.json'),
+    // NIS2 — one writer, shared with production.
+    //
+    // This was four hand-rolled spans (framework, requirements, templates,
+    // pack) scattered across 400 lines, and production ran none of them:
+    // prisma/seed.ts is not run on deploys. The template loop also wrote
+    // GENERIC_TEMPLATE_TASKS, so a fresh dev database held 100 placeholder
+    // tasks for these 20 controls while the fixture's 105 AUTHORED tasks
+    // reached nothing.
+    //
+    // The legacy cleanup this replaced deserves a note, because deleting it
+    // REMOVES a destructive path rather than a protective one. It looked for
+    // a NIS2 Framework row with version NULL — left over from a key-only era
+    // — and, finding one, deleted it AND every FrameworkRequirement hanging
+    // off it. That was needed only because the upsert beside it keyed on
+    // (key, version), so a null-version row was invisible to it and a second
+    // row would have been created. applyCatalogFile upserts on `key` alone
+    // (Framework.key is @unique), so it finds such a row and UPDATES it,
+    // keeping its requirements. Production carries exactly one NIS2 row, at
+    // 2022/2555, and no framework anywhere with a null version, so the branch
+    // was already unreachable there.
+    const nis2Result = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/nis2-control-templates.json'),
+        'prisma/fixtures/nis2-control-templates.json',
     );
-    const nis2 = await prisma.framework.upsert({
-        where: { key_version: { key: 'NIS2', version: '2022/2555' } },
-        update: { name: 'NIS2 Directive', kind: 'EU_DIRECTIVE', description: 'Directive (EU) 2022/2555 on cybersecurity' },
-        create: { key: 'NIS2', name: 'NIS2 Directive', version: '2022/2555', kind: 'EU_DIRECTIVE', description: 'Directive (EU) 2022/2555 on cybersecurity' },
-    });
-    // Clean old NIS2 requirements from key-only era
-    const oldNis2 = await prisma.framework.findFirst({ where: { key: 'NIS2', version: null } });
-    if (oldNis2 && oldNis2.id !== nis2.id) {
-        await prisma.frameworkRequirement.deleteMany({ where: { frameworkId: oldNis2.id } });
-        await prisma.framework.delete({ where: { id: oldNis2.id } }).catch(() => { });
-    }
-    const nis2ReqMap: Record<string, string> = {};
-    for (const req of nis2Data) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: nis2.id, code: req.key } },
-            update: { title: req.title, section: req.section, sortOrder: req.sortOrder },
-            create: { frameworkId: nis2.id, code: req.key, title: req.title, section: req.section, category: req.section, sortOrder: req.sortOrder },
-        });
-        nis2ReqMap[req.key] = r.id;
-    }
-    console.log(`✅ NIS2 framework + ${nis2Data.length} requirements seeded`);
+    console.log(
+        `✅ NIS2: ${nis2Result.requirements.upserted} requirements, ` +
+            `${nis2Result.templates.created} templates, ` +
+            `tasks ${nis2Result.tasks.created}c/${nis2Result.tasks.unchanged}=`,
+    );
 
     // DORA — Digital Operational Resilience Act (Regulation (EU) 2022/2554).
     //
@@ -1259,28 +1263,6 @@ Reviewed at least annually.` },
     }
     console.log(`✅ ISO 27001 control templates seeded (${templatesCreated} new)`);
 
-    // ─── NIS2 Control Templates ───
-    const nis2Templates = fixtureArray<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>(
-        'fixtures/nis2-control-templates',
-        require('./fixtures/nis2-control-templates.json'),
-    );
-    for (const t of nis2Templates) {
-        const existing = await prisma.controlTemplate.findUnique({ where: { code: t.code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
-            }
-            for (const rk of t.requirements) {
-                if (nis2ReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: nis2ReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    console.log('✅ NIS2 control templates seeded');
 
 
     // ─── ISO 9001 Control Templates ───
@@ -1368,19 +1350,6 @@ Reviewed at least annually.` },
         }
     }
 
-    // NIS2 Pack
-    const nis2Tmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'NIS2-' } } });
-    const nis2Pack = await prisma.frameworkPack.upsert({
-        where: { key: 'NIS2_BASELINE' },
-        update: { name: 'NIS2 Baseline Pack', frameworkId: nis2.id, version: '2022/2555' },
-        create: { key: 'NIS2_BASELINE', name: 'NIS2 Baseline Pack', frameworkId: nis2.id, version: '2022/2555', description: 'NIS2 directive security measures baseline.' },
-    });
-    for (const tmpl of nis2Tmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: nis2Pack.id, templateId: tmpl.id } },
-            create: { packId: nis2Pack.id, templateId: tmpl.id }, update: {},
-        });
-    }
 
 
     // ─── OWASP AISVS v1.0 — AI Security Verification Standard ───
