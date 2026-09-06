@@ -41,6 +41,9 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
 
     // Admin subpages
     '/admin/agents': { href: '/admin', label: 'Admin' },
+    // The ASI09 review-quality report hangs off the agent register: it is a
+    // view OF those agents' review queue, so back goes to them, not to Admin.
+    '/admin/agents/review-quality': { href: '/admin/agents', label: 'Agents' },
     '/admin/api-keys': { href: '/admin', label: 'Admin' },
     '/admin/audit-log': { href: '/admin', label: 'Admin' },
     '/admin/billing': { href: '/admin', label: 'Admin' },

@@ -209,6 +209,33 @@ export interface ExceptionExpiryMonitorPayload {
     tenantId?: string;
 }
 
+/**
+ * Agent-proposal expiry sweep (OWASP ASI09) — moves PENDING proposals whose
+ * review window has closed to the terminal EXPIRED status, and stamps a
+ * deadline onto pre-`expiresAt` rows.
+ *
+ * Nothing is deleted: an expired proposal is the record of something an agent
+ * asked for and no human agreed to. The sweep is BOOKKEEPING — the refusal to
+ * approve past the deadline lives in the usecase and reads the clock, so a dead
+ * worker costs tidiness rather than safety.
+ */
+export interface AgentProposalExpiryPayload {
+    /** Optional: scope to a single tenant. Omit for the system-wide sweep. */
+    tenantId?: string;
+}
+
+/**
+ * Agent-proposal sample audit (OWASP ASI09) — draws a keyed random sample of
+ * already-APPROVED proposals and opens a retrospective review on each, so the
+ * disagreement rate is measurable. The only write seam for
+ * `AgentProposalSampleAudit`; a human cannot open one by hand, or the sample
+ * would stop being a sample.
+ */
+export interface AgentProposalSampleAuditPayload {
+    /** Optional: scope to a single tenant. Omit for the system-wide sweep. */
+    tenantId?: string;
+}
+
 /** Evidence retention sweep */
 export interface RetentionSweepPayload {
     tenantId?: string;
@@ -674,6 +701,8 @@ export interface JobPayloadMap {
     'hris-sync': HrisSyncPayload;
     'hris-sync-dispatch': HrisSyncDispatchPayload;
     'av-rescan': AvRescanPayload;
+    'agent-proposal-expiry': AgentProposalExpiryPayload;
+    'agent-proposal-sample-audit': AgentProposalSampleAuditPayload;
 }
 
 /** aws-posture connector — run one tenant connection's benchmark + collect evidence. */
@@ -1182,6 +1211,27 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnFail: 500,
     },
     'compliance-posture-summary-dispatch': {
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 50,
+        removeOnFail: 200,
+    },
+    'agent-proposal-expiry': {
+        // A retry is safe here and worth having: expiry is a conditional
+        // `updateMany` over rows whose deadline has passed, so a second run
+        // finds the ones the first did not reach and re-finds none it did.
+        attempts: 3,
+        backoff: { type: 'fixed', delay: 30_000 },
+        removeOnComplete: 50,
+        removeOnFail: 200,
+    },
+    'agent-proposal-sample-audit': {
+        // ONE attempt, and it is a correctness constraint rather than courtesy —
+        // the same reasoning as `identity-leaver-pass`. This job DRAWS a sample.
+        // A retry after a partial run draws again, so the second attempt would
+        // enlarge the sample beyond what `sampleSizeFor` decided and make the
+        // disagreement rate a statistic over a population nobody chose. A missed
+        // week is recoverable; a silently doubled draw is not detectable.
         attempts: 1,
         backoff: { type: 'fixed', delay: 0 },
         removeOnComplete: 50,

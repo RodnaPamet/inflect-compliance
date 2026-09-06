@@ -23,6 +23,7 @@ import {
     approveAgentProposal,
     rejectAgentProposal,
     listAgentProposals,
+    wasApplied,
 } from '@/app-layer/usecases/agent-proposals';
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -37,6 +38,7 @@ let keyPropose = ''; // A: mcp:read + mcp:propose + risks:read
 let keyReadOnly = ''; // A: mcp:read + risks:read (NO propose)
 let keyProposeB = ''; // B: mcp:read + mcp:propose + risks:read
 let userA = '';
+let userA2 = ''; // A SECOND human in tenant A — see the approval test below.
 let userB = '';
 
 async function mintKey(tenantId: string, userId: string, scopes: string[]): Promise<string> {
@@ -104,6 +106,23 @@ async function seedTenant(tenantId: string, slug: string): Promise<string> {
     return userId;
 }
 
+/** A second ACTIVE member of a tenant, so four-eyes has somebody to be. */
+async function seedSecondReviewer(tenantId: string): Promise<string> {
+    const userId = `u2-${tenantId}`;
+    const email = `second-${tenantId}@example.test`;
+    await prisma.user.upsert({
+        where: { id: userId },
+        update: {},
+        create: { id: userId, email, emailHash: hashForLookup(email) },
+    });
+    await prisma.tenantMembership.upsert({
+        where: { tenantId_userId: { tenantId, userId } },
+        update: { role: 'ADMIN', status: 'ACTIVE' },
+        create: { tenantId, userId, role: 'ADMIN', status: 'ACTIVE' },
+    });
+    return userId;
+}
+
 const humanCtx = (tenantId: string, userId: string) =>
     makeRequestContext('ADMIN', { tenantId, tenantSlug: tenantId, userId });
 
@@ -112,6 +131,14 @@ describeFn('MCP propose-not-commit (real route + approval)', () => {
         await prisma.$connect();
         userA = await seedTenant(TENANT_A, TENANT_A);
         userB = await seedTenant(TENANT_B, TENANT_B);
+        // A second reviewer in tenant A. These fixtures opt OUT of the
+        // agent-registration gate (see `seedTenant`), so their proposals arrive
+        // from a machine principal the register does not know — which
+        // `resolveApprovalRequirement` scores at the strictest rung, two
+        // approvers. That is deliberate: if turning the gate off also
+        // DOWNGRADED the approval requirement, the gate would be a lever for
+        // widening authority rather than narrowing it.
+        userA2 = await seedSecondReviewer(TENANT_A);
         keyPropose = await mintKey(TENANT_A, userA, ['mcp:read', 'mcp:propose', 'risks:read']);
         keyReadOnly = await mintKey(TENANT_A, userA, ['mcp:read', 'risks:read']);
         keyProposeB = await mintKey(TENANT_B, userB, ['mcp:read', 'mcp:propose', 'risks:read']);
@@ -120,9 +147,10 @@ describeFn('MCP propose-not-commit (real route + approval)', () => {
     afterAll(async () => {
         for (const t of [TENANT_A, TENANT_B]) {
             await prisma.tenantApiKey.deleteMany({ where: { tenantId: t } }).catch(() => {});
+            await prisma.agentProposalApproval.deleteMany({ where: { tenantId: t } }).catch(() => {});
             await prisma.agentProposal.deleteMany({ where: { tenantId: t } }).catch(() => {});
             await prisma.risk.deleteMany({ where: { tenantId: t } }).catch(() => {});
-            await prisma.user.deleteMany({ where: { id: `u-${t}` } }).catch(() => {});
+            await prisma.user.deleteMany({ where: { id: { in: [`u-${t}`, `u2-${t}`] } } }).catch(() => {});
         }
         await prisma.$disconnect();
     });
@@ -148,11 +176,21 @@ describeFn('MCP propose-not-commit (real route + approval)', () => {
         const { json } = await proposeRisks(keyPropose, 2, [{ title: 'Risk to approve', description: 'y' }]);
         const id = resultOf(json).proposalIds[0];
 
-        const result = await approveAgentProposal(humanCtx(TENANT_A, userA), id);
+        // The FIRST signature creates nothing — a proposal from an
+        // unregistered machine principal needs two humans.
+        const first = await approveAgentProposal(humanCtx(TENANT_A, userA), id);
+        expect(first.status).toBe('AWAITING_APPROVAL');
+        expect(first.createdEntityId).toBeNull();
+        expect(await prisma.risk.findFirst({ where: { title: 'Risk to approve' } })).toBeNull();
+
+        const result = await approveAgentProposal(humanCtx(TENANT_A, userA2), id);
         expect(result.createdEntityId).toBeTruthy();
         expect(result.status).toBe('ACCEPTED');
 
         // The real risk exists, linked from the proposal.
+        // An approval that only RECORDED a signature applies nothing, so there is
+        // no row to look for — narrow before reading the id.
+        if (!wasApplied(result)) throw new Error('expected the proposal to be applied');
         const risk = await prisma.risk.findFirst({ where: { id: result.createdEntityId } });
         expect(risk?.tenantId).toBe(TENANT_A);
         const proposal = await prisma.agentProposal.findFirst({ where: { id } });

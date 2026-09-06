@@ -11,22 +11,54 @@ import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import type { ProposalDiff } from '@/lib/agentic/proposal-diff';
+
+import { ProposalDiffPanel } from './ProposalDiffPanel';
 
 export interface ProposalRow {
     id: string;
     kind: string;
+    /** CREATE or UPDATE — decides which rendering the diff panel produces. */
+    operation: string;
     status: string;
-    payloadJson: string;
+    /** The record an UPDATE would change; null for a CREATE. */
+    targetEntityId: string | null;
     rationale: string | null;
     proposedViaKeyId: string | null;
     createdAt: string;
+    /**
+     * The diff, computed SERVER-SIDE against the target's state at page render.
+     *
+     * The raw `payloadJson` is deliberately no longer sent to the client. It was
+     * the whole of the old review surface — a `<pre>` of the payload — and that
+     * is exactly the opaque blob this page exists to stop a reviewer approving.
+     * Shipping it alongside the diff would leave the failure one `JSON.stringify`
+     * away from returning.
+     */
+    diff: ProposalDiff;
+    /**
+     * This viewer's signature is recorded and the proposal still needs another.
+     *
+     * Client-side only and deliberately so: it is set from the approve response,
+     * which is the one moment the browser learns it. The authoritative count
+     * lives on the server; this exists so the row does not silently vanish.
+     */
+    awaitingSecondApproval?: boolean;
 }
 
 /**
- * The review-queue client. Renders each PENDING agent proposal with its
- * proposed content (full, untruncated — AISVS C9.2.2) + the agent's rationale,
- * and Approve / Reject actions. Approve runs the real create-usecase server-
- * side; the agent never commits.
+ * The review-queue client.
+ *
+ * Each proposal renders its DIFF, and the approve control lives INSIDE that
+ * diff panel (see `ProposalDiffPanel` for why it is a child rather than a
+ * sibling). Reject stays in the card header: refusing a proposal you cannot
+ * read is always safe, and is the only action available when the diff could not
+ * be computed.
+ *
+ * Approving an UPDATE sends back the `baseDigest` of the diff that was
+ * rendered. The server recomputes it and refuses the approval if the record has
+ * moved since — so "a human approved this delta" stays a checkable claim rather
+ * than a checkbox.
  */
 export function AgentProposalsClient({
     initialProposals,
@@ -40,22 +72,56 @@ export function AgentProposalsClient({
     const [proposals, setProposals] = useState(initialProposals);
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    /** "your signature was recorded, a second reviewer is still required". */
+    const [notice, setNotice] = useState<string | null>(null);
 
-    async function act(id: string, action: 'approve' | 'reject') {
-        setBusy(id);
+    async function act(p: ProposalRow, action: 'approve' | 'reject') {
+        setBusy(p.id);
         setError(null);
+        setNotice(null);
         const fallback = t(`proposals.${action}Failed`);
         try {
-            const res = await fetch(apiUrl(`/agent-proposals/${id}/${action}`), {
+            const res = await fetch(apiUrl(`/agent-proposals/${p.id}/${action}`), {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({}),
+                // The fingerprint of the base this reviewer actually read. Sent
+                // only on approve, and only when the diff produced one (an
+                // UPDATE). The server treats its ABSENCE on an update as a
+                // refusal, so there is nothing to gain by omitting it.
+                body: JSON.stringify(
+                    action === 'approve' && p.diff.baseDigest
+                        ? { baseDigest: p.diff.baseDigest }
+                        : {},
+                ),
             });
             if (!res.ok) {
                 const body = await res.json().catch(() => null);
                 throw new Error(body?.error?.message ?? fallback);
             }
-            setProposals((prev) => prev.filter((p) => p.id !== id));
+
+            // TWO SUCCESS SHAPES, AND THEY MEAN OPPOSITE THINGS.
+            //
+            // A tiered proposal's FIRST approval records a signature and applies
+            // nothing — a 200 whose body says `AWAITING_APPROVAL`. Treating that
+            // as "done" and dropping the row is this epic's own failure in
+            // miniature: a reviewer told "approved" for a proposal that has not
+            // been approved learns that clicking the button is what approval
+            // means, and the queue hides the fact that a second human is still
+            // required. So the row STAYS, and it says what is missing.
+            const body: { status?: string; approvalsRecorded?: number; approvalsRequired?: number } =
+                await res.json().catch(() => ({}));
+            if (action === 'approve' && body.status === 'AWAITING_APPROVAL') {
+                const recorded = body.approvalsRecorded ?? 1;
+                const required = body.approvalsRequired ?? 2;
+                setProposals((prev) =>
+                    prev.map((row) =>
+                        row.id === p.id ? { ...row, awaitingSecondApproval: true } : row,
+                    ),
+                );
+                setNotice(t('proposals.signatureRecorded', { recorded, required }));
+                return;
+            }
+            setProposals((prev) => prev.filter((row) => row.id !== p.id));
         } catch (e) {
             setError(e instanceof Error ? e.message : fallback);
         } finally {
@@ -77,8 +143,20 @@ export function AgentProposalsClient({
                 description={t('proposals.description')}
             />
 
+            {notice && (
+                <div
+                    data-testid="proposal-awaiting-second"
+                    className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-muted')}
+                >
+                    {notice}
+                </div>
+            )}
+
             {error && (
-                <div className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-error')}>
+                <div
+                    data-testid="proposal-action-error"
+                    className={cn(cardVariants({ density: 'compact' }), 'text-sm text-content-error')}
+                >
                     {error}
                 </div>
             )}
@@ -90,62 +168,87 @@ export function AgentProposalsClient({
                 />
             ) : (
                 <ul className="space-y-default">
-                    {proposals.map((p) => {
-                        let payload: unknown;
-                        try {
-                            payload = JSON.parse(p.payloadJson);
-                        } catch {
-                            payload = p.payloadJson;
-                        }
-                        return (
-                            <li
-                                key={p.id}
-                                id={`proposal-${p.id}`}
-                                className={cn(cardVariants({ density: 'comfortable' }), 'space-y-default')}
-                            >
-                                <div className="flex items-center justify-between gap-default">
-                                    <div className="flex items-center gap-tight">
-                                        <StatusBadge variant="info">{p.kind}</StatusBadge>
-                                        <span className="text-xs text-content-subtle">
-                                            {t('proposals.proposedAt', { date: formatDateTime(p.createdAt) })}
-                                            {p.proposedViaKeyId
-                                                ? t('proposals.keySuffix', { key: p.proposedViaKeyId.slice(0, 8) })
-                                                : ''}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-tight">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            disabled={busy === p.id}
-                                            onClick={() => act(p.id, 'reject')}
-                                        >
-                                            {t('proposals.reject')}
-                                        </Button>
-                                        <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            disabled={busy === p.id}
-                                            onClick={() => act(p.id, 'approve')}
-                                        >
-                                            {t('proposals.approve')}
-                                        </Button>
-                                    </div>
+                    {proposals.map((p) => (
+                        <li
+                            key={p.id}
+                            id={`proposal-${p.id}`}
+                            className={cn(cardVariants({ density: 'comfortable' }), 'space-y-default')}
+                        >
+                            <div className="flex items-center justify-between gap-default">
+                                <div className="flex items-center gap-tight">
+                                    <StatusBadge variant="info">{p.kind}</StatusBadge>
+                                    <StatusBadge
+                                        variant={p.operation === 'UPDATE' ? 'warning' : 'neutral'}
+                                    >
+                                        {p.operation === 'UPDATE'
+                                            ? t('proposals.diff.operationUpdate')
+                                            : t('proposals.diff.operationCreate')}
+                                    </StatusBadge>
+                                    <span className="text-xs text-content-subtle">
+                                        {t('proposals.proposedAt', {
+                                            date: formatDateTime(p.createdAt),
+                                        })}
+                                        {p.proposedViaKeyId
+                                            ? t('proposals.keySuffix', {
+                                                key: p.proposedViaKeyId.slice(0, 8),
+                                            })
+                                            : ''}
+                                    </span>
                                 </div>
+                                {/*
+                                  Reject only. The approve control is NOT here —
+                                  it is rendered by the diff panel below, in the
+                                  branch that has already rendered a diff body.
+                                */}
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    data-testid={`proposal-reject-${p.id}`}
+                                    disabled={busy === p.id}
+                                    onClick={() => act(p, 'reject')}
+                                >
+                                    {t('proposals.reject')}
+                                </Button>
+                            </div>
 
-                                {p.rationale && (
-                                    <p className="text-sm text-content-muted">
-                                        <span className="font-medium text-content-default">{t('proposals.rationale')}</span>
-                                        {p.rationale}
-                                    </p>
-                                )}
+                            {p.targetEntityId && (
+                                <p
+                                    data-testid={`proposal-target-${p.id}`}
+                                    className="text-xs text-content-subtle"
+                                >
+                                    {t('proposals.diff.targetLabel', { id: p.targetEntityId })}
+                                </p>
+                            )}
 
-                                <pre className="overflow-x-auto rounded border border-border-subtle bg-bg-subtle p-3 text-xs text-content-default">
-                                    {JSON.stringify(payload, null, 2)}
-                                </pre>
-                            </li>
-                        );
-                    })}
+                            {p.rationale && (
+                                <p
+                                    data-testid={`proposal-rationale-${p.id}`}
+                                    className="text-sm text-content-muted"
+                                >
+                                    <span className="font-medium text-content-default">
+                                        {t('proposals.rationale')}
+                                    </span>
+                                    {p.rationale}
+                                </p>
+                            )}
+
+                            <ProposalDiffPanel
+                                proposalId={p.id}
+                                diff={p.diff}
+                                approveAction={
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        data-testid={`proposal-approve-${p.id}`}
+                                        disabled={busy === p.id}
+                                        onClick={() => act(p, 'approve')}
+                                    >
+                                        {t('proposals.approve')}
+                                    </Button>
+                                }
+                            />
+                        </li>
+                    ))}
                 </ul>
             )}
         </div>

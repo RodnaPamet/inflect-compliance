@@ -45,6 +45,8 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     AgentRiskAssessmentAnswer: "tests/integration/agent-assessment-isolation.test.ts",
     AgentPolicyCard: "tests/integration/policy-card-isolation.test.ts",
     AgentPolicyCardVersion: "tests/integration/policy-card-isolation.test.ts",
+    AgentProposalApproval: "tests/integration/proposal-review-tiering.test.ts",
+    AgentProposalSampleAudit: "tests/integration/proposal-sample-audit.test.ts",
     McpToolManifestPin: "tests/integration/tool-manifest-pin-isolation.test.ts",
 };
 
