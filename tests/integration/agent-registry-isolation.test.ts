@@ -20,8 +20,13 @@
  *
  *   • `ownerUserId` is a plain FK to a GLOBAL table, so the constraint accepts
  *     another tenant's user;
- *   • `vendorId` is a plain FK too, and Postgres runs FK checks as the table
- *     owner, so RLS does not stop a cross-tenant supplier being named.
+ *   • `vendorId` USED to be a plain FK, and Postgres runs FK checks as the
+ *     table owner, so RLS did not stop a cross-tenant supplier being named.
+ *     That is no longer true: the relation is now composite
+ *     (`[vendorId, tenantId] -> Vendor[id, tenantId]`), so the database owns
+ *     this refusal and the usecase check is the second layer rather than the
+ *     only one. Both are asserted below — the usecase for the message it
+ *     gives, the constraint for what it refuses when the usecase is bypassed.
  *
  * Both produce a row that reads as entirely legitimate. Neither is a read
  * breach on its own, which is what makes them worth a behavioural test: the
@@ -412,7 +417,14 @@ describe('registration authors the register entry in the same transaction', () =
     });
 });
 
-describe("the usecase refuses ids the foreign key would have accepted", () => {
+// Renamed 2026-09-06. It read "the usecase refuses ids the foreign key would
+// have accepted", which was an accurate description of the OLD shape and is now
+// half wrong: `vendorId` is a composite FK, so the database refuses a
+// cross-tenant supplier on its own. It stays true of `ownerUserId`, which is a
+// plain FK to a GLOBAL table and therefore still application-defended only —
+// so the two cases in here no longer have the same backing and the name should
+// not imply they do.
+describe("cross-tenant ids that look legitimate — refused by the usecase, and by the FK where one exists", () => {
     it("refuses another tenant's user as the accountable owner", async () => {
         // The FK on `ownerUserId` points at the GLOBAL User table, so the
         // database is perfectly happy with this. The row would then say tenant
@@ -449,6 +461,64 @@ describe("the usecase refuses ids the foreign key would have accepted", () => {
             ).rejects.toThrow(/vendor/i);
         } finally {
             await prisma.vendor.deleteMany({ where: { id: foreignVendor.id } });
+        }
+    });
+
+    it('refuses a cross-tenant vendor at the DATABASE, with the usecase bypassed', async () => {
+        // The test above proves the usecase refuses. This proves the refusal
+        // survives the usecase being skipped, which is the only reason the
+        // composite FK was worth a migration.
+        //
+        // It writes with the raw test client on purpose: that client carries no
+        // tenant context and runs as the owner, so RLS is not what stops this.
+        // Postgres runs FK checks as the table owner too — which is exactly why
+        // a single-column `vendorId -> Vendor(id)` accepted another tenant's
+        // supplier however carefully the application filtered.
+        const foreignVendor = await prisma.vendor.create({
+            data: { tenantId: T2, name: 'Supplier of tenant two, direct-write probe' },
+        });
+        try {
+            await expect(
+                prisma.registeredAgent.update({
+                    where: { id: seeded[T1].agentId },
+                    data: { vendorId: foreignVendor.id },
+                }),
+            ).rejects.toThrow(/foreign key|constraint/i);
+
+            // And the row is untouched — a refused write must not half-apply.
+            const after = await prisma.registeredAgent.findUniqueOrThrow({
+                where: { id: seeded[T1].agentId },
+                select: { vendorId: true, tenantId: true },
+            });
+            expect(after.vendorId).toBeNull();
+            expect(after.tenantId).toBe(T1);
+        } finally {
+            await prisma.vendor.deleteMany({ where: { id: foreignVendor.id } });
+        }
+    });
+
+    it("accepts the SAME tenant's vendor, so the constraint refuses the tenant and not the column", async () => {
+        // The companion positive. Without it, a constraint that rejected EVERY
+        // vendorId would pass the test above and look like working isolation.
+        const ownVendor = await prisma.vendor.create({
+            data: { tenantId: T1, name: 'Supplier of tenant one' },
+        });
+        try {
+            await prisma.registeredAgent.update({
+                where: { id: seeded[T1].agentId },
+                data: { vendorId: ownVendor.id },
+            });
+            const after = await prisma.registeredAgent.findUniqueOrThrow({
+                where: { id: seeded[T1].agentId },
+                select: { vendorId: true },
+            });
+            expect(after.vendorId).toBe(ownVendor.id);
+        } finally {
+            await prisma.registeredAgent.update({
+                where: { id: seeded[T1].agentId },
+                data: { vendorId: null },
+            });
+            await prisma.vendor.deleteMany({ where: { id: ownVendor.id } });
         }
     });
 });

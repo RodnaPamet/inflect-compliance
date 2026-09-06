@@ -532,7 +532,7 @@ model RegisteredAgent {
   tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   aiSystem  AiSystem        @relation(fields: [aiSystemId, tenantId], references: [id, tenantId], onDelete: Restrict)
   owner     User            @relation("RegisteredAgentOwner", fields: [ownerUserId], references: [id])
-  vendor    Vendor?         @relation("RegisteredAgentVendor", fields: [vendorId], references: [id])
+  vendor    Vendor?         @relation("RegisteredAgentVendor", fields: [vendorId, tenantId], references: [id, tenantId], onDelete: Restrict)
   proposals AgentProposal[]
   runs      WorkflowRun[]
   /// The credentials that speak for this agent. Many, not one: rotation issues
