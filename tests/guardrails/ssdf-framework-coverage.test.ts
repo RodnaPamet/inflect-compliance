@@ -24,6 +24,7 @@ import * as path from 'node:path';
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { parseMappingSetFile } from '@/app-layer/services/mapping-set-importer';
 import { codeOf, declarationOf } from '../helpers/source-blocks';
+import { appliedCatalogFor } from '../helpers/applied-catalogue';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -120,39 +121,67 @@ describe('NIST SSDF seed fixture', () => {
     });
 });
 
-describe('NIST SSDF seed wiring (seed.ts)', () => {
-    const seed = readCode('prisma/seed.ts');
+describe('NIST SSDF delivery', () => {
+    /**
+     * This block asked whether `prisma/seed.ts` CONTAINED the SSDF wiring —
+     * the fixture filename, a key/version pair, the literal
+     * 'NIST_SSDF_BASELINE'. Every one of those was a claim about a file that
+     * is not run on production deploys, so all of them were green while the
+     * framework's reachability was never in question here at all.
+     *
+     * Two of them were worse than weak. `'NIST_SSDF_BASELINE'` is the pack
+     * seed.ts builds; production has SSDF_CORE, so the assertion named a row
+     * no customer has. And the kind check carried a 260-character interior
+     * span, which re-forms across a sibling block — the Class C shape this
+     * repo ratchets down.
+     *
+     * It now asks the catalogue what it declares. The attribution assertions
+     * moved with it and got stronger: the licensing statements are in the
+     * fixture production actually applies, not only in the dev seeder.
+     */
+    const catalog = appliedCatalogFor('NIST-SSDF');
 
-    it('reads the fixture + upserts the framework', () => {
-        expect(seed).toContain('nist_ssdf_requirements.json');
-        expect(seed).toMatch(/key:\s*'NIST-SSDF',\s*version:\s*'1\.1'/);
-        expect(seed).toMatch(/key:\s*'NIST-SSDF'[\s\S]{0,260}kind:\s*'NIST_FRAMEWORK'/);
+    it('a production seeder applies a NIST SSDF catalogue at all', () => {
+        // Every case below is vacuous on null. This is the denominator: if
+        // SSDF ever leaves CATALOG_FIXTURES, that is a delivery regression and
+        // must fail here rather than quietly skip.
+        expect(catalog).not.toBeNull();
+        expect(catalog?.requirements.length).toBeGreaterThanOrEqual(40);
+        expect(catalog?.templates.length).toBeGreaterThanOrEqual(15);
     });
 
-    it('persists NIST provider + public-domain notice in framework metadata', () => {
-        // #2246 Class A — this read the WHOLE seed file and matched
-        // /public[\s-]*information/i, which in `prisma/seed.ts` is satisfied
-        // only by the `// PUBLIC DOMAIN (NIST): …` banner comment above the
-        // block. In CODE the same sentence is split across two adjacent
-        // string literals (`'… considered public ' + 'information …'`), which
-        // no character class can cross. Bind to the metadata declaration
-        // itself and name both halves.
-        const meta = declarationOf(seed, 'nistSsdfMeta');
-        expect(meta).toMatch(/provider:\s*'NIST'/);
-        expect(meta).toMatch(/license:\s*'public-domain'/);
-        expect(meta).toMatch(
-            /'Information presented on NIST sites is considered public '\s*\+\s*'information and may be distributed or copied\.'/,
-        );
+    it('declares the framework as NIST-SSDF 1.1, kind NIST_FRAMEWORK', () => {
+        expect(catalog?.framework.key).toBe('NIST-SSDF');
+        expect(catalog?.framework.version).toBe('1.1');
+        expect(catalog?.framework.kind).toBe('NIST_FRAMEWORK');
+    });
+
+    it('carries the NIST provider and public-domain notice', () => {
+        // Field reads rather than a regex over a source file: the metadata is
+        // structured data in the fixture, so there is nothing to pattern-match
+        // and no span to reach out of the block it names.
+        const meta = (catalog?.framework.metadata ?? {}) as Record<string, unknown>;
+        expect(meta.provider).toBe('NIST');
+        expect(meta.license).toBe('public-domain');
+        expect(String(meta.copyright)).toContain('considered public information');
     });
 
     it('notes the SSDF federal self-attestation context (EO 14028 / OMB M-22-18)', () => {
-        expect(seed).toMatch(/EO 14028/);
-        expect(seed).toMatch(/M-22-18/);
+        // Read the field that holds it rather than stringifying the whole
+        // object: `JSON.stringify(meta)` is satisfied by the string appearing
+        // under ANY key, so the assertion would survive the attestation note
+        // moving into an unrelated field — and it is a subject the
+        // assertion-reach analyser cannot resolve, which makes it a blind spot
+        // in the Class D denominator besides.
+        const meta = (catalog?.framework.metadata ?? {}) as Record<string, unknown>;
+        expect(String(meta.selfAttestation)).toContain('EO 14028');
+        expect(String(meta.selfAttestation)).toContain('M-22-18');
     });
 
-    it('seeds a NIST SSDF baseline pack (idempotent upsert)', () => {
-        expect(seed).toContain("'NIST_SSDF_BASELINE'");
-        expect(seed).toMatch(/frameworkPack\.upsert/);
+    it('declares the pack production actually has', () => {
+        // SSDF_CORE, not seed.ts's NIST_SSDF_BASELINE. pack-key-agreement
+        // records that divergence and shrinks when the seed.ts block goes.
+        expect(catalog?.pack?.key).toBe('SSDF_CORE');
     });
 });
 

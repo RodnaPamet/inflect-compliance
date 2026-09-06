@@ -3,17 +3,39 @@
  *
  * 15 ISMS policy documents (POL-00…POL-14) imported from ciso-toolkit
  * (MIT). This guard locks: the pinned fixture (all 15, required fields),
- * the MIT attribution sidecar, the seed upsert, that every body survives
- * sanitizePolicyContent UNCHANGED (no content silently stripped on adopt),
- * the picker UI source credit (licensing obligation), and the sync
- * script's normalizer.
+ * the MIT attribution sidecar, that a PRODUCTION seeder actually applies the
+ * library, that every body survives sanitizePolicyContent UNCHANGED (no
+ * content silently stripped on adopt), the picker UI source credit (licensing
+ * obligation), and the sync script's normalizer.
+ *
+ * ═══ WHAT WAS WRONG ═══
+ *
+ * The delivery half of this guard asked `prisma/seed.ts`:
+ *
+ *     expect(seed).toContain('policy-templates-ciso-toolkit.json');
+ *     expect(seed).toMatch(/OR:\s*\[\{\s*externalRef[\s\S]*\{\s*title/);
+ *
+ * `prisma/seed.ts` is not run on production deploys — that is the whole
+ * reason `scripts/seed-policy-templates.ts` exists and is wired into
+ * `scripts/entrypoint.sh`. So the assertion could not fail while the 15
+ * policies were undeliverable, and it named the ONE writer no customer ever
+ * runs. Worse, it read as the guard's delivery evidence: the fixture-shape
+ * cases above it parse a file off disk, and nothing here established that
+ * anything applies that file.
+ *
+ * Delivery is now asked of the applied corpus (`tests/helpers/applied-catalogue`),
+ * which discovers the production seeders from `entrypoint.sh` and their
+ * fixtures from their own source. The idempotency claim moved with it, onto
+ * the seeder that actually re-runs on every container start — which is where
+ * "safe to re-run" has to be true.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { sanitizePolicyContent } from '@/lib/security/sanitize';
 import { normalizePolicyMarkdown } from '../../scripts/sync-ciso-toolkit-policies';
-import { codeOf } from '../helpers/source-blocks';
+import { appliedCatalogueStats, productionDeclaringSources } from '../helpers/applied-catalogue';
+import { codeOf, declarationOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 // SOURCE reads are comment-masked at the seam, so a comment naming the source
@@ -27,6 +49,8 @@ const read = (rel: string) => {
 
 const FIXTURE = 'prisma/fixtures/policy-templates-ciso-toolkit.json';
 const LICENSE = 'prisma/fixtures/policy-templates-ciso-toolkit.LICENSE.md';
+/** The writer that reaches production. `prisma/seed.ts` does not. */
+const SEEDER = 'scripts/seed-policy-templates.ts';
 
 const fixture = JSON.parse(read(FIXTURE)) as {
     source: string;
@@ -35,11 +59,56 @@ const fixture = JSON.parse(read(FIXTURE)) as {
     templates: Array<Record<string, string>>;
 };
 
+const REFS = Array.from({ length: 15 }, (_, i) => `POL-${String(i).padStart(2, '0')}`);
+
+describe('ciso-toolkit policy library — production delivery', () => {
+    const stats = appliedCatalogueStats();
+
+    it('a production seeder applies the ciso-toolkit fixture at all', () => {
+        // DENOMINATOR. Every fixture-shape and sanitisation case below this
+        // point is a claim about a file nothing installs, unless this holds.
+        expect(stats.seeders).toContain(SEEDER);
+        expect(stats.fixtures).toContain(FIXTURE);
+        expect(fixture.templates).toHaveLength(15);
+    });
+
+    it('every one of the 15 policies is declared by a source that reaches production', () => {
+        for (const ref of REFS) {
+            expect(productionDeclaringSources(ref)).toContain(FIXTURE);
+        }
+    });
+
+    it("ships the 'ciso-toolkit' provenance value the attribution credit is gated on", () => {
+        // `PolicyTemplate.source` is what the picker tests `=== 'ciso-toolkit'`
+        // against, so the credit only renders if this literal survives into the
+        // rows production writes — fixture value AND seeder label.
+        const declaring = productionDeclaringSources('ciso-toolkit');
+        expect(declaring).toContain(FIXTURE);
+        expect(declaring).toContain(SEEDER);
+    });
+
+    it('the production seeder reads the fixture and upserts it idempotently (externalRef OR title)', () => {
+        const seeder = read(SEEDER);
+        // Bounded to the FIXTURES declaration: a require() of this path
+        // elsewhere in the file must not satisfy the ciso-toolkit arm.
+        expect(declarationOf(seeder, 'FIXTURES')).toContain(
+            "require('../prisma/fixtures/policy-templates-ciso-toolkit.json')",
+        );
+        // entrypoint.sh runs this on EVERY container start, so re-running must
+        // not duplicate the library.
+        const main = functionBodyOf(seeder, 'main');
+        expect(main).toMatch(
+            /where:\s*\{\s*OR:\s*\[\{\s*externalRef:\s*t\.externalRef\s*\},\s*\{\s*title:\s*t\.title\s*\}\]\s*\}/,
+        );
+        expect(main).toMatch(/externalRef:\s*t\.externalRef,/);
+    });
+});
+
 describe('ciso-toolkit policy library — fixture + licensing', () => {
     it('vendors exactly 15 policies (POL-00…POL-14) with the required fields', () => {
         expect(fixture.templates).toHaveLength(15);
         const refs = fixture.templates.map((t) => t.externalRef).sort();
-        expect(refs).toEqual(Array.from({ length: 15 }, (_, i) => `POL-${String(i).padStart(2, '0')}`));
+        expect(refs).toEqual(REFS);
         for (const t of fixture.templates) {
             for (const f of ['title', 'category', 'contentText', 'tags', 'source', 'sourceLicense']) {
                 expect(t[f]).toBeTruthy();
@@ -80,15 +149,7 @@ describe('ciso-toolkit policy library — sanitisation (no silent stripping)', (
     });
 });
 
-describe('ciso-toolkit policy library — seed + sync + UI', () => {
-    it('the seed upserts the fixture (idempotent by externalRef or title)', () => {
-        const seed = read('prisma/seed.ts');
-        expect(seed).toContain('policy-templates-ciso-toolkit.json');
-        expect(seed).toMatch(/externalRef: t\.externalRef/);
-        // Idempotent upsert: match existing by externalRef OR title.
-        expect(seed).toMatch(/OR:\s*\[\{\s*externalRef[\s\S]*\{\s*title/);
-    });
-
+describe('ciso-toolkit policy library — sync + UI', () => {
     it('the templates picker renders the ciso-toolkit source credit', () => {
         // The picker unified into the NewPolicyModal (the standalone
         // /policies/templates page is now a redirect); the licensing credit

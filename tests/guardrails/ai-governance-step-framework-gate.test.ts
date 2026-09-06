@@ -6,12 +6,36 @@
  * is set) — analogous to NIS2 → NIS2_SELF_ASSESSMENT. Since the framework
  * picker became data-driven (it now feeds the *canonical DB framework keys*
  * into the gate), the gate's hand-maintained `AI_FWS` set MUST stay in sync
- * with the keys the seed actually writes. A drift — renaming an AI framework
- * key in the seed without updating the gate, or the two gate copies (client +
+ * with the keys the catalogue actually writes. A drift — renaming an AI
+ * framework key without updating the gate, or the two gate copies (client +
  * server) diverging — would silently stop the step from appearing.
  *
+ * ═══ WHAT WAS WRONG ═══
+ *
+ * The "%s is a real framework key" case read `prisma/seed.ts` and looked for
+ * the literal. `prisma/seed.ts` is not run on a production deploy, so that
+ * assertion could not fail while the key it named was undeliverable — and it
+ * would fail on the change that FIXED delivery, because a converted framework
+ * declares its key in a CatalogFile instead. Five guards in this suite have
+ * already reddened exactly that way, each on the commit that first made its
+ * framework reachable.
+ *
+ * The question the gate actually cares about is "does anything the product
+ * applies declare this key?", so that is what is asked now, via
+ * `declaringSources` — which spans `prisma/seed.ts` AND every fixture a
+ * production seeder applies. The case therefore survives a conversion instead
+ * of being broken by it.
+ *
+ * ═══ WHAT IS HONESTLY NOT ASSERTED ═══
+ *
+ * None of these three frameworks has a CatalogFile today: OWASP-AISVS,
+ * ISO42001 and EU-AI-ACT are hand-rolled in `prisma/seed.ts`, so no production
+ * writer creates them. Asserting production delivery here would assert
+ * something false. The CatalogFile case below therefore arms itself only when
+ * a catalogue appears, and records the dev-only reality until then.
+ *
  * This locks the linkage end-to-end:
- *   - every seeded AI framework key is a real key in the seed,
+ *   - every AI framework key is declared by something the product applies,
  *   - selecting it makes the step applicable (server gate, behavioural),
  *   - the client + server AI_FWS sets are identical and recognise each key.
  */
@@ -20,6 +44,12 @@ import * as path from 'node:path';
 
 import { isStepApplicable } from '@/app-layer/usecases/onboarding';
 
+import {
+    appliedCatalogFor,
+    appliedCatalogueStats,
+    declaringSources,
+    productionDeclaringSources,
+} from '../helpers/applied-catalogue';
 import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -27,16 +57,43 @@ const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8
 
 const STEP = 'AI_GOVERNANCE_SELF_ASSESSMENT';
 
-// The canonical AI-framework keys as seeded into the global Framework table.
-// Cross-checked against prisma/seed.ts below, so a seed-side rename fails CI
-// here first — forcing this list AND the gate set to be updated together.
+/** The dev-only seeder, named once so the null-catalogue branch can say so. */
+const DEV_SEEDER = 'prisma/seed.ts';
+
+// The canonical AI-framework keys as written into the global Framework table.
+// Cross-checked against the applied catalogue below, so a rename on either
+// delivery path fails CI here first — forcing this list AND the gate set to be
+// updated together.
 const AI_FRAMEWORK_KEYS = ['OWASP-AISVS', 'ISO42001', 'EU-AI-ACT'];
 
-describe('AI-governance step — seeded keys drive the gate', () => {
-    const seed = read('prisma/seed.ts');
+describe('AI-governance step — declared keys drive the gate', () => {
+    it('the applied catalogue is non-empty', () => {
+        // DENOMINATOR. A scan that found no seeders and no fixtures would make
+        // every key case below assert against an empty corpus and pass.
+        const stats = appliedCatalogueStats();
+        expect(stats.seeders.length).toBeGreaterThanOrEqual(5);
+        expect(stats.fixtures.length).toBeGreaterThanOrEqual(7);
+        expect(stats.bytes).toBeGreaterThan(0);
+    });
 
-    it.each(AI_FRAMEWORK_KEYS)('%s is a real framework key in the seed', (key) => {
-        expect(seed).toContain(`'${key}'`);
+    it.each(AI_FRAMEWORK_KEYS)('%s is declared by a source the product applies', (key) => {
+        // Delivery-path agnostic on purpose: seed.ts today, a CatalogFile the
+        // day one lands. Either answer is a real declaration of the key.
+        expect(declaringSources(key).length).toBeGreaterThan(0);
+    });
+
+    it.each(AI_FRAMEWORK_KEYS)('%s: an applied CatalogFile, where one exists, declares exactly this key', (key) => {
+        const catalog = appliedCatalogFor(key);
+        if (catalog === null) {
+            // No CatalogFile for any AI framework yet — see the docblock. The
+            // key is dev-seeded, which is what this records rather than
+            // pretending to a production writer that does not exist.
+            expect(declaringSources(key)).toContain(DEV_SEEDER);
+            return;
+        }
+        expect(catalog.framework.key).toBe(key);
+        expect(catalog.requirements.length).toBeGreaterThan(0);
+        expect(productionDeclaringSources(key)).toContain(catalog.file);
     });
 
     it.each(AI_FRAMEWORK_KEYS)('selecting %s makes the step applicable (server gate)', (key) => {

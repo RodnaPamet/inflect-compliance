@@ -121,7 +121,7 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
 // Re-seated in the same diff that made the improvement, as this ratchet's own
 // sentinel requires — leaving the headroom would let a future regression spend
 // it with a green build.
-const UNBOUNDED_INTERIOR_SPAN_BASELINE = 148;
+const UNBOUNDED_INTERIOR_SPAN_BASELINE = 147;
 
 /**
  * Interior spans of ANY boundedness, including `[\s\S]{0,200}`.
@@ -141,7 +141,7 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 148;
  *     is why this number falls further than the one above). 191 of the 368
  *     are character-bounded.
  */
-const INTERIOR_SPAN_BASELINE = 338;
+const INTERIOR_SPAN_BASELINE = 332;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.

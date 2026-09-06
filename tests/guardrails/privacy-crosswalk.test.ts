@@ -11,14 +11,17 @@
  *     short (≤ 200 chars) and clause-ref only — no verbatim ISO passages;
  *   - ATTRIBUTION: the ported crosswalk credits the Microsoft Data Protection
  *     Mapping Project (MIT); docs/attributions.md records it;
- *   - COMPLETENESS: ISO 27701 ships a starter pack (seed-wired); GDPR is the
- *     documented regulatory-reference exemption.
+ *   - DELIVERY: a production seeder actually applies an ISO 27701 catalogue —
+ *     framework, requirements, templates and pack — and the summaries it
+ *     delivers keep the same clause-ref-only discipline as the yaml; GDPR is
+ *     the documented regulatory-reference exemption.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { parseMappingSetFile } from '@/app-layer/services/mapping-set-importer';
+import { appliedCatalogFor } from '../helpers/applied-catalogue';
 import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -86,13 +89,14 @@ describe('Privacy crosswalk — mapping validity (no dangling refs)', () => {
     });
 });
 
-describe('Privacy crosswalk — ISO-copyright discipline (clause-ref only)', () => {
-    const MAX_DESC = 200;
+/** Clause-ref only: a paraphrase fits, a pasted ISO passage does not. */
+const MAX_REQ_SUMMARY = 200;
 
+describe('Privacy crosswalk — ISO-copyright discipline (clause-ref only)', () => {
     it('every ISO 27701 requirement description is short (≤ 200 chars)', () => {
         const offenders = nodes(ISO27701).framework.nodes
             .map((n) => ({ ref: n.refId, len: (n.description ?? '').trim().length }))
-            .filter((n) => n.len > MAX_DESC);
+            .filter((n) => n.len > MAX_REQ_SUMMARY);
         expect(offenders).toEqual([]);
     });
 
@@ -121,13 +125,64 @@ describe('Privacy crosswalk — attribution', () => {
     });
 });
 
-describe('Privacy crosswalk — completeness', () => {
-    const seed = read('prisma/seed.ts');
+describe('Privacy crosswalk — ISO 27701 delivery', () => {
+    /**
+     * This block used to ask `prisma/seed.ts` whether ISO 27701 shipped a pack.
+     * `prisma/seed.ts` is not run on a production deploy, so that question could
+     * not fail while the framework was undeliverable — and it named the wrong
+     * pack besides: seed.ts builds `ISO27701_BASELINE`, while the row production
+     * actually has is `ISO27701_CORE`, declared by the CatalogFile that
+     * `scripts/seed-framework-catalogs.ts` applies on every container start.
+     * The questions below are put to that catalogue instead.
+     */
+    const catalog = appliedCatalogFor('ISO27701');
     const completeness = read('tests/guardrails/framework-starter-pack-completeness.test.ts');
 
-    it('ISO 27701 ships a seed-wired starter pack', () => {
-        expect(seed).toContain("'ISO27701'");
-        expect(seed).toContain("'ISO27701_BASELINE'");
+    it('a production seeder applies an ISO 27701 catalogue at all', () => {
+        // DENOMINATOR. Every case below is vacuous when the lookup returns null.
+        expect(catalog).not.toBeNull();
+        expect(catalog?.requirements.length).toBeGreaterThanOrEqual(20);
+        expect(catalog?.templates.length).toBeGreaterThanOrEqual(10);
+    });
+
+    it('declares the framework as ISO27701 2019, kind ISO_STANDARD', () => {
+        expect(catalog?.framework.key).toBe('ISO27701');
+        expect(catalog?.framework.version).toBe('2019');
+        expect(catalog?.framework.kind).toBe('ISO_STANDARD');
+        expect(catalog?.framework.sourceUrn).toBe('urn:inflect:library:iso27701-2019');
+    });
+
+    it('carries the ISO/IEC provider and the ISO-copyright notice in framework metadata', () => {
+        const meta = (catalog?.framework.metadata ?? {}) as Record<string, unknown>;
+        expect(meta.provider).toBe('ISO/IEC');
+        expect(meta.license).toBe('iso-copyright');
+        expect(String(meta.copyright ?? '')).toMatch(/ISO-copyrighted/);
+    });
+
+    it('delivers the pack production actually has', () => {
+        // NOT seed.ts's ISO27701_BASELINE — no customer database holds that key.
+        expect(catalog?.pack?.key).toBe('ISO27701_CORE');
+        const codes = (catalog?.pack?.templateCodes ?? []) as string[];
+        expect(codes.length).toBeGreaterThanOrEqual(10);
+        const templateCodes = new Set(catalog?.templates.map((t) => t.code));
+        expect(codes.filter((c) => !templateCodes.has(c))).toEqual([]);
+    });
+
+    it('delivers both the PII controller (7.x) and processor (8.x) clause families', () => {
+        const codes = new Set((catalog?.requirements ?? []).map((r) => String(r.code)));
+        for (const req of ['7.2.2', '7.2.5', '7.2.8', '7.3.6', '7.4.7', '7.5.1', '8.5.7']) {
+            expect(codes.has(req)).toBe(true);
+        }
+    });
+
+    it('keeps clause-ref-only discipline in the summaries it DELIVERS, not just the yaml', () => {
+        const offenders = (catalog?.requirements ?? [])
+            .map((r) => ({ code: String(r.code), len: String(r.summary ?? '').trim().length }))
+            .filter((r) => r.len > MAX_REQ_SUMMARY);
+        expect(offenders).toEqual([]);
+    });
+
+    it('the sibling starter-pack completeness ratchet knows about ISO 27701', () => {
         expect(completeness).toContain("'ISO27701-2019'");
     });
 
