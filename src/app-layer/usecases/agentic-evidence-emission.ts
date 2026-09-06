@@ -40,6 +40,7 @@
  * them.
  */
 import { Prisma } from '@prisma/client';
+import { internal } from '@/lib/errors/types';
 
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { log } from '@/lib/observability';
@@ -420,7 +421,7 @@ async function writeArtefact(
                 // A concurrent tick inserted between our read and our insert, and
                 // then vanished. Refusing to loop is deliberate: one retry is a
                 // race, two is a bug we would rather see.
-                throw new Error('agentic evidence artefact vanished between attempts');
+                throw internal('agentic evidence artefact vanished between attempts');
             }
 
             const evidence = await db.evidence.create({
