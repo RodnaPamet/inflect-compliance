@@ -1,6 +1,6 @@
 # 2026-09-06 — agent behavioural circuit breaker (anomaly, not volume)
 
-**Commit:** `<pending> feat(agentic): trip a circuit breaker on behavioural anomaly, not only volume`
+**Commit:** `8f6e569dc feat(agentic): trip a circuit breaker on behavioural anomaly, not only volume`
 
 ## Design
 
