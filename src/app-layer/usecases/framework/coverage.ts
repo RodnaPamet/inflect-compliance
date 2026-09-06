@@ -8,9 +8,9 @@ import { rollUpRequirementVerdict } from '@/lib/compliance/requirement-status-ro
 import { isCoverageQualifyingEvidence } from '@/lib/compliance/coverage-evidence';
 import { toCsv } from '@/lib/csv/format-csv';
 import {
-    canonicalRequirementCode,
-    frameworkFamilyId,
-} from '../../domain/framework-representation';
+    collapseLinksToOwnRequirements,
+    resolveFamilyRequirementAliases,
+} from '../../services/framework-representation-aliases';
 
 // ─── Two representations of one framework ───
 //
@@ -20,98 +20,19 @@ import {
 // `Framework.key` is `@unique`, and a tenant's `ControlRequirementLink` rows
 // hang off whichever representation its database happened to get.
 //
-// The two disagree on TWO independent axes, and `domain/framework-representation.ts`
-// carries both halves of the reconciliation: framework IDENTITY (`sourceUrn`,
-// or `LEGACY_KEY_FAMILY_URNS` for rows written before that convention) and the
-// requirement CODE NAMESPACE (ISO 27001 Annex A is `A.5.15` in the library and
-// `5.15` in the seed).
-//
-// This surface joined links on requirement id alone, so a tenant whose
+// Both surfaces below joined links on requirement id alone, so a tenant whose
 // controls hang off one representation read as covering NOTHING of the other.
 // The failure is a WRONG NUMBER rather than an error — the coverage percent on
 // the Frameworks list page, the framework JSON + CSV exports, the readiness
 // report and the MCP framework tools all reported a mapped control as a gap,
 // which is indistinguishable from a customer who has done no work.
-// `usecases/agent-coverage.ts` already reconciles the same two axes; this is
-// the older pair of consumers catching up.
 //
-// The DENOMINATOR stays the requested framework's own requirements, on
-// purpose. A sibling representation can carry obligations the requested one
-// does not declare, and folding those in would inflate the total with
-// requirements nobody asked about. Only the NUMERATOR expands.
-
-/** The framework catalogue is a small GLOBAL table (tens of rows, no tenantId). */
-const FRAMEWORK_CATALOGUE_CAP = 500;
-
-/**
- * Bound on the sibling requirement rows read for the alias map. The largest
- * framework shipped is ISO 27001 at ~100 rows across both representations, so
- * this cap is two orders of magnitude clear of the data; it exists so a
- * malformed catalogue cannot turn one page render into an unbounded read.
- */
-const SIBLING_REQUIREMENT_CAP = 5000;
-
-interface FamilyRequirementAliases {
-    /** Every requirement id a tenant link may point at — this framework's rows and its siblings'. */
-    readonly lookupIds: string[];
-    /** Any family requirement id → the REQUESTED framework's row for the same obligation. */
-    readonly toOwnRequirementId: ReadonlyMap<string, string>;
-}
-
-/**
- * Map every other representation's requirement rows onto this framework's own,
- * by (family, canonical code).
- *
- * Both halves matter and fixing one alone delivers nothing: collapsing the
- * family without canonicalising the code reaches the sibling framework and
- * then matches none of its Annex A rows, and canonicalising the code without
- * collapsing the family never reaches the sibling framework at all.
- */
-async function resolveFamilyRequirementAliases(
-    db: typeof prisma,
-    fw: { id: string; key: string; sourceUrn: string | null },
-    requirements: readonly { id: string; code: string }[],
-): Promise<FamilyRequirementAliases> {
-    const toOwn = new Map<string, string>();
-    for (const r of requirements) toOwn.set(r.id, r.id);
-    const done = () => ({ lookupIds: [...toOwn.keys()], toOwnRequirementId: toOwn });
-
-    const family = frameworkFamilyId(fw);
-
-    // `frameworkFamilyId` degrades to `key:<key>` for a row that declares no
-    // family, and `Framework.key` is `@unique` — so a family id of that shape
-    // can only ever name THIS row. Skipping the catalogue read here is not an
-    // optimisation traded against correctness: there is provably no sibling.
-    if (family === `key:${fw.key}`) return done();
-
-    const catalogue = await db.framework.findMany({
-        select: { id: true, key: true, sourceUrn: true },
-        take: FRAMEWORK_CATALOGUE_CAP,
-    });
-    const siblingFrameworkIds = catalogue
-        .filter((f) => f.id !== fw.id && frameworkFamilyId(f) === family)
-        .map((f) => f.id);
-    if (siblingFrameworkIds.length === 0) return done();
-
-    const ownByCanonicalCode = new Map<string, string>();
-    for (const r of requirements) {
-        ownByCanonicalCode.set(canonicalRequirementCode(family, r.code), r.id);
-    }
-
-    const siblings = await db.frameworkRequirement.findMany({
-        where: { frameworkId: { in: siblingFrameworkIds }, deprecatedAt: null },
-        select: { id: true, code: true },
-        take: SIBLING_REQUIREMENT_CAP,
-    });
-    for (const s of siblings) {
-        // A sibling obligation the requested framework does not declare is
-        // dropped rather than added — see the denominator note above.
-        const own = ownByCanonicalCode.get(canonicalRequirementCode(family, s.code));
-        if (own) toOwn.set(s.id, own);
-    }
-
-    return done();
-}
+// The reconciliation itself lives in
+// `services/framework-representation-aliases.ts` because `getSoA` and
+// `getFrameworkTree` read the SAME links and have to give the same answer:
+// fixing this file alone would leave two compliance surfaces contradicting
+// each other about one tenant. Read that module's header for the two axes,
+// the tie-break, and why the denominator does not move.
 
 // в”Ђв”Ђв”Ђ Coverage Computation в”Ђв”Ђв”Ђ
 
@@ -147,39 +68,45 @@ export async function computeCoverage(ctx: RequestContext, frameworkKey: string,
         orderBy: { sortOrder: 'asc' },
     });
 
-    const { lookupIds, toOwnRequirementId } = await resolveFamilyRequirementAliases(db, fw, requirements);
     const requirementById = new Map(requirements.map((r) => [r.id, r]));
 
     // Get all tenant control requirement links for this framework — and for
-    // every OTHER representation of it, via `lookupIds`.
+    // every OTHER representation of it, via `aliases.lookupIds`.
     //
     // `control: { deletedAt: null }` for the same reason as
     // `generateReadinessReport` below: a soft-deleted control kept satisfying
     // the requirement it used to cover, so coverage counted rows the product
     // considers deleted and drifted UPWARD as data was removed. `getSoA`
     // filters, so the two disagreed about the same tenant at the same moment.
-    const rawLinks = await runInTenantContext(ctx, (tdb) =>
-        tdb.controlRequirementLink.findMany({
+    //
+    // The alias resolution reads only GLOBAL tables and runs in the same
+    // transaction as the links query, so the two cannot see different
+    // catalogues.
+    const { rawLinks, aliases } = await runInTenantContext(ctx, async (tdb) => {
+        const resolved = await resolveFamilyRequirementAliases(tdb, fw, requirements);
+        const rows = await tdb.controlRequirementLink.findMany({
             where: {
                 tenantId: ctx.tenantId,
-                requirementId: { in: lookupIds },
+                requirementId: { in: resolved.lookupIds },
                 control: { deletedAt: null },
             },
             include: {
                 control: { select: { id: true, code: true, name: true, status: true } },
             },
-        })
-    );
+        });
+        return { rawLinks: rows, aliases: resolved };
+    });
 
     // Re-point every link at the REQUESTED framework's own requirement row, so
     // a link held against the other representation counts for the obligation
-    // it actually satisfies. `requirement` is read back from the requested
-    // framework's rows rather than the link's own, so `controlMappings` and the
-    // CSV export report one spelling instead of a mixture of two.
-    const links = rawLinks.flatMap((l) => {
-        const ownId = toOwnRequirementId.get(l.requirementId);
-        const requirement = ownId ? requirementById.get(ownId) : undefined;
-        return requirement ? [{ ...l, requirementId: requirement.id, requirement }] : [];
+    // it actually satisfies — at most one link per (requirement, control), or
+    // a control linked to BOTH representations would emit two identical
+    // `controlMappings` entries and two identical CSV rows. `requirement` is
+    // read back from the requested framework's rows rather than the link's
+    // own, so the output reports one spelling instead of a mixture of two.
+    const links = collapseLinksToOwnRequirements(rawLinks, aliases).flatMap((l) => {
+        const requirement = requirementById.get(l.requirementId);
+        return requirement ? [{ ...l, requirement }] : [];
     });
 
     const mappedReqIds = new Set(links.map((l) => l.requirementId));
@@ -340,14 +267,13 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
     // expiry). Shared by the exception filter below and the overdue-task check.
     const now = new Date();
 
-    // Same two-representation reconciliation as `computeCoverage` above — the
+    // Get tenant control-requirement mappings, with the same
+    // two-representation reconciliation as `computeCoverage` above — the
     // readiness report reads the SAME links and would otherwise report a
     // mapped control as a gap on exactly the tenants that surface does.
-    const { lookupIds, toOwnRequirementId } = await resolveFamilyRequirementAliases(db, fw, requirements);
-
-    // Get tenant control-requirement mappings
-    const rawLinks = await runInTenantContext(ctx, (tdb) =>
-        tdb.controlRequirementLink.findMany({
+    const { rawLinks, aliases } = await runInTenantContext(ctx, async (tdb) => {
+        const resolved = await resolveFamilyRequirementAliases(tdb, fw, requirements);
+        const rows = await tdb.controlRequirementLink.findMany({
             // `control: { deletedAt: null }` is the second half of the same fix
             // the evidence filter below already made.
             //
@@ -360,7 +286,7 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
             // deleted control kept satisfying the requirement it used to cover.
             where: {
                 tenantId: ctx.tenantId,
-                requirementId: { in: lookupIds },
+                requirementId: { in: resolved.lookupIds },
                 control: { deletedAt: null },
             },
             include: {
@@ -424,16 +350,17 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
                     },
                 },
             },
-        })
-    );
+        });
+        return { rawLinks: rows, aliases: resolved };
+    });
 
     // Re-point every link at this framework's own requirement row (see
-    // `resolveFamilyRequirementAliases`); everything below then reads exactly
-    // as it did when links could only ever name this framework's rows.
-    const links = rawLinks.flatMap((l) => {
-        const requirementId = toOwnRequirementId.get(l.requirementId);
-        return requirementId ? [{ ...l, requirementId }] : [];
-    });
+    // `collapseLinksToOwnRequirements`); everything below then reads exactly
+    // as it did when links could only ever name this framework's rows —
+    // including the "at most one link per (requirement, control)" guarantee
+    // `@@unique([controlId, requirementId])` used to provide on its own, which
+    // the per-requirement rollup and the N/A lists both lean on.
+    const links = collapseLinksToOwnRequirements(rawLinks, aliases);
 
     const mappedReqIds = new Set(links.map((l) => l.requirementId));
     const mapped = requirements.filter((r) => mappedReqIds.has(r.id));

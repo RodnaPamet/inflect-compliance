@@ -25,9 +25,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
+import { declarationOf } from '../helpers/source-blocks';
 import {
     ISO27001_FAMILY_URN,
     LEGACY_KEY_FAMILY_URNS,
+    SOC2_FAMILY_URN,
     canonicalRequirementCode,
     frameworkFamilyId,
     requirementCodeSpellings,
@@ -39,6 +41,17 @@ const ISO42001_FAMILY_URN = 'urn:inflect:library:iso-42001';
 
 const libraryCodes = (file: string): string[] =>
     loadLibrary(parseLibraryFile(path.join(LIB_DIR, file)), file).framework.nodes.map((n) => n.refId);
+
+/**
+ * The requirement codes `prisma/seed.ts` writes for one framework, read out of
+ * the seed's own array literal rather than duplicated here. `declarationOf`
+ * bounds the read to that declaration and strips comments, so a code named in
+ * a comment cannot satisfy the comparison, and an unrelated edit elsewhere in
+ * the seed cannot slide the window off the target.
+ */
+const seededCodes = (declaration: string): string[] =>
+    [...declarationOf(fs.readFileSync(path.join(ROOT, 'prisma/seed.ts'), 'utf8'), declaration)
+        .matchAll(/\bcode: '([^']+)'/g)].map((m) => m[1]);
 
 const fixtureCodes = (file: string): string[] =>
     (JSON.parse(fs.readFileSync(path.join(ROOT, 'prisma/fixtures', file), 'utf8')) as Array<{
@@ -84,8 +97,23 @@ describe('frameworkFamilyId', () => {
         expect(frameworkFamilyId({ key: 'CUSTOM-THING', sourceUrn: null })).toBe('key:CUSTOM-THING');
     });
 
-    it('carries exactly one legacy key, because each entry asserts two rows are one framework', () => {
-        expect(Object.keys(LEGACY_KEY_FAMILY_URNS)).toEqual(['ISO27001']);
+    it('places a seeded SOC2 row in the library family too', () => {
+        // `prisma/seed.ts` wrote NO urn on this row at all until the entry
+        // landed, so unlike ISO 27001 this is not only a legacy-database
+        // fallback: every database has an urn-less `SOC2` row until it is
+        // re-seeded.
+        expect(frameworkFamilyId({ key: 'SOC2', sourceUrn: null })).toBe(SOC2_FAMILY_URN);
+        expect(frameworkFamilyId({ key: 'SOC2-2017', sourceUrn: SOC2_FAMILY_URN })).toBe(
+            SOC2_FAMILY_URN,
+        );
+    });
+
+    it('carries only the keys whose two representations have been compared', () => {
+        // Each entry ASSERTS that two `Framework` rows describe one framework,
+        // so the list is not a place to add a guess: the two `describe` blocks
+        // at the foot of this file recompute the code comparison behind each
+        // one from the shipped data.
+        expect(Object.keys(LEGACY_KEY_FAMILY_URNS).sort()).toEqual(['ISO27001', 'SOC2']);
     });
 });
 
@@ -172,5 +200,48 @@ describe('the shipped data the ISO 27001 rule stands on', () => {
         // …and under the family they actually belong to, they do not.
         expect(canonicalCollisions(ISO42001_FAMILY_URN, iso42001Lib)).toEqual([]);
         expect(canonicalCollisions(ISO42001_FAMILY_URN, iso42001Seed)).toEqual([]);
+    });
+});
+
+describe('the shipped data the SOC 2 rule stands on', () => {
+    const libCodes = libraryCodes('soc2-2017.yaml');
+    const seedCodes = seededCodes('soc2Reqs');
+
+    it('the detector actually found the seeded criteria', () => {
+        // Without this, a renamed declaration or a reformatted seed would make
+        // every comparison below vacuously true over an empty list.
+        expect(seedCodes.length).toBeGreaterThanOrEqual(10);
+        expect(seedCodes).toContain('CC6.1');
+    });
+
+    it('every seeded criterion is spelled the same in the library', () => {
+        // This is what makes a legacy-key entry SUFFICIENT for SOC 2 and a
+        // code rule unnecessary: the identity axis is the only one that
+        // differs. If a future library revision renumbers the criteria, this
+        // goes red and the entry needs a canonicalisation rule beside it.
+        expect(seedCodes.filter((c) => !libCodes.includes(c))).toEqual([]);
+    });
+
+    it('the two representations really are different rows, not one', () => {
+        // The library carries the non-assessable parent nodes (`CC1`, `CC2`, …)
+        // and the supplemental criteria the seed omits, so the sets are not
+        // equal — the seeded list is a strict subset.
+        expect(libCodes.filter((c) => !seedCodes.includes(c)).length).toBeGreaterThan(0);
+    });
+
+    it('canonicalisation is the identity here, and collapses nothing', () => {
+        for (const code of [...libCodes, ...seedCodes]) {
+            expect(canonicalRequirementCode(SOC2_FAMILY_URN, code)).toBe(code);
+        }
+        expect(canonicalCollisions(SOC2_FAMILY_URN, libCodes)).toEqual([]);
+        expect(canonicalCollisions(SOC2_FAMILY_URN, seedCodes)).toEqual([]);
+    });
+
+    it('the seed writes the urn, so the legacy entry is a fallback and not the only tie', () => {
+        const soc2Row = declarationOf(
+            fs.readFileSync(path.join(ROOT, 'prisma/seed.ts'), 'utf8'),
+            'soc2',
+        );
+        expect(soc2Row).toContain(`sourceUrn: '${SOC2_FAMILY_URN}'`);
     });
 });

@@ -7,8 +7,8 @@
  * `@unique`), and a tenant's `ControlRequirementLink` rows hang off whichever
  * one its database happened to get. The two disagree on TWO independent axes:
  *
- *   IDENTITY   `sourceUrn` ties them; rows written before that convention
- *              carry `null` and resolve through `LEGACY_KEY_FAMILY_URNS`.
+ *   IDENTITY   `sourceUrn` ties them; rows an existing database holds without
+ *              one resolve through `LEGACY_KEY_FAMILY_URNS`.
  *   SPELLING   ISO 27001 Annex A control 15 of clause 5 is `A.5.15` in the
  *              library and `5.15` in the seed fixture.
  *
@@ -18,22 +18,45 @@
  * errors — the number is simply wrong, and wrong in the direction that looks
  * like a customer who has done no work.
  *
- * WHY THE FIXTURE HAS TWO FAMILIES. A single-representation fixture passes
- * before and after the fix and proves nothing, and a fixture with only ONE
- * two-representation family cannot separate the two axes. So:
+ * FOUR surfaces read those links, and this suite asserts they AGREE. Teaching
+ * one of them to reconcile the representations and leaving the others behind is
+ * worse than teaching none: coverage then says 100% beside an SoA saying
+ * nothing is mapped, and neither says why.
  *
- *   ISO 27001   seed row carries NO `sourceUrn` (the deployed state — an
- *               existing database is not re-seeded), and the two rows spell
- *               Annex A differently. Clause `7` is spelled IDENTICALLY in
- *               both, which is what isolates the identity axis from the
- *               spelling axis inside one family.
- *   SOC 2       both rows carry `sourceUrn`, and both spell `CC6.1` the same.
- *               Nothing here needs the legacy key map.
+ * WHY THE FIXTURE HAS THREE FAMILIES. A single-representation fixture passes
+ * before and after the fix and proves nothing, and one two-representation
+ * family cannot separate the axes from each other. So:
  *
- * The two mutation proofs therefore land on different assertions:
- *   emptying `LEGACY_KEY_FAMILY_URNS`  reddens both ISO 27001 assertions and
- *                                      leaves SOC 2 green;
- *   neutering `canonicalRequirementCode` reddens ONLY the Annex A assertion.
+ *   ISO 27001   seeded row carries NO `sourceUrn` (the state of a database
+ *               provisioned before the seed wrote one — an existing database
+ *               is not re-seeded), and the two rows spell Annex A differently.
+ *               Clauses `7` and `8` are spelled IDENTICALLY in both, which is
+ *               what isolates the identity axis from the spelling axis.
+ *   SOC 2       seeded row carries no `sourceUrn` either — the seed wrote none
+ *               at all until the fix, and an existing database is never
+ *               re-seeded — and both rows spell `CC6.1` the same. The identity
+ *               axis alone, with no spelling difference to hide behind.
+ *   ISO 42001   BOTH rows carry `sourceUrn`, so nothing here needs the legacy
+ *               map, and both carry clause `8.2` AND Annex control `A.8.2` —
+ *               different obligations. The `A.` strip is scoped to the ISO
+ *               27001 family precisely so this family does not merge them.
+ *
+ * The mutation proofs land on different sets, and what each one leaves GREEN
+ * is the load-bearing half — a mutation that reddens everything separates
+ * nothing. Measured against this file, not asserted from the design:
+ *
+ *   emptying `LEGACY_KEY_FAMILY_URNS` reddens every ISO 27001 and SOC 2
+ *       assertion and leaves BOTH ISO 42001 ones green: those two rows carry
+ *       the urn, so no legacy key was ever in play for them.
+ *   neutering `canonicalRequirementCode` to the identity leaves the clause `7`
+ *       assertion green — `7` is spelled the same in both representations, so
+ *       that one and only that one isolates identity from spelling. (It does
+ *       NOT redden only the Annex A assertion: every ISO 27001 total, the
+ *       readiness report, the SoA, the tree and the gap analysis go with it,
+ *       because they all count the same requirement.)
+ *   making the `A.` strip family-blind reddens ONLY the two ISO 42001
+ *       assertions: that family carries clause `8.2` AND Annex `A.8.2` as
+ *       different obligations, and a blanket strip merges them.
  */
 import { MembershipStatus, PrismaClient, Role } from '@prisma/client';
 
@@ -42,7 +65,10 @@ import { prismaTestClient, resetDatabase } from '../helpers/db';
 import { makeRequestContext } from '../helpers/make-context';
 import { hashForLookup } from '@/lib/security/encryption';
 import { computeCoverage, generateReadinessReport } from '@/app-layer/usecases/framework/coverage';
-import { performGapAnalysis } from '@/app-layer/usecases/gap-analysis';
+import { getFrameworkTree } from '@/app-layer/usecases/framework/tree';
+import { getSoA } from '@/app-layer/usecases/soa';
+import { getRequirementTraceability, performGapAnalysis } from '@/app-layer/usecases/gap-analysis';
+import type { FrameworkTreeNode } from '@/lib/framework-tree/types';
 
 const prisma: PrismaClient = prismaTestClient();
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -51,6 +77,7 @@ jest.setTimeout(60_000);
 /** The urn both representations of each family carry, verbatim from the YAML. */
 const ISMS_URN = 'urn:inflect:library:iso27001-2022';
 const SOC2_URN = 'urn:inflect:library:soc2-2017';
+const AIMS_URN = 'urn:inflect:library:iso-42001';
 
 /** The tenant that holds every control, all of them on the SEEDED rows. */
 const TA = 'fwrep-tenant-a';
@@ -92,13 +119,43 @@ async function createRepresentation(
     }
 }
 
-async function linkControl(tenantId: string, controlCode: string, requirementId: string): Promise<void> {
+/**
+ * One control, linked to one or more requirements.
+ *
+ * The multi-link form exists for exactly one shape: a control the tenant has
+ * attached to BOTH representations of one obligation. That is the only way
+ * `@@unique([controlId, requirementId])` stops guaranteeing "at most one link
+ * per (requirement, control)" once the representations are collapsed.
+ */
+async function linkControl(
+    tenantId: string,
+    controlCode: string,
+    links: Array<{ requirementId: string; applicability?: 'APPLICABLE' | 'NOT_APPLICABLE'; justification?: string }>,
+): Promise<void> {
     const control = await prisma.control.create({
         data: { tenantId, code: controlCode, name: `Control ${controlCode}`, status: 'IMPLEMENTED' },
     });
-    await prisma.controlRequirementLink.create({
-        data: { tenantId, controlId: control.id, requirementId },
-    });
+    for (const link of links) {
+        await prisma.controlRequirementLink.create({
+            data: {
+                tenantId,
+                controlId: control.id,
+                requirementId: link.requirementId,
+                applicability: link.applicability ?? null,
+                applicabilityJustification: link.justification ?? null,
+            },
+        });
+    }
+}
+
+/** Depth-first lookup — the tree builder nests requirements under synthesized sections. */
+function findNode(nodes: readonly FrameworkTreeNode[], code: string): FrameworkTreeNode | undefined {
+    for (const node of nodes) {
+        if (node.code === code) return node;
+        const hit = findNode(node.children, code);
+        if (hit) return hit;
+    }
+    return undefined;
 }
 
 /**
@@ -132,20 +189,32 @@ describeFn('coverage across the two representations of one framework', () => {
         await createRepresentation('ISO27001', 'ISO/IEC 27001', null, [
             { code: '5.15', title: 'Access control' },
             { code: '7', title: 'Support' },
+            { code: '8', title: 'Operation' },
         ]);
         await createRepresentation('ISO27001-2022', 'ISO/IEC 27001:2022', ISMS_URN, [
             { code: 'A.5.15', title: 'Access control' },
             { code: '7', title: 'Support' },
+            { code: '8', title: 'Operation' },
         ]);
 
-        // SOC 2 — the family that agrees on the spelling and ties itself
-        // together with `sourceUrn` on BOTH rows, needing no legacy key.
-        await createRepresentation('SOC2', 'SOC 2', SOC2_URN, [
+        // SOC 2 — the identity axis on its own. The seeded row carries no urn
+        // (`prisma/seed.ts` wrote none), so ONLY the legacy key map ties it.
+        await createRepresentation('SOC2', 'SOC 2', null, [
             { code: 'CC6.1', title: 'Logical access' },
         ]);
         await createRepresentation('SOC2-2017', 'SOC 2 (2017 TSC)', SOC2_URN, [
             { code: 'CC6.1', title: 'Logical access' },
         ]);
+
+        // ISO 42001 — tied by `sourceUrn` on both rows, needing no legacy key,
+        // and carrying the clause/Annex code collision that makes the ISO
+        // 27001 `A.` strip family-scoped rather than global.
+        for (const key of ['AIMS-SEED', 'AIMS-LIB']) {
+            await createRepresentation(key, `ISO/IEC 42001 (${key})`, AIMS_URN, [
+                { code: '8.2', title: 'AI risk assessment' },
+                { code: 'A.8.2', title: 'System documentation' },
+            ]);
+        }
 
         // A curated mapping, authored the way every shipped mapping set is:
         // against the LIBRARY representation of both frameworks.
@@ -177,14 +246,27 @@ describeFn('coverage across the two representations of one framework', () => {
 
         // Tenant A's whole posture hangs off the SEEDED rows — the state a
         // database provisioned before library-sync ran is actually in.
-        await linkControl(TA, 'A-ANNEX-515', reqId('ISO27001', '5.15'));
-        await linkControl(TA, 'A-CLAUSE-7', reqId('ISO27001', '7'));
-        await linkControl(TA, 'A-SOC2-CC61', reqId('SOC2', 'CC6.1'));
+        await linkControl(TA, 'A-ANNEX-515', [{ requirementId: reqId('ISO27001', '5.15') }]);
+        await linkControl(TA, 'A-CLAUSE-7', [{ requirementId: reqId('ISO27001', '7') }]);
+        await linkControl(TA, 'A-SOC2-CC61', [{ requirementId: reqId('SOC2', 'CC6.1') }]);
+        await linkControl(TA, 'A-AIMS-CLAUSE82', [{ requirementId: reqId('AIMS-SEED', '8.2') }]);
+
+        // …except this one, which the tenant attached to BOTH representations
+        // of clause 8, and scoped OUT against the library one. Two links, one
+        // control, one obligation.
+        await linkControl(TA, 'A-DUAL', [
+            { requirementId: reqId('ISO27001', '8') },
+            {
+                requirementId: reqId('ISO27001-2022', '8'),
+                applicability: 'NOT_APPLICABLE',
+                justification: 'Scoped out for the ISMS certification boundary',
+            },
+        ]);
     });
 
     afterAll(async () => {
         await clearOwnRows();
-        // Hand the GLOBAL catalogue back empty. This suite creates four
+        // Hand the GLOBAL catalogue back empty. This suite creates six
         // Framework rows plus a mapping set, and a `RequirementMapping` row is
         // a foreign key onto a `FrameworkRequirement`: leaving them behind
         // makes the next suite that deletes a framework by key fail on an FK
@@ -210,7 +292,12 @@ describeFn('coverage across the two representations of one framework', () => {
         );
     });
 
-    it('a family whose rows both carry sourceUrn reconciles without any legacy key', async () => {
+    it('a seeded SOC 2 row with no sourceUrn reconciles through the legacy key', async () => {
+        // `prisma/seed.ts` now writes the urn, but an existing database is
+        // never re-seeded, so its `SOC2` row still carries none — that is the
+        // row this fixture models. Both representations spell `CC6.1`
+        // identically, so this assertion depends on the `SOC2` entry in
+        // `LEGACY_KEY_FAMILY_URNS` and on nothing else.
         const coverage = await computeCoverage(ctxFor(TA), 'SOC2-2017');
 
         expect(coverage.total).toBe(1);
@@ -218,6 +305,16 @@ describeFn('coverage across the two representations of one framework', () => {
         expect(coverage.coveragePercent).toBe(100);
         expect(coverage.controlMappings).toContainEqual(
             expect.objectContaining({ requirementCode: 'CC6.1', controlCode: 'A-SOC2-CC61' }),
+        );
+    });
+
+    it('a family whose rows both carry sourceUrn reconciles without any legacy key', async () => {
+        const coverage = await computeCoverage(ctxFor(TA), 'AIMS-LIB');
+
+        // The control hangs off the SEEDED clause `8.2`, and only the urn ties
+        // the two rows: neither key appears in `LEGACY_KEY_FAMILY_URNS`.
+        expect(coverage.controlMappings).toContainEqual(
+            expect.objectContaining({ requirementCode: '8.2', controlCode: 'A-AIMS-CLAUSE82' }),
         );
     });
 
@@ -234,26 +331,99 @@ describeFn('coverage across the two representations of one framework', () => {
         );
     });
 
+    it('the A. strip stays inside the ISO 27001 family, so 8.2 and A.8.2 stay apart', async () => {
+        // ISO 42001 carries clause `8.2` (AI risk assessment) AND Annex control
+        // `A.8.2` (system documentation) in BOTH representations — different
+        // obligations. A family-blind strip would let the clause-8.2 control
+        // satisfy the Annex control, inflating coverage on a route that works.
+        const coverage = await computeCoverage(ctxFor(TA), 'AIMS-LIB');
+
+        expect(coverage.total).toBe(2);
+        expect(coverage.mapped).toBe(1);
+        expect(coverage.unmappedRequirements.map((r) => r.code)).toEqual(['A.8.2']);
+    });
+
     // ─── The shape of the answer ─────────────────────────────────────
 
     it('reports full coverage without inflating the denominator with the sibling representation', async () => {
         const coverage = await computeCoverage(ctxFor(TA), 'ISO27001-2022');
 
-        // TWO, not four: the sibling representation's rows expand which
+        // THREE, not six: the sibling representation's rows expand which
         // requirements count as MAPPED, never how many there are to map.
-        expect(coverage.total).toBe(2);
-        expect(coverage.mapped).toBe(2);
+        expect(coverage.total).toBe(3);
+        expect(coverage.mapped).toBe(3);
         expect(coverage.unmapped).toBe(0);
         expect(coverage.coveragePercent).toBe(100);
+    });
+
+    it('a control linked to BOTH representations of one obligation is reported once', async () => {
+        // `@@unique([controlId, requirementId])` used to make this impossible;
+        // collapsing the two representations onto one requirement row is what
+        // re-opens it. Two identical `controlMappings` entries would also be
+        // two identical rows in the coverage CSV export.
+        const coverage = await computeCoverage(ctxFor(TA), 'ISO27001-2022');
+
+        const dual = coverage.controlMappings.filter(
+            (m) => m.requirementCode === '8' && m.controlCode === 'A-DUAL',
+        );
+        expect(dual).toHaveLength(1);
     });
 
     it('the readiness report agrees with the coverage page for the same tenant', async () => {
         const report = await generateReadinessReport(ctxFor(TA), 'ISO27001-2022');
 
-        expect(report.coverage.total).toBe(2);
-        expect(report.coverage.mapped).toBe(2);
+        expect(report.coverage.total).toBe(3);
+        expect(report.coverage.mapped).toBe(3);
         expect(report.coverage.coveragePercent).toBe(100);
+        // Clause 8's only control is scoped out against THIS framework, so it
+        // is neither implemented nor a gap — the other two are implemented.
         expect(report.summary.implementedRequirements).toBe(2);
+        expect(report.summary.gapRequirements).toBe(0);
+    });
+
+    it('the SoA agrees with the coverage page for the same tenant', async () => {
+        // The contradiction this closes: coverage saying 100% while the SoA,
+        // reading the same links a requirement id at a time, said every
+        // requirement was unmapped.
+        const soa = await getSoA(ctxFor(TA), { framework: 'ISO27001-2022' });
+
+        expect(soa.summary.total).toBe(3);
+        expect(soa.summary.unmapped).toBe(0);
+        expect(soa.entries.map((e) => e.requirementCode).sort()).toEqual(['7', '8', 'A.5.15']);
+
+        const annexA = soa.entries.find((e) => e.requirementCode === 'A.5.15');
+        expect(annexA?.applicable).toBe(true);
+        expect(annexA?.mappedControls.map((c) => c.code)).toEqual(['A-ANNEX-515']);
+    });
+
+    it('the SoA honours the override written against the framework being asked about', async () => {
+        const soa = await getSoA(ctxFor(TA), { framework: 'ISO27001-2022' });
+
+        const clause8 = soa.entries.find((e) => e.requirementCode === '8');
+        // One row, not two, even though the control arrives through two links.
+        expect(clause8?.mappedControls).toHaveLength(1);
+        // …and the surviving link is the one naming THIS framework, whose
+        // per-framework `applicability` override scopes the control out.
+        expect(clause8?.applicable).toBe(false);
+        expect(clause8?.justification).toBe('Scoped out for the ISMS certification boundary');
+    });
+
+    it('the framework tree agrees with the coverage page for the same tenant', async () => {
+        // Before the collapse this tree decorated every node `gap` for this
+        // tenant while `computeCoverage` reported 100% off the same links.
+        const tree = await getFrameworkTree(ctxFor(TA), 'ISO27001-2022');
+
+        expect(findNode(tree.nodes, 'A.5.15')?.complianceStatus).toBe('compliant');
+        expect(findNode(tree.nodes, '7')?.complianceStatus).toBe('compliant');
+        // Clause 8 reads `compliant` here and NOT APPLICABLE on the SoA above,
+        // and that divergence is NOT this fix's: the tree decorator reads
+        // `Control.applicability` (its global column) and has never read the
+        // per-framework `ControlRequirementLink.applicability` override that
+        // the SoA and the readiness rollup both resolve. It predates the
+        // collapse and is reachable without two representations — any tenant
+        // scoping a control out of one framework sees it. Pinned here as the
+        // measured behaviour rather than silently widened into this PR.
+        expect(findNode(tree.nodes, '8')?.complianceStatus).toBe('compliant');
     });
 
     it('a tenant that holds no controls still reads as zero', async () => {
@@ -262,10 +432,13 @@ describeFn('coverage across the two representations of one framework', () => {
         // would report tenant B as fully covered off tenant A's controls.
         const coverage = await computeCoverage(ctxFor(TB), 'ISO27001-2022');
 
-        expect(coverage.total).toBe(2);
+        expect(coverage.total).toBe(3);
         expect(coverage.mapped).toBe(0);
         expect(coverage.coveragePercent).toBe(0);
-        expect(coverage.unmappedRequirements.map((r) => r.code).sort()).toEqual(['7', 'A.5.15']);
+        expect(coverage.unmappedRequirements.map((r) => r.code).sort()).toEqual(['7', '8', 'A.5.15']);
+
+        const soa = await getSoA(ctxFor(TB), { framework: 'ISO27001-2022' });
+        expect(soa.summary.unmapped).toBe(3);
     });
 
     // ─── The mapping side ────────────────────────────────────────────
@@ -291,5 +464,24 @@ describeFn('coverage across the two representations of one framework', () => {
         expect(annexA).toBeDefined();
         expect(annexA!.status).toBe('COVERED');
         expect(annexA!.bestConfidence).toBe('FULL');
+    });
+
+    it('single-requirement traceability resolves the same mapping', async () => {
+        // The sibling of the usecase above, and it needs its own test: it
+        // builds the target-key list and calls `buildTraceabilityReport`
+        // itself, so reverting ITS two lines leaves `performGapAnalysis`
+        // untouched and every mapping suite green.
+        const report = await getRequirementTraceability({
+            sourceRequirementId: reqId('SOC2-2017', 'CC6.1'),
+            targetFrameworkKey: 'ISO27001',
+            maxDepth: 1,
+        });
+
+        expect(report.findings).toHaveLength(1);
+        expect(report.findings[0].confidence).toBe('FULL');
+        // The mapping lands on the LIBRARY row; the caller asked about the
+        // seeded key. Both have to be recognised as one framework.
+        expect(report.findings[0].target.frameworkKey).toBe('ISO27001-2022');
+        expect(report.summary.bestConfidence).toBe('FULL');
     });
 });
