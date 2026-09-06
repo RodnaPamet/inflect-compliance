@@ -294,9 +294,6 @@ const SINK_FLOOR = 30;
  * have been choosing the denominator that keeps the number green, which is the
  * defect this cap exists to catch, one level up.
  */
-const MEASURED_HOLES = 113;
-const MEASURED_HOLES = 99;
-const MEASURED_SINKS = 51;
 // 2026-09-06 (ASI08 run caps): +2 holes, +1 sink. `haltRunAtCap` in
 // `workflow-runs.ts` writes the `WORKFLOW_RUN_CAP_HALTED` row, and its two
 // opaque positions are `entityId: runId` — which every audit call in that file
@@ -306,15 +303,19 @@ const MEASURED_SINKS = 51;
 // the bag is named at the sink rather than spread. Neither opaque value is
 // content, and neither can become content: one is a cuid, the other is derived
 // from `def.steps.length`.
-const MEASURED_HOLES = 99;
-const MEASURED_SINKS = 46;
 // Re-MEASURED 2026-09-06, when the behavioural circuit breaker added its three
 // sink calls: 97 / 45 became 108 / 48. Both numbers come from running this
 // sweep with the constants zeroed so the failure message prints the real
 // counts — never from picking a pair that happens to pass.
-const MEASURED_HOLES = 108;
-const MEASURED_SINKS = 48;
 /** `src/lib/mcp/auth.ts` — a six-field `detailsJson` bag built out of locals. */
+// MEASURED on the merged tree, not carried from any one lane. Four lanes each
+// measured this ratchet against a tree that did not contain the other three —
+// their numbers were 113/51, 99/46 and 108/48, all correct where they were taken
+// and all wrong here. Taking any one of them would have produced a green ratchet
+// describing a codebase that does not exist, which is the failure this ratchet is
+// for. Re-derived by zeroing both and reading the failure message.
+const MEASURED_HOLES = 128;
+const MEASURED_SINKS = 61;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

@@ -1289,6 +1289,8 @@ export function recordAgenticMemberFailure(attrs: { component: string; kind: str
 /** One fan-out halted on a fatal failure. Members behind it went unattempted. */
 export function recordAgenticFanOutHalt(attrs: { component: string; kind: string }): void {
     getAgenticFanOutHalts().add(1, { component: attrs.component, kind: attrs.kind });
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // AGENTIC RUN CAPS — OWASP ASI08 (cascading failures)
 // ════════════════════════════════════════════════════════════════════════

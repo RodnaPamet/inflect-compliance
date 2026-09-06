@@ -478,7 +478,10 @@ async function executeFrom(
                 // which would overwrite the cap an operator needs to read with
                 // a tool error that did not happen.
                 const readHalt = budget.charge('TOOL_CALLS', 1);
-                if (readHalt) return haltRunAtCap(ctx, runId, readHalt, def.steps.length - seq);
+                if (readHalt) {
+                    const status = await haltRunAtCap(ctx, runId, readHalt, def.steps.length - seq);
+                    return { status, stepFailures };
+                }
                 const args = step.args ? step.args(context) : {};
                 const result = await runReadTool(invocation, step.tool, args);
                 const output = parseToolResult(result);
@@ -502,11 +505,13 @@ async function executeFrom(
                     // chose that subset.
                     const proposalHalt = budget.charge('PROPOSALS', items.length);
                     if (proposalHalt) {
-                        return haltRunAtCap(ctx, runId, proposalHalt, def.steps.length - seq);
+                        const status = await haltRunAtCap(ctx, runId, proposalHalt, def.steps.length - seq);
+                        return { status, stepFailures };
                     }
                     const proposeHalt = budget.charge('TOOL_CALLS', 1);
                     if (proposeHalt) {
-                        return haltRunAtCap(ctx, runId, proposeHalt, def.steps.length - seq);
+                        const status = await haltRunAtCap(ctx, runId, proposeHalt, def.steps.length - seq);
+                        return { status, stepFailures };
                     }
                     const rationale = step.rationale ? step.rationale(context) : undefined;
                     const result = await runProposeTool(invocation, step.tool, { items, rationale });
@@ -538,7 +543,10 @@ async function executeFrom(
             // clothes. So the completed step keeps its output, and the run
             // stops before the next one.
             const tokenHalt = budget.charge('TOKENS', costTokens - budget.used('TOKENS'));
-            if (tokenHalt) return haltRunAtCap(ctx, runId, tokenHalt, def.steps.length - seq - 1);
+            if (tokenHalt) {
+                const status = await haltRunAtCap(ctx, runId, tokenHalt, def.steps.length - seq - 1);
+                return { status, stepFailures };
+            }
         } catch (err) {
             // An integrity failure is NOT a step failure and must not be
             // recorded as one: the step ran, the context it produced is the

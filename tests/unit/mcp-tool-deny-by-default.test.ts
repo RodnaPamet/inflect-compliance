@@ -61,10 +61,6 @@ jest.mock('@/lib/prisma', () => {
     // rather than omitting the method is deliberate: an absent `$queryRaw`
     // makes every call throw, which would look like a refusal.
     const $queryRaw = jest.fn().mockResolvedValue([]);
-    return {
-        __esModule: true,
-        default: { tenantApiKey, mcpToolManifestPin, $queryRaw },
-        prisma: { tenantApiKey, mcpToolManifestPin, $queryRaw },
     // The behavioural circuit breaker's two tables. `findUnique` resolving to
     // NULL is "this agent has never been observed", which contributes no term at
     // the boundary — the same neutral default an unpinned tool manifest and an

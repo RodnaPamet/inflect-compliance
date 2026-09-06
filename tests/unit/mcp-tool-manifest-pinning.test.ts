@@ -111,10 +111,6 @@ const tenantApiKey = { findFirst: jest.fn() };
 // every call throw, which would look like a refusal.
 const killSwitchQuery = jest.fn().mockResolvedValue([]);
 
-jest.mock('@/lib/prisma', () => ({
-    __esModule: true,
-    default: { tenantApiKey, mcpToolManifestPin: pinTable, $queryRaw: killSwitchQuery },
-    prisma: { tenantApiKey, mcpToolManifestPin: pinTable, $queryRaw: killSwitchQuery },
 // The behavioural circuit breaker's two tables. `findUnique` resolving to NULL
 // is "this agent has never been observed", which contributes no term at the
 // boundary — the same neutral default an unpinned tool manifest gets, so these
@@ -130,8 +126,8 @@ const breakerTables = {
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { tenantApiKey, mcpToolManifestPin: pinTable, ...breakerTables },
-    prisma: { tenantApiKey, mcpToolManifestPin: pinTable, ...breakerTables },
+    default: { tenantApiKey, mcpToolManifestPin: pinTable, $queryRaw: killSwitchQuery, ...breakerTables },
+    prisma: { tenantApiKey, mcpToolManifestPin: pinTable, $queryRaw: killSwitchQuery, ...breakerTables },
 }));
 
 jest.mock('@/lib/db-context', () => ({

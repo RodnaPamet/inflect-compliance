@@ -110,13 +110,13 @@ import {
 } from '@/lib/agentic/policy-card-evaluation';
 import { reserveDailyAction } from '@/lib/agentic/policy-card-store';
 import {
-    recordAgentKillRefusal,
     openBreakerGate,
     recordAuthorizedCall,
     type BreakerLatch,
 } from '@/lib/agentic/circuit-breaker-store';
 import {
     recordAgentBreakerRefusal,
+    recordAgentKillRefusal,
     recordPolicyCardEvaluation,
     recordPolicyCardRefusal,
     recordToolManifestDrift,

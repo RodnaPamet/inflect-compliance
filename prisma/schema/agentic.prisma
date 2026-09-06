@@ -1030,6 +1030,20 @@ model AgentKillSwitchDrill {
   /// may not get as far as either.
   evidenceId String?
   findingId  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// "The most recent drills for this tenant" — the operator surface and the
+  /// evidence query are the same shape.
+  @@index([tenantId, startedAt])
+  /// "Has any drill failed?" — the alert query.
+  @@index([tenantId, outcome])
+}
+
+// ═════════════════════════════════════════════════════════════════════
 // The behavioural CIRCUIT BREAKER — anomaly, not volume (OWASP ASI08/ASI10).
 //
 // The action caps on a policy card answer "is this agent doing too MUCH". They
@@ -1098,16 +1112,6 @@ model AgentBehaviourWindow {
   /// second one as the first.
   verdict String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  /// "The most recent drills for this tenant" — the operator surface and the
-  /// evidence query are the same shape.
-  @@index([tenantId, startedAt])
-  /// "Has any drill failed?" — the alert query.
-  @@index([tenantId, outcome])
   tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   agent  RegisteredAgent @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Cascade)
 

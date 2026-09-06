@@ -822,6 +822,8 @@ export function recordKillSwitchDrill(attrs: { outcome: string }): void {
         });
     }
     _agentKillDrill.add(1, { outcome: attrs.outcome });
+}
+
 // ── Agent behavioural circuit breaker (OWASP ASI08 / ASI10) ────────────────
 
 let _breakerVerdict: Counter | null = null;
