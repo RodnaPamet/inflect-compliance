@@ -633,6 +633,8 @@ export function recordSyncLock(attrs: {
 let _policyCardEvaluation: Counter | null = null;
 let _policyCardRefusal: Counter | null = null;
 let _toolManifestDrift: Counter | null = null;
+let _agentKillRefusal: Counter | null = null;
+let _agentKillDrill: Counter | null = null;
 
 /**
  * One policy-card evaluation at the MCP tool boundary.
@@ -753,4 +755,215 @@ export function recordToolManifestDrift(attrs: { tool: string; status: string })
         });
     }
     _toolManifestDrift.add(1, { tool: attrs.tool, status: attrs.status });
+}
+
+// ── The kill switch, and its drill (OWASP ASI08 / ASI10) ───────────────────
+
+/**
+ * A tool call refused because a kill switch is in force.
+ *
+ * `scope` is the label and the agent id is NOT. Two reasons, and the second is
+ * the one that matters: an agent id is unbounded cardinality, and the shape an
+ * operator reads during an incident is "is anything still trying" — a per-scope
+ * count answers that, and the per-call detail is already on the hash-chained
+ * `AUTHZ_DENIED` row where a responder can join it to the agent.
+ *
+ * `drill` separates the nightly synthetic refusal from a real one. Without it
+ * every deployment would show a small steady stream of `agent_killed` denials
+ * and operators would learn to ignore the series — which is how a security
+ * signal stops being read, one level up from the alert this counter exists for.
+ *
+ * ALERT ON — `drill="false"` and any non-zero rate that OUTLIVES the kill it
+ * belongs to. A burst at the moment of a kill is the control working: it is the
+ * agents being stopped. A burst that is still going an hour later means
+ * something is retrying against a stop nobody has lifted, and the run behind it
+ * needs killing at a wider scope or the client needs turning off.
+ *
+ * A ZERO rate while a kill is in force is NOT reassurance and must not be
+ * alerted as such — it is indistinguishable from "no agent tried". The
+ * scheduled drill is what turns that absence into a positive signal; see
+ * `recordKillSwitchDrill`.
+ */
+export function recordAgentKillRefusal(attrs: { scope: string; drill: boolean }): void {
+    if (!_agentKillRefusal) {
+        _agentKillRefusal = getMeter().createCounter('agentic.kill_switch.refusal', {
+            description:
+                'MCP tool calls refused at the tool boundary because a kill switch is in force',
+            unit: '1',
+        });
+    }
+    _agentKillRefusal.add(1, { scope: attrs.scope, drill: String(attrs.drill) });
+}
+
+/**
+ * One scheduled kill-switch drill, by outcome.
+ *
+ * This is the counter that makes a SILENT kill switch detectable. Every other
+ * signal here fires when the control ACTS; a stop control that has quietly
+ * stopped working emits nothing at all, and looks exactly like a quiet week.
+ *
+ * `PASSED` / `FAILED` / `ERROR` are three different states and are deliberately
+ * three labels rather than a boolean: a drill that could not RUN has proved
+ * nothing, and folding it into FAILED would page somebody about a broken kill
+ * switch when the fault is a database timeout.
+ *
+ * ALERT ON — any `outcome="FAILED"`, immediately: the drill only fails when a
+ * kill was in force and the boundary let a tool call through, or refused it for
+ * the wrong reason. Also alert on the ABSENCE of `outcome="PASSED"` for longer
+ * than two scheduled intervals — a drill that stopped running is the same
+ * evidence gap as a drill that never existed, and an absence is ambiguous unless
+ * something asserts the positive.
+ */
+export function recordKillSwitchDrill(attrs: { outcome: string }): void {
+    if (!_agentKillDrill) {
+        _agentKillDrill = getMeter().createCounter('agentic.kill_switch.drill', {
+            description: 'Scheduled kill-switch drills, by recorded outcome',
+            unit: '1',
+        });
+    }
+    _agentKillDrill.add(1, { outcome: attrs.outcome });
+}
+
+// ── Agent behavioural circuit breaker (OWASP ASI08 / ASI10) ────────────────
+
+let _breakerVerdict: Counter | null = null;
+let _breakerTrip: Counter | null = null;
+let _breakerRefusal: Counter | null = null;
+let _breakerClose: Counter | null = null;
+
+/**
+ * Every window the breaker judged, by outcome. The DENOMINATOR that makes the
+ * trip counter a rate — and, more importantly, the series that says whether the
+ * control is running at all.
+ *
+ * The four outcomes partition every evaluation:
+ *
+ *   no_baseline — REFUSED TO JUDGE. The agent has too little history. This is
+ *                 the label to watch on a new deployment: it is not an
+ *                 all-clear, and a fleet stuck at 100% `no_baseline` is a
+ *                 breaker that is protecting nothing while looking healthy.
+ *   steady      — judged, nothing fired.
+ *   armed       — something fired, but not for long enough to trip.
+ *   trip        — latched OPEN.
+ *
+ * ALERT ON — `no_baseline` as a SHARE of the total staying above ~50% for more
+ * than a fortnight. Every agent earns a baseline in twelve of its own active
+ * windows, so a share that does not fall is an epoch being advanced on a loop
+ * (somebody closing breakers with `ACCEPTED_NEW_BASELINE` rather than fixing an
+ * agent), or a ledger that is not being written.
+ *
+ * And on the whole series going to ZERO while `agentic.policy_card.evaluation`
+ * keeps moving: tool calls are still happening and nothing is judging them.
+ * That shape is the one an absence cannot be distinguished from — "the breaker
+ * found nothing" and "the breaker never ran" produce the same empty page — which
+ * is exactly why the denominator is emitted rather than only the trips.
+ */
+export function recordAgentBreakerVerdict(attrs: {
+    outcome: 'no_baseline' | 'steady' | 'armed' | 'trip';
+}): void {
+    if (!_breakerVerdict) {
+        _breakerVerdict = getMeter().createCounter('agentic.circuit_breaker.verdict', {
+            description: 'Behavioural circuit-breaker window evaluations, by outcome',
+            unit: '1',
+        });
+    }
+    _breakerVerdict.add(1, { outcome: attrs.outcome });
+}
+
+/**
+ * One breaker LATCHING OPEN, with the signal that carried it.
+ *
+ * `signal` is the dimension that decides what an operator does next, and the
+ * three mean three different investigations:
+ *
+ *   PROPOSAL_RATE  — a flood. Look for a loop, a retry storm, or a workflow
+ *                    that lost its checkpoint.
+ *   REJECTION_RATE — humans started rejecting this agent's work. Look at the
+ *                    proposals, not the agent: a model or prompt change is the
+ *                    usual cause and the queue noticed it first.
+ *   TOOL_MIX       — the agent started doing a KIND of thing it has never done.
+ *                    This is the rogue-agent shape, and it is the one to treat
+ *                    as an incident rather than a tuning problem: no budget was
+ *                    exceeded, which is why nothing else fired.
+ *
+ * The AGENT is a label and the tool names are NOT. Tool names are on the ledger
+ * rows and on the `AUTHZ_DENIED` audit trail, which are the per-call records;
+ * adding them here would multiply the series by the catalogue for a dimension
+ * two other stores already answer precisely.
+ *
+ * ALERT ON — any increase, immediately, for `signal="TOOL_MIX"`. A fleet-wide
+ * simultaneous jump across every tenant is a deploy that changed what tools
+ * exist; a jump confined to one agent is not, and cannot be.
+ */
+export function recordAgentBreakerTrip(attrs: {
+    agentId: string;
+    signal: string;
+    riskTier: string | null;
+}): void {
+    if (!_breakerTrip) {
+        _breakerTrip = getMeter().createCounter('agentic.circuit_breaker.trip', {
+            description: 'Agents latched OPEN by the behavioural circuit breaker, by signal',
+            unit: '1',
+        });
+    }
+    _breakerTrip.add(1, {
+        agent: attrs.agentId,
+        signal: attrs.signal,
+        // `unscored` rather than an omitted label, for the reason
+        // `recordPolicyCardRefusal` gives: a missing label collapses into
+        // whichever series shares the rest of the key.
+        'risk.tier': attrs.riskTier ?? 'unscored',
+    });
+}
+
+/**
+ * A tool call refused because the agent's breaker is OPEN.
+ *
+ * Separate from the trip counter because they answer different questions. One
+ * trip produces as many refusals as the agent has calls left in it, so this
+ * series measures how hard a stopped agent is still pushing — which is the
+ * number that says whether somebody needs to revoke the credential rather than
+ * wait for the operator.
+ *
+ * ALERT ON — a refusal rate that does not decay within an hour of a trip. An
+ * agent that keeps calling at full rate into a latched breaker is not a
+ * misconfiguration.
+ */
+export function recordAgentBreakerRefusal(attrs: { agentId: string }): void {
+    if (!_breakerRefusal) {
+        _breakerRefusal = getMeter().createCounter('agentic.circuit_breaker.refusal', {
+            description: 'Agent tool calls refused because the behavioural breaker is OPEN',
+            unit: '1',
+        });
+    }
+    _breakerRefusal.add(1, { agent: attrs.agentId });
+}
+
+/**
+ * A human closing a breaker, by the reason they gave.
+ *
+ * The two reasons are the two stories, and the ratio between them is the health
+ * metric for the whole control:
+ *
+ *   resolved              — "I fixed the agent". The baseline is kept.
+ *   accepted_new_baseline — "yes, I changed this agent". The baseline is
+ *                           discarded and the agent re-learns.
+ *
+ * ALERT ON — `accepted_new_baseline` dominating over weeks. It is the reason
+ * that makes the breaker forget, and a deployment where every trip is answered
+ * with "that's fine now" has a detector calibrated to fire on ordinary work.
+ * That is the failure this control dies of, so it is measured rather than
+ * assumed.
+ */
+export function recordAgentBreakerClose(attrs: {
+    agentId: string;
+    reason: 'resolved' | 'accepted_new_baseline';
+}): void {
+    if (!_breakerClose) {
+        _breakerClose = getMeter().createCounter('agentic.circuit_breaker.close', {
+            description: 'Behavioural circuit breakers closed by a human, by the reason given',
+            unit: '1',
+        });
+    }
+    _breakerClose.add(1, { agent: attrs.agentId, reason: attrs.reason });
 }

@@ -201,9 +201,35 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // position, which is the class this guard deliberately started counting
     // rather than pretending it could see through. Naming them differently
     // would not make them readable; it would only make the code worse.
+    // ASI08/ASI10 kill-switch sinks. Both files were read line by line: neither
+    // carries a prompt, a tool argument, a workflow context or a proposal
+    // payload. The opaque values are a tenant id, a job-run id, a kill-switch
+    // id, a derived scope name ('AGENT' | 'TENANT'), an actor id and an
+    // `err.message` — all bound to locals one or two lines above their sink,
+    // which is the class this guard counts rather than pretends to see through.
+    // Naming them differently would not make them readable; it would only make
+    // the code worse. Note what is deliberately NOT here: a HELPER or SPREAD
+    // kind. `killScopeOf(...)` was inline at both audit sinks and produced one;
+    // it is now bound to a `const scope` first, which is the fix this list's own
+    // header prescribes rather than an entry.
+    'src/app-layer/jobs/agent-kill-switch-drill.ts — identifier bound elsewhere',
+    'src/app-layer/usecases/agent-kill-switch.ts — identifier bound elsewhere',
     'src/lib/agentic/bounded-exec.ts — identifier bound elsewhere',
     'src/lib/agentic/tool-manifest-store.ts — call to a helper this rule cannot open',
     'src/lib/agentic/tool-manifest-store.ts — identifier bound elsewhere',
+    // ASI08/ASI10 behavioural circuit breaker. Both files were read line by
+    // line: neither carries a prompt, a proposal payload, a rationale or any
+    // captured tool output. The opaque values are a tenant id, an agent id, a
+    // tool NAME, a close-reason code from `BREAKER_CLOSE_REASONS` and a boolean.
+    // They are holes because the rule counts a bare identifier at a value
+    // position, which is the class this guard deliberately started counting
+    // rather than pretending it could see through. Two fields that WOULD have
+    // been holes were removed instead of renamed — the capability class (a tool
+    // name implies it) and a repeat of the agent id inside a summary string
+    // (`entityId` already carries it); renaming the rest would not make them
+    // readable, only the code worse.
+    'src/app-layer/usecases/agent-circuit-breaker.ts — identifier bound elsewhere',
+    'src/lib/agentic/circuit-breaker-store.ts — identifier bound elsewhere',
 ];
 
 /**
@@ -229,6 +255,22 @@ const SINK_FLOOR = 30;
  * So the number is read as OPAQUE VALUE POSITIONS PER RECOGNISED SINK CALL, and
  * the ceiling is derived from two measured quantities rather than picked:
  *
+ *   MEASURED_HOLES / MEASURED_SINKS         the path today, 113 / 51 = 2.216
+ *   MOST_OPAQUE_SINGLE_CALL                 the worst single call on it, 6
+ *
+ * The ceiling is `(113 + 6) / 51`. In words: the path may absorb ONE more sink
+ *   MEASURED_HOLES / MEASURED_SINKS         the path today, 99 / 51 = 1.941
+ *   MOST_OPAQUE_SINGLE_CALL                 the worst single call on it, 6
+ *
+ * The ceiling is `(99 + 6) / 51`. In words: the path may absorb ONE more sink
+ *   MEASURED_HOLES / MEASURED_SINKS         the path today, 99 / 46 = 2.152
+ *   MOST_OPAQUE_SINGLE_CALL                 the worst single call on it, 6
+ *
+ * The ceiling is `(99 + 6) / 46`. In words: the path may absorb ONE more sink
+ *   MEASURED_HOLES / MEASURED_SINKS         the path today, 108 / 48 = 2.25
+ *   MOST_OPAQUE_SINGLE_CALL                 the worst single call on it, 6
+ *
+ * The ceiling is `(108 + 6) / 48`. In words: the path may absorb ONE more sink
  *   MEASURED_HOLES / MEASURED_SINKS         the path today, 106 / 59 = 1.797
  *   MOST_OPAQUE_SINGLE_CALL                 the worst single call on it, 6
  *
@@ -238,6 +280,19 @@ const SINK_FLOOR = 30;
  * with no new sink, fail. That is the sensitivity this cap is for — it moves
  * when a field bag grows, which is the thing the exact set above cannot see.
  *
+ * RE-MEASURED 2026-09-06, when the ASI08 failure-isolation work added the first
+ * `src/app-layer/jobs/agent-*.ts` file — the anticipatory glob doing exactly
+ * what it was written for. Sinks went 45 → 51 and holes 97 → 99, and note the
+ * direction that combination moves the ceiling: 2.156 → 1.941 for the observed
+ * ratio and 2.289 → 2.059 for the cap. Six new sink calls with two new opaque
+ * positions between them TIGHTENS the budget rather than buying headroom, which
+ * is the arithmetic working. The two new holes are both in
+ * `workflow-runs.ts` (`entityId: runId`, `stepSeq: seq` on the isolated-failure
+ * audit row) — a file already listed below, so the SET does not move. The new
+ * job contributes ZERO: its log lines spell `component` out as a literal and
+ * its audit row passes a timestamp rather than an inline subtraction, both
+ * changed deliberately so the rule can read them.
+ *
  * A rejected alternative, recorded because the reasoning matters more than the
  * number: the rule could also census the NAMED POSITIONS it resolves (object
  * keys, member-chain final properties), which gives `holes / positions = 0.099`
@@ -246,9 +301,28 @@ const SINK_FLOOR = 30;
  * have been choosing the denominator that keeps the number green, which is the
  * defect this cap exists to catch, one level up.
  */
-const MEASURED_HOLES = 106;
-const MEASURED_SINKS = 59;
+// 2026-09-06 (ASI08 run caps): +2 holes, +1 sink. `haltRunAtCap` in
+// `workflow-runs.ts` writes the `WORKFLOW_RUN_CAP_HALTED` row, and its two
+// opaque positions are `entityId: runId` — which every audit call in that file
+// already carries — and `stepsNotRun`, an integer count of steps that did not
+// execute. Every other field on that row is a member access the rule resolves
+// (`halt.kind`, `halt.limit`, `halt.source`, `halt.used`, `halt.refused`), so
+// the bag is named at the sink rather than spread. Neither opaque value is
+// content, and neither can become content: one is a cuid, the other is derived
+// from `def.steps.length`.
+// Re-MEASURED 2026-09-06, when the behavioural circuit breaker added its three
+// sink calls: 97 / 45 became 108 / 48. Both numbers come from running this
+// sweep with the constants zeroed so the failure message prints the real
+// counts — never from picking a pair that happens to pass.
 /** `src/lib/mcp/auth.ts` — a six-field `detailsJson` bag built out of locals. */
+// MEASURED on the merged tree, not carried from any one lane. Four lanes each
+// measured this ratchet against a tree that did not contain the other three —
+// their numbers were 113/51, 99/46 and 108/48, all correct where they were taken
+// and all wrong here. Taking any one of them would have produced a green ratchet
+// describing a codebase that does not exist, which is the failure this ratchet is
+// for. Re-derived by zeroing both and reading the failure message.
+const MEASURED_HOLES = 140;
+const MEASURED_SINKS = 76;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

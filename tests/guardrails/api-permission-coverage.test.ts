@@ -374,6 +374,17 @@ const EXCLUDED_ROUTES: ReadonlyArray<{ relPath: string; reason: string }> = [
         reason: 'Platform-admin-key-gated: process/runtime diagnostics — server-wide, with no tenant dimension, so tenant-scope does not apply.',
     },
     {
+        relPath: 'api/admin/agent-kill-switch/route.ts',
+        reason:
+            'Platform-admin-key-gated: the PLATFORM-wide agent kill switch. ' +
+            'requirePermission resolves a TENANT role, so there is no key it ' +
+            'could check for "stop every agent in the deployment" — and no ' +
+            'tenant should hold one. The two TENANT-scoped scopes of the same ' +
+            'control (one agent / this tenant) DO use requirePermission, at ' +
+            'api/t/[tenantSlug]/admin/agents/kill-switch, under their own key ' +
+            'admin.agent_kill_switch.',
+    },
+    {
         relPath: 'api/security/csp-report/route.ts',
         reason:
             'Platform-admin-key-gated GET (verifyPlatformApiKey) over the ' +

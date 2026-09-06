@@ -122,7 +122,16 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
 // itself an instance of the defect this ratchet exists to catch: adding a second
 // framework to a file made three existing guards stop naming the thing they were
 // written for, with no test edited.
-const AMBIGUOUS_NEEDLE_BASELINE = 1459;
+//
+// Re-seated 2026-09-06 (−2), and this one was ALREADY RED before the branch
+// that lowers it. Measured on a pristine checkout of the base commit with no
+// local change present: live 1460 against a baseline of 1462, i.e. two units of
+// unspent slack sitting on main. With DRIFT_ALLOWANCE at 0 that is not a
+// rounding difference, it is exactly the headroom this sentinel exists to
+// refuse — two ambiguous needles could have been added and the build would have
+// stayed green. The cause is not attributed here on purpose: the improvement
+// arrived with somebody else's merge, and inventing a story for it would be
+// worse than recording that the number was measured rather than reasoned.
 
 /** At or above this many satisfying positions, the needle names nothing. */
 const HIGH_MULTIPLICITY = 5;
@@ -150,7 +159,15 @@ const HIGH_MULTIPLICITY = 5;
  *     with the OWASP-privacy guard's rebinding; the two `CC-BY-SA` needles that
  *     the second OWASP framework pushed to five went with it.
  */
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 250;
+//   • 250 (2026-09-06): −1, measured on a pristine base commit exactly as the
+//     parent count above was. Same reading, same refusal to invent a cause.
+// MEASURED on the merged tree, 2026-09-06: 1457. This branch drained two and
+// main's DORA work drained one more, so neither side's number (1459 and 1458)
+// describes the result of putting them together. DRIFT_ALLOWANCE is 0 here, so
+// the higher of the two would have left a ratchet that cannot see the next
+// regression — which is the whole reason it is measured rather than merged.
+const AMBIGUOUS_NEEDLE_BASELINE = 1457;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 249;
 
 /**
  * Sites this detector could NOT analyse, having established they read a file.

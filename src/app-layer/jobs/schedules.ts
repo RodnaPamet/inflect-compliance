@@ -78,6 +78,17 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'agent-run-reaper',
+        // Hourly, at :37. Off the hour and off every quarter, so it does not
+        // land with the `*/15` automation tick, the `*/5` SLA monitor or the
+        // on-the-hour jobs. Hourly rather than daily because the thing it
+        // settles is a run that is already an hour past its own wall-clock cap:
+        // waiting until tomorrow would leave an agent reading as busy for a day.
+        pattern: '37 * * * *',
+        description: 'Settle agentic workflow runs left RUNNING by an executor that died (pod eviction, OOM, rolling deploy). Each agent and each run is isolated, so one bad row does not stop the sweep; runs waiting on a human (AWAITING_APPROVAL / PAUSED) are never touched.',
+        defaultPayload: {},
+    },
+    {
         name: 'sharepoint-delta-sync-dispatch',
         pattern: '0 */4 * * *',   // every 4 hours
         description: 'Fan out a SharePoint delta sync per enabled connection (auto-import changed evidence files)',
@@ -125,6 +136,22 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         // wrong answer from the field named `description`. What bounds the
         // blast radius is the per-tenant ladder, not a clamp.
         description: 'Fan out a leaver pass per (tenant, writable directory provider). What each pass may do is the tenant\'s own identityLeaverMode: DRY_RUN decides and records what a disable WOULD do; AUTOMATIC performs it. Tenants default to DISABLED.',
+        defaultPayload: {},
+    },
+    {
+        name: 'agent-kill-switch-drill',
+        pattern: '0 6 * * *',     // daily at 06:00 UTC
+        // NO tenantId in the payload: absent means "discover the tenants that
+        // run agents and drill each one". See `AgentKillSwitchDrillPayload`.
+        //
+        // The hour is not arbitrary and it is not sequencing, because nothing
+        // here depends on another job — a warning worth keeping, since
+        // declaration order in this array is NOT execution order and only the
+        // cron pattern is. 06:00 UTC puts the drill AFTER the 03:00/05:00
+        // identity chain rather than beside it, so a failing drill's CRITICAL
+        // Finding does not arrive inside the same minute as an unrelated
+        // directory incident and get triaged as part of it.
+        description: 'Pull the agent kill switch for real, per tenant that runs agents, and check the MCP tool boundary refuses. AGENT scope end-to-end against a committed kill on a canary target; TENANT and PLATFORM scopes at the predicate level inside a rolled-back transaction. Records an AgentKillSwitchDrill row + Evidence every run, and raises a CRITICAL Finding on FAILED.',
         defaultPayload: {},
     },
     {

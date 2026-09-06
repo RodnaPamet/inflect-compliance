@@ -114,14 +114,15 @@ describe('API Key Scopes — scopesToPermissions', () => {
         const { admin: starAdmin, ...starRest } = perms;
         const { admin: adminAdmin, ...adminRest } = adminPerms;
         expect(starRest).toEqual(adminRest);
-        // And `admin` differs in exactly three places — asserted as a whole
-        // object, so a FOURTH divergence appearing later fails here rather than
+        // And `admin` differs in exactly four places — asserted as a whole
+        // object, so a FIFTH divergence appearing later fails here rather than
         // slipping past the named checks below.
         expect(starAdmin).toEqual({
             ...adminAdmin,
             agent_registry: false,
             agent_tool_exposure: false,
             agent_policy_card: false,
+            agent_kill_switch: false,
         });
     });
 
@@ -137,11 +138,16 @@ describe('API Key Scopes — scopesToPermissions', () => {
         expect(star.admin.agent_registry).toBe(false);
         expect(star.admin.agent_tool_exposure).toBe(false);
         expect(star.admin.agent_policy_card).toBe(false);
+        // And the STOP switch, which is the sharpest case: an agent holding a
+        // `*` key that could lift its own kill switch is an agent that cannot be
+        // stopped, and unlike the three above that failure has no backstop.
+        expect(star.admin.agent_kill_switch).toBe(false);
         // The contrast that makes it a decision rather than an omission: a human
-        // ADMIN session holds all three.
+        // ADMIN session holds all four.
         expect(getPermissionsForRole('ADMIN').admin.agent_registry).toBe(true);
         expect(getPermissionsForRole('ADMIN').admin.agent_tool_exposure).toBe(true);
         expect(getPermissionsForRole('ADMIN').admin.agent_policy_card).toBe(true);
+        expect(getPermissionsForRole('ADMIN').admin.agent_kill_switch).toBe(true);
         // And the asymmetry is deliberate — `*` still reaches the privileged
         // DATA operations. Without this the assertions above would also pass on
         // a `*` that had quietly stopped granting anything at all.

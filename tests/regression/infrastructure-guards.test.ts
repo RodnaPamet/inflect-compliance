@@ -107,11 +107,13 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     // Epic G-4 — daily reviewer reminder for access review
     // campaigns approaching their dueAt.
     'access-review-reminder',
-    // ASI09 automation-bias controls. Expiry runs daily (a stale queue is
-    // itself a driver of rubber-stamping); the sample audit runs weekly and
-    // re-surfaces an approved proposal for retrospective review.
+    // ASI09 automation-bias controls and the ASI08/ASI10 stop controls.
+    // Alphabetical, like every other entry — the sortedness check is what
+    // keeps this list reviewable as it grows.
+    'agent-kill-switch-drill',
     'agent-proposal-expiry',
     'agent-proposal-sample-audit',
+    'agent-run-reaper',
     'automation-runner',
     // C-roadmap — cross-tenant fan-out for the per-user calendar
     // push. The child (calendar-push-tenant) is enqueued, not

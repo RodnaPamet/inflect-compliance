@@ -694,6 +694,18 @@ executorRegistry.register('sla-monitor', async (payload) => {
     return result;
 });
 
+// ── agent-run-reaper (Agentic — ASI08 failure isolation) ─────────────
+//
+// Settles agentic workflow runs left RUNNING by an executor that died. The
+// sweep is cross-tenant; `payload.tenantId` narrows it to one tenant for an
+// operator re-run after an incident.
+
+executorRegistry.register('agent-run-reaper', async (payload) => {
+    const { runAgentRunReaperJob } = await import('./agent-run-reaper');
+    const { result } = await runAgentRunReaperJob({ tenantId: payload.tenantId });
+    return result;
+});
+
 // ── rule-chain-dispatch (Automation Epic 7) ──────────────────────────
 
 executorRegistry.register('rule-chain-dispatch', async (payload) => {
@@ -1151,6 +1163,18 @@ executorRegistry.register('identity-leaver-pass', async (payload) => {
         { mode: r.mode, refusal: r.refusal, counts: r.counts, population: r.population },
         { status: r.status, errorMessage: r.errorMessage },
     );
+});
+
+// agent-kill-switch-drill: pull the switch for real and check the boundary
+// refuses. Registered with the payload passed THROUGH (never `_payload`): an
+// absent tenantId is the scheduled sweep, a present one drills that tenant, and
+// dropping it would silently turn every targeted run into an all-tenant scan.
+executorRegistry.register('agent-kill-switch-drill', async (payload) => {
+    const { runAgentKillSwitchDrillJob } = await import('./agent-kill-switch-drill');
+    // `tenantId` NAMED rather than the payload spread: absent is the scheduled
+    // sweep, present drills that tenant, and a payload passed opaquely is how a
+    // targeted run silently becomes an all-tenant scan.
+    return runAgentKillSwitchDrillJob({ tenantId: payload.tenantId });
 });
 
 // identity-leaver-dispatch: fan out a pass per (tenant, writable provider).

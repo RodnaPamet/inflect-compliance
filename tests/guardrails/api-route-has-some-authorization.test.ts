@@ -382,6 +382,20 @@ const EXEMPT_HANDLERS: readonly ExemptEntry[] = [
       mechanism: /verifyPlatformApiKey/ },
     { handler: 'api/admin/tenants/[slug]/transfer-ownership/route.ts#POST', klass: 'PROTOCOL_CREDENTIAL',
       mechanism: /verifyPlatformApiKey/ },
+    // The PLATFORM-wide agent kill switch. Not a missing gate and not a
+    // deferral: `requirePermission` resolves a TENANT role, so there is no key
+    // it could check for "stop every agent in the deployment" — and no tenant
+    // should hold one. All three verbs verify the platform admin key before any
+    // work, through the same `verifyPlatformApiKey` the tenant-creation and
+    // ownership-transfer routes above use. The two TENANT-scoped scopes of the
+    // same control (one agent / this tenant) are NOT here: they use
+    // requirePermission under admin.agent_kill_switch, and are covered by layer 1.
+    { handler: 'api/admin/agent-kill-switch/route.ts#GET', klass: 'PROTOCOL_CREDENTIAL',
+      mechanism: /verifyPlatformApiKey/ },
+    { handler: 'api/admin/agent-kill-switch/route.ts#POST', klass: 'PROTOCOL_CREDENTIAL',
+      mechanism: /verifyPlatformApiKey/ },
+    { handler: 'api/admin/agent-kill-switch/route.ts#PATCH', klass: 'PROTOCOL_CREDENTIAL',
+      mechanism: /verifyPlatformApiKey/ },
     { handler: 'api/scim/v2/Users/route.ts#GET', klass: 'PROTOCOL_CREDENTIAL', mechanism: /authenticateScimRequest/ },
     { handler: 'api/scim/v2/Users/route.ts#POST', klass: 'PROTOCOL_CREDENTIAL', mechanism: /authenticateScimRequest/ },
     { handler: 'api/scim/v2/Users/[id]/route.ts#GET', klass: 'PROTOCOL_CREDENTIAL', mechanism: /authenticateScimRequest/ },

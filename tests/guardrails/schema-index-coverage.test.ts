@@ -401,12 +401,29 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // ASI08 run caps — `proposedItemsSoFar` counts what a run has already
+    // proposed, so a resumed segment cannot restart the PROPOSALS budget at zero
+    // and hand one run a fresh cap per human checkpoint.
+    //
+    // Filters (tenantId, runId) then narrows on kind + status with NO sort, and
+    // is bounded by `take: ENGINE_RUN_CAPS.STEPS` — a run cannot execute more
+    // steps than the engine's own ceiling, which is the tightest honest bound
+    // rather than a round number. The tenantId-leading @@index([tenantId, runId])
+    // serves the selective half; kind and status discriminate within ONE run's
+    // steps, which is at most that ceiling, so a composite would index a set the
+    // planner has already reduced to tens of rows.
+    WorkflowStep:
+        'proposedItemsSoFar filters (tenantId, runId) + kind/status with no sort — covered by @@index([tenantId, runId]); bounded take = ENGINE_RUN_CAPS.STEPS, and the residual is one run\'s steps.',
+    AgentBehaviourWindow:
+        'Every read filters (tenantId, agentId) and either orders by windowStart desc (the operator surface, take ≤ 48) or ranges on it (the baseline load the MCP tool boundary makes once per active window, take ≤ 169) — covered exactly by the tenant-leading @@unique([tenantId, agentId, windowStart]), which is also the ON CONFLICT target of the per-call upsert and so cannot be dropped as merely a read optimisation. It sits HERE rather than in LIST_QUERY_INDEXES because that layer matches @@index blocks only, and adding a duplicate @@index over the same three columns would put a second B-tree on a table written once per tool call to satisfy a matcher.',
     AgentProposalApproval: 'approveAgentProposal reads the signatures on ONE proposal by (tenantId, proposalId) plus a small outcome equality — covered by @@index([tenantId, proposalId]), which the @@unique([tenantId, proposalId, approverUserId]) four-eyes index also serves as a prefix of; bounded take \u2264 32 and, in practice, by requiredApprovals.',
     AiSystemRequirementLink: 'computeAgentRiskCoverage reads the agent\'s own scope by (tenantId, aiSystemId, requirementId IN [ten ASI rows]) \u2014 covered by @@index([tenantId, aiSystemId]); bounded by the framework\'s requirement count, not by tenant data.',
     AuditChecklistItem: 'updateAudit prefetches the touched checklist rows by (id IN […], tenantId) for FAIL-transition detection — a PK IN lookup + RLS-bound tenantId; @@index([tenantId, auditId]) is more than sufficient; bounded by the request payload size.',
     AuditPackItem: 'getPackByShareToken reads a pack\'s items by (tenantId, auditPackId) for the public share-page projection — covered by @@index([tenantId, auditPackId]); bounded take ≤2000.',
     AuditPackShareComment: 'listShareComments filters by (tenantId, auditPackId), orders by createdAt desc — covered by @@index([tenantId, auditPackId]); bounded take ≤500.',
     AuditPackShare: 'listPackShares filters by (tenantId, auditPackId), orders by createdAt desc — covered by @@index([tenantId, auditPackId]); bounded take ≤200.',
+    AgentKillSwitch: 'listKillSwitches filters by tenantId (optionally + liftedAt IS NULL) and orders by engagedAt desc — served by @@index([tenantId, engagedAt]); the BOUNDARY read is a different query and has its own composite @@index([tenantId, agentId, liftedAt]); bounded take \u2264 500.',
+    AgentKillSwitchDrill: 'The drill sweep and the evidence surface both read (tenantId, startedAt desc) \u2014 covered by @@index([tenantId, startedAt]), with @@index([tenantId, outcome]) for the "has any drill failed" alert query; one row per tenant per day, bounded take.',
     McpToolManifestPin: 'listToolManifests filters by tenantId alone and the row count is bounded by this build s tool catalogue (a dozen) — covered by the tenant-leading @@unique([tenantId, toolName]); bounded take ≤200. The boundary s own reads are point lookups on that same unique.',
     AuditorAccount: 'listAuditors filters by tenantId, orders by createdAt desc — covered by @@unique([tenantId, emailHash]) tenantId-leading composite; bounded take ≤500.',
     IdentityWriteJournal: 'listUnsettledWrites filters (tenantId, outcome PENDING, attemptedAt < cutoff) and orders by attemptedAt asc \u2014 covered by @@index([tenantId, outcome]) with @@index([tenantId, attemptedAt]) for the ordering; findRestorableState reads (tenantId, provider, externalUserId) via its own composite; bounded take \u2264 200.',

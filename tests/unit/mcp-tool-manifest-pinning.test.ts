@@ -103,10 +103,31 @@ const pinTable = {
 
 const tenantApiKey = { findFirst: jest.fn() };
 
+// No kill switch is in force in this suite. The boundary's step 0 asks ONE
+// `$queryRaw` (see `agentic/kill-switch.ts`) and reads an empty result as "not
+// killed" — the mock has to answer it, exactly as it answers
+// `tenantApiKey.findFirst` for the liveness step beside it. Answering `[]`
+// rather than omitting the method is deliberate: an absent `$queryRaw` makes
+// every call throw, which would look like a refusal.
+const killSwitchQuery = jest.fn().mockResolvedValue([]);
+
+// The behavioural circuit breaker's two tables. `findUnique` resolving to NULL
+// is "this agent has never been observed", which contributes no term at the
+// boundary — the same neutral default an unpinned tool manifest gets, so these
+// assertions stay about manifest drift.
+const breakerTables = {
+    agentCircuitBreaker: { findUnique: jest.fn().mockResolvedValue(null) },
+    agentBehaviourWindow: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    $executeRaw: jest.fn().mockResolvedValue(0),
+};
+
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
-    default: { tenantApiKey, mcpToolManifestPin: pinTable },
-    prisma: { tenantApiKey, mcpToolManifestPin: pinTable },
+    default: { tenantApiKey, mcpToolManifestPin: pinTable, $queryRaw: killSwitchQuery, ...breakerTables },
+    prisma: { tenantApiKey, mcpToolManifestPin: pinTable, $queryRaw: killSwitchQuery, ...breakerTables },
 }));
 
 jest.mock('@/lib/db-context', () => ({

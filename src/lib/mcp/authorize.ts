@@ -4,10 +4,19 @@
  *
  * ## What runs, in order, and why that order
  *
+ *   0. KILL SWITCH — has a human already decided nothing further runs, at
+ *      any of three scopes (this agent / this tenant / the platform)? Ahead
+ *      of everything else because the answer does not depend on whether
+ *      this caller is correctly configured — see `assertNotKilled`.
  *   1. AUDIENCE — was the token the caller presented minted FOR this tool?
  *      (RFC 8693; `null` for a caller holding the long-lived key itself.)
  *   2. LIVENESS — is the credential still live RIGHT NOW? Re-read per tool
  *      call, never cached, so a revoke lands inside a run in flight.
+ *  2b. CIRCUIT BREAKER — is this agent LATCHED OPEN by its own behaviour? A
+ *      lettered sub-step and not a renumbering, because it belongs WITH
+ *      liveness: both ask "may this agent be running at all, right now", both
+ *      are agent-level rather than call-level, and both change their answer
+ *      DURING a run. See `assertCircuitBreakerClosed`.
  *   3. TOOL MANIFEST — is the tool's DEFINITION (name + description + parameter
  *      schema) the one this tenant approved? Deny on any drift, until a named
  *      human re-approves. See `assertToolManifestPinned`.
@@ -23,6 +32,11 @@
  *      function `requirePermission` calls on the equivalent human route.
  *  10. POLICY — the shared `assertCanRead` / `assertCanWrite` the mirrored route
  *      applies, where `PermissionSet` has no key to name.
+ *  11. OBSERVE — record the call against the agent's behavioural ledger. NOT a
+ *      gate: it runs only once every gate above has passed, and it is the only
+ *      step here that writes something other than a denial. Deliberately last —
+ *      see `circuit-breaker-store.ts` for why recording refused calls would let
+ *      a caller steer its own baseline with calls that never execute.
  *
  * Cheapest and least-revealing first, and CREDENTIAL checks before PRINCIPAL
  * checks. Step 3 is the exception to "cheapest first" and is placed on purpose:
@@ -39,6 +53,14 @@
  * was only pointed at the wrong tool. An agent probing for reach it does not
  * have is the whole reason these rows exist; burying that in routine
  * misconfiguration is how a security signal stops being read.
+ *
+ * THE KILL SWITCH SITS AT 0 for a third reason beyond the two liveness has:
+ * it is the only step whose answer was decided by a PERSON rather than by
+ * configuration, and a refusal it does not get to state is a stop control an
+ * operator cannot see working. Suspension in the agent register is not this
+ * check's equivalent and never was — it is read once per invocation inside
+ * `resolveMcpInvocation`, so it refuses the next REQUEST and does nothing to a
+ * run already in flight.
  *
  * LIVENESS sits at 2 rather than later for two reasons. It is the check whose
  * ANSWER CHANGES DURING A RUN — every other term was fixed when the invocation
@@ -88,6 +110,13 @@ import {
 } from '@/lib/agentic/policy-card-evaluation';
 import { reserveDailyAction } from '@/lib/agentic/policy-card-store';
 import {
+    openBreakerGate,
+    recordAuthorizedCall,
+    type BreakerLatch,
+} from '@/lib/agentic/circuit-breaker-store';
+import {
+    recordAgentBreakerRefusal,
+    recordAgentKillRefusal,
     recordPolicyCardEvaluation,
     recordPolicyCardRefusal,
     recordToolManifestDrift,
@@ -97,6 +126,11 @@ import type { ToolDefinition } from './tool-manifest';
 import { RESOURCE_READ_DATA_SCOPE, dataScopeForToolCall } from './tool-data-scope';
 import type { AgentDataAccessScope } from '@prisma/client';
 import { checkCredentialLiveness } from '@/lib/agentic/agent-credential-state';
+import {
+    KILL_SWITCH_DRILL_AGENT_ID,
+    killRefusalMessage,
+    resolveKillState,
+} from '@/lib/agentic/kill-switch';
 import {
     audienceCovers,
     isTokenLive,
@@ -233,12 +267,15 @@ export interface PolicyCardBinding {
 
 /** Why a tool call was refused, for the audit row an operator reads. */
 export type McpDenialReason =
+    /** A kill switch is in force at one of the three scopes. See step 0. */
+    | 'agent_killed'
     | 'audience_denied'
     | 'credential_revoked'
     | 'credential_expired'
     | 'tool_not_offered'
     | 'tool_not_granted'
     | 'tool_manifest_unapproved'
+    | 'circuit_breaker_open'
     | 'autonomy_denied'
     | 'policy_card_denied'
     | 'capability_denied'
@@ -410,6 +447,77 @@ export async function resolveOfferedTool<T extends { name: string }>(
         },
     });
     return null;
+}
+
+/**
+ * Step 0 — THE KILL SWITCH. Is anything stopping this agent RIGHT NOW?
+ *
+ * ## Why it is step 0 and not step 3
+ *
+ * Every other step in this gate asks whether the caller is correctly
+ * CONFIGURED — the right audience, a live key, an approved definition, a grant,
+ * a rung, a budget, a permission. This one asks whether a human has already
+ * decided that nothing further runs, and that decision does not become
+ * conditional on the answers to the other seven.
+ *
+ * Concretely: a killed agent presenting a mis-scoped token must be refused for
+ * being KILLED. If this sat below the audience check it would be told
+ * "audience", and the operator watching the trail during an incident would see
+ * the wrong reason for the refusal — and would have no row saying the kill was
+ * doing anything at all. `AGENT_KILLED` is the row that says the stop control
+ * worked; making it reachable only through a valid configuration is how a stop
+ * control becomes deniable.
+ *
+ * It also short-circuits the other seven, which matters most in exactly the
+ * situation it exists for: during an incident the system is already under load,
+ * and a killed fleet retrying should cost one indexed lookup per call rather
+ * than the whole funnel.
+ *
+ * The one thing that runs AHEAD of it is `resolveOfferedTool`, in the two
+ * runners, and that is fine: it neither reads state nor executes anything — a
+ * killed agent naming an unknown tool gets a protocol error and nothing runs,
+ * which is the same outcome by a shorter path.
+ *
+ * ## The refusal is loud
+ *
+ * `escalate: true`, unconditionally, like a manifest drift. A policy-card
+ * refusal escalates only when the card asked for it, because a mis-scoped
+ * integration is routine. A tool call arriving after somebody pulled the stop
+ * switch is not routine under any configuration: either a client has not
+ * noticed, or a run nobody accounted for is still going.
+ *
+ * ## Uncached, per call
+ *
+ * See `agentic/kill-switch.ts`. A cached kill state that lags by one execution
+ * cycle is this control failing at the one moment it matters.
+ */
+async function assertNotKilled(inv: McpInvocation, target: string): Promise<void> {
+    const kill = await resolveKillState(inv.ctx.tenantId, inv.agentId);
+    if (kill === null) return;
+
+    // The nightly drill drives this same gate against a canary agent id, and its
+    // refusals must not be counted with real ones — a steady synthetic stream in
+    // the same series is how operators learn to ignore it. The label is derived
+    // from the target agent id rather than passed in, so no caller can mark a
+    // real refusal as a drill.
+    const drill = inv.agentId === KILL_SWITCH_DRILL_AGENT_ID;
+    recordAgentKillRefusal({ scope: kill.scope, drill });
+
+    await denyToolCall(inv.ctx, 'agent_killed', {
+        tool: target,
+        agentId: inv.agentId,
+        // Names WHAT is stopped and WHO lifts it. It does NOT echo the reason
+        // text an administrator typed: that is tenant content, and the caller in
+        // the scenario this defends against is the thing that was just stopped.
+        message: killRefusalMessage(kill.scope),
+        extra: {
+            killScope: kill.scope,
+            killSwitchId: kill.switchId,
+            killEngagedAt: kill.engagedAt.toISOString(),
+            drill,
+            escalate: true,
+        },
+    });
 }
 
 /**
@@ -691,6 +799,24 @@ async function assertWithinPolicyCard(
  * audience-gated, ceiling-gated and audited, but not allowlisted.
  */
 export async function authorizeResourceRead(inv: McpInvocation): Promise<void> {
+    // Step 0, here too. A killed agent must not read tenant data through the
+    // other door either — the resources surface is a tenant-data read that
+    // spends the agent's day like any tool call, and a stop that covered one of
+    // the two doors would be a stop somebody could walk around.
+    await assertNotKilled(inv, MCP_RESOURCES_AUDIENCE);
+    // …and the breaker, for the same reason and by the same argument its own
+    // docstring makes: "it halts everything — reads included… 'stopped' has to
+    // mean stopped or the word is doing no work." That sentence was true of the
+    // TOOL door only — this one was never gated, so a tripped agent could still
+    // read a tenant's whole compliance posture through resources, which is the
+    // exfiltration half of the rogue-agent case the breaker exists to stop.
+    //
+    // The return is discarded here on purpose. `recordAuthorizedCall` feeds the
+    // behavioural baseline from the TOOL door, where a call has a capability
+    // class to be counted under; a resource read has none, and inventing one
+    // would let the resources surface steer the very baseline that judges it.
+    // The gate reads the latch; it does not write history.
+    await assertCircuitBreakerClosed(inv, MCP_RESOURCES_AUDIENCE);
     await assertAudience(inv, MCP_RESOURCES_AUDIENCE);
     await assertCredentialLive(inv, MCP_RESOURCES_AUDIENCE);
     await assertAutonomy(inv, MCP_RESOURCES_AUDIENCE, 'read', undefined);
@@ -790,6 +916,52 @@ async function assertToolManifestPinned(
 }
 
 /**
+ * Is this agent LATCHED OPEN by its own behaviour?
+ *
+ * The breaker is an AGENT-LEVEL halt, and it halts everything — reads included.
+ * A half-stopped agent that may still read is still reading a tenant's whole
+ * compliance posture on its own initiative, which is the exfiltration half of
+ * the rogue-agent case; "stopped" has to mean stopped or the word is doing no
+ * work.
+ *
+ * `null` from the gate is NOT a refusal, for the same reason an absent policy
+ * card is not: the breaker is a control that LEARNS, and an agent it has never
+ * observed must be able to act. Deny-by-default lives in the tool grants, which
+ * already are.
+ *
+ * The refusal message names the STATE and the remedy, never the signal that
+ * fired. What tripped a breaker is a fact about how the detector reads this
+ * agent, and handing it to the caller is handing an attacker the shape of the
+ * threshold to stay under. It is on the latch row and in the audit entry, where
+ * the operator reads it.
+ */
+async function assertCircuitBreakerClosed(
+    inv: McpInvocation,
+    toolName: string,
+): Promise<BreakerLatch | null> {
+    if (inv.agentId === null) return null;
+    const latch = await openBreakerGate(inv.ctx.tenantId, inv.agentId);
+
+    if (latch !== null && latch.state === 'OPEN') {
+        recordAgentBreakerRefusal({ agentId: inv.agentId });
+        await denyToolCall(inv.ctx, 'circuit_breaker_open', {
+            tool: toolName,
+            agentId: inv.agentId,
+            message:
+                'This agent is stopped: its behaviour diverged from its own established ' +
+                'pattern and its circuit breaker latched open. An administrator must ' +
+                'review and close it before it can call any tool again.',
+            extra: {
+                breakerSignals: [...latch.trippedSignals],
+                trippedAt: latch.trippedAt === null ? null : latch.trippedAt.toISOString(),
+            },
+        });
+    }
+
+    return latch;
+}
+
+/**
  * The gate. Throws `forbidden` — after exactly one audit row — when this
  * invocation may not call this tool.
  */
@@ -828,11 +1000,22 @@ export async function authorizeToolCall(
      */
     rawArgs?: unknown,
 ): Promise<void> {
+    // 0. Is a kill switch in force? Ahead of everything, including the
+    //    credential checks — a stop somebody already pulled is not conditional on
+    //    this caller being correctly configured. See `assertNotKilled`.
+    await assertNotKilled(inv, tool.name);
+
     // 1. Was this token minted for this tool?
     await assertAudience(inv, tool.name);
 
     // 2. Is the credential still live, right now?
     await assertCredentialLive(inv, tool.name);
+
+    // 2b. Is this agent latched open by its own behaviour? The latch it read is
+    //     threaded to step 11 rather than re-read there: two point lookups per
+    //     tool call to learn the same fact is the cost that gets a control
+    //     removed for being expensive.
+    const breakerLatch = await assertCircuitBreakerClosed(inv, tool.name);
 
     // 3. Is the tool DEFINITION the one this tenant approved? Supply chain
     //    before authority: a poisoned description is not a question about who
@@ -930,6 +1113,26 @@ export async function authorizeToolCall(
                 extra: { policy: authorize.policy, basis: authorize.basis },
             });
         }
+    }
+
+    // 11. Observe. Not a gate — every gate has passed, and this is the only step
+    //     that writes something other than a denial. It never throws: the store
+    //     swallows its own failure, because turning an observability write into
+    //     an outage for a call ten checks have already allowed is the wrong
+    //     trade in the only direction that matters.
+    if (inv.agentId !== null) {
+        await recordAuthorizedCall(
+            inv.ctx.tenantId,
+            inv.agentId,
+            breakerLatch,
+            tool.capabilityClass,
+            tool.name,
+            // The invocation's OWN clock, the one `assertCredentialLive` and the
+            // daily budget already read. A second, independent `new Date()` here
+            // would put the observation in a different window from the
+            // reservation that admitted it whenever a call straddles the hour.
+            inv.now(),
+        );
     }
 }
 

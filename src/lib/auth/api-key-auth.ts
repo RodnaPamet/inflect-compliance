@@ -93,7 +93,7 @@ const KEY_PREFIX_DISPLAY_LENGTH = 8;
  * Some ACTIONS are deliberately unreachable by any NAMED scope:
  * `admin.tenant_lifecycle`, `admin.owner_management`,
  * `admin.agent_registry`, `admin.agent_tool_exposure`,
- * `admin.agent_policy_card`,
+ * `admin.agent_policy_card`, `admin.agent_kill_switch`,
  * `admin.compliance_dsar_*` and `reports.schedule_external`. Deleting
  * the tenant, rotating the DEK, managing OWNERs, deciding which agents
  * may act and what they may reach, moving DSARs, and aiming a standing
@@ -237,6 +237,13 @@ export function scopesToPermissions(scopes: string[]): PermissionSet {
                 agent_registry: false,
                 agent_tool_exposure: false,
                 agent_policy_card: false,
+                // And the STOP switch, for the sharpest version of the same
+                // argument. A `*` key carried by an agent that could lift its
+                // own kill switch is an agent that cannot be stopped — the one
+                // authority in this block whose failure has no other backstop.
+                // Subtracting it costs nothing: an operator pulling a kill is at
+                // a keyboard, not holding a bearer token.
+                agent_kill_switch: false,
             },
         };
     }

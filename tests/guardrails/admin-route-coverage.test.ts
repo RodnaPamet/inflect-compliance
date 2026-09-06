@@ -64,6 +64,13 @@ const ADMIN_ONLY_ROUTES = [
     'admin/agents/route.ts',
     'admin/agents/[agentId]/route.ts',
     'admin/agents/[agentId]/status/route.ts',
+    // The kill switch's two TENANT scopes (one agent / this tenant) — its own
+    // key, `admin.agent_kill_switch`. Separate from the register's because
+    // agent_registry bundles suspend with ACTIVATE, and stopping must be
+    // delegable without admitting. The PLATFORM scope is not here at all: it has
+    // no tenant, and lives at /api/admin/agent-kill-switch behind
+    // PLATFORM_ADMIN_API_KEY.
+    'admin/agents/kill-switch/route.ts',
     // Deny-by-default MCP tool exposure — its own key,
     // `admin.agent_tool_exposure`, narrower than the register's.
     'admin/agents/[agentId]/tools/route.ts',
@@ -73,6 +80,13 @@ const ADMIN_ONLY_ROUTES = [
     // budgets, so sharing the tool-exposure key would make every routine grant
     // carry the authority to raise an agent's ceiling.
     'admin/agents/[agentId]/policy-card/route.ts',
+    // The behavioural circuit breaker (OWASP ASI08/ASI10) — the latch an agent's
+    // own divergence from its own history can throw, and the audited human act of
+    // closing it. Same `admin.agent_registry` key as the register, and for the
+    // register's reason: closing a breaker IS the authority to decide that an
+    // agent may act. A narrower key would let somebody who cannot activate an
+    // agent un-stop one that stopped itself.
+    'admin/agents/[agentId]/circuit-breaker/route.ts',
     // Tool-manifest pinning (OWASP ASI04) — the tenant's record of which tool
     // DEFINITION it has accepted, and the audited act of re-approving one that
     // changed. Same `admin.agent_registry` key as the register, and for the same

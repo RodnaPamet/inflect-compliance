@@ -106,6 +106,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_registry: true,
             agent_tool_exposure: true,
             agent_policy_card: true,
+            agent_kill_switch: true,
         });
     });
 
@@ -124,6 +125,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_registry: true,
             agent_tool_exposure: true,
             agent_policy_card: true,
+            agent_kill_switch: true,
         });
     });
 
@@ -142,6 +144,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_registry: false,
             agent_tool_exposure: false,
             agent_policy_card: false,
+            agent_kill_switch: false,
         });
     });
 
@@ -160,6 +163,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_registry: false,
             agent_tool_exposure: false,
             agent_policy_card: false,
+            agent_kill_switch: false,
         });
     });
 
@@ -178,6 +182,7 @@ describe('PermissionSet admin capabilities', () => {
             agent_registry: false,
             agent_tool_exposure: false,
             agent_policy_card: false,
+            agent_kill_switch: false,
         });
     });
 });

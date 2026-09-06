@@ -372,6 +372,21 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // (`saveAgentAssessmentAnswer`) and encrypted here at rest. Not used in any
     // WHERE/orderBy — answers are read by (tenantId, assessmentId).
     AgentRiskAssessmentAnswer: ['note'],
+    // The kill switch (Epic Agentic 9) — WHY somebody stopped an agent, and why
+    // they let it run again. Written during an incident, so it is the field most
+    // likely to name the system that misbehaved, the customer that noticed, or
+    // the person who called it in. Sanitised at the single write seam
+    // (`agent-kill-switch` usecase, `requireReason`) and encrypted here at rest.
+    // Not used in any WHERE/orderBy — the hot-path boundary read selects only
+    // id/scope/engagedAt, and the operator surface filters on
+    // (tenantId, agentId, liftedAt) and sorts on engagedAt.
+    //
+    // `PlatformAgentKillSwitch.reason` is deliberately NOT here and CANNOT be:
+    // ciphertext is wrapped by a PER-TENANT DEK and that row has no tenant. Its
+    // content is an operator's own incident reference rather than tenant data,
+    // and the table carries no tenant column to leak across — but the asymmetry
+    // is stated rather than left to be discovered.
+    AgentKillSwitch: ['reason', 'liftReason'],
 
     // ─── Epic G-7 risk treatment plans ─────────────────
     //  Both columns can name internal systems / vendors / users:
