@@ -66,7 +66,6 @@ const POLICY_MAP = fixtureObject<{ policies: PolicyFrameworkMap }>(
  * failure this file was written for.
  */
 const TASK_ONLY_FIXTURES: Array<{ label: string; data: unknown }> = [
-    { label: 'DORA', data: require('../prisma/fixtures/dora-control-templates.json') as unknown },
     { label: 'NIS2', data: require('../prisma/fixtures/nis2-control-templates.json') as unknown },
 ];
 

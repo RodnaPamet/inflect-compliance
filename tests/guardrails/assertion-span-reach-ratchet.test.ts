@@ -141,7 +141,7 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 148;
  *     is why this number falls further than the one above). 191 of the 368
  *     are character-bounded.
  */
-const INTERIOR_SPAN_BASELINE = 339;
+const INTERIOR_SPAN_BASELINE = 338;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.

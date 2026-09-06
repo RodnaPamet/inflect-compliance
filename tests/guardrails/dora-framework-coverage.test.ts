@@ -102,21 +102,67 @@ describe('DORA seed fixture', () => {
     });
 });
 
-describe('DORA seed wiring (seed.ts)', () => {
-    const seed = read('prisma/seed.ts');
+describe('DORA delivery', () => {
+    /**
+     * This block asked, until 2026-09-06, whether `prisma/seed.ts` CONTAINED
+     * the DORA wiring — the fixture filename, a `key: 'DORA', version:` pair,
+     * the literal `'DORA_BASELINE'`. Every one of those was a claim about the
+     * implementation, and seed.ts is not run on production deploys, so all
+     * three could be green while no customer had DORA at all. They were, for
+     * DORA's whole life.
+     *
+     * It now asks whether DORA is DELIVERED, which is the thing the block was
+     * named for. The catalogue is the single source, and it is checked at the
+     * two points that matter: the file declares the framework and pack, and
+     * the production seeder applies that file.
+     */
+    const catalog = JSON.parse(
+        fs.readFileSync(path.join(ROOT, 'prisma/fixtures/dora-control-templates.json'), 'utf8'),
+    ) as {
+        framework: { key: string; version?: string; kind?: string };
+        requirements: Array<{ code: string }>;
+        templates: Array<{ code: string; requirementCodes?: string[]; tasks?: unknown[] }>;
+        pack?: { key: string; templateCodes?: string[] };
+    };
 
-    it('reads the DORA requirements fixture', () => {
-        expect(seed).toContain('dora_requirements.json');
+    it('declares the framework as DORA 2022/2554, kind REGULATION', () => {
+        expect(catalog.framework.key).toBe('DORA');
+        expect(catalog.framework.version).toBe('2022/2554');
+        expect(catalog.framework.kind).toBe('REGULATION');
     });
 
-    it('upserts the DORA framework (key DORA, version 2022/2554, kind REGULATION)', () => {
-        expect(seed).toMatch(/key:\s*'DORA',\s*version:\s*'2022\/2554'/);
-        expect(seed).toMatch(/key:\s*'DORA'[\s\S]{0,160}kind:\s*'REGULATION'/);
+    it('declares the DORA_BASELINE pack over its own templates', () => {
+        expect(catalog.pack?.key).toBe('DORA_BASELINE');
+        const codes = new Set(catalog.templates.map((t) => t.code));
+        expect((catalog.pack?.templateCodes ?? []).filter((c) => !codes.has(c))).toEqual([]);
     });
 
-    it('seeds a DORA framework pack (idempotent upsert)', () => {
-        expect(seed).toContain("'DORA_BASELINE'");
-        expect(seed).toMatch(/frameworkPack\.upsert/);
+    it('every template resolves its requirement codes', () => {
+        // requirementCodes has .default([]) in CatalogTemplateSchema, so a
+        // template naming an unknown code — or using the old bare-array
+        // `requirements` key — parses cleanly and links to nothing. Silence
+        // is the failure mode; this is what breaks it.
+        const declared = new Set(catalog.requirements.map((r) => r.code));
+        const dangling: string[] = [];
+        for (const t of catalog.templates) {
+            const codes = t.requirementCodes ?? [];
+            if (codes.length === 0) dangling.push(`${t.code}: no requirementCodes`);
+            for (const c of codes) if (!declared.has(c)) dangling.push(`${t.code} -> ${c}`);
+        }
+        expect(dangling).toEqual([]);
+    });
+
+    it('carries its authored tasks rather than relying on the generic five', () => {
+        // seed.ts's own DORA loop wrote GENERIC_TEMPLATE_TASKS, so all 24
+        // controls held the five placeholder strings in dev while these
+        // authored tasks reached nothing anywhere.
+        const authored = catalog.templates.reduce((n, t) => n + (t.tasks?.length ?? 0), 0);
+        expect(authored).toBeGreaterThanOrEqual(133);
+    });
+
+    it('is applied by the production seeder, not only by seed.ts', () => {
+        const seeder = read('scripts/seed-framework-catalogs.ts');
+        expect(seeder).toContain('prisma/fixtures/dora-control-templates.json');
     });
 });
 
