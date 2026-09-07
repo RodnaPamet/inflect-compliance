@@ -1552,228 +1552,74 @@ Reviewed at least annually.` },
     }
     console.log(`✅ EU AI Act framework + ${euAiActData.length} obligations + ${euAiActTiers.size} risk-tier packs seeded`);
 
-    // ─── OWASP Agentic AI Top 10 (ASI01–ASI10) ───
-    // Governs AI as an ACTOR, which NIST AI RMF / ISO 42001 / the EU AI Act do
-    // not: none of those contains a control set for tool calls, delegated
-    // identity, inter-agent messaging or persistent memory. CC-BY-SA-4.0 —
-    // reference INDEX (canonical ASI ids + short titles) + Inflect-authored
-    // governance summaries, never the verbatim OWASP prose. Rides the generic
-    // framework/pack machinery: one control template per risk.
-    const asiData = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/owasp_asi_requirements',
-        require('./fixtures/owasp_asi_requirements.json'),
+    // ─── OWASP-ASI — one writer, shared with production ───
+    //
+    // Built inline here until now, and prisma/seed.ts is not run on production
+    // deploys — so production has NEVER held this framework: not the framework
+    // row, not its templates, not its pack. A fresh database got it; a customer
+    // never did.
+    //
+    // The fixture was extracted from a database seeded by the block this
+    // replaces, so the templates, their categories, frequencies and requirement
+    // links are exactly what the inline grouping produced rather than a
+    // re-derivation of it. Tasks are unchanged: the fixture carries none, which
+    // applyCatalogFile turns into the same generic five the loop wrote.
+    const asiResult = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/owasp-asi-control-templates.json'),
+        'prisma/fixtures/owasp-asi-control-templates.json',
     );
-    const asiMeta = JSON.stringify({
-        locale: 'en',
-        provider: 'OWASP',
-        packager: 'inflect',
-        license: 'CC-BY-SA-4.0',
-        sourceUrl: 'https://genai.owasp.org/',
-        copyright:
-            'OWASP Agentic AI Top 10 © OWASP Foundation / OWASP GenAI Security ' +
-            'Project, licensed CC-BY-SA-4.0 (https://creativecommons.org/licenses/by-sa/4.0/). ' +
-            'Source: https://genai.owasp.org/. Inflect stores a reference index ' +
-            '(canonical ASI identifiers + short risk titles) with its own governance ' +
-            'summaries, not the verbatim OWASP risk prose.',
-    });
-    const asi = await prisma.framework.upsert({
-        where: { key_version: { key: 'OWASP-ASI', version: '1.0' } },
-        update: { name: 'OWASP Agentic AI Top 10', kind: 'INDUSTRY_STANDARD', description: 'The ten most critical security risks specific to AI systems that act — agents that plan, call tools, hold delegated identity and carry memory.', metadataJson: asiMeta, sourceUrn: 'urn:inflect:library:owasp-agentic-top10' },
-        create: { key: 'OWASP-ASI', name: 'OWASP Agentic AI Top 10', version: '1.0', kind: 'INDUSTRY_STANDARD', description: 'The ten most critical security risks specific to AI systems that act — agents that plan, call tools, hold delegated identity and carry memory.', metadataJson: asiMeta, sourceUrn: 'urn:inflect:library:owasp-agentic-top10' },
-    });
-    const asiReqMap: Record<string, string> = {};
-    for (const req of asiData) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: asi.id, code: req.key } },
-            update: { title: req.title, section: req.section, sortOrder: req.sortOrder },
-            create: { frameworkId: asi.id, code: req.key, title: req.title, section: req.section, category: 'OWASP Agentic AI Top 10', sortOrder: req.sortOrder },
-        });
-        asiReqMap[req.key] = r.id;
-    }
-    // One control template per risk (10) — the risk IS the assessable unit here,
-    // unlike AISVS where 191 requirements roll up to 12 chapter templates.
-    for (const req of asiData) {
-        const code = `ASI-${req.key.slice(3)}`;
-        const existing = await prisma.controlTemplate.findUnique({ where: { code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: { code, title: req.title, category: 'OWASP Agentic AI Top 10', defaultFrequency: 'QUARTERLY' },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
-            }
-            if (asiReqMap[req.key]) {
-                await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: asiReqMap[req.key] } }).catch(() => { });
-            }
-        }
-    }
-    const asiTmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'ASI-' } } });
-    const asiPack = await prisma.frameworkPack.upsert({
-        where: { key: 'OWASP_ASI_BASELINE' },
-        update: { name: 'OWASP Agentic AI Top 10 Baseline Pack', frameworkId: asi.id, version: '1.0' },
-        create: { key: 'OWASP_ASI_BASELINE', name: 'OWASP Agentic AI Top 10 Baseline Pack', frameworkId: asi.id, version: '1.0', description: 'One control per agentic-AI risk, ASI01 through ASI10.' },
-    });
-    for (const tmpl of asiTmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: asiPack.id, templateId: tmpl.id } },
-            create: { packId: asiPack.id, templateId: tmpl.id }, update: {},
-        });
-    }
-    console.log(`✅ OWASP Agentic AI Top 10 framework + ${asiData.length} risks + ${asiTmpls.length} control templates seeded`);
+    console.log(
+        `✅ OWASP-ASI: ${asiResult.requirements.upserted} requirements, ` +
+            `${asiResult.templates.created} templates, ` +
+            `pack ${asiResult.pack?.key ?? '-'}`,
+    );
 
-    // ─── IMDA Model AI Governance Framework (May 2026 revision) ───
-    // The governance counterpart to the OWASP agentic threat model: four
-    // dimensions (bound risks upfront / meaningful human accountability /
-    // technical controls and processes / end-user responsibility), extended by
-    // the May 2026 revision for multi-agent systems, third-party agents and
-    // automation bias. The four dimensions are the framework's own structure;
-    // the MGF-<dimension>.<n> requirement keys are INFLECT-ASSIGNED (the MGF
-    // publishes narrative guidance, not numbered clauses) — see
-    // docs/implementation-notes/2026-09-05-agentic-frameworks.md.
-    const mgfData = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/imda_mgf_requirements',
-        require('./fixtures/imda_mgf_requirements.json'),
+    // ─── IMDA-MGF — one writer, shared with production ───
+    //
+    // Built inline here until now, and prisma/seed.ts is not run on production
+    // deploys — so production has NEVER held this framework: not the framework
+    // row, not its templates, not its pack. A fresh database got it; a customer
+    // never did.
+    //
+    // The fixture was extracted from a database seeded by the block this
+    // replaces, so the templates, their categories, frequencies and requirement
+    // links are exactly what the inline grouping produced rather than a
+    // re-derivation of it. Tasks are unchanged: the fixture carries none, which
+    // applyCatalogFile turns into the same generic five the loop wrote.
+    const mgfResult = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/imda-mgf-control-templates.json'),
+        'prisma/fixtures/imda-mgf-control-templates.json',
     );
-    const mgfMeta = JSON.stringify({
-        locale: 'en',
-        provider: 'IMDA Singapore',
-        packager: 'inflect',
-        publicationDate: '2026-05',
-        sourceUrl: 'https://www.imda.gov.sg/',
-        notLegalAdvice: true,
-        identifiersAssignedByPackager: true,
-        copyright:
-            'Model AI Governance Framework © Infocomm Media Development Authority / ' +
-            'Personal Data Protection Commission, Singapore. Source: https://www.imda.gov.sg/. ' +
-            'Inflect stores dimension titles and its own governance summaries with ' +
-            'attribution, not the verbatim publication prose; requirement identifiers ' +
-            'are Inflect-assigned and are not IMDA clause numbers. Not legal advice.',
-    });
-    const mgf = await prisma.framework.upsert({
-        where: { key_version: { key: 'IMDA-MGF', version: '2026' } },
-        update: { name: 'IMDA Model AI Governance Framework (May 2026)', kind: 'INDUSTRY_STANDARD', description: 'Four AI-governance dimensions — bound risks upfront, meaningful human accountability, technical controls and processes, end-user responsibility — extended for agentic deployments.', metadataJson: mgfMeta, sourceUrn: 'urn:inflect:library:imda-mgf-2026' },
-        create: { key: 'IMDA-MGF', name: 'IMDA Model AI Governance Framework (May 2026)', version: '2026', kind: 'INDUSTRY_STANDARD', description: 'Four AI-governance dimensions — bound risks upfront, meaningful human accountability, technical controls and processes, end-user responsibility — extended for agentic deployments.', metadataJson: mgfMeta, sourceUrn: 'urn:inflect:library:imda-mgf-2026' },
-    });
-    const mgfReqMap: Record<string, string> = {};
-    for (const req of mgfData) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: mgf.id, code: req.key } },
-            update: { title: req.title, section: req.section, sortOrder: req.sortOrder },
-            create: { frameworkId: mgf.id, code: req.key, title: req.title, section: req.section, category: req.section, sortOrder: req.sortOrder },
-        });
-        mgfReqMap[req.key] = r.id;
-    }
-    // One control template per dimension (4).
-    const mgfDimensions = new Map<string, { title: string; reqs: string[] }>();
-    for (const req of mgfData) {
-        if (!mgfDimensions.has(req.section)) mgfDimensions.set(req.section, { title: req.section, reqs: [] });
-        mgfDimensions.get(req.section)!.reqs.push(req.key);
-    }
-    for (const [, info] of mgfDimensions) {
-        // Code is derived from the dimension label in the data ("D1 Bound risks
-        // upfront" → MGF-D1), not from loop position — reordering the fixture
-        // must not silently re-point a template at a different dimension.
-        const code = `MGF-${info.title.split(' ')[0]}`;
-        const existing = await prisma.controlTemplate.findUnique({ where: { code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: { code, title: info.title, category: 'IMDA MGF', defaultFrequency: 'ANNUALLY' },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
-            }
-            for (const rk of info.reqs) {
-                if (mgfReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: mgfReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    const mgfTmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'MGF-D' } } });
-    const mgfPack = await prisma.frameworkPack.upsert({
-        where: { key: 'IMDA_MGF_BASELINE' },
-        update: { name: 'IMDA MGF Baseline Pack', frameworkId: mgf.id, version: '2026' },
-        create: { key: 'IMDA_MGF_BASELINE', name: 'IMDA MGF Baseline Pack', frameworkId: mgf.id, version: '2026', description: 'IMDA Model AI Governance Framework requirements across the four governance dimensions.' },
-    });
-    for (const tmpl of mgfTmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: mgfPack.id, templateId: tmpl.id } },
-            create: { packId: mgfPack.id, templateId: tmpl.id }, update: {},
-        });
-    }
-    console.log(`✅ IMDA MGF framework + ${mgfData.length} requirements + ${mgfDimensions.size} dimension packs seeded`);
+    console.log(
+        `✅ IMDA-MGF: ${mgfResult.requirements.upserted} requirements, ` +
+            `${mgfResult.templates.created} templates, ` +
+            `pack ${mgfResult.pack?.key ?? '-'}`,
+    );
 
-    // ─── NIST Privacy Framework v1.0 ───
-    // PUBLIC DOMAIN (NIST): "Information presented on NIST sites is considered
-    // public information and may be distributed or copied." The privacy
-    // companion to NIST CSF 2.0 (same Function/Category/Subcategory structure).
-    // Rides the generic framework/pack machinery — no special-casing.
-    const nistPrivacyData = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/nist_privacy_framework_requirements',
-        require('./fixtures/nist_privacy_framework_requirements.json'),
+    // ─── NIST-PRIVACY — one writer, shared with production ───
+    //
+    // Built inline here until now, and prisma/seed.ts is not run on production
+    // deploys — so production has NEVER held this framework: not the framework
+    // row, not its templates, not its pack. A fresh database got it; a customer
+    // never did.
+    //
+    // The fixture was extracted from a database seeded by the block this
+    // replaces, so the templates, their categories, frequencies and requirement
+    // links are exactly what the inline grouping produced rather than a
+    // re-derivation of it. Tasks are unchanged: the fixture carries none, which
+    // applyCatalogFile turns into the same generic five the loop wrote.
+    const nistPrivacyResult = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/nist-privacy-control-templates.json'),
+        'prisma/fixtures/nist-privacy-control-templates.json',
     );
-    const nistPrivacyMeta = JSON.stringify({
-        locale: 'en',
-        provider: 'NIST',
-        packager: 'inflect',
-        publicationDate: '2020-01-16',
-        license: 'public-domain',
-        sourceUrl: 'https://www.nist.gov/privacy-framework',
-        copyright:
-            'Information presented on NIST sites is considered public ' +
-            'information and may be distributed or copied.',
-    });
-    const nistPrivacy = await prisma.framework.upsert({
-        where: { key_version: { key: 'NIST-PRIVACY', version: '1.0' } },
-        update: { name: 'NIST Privacy Framework v1.0', kind: 'NIST_FRAMEWORK', description: 'Privacy outcomes (Functions/Categories/Subcategories) for managing privacy risk — the privacy companion to NIST CSF.', metadataJson: nistPrivacyMeta, sourceUrn: 'urn:inflect:library:nist-privacy-framework-1.0' },
-        create: { key: 'NIST-PRIVACY', name: 'NIST Privacy Framework v1.0', version: '1.0', kind: 'NIST_FRAMEWORK', description: 'Privacy outcomes (Functions/Categories/Subcategories) for managing privacy risk — the privacy companion to NIST CSF.', metadataJson: nistPrivacyMeta, sourceUrn: 'urn:inflect:library:nist-privacy-framework-1.0' },
-    });
-    const nistPrivacyReqMap: Record<string, string> = {};
-    for (const req of nistPrivacyData) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: nistPrivacy.id, code: req.key } },
-            update: { title: req.title, section: req.section, sortOrder: req.sortOrder },
-            create: { frameworkId: nistPrivacy.id, code: req.key, title: req.title, section: req.section, category: req.section, sortOrder: req.sortOrder },
-        });
-        nistPrivacyReqMap[req.key] = r.id;
-    }
-    // One control template per Category (the 18 privacy Categories).
-    const nistPrivacyGroups = new Map<string, { title: string; reqs: string[] }>();
-    for (const req of nistPrivacyData) {
-        if (!nistPrivacyGroups.has(req.section)) nistPrivacyGroups.set(req.section, { title: req.section, reqs: [] });
-        nistPrivacyGroups.get(req.section)!.reqs.push(req.key);
-    }
-    let nistPrivacyGroupIdx = 0;
-    for (const [, info] of nistPrivacyGroups) {
-        const code = `PRIV-${String(nistPrivacyGroupIdx++).padStart(2, '0')}`;
-        const existing = await prisma.controlTemplate.findUnique({ where: { code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: { code, title: info.title, category: 'NIST Privacy', defaultFrequency: 'ANNUALLY' },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
-            }
-            for (const rk of info.reqs) {
-                if (nistPrivacyReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: nistPrivacyReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    const nistPrivacyTmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'PRIV-' } } });
-    const nistPrivacyPack = await prisma.frameworkPack.upsert({
-        where: { key: 'NIST_PRIVACY_BASELINE' },
-        update: { name: 'NIST Privacy Framework Baseline Pack', frameworkId: nistPrivacy.id, version: '1.0' },
-        create: { key: 'NIST_PRIVACY_BASELINE', name: 'NIST Privacy Framework Baseline Pack', frameworkId: nistPrivacy.id, version: '1.0', description: 'NIST Privacy Framework v1.0 privacy Functions, Categories, and Subcategories.' },
-    });
-    for (const tmpl of nistPrivacyTmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: nistPrivacyPack.id, templateId: tmpl.id } },
-            create: { packId: nistPrivacyPack.id, templateId: tmpl.id }, update: {},
-        });
-    }
-    console.log(`✅ NIST Privacy Framework + ${nistPrivacyData.length} subcategories + ${nistPrivacyGroups.size} category packs seeded`);
+    console.log(
+        `✅ NIST-PRIVACY: ${nistPrivacyResult.requirements.upserted} requirements, ` +
+            `${nistPrivacyResult.templates.created} templates, ` +
+            `pack ${nistPrivacyResult.pack?.key ?? '-'}`,
+    );
 
     // ─── NIST SSDF (SP 800-218) v1.1 — one writer, shared with production ───
     //

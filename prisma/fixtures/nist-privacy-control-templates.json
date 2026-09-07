@@ -1,0 +1,1017 @@
+{
+  "_meta": {
+    "purpose": "NIST Privacy Framework v1.0 in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
+    "why": "Built inline in prisma/seed.ts, which is not run on production deploys. Production has never held this framework — not the framework row, not the templates, not the pack. Extracted from a database seeded by the inline block, so the shape is carried over exactly rather than re-derived from the grouping logic.",
+    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here — every template carries the generic five, as it did inline.",
+    "deliveredBy": "scripts/seed-framework-catalogs.ts"
+  },
+  "framework": {
+    "key": "NIST-PRIVACY",
+    "name": "NIST Privacy Framework v1.0",
+    "version": "1.0",
+    "kind": "NIST_FRAMEWORK",
+    "description": "Privacy outcomes (Functions/Categories/Subcategories) for managing privacy risk — the privacy companion to NIST CSF.",
+    "sourceUrn": "urn:inflect:library:nist-privacy-framework-1.0",
+    "metadata": {
+      "locale": "en",
+      "provider": "NIST",
+      "packager": "inflect",
+      "publicationDate": "2020-01-16",
+      "license": "public-domain",
+      "sourceUrl": "https://www.nist.gov/privacy-framework",
+      "copyright": "Information presented on NIST sites is considered public information and may be distributed or copied."
+    }
+  },
+  "requirements": [
+    {
+      "code": "ID.IM-P1",
+      "title": "Systems, products, and services that process data are inventoried.",
+      "section": "Inventory and Mapping",
+      "category": "Inventory and Mapping",
+      "sortOrder": 0
+    },
+    {
+      "code": "ID.IM-P2",
+      "title": "Owners or operators and roles for data processing are inventoried.",
+      "section": "Inventory and Mapping",
+      "category": "Inventory and Mapping",
+      "sortOrder": 1
+    },
+    {
+      "code": "ID.IM-P3",
+      "title": "Categories of individuals whose data are processed are inventoried.",
+      "section": "Inventory and Mapping",
+      "category": "Inventory and Mapping",
+      "sortOrder": 2
+    },
+    {
+      "code": "ID.IM-P4",
+      "title": "Data actions of the systems, products, and services are inventoried.",
+      "section": "Inventory and Mapping",
+      "category": "Inventory and Mapping",
+      "sortOrder": 3
+    },
+    {
+      "code": "ID.IM-P5",
+      "title": "The purposes for the data actions are inventoried.",
+      "section": "Inventory and Mapping",
+      "category": "Inventory and Mapping",
+      "sortOrder": 4
+    },
+    {
+      "code": "ID.IM-P6",
+      "title": "Data elements within the data actions are inventoried.",
+      "section": "Inventory and Mapping",
+      "category": "Inventory and Mapping",
+      "sortOrder": 5
+    },
+    {
+      "code": "ID.IM-P7",
+      "title": "The data processing environment is identified (e.g., geographic location, internal, cloud, third parties).",
+      "section": "Inventory and Mapping",
+      "category": "Inventory and Mapping",
+      "sortOrder": 6
+    },
+    {
+      "code": "ID.IM-P8",
+      "title": "Data processing is mapped, illustrating the data actions and associated data elements for systems, products, and services.",
+      "section": "Inventory and Mapping",
+      "category": "Inventory and Mapping",
+      "sortOrder": 7
+    },
+    {
+      "code": "ID.BE-P1",
+      "title": "The organization's role(s) in the data processing ecosystem are identified and communicated.",
+      "section": "Business Environment",
+      "category": "Business Environment",
+      "sortOrder": 8
+    },
+    {
+      "code": "ID.BE-P2",
+      "title": "Priorities for organizational mission, objectives, and activities are established and communicated.",
+      "section": "Business Environment",
+      "category": "Business Environment",
+      "sortOrder": 9
+    },
+    {
+      "code": "ID.BE-P3",
+      "title": "Systems/products/services that support organizational priorities are identified and key requirements communicated.",
+      "section": "Business Environment",
+      "category": "Business Environment",
+      "sortOrder": 10
+    },
+    {
+      "code": "ID.RA-P1",
+      "title": "Contextual factors related to the systems/products/services and the data actions are identified (e.g., individuals' demographics, visibility into processing, data sensitivity).",
+      "section": "Risk Assessment",
+      "category": "Risk Assessment",
+      "sortOrder": 11
+    },
+    {
+      "code": "ID.RA-P2",
+      "title": "Data analytic inputs and outputs are identified and evaluated for bias.",
+      "section": "Risk Assessment",
+      "category": "Risk Assessment",
+      "sortOrder": 12
+    },
+    {
+      "code": "ID.RA-P3",
+      "title": "Potential problematic data actions and associated problems for individuals are identified.",
+      "section": "Risk Assessment",
+      "category": "Risk Assessment",
+      "sortOrder": 13
+    },
+    {
+      "code": "ID.RA-P4",
+      "title": "Problematic data actions, likelihoods, and impacts are used to determine and prioritize privacy risk.",
+      "section": "Risk Assessment",
+      "category": "Risk Assessment",
+      "sortOrder": 14
+    },
+    {
+      "code": "ID.RA-P5",
+      "title": "Risk responses are identified, prioritized, and implemented.",
+      "section": "Risk Assessment",
+      "category": "Risk Assessment",
+      "sortOrder": 15
+    },
+    {
+      "code": "ID.DE-P1",
+      "title": "Data processing ecosystem risk management policies, processes, and procedures are identified, established, assessed, managed, and agreed to by stakeholders.",
+      "section": "Data Processing Ecosystem Risk Management",
+      "category": "Data Processing Ecosystem Risk Management",
+      "sortOrder": 16
+    },
+    {
+      "code": "ID.DE-P2",
+      "title": "Data processing ecosystem parties (e.g., service providers, customers, partners, product/service developers) are identified, prioritized, and assessed using a privacy risk assessment process.",
+      "section": "Data Processing Ecosystem Risk Management",
+      "category": "Data Processing Ecosystem Risk Management",
+      "sortOrder": 17
+    },
+    {
+      "code": "ID.DE-P3",
+      "title": "Contracts with ecosystem parties are used to implement appropriate measures designed to meet the objectives of the organization's privacy program.",
+      "section": "Data Processing Ecosystem Risk Management",
+      "category": "Data Processing Ecosystem Risk Management",
+      "sortOrder": 18
+    },
+    {
+      "code": "ID.DE-P4",
+      "title": "Interoperability frameworks or similar multi-party approaches are used to manage data processing ecosystem privacy risks.",
+      "section": "Data Processing Ecosystem Risk Management",
+      "category": "Data Processing Ecosystem Risk Management",
+      "sortOrder": 19
+    },
+    {
+      "code": "ID.DE-P5",
+      "title": "Ecosystem parties are routinely assessed using audits, test results, or other evaluations to confirm they are meeting their contractual, interoperability-framework, and other obligations.",
+      "section": "Data Processing Ecosystem Risk Management",
+      "category": "Data Processing Ecosystem Risk Management",
+      "sortOrder": 20
+    },
+    {
+      "code": "GV.PO-P1",
+      "title": "Organizational privacy values and policies (e.g., conditions on data processing such as data uses or retention periods, individuals' prerogatives with respect to data processing) are established and communicated.",
+      "section": "Governance Policies, Processes, and Procedures",
+      "category": "Governance Policies, Processes, and Procedures",
+      "sortOrder": 21
+    },
+    {
+      "code": "GV.PO-P2",
+      "title": "Processes to instill organizational privacy values within system/product/service development and operations are established and in place.",
+      "section": "Governance Policies, Processes, and Procedures",
+      "category": "Governance Policies, Processes, and Procedures",
+      "sortOrder": 22
+    },
+    {
+      "code": "GV.PO-P3",
+      "title": "Roles and responsibilities for the workforce are established with respect to privacy.",
+      "section": "Governance Policies, Processes, and Procedures",
+      "category": "Governance Policies, Processes, and Procedures",
+      "sortOrder": 23
+    },
+    {
+      "code": "GV.PO-P4",
+      "title": "Privacy roles and responsibilities are coordinated and aligned with third-party stakeholders (e.g., service providers, customers, partners).",
+      "section": "Governance Policies, Processes, and Procedures",
+      "category": "Governance Policies, Processes, and Procedures",
+      "sortOrder": 24
+    },
+    {
+      "code": "GV.PO-P5",
+      "title": "Legal, regulatory, and contractual requirements regarding privacy are understood and managed.",
+      "section": "Governance Policies, Processes, and Procedures",
+      "category": "Governance Policies, Processes, and Procedures",
+      "sortOrder": 25
+    },
+    {
+      "code": "GV.PO-P6",
+      "title": "Governance and risk management policies, processes, and procedures address privacy risks.",
+      "section": "Governance Policies, Processes, and Procedures",
+      "category": "Governance Policies, Processes, and Procedures",
+      "sortOrder": 26
+    },
+    {
+      "code": "GV.RM-P1",
+      "title": "Risk management processes are established, managed, and agreed to by organizational stakeholders.",
+      "section": "Risk Management Strategy",
+      "category": "Risk Management Strategy",
+      "sortOrder": 27
+    },
+    {
+      "code": "GV.RM-P2",
+      "title": "Organizational risk tolerance is determined and clearly expressed.",
+      "section": "Risk Management Strategy",
+      "category": "Risk Management Strategy",
+      "sortOrder": 28
+    },
+    {
+      "code": "GV.RM-P3",
+      "title": "The organization's determination of risk tolerance is informed by its role in the data processing ecosystem.",
+      "section": "Risk Management Strategy",
+      "category": "Risk Management Strategy",
+      "sortOrder": 29
+    },
+    {
+      "code": "GV.AT-P1",
+      "title": "The workforce is informed and trained on its roles and responsibilities.",
+      "section": "Awareness and Training",
+      "category": "Awareness and Training",
+      "sortOrder": 30
+    },
+    {
+      "code": "GV.AT-P2",
+      "title": "Senior executives understand their roles and responsibilities.",
+      "section": "Awareness and Training",
+      "category": "Awareness and Training",
+      "sortOrder": 31
+    },
+    {
+      "code": "GV.AT-P3",
+      "title": "Privacy personnel understand their roles and responsibilities.",
+      "section": "Awareness and Training",
+      "category": "Awareness and Training",
+      "sortOrder": 32
+    },
+    {
+      "code": "GV.AT-P4",
+      "title": "Third parties (e.g., service providers, customers, partners) understand their roles and responsibilities.",
+      "section": "Awareness and Training",
+      "category": "Awareness and Training",
+      "sortOrder": 33
+    },
+    {
+      "code": "GV.MT-P1",
+      "title": "Privacy risk is re-evaluated on an ongoing basis and as key factors, including the organization's business environment and data processing, change.",
+      "section": "Monitoring and Review",
+      "category": "Monitoring and Review",
+      "sortOrder": 34
+    },
+    {
+      "code": "GV.MT-P2",
+      "title": "Privacy values, policies, and training are reviewed and any updates are communicated.",
+      "section": "Monitoring and Review",
+      "category": "Monitoring and Review",
+      "sortOrder": 35
+    },
+    {
+      "code": "GV.MT-P3",
+      "title": "Policies, processes, and procedures for assessing compliance with legal requirements and privacy policies are established and in place.",
+      "section": "Monitoring and Review",
+      "category": "Monitoring and Review",
+      "sortOrder": 36
+    },
+    {
+      "code": "GV.MT-P4",
+      "title": "Policies, processes, and procedures for communicating progress on managing privacy risks are established and in place.",
+      "section": "Monitoring and Review",
+      "category": "Monitoring and Review",
+      "sortOrder": 37
+    },
+    {
+      "code": "GV.MT-P5",
+      "title": "Policies, processes, and procedures are established and in place to receive, analyze, and respond to problematic data actions disclosed to the organization from internal and external sources (e.g., internal discovery, researchers, individuals).",
+      "section": "Monitoring and Review",
+      "category": "Monitoring and Review",
+      "sortOrder": 38
+    },
+    {
+      "code": "GV.MT-P6",
+      "title": "Policies, processes, and procedures incorporate lessons learned from problematic data actions.",
+      "section": "Monitoring and Review",
+      "category": "Monitoring and Review",
+      "sortOrder": 39
+    },
+    {
+      "code": "GV.MT-P7",
+      "title": "Policies, processes, and procedures for receiving, tracking, and responding to complaints, concerns, and questions from individuals about organizational privacy practices are established and in place.",
+      "section": "Monitoring and Review",
+      "category": "Monitoring and Review",
+      "sortOrder": 40
+    },
+    {
+      "code": "CT.PO-P1",
+      "title": "Policies, processes, and procedures for authorizing data processing (e.g., organizational decisions, individual consent), revoking authorizations, and maintaining authorizations are established and in place.",
+      "section": "Data Processing Policies, Processes, and Procedures",
+      "category": "Data Processing Policies, Processes, and Procedures",
+      "sortOrder": 41
+    },
+    {
+      "code": "CT.PO-P2",
+      "title": "Policies, processes, and procedures for enabling data review, transfer, sharing or disclosure, alteration, and deletion are established and in place (e.g., to maintain data quality, manage data retention).",
+      "section": "Data Processing Policies, Processes, and Procedures",
+      "category": "Data Processing Policies, Processes, and Procedures",
+      "sortOrder": 42
+    },
+    {
+      "code": "CT.PO-P3",
+      "title": "Policies, processes, and procedures for enabling individuals' data processing preferences and requests are established and in place.",
+      "section": "Data Processing Policies, Processes, and Procedures",
+      "category": "Data Processing Policies, Processes, and Procedures",
+      "sortOrder": 43
+    },
+    {
+      "code": "CT.PO-P4",
+      "title": "A data life cycle to manage data is aligned and implemented with the system development life cycle to manage systems.",
+      "section": "Data Processing Policies, Processes, and Procedures",
+      "category": "Data Processing Policies, Processes, and Procedures",
+      "sortOrder": 44
+    },
+    {
+      "code": "CT.DM-P1",
+      "title": "Data elements can be accessed for review.",
+      "section": "Data Processing Management",
+      "category": "Data Processing Management",
+      "sortOrder": 45
+    },
+    {
+      "code": "CT.DM-P2",
+      "title": "Data elements can be accessed for transmission or disclosure.",
+      "section": "Data Processing Management",
+      "category": "Data Processing Management",
+      "sortOrder": 46
+    },
+    {
+      "code": "CT.DM-P3",
+      "title": "Data elements can be accessed for alteration.",
+      "section": "Data Processing Management",
+      "category": "Data Processing Management",
+      "sortOrder": 47
+    },
+    {
+      "code": "CT.DM-P4",
+      "title": "Data elements can be accessed for deletion.",
+      "section": "Data Processing Management",
+      "category": "Data Processing Management",
+      "sortOrder": 48
+    },
+    {
+      "code": "CT.DM-P5",
+      "title": "Data are destroyed according to policy.",
+      "section": "Data Processing Management",
+      "category": "Data Processing Management",
+      "sortOrder": 49
+    },
+    {
+      "code": "CT.DM-P6",
+      "title": "Data are transmitted using standardized formats.",
+      "section": "Data Processing Management",
+      "category": "Data Processing Management",
+      "sortOrder": 50
+    },
+    {
+      "code": "CT.DM-P7",
+      "title": "Mechanisms for transmitting processing permissions and related data values with data elements are established and in place.",
+      "section": "Data Processing Management",
+      "category": "Data Processing Management",
+      "sortOrder": 51
+    },
+    {
+      "code": "CT.DM-P8",
+      "title": "Audit/log records are determined, documented, implemented, and reviewed in accordance with policy and incorporating the principle of data minimization.",
+      "section": "Data Processing Management",
+      "category": "Data Processing Management",
+      "sortOrder": 52
+    },
+    {
+      "code": "CT.DM-P9",
+      "title": "Technical measures implemented to manage data processing are tested and assessed.",
+      "section": "Data Processing Management",
+      "category": "Data Processing Management",
+      "sortOrder": 53
+    },
+    {
+      "code": "CT.DM-P10",
+      "title": "Stakeholder privacy preferences are included in algorithmic design objectives and outputs are evaluated against these preferences.",
+      "section": "Data Processing Management",
+      "category": "Data Processing Management",
+      "sortOrder": 54
+    },
+    {
+      "code": "CT.DP-P1",
+      "title": "Data are processed to limit observability and linkability (e.g., data actions take place on local devices, privacy-preserving cryptography).",
+      "section": "Disassociated Processing",
+      "category": "Disassociated Processing",
+      "sortOrder": 55
+    },
+    {
+      "code": "CT.DP-P2",
+      "title": "Data are processed to limit the identification of individuals (e.g., de-identification privacy techniques, tokenization).",
+      "section": "Disassociated Processing",
+      "category": "Disassociated Processing",
+      "sortOrder": 56
+    },
+    {
+      "code": "CT.DP-P3",
+      "title": "Data are processed to limit the formulation of inferences about individuals' behavior or activities (e.g., data processing is decentralized, distributed architectures).",
+      "section": "Disassociated Processing",
+      "category": "Disassociated Processing",
+      "sortOrder": 57
+    },
+    {
+      "code": "CT.DP-P4",
+      "title": "System or device configurations permit selective collection or disclosure of data elements.",
+      "section": "Disassociated Processing",
+      "category": "Disassociated Processing",
+      "sortOrder": 58
+    },
+    {
+      "code": "CT.DP-P5",
+      "title": "Attribute references are substituted for attribute values.",
+      "section": "Disassociated Processing",
+      "category": "Disassociated Processing",
+      "sortOrder": 59
+    },
+    {
+      "code": "CM.PO-P1",
+      "title": "Transparency policies, processes, and procedures for communicating data processing purposes, practices, associated privacy risks, and options for enabling individuals' data processing preferences and requests are established and in place.",
+      "section": "Communication Policies, Processes, and Procedures",
+      "category": "Communication Policies, Processes, and Procedures",
+      "sortOrder": 60
+    },
+    {
+      "code": "CM.PO-P2",
+      "title": "Roles and responsibilities (e.g., public relations) for communicating data processing purposes, practices, and associated privacy risks are established.",
+      "section": "Communication Policies, Processes, and Procedures",
+      "category": "Communication Policies, Processes, and Procedures",
+      "sortOrder": 61
+    },
+    {
+      "code": "CM.AW-P1",
+      "title": "Mechanisms (e.g., notices, internal or public reports) for communicating data processing purposes, practices, associated privacy risks, and options for enabling individuals' preferences and requests are established and in place.",
+      "section": "Data Processing Awareness",
+      "category": "Data Processing Awareness",
+      "sortOrder": 62
+    },
+    {
+      "code": "CM.AW-P2",
+      "title": "Mechanisms for obtaining feedback from individuals (e.g., surveys or focus groups) about data processing and associated privacy risks are established and in place.",
+      "section": "Data Processing Awareness",
+      "category": "Data Processing Awareness",
+      "sortOrder": 63
+    },
+    {
+      "code": "CM.AW-P3",
+      "title": "System/product/service design enables data processing visibility.",
+      "section": "Data Processing Awareness",
+      "category": "Data Processing Awareness",
+      "sortOrder": 64
+    },
+    {
+      "code": "CM.AW-P4",
+      "title": "Records of data disclosures and sharing are maintained and can be accessed for review or transmission/disclosure.",
+      "section": "Data Processing Awareness",
+      "category": "Data Processing Awareness",
+      "sortOrder": 65
+    },
+    {
+      "code": "CM.AW-P5",
+      "title": "Data corrections or deletions can be communicated to individuals or organizations (e.g., data sources) in the data processing ecosystem.",
+      "section": "Data Processing Awareness",
+      "category": "Data Processing Awareness",
+      "sortOrder": 66
+    },
+    {
+      "code": "CM.AW-P6",
+      "title": "Data provenance and lineage are maintained and can be accessed for review or transmission/disclosure.",
+      "section": "Data Processing Awareness",
+      "category": "Data Processing Awareness",
+      "sortOrder": 67
+    },
+    {
+      "code": "CM.AW-P7",
+      "title": "Impacted individuals and organizations are notified about a privacy breach or event.",
+      "section": "Data Processing Awareness",
+      "category": "Data Processing Awareness",
+      "sortOrder": 68
+    },
+    {
+      "code": "CM.AW-P8",
+      "title": "Individuals are provided with mitigation mechanisms (e.g., credit monitoring, consent withdrawal, data alteration or deletion) to address impacts of problematic data actions.",
+      "section": "Data Processing Awareness",
+      "category": "Data Processing Awareness",
+      "sortOrder": 69
+    },
+    {
+      "code": "PR.PO-P1",
+      "title": "A baseline configuration of information technology is created and maintained incorporating security principles (e.g., concept of least functionality).",
+      "section": "Data Protection Policies, Processes, and Procedures",
+      "category": "Data Protection Policies, Processes, and Procedures",
+      "sortOrder": 70
+    },
+    {
+      "code": "PR.PO-P2",
+      "title": "Configuration change control processes are established and in place.",
+      "section": "Data Protection Policies, Processes, and Procedures",
+      "category": "Data Protection Policies, Processes, and Procedures",
+      "sortOrder": 71
+    },
+    {
+      "code": "PR.PO-P3",
+      "title": "Backups of information are conducted, maintained, and tested.",
+      "section": "Data Protection Policies, Processes, and Procedures",
+      "category": "Data Protection Policies, Processes, and Procedures",
+      "sortOrder": 72
+    },
+    {
+      "code": "PR.PO-P4",
+      "title": "Policy and regulations regarding the physical operating environment for organizational assets are met.",
+      "section": "Data Protection Policies, Processes, and Procedures",
+      "category": "Data Protection Policies, Processes, and Procedures",
+      "sortOrder": 73
+    },
+    {
+      "code": "PR.PO-P5",
+      "title": "Protection processes are improved.",
+      "section": "Data Protection Policies, Processes, and Procedures",
+      "category": "Data Protection Policies, Processes, and Procedures",
+      "sortOrder": 74
+    },
+    {
+      "code": "PR.PO-P6",
+      "title": "Effectiveness of protection technologies is shared.",
+      "section": "Data Protection Policies, Processes, and Procedures",
+      "category": "Data Protection Policies, Processes, and Procedures",
+      "sortOrder": 75
+    },
+    {
+      "code": "PR.PO-P7",
+      "title": "Response plans (Incident Response and Business Continuity) and recovery plans (Incident Recovery and Disaster Recovery) are established, in place, and managed.",
+      "section": "Data Protection Policies, Processes, and Procedures",
+      "category": "Data Protection Policies, Processes, and Procedures",
+      "sortOrder": 76
+    },
+    {
+      "code": "PR.PO-P8",
+      "title": "Response and recovery plans are tested.",
+      "section": "Data Protection Policies, Processes, and Procedures",
+      "category": "Data Protection Policies, Processes, and Procedures",
+      "sortOrder": 77
+    },
+    {
+      "code": "PR.PO-P9",
+      "title": "Privacy procedures are included in human resources practices (e.g., deprovisioning, personnel screening).",
+      "section": "Data Protection Policies, Processes, and Procedures",
+      "category": "Data Protection Policies, Processes, and Procedures",
+      "sortOrder": 78
+    },
+    {
+      "code": "PR.PO-P10",
+      "title": "A vulnerability management plan is developed and implemented.",
+      "section": "Data Protection Policies, Processes, and Procedures",
+      "category": "Data Protection Policies, Processes, and Procedures",
+      "sortOrder": 79
+    },
+    {
+      "code": "PR.AC-P1",
+      "title": "Identities and credentials are issued, managed, verified, revoked, and audited for authorized individuals, processes, and devices.",
+      "section": "Identity Management, Authentication, and Access Control",
+      "category": "Identity Management, Authentication, and Access Control",
+      "sortOrder": 80
+    },
+    {
+      "code": "PR.AC-P2",
+      "title": "Physical access to data and devices is managed.",
+      "section": "Identity Management, Authentication, and Access Control",
+      "category": "Identity Management, Authentication, and Access Control",
+      "sortOrder": 81
+    },
+    {
+      "code": "PR.AC-P3",
+      "title": "Remote access is managed.",
+      "section": "Identity Management, Authentication, and Access Control",
+      "category": "Identity Management, Authentication, and Access Control",
+      "sortOrder": 82
+    },
+    {
+      "code": "PR.AC-P4",
+      "title": "Access permissions and authorizations are managed, incorporating the principles of least privilege and separation of duties.",
+      "section": "Identity Management, Authentication, and Access Control",
+      "category": "Identity Management, Authentication, and Access Control",
+      "sortOrder": 83
+    },
+    {
+      "code": "PR.AC-P5",
+      "title": "Network integrity is protected (e.g., network segregation, network segmentation).",
+      "section": "Identity Management, Authentication, and Access Control",
+      "category": "Identity Management, Authentication, and Access Control",
+      "sortOrder": 84
+    },
+    {
+      "code": "PR.AC-P6",
+      "title": "Individuals and devices are proofed and bound to credentials, and authenticated commensurate with the risk of the transaction.",
+      "section": "Identity Management, Authentication, and Access Control",
+      "category": "Identity Management, Authentication, and Access Control",
+      "sortOrder": 85
+    },
+    {
+      "code": "PR.DS-P1",
+      "title": "Data-at-rest are protected.",
+      "section": "Data Security",
+      "category": "Data Security",
+      "sortOrder": 86
+    },
+    {
+      "code": "PR.DS-P2",
+      "title": "Data-in-transit are protected.",
+      "section": "Data Security",
+      "category": "Data Security",
+      "sortOrder": 87
+    },
+    {
+      "code": "PR.DS-P3",
+      "title": "Systems/products/services and associated data are formally managed throughout removal, transfers, and disposition.",
+      "section": "Data Security",
+      "category": "Data Security",
+      "sortOrder": 88
+    },
+    {
+      "code": "PR.DS-P4",
+      "title": "Adequate capacity to ensure availability is maintained.",
+      "section": "Data Security",
+      "category": "Data Security",
+      "sortOrder": 89
+    },
+    {
+      "code": "PR.DS-P5",
+      "title": "Protections against data leaks are implemented.",
+      "section": "Data Security",
+      "category": "Data Security",
+      "sortOrder": 90
+    },
+    {
+      "code": "PR.DS-P6",
+      "title": "Integrity checking mechanisms are used to verify software, firmware, and information integrity.",
+      "section": "Data Security",
+      "category": "Data Security",
+      "sortOrder": 91
+    },
+    {
+      "code": "PR.DS-P7",
+      "title": "The development and testing environment(s) are separate from the production environment.",
+      "section": "Data Security",
+      "category": "Data Security",
+      "sortOrder": 92
+    },
+    {
+      "code": "PR.DS-P8",
+      "title": "Integrity checking mechanisms are used to verify hardware integrity.",
+      "section": "Data Security",
+      "category": "Data Security",
+      "sortOrder": 93
+    },
+    {
+      "code": "PR.MA-P1",
+      "title": "Maintenance and repair of organizational assets are performed and logged, with approved and controlled tools.",
+      "section": "Maintenance",
+      "category": "Maintenance",
+      "sortOrder": 94
+    },
+    {
+      "code": "PR.MA-P2",
+      "title": "Remote maintenance of organizational assets is approved, logged, and performed in a manner that prevents unauthorized access.",
+      "section": "Maintenance",
+      "category": "Maintenance",
+      "sortOrder": 95
+    },
+    {
+      "code": "PR.PT-P1",
+      "title": "Removable media is protected and its use restricted according to policy.",
+      "section": "Protective Technology",
+      "category": "Protective Technology",
+      "sortOrder": 96
+    },
+    {
+      "code": "PR.PT-P2",
+      "title": "The principle of least functionality is incorporated by configuring systems to provide only essential capabilities.",
+      "section": "Protective Technology",
+      "category": "Protective Technology",
+      "sortOrder": 97
+    },
+    {
+      "code": "PR.PT-P3",
+      "title": "Communications and control networks are protected.",
+      "section": "Protective Technology",
+      "category": "Protective Technology",
+      "sortOrder": 98
+    },
+    {
+      "code": "PR.PT-P4",
+      "title": "Mechanisms (e.g., failsafe, load balancing, hot swap) are implemented to achieve resilience requirements in normal and adverse situations.",
+      "section": "Protective Technology",
+      "category": "Protective Technology",
+      "sortOrder": 99
+    }
+  ],
+  "templates": [
+    {
+      "code": "PRIV-00",
+      "title": "Inventory and Mapping",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.IM-P1",
+        "ID.IM-P2",
+        "ID.IM-P3",
+        "ID.IM-P4",
+        "ID.IM-P5",
+        "ID.IM-P6",
+        "ID.IM-P7",
+        "ID.IM-P8"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-01",
+      "title": "Business Environment",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.BE-P1",
+        "ID.BE-P2",
+        "ID.BE-P3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-02",
+      "title": "Risk Assessment",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.RA-P1",
+        "ID.RA-P2",
+        "ID.RA-P3",
+        "ID.RA-P4",
+        "ID.RA-P5"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-03",
+      "title": "Data Processing Ecosystem Risk Management",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.DE-P1",
+        "ID.DE-P2",
+        "ID.DE-P3",
+        "ID.DE-P4",
+        "ID.DE-P5"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-04",
+      "title": "Governance Policies, Processes, and Procedures",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.PO-P1",
+        "GV.PO-P2",
+        "GV.PO-P3",
+        "GV.PO-P4",
+        "GV.PO-P5",
+        "GV.PO-P6"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-05",
+      "title": "Risk Management Strategy",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.RM-P1",
+        "GV.RM-P2",
+        "GV.RM-P3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-06",
+      "title": "Awareness and Training",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.AT-P1",
+        "GV.AT-P2",
+        "GV.AT-P3",
+        "GV.AT-P4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-07",
+      "title": "Monitoring and Review",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.MT-P1",
+        "GV.MT-P2",
+        "GV.MT-P3",
+        "GV.MT-P4",
+        "GV.MT-P5",
+        "GV.MT-P6",
+        "GV.MT-P7"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-08",
+      "title": "Data Processing Policies, Processes, and Procedures",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.PO-P1",
+        "CT.PO-P2",
+        "CT.PO-P3",
+        "CT.PO-P4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-09",
+      "title": "Data Processing Management",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.DM-P1",
+        "CT.DM-P2",
+        "CT.DM-P3",
+        "CT.DM-P4",
+        "CT.DM-P5",
+        "CT.DM-P6",
+        "CT.DM-P7",
+        "CT.DM-P8",
+        "CT.DM-P9",
+        "CT.DM-P10"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-10",
+      "title": "Disassociated Processing",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.DP-P1",
+        "CT.DP-P2",
+        "CT.DP-P3",
+        "CT.DP-P4",
+        "CT.DP-P5"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-11",
+      "title": "Communication Policies, Processes, and Procedures",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CM.PO-P1",
+        "CM.PO-P2"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-12",
+      "title": "Data Processing Awareness",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CM.AW-P1",
+        "CM.AW-P2",
+        "CM.AW-P3",
+        "CM.AW-P4",
+        "CM.AW-P5",
+        "CM.AW-P6",
+        "CM.AW-P7",
+        "CM.AW-P8"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-13",
+      "title": "Data Protection Policies, Processes, and Procedures",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.PO-P1",
+        "PR.PO-P2",
+        "PR.PO-P3",
+        "PR.PO-P4",
+        "PR.PO-P5",
+        "PR.PO-P6",
+        "PR.PO-P7",
+        "PR.PO-P8",
+        "PR.PO-P9",
+        "PR.PO-P10"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-14",
+      "title": "Identity Management, Authentication, and Access Control",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.AC-P1",
+        "PR.AC-P2",
+        "PR.AC-P3",
+        "PR.AC-P4",
+        "PR.AC-P5",
+        "PR.AC-P6"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-15",
+      "title": "Data Security",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.DS-P1",
+        "PR.DS-P2",
+        "PR.DS-P3",
+        "PR.DS-P4",
+        "PR.DS-P5",
+        "PR.DS-P6",
+        "PR.DS-P7",
+        "PR.DS-P8"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-16",
+      "title": "Maintenance",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.MA-P1",
+        "PR.MA-P2"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "PRIV-17",
+      "title": "Protective Technology",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.PT-P1",
+        "PR.PT-P2",
+        "PR.PT-P3",
+        "PR.PT-P4"
+      ],
+      "tasks": []
+    }
+  ],
+  "pack": {
+    "key": "NIST_PRIVACY_BASELINE",
+    "name": "NIST Privacy Framework Baseline Pack",
+    "version": "1.0",
+    "description": "One control per privacy Category, covering the Framework five Functions.",
+    "templateCodes": [
+      "PRIV-00",
+      "PRIV-01",
+      "PRIV-02",
+      "PRIV-03",
+      "PRIV-04",
+      "PRIV-05",
+      "PRIV-06",
+      "PRIV-07",
+      "PRIV-08",
+      "PRIV-09",
+      "PRIV-10",
+      "PRIV-11",
+      "PRIV-12",
+      "PRIV-13",
+      "PRIV-14",
+      "PRIV-15",
+      "PRIV-16",
+      "PRIV-17"
+    ]
+  }
+}
