@@ -839,12 +839,6 @@ Reviewed at least annually.` },
     console.log(`✅ IC original gap-fill policy templates seeded (${originalGapPolicies.templates.length})`);
 
     // ─── Frameworks & Requirements ───
-    const annexAData = fixtureArray<{
-        key: string; theme: string; themeNumber: number; sortOrder: number; title: string; summary?: string;
-    }>(
-        'fixtures/iso27001_2022_annexA',
-        require('./fixtures/iso27001_2022_annexA.json'),
-    );
 
     // ISO 27001:2022
     // `sourceUrn` ties this row to `src/data/libraries/iso27001-2022.yaml`, the
@@ -853,23 +847,30 @@ Reviewed at least annually.` },
     // set — every mapping is authored against the library key. Note the two
     // representations still number Annex A differently (`5.15` here, `A.5.15`
     // there); `domain/framework-representation.ts` reconciles that half.
-    const iso27001 = await prisma.framework.upsert({
-        where: { key: 'ISO27001' },
-        update: { name: 'ISO/IEC 27001', version: '2022', description: 'ISO/IEC 27001:2022 Information Security Management', sourceUrn: 'urn:inflect:library:iso27001-2022' },
-        create: { key: 'ISO27001', name: 'ISO/IEC 27001', version: '2022', description: 'ISO/IEC 27001:2022 Information Security Management', sourceUrn: 'urn:inflect:library:iso27001-2022' },
-    });
-
-    // Upsert all 93 Annex A requirements
-    const requirementMap: Record<string, string> = {};
-    for (const req of annexAData) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: iso27001.id, code: req.key } },
-            update: { title: req.title, description: req.summary || null, theme: req.theme, themeNumber: req.themeNumber, sortOrder: req.sortOrder },
-            create: { frameworkId: iso27001.id, code: req.key, title: req.title, description: req.summary || null, category: req.theme, theme: req.theme, themeNumber: req.themeNumber, sortOrder: req.sortOrder },
-        });
-        requirementMap[req.key] = r.id;
-    }
-    console.log(`✅ ISO 27001:2022 framework + ${annexAData.length} Annex A requirements seeded`);
+    // ISO/IEC 27001:2022 Annex A — one writer, shared with production.
+    //
+    // The framework, its 93 requirements, the 93 A-<key> templates and the
+    // ISO27001_2022_BASE pack were four spans scattered across 500 lines here,
+    // and production ran none of them: prisma/seed.ts is not run on deploys.
+    // Production holds the Annex A catalogue only because a one-off backfill
+    // put it there, so a fresh database or a restore gets nothing.
+    //
+    // This is also the precondition for AUTHORING. The inline loop wrote
+    // GENERIC_TEMPLATE_TASKS for every one of the 93 controls — 465 placeholder
+    // tasks, the largest such population in the product — and there was
+    // nowhere for authored content to live. The fixture carries `tasks: []`
+    // today, which applyCatalogFile turns into the same generic five, so this
+    // change moves no content. The authoring follows, per theme.
+    const iso27001Result = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/iso27001-control-templates.json'),
+        'prisma/fixtures/iso27001-control-templates.json',
+    );
+    console.log(
+        `✅ ISO 27001: ${iso27001Result.requirements.upserted} Annex A requirements, ` +
+            `${iso27001Result.templates.created} templates, ` +
+            `tasks ${iso27001Result.tasks.created}c/${iso27001Result.tasks.unchanged}=`,
+    );
 
     // SOC2
     const soc2 = await prisma.framework.upsert({
@@ -1240,28 +1241,6 @@ Reviewed at least annually.` },
 
     console.log('✅ SOC2 + NIS2 + ISO9001 + ISO28000 + ISO39001 frameworks seeded');
 
-    // ─── ISO 27001:2022 Control Templates (one per Annex A control) ───
-
-    let templatesCreated = 0;
-    for (const req of annexAData) {
-        const code = `A-${req.key}`;
-        const existing = await prisma.controlTemplate.findUnique({ where: { code } });
-        if (!existing) {
-            const template = await prisma.controlTemplate.create({
-                data: { code, title: req.title, description: req.summary || null, category: req.theme, defaultFrequency: 'QUARTERLY' },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({
-                    data: { templateId: template.id, title: task.title, description: task.description },
-                });
-            }
-            await prisma.controlTemplateRequirementLink.create({
-                data: { templateId: template.id, requirementId: requirementMap[req.key] },
-            });
-            templatesCreated++;
-        }
-    }
-    console.log(`✅ ISO 27001 control templates seeded (${templatesCreated} new)`);
 
 
 
@@ -1335,20 +1314,6 @@ Reviewed at least annually.` },
     console.log('✅ ISO 39001 control templates seeded');
 
     // ─── Framework Packs ───
-    const allIsoTemplates = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'A-' } } });
-    const pack = await prisma.frameworkPack.upsert({
-        where: { key: 'ISO27001_2022_BASE' },
-        update: { name: 'ISO 27001:2022 Starter Pack', frameworkId: iso27001.id, version: '2022' },
-        create: { key: 'ISO27001_2022_BASE', name: 'ISO 27001:2022 Starter Pack', frameworkId: iso27001.id, version: '2022', description: 'Full Annex A control set with default implementation tasks.' },
-    });
-    for (const tmpl of allIsoTemplates) {
-        const existing = await prisma.packTemplateLink.findUnique({
-            where: { packId_templateId: { packId: pack.id, templateId: tmpl.id } },
-        });
-        if (!existing) {
-            await prisma.packTemplateLink.create({ data: { packId: pack.id, templateId: tmpl.id } });
-        }
-    }
 
 
 
@@ -2429,8 +2394,19 @@ Reviewed at least annually.` },
     // available and would fall back to the legacy "not installed" skip.
     const tenantControls = await prisma.control.findMany({ where: { tenantId: tenant.id } });
     const annexMap: Record<string, string> = {};
+    // Re-fetched by its unique key: the upsert that used to bind `iso27001`
+    // moved into applyCatalogFile above. Framework.key is @unique.
+    //
+    // NOTE, and deliberately NOT fixed here: this block is already a no-op.
+    // Seeded controls carry annexId 'A.5.1' while requirement codes are '5.1',
+    // so `annexMap[code]` never resolves and ControlRequirementLink has 0 rows
+    // in a fresh dev database (verified). The E2E coverage-metrics data this
+    // exists to seed has never been created. Fixing it here would make the
+    // delivery proof measure a deliberate behaviour change as well as a move,
+    // so it is preserved exactly and filed separately.
+    const iso27001Fw = await prisma.framework.findUniqueOrThrow({ where: { key: 'ISO27001' } });
     const annexReqs = await prisma.frameworkRequirement.findMany({
-        where: { frameworkId: iso27001.id },
+        where: { frameworkId: iso27001Fw.id },
     });
     for (const r of annexReqs) annexMap[r.code] = r.id;
     for (const ctrl of tenantControls) {
