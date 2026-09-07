@@ -108,7 +108,19 @@ describe('the two seeding paths agree on pack keys', () => {
         // and there is no second writer left to disagree.
         const unexplained: string[] = [];
         for (const [fwKey, packKey] of prodPacks) {
-            const seedBuildsFramework = seed.includes(`'${fwKey}'`);
+            // BUILDS, not mentions. A converted framework can still be NAMED
+            // in seed.ts — ISO 27001's coverage-link block re-fetches it with
+            // `framework.findUniqueOrThrow({ where: { key: 'ISO27001' } })`
+            // now that its upsert has moved into applyCatalogFile. Reading a
+            // row is not writing one, and a mention-based rule reported that
+            // re-fetch as a second writer inventing a pack.
+            // Split rather than span: an interior `[\s\S]{0,400}` here would
+            // be Class C debt, and hiding it inside `new RegExp` would put it
+            // where the span analyser cannot see it — worse than the problem.
+            const seedBuildsFramework = seed
+                .split('framework.upsert')
+                .slice(1)
+                .some((block) => block.slice(0, 400).includes(`key: '${fwKey}'`));
             if (!seedBuildsFramework) continue;
             if (seed.includes(`'${packKey}'`)) continue;
             if (PACK_KEY_DIVERGENCES[fwKey]) continue;
