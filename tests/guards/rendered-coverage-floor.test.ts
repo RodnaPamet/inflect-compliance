@@ -119,7 +119,21 @@ const ROOT = path.resolve(__dirname, '../..');
 // stays a one-file PR taken when no rendered-test PR is in flight, and the live
 // count is re-measured immediately before merge rather than trusted from when it
 // was written.
-const RENDERED_TEST_FLOOR = 252;
+//
+// 252 → 261 (2026-09-07): NOT a re-baselining wave — a single suite
+// (agent-quarantine-client.test.tsx, the quarantine triage page) arrived while
+// live already stood at 260 against floor 252, i.e. slack 8 of 8. That is the
+// exact near-exhaustion the paragraph above describes, so the one file tipped
+// it. The floor moves to the live count MEASURED IN THIS TREE
+// (`ls tests/rendered/*.test.tsx | wc -l` = 261) rather than to 253, because a
+// floor that trails live by 8 is a trap primed for whoever adds the next suite.
+//
+// The hazard in the paragraph above is LIVE for this change: it was written
+// alongside a sibling branch on the same checkout. If that branch also adds a
+// rendered suite, both diffs edit this one line, the merge is CLEAN, and main
+// is left wrong by one. RE-MEASURE immediately before merge and take the number
+// from the failure message, never from arithmetic on the two sides.
+const RENDERED_TEST_FLOOR = 261;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

@@ -93,11 +93,29 @@ describe('the applied-catalogue helper', () => {
     });
 
     it('finds a key that only seed.ts declares, and does not call it production', () => {
-        // The mirror case, and the one that makes the sweep worth doing:
-        // SSDF_STARTER_PACK is declared by seed.ts alone, so it reaches dev
-        // and no customer. The helper must say both halves of that.
-        expect(declaringSources('SSDF_STARTER_PACK')).toEqual(['prisma/seed.ts']);
-        expect(productionDeclaringSources('SSDF_STARTER_PACK')).toEqual([]);
+        // The mirror case, and the one that makes the sweep worth doing: a key
+        // seed.ts declares alone reaches dev and no customer, and the helper
+        // must say both halves of that.
+        //
+        // DERIVED, not named. This case used to pin SSDF_STARTER_PACK, and
+        // retiring that pack — a correct change, the whole point of the
+        // conversions — turned the guard red for a framework that had just
+        // been fixed. That is the hardcoded-witness defect this suite has
+        // already removed from two other guards; keeping it here would have
+        // been the third, and every remaining dev-only pack key is scheduled
+        // for the same retirement.
+        const seedOnly = [...appliedSources().find((s) => !s.reachesProduction)!.text.matchAll(
+            /key: '([A-Z0-9_]*(?:PACK|BASELINE|CORE))'/g,
+        )]
+            .map((m) => m[1])
+            .find((k) => productionDeclaringSources(k).length === 0);
+
+        // If this is undefined, every pack seed.ts builds now also reaches
+        // production — the end state of the conversions, and a reason to
+        // delete this case rather than repair it.
+        expect(seedOnly).toBeDefined();
+        expect(declaringSources(seedOnly!)).toEqual(['prisma/seed.ts']);
+        expect(productionDeclaringSources(seedOnly!)).toEqual([]);
     });
 
     it('returns nothing for a key nothing declares', () => {

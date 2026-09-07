@@ -164,6 +164,7 @@ export const SUBPAGES: readonly string[] = [
     '/admin/integrations/identity-accounts',
     '/admin/mcp',
     '/admin/mcp/agent-receipts',
+    '/admin/mcp/quarantine',
     '/admin/members',
     '/admin/notifications',
     '/admin/personnel',

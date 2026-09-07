@@ -177,6 +177,15 @@ export type EntityListPageTable<TRow extends TableRowData> = Pick<
     | 'onRowSelectionChange'
     | 'selectedRows'
     | 'selectionControls'
+    // The select column is DEFAULT-ON in `<DataTable>` and its own docs name
+    // `selectionEnabled={false}` as the opt-out "for tables that are
+    // deliberately read-only at the row level". Until this entry existed the
+    // shell could not express that, so every page that adopted `EntityListPage`
+    // was forced into the default — including read-only ones, where the
+    // checkboxes are a control that does nothing AND the row action silently
+    // moves from single click to double click, because selection takes the
+    // single one.
+    | 'selectionEnabled'
     | 'batchActions'
     | 'columnVisibility'
     | 'onColumnVisibilityChange'

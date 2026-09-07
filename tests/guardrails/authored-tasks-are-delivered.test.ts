@@ -77,6 +77,35 @@ const seederSource = [SEEDER, CATALOG_SEEDER]
  */
 const KNOWN_UNDELIVERED: Record<string, string> = {};
 
+/**
+ * Fixtures a production seeder applies that carry NO authored tasks yet.
+ *
+ * A DOWNWARD RATCHET, and it exists because the alternative was silence.
+ *
+ * The reverse-rot check below asks whether a wired fixture still carries
+ * tasks, which is right for a fixture that HAD them and lost them. It is wrong
+ * for one that never had any: `applyCatalogFile` writes the generic five when
+ * `tasks` is empty, so such a fixture does deliver tasks — just not authored
+ * ones. Failing it would have pushed the next person to either author 32
+ * controls inside a delivery PR or quietly relax the check.
+ *
+ * But permitting it silently is worse. `control-task-actionability` judges the
+ * tasks a fixture declares, and these declare none, so it cannot see the gap
+ * either — relaxing this check without recording the fact would leave 32
+ * templates shipping placeholder tasks with NOTHING tracking it.
+ *
+ * So the gap is named here. An entry leaves when its fixture gains authored
+ * content, exactly as ISO 27001's did.
+ */
+const DELIVERED_WITHOUT_AUTHORED_TASKS: Record<string, string> = {
+    'owasp-asi-control-templates.json':
+        'OWASP Agentic AI Top 10 — 10 templates. Delivered 2026-09-07; authoring not yet done.',
+    'imda-mgf-control-templates.json':
+        'IMDA MGF — 4 templates, one per governance dimension. Delivered 2026-09-07; authoring not yet done.',
+    'nist-privacy-control-templates.json':
+        'NIST Privacy Framework — 18 templates, one per privacy Category. Delivered 2026-09-07; authoring not yet done.',
+};
+
 /** Every fixture that carries at least one authored task. */
 function fixturesWithAuthoredTasks(): Array<{ file: string; tasks: number }> {
     return fs
@@ -146,7 +175,9 @@ describe('authored tasks have a delivery path', () => {
                 }
             });
         const withTasks = new Set(authored.map((a) => a.file));
-        expect(named.filter((f) => !withTasks.has(f))).toEqual([]);
+        expect(
+            named.filter((f) => !withTasks.has(f) && !DELIVERED_WITHOUT_AUTHORED_TASKS[f]),
+        ).toEqual([]);
     });
 
     it('every exempt fixture is real, still undelivered, and still carries tasks', () => {
@@ -169,5 +200,24 @@ describe('authored tasks have a delivery path', () => {
             .reduce((n, a) => n + a.tasks, 0);
         expect(Object.keys(KNOWN_UNDELIVERED)).toHaveLength(0);
         expect(undelivered).toBe(0);
+    });
+    it('every delivered-without-authored-tasks entry is real and still unauthored', () => {
+        // Three ways an entry here becomes a lie: the fixture is gone, it was
+        // never wired, or it has since been authored. The third is the one
+        // worth catching — an entry that outlives its gap makes the list read
+        // longer than the debt.
+        const withTasks = new Set(authored.map((a) => a.file));
+        const stale = Object.keys(DELIVERED_WITHOUT_AUTHORED_TASKS).filter(
+            (f) =>
+                !fs.existsSync(path.join(FIXTURE_DIR, f)) ||
+                !seederSource.includes(f) ||
+                withTasks.has(f),
+        );
+        expect(stale).toEqual([]);
+    });
+
+    it('the delivered-without-authored-tasks list is not growing', () => {
+        // Three on 2026-09-07. Each authoring PR removes its own entry.
+        expect(Object.keys(DELIVERED_WITHOUT_AUTHORED_TASKS)).toHaveLength(3);
     });
 });

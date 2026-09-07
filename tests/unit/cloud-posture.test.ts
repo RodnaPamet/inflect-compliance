@@ -118,7 +118,18 @@ describe('GcpPostureProvider', () => {
 
 describe('control-map validity', () => {
     const seed = read('prisma/seed.ts');
-    const icSoc2 = new Set([...seed.matchAll(/code: '(CC\d\.\d)'/g)].map((m) => m[1]));
+        // The SOC 2 criteria come from the CatalogFile production applies,
+        // not from prisma/seed.ts. seed.ts built SOC 2 a second time until
+        // its duplicate block was removed; reading the criteria from a file
+        // production never runs was always the weaker source, and after the
+        // convergence it is no source at all.
+        const icSoc2 = new Set(
+            (
+                JSON.parse(read('prisma/fixtures/soc2-control-templates.json')) as {
+                    requirements: Array<{ code: string }>;
+                }
+            ).requirements.map((r) => r.code),
+        );
     const csfYaml = read('src/data/libraries/nist-csf-2.0.yaml');
     const icCsf = new Set([...csfYaml.matchAll(/ref_id:\s*([A-Z]{2}\.[A-Z]{2}-\d+)/g)].map((m) => m[1]));
 

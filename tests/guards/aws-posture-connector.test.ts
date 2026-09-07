@@ -72,8 +72,17 @@ describe('aws-posture — mapping validity', () => {
         const { allMappedRequirementCodes } = require('@/data/integrations/aws-posture-control-map');
         // IC's seeded SOC2 codes (prisma/seed.ts soc2Reqs).
         const seed = read('prisma/seed.ts');
+        // The SOC 2 criteria come from the CatalogFile production applies,
+        // not from prisma/seed.ts. seed.ts built SOC 2 a second time until
+        // its duplicate block was removed; reading the criteria from a file
+        // production never runs was always the weaker source, and after the
+        // convergence it is no source at all.
         const icSoc2 = new Set(
-            [...seed.matchAll(/code: '(CC\d\.\d)'/g)].map((m) => m[1]),
+            (
+                JSON.parse(read('prisma/fixtures/soc2-control-templates.json')) as {
+                    requirements: Array<{ code: string }>;
+                }
+            ).requirements.map((r) => r.code),
         );
         expect(icSoc2.size).toBeGreaterThanOrEqual(5);
         for (const code of allMappedRequirementCodes().soc2) {

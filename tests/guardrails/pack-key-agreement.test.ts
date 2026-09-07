@@ -45,13 +45,7 @@ const SEED = 'prisma/seed.ts';
  * Do not add one to make a test pass: a NEW divergence means a fresh database
  * and a customer database now disagree about what a pack is called.
  */
-const PACK_KEY_DIVERGENCES: Record<string, { dev: string; production: string }> = {
-    SOC2: { dev: 'SOC2_STARTER_PACK', production: 'SOC2_BASELINE' },
-    'NIST-SSDF': { dev: 'SSDF_STARTER_PACK', production: 'SSDF_CORE' },
-    'CIS-V8': { dev: 'CIS_V8_IG1_PACK', production: 'CIS_V8_IG1' },
-    'OWASP-ASVS': { dev: 'ASVS_L1_PACK', production: 'ASVS_L1' },
-    ISO27701: { dev: 'ISO27701_BASELINE', production: 'ISO27701_CORE' },
-};
+const PACK_KEY_DIVERGENCES: Record<string, { dev: string; production: string }> = {};
 
 /** framework key -> pack key, for every CatalogFile a production seeder applies. */
 function productionPacks(): Map<string, string> {
@@ -108,7 +102,19 @@ describe('the two seeding paths agree on pack keys', () => {
         // and there is no second writer left to disagree.
         const unexplained: string[] = [];
         for (const [fwKey, packKey] of prodPacks) {
-            const seedBuildsFramework = seed.includes(`'${fwKey}'`);
+            // BUILDS, not mentions. A converted framework can still be NAMED
+            // in seed.ts — ISO 27001's coverage-link block re-fetches it with
+            // `framework.findUniqueOrThrow({ where: { key: 'ISO27001' } })`
+            // now that its upsert has moved into applyCatalogFile. Reading a
+            // row is not writing one, and a mention-based rule reported that
+            // re-fetch as a second writer inventing a pack.
+            // Split rather than span: an interior `[\s\S]{0,400}` here would
+            // be Class C debt, and hiding it inside `new RegExp` would put it
+            // where the span analyser cannot see it — worse than the problem.
+            const seedBuildsFramework = seed
+                .split('framework.upsert')
+                .slice(1)
+                .some((block) => block.slice(0, 400).includes(`key: '${fwKey}'`));
             if (!seedBuildsFramework) continue;
             if (seed.includes(`'${packKey}'`)) continue;
             if (PACK_KEY_DIVERGENCES[fwKey]) continue;
@@ -120,8 +126,19 @@ describe('the two seeding paths agree on pack keys', () => {
     });
 
     it('the divergence list is not growing', () => {
-        // Five on 2026-09-06. Each framework conversion removes its own.
-        expect(Object.keys(PACK_KEY_DIVERGENCES).length).toBeLessThanOrEqual(5);
+        // EMPTY, and that is the ratchet arriving where it was pointed.
+        //
+        // It held five when written — SOC 2, NIST SSDF, CIS v8, OWASP ASVS and
+        // ISO 27701, each shipping a pack under one key in dev and another in
+        // production. Every entry left the same way: the framework moved onto
+        // applyCatalogFile and the seed.ts block that invented the second key
+        // went with it. None was deleted to make a test pass.
+        //
+        // Kept as an empty record rather than removed, because the assertions
+        // below are what stop a sixth appearing. A new entry means a fresh
+        // database and a customer database now disagree about what a pack is
+        // called, and the entry would be the only thing saying so.
+        expect(Object.keys(PACK_KEY_DIVERGENCES)).toEqual([]);
     });
 
     it('DORA and NIS2 agree, because they have already converted', () => {

@@ -232,6 +232,20 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'PLATFORM_ADMIN_API_KEY.',
     },
     {
+        path: new RegExp(`^${T}\\/admin\\/mcp\\/quarantine$`),
+        methods: ['GET'],
+        permission: 'admin.agent_registry',
+        note:
+            'The QUARANTINE TRIAGE read — the proposals the agentic output ' +
+            'guard refused, with the payload that was attempted. Same key as ' +
+            'the agent register below and NOT a wider one: the operator move ' +
+            'after reading this page is to suspend or retire the agent that ' +
+            'produced the row, which is the authority that key names. This ' +
+            'rule is REQUIRED, not a stylistic preference over a prefix ' +
+            'match: no other rule in this map matches /admin/mcp/** at all, ' +
+            'so without it the path carries no declared permission.',
+    },
+    {
         path: new RegExp(`^${T}\\/admin\\/agents(\\/.*)?$`),
         permission: 'admin.agent_registry',
         note:

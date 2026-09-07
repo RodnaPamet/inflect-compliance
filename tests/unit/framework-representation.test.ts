@@ -53,6 +53,20 @@ const seededCodes = (declaration: string): string[] =>
     [...declarationOf(fs.readFileSync(path.join(ROOT, 'prisma/seed.ts'), 'utf8'), declaration)
         .matchAll(/\bcode: '([^']+)'/g)].map((m) => m[1]);
 
+/**
+ * The requirement codes a CatalogFile declares — what production actually
+ * creates for that framework.
+ *
+ * SOC 2 used to be read out of `soc2Reqs` in prisma/seed.ts. That block built
+ * the framework a SECOND time alongside the CatalogFile a production seeder
+ * applies, and was removed; seed.ts is not run on deploys, so it was never the
+ * authority here anyway.
+ */
+const catalogCodes = (file: string): string[] =>
+    (JSON.parse(fs.readFileSync(path.join(ROOT, 'prisma/fixtures', file), 'utf8')) as {
+        requirements: Array<{ code: string }>;
+    }).requirements.map((r) => r.code);
+
 const fixtureCodes = (file: string): string[] =>
     (JSON.parse(fs.readFileSync(path.join(ROOT, 'prisma/fixtures', file), 'utf8')) as Array<{
         key: string;
@@ -205,11 +219,11 @@ describe('the shipped data the ISO 27001 rule stands on', () => {
 
 describe('the shipped data the SOC 2 rule stands on', () => {
     const libCodes = libraryCodes('soc2-2017.yaml');
-    const seedCodes = seededCodes('soc2Reqs');
+    const seedCodes = catalogCodes('soc2-control-templates.json');
 
-    it('the detector actually found the seeded criteria', () => {
-        // Without this, a renamed declaration or a reformatted seed would make
-        // every comparison below vacuously true over an empty list.
+    it('the detector actually found the criteria production creates', () => {
+        // Without this, a renamed field or a reshaped fixture would make every
+        // comparison below vacuously true over an empty list.
         expect(seedCodes.length).toBeGreaterThanOrEqual(10);
         expect(seedCodes).toContain('CC6.1');
     });
@@ -237,11 +251,20 @@ describe('the shipped data the SOC 2 rule stands on', () => {
         expect(canonicalCollisions(SOC2_FAMILY_URN, seedCodes)).toEqual([]);
     });
 
-    it('the seed writes the urn, so the legacy entry is a fallback and not the only tie', () => {
-        const soc2Row = declarationOf(
-            fs.readFileSync(path.join(ROOT, 'prisma/seed.ts'), 'utf8'),
-            'soc2',
-        );
-        expect(soc2Row).toContain(`sourceUrn: '${SOC2_FAMILY_URN}'`);
+    it('the applied catalogue writes the urn, so the legacy entry is a fallback and not the only tie', () => {
+        // This read prisma/seed.ts's `soc2` framework row until that row was
+        // removed — SOC 2 was being built twice and the duplicate went.
+        //
+        // The move nearly dropped the urn: unlike the other three frameworks
+        // converged with it, SOC 2 carries no metadataJson, so it was left out
+        // when provenance was added to the CatalogFiles, and nobody noticed it
+        // still had a sourceUrn. This assertion is what caught that.
+        const catalog = JSON.parse(
+            fs.readFileSync(
+                path.join(ROOT, 'prisma/fixtures/soc2-control-templates.json'),
+                'utf8',
+            ),
+        ) as { framework: { sourceUrn?: string } };
+        expect(catalog.framework.sourceUrn).toBe(SOC2_FAMILY_URN);
     });
 });

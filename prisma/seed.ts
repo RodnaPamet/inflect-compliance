@@ -839,12 +839,6 @@ Reviewed at least annually.` },
     console.log(`✅ IC original gap-fill policy templates seeded (${originalGapPolicies.templates.length})`);
 
     // ─── Frameworks & Requirements ───
-    const annexAData = fixtureArray<{
-        key: string; theme: string; themeNumber: number; sortOrder: number; title: string; summary?: string;
-    }>(
-        'fixtures/iso27001_2022_annexA',
-        require('./fixtures/iso27001_2022_annexA.json'),
-    );
 
     // ISO 27001:2022
     // `sourceUrn` ties this row to `src/data/libraries/iso27001-2022.yaml`, the
@@ -853,138 +847,53 @@ Reviewed at least annually.` },
     // set — every mapping is authored against the library key. Note the two
     // representations still number Annex A differently (`5.15` here, `A.5.15`
     // there); `domain/framework-representation.ts` reconciles that half.
-    const iso27001 = await prisma.framework.upsert({
-        where: { key: 'ISO27001' },
-        update: { name: 'ISO/IEC 27001', version: '2022', description: 'ISO/IEC 27001:2022 Information Security Management', sourceUrn: 'urn:inflect:library:iso27001-2022' },
-        create: { key: 'ISO27001', name: 'ISO/IEC 27001', version: '2022', description: 'ISO/IEC 27001:2022 Information Security Management', sourceUrn: 'urn:inflect:library:iso27001-2022' },
-    });
-
-    // Upsert all 93 Annex A requirements
-    const requirementMap: Record<string, string> = {};
-    for (const req of annexAData) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: iso27001.id, code: req.key } },
-            update: { title: req.title, description: req.summary || null, theme: req.theme, themeNumber: req.themeNumber, sortOrder: req.sortOrder },
-            create: { frameworkId: iso27001.id, code: req.key, title: req.title, description: req.summary || null, category: req.theme, theme: req.theme, themeNumber: req.themeNumber, sortOrder: req.sortOrder },
-        });
-        requirementMap[req.key] = r.id;
-    }
-    console.log(`✅ ISO 27001:2022 framework + ${annexAData.length} Annex A requirements seeded`);
-
-    // SOC2
-    // `sourceUrn` ties this row to `src/data/libraries/soc2-2017.yaml`, the
-    // OTHER representation of the same framework, exactly as the ISO 27001 row
-    // above does. Three shipped mapping sets target the library key
-    // (`SOC2-2017`) — from ISO 27001, NIST CSF and the SSDF — and reached
-    // nothing a tenant held against THESE rows until the two were tied.
-    // Unlike ISO 27001 the two representations agree on the code spelling
-    // (`CC6.1` here and there), so no canonicalisation is involved; the
-    // seeded criteria are a strict subset of the library's. An existing
-    // database is not re-seeded on deploy, which is why `SOC2` is also in
-    // `LEGACY_KEY_FAMILY_URNS` (src/app-layer/domain/framework-representation.ts).
-    const soc2 = await prisma.framework.upsert({
-        where: { key: 'SOC2' },
-        update: { name: 'SOC 2', description: 'SOC 2 Trust Services Criteria', sourceUrn: 'urn:inflect:library:soc2-2017' },
-        create: { key: 'SOC2', name: 'SOC 2', description: 'SOC 2 Trust Services Criteria', sourceUrn: 'urn:inflect:library:soc2-2017' },
-    });
-    // The assessable Common Criteria the library (src/data/libraries/soc2-2017.yaml)
-    // declares — one criterion per CC category, plus CC1.2. The three added on
-    // 2026-08-29 (CC1.2, CC4.1, CC9.1) closed the gap between this list and the
-    // library: CC9.1 was already a mapping TARGET in
-    // mappings/iso27001-to-soc2.yaml with no requirement row to resolve against,
-    // and CC4 (Monitoring Activities) was missing from both.
-    const soc2Reqs = [
-        { code: 'CC1.1', title: 'COSO principle 1 — Integrity and ethical values', category: 'Control Environment' },
-        { code: 'CC1.2', title: 'Board independence and oversight', category: 'Control Environment' },
-        { code: 'CC2.1', title: 'Information for internal controls', category: 'Communication' },
-        { code: 'CC3.1', title: 'Specifies objectives', category: 'Risk Assessment' },
-        { code: 'CC4.1', title: 'Evaluates and communicates control deficiencies', category: 'Monitoring Activities' },
-        { code: 'CC5.1', title: 'Selects and develops control activities', category: 'Control Activities' },
-        { code: 'CC6.1', title: 'Logical and physical access controls', category: 'Logical Access' },
-        { code: 'CC7.1', title: 'System operations monitoring', category: 'System Operations' },
-        { code: 'CC8.1', title: 'Change management', category: 'Change Management' },
-        { code: 'CC9.1', title: 'Risk mitigation — business disruption and vendors', category: 'Risk Mitigation' },
-    ];
-    const soc2ReqMap: Record<string, string> = {};
-    for (let i = 0; i < soc2Reqs.length; i++) {
-        const req = soc2Reqs[i];
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: soc2.id, code: req.code } },
-            update: {},
-            create: { frameworkId: soc2.id, code: req.code, title: req.title, category: req.category, sortOrder: i },
-        });
-        soc2ReqMap[req.code] = r.id;
-    }
-
-    // ─── SOC 2 Starter Pack (curated Trust Services Criteria controls) ───
-    // Curated control templates covering the Common Criteria CC1–CC9, each
-    // linked to the specific criterion (or criteria) it satisfies via
-    // soc2ReqMap, so installing the pack produces mapped coverage rather than
-    // the bare 0% a tenant used to get when it installed SOC 2.
+    // ISO/IEC 27001:2022 Annex A — one writer, shared with production.
     //
-    // Distinct 'TSC-' code prefix. It must NOT be 'SOC2-': that prefix is owned
-    // by scripts/backfill-framework-catalog.mjs, which packs every
-    // 'SOC2-'-prefixed template into SOC2_BASELINE by code prefix — sharing the
-    // prefix would make the two packs swallow each other's templates.
+    // The framework, its 93 requirements, the 93 A-<key> templates and the
+    // ISO27001_2022_BASE pack were four spans scattered across 500 lines here,
+    // and production ran none of them: prisma/seed.ts is not run on deploys.
+    // Production holds the Annex A catalogue only because a one-off backfill
+    // put it there, so a fresh database or a restore gets nothing.
     //
-    // The fixture is a CatalogFile — `{ framework, requirements, templates,
-    // pack }` — since the templates gained authored task sets and a delivery
-    // path through `applyCatalogFile` (scripts/seed-framework-catalogs.ts).
-    // This block reads `.templates` out of it and otherwise behaves as before:
-    // dev and CI seed through here, production through the catalog seeder.
-    //
-    // Read via the shape, NOT through an `as` cast over the whole file. The
-    // previous line cast the JSON straight to an array, so when the file
-    // became an object the cast still compiled and `for...of` threw at
-    // runtime — taking the entire seed down and failing E2E specs that have
-    // nothing to do with SOC 2. A cast is a claim the compiler stops checking.
-    const soc2Catalog = fixtureObject<{
-        templates: Array<{
-            code: string; title: string; description: string; category: string;
-            defaultFrequency: string; requirementCodes: string[];
-            tasks: Array<{ title: { en: string }; description: { en: string } }>;
-        }>;
-    }>(
-        'fixtures/soc2-control-templates',
-        require('./fixtures/soc2-control-templates.json'),
-        'templates',
+    // This is also the precondition for AUTHORING. The inline loop wrote
+    // GENERIC_TEMPLATE_TASKS for every one of the 93 controls — 465 placeholder
+    // tasks, the largest such population in the product — and there was
+    // nowhere for authored content to live. The fixture carries `tasks: []`
+    // today, which applyCatalogFile turns into the same generic five, so this
+    // change moves no content. The authoring follows, per theme.
+    const iso27001Result = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/iso27001-control-templates.json'),
+        'prisma/fixtures/iso27001-control-templates.json',
     );
-    const soc2StarterControls = soc2Catalog.templates;
-    for (const c of soc2StarterControls) {
-        const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: {
-                    code: c.code,
-                    title: c.title,
-                    description: c.description,
-                    category: c.category,
-                    defaultFrequency: c.defaultFrequency as ControlFrequency,
-                },
-            });
-            for (const task of c.tasks) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
-            }
-            for (const rk of c.requirementCodes) {
-                if (soc2ReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: soc2ReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    const soc2StarterTmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'TSC-' } } });
-    const soc2StarterPack = await prisma.frameworkPack.upsert({
-        where: { key: 'SOC2_STARTER_PACK' },
-        update: { name: 'SOC 2 Starter Pack', frameworkId: soc2.id },
-        create: { key: 'SOC2_STARTER_PACK', name: 'SOC 2 Starter Pack', frameworkId: soc2.id, description: 'Curated SOC 2 Common Criteria controls (CC1–CC9) with default tasks, mapped to the Trust Services Criteria.' },
-    });
-    for (const tmpl of soc2StarterTmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: soc2StarterPack.id, templateId: tmpl.id } },
-            create: { packId: soc2StarterPack.id, templateId: tmpl.id }, update: {},
-        });
-    }
-    console.log(`✅ SOC 2 + ${soc2Reqs.length} criteria + SOC 2 Starter Pack (${soc2StarterControls.length} curated controls) seeded`);
+    console.log(
+        `✅ ISO 27001: ${iso27001Result.requirements.upserted} Annex A requirements, ` +
+            `${iso27001Result.templates.created} templates, ` +
+            `tasks ${iso27001Result.tasks.created}c/${iso27001Result.tasks.unchanged}=`,
+    );
+
+    // ─── SOC2 — one writer, shared with production ───
+    //
+    // The CatalogFile below already carried this framework, its requirements,
+    // its templates and their AUTHORED tasks, and scripts/seed-framework-catalogs.ts
+    // has been applying it on every production start. seed.ts built the whole
+    // thing a SECOND time — a duplicate writer for rows production already
+    // had, differing only in the pack key it invented.
+    //
+    // That invented key is why this mattered beyond tidiness: production has
+    // SOC2_BASELINE, seed.ts made a different one, and guards
+    // elsewhere asserted the seed.ts spelling — naming a pack no customer has.
+    // pack-key-agreement recorded the divergence; this closes it.
+    const soc2Result = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/soc2-control-templates.json'),
+        'prisma/fixtures/soc2-control-templates.json',
+    );
+    console.log(
+        `✅ SOC2: ${soc2Result.requirements.upserted} requirements, ` +
+            `${soc2Result.templates.created} templates, ` +
+            `tasks ${soc2Result.tasks.created}c/${soc2Result.tasks.unchanged}=`,
+    );
 
     // NIS2 — one writer, shared with production.
     //
@@ -1250,28 +1159,6 @@ Reviewed at least annually.` },
 
     console.log('✅ SOC2 + NIS2 + ISO9001 + ISO28000 + ISO39001 frameworks seeded');
 
-    // ─── ISO 27001:2022 Control Templates (one per Annex A control) ───
-
-    let templatesCreated = 0;
-    for (const req of annexAData) {
-        const code = `A-${req.key}`;
-        const existing = await prisma.controlTemplate.findUnique({ where: { code } });
-        if (!existing) {
-            const template = await prisma.controlTemplate.create({
-                data: { code, title: req.title, description: req.summary || null, category: req.theme, defaultFrequency: 'QUARTERLY' },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({
-                    data: { templateId: template.id, title: task.title, description: task.description },
-                });
-            }
-            await prisma.controlTemplateRequirementLink.create({
-                data: { templateId: template.id, requirementId: requirementMap[req.key] },
-            });
-            templatesCreated++;
-        }
-    }
-    console.log(`✅ ISO 27001 control templates seeded (${templatesCreated} new)`);
 
 
 
@@ -1345,20 +1232,6 @@ Reviewed at least annually.` },
     console.log('✅ ISO 39001 control templates seeded');
 
     // ─── Framework Packs ───
-    const allIsoTemplates = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'A-' } } });
-    const pack = await prisma.frameworkPack.upsert({
-        where: { key: 'ISO27001_2022_BASE' },
-        update: { name: 'ISO 27001:2022 Starter Pack', frameworkId: iso27001.id, version: '2022' },
-        create: { key: 'ISO27001_2022_BASE', name: 'ISO 27001:2022 Starter Pack', frameworkId: iso27001.id, version: '2022', description: 'Full Annex A control set with default implementation tasks.' },
-    });
-    for (const tmpl of allIsoTemplates) {
-        const existing = await prisma.packTemplateLink.findUnique({
-            where: { packId_templateId: { packId: pack.id, templateId: tmpl.id } },
-        });
-        if (!existing) {
-            await prisma.packTemplateLink.create({ data: { packId: pack.id, templateId: tmpl.id } });
-        }
-    }
 
 
 
@@ -1587,625 +1460,169 @@ Reviewed at least annually.` },
     }
     console.log(`✅ EU AI Act framework + ${euAiActData.length} obligations + ${euAiActTiers.size} risk-tier packs seeded`);
 
-    // ─── OWASP Agentic AI Top 10 (ASI01–ASI10) ───
-    // Governs AI as an ACTOR, which NIST AI RMF / ISO 42001 / the EU AI Act do
-    // not: none of those contains a control set for tool calls, delegated
-    // identity, inter-agent messaging or persistent memory. CC-BY-SA-4.0 —
-    // reference INDEX (canonical ASI ids + short titles) + Inflect-authored
-    // governance summaries, never the verbatim OWASP prose. Rides the generic
-    // framework/pack machinery: one control template per risk.
-    const asiData = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/owasp_asi_requirements',
-        require('./fixtures/owasp_asi_requirements.json'),
+    // ─── OWASP-ASI — one writer, shared with production ───
+    //
+    // Built inline here until now, and prisma/seed.ts is not run on production
+    // deploys — so production has NEVER held this framework: not the framework
+    // row, not its templates, not its pack. A fresh database got it; a customer
+    // never did.
+    //
+    // The fixture was extracted from a database seeded by the block this
+    // replaces, so the templates, their categories, frequencies and requirement
+    // links are exactly what the inline grouping produced rather than a
+    // re-derivation of it. Tasks are unchanged: the fixture carries none, which
+    // applyCatalogFile turns into the same generic five the loop wrote.
+    const asiResult = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/owasp-asi-control-templates.json'),
+        'prisma/fixtures/owasp-asi-control-templates.json',
     );
-    const asiMeta = JSON.stringify({
-        locale: 'en',
-        provider: 'OWASP',
-        packager: 'inflect',
-        license: 'CC-BY-SA-4.0',
-        sourceUrl: 'https://genai.owasp.org/',
-        copyright:
-            'OWASP Agentic AI Top 10 © OWASP Foundation / OWASP GenAI Security ' +
-            'Project, licensed CC-BY-SA-4.0 (https://creativecommons.org/licenses/by-sa/4.0/). ' +
-            'Source: https://genai.owasp.org/. Inflect stores a reference index ' +
-            '(canonical ASI identifiers + short risk titles) with its own governance ' +
-            'summaries, not the verbatim OWASP risk prose.',
-    });
-    const asi = await prisma.framework.upsert({
-        where: { key_version: { key: 'OWASP-ASI', version: '1.0' } },
-        update: { name: 'OWASP Agentic AI Top 10', kind: 'INDUSTRY_STANDARD', description: 'The ten most critical security risks specific to AI systems that act — agents that plan, call tools, hold delegated identity and carry memory.', metadataJson: asiMeta, sourceUrn: 'urn:inflect:library:owasp-agentic-top10' },
-        create: { key: 'OWASP-ASI', name: 'OWASP Agentic AI Top 10', version: '1.0', kind: 'INDUSTRY_STANDARD', description: 'The ten most critical security risks specific to AI systems that act — agents that plan, call tools, hold delegated identity and carry memory.', metadataJson: asiMeta, sourceUrn: 'urn:inflect:library:owasp-agentic-top10' },
-    });
-    const asiReqMap: Record<string, string> = {};
-    for (const req of asiData) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: asi.id, code: req.key } },
-            update: { title: req.title, section: req.section, sortOrder: req.sortOrder },
-            create: { frameworkId: asi.id, code: req.key, title: req.title, section: req.section, category: 'OWASP Agentic AI Top 10', sortOrder: req.sortOrder },
-        });
-        asiReqMap[req.key] = r.id;
-    }
-    // One control template per risk (10) — the risk IS the assessable unit here,
-    // unlike AISVS where 191 requirements roll up to 12 chapter templates.
-    for (const req of asiData) {
-        const code = `ASI-${req.key.slice(3)}`;
-        const existing = await prisma.controlTemplate.findUnique({ where: { code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: { code, title: req.title, category: 'OWASP Agentic AI Top 10', defaultFrequency: 'QUARTERLY' },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
-            }
-            if (asiReqMap[req.key]) {
-                await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: asiReqMap[req.key] } }).catch(() => { });
-            }
-        }
-    }
-    const asiTmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'ASI-' } } });
-    const asiPack = await prisma.frameworkPack.upsert({
-        where: { key: 'OWASP_ASI_BASELINE' },
-        update: { name: 'OWASP Agentic AI Top 10 Baseline Pack', frameworkId: asi.id, version: '1.0' },
-        create: { key: 'OWASP_ASI_BASELINE', name: 'OWASP Agentic AI Top 10 Baseline Pack', frameworkId: asi.id, version: '1.0', description: 'One control per agentic-AI risk, ASI01 through ASI10.' },
-    });
-    for (const tmpl of asiTmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: asiPack.id, templateId: tmpl.id } },
-            create: { packId: asiPack.id, templateId: tmpl.id }, update: {},
-        });
-    }
-    console.log(`✅ OWASP Agentic AI Top 10 framework + ${asiData.length} risks + ${asiTmpls.length} control templates seeded`);
-
-    // ─── IMDA Model AI Governance Framework (May 2026 revision) ───
-    // The governance counterpart to the OWASP agentic threat model: four
-    // dimensions (bound risks upfront / meaningful human accountability /
-    // technical controls and processes / end-user responsibility), extended by
-    // the May 2026 revision for multi-agent systems, third-party agents and
-    // automation bias. The four dimensions are the framework's own structure;
-    // the MGF-<dimension>.<n> requirement keys are INFLECT-ASSIGNED (the MGF
-    // publishes narrative guidance, not numbered clauses) — see
-    // docs/implementation-notes/2026-09-05-agentic-frameworks.md.
-    const mgfData = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/imda_mgf_requirements',
-        require('./fixtures/imda_mgf_requirements.json'),
+    console.log(
+        `✅ OWASP-ASI: ${asiResult.requirements.upserted} requirements, ` +
+            `${asiResult.templates.created} templates, ` +
+            `pack ${asiResult.pack?.key ?? '-'}`,
     );
-    const mgfMeta = JSON.stringify({
-        locale: 'en',
-        provider: 'IMDA Singapore',
-        packager: 'inflect',
-        publicationDate: '2026-05',
-        sourceUrl: 'https://www.imda.gov.sg/',
-        notLegalAdvice: true,
-        identifiersAssignedByPackager: true,
-        copyright:
-            'Model AI Governance Framework © Infocomm Media Development Authority / ' +
-            'Personal Data Protection Commission, Singapore. Source: https://www.imda.gov.sg/. ' +
-            'Inflect stores dimension titles and its own governance summaries with ' +
-            'attribution, not the verbatim publication prose; requirement identifiers ' +
-            'are Inflect-assigned and are not IMDA clause numbers. Not legal advice.',
-    });
-    const mgf = await prisma.framework.upsert({
-        where: { key_version: { key: 'IMDA-MGF', version: '2026' } },
-        update: { name: 'IMDA Model AI Governance Framework (May 2026)', kind: 'INDUSTRY_STANDARD', description: 'Four AI-governance dimensions — bound risks upfront, meaningful human accountability, technical controls and processes, end-user responsibility — extended for agentic deployments.', metadataJson: mgfMeta, sourceUrn: 'urn:inflect:library:imda-mgf-2026' },
-        create: { key: 'IMDA-MGF', name: 'IMDA Model AI Governance Framework (May 2026)', version: '2026', kind: 'INDUSTRY_STANDARD', description: 'Four AI-governance dimensions — bound risks upfront, meaningful human accountability, technical controls and processes, end-user responsibility — extended for agentic deployments.', metadataJson: mgfMeta, sourceUrn: 'urn:inflect:library:imda-mgf-2026' },
-    });
-    const mgfReqMap: Record<string, string> = {};
-    for (const req of mgfData) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: mgf.id, code: req.key } },
-            update: { title: req.title, section: req.section, sortOrder: req.sortOrder },
-            create: { frameworkId: mgf.id, code: req.key, title: req.title, section: req.section, category: req.section, sortOrder: req.sortOrder },
-        });
-        mgfReqMap[req.key] = r.id;
-    }
-    // One control template per dimension (4).
-    const mgfDimensions = new Map<string, { title: string; reqs: string[] }>();
-    for (const req of mgfData) {
-        if (!mgfDimensions.has(req.section)) mgfDimensions.set(req.section, { title: req.section, reqs: [] });
-        mgfDimensions.get(req.section)!.reqs.push(req.key);
-    }
-    for (const [, info] of mgfDimensions) {
-        // Code is derived from the dimension label in the data ("D1 Bound risks
-        // upfront" → MGF-D1), not from loop position — reordering the fixture
-        // must not silently re-point a template at a different dimension.
-        const code = `MGF-${info.title.split(' ')[0]}`;
-        const existing = await prisma.controlTemplate.findUnique({ where: { code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: { code, title: info.title, category: 'IMDA MGF', defaultFrequency: 'ANNUALLY' },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
-            }
-            for (const rk of info.reqs) {
-                if (mgfReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: mgfReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    const mgfTmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'MGF-D' } } });
-    const mgfPack = await prisma.frameworkPack.upsert({
-        where: { key: 'IMDA_MGF_BASELINE' },
-        update: { name: 'IMDA MGF Baseline Pack', frameworkId: mgf.id, version: '2026' },
-        create: { key: 'IMDA_MGF_BASELINE', name: 'IMDA MGF Baseline Pack', frameworkId: mgf.id, version: '2026', description: 'IMDA Model AI Governance Framework requirements across the four governance dimensions.' },
-    });
-    for (const tmpl of mgfTmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: mgfPack.id, templateId: tmpl.id } },
-            create: { packId: mgfPack.id, templateId: tmpl.id }, update: {},
-        });
-    }
-    console.log(`✅ IMDA MGF framework + ${mgfData.length} requirements + ${mgfDimensions.size} dimension packs seeded`);
 
-    // ─── NIST Privacy Framework v1.0 ───
-    // PUBLIC DOMAIN (NIST): "Information presented on NIST sites is considered
-    // public information and may be distributed or copied." The privacy
-    // companion to NIST CSF 2.0 (same Function/Category/Subcategory structure).
-    // Rides the generic framework/pack machinery — no special-casing.
-    const nistPrivacyData = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/nist_privacy_framework_requirements',
-        require('./fixtures/nist_privacy_framework_requirements.json'),
+    // ─── IMDA-MGF — one writer, shared with production ───
+    //
+    // Built inline here until now, and prisma/seed.ts is not run on production
+    // deploys — so production has NEVER held this framework: not the framework
+    // row, not its templates, not its pack. A fresh database got it; a customer
+    // never did.
+    //
+    // The fixture was extracted from a database seeded by the block this
+    // replaces, so the templates, their categories, frequencies and requirement
+    // links are exactly what the inline grouping produced rather than a
+    // re-derivation of it. Tasks are unchanged: the fixture carries none, which
+    // applyCatalogFile turns into the same generic five the loop wrote.
+    const mgfResult = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/imda-mgf-control-templates.json'),
+        'prisma/fixtures/imda-mgf-control-templates.json',
     );
-    const nistPrivacyMeta = JSON.stringify({
-        locale: 'en',
-        provider: 'NIST',
-        packager: 'inflect',
-        publicationDate: '2020-01-16',
-        license: 'public-domain',
-        sourceUrl: 'https://www.nist.gov/privacy-framework',
-        copyright:
-            'Information presented on NIST sites is considered public ' +
-            'information and may be distributed or copied.',
-    });
-    const nistPrivacy = await prisma.framework.upsert({
-        where: { key_version: { key: 'NIST-PRIVACY', version: '1.0' } },
-        update: { name: 'NIST Privacy Framework v1.0', kind: 'NIST_FRAMEWORK', description: 'Privacy outcomes (Functions/Categories/Subcategories) for managing privacy risk — the privacy companion to NIST CSF.', metadataJson: nistPrivacyMeta, sourceUrn: 'urn:inflect:library:nist-privacy-framework-1.0' },
-        create: { key: 'NIST-PRIVACY', name: 'NIST Privacy Framework v1.0', version: '1.0', kind: 'NIST_FRAMEWORK', description: 'Privacy outcomes (Functions/Categories/Subcategories) for managing privacy risk — the privacy companion to NIST CSF.', metadataJson: nistPrivacyMeta, sourceUrn: 'urn:inflect:library:nist-privacy-framework-1.0' },
-    });
-    const nistPrivacyReqMap: Record<string, string> = {};
-    for (const req of nistPrivacyData) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: nistPrivacy.id, code: req.key } },
-            update: { title: req.title, section: req.section, sortOrder: req.sortOrder },
-            create: { frameworkId: nistPrivacy.id, code: req.key, title: req.title, section: req.section, category: req.section, sortOrder: req.sortOrder },
-        });
-        nistPrivacyReqMap[req.key] = r.id;
-    }
-    // One control template per Category (the 18 privacy Categories).
-    const nistPrivacyGroups = new Map<string, { title: string; reqs: string[] }>();
-    for (const req of nistPrivacyData) {
-        if (!nistPrivacyGroups.has(req.section)) nistPrivacyGroups.set(req.section, { title: req.section, reqs: [] });
-        nistPrivacyGroups.get(req.section)!.reqs.push(req.key);
-    }
-    let nistPrivacyGroupIdx = 0;
-    for (const [, info] of nistPrivacyGroups) {
-        const code = `PRIV-${String(nistPrivacyGroupIdx++).padStart(2, '0')}`;
-        const existing = await prisma.controlTemplate.findUnique({ where: { code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: { code, title: info.title, category: 'NIST Privacy', defaultFrequency: 'ANNUALLY' },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
-            }
-            for (const rk of info.reqs) {
-                if (nistPrivacyReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: nistPrivacyReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    const nistPrivacyTmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'PRIV-' } } });
-    const nistPrivacyPack = await prisma.frameworkPack.upsert({
-        where: { key: 'NIST_PRIVACY_BASELINE' },
-        update: { name: 'NIST Privacy Framework Baseline Pack', frameworkId: nistPrivacy.id, version: '1.0' },
-        create: { key: 'NIST_PRIVACY_BASELINE', name: 'NIST Privacy Framework Baseline Pack', frameworkId: nistPrivacy.id, version: '1.0', description: 'NIST Privacy Framework v1.0 privacy Functions, Categories, and Subcategories.' },
-    });
-    for (const tmpl of nistPrivacyTmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: nistPrivacyPack.id, templateId: tmpl.id } },
-            create: { packId: nistPrivacyPack.id, templateId: tmpl.id }, update: {},
-        });
-    }
-    console.log(`✅ NIST Privacy Framework + ${nistPrivacyData.length} subcategories + ${nistPrivacyGroups.size} category packs seeded`);
-
-    // ─── NIST SSDF (SP 800-218) v1.1 ───
-    // PUBLIC DOMAIN (NIST): "Information presented on NIST sites is considered
-    // public information and may be distributed or copied." The Secure Software
-    // Development Framework — four practice groups (PO/PS/PW/RV) → practices →
-    // tasks. Underpins US federal secure-software self-attestation (EO 14028 /
-    // OMB M-22-18). Rides the generic framework/pack machinery — no special-casing.
-    const nistSsdfData = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/nist_ssdf_requirements',
-        require('./fixtures/nist_ssdf_requirements.json'),
+    console.log(
+        `✅ IMDA-MGF: ${mgfResult.requirements.upserted} requirements, ` +
+            `${mgfResult.templates.created} templates, ` +
+            `pack ${mgfResult.pack?.key ?? '-'}`,
     );
-    const nistSsdfMeta = JSON.stringify({
-        locale: 'en',
-        provider: 'NIST',
-        packager: 'inflect',
-        publicationDate: '2022-02-03',
-        license: 'public-domain',
-        sourceUrl: 'https://csrc.nist.gov/Projects/ssdf',
-        selfAttestation: 'US federal secure-software self-attestation (EO 14028 / OMB M-22-18)',
-        copyright:
-            'Information presented on NIST sites is considered public ' +
-            'information and may be distributed or copied.',
-    });
-    const nistSsdf = await prisma.framework.upsert({
-        where: { key_version: { key: 'NIST-SSDF', version: '1.1' } },
-        update: { name: 'NIST SSDF (SP 800-218) v1.1', kind: 'NIST_FRAMEWORK', description: 'Secure software development practices (Prepare / Protect / Produce / Respond) — the SSDF underpins US federal secure-software self-attestation.', metadataJson: nistSsdfMeta, sourceUrn: 'urn:inflect:library:nist-ssdf-800-218' },
-        create: { key: 'NIST-SSDF', name: 'NIST SSDF (SP 800-218) v1.1', version: '1.1', kind: 'NIST_FRAMEWORK', description: 'Secure software development practices (Prepare / Protect / Produce / Respond) — the SSDF underpins US federal secure-software self-attestation.', metadataJson: nistSsdfMeta, sourceUrn: 'urn:inflect:library:nist-ssdf-800-218' },
-    });
-    const nistSsdfReqMap: Record<string, string> = {};
-    for (const req of nistSsdfData) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: nistSsdf.id, code: req.key } },
-            update: { title: req.title, section: req.section, sortOrder: req.sortOrder },
-            create: { frameworkId: nistSsdf.id, code: req.key, title: req.title, section: req.section, category: req.section, sortOrder: req.sortOrder },
-        });
-        nistSsdfReqMap[req.key] = r.id;
-    }
-    // One control template per practice (the 19 SSDF practices). Curated,
-    // higher-quality control templates land with the SSDF Starter Pack.
-    const nistSsdfGroups = new Map<string, { title: string; reqs: string[] }>();
-    for (const req of nistSsdfData) {
-        if (!nistSsdfGroups.has(req.section)) nistSsdfGroups.set(req.section, { title: req.section, reqs: [] });
-        nistSsdfGroups.get(req.section)!.reqs.push(req.key);
-    }
-    let nistSsdfGroupIdx = 0;
-    for (const [, info] of nistSsdfGroups) {
-        const code = `SSDF-${String(nistSsdfGroupIdx++).padStart(2, '0')}`;
-        const existing = await prisma.controlTemplate.findUnique({ where: { code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: { code, title: info.title, category: 'Secure Development', defaultFrequency: 'ANNUALLY' },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
-            }
-            for (const rk of info.reqs) {
-                if (nistSsdfReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: nistSsdfReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    const nistSsdfTmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'SSDF-' } } });
-    const nistSsdfPack = await prisma.frameworkPack.upsert({
-        where: { key: 'NIST_SSDF_BASELINE' },
-        update: { name: 'NIST SSDF Baseline Pack', frameworkId: nistSsdf.id, version: '1.1' },
-        create: { key: 'NIST_SSDF_BASELINE', name: 'NIST SSDF Baseline Pack', frameworkId: nistSsdf.id, version: '1.1', description: 'NIST SSDF (SP 800-218) v1.1 practice groups, practices, and tasks.' },
-    });
-    for (const tmpl of nistSsdfTmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: nistSsdfPack.id, templateId: tmpl.id } },
-            create: { packId: nistSsdfPack.id, templateId: tmpl.id }, update: {},
-        });
-    }
-    console.log(`✅ NIST SSDF + ${nistSsdfData.length} tasks + ${nistSsdfGroups.size} practice packs seeded`);
 
-    // ─── SSDF Starter Pack (curated secure-development controls) ───
-    // Curated, higher-quality control templates (one per SSDF practice) that
-    // give an SSDF adopter a real coverage baseline on day one — quality over
-    // count. Distinct 'SDLC-' code prefix so they do not collide with the
-    // auto-generated NIST_SSDF_BASELINE 'SSDF-NN' templates. Each control links
-    // to the specific SSDF task requirement(s) it satisfies (via nistSsdfReqMap
-    // from the framework block above), so installing the pack produces mapped
-    // coverage, not bare 0%.
-        // CatalogFile shape — see the SOC 2 block above and
-        // scripts/seed-framework-catalogs.ts. Read via `.templates`, NOT an
-        // `as Array<...>` cast over the whole file: that cast compiled after the
-        // fixture became an object and `for...of` threw at runtime, taking the
-        // whole seed down.
-    const ssdfStarterControls = (fixtureObject<{
-        templates: Array<{
-        code: string; title: string; description: string; defaultFrequency: string; requirementCodes: string[]; tasks: Array<{ title: { en: string }; description: { en: string } }>;
-        }>;
-    }>(
-        'fixtures/ssdf-control-templates',
-        require('./fixtures/ssdf-control-templates.json'),
-        'templates',
-    )).templates;
-    for (const c of ssdfStarterControls) {
-        const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: {
-                    code: c.code,
-                    title: c.title,
-                    description: c.description,
-                    category: 'Secure Development',
-                    defaultFrequency: c.defaultFrequency as ControlFrequency,
-                },
-            });
-            for (const task of c.tasks) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
-            }
-            for (const rk of c.requirementCodes) {
-                if (nistSsdfReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: nistSsdfReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    const ssdfStarterTmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'SDLC-' } } });
-    const ssdfStarterPack = await prisma.frameworkPack.upsert({
-        where: { key: 'SSDF_STARTER_PACK' },
-        update: { name: 'SSDF Starter Pack', frameworkId: nistSsdf.id, version: '1.1' },
-        create: { key: 'SSDF_STARTER_PACK', name: 'SSDF Starter Pack', frameworkId: nistSsdf.id, version: '1.1', description: 'Curated secure-development controls (one per SSDF practice) with default tasks, mapped to SSDF requirements.' },
-    });
-    for (const tmpl of ssdfStarterTmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: ssdfStarterPack.id, templateId: tmpl.id } },
-            create: { packId: ssdfStarterPack.id, templateId: tmpl.id }, update: {},
-        });
-    }
-    console.log(`✅ SSDF Starter Pack + ${ssdfStarterControls.length} curated controls seeded`);
-
-    // ─── CIS Critical Security Controls v8 ───
-    // STRUCTURAL OUTLINE ONLY. CIS Controls v8 are (c) Center for Internet
-    // Security, licensed CC BY-NC-SA 4.0 (NonCommercial + ShareAlike). Because
-    // Inflect Compliance is a commercial product, we ship ONLY the factual
-    // identifiers (Control 1-18, Safeguard numbers), the short factual titles,
-    // and the IG1/IG2/IG3 structure. All descriptive text is our own paraphrase.
-    // Full CIS Controls: https://www.cisecurity.org/controls. Rides the generic
-    // framework/pack machinery — no special-casing.
-    const cisData = fixtureArray<{ key: string; section: string; category: string; sortOrder: number; title: string }>(
-        'fixtures/cis-v8-requirements',
-        require('./fixtures/cis-v8-requirements.json'),
+    // ─── NIST-PRIVACY — one writer, shared with production ───
+    //
+    // Built inline here until now, and prisma/seed.ts is not run on production
+    // deploys — so production has NEVER held this framework: not the framework
+    // row, not its templates, not its pack. A fresh database got it; a customer
+    // never did.
+    //
+    // The fixture was extracted from a database seeded by the block this
+    // replaces, so the templates, their categories, frequencies and requirement
+    // links are exactly what the inline grouping produced rather than a
+    // re-derivation of it. Tasks are unchanged: the fixture carries none, which
+    // applyCatalogFile turns into the same generic five the loop wrote.
+    const nistPrivacyResult = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/nist-privacy-control-templates.json'),
+        'prisma/fixtures/nist-privacy-control-templates.json',
     );
-    const cisMeta = JSON.stringify({
-        locale: 'en',
-        provider: 'Center for Internet Security',
-        packager: 'inflect',
-        publicationDate: '2021-05-18',
-        license: 'CC-BY-NC-SA-4.0',
-        sourceUrl: 'https://www.cisecurity.org/controls',
-        note: 'Structural outline only — identifiers, titles, and IG structure reused under CC BY-NC-SA 4.0; all descriptions are original paraphrases.',
-        copyright:
-            'CIS Critical Security Controls v8 are (c) Center for Internet ' +
-            'Security and licensed CC BY-NC-SA 4.0.',
-    });
-    const cisFramework = await prisma.framework.upsert({
-        where: { key_version: { key: 'CIS-V8', version: '8' } },
-        update: { name: 'CIS Critical Security Controls v8', kind: 'INDUSTRY_STANDARD', description: 'A prioritized set of 18 controls and 153 safeguards, grouped into Implementation Groups IG1-IG3, to mitigate the most common cyber attacks.', metadataJson: cisMeta, sourceUrn: 'urn:inflect:library:cis-controls-v8' },
-        create: { key: 'CIS-V8', name: 'CIS Critical Security Controls v8', version: '8', kind: 'INDUSTRY_STANDARD', description: 'A prioritized set of 18 controls and 153 safeguards, grouped into Implementation Groups IG1-IG3, to mitigate the most common cyber attacks.', metadataJson: cisMeta, sourceUrn: 'urn:inflect:library:cis-controls-v8' },
-    });
-    const cisReqMap: Record<string, string> = {};
-    for (const req of cisData) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: cisFramework.id, code: req.key } },
-            update: { title: req.title, section: req.section, category: req.category, sortOrder: req.sortOrder },
-            create: { frameworkId: cisFramework.id, code: req.key, title: req.title, section: req.section, category: req.category, sortOrder: req.sortOrder },
-        });
-        cisReqMap[req.key] = r.id;
-    }
-    // ─── CIS v8 IG1 Starter Pack (curated essential cyber-hygiene controls) ───
-    // Curated control templates — one per CIS control that carries IG1 safeguards
-    // (the essential cyber-hygiene baseline) — so a CIS adopter gets mapped
-    // coverage on day one, not a bare 0%. Distinct 'CIS-' code prefix. Each
-    // control links to the specific IG1 safeguard requirement(s) it satisfies.
-        // CatalogFile shape — see the SOC 2 block above and
-        // scripts/seed-framework-catalogs.ts. Read via `.templates`, NOT an
-        // `as Array<...>` cast over the whole file: that cast compiled after the
-        // fixture became an object and `for...of` threw at runtime, taking the
-        // whole seed down.
-    const cisIg1Controls = (fixtureObject<{
-        templates: Array<{
-        code: string; title: string; description: string; defaultFrequency: string; requirementCodes: string[]; tasks: Array<{ title: { en: string }; description: { en: string } }>;
-        }>;
-    }>(
-        'fixtures/cis-v8-ig1-control-templates',
-        require('./fixtures/cis-v8-ig1-control-templates.json'),
-        'templates',
-    )).templates;
-    for (const c of cisIg1Controls) {
-        const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: {
-                    code: c.code,
-                    title: c.title,
-                    description: c.description,
-                    category: 'Cyber Hygiene',
-                    defaultFrequency: c.defaultFrequency as ControlFrequency,
-                },
-            });
-            for (const task of c.tasks) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
-            }
-            for (const rk of c.requirementCodes) {
-                if (cisReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: cisReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    const cisIg1Tmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'CIS-' } } });
-    const cisIg1Pack = await prisma.frameworkPack.upsert({
-        where: { key: 'CIS_V8_IG1_PACK' },
-        update: { name: 'CIS Controls v8 — IG1 Starter Pack', frameworkId: cisFramework.id, version: '8' },
-        create: { key: 'CIS_V8_IG1_PACK', name: 'CIS Controls v8 — IG1 Starter Pack', frameworkId: cisFramework.id, version: '8', description: 'Curated essential cyber-hygiene controls covering the IG1 safeguards of the CIS Critical Security Controls v8, each mapped to its safeguards.' },
-    });
-    for (const tmpl of cisIg1Tmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: cisIg1Pack.id, templateId: tmpl.id } },
-            create: { packId: cisIg1Pack.id, templateId: tmpl.id }, update: {},
-        });
-    }
-    console.log(`✅ CIS Controls v8 + ${cisData.length} safeguards + IG1 Starter Pack (${cisIg1Controls.length} controls) seeded`);
-
-    // ─── OWASP Application Security Verification Standard (ASVS) 4.0.3 ───
-    // STRUCTURAL OUTLINE ONLY. OWASP ASVS is (c) the OWASP Foundation, licensed
-    // CC BY-SA 4.0 (ShareAlike). Because ShareAlike would force us to relicense
-    // derivative content — incompatible with Inflect Compliance as a proprietary
-    // product — we ship ONLY the factual identifiers (chapters V1-V14, requirement
-    // numbers such as V2.1.1), the short factual titles, and the L1/L2/L3
-    // verification-level structure. All descriptive text is our own paraphrase.
-    // Full standard: https://owasp.org/www-project-application-security-verification-standard/
-    // Rides the generic framework/pack machinery — no special-casing.
-    const asvsData = fixtureArray<{ key: string; section: string; category: string; sortOrder: number; title: string }>(
-        'fixtures/asvs-requirements',
-        require('./fixtures/asvs-requirements.json'),
+    console.log(
+        `✅ NIST-PRIVACY: ${nistPrivacyResult.requirements.upserted} requirements, ` +
+            `${nistPrivacyResult.templates.created} templates, ` +
+            `pack ${nistPrivacyResult.pack?.key ?? '-'}`,
     );
-    const asvsMeta = JSON.stringify({
-        locale: 'en',
-        provider: 'OWASP Foundation',
-        packager: 'inflect',
-        publicationDate: '2021-10-01',
-        license: 'CC-BY-SA-4.0',
-        sourceUrl: 'https://owasp.org/www-project-application-security-verification-standard/',
-        note: 'Structural outline only — identifiers, titles, and L1/L2/L3 structure reused under CC BY-SA 4.0; all descriptions are original paraphrases because the share-alike term is incompatible with embedding the text in a proprietary product.',
-        copyright:
-            'OWASP Application Security Verification Standard 4.0.3 is (c) the ' +
-            'OWASP Foundation and licensed CC BY-SA 4.0.',
-    });
-    const asvsFramework = await prisma.framework.upsert({
-        where: { key_version: { key: 'OWASP-ASVS', version: '4.0.3' } },
-        update: { name: 'OWASP Application Security Verification Standard 4.0.3', kind: 'INDUSTRY_STANDARD', description: 'Application security requirements organized into 14 chapters across three cumulative verification levels (L1, L2, L3).', metadataJson: asvsMeta, sourceUrn: 'urn:inflect:library:owasp-asvs-4.0.3' },
-        create: { key: 'OWASP-ASVS', name: 'OWASP Application Security Verification Standard 4.0.3', version: '4.0.3', kind: 'INDUSTRY_STANDARD', description: 'Application security requirements organized into 14 chapters across three cumulative verification levels (L1, L2, L3).', metadataJson: asvsMeta, sourceUrn: 'urn:inflect:library:owasp-asvs-4.0.3' },
-    });
-    const asvsReqMap: Record<string, string> = {};
-    for (const req of asvsData) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: asvsFramework.id, code: req.key } },
-            update: { title: req.title, section: req.section, category: req.category, sortOrder: req.sortOrder },
-            create: { frameworkId: asvsFramework.id, code: req.key, title: req.title, section: req.section, category: req.category, sortOrder: req.sortOrder },
-        });
-        asvsReqMap[req.key] = r.id;
-    }
-    // ─── ASVS L1 Starter Pack (curated Level 1 application-security controls) ───
-    // Curated control templates — one per ASVS chapter that carries L1 requirements
-    // (the Level 1 verification baseline) — so an ASVS adopter gets mapped coverage
-    // on day one, not a bare 0%. Distinct 'ASVS-' code prefix. Each control links to
-    // the specific L1 requirement(s) it satisfies.
-        // CatalogFile shape — see the SOC 2 block above and
-        // scripts/seed-framework-catalogs.ts. Read via `.templates`, NOT an
-        // `as Array<...>` cast over the whole file: that cast compiled after the
-        // fixture became an object and `for...of` threw at runtime, taking the
-        // whole seed down.
-    const asvsL1Controls = (fixtureObject<{
-        templates: Array<{
-        code: string; title: string; description: string; defaultFrequency: string; requirementCodes: string[]; tasks: Array<{ title: { en: string }; description: { en: string } }>;
-        }>;
-    }>(
-        'fixtures/asvs-l1-control-templates',
-        require('./fixtures/asvs-l1-control-templates.json'),
-        'templates',
-    )).templates;
-    for (const c of asvsL1Controls) {
-        const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: {
-                    code: c.code,
-                    title: c.title,
-                    description: c.description,
-                    category: 'Application Security',
-                    defaultFrequency: c.defaultFrequency as ControlFrequency,
-                },
-            });
-            for (const task of c.tasks) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
-            }
-            for (const rk of c.requirementCodes) {
-                if (asvsReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: asvsReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    const asvsL1Tmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'ASVS-' } } });
-    const asvsL1Pack = await prisma.frameworkPack.upsert({
-        where: { key: 'ASVS_L1_PACK' },
-        update: { name: 'OWASP ASVS 4.0.3 — L1 Starter Pack', frameworkId: asvsFramework.id, version: '4.0.3' },
-        create: { key: 'ASVS_L1_PACK', name: 'OWASP ASVS 4.0.3 — L1 Starter Pack', frameworkId: asvsFramework.id, version: '4.0.3', description: 'Curated Level 1 application-security controls covering the L1 verification requirements of OWASP ASVS 4.0.3, each mapped to its requirements.' },
-    });
-    for (const tmpl of asvsL1Tmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: asvsL1Pack.id, templateId: tmpl.id } },
-            create: { packId: asvsL1Pack.id, templateId: tmpl.id }, update: {},
-        });
-    }
-    console.log(`✅ OWASP ASVS 4.0.3 + ${asvsData.length} requirements + L1 Starter Pack (${asvsL1Controls.length} controls) seeded`);
 
-    // ─── ISO/IEC 27701:2019 — Privacy Information Management System (PIMS) ───
-    // ISO 27701 is the privacy extension of ISO 27001/27002 (controller Annex A +
-    // processor Annex B). Requirement descriptions are OURS (clause-ref only — ISO
-    // text is copyrighted). Ships a curated privacy starter pack so an adopter gets
-    // mapped coverage on day one, not a bare 0%. Rides the generic pack machinery.
-    const iso27701Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/iso27701_requirements',
-        require('./fixtures/iso27701_requirements.json'),
+    // ─── NIST SSDF (SP 800-218) v1.1 — one writer, shared with production ───
+    //
+    // This was TWO template populations for one standard, and the code said so
+    // in its own comments: an auto-generated 'SSDF-NN' set, and a curated
+    // 'SDLC-' set described as "higher-quality ... quality over count", given a
+    // "distinct 'SDLC-' code prefix so they do not collide" with the first.
+    // Both were seeded here under two pack keys, and production has NEITHER of
+    // those keys — it has SSDF_CORE, holding the 19 curated templates and
+    // nothing else. The SSDF- set reached no customer in its life.
+    //
+    // applyCatalogFile now writes the framework, its 42 requirements, the 19
+    // SDLC- templates with their 102 AUTHORED tasks, and SSDF_CORE — which is
+    // exactly what production already holds. So the duplicate stops existing
+    // in dev, and the NIST_SSDF_BASELINE / SSDF_STARTER_PACK divergence
+    // recorded in pack-key-agreement closes.
+    const ssdfResult = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/ssdf-control-templates.json'),
+        'prisma/fixtures/ssdf-control-templates.json',
     );
-    const iso27701Meta = JSON.stringify({
-        locale: 'en',
-        provider: 'ISO/IEC',
-        packager: 'inflect',
-        publicationDate: '2019-08-06',
-        license: 'iso-copyright',
-        sourceUrl: 'https://www.iso.org/standard/71670.html',
-        copyright: 'Structural clause-reference outline; ISO/IEC 27701:2019 normative text is ISO-copyrighted.',
-    });
-    const iso27701 = await prisma.framework.upsert({
-        where: { key_version: { key: 'ISO27701', version: '2019' } },
-        update: { name: 'ISO/IEC 27701:2019', kind: 'ISO_STANDARD', description: 'Privacy Information Management System (PIMS) — the privacy extension of ISO/IEC 27001/27002.', metadataJson: iso27701Meta, sourceUrn: 'urn:inflect:library:iso27701-2019' },
-        create: { key: 'ISO27701', name: 'ISO/IEC 27701:2019', version: '2019', kind: 'ISO_STANDARD', description: 'Privacy Information Management System (PIMS) — the privacy extension of ISO/IEC 27001/27002.', metadataJson: iso27701Meta, sourceUrn: 'urn:inflect:library:iso27701-2019' },
-    });
-    const iso27701ReqMap: Record<string, string> = {};
-    for (const req of iso27701Data) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: iso27701.id, code: req.key } },
-            update: { title: req.title, section: req.section, sortOrder: req.sortOrder },
-            create: { frameworkId: iso27701.id, code: req.key, title: req.title, section: req.section, category: req.section, sortOrder: req.sortOrder },
-        });
-        iso27701ReqMap[req.key] = r.id;
-    }
-    // Curated privacy starter-pack controls (PIMS-NN) with tasks + requirement links.
-        // CatalogFile shape — see the SOC 2 block above and
-        // scripts/seed-framework-catalogs.ts. Read via `.templates`, NOT an
-        // `as Array<...>` cast over the whole file: that cast compiled after the
-        // fixture became an object and `for...of` threw at runtime, taking the
-        // whole seed down.
-    const iso27701Controls = (fixtureObject<{
-        templates: Array<{
-        code: string; title: string; description: string; defaultFrequency: string; requirementCodes: string[]; tasks: Array<{ title: { en: string }; description: { en: string } }>;
-        }>;
-    }>(
-        'fixtures/iso27701-control-templates',
-        require('./fixtures/iso27701-control-templates.json'),
-        'templates',
-    )).templates;
-    for (const c of iso27701Controls) {
-        const existing = await prisma.controlTemplate.findUnique({ where: { code: c.code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: { code: c.code, title: c.title, description: c.description, category: 'Privacy', defaultFrequency: c.defaultFrequency as ControlFrequency },
-            });
-            for (const task of c.tasks) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title.en, description: task.description.en } });
-            }
-            for (const rk of c.requirementCodes) {
-                if (iso27701ReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: iso27701ReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    const iso27701Tmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'PIMS-' } } });
-    const iso27701Pack = await prisma.frameworkPack.upsert({
-        where: { key: 'ISO27701_BASELINE' },
-        update: { name: 'ISO 27701 Privacy Baseline Pack', frameworkId: iso27701.id, version: '2019' },
-        create: { key: 'ISO27701_BASELINE', name: 'ISO 27701 Privacy Baseline Pack', frameworkId: iso27701.id, version: '2019', description: 'Curated ISO/IEC 27701 privacy controls (purpose, consent, PIA, RoPA, rights, transfers) with tasks, mapped to PIMS clauses.' },
-    });
-    for (const tmpl of iso27701Tmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: iso27701Pack.id, templateId: tmpl.id } },
-            create: { packId: iso27701Pack.id, templateId: tmpl.id }, update: {},
-        });
-    }
-    console.log(`✅ ISO 27701 PIMS + ${iso27701Data.length} requirements + ${iso27701Controls.length} privacy controls seeded`);
+    console.log(
+        `✅ NIST SSDF: ${ssdfResult.requirements.upserted} requirements, ` +
+            `${ssdfResult.templates.created} templates, ` +
+            `tasks ${ssdfResult.tasks.created}c/${ssdfResult.tasks.unchanged}=`,
+    );
+
+    // ─── CIS-V8 — one writer, shared with production ───
+    //
+    // The CatalogFile below already carried this framework, its requirements,
+    // its templates and their AUTHORED tasks, and scripts/seed-framework-catalogs.ts
+    // has been applying it on every production start. seed.ts built the whole
+    // thing a SECOND time — a duplicate writer for rows production already
+    // had, differing only in the pack key it invented.
+    //
+    // That invented key is why this mattered beyond tidiness: production has
+    // CIS_V8_IG1, seed.ts made a different one, and guards
+    // elsewhere asserted the seed.ts spelling — naming a pack no customer has.
+    // pack-key-agreement recorded the divergence; this closes it.
+    const cisResult = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/cis-v8-ig1-control-templates.json'),
+        'prisma/fixtures/cis-v8-ig1-control-templates.json',
+    );
+    console.log(
+        `✅ CIS-V8: ${cisResult.requirements.upserted} requirements, ` +
+            `${cisResult.templates.created} templates, ` +
+            `tasks ${cisResult.tasks.created}c/${cisResult.tasks.unchanged}=`,
+    );
+
+    // ─── OWASP-ASVS — one writer, shared with production ───
+    //
+    // The CatalogFile below already carried this framework, its requirements,
+    // its templates and their AUTHORED tasks, and scripts/seed-framework-catalogs.ts
+    // has been applying it on every production start. seed.ts built the whole
+    // thing a SECOND time — a duplicate writer for rows production already
+    // had, differing only in the pack key it invented.
+    //
+    // That invented key is why this mattered beyond tidiness: production has
+    // ASVS_L1, seed.ts made a different one, and guards
+    // elsewhere asserted the seed.ts spelling — naming a pack no customer has.
+    // pack-key-agreement recorded the divergence; this closes it.
+    const asvsResult = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/asvs-l1-control-templates.json'),
+        'prisma/fixtures/asvs-l1-control-templates.json',
+    );
+    console.log(
+        `✅ OWASP-ASVS: ${asvsResult.requirements.upserted} requirements, ` +
+            `${asvsResult.templates.created} templates, ` +
+            `tasks ${asvsResult.tasks.created}c/${asvsResult.tasks.unchanged}=`,
+    );
+
+    // ─── ISO27701 — one writer, shared with production ───
+    //
+    // The CatalogFile below already carried this framework, its requirements,
+    // its templates and their AUTHORED tasks, and scripts/seed-framework-catalogs.ts
+    // has been applying it on every production start. seed.ts built the whole
+    // thing a SECOND time — a duplicate writer for rows production already
+    // had, differing only in the pack key it invented.
+    //
+    // That invented key is why this mattered beyond tidiness: production has
+    // ISO27701_CORE, seed.ts made a different one, and guards
+    // elsewhere asserted the seed.ts spelling — naming a pack no customer has.
+    // pack-key-agreement recorded the divergence; this closes it.
+    const iso27701Result = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/iso27701-control-templates.json'),
+        'prisma/fixtures/iso27701-control-templates.json',
+    );
+    console.log(
+        `✅ ISO27701: ${iso27701Result.requirements.upserted} requirements, ` +
+            `${iso27701Result.templates.created} templates, ` +
+            `tasks ${iso27701Result.tasks.created}c/${iso27701Result.tasks.unchanged}=`,
+    );
 
     // ─── ISO 27701 privacy risk templates ───
     // The failure modes the PIMS controls exist to prevent. frameworkTag 'ISO27701'.
@@ -2439,8 +1856,19 @@ Reviewed at least annually.` },
     // available and would fall back to the legacy "not installed" skip.
     const tenantControls = await prisma.control.findMany({ where: { tenantId: tenant.id } });
     const annexMap: Record<string, string> = {};
+    // Re-fetched by its unique key: the upsert that used to bind `iso27001`
+    // moved into applyCatalogFile above. Framework.key is @unique.
+    //
+    // NOTE, and deliberately NOT fixed here: this block is already a no-op.
+    // Seeded controls carry annexId 'A.5.1' while requirement codes are '5.1',
+    // so `annexMap[code]` never resolves and ControlRequirementLink has 0 rows
+    // in a fresh dev database (verified). The E2E coverage-metrics data this
+    // exists to seed has never been created. Fixing it here would make the
+    // delivery proof measure a deliberate behaviour change as well as a move,
+    // so it is preserved exactly and filed separately.
+    const iso27001Fw = await prisma.framework.findUniqueOrThrow({ where: { key: 'ISO27001' } });
     const annexReqs = await prisma.frameworkRequirement.findMany({
-        where: { frameworkId: iso27001.id },
+        where: { frameworkId: iso27001Fw.id },
     });
     for (const r of annexReqs) annexMap[r.code] = r.id;
     for (const ctrl of tenantControls) {

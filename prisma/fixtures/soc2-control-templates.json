@@ -4,14 +4,16 @@
     "why": "Production served SOC2- — 7 templates whose titles restate the criterion ('Specifies objectives'), each carrying the five generic placeholder tasks. These 29 TSC- templates are real controls and were never delivered anywhere. This file replaces that offering.",
     "grounding": "Requirement titles and summaries come from src/data/libraries/soc2-2017.yaml so the two cannot drift. Task content is grounded in each template's own description — the library is thin for SOC 2 (a one-line COSO paraphrase, no checklist or artifacts).",
     "deliveredBy": "scripts/seed-framework-catalogs.ts",
-    "packStrategy": "Reuses SOC2_BASELINE rather than creating SOC2_CORE. The retirement of the seven SOC2- criterion-restatement templates is a separate operator step, not a seeder action — seeders upsert, they do not delete, and deleting customer-visible catalogue rows should be a reviewed action with before/after counts rather than a side effect of a deploy."
+    "packStrategy": "Reuses SOC2_BASELINE rather than creating SOC2_CORE. The retirement of the seven SOC2- criterion-restatement templates is a separate operator step, not a seeder action — seeders upsert, they do not delete, and deleting customer-visible catalogue rows should be a reviewed action with before/after counts rather than a side effect of a deploy.",
+    "provenance": "sourceUrn carried over from the prisma/seed.ts block this file replaced. SOC 2 has no metadataJson in seed.ts and so none here, but it DID carry a sourceUrn, and SOC2_FAMILY_URN in src/app-layer/domain/framework-representation.ts is that exact value — it is how a SOC 2 row is tied to its library family, not decoration."
   },
   "framework": {
     "key": "SOC2",
     "name": "SOC 2 (Trust Services Criteria)",
     "version": "2017",
     "kind": "SOC_CRITERIA",
-    "description": "AICPA Trust Services Criteria. Common Criteria CC1-CC9 applied to the Security category."
+    "description": "AICPA Trust Services Criteria. Common Criteria CC1-CC9 applied to the Security category.",
+    "sourceUrn": "urn:inflect:library:soc2-2017"
   },
   "requirements": [
     {
