@@ -99,7 +99,7 @@ model VendorContact {
   emailHash      String?
   phoneEncrypted String?
   tenant         Tenant   @relation(fields: [tenantId], references: [id])
-  vendor         Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor         Vendor   @relation(fields: [vendorId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@index([tenantId, vendorId])
 }
@@ -126,7 +126,7 @@ model VendorDocument {
   updatedAt        DateTime              @updatedAt
   tenant           Tenant                @relation(fields: [tenantId], references: [id])
   uploadedBy       User                  @relation("VendorDocUploader", fields: [uploadedByUserId], references: [id])
-  vendor           Vendor                @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor           Vendor                @relation(fields: [vendorId, tenantId], references: [id, tenantId], onDelete: Cascade)
   extractions      VendorDocExtraction[]
 
   @@index([tenantId, vendorId])
@@ -353,7 +353,7 @@ model VendorAssessment {
   template                     QuestionnaireTemplate?    @relation(fields: [templateId], references: [id])
   templateVersion              VendorAssessmentTemplate? @relation("AssessmentByTemplateVersion", fields: [templateVersionId], references: [id])
   tenant                       Tenant                    @relation(fields: [tenantId], references: [id])
-  vendor                       Vendor                    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor                       Vendor                    @relation(fields: [vendorId, tenantId], references: [id, tenantId], onDelete: Cascade)
   answers                      VendorAssessmentAnswer[]
 
   @@index([tenantId, vendorId])
@@ -437,7 +437,7 @@ model VendorDocExtraction {
   updatedAt        DateTime  @updatedAt
 
   tenant    Tenant                 @relation(fields: [tenantId], references: [id])
-  vendor    Vendor                 @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor    Vendor                 @relation(fields: [vendorId, tenantId], references: [id, tenantId], onDelete: Cascade)
   document  VendorDocument         @relation(fields: [documentId], references: [id], onDelete: Cascade)
   createdBy User                   @relation("VendorDocExtractionCreator", fields: [createdByUserId], references: [id])
   proposals VendorAnswerProposal[]
@@ -516,7 +516,7 @@ model VendorMonitor {
   updatedAt            DateTime  @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendorId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@unique([tenantId, vendorId])
   @@index([tenantId, enabled])
@@ -553,7 +553,7 @@ model VendorPostureEvent {
   createdAt        DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
-  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendorId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@unique([tenantId, fingerprint])
   @@index([tenantId, vendorId, occurredAt])
@@ -569,7 +569,7 @@ model VendorLink {
   relation   VendorLinkRelation   @default(RELATED)
   createdAt  DateTime             @default(now())
   tenant     Tenant               @relation(fields: [tenantId], references: [id])
-  vendor     Vendor               @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor     Vendor               @relation(fields: [vendorId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@unique([tenantId, vendorId, entityType, entityId])
   @@index([tenantId, vendorId])
@@ -591,7 +591,7 @@ model VendorEvidenceBundle {
   updatedAt       DateTime                   @updatedAt
   createdBy       User?                      @relation("EvidenceBundleCreator", fields: [createdByUserId], references: [id])
   tenant          Tenant                     @relation(fields: [tenantId], references: [id])
-  vendor          Vendor                     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor          Vendor                     @relation(fields: [vendorId, tenantId], references: [id, tenantId], onDelete: Cascade)
   items           VendorEvidenceBundleItem[]
 
   @@index([tenantId, vendorId])
@@ -621,8 +621,8 @@ model VendorRelationship {
   dataTypes            String?
   country              String?
   createdAt            DateTime @default(now())
-  primary              Vendor   @relation("PrimaryRelation", fields: [primaryVendorId], references: [id], onDelete: Cascade)
-  subprocessor         Vendor   @relation("SubprocessorRelation", fields: [subprocessorVendorId], references: [id], onDelete: Cascade)
+  primary              Vendor   @relation("PrimaryRelation", fields: [primaryVendorId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  subprocessor         Vendor   @relation("SubprocessorRelation", fields: [subprocessorVendorId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant               Tenant   @relation(fields: [tenantId], references: [id])
 
   @@unique([tenantId, primaryVendorId, subprocessorVendorId])

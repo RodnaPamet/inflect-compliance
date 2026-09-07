@@ -49,7 +49,7 @@ model ReminderHistory {
   evidenceId String
   type       String
   sentAt     DateTime @default(now())
-  evidence   Evidence @relation(fields: [evidenceId], references: [id])
+  evidence   Evidence @relation(fields: [evidenceId, tenantId], references: [id, tenantId], onDelete: Restrict)
   tenant     Tenant   @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])

@@ -142,7 +142,7 @@ model AuditPackItem {
   snapshotJson  String
   sortOrder     Int                     @default(0)
   createdAt     DateTime                @default(now())
-  pack          AuditPack               @relation(fields: [auditPackId], references: [id], onDelete: Cascade)
+  pack          AuditPack               @relation(fields: [auditPackId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant        Tenant                  @relation(fields: [tenantId], references: [id])
   shareComments AuditPackShareComment[]
 
@@ -159,7 +159,7 @@ model AuditPackShare {
   createdByUserId String
   revokedAt       DateTime?
   createdAt       DateTime                @default(now())
-  pack            AuditPack               @relation(fields: [auditPackId], references: [id])
+  pack            AuditPack               @relation(fields: [auditPackId, tenantId], references: [id, tenantId], onDelete: Restrict)
   createdBy       User                    @relation(fields: [createdByUserId], references: [id])
   tenant          Tenant                  @relation(fields: [tenantId], references: [id])
   comments        AuditPackShareComment[]
@@ -202,7 +202,7 @@ model AuditPackShareComment {
   resolvedByUserId String?
 
   tenant     Tenant         @relation(fields: [tenantId], references: [id])
-  pack       AuditPack      @relation(fields: [auditPackId], references: [id], onDelete: Cascade)
+  pack       AuditPack      @relation(fields: [auditPackId, tenantId], references: [id, tenantId], onDelete: Cascade)
   share      AuditPackShare @relation(fields: [auditPackShareId], references: [id], onDelete: Cascade)
   item       AuditPackItem? @relation(fields: [auditPackItemId], references: [id], onDelete: SetNull)
   resolvedBy User?          @relation("AuditPackShareCommentResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull)

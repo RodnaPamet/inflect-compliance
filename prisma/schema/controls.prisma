@@ -150,9 +150,9 @@ model RiskControl {
   rationale       String?
   createdByUserId String?
   createdAt       DateTime @default(now())
-  control         Control  @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  control         Control  @relation(fields: [controlId, tenantId], references: [id, tenantId], onDelete: Cascade)
   createdBy       User?    @relation("RiskControlCreator", fields: [createdByUserId], references: [id])
-  risk            Risk     @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  risk            Risk     @relation(fields: [riskId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant          Tenant   @relation(fields: [tenantId], references: [id])
 
   @@unique([tenantId, riskId, controlId])
@@ -170,7 +170,7 @@ model ControlAsset {
   createdByUserId String?
   createdAt       DateTime     @default(now())
   asset           Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  control         Control      @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  control         Control      @relation(fields: [controlId, tenantId], references: [id, tenantId], onDelete: Cascade)
   createdBy       User?        @relation("ControlAssetCreator", fields: [createdByUserId], references: [id])
   tenant          Tenant       @relation(fields: [tenantId], references: [id])
 
@@ -185,7 +185,7 @@ model ControlContributor {
   controlId String
   userId    String
   createdAt DateTime @default(now())
-  control   Control  @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  control   Control  @relation(fields: [controlId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
   user      User     @relation(fields: [userId], references: [id])
 
@@ -209,7 +209,7 @@ model ControlEvidenceLink {
   createdByUserId     String?
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
-  control             Control                 @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  control             Control                 @relation(fields: [controlId, tenantId], references: [id, tenantId], onDelete: Cascade)
   createdBy           User?                   @relation("ControlEvidenceCreator", fields: [createdByUserId], references: [id])
   bia                 BusinessImpactAnalysis? @relation(fields: [biaId], references: [id], onDelete: Cascade)
   tenant              Tenant                  @relation(fields: [tenantId], references: [id])
@@ -320,7 +320,7 @@ model ControlRequirementLink {
   applicability              Applicability?
   applicabilityJustification String?
   createdAt                  DateTime             @default(now())
-  control                    Control              @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  control                    Control              @relation(fields: [controlId, tenantId], references: [id, tenantId], onDelete: Cascade)
   requirement                FrameworkRequirement @relation(fields: [requirementId], references: [id])
   tenant                     Tenant               @relation(fields: [tenantId], references: [id])
 
@@ -356,7 +356,7 @@ model ControlTestPlan {
   /// Soft-delete (bulk-delete support) — enrolled in SOFT_DELETE_MODELS.
   deletedAt          DateTime?
   deletedByUserId    String?
-  control            Control           @relation(fields: [controlId], references: [id])
+  control            Control           @relation(fields: [controlId, tenantId], references: [id, tenantId], onDelete: Restrict)
   createdBy          User              @relation("TestPlanCreator", fields: [createdByUserId], references: [id])
   owner              User?             @relation("TestPlanOwner", fields: [ownerUserId], references: [id])
   tenant             Tenant            @relation(fields: [tenantId], references: [id])
@@ -388,7 +388,7 @@ model ControlTestRun {
   createdAt        DateTime                  @default(now())
   updatedAt        DateTime                  @updatedAt
   evidence         ControlTestEvidenceLink[]
-  control          Control                   @relation(fields: [controlId], references: [id])
+  control          Control                   @relation(fields: [controlId, tenantId], references: [id, tenantId], onDelete: Restrict)
   createdBy        User                      @relation("TestRunCreator", fields: [createdByUserId], references: [id])
   executedBy       User?                     @relation("TestRunExecutor", fields: [executedByUserId], references: [id])
   tenant           Tenant                    @relation(fields: [tenantId], references: [id])

@@ -195,7 +195,7 @@ model EvidenceControlLink {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   evidence        Evidence @relation(fields: [evidenceId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  control         Control  @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  control         Control  @relation(fields: [controlId, tenantId], references: [id, tenantId], onDelete: Cascade)
   createdBy       User?    @relation("EvidenceControlLinkCreator", fields: [createdByUserId], references: [id])
   tenant          Tenant   @relation(fields: [tenantId], references: [id])
 
@@ -223,7 +223,7 @@ model EvidenceRiskLink {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   evidence        Evidence @relation(fields: [evidenceId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  risk            Risk     @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  risk            Risk     @relation(fields: [riskId, tenantId], references: [id, tenantId], onDelete: Cascade)
   createdBy       User?    @relation("EvidenceRiskLinkCreator", fields: [createdByUserId], references: [id])
   tenant          Tenant   @relation(fields: [tenantId], references: [id])
 

@@ -219,7 +219,7 @@ model ProcessEdgeControl {
 
   tenant  Tenant      @relation(fields: [tenantId], references: [id])
   edge    ProcessEdge @relation(fields: [edgeId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  control Control     @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  control Control     @relation(fields: [controlId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@unique([edgeId, controlKey])
   @@index([tenantId, processMapId])

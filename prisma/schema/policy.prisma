@@ -77,7 +77,7 @@ model PolicyVersion {
   ackAssignments   PolicyAcknowledgementAssignment[]
   approvals        PolicyApproval[]
   createdBy        User                              @relation("PolicyVersionCreator", fields: [createdById], references: [id])
-  policy           Policy                            @relation("PolicyVersions", fields: [policyId], references: [id], onDelete: Cascade)
+  policy           Policy                            @relation("PolicyVersions", fields: [policyId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant           Tenant                            @relation(fields: [tenantId], references: [id])
 
   @@unique([policyId, versionNumber])
@@ -96,7 +96,7 @@ model PolicyApproval {
   comment           String?
   createdAt         DateTime             @default(now())
   approvedBy        User?                @relation("PolicyApprover", fields: [approvedByUserId], references: [id])
-  policy            Policy               @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  policy            Policy               @relation(fields: [policyId, tenantId], references: [id, tenantId], onDelete: Cascade)
   policyVersion     PolicyVersion        @relation(fields: [policyVersionId], references: [id], onDelete: Cascade)
   requestedBy       User                 @relation("PolicyApprovalRequester", fields: [requestedByUserId], references: [id])
   tenant            Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -154,7 +154,7 @@ model PolicyControlLink {
   tenantId  String
   policyId  String
   controlId String
-  control   Control @relation(fields: [controlId], references: [id], onDelete: Cascade)
+  control   Control @relation(fields: [controlId, tenantId], references: [id, tenantId], onDelete: Cascade)
   policy    Policy  @relation(fields: [policyId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant    Tenant  @relation(fields: [tenantId], references: [id])
 

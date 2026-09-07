@@ -261,7 +261,7 @@ model AssetRiskLink {
   createdAt       DateTime      @default(now())
   asset           Asset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
   createdBy       User?         @relation("AssetRiskCreator", fields: [createdByUserId], references: [id])
-  risk            Risk          @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  risk            Risk          @relation(fields: [riskId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant          Tenant        @relation(fields: [tenantId], references: [id])
 
   @@unique([tenantId, assetId, riskId])
