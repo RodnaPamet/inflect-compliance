@@ -52,7 +52,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { appliedCatalogueStats, declaringSources } from '../helpers/applied-catalogue';
+import { appliedCatalogFor, appliedCatalogueStats, declaringSources } from '../helpers/applied-catalogue';
 import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
@@ -184,51 +184,58 @@ describe('NIST Privacy Framework declaration (source-agnostic)', () => {
     });
 });
 
-describe('NIST Privacy Framework dev seed content (prisma/seed.ts — reaches no production database)', () => {
-    const seed = read('prisma/seed.ts');
+describe('NIST Privacy Framework delivery', () => {
+    /**
+     * This block asserted what `prisma/seed.ts` built, and was correct to: NIST
+     * Privacy was inline there, and its own name said what that meant —
+     * "reaches no production database". Those assertions were written to be
+     * true THEN and to flip the day the framework converted, which is what a
+     * delivery ratchet is for. This is the flip.
+     *
+     * The framework now arrives through applyCatalogFile, so the same facts —
+     * identity, provenance, pack — are asserted against the CatalogFile
+     * production applies, as field reads on structured data rather than
+     * regexes over a file production never runs.
+     */
+    const catalog = appliedCatalogFor('NIST-PRIVACY');
 
-    it('reads the fixture + upserts the framework', () => {
-        // Bound to the declarations rather than scanned across the whole file.
-        // The framework case previously carried an interior any-char span,
-        // `/key: 'NIST-PRIVACY'[\s\S]{0,200}kind: 'NIST_FRAMEWORK'/`, which
-        // re-forms across a SIBLING upsert — the file holds dozens — so the
-        // NIST-PRIVACY block could lose its `kind` and a neighbour's would
-        // satisfy the match. Two field-shaped assertions inside one bounded
-        // declaration cannot do that.
-        expect(declarationOf(seed, 'nistPrivacyData')).toContain(
-            'nist_privacy_framework_requirements.json',
-        );
-        const fw = declarationOf(seed, 'nistPrivacy');
-        expect(fw).toMatch(/key:\s*'NIST-PRIVACY',\s*version:\s*'1\.0'/);
-        expect(fw).toMatch(/kind:\s*'NIST_FRAMEWORK'/);
+    it('a production seeder applies a NIST Privacy catalogue at all', () => {
+        // DENOMINATOR: every case below is vacuous on null.
+        expect(catalog).not.toBeNull();
+        expect(catalog?.requirements.length).toBeGreaterThanOrEqual(90);
+        expect(catalog?.templates.length).toBeGreaterThanOrEqual(15);
     });
 
-    it('persists NIST provider + public-domain notice in framework metadata', () => {
-        // #2246 Class A — this read the WHOLE seed file and matched
-        // /public[\s-]*information/i, which in `prisma/seed.ts` is satisfied
-        // only by the `// PUBLIC DOMAIN (NIST): …` banner comment above the
-        // block. In CODE the same sentence is split across two adjacent
-        // string literals (`'… considered public ' + 'information …'`), which
-        // no character class can cross. Bind to the metadata declaration
-        // itself and name both halves.
-        const meta = declarationOf(seed, 'nistPrivacyMeta');
-        expect(meta).toMatch(/provider:\s*'NIST'/);
-        expect(meta).toMatch(/license:\s*'public-domain'/);
-        expect(meta).toMatch(
-            /'Information presented on NIST sites is considered public '\s*\+\s*'information and may be distributed or copied\.'/,
-        );
+    it('declares the framework as NIST-PRIVACY 1.0, kind NIST_FRAMEWORK', () => {
+        expect(catalog?.framework.key).toBe('NIST-PRIVACY');
+        expect(catalog?.framework.version).toBe('1.0');
+        expect(catalog?.framework.kind).toBe('NIST_FRAMEWORK');
     });
 
-    it('the dev pack row names the framework and the 1.0 version', () => {
-        // `expect(seed).toContain("'NIST_PRIVACY_BASELINE'")` moved up to the
-        // source-agnostic describe. `expect(seed).toMatch(/frameworkPack\.upsert/)`
-        // was DELETED rather than repointed: 16 positions in `prisma/seed.ts`
-        // satisfy it, so it was already a tautology — the whole NIST Privacy
-        // block could be deleted and it would still pass.
-        const pack = declarationOf(seed, 'nistPrivacyPack');
-        expect(pack).toMatch(/key:\s*'NIST_PRIVACY_BASELINE'/);
-        expect(pack).toMatch(/frameworkId:\s*nistPrivacy\.id/);
-        expect(pack).toMatch(/version:\s*'1\.0'/);
+    it('carries the NIST provider and public-domain notice', () => {
+        const meta = (catalog?.framework.metadata ?? {}) as Record<string, unknown>;
+        expect(meta.provider).toBe('NIST');
+        expect(meta.license).toBe('public-domain');
+        expect(String(meta.copyright)).toContain('considered public information');
+    });
+
+    it('declares the NIST_PRIVACY_BASELINE pack over its own templates', () => {
+        expect(catalog?.pack?.key).toBe('NIST_PRIVACY_BASELINE');
+        const codes = new Set((catalog?.templates ?? []).map((t) => String(t.code)));
+        const packCodes = (catalog?.pack?.templateCodes ?? []) as string[];
+        expect(packCodes.length).toBeGreaterThan(0);
+        expect(packCodes.filter((c) => !codes.has(c))).toEqual([]);
+    });
+
+    it('every template resolves its requirement codes', () => {
+        const declared = new Set((catalog?.requirements ?? []).map((r) => String(r.code)));
+        const dangling: string[] = [];
+        for (const t of catalog?.templates ?? []) {
+            const codes = (t.requirementCodes ?? []) as string[];
+            if (!codes.length) dangling.push(`${String(t.code)}: no requirementCodes`);
+            for (const c of codes) if (!declared.has(c)) dangling.push(`${String(t.code)} -> ${c}`);
+        }
+        expect(dangling).toEqual([]);
     });
 });
 

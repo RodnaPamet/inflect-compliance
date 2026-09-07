@@ -1,0 +1,230 @@
+{
+  "_meta": {
+    "purpose": "IMDA Model AI Governance Framework (May 2026) in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
+    "why": "Built inline in prisma/seed.ts, which is not run on production deploys. Production has never held this framework — not the framework row, not the templates, not the pack. Extracted from a database seeded by the inline block, so the shape is carried over exactly rather than re-derived from the grouping logic.",
+    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here — every template carries the generic five, as it did inline.",
+    "deliveredBy": "scripts/seed-framework-catalogs.ts"
+  },
+  "framework": {
+    "key": "IMDA-MGF",
+    "name": "IMDA Model AI Governance Framework (May 2026)",
+    "version": "2026",
+    "kind": "INDUSTRY_STANDARD",
+    "description": "Four AI-governance dimensions — bound risks upfront, meaningful human accountability, technical controls and processes, end-user responsibility — extended for agentic deployments.",
+    "sourceUrn": "urn:inflect:library:imda-mgf-2026",
+    "metadata": {
+      "locale": "en",
+      "provider": "IMDA Singapore",
+      "packager": "inflect",
+      "publicationDate": "2026-05",
+      "sourceUrl": "https://www.imda.gov.sg/",
+      "notLegalAdvice": true,
+      "identifiersAssignedByPackager": true,
+      "copyright": "Model AI Governance Framework © Infocomm Media Development Authority / Personal Data Protection Commission, Singapore. Source: https://www.imda.gov.sg/. Inflect stores dimension titles and its own governance summaries with attribution, not the verbatim publication prose; requirement identifiers are Inflect-assigned and are not IMDA clause numbers. Not legal advice."
+    }
+  },
+  "requirements": [
+    {
+      "code": "MGF-1.1",
+      "title": "Risk taxonomy and tolerances defined before deployment",
+      "section": "D1 Bound risks upfront",
+      "category": "D1 Bound risks upfront",
+      "sortOrder": 0
+    },
+    {
+      "code": "MGF-1.2",
+      "title": "Internal governance structure with named accountable owners",
+      "section": "D1 Bound risks upfront",
+      "category": "D1 Bound risks upfront",
+      "sortOrder": 1
+    },
+    {
+      "code": "MGF-1.3",
+      "title": "Agent scope and authority limits are declared and enforced",
+      "section": "D1 Bound risks upfront",
+      "category": "D1 Bound risks upfront",
+      "sortOrder": 2
+    },
+    {
+      "code": "MGF-1.4",
+      "title": "Multi-agent system risk assessment",
+      "section": "D1 Bound risks upfront",
+      "category": "D1 Bound risks upfront",
+      "sortOrder": 3
+    },
+    {
+      "code": "MGF-1.5",
+      "title": "Third-party agent due diligence before adoption",
+      "section": "D1 Bound risks upfront",
+      "category": "D1 Bound risks upfront",
+      "sortOrder": 4
+    },
+    {
+      "code": "MGF-2.1",
+      "title": "Human involvement model chosen per decision class",
+      "section": "D2 Meaningful human accountability",
+      "category": "D2 Meaningful human accountability",
+      "sortOrder": 5
+    },
+    {
+      "code": "MGF-2.2",
+      "title": "Every deployed agent has an accountable human owner",
+      "section": "D2 Meaningful human accountability",
+      "category": "D2 Meaningful human accountability",
+      "sortOrder": 6
+    },
+    {
+      "code": "MGF-2.3",
+      "title": "Intervention, escalation and stop authority",
+      "section": "D2 Meaningful human accountability",
+      "category": "D2 Meaningful human accountability",
+      "sortOrder": 7
+    },
+    {
+      "code": "MGF-2.4",
+      "title": "Automation bias mitigated in human review",
+      "section": "D2 Meaningful human accountability",
+      "category": "D2 Meaningful human accountability",
+      "sortOrder": 8
+    },
+    {
+      "code": "MGF-3.1",
+      "title": "Data governance and provenance for inputs and memory",
+      "section": "D3 Technical controls and processes",
+      "category": "D3 Technical controls and processes",
+      "sortOrder": 9
+    },
+    {
+      "code": "MGF-3.2",
+      "title": "Pre-release and ongoing testing, evaluation and red-teaming",
+      "section": "D3 Technical controls and processes",
+      "category": "D3 Technical controls and processes",
+      "sortOrder": 10
+    },
+    {
+      "code": "MGF-3.3",
+      "title": "Traceability of decisions, tool calls and actions",
+      "section": "D3 Technical controls and processes",
+      "category": "D3 Technical controls and processes",
+      "sortOrder": 11
+    },
+    {
+      "code": "MGF-3.4",
+      "title": "Least-privilege identity and credential handling for agents",
+      "section": "D3 Technical controls and processes",
+      "category": "D3 Technical controls and processes",
+      "sortOrder": 12
+    },
+    {
+      "code": "MGF-3.5",
+      "title": "Incident detection, response and post-incident review",
+      "section": "D3 Technical controls and processes",
+      "category": "D3 Technical controls and processes",
+      "sortOrder": 13
+    },
+    {
+      "code": "MGF-3.6",
+      "title": "Controls on inter-agent communication and delegation",
+      "section": "D3 Technical controls and processes",
+      "category": "D3 Technical controls and processes",
+      "sortOrder": 14
+    },
+    {
+      "code": "MGF-4.1",
+      "title": "Disclosure that an AI agent is in use",
+      "section": "D4 End-user responsibility",
+      "category": "D4 End-user responsibility",
+      "sortOrder": 15
+    },
+    {
+      "code": "MGF-4.2",
+      "title": "Capabilities, limits and failure modes explained",
+      "section": "D4 End-user responsibility",
+      "category": "D4 End-user responsibility",
+      "sortOrder": 16
+    },
+    {
+      "code": "MGF-4.3",
+      "title": "User control, consent and redress channels",
+      "section": "D4 End-user responsibility",
+      "category": "D4 End-user responsibility",
+      "sortOrder": 17
+    },
+    {
+      "code": "MGF-4.4",
+      "title": "Guidance for safe operation and against over-reliance",
+      "section": "D4 End-user responsibility",
+      "category": "D4 End-user responsibility",
+      "sortOrder": 18
+    }
+  ],
+  "templates": [
+    {
+      "code": "MGF-D1",
+      "title": "D1 Bound risks upfront",
+      "category": "IMDA MGF",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "MGF-1.1",
+        "MGF-1.2",
+        "MGF-1.3",
+        "MGF-1.4",
+        "MGF-1.5"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "MGF-D2",
+      "title": "D2 Meaningful human accountability",
+      "category": "IMDA MGF",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "MGF-2.1",
+        "MGF-2.2",
+        "MGF-2.3",
+        "MGF-2.4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "MGF-D3",
+      "title": "D3 Technical controls and processes",
+      "category": "IMDA MGF",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "MGF-3.1",
+        "MGF-3.2",
+        "MGF-3.3",
+        "MGF-3.4",
+        "MGF-3.5",
+        "MGF-3.6"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "MGF-D4",
+      "title": "D4 End-user responsibility",
+      "category": "IMDA MGF",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "MGF-4.1",
+        "MGF-4.2",
+        "MGF-4.3",
+        "MGF-4.4"
+      ],
+      "tasks": []
+    }
+  ],
+  "pack": {
+    "key": "IMDA_MGF_BASELINE",
+    "name": "IMDA MGF Baseline Pack",
+    "version": "2026",
+    "description": "One control per MGF governance dimension.",
+    "templateCodes": [
+      "MGF-D1",
+      "MGF-D2",
+      "MGF-D3",
+      "MGF-D4"
+    ]
+  }
+}
