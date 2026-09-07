@@ -417,7 +417,7 @@ model RiskHierarchyLink {
   riskId    String
   nodeId    String
   createdAt DateTime          @default(now())
-  risk      Risk              @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  risk      Risk              @relation(fields: [riskId, tenantId], references: [id, tenantId], onDelete: Cascade)
   node      RiskHierarchyNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
   tenant    Tenant            @relation(fields: [tenantId], references: [id])
 
@@ -502,8 +502,8 @@ model RiskCorrelation {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   tenant          Tenant   @relation(fields: [tenantId], references: [id])
-  riskA           Risk     @relation("CorrelationA", fields: [riskAId], references: [id], onDelete: Cascade)
-  riskB           Risk     @relation("CorrelationB", fields: [riskBId], references: [id], onDelete: Cascade)
+  riskA           Risk     @relation("CorrelationA", fields: [riskAId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  riskB           Risk     @relation("CorrelationB", fields: [riskBId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@unique([tenantId, riskAId, riskBId])
   @@index([tenantId])
@@ -532,7 +532,7 @@ model RiskSnapshot {
   plm                  Float?
   activeTreatmentPlans Int      @default(0)
   snapshotAt           DateTime @default(now())
-  risk                 Risk     @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  risk                 Risk     @relation(fields: [riskId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant               Tenant   @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId, riskId, snapshotAt])
@@ -571,7 +571,7 @@ model RiskScoreEvent {
   /// Nullable: PLAN/MIGRATION events may have no acting user.
   createdByUserId String?
   createdAt       DateTime             @default(now())
-  risk            Risk                 @relation(fields: [riskId], references: [id], onDelete: Cascade)
+  risk            Risk                 @relation(fields: [riskId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant          Tenant               @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId, riskId, createdAt])

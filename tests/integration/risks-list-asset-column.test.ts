@@ -132,7 +132,18 @@ describeFn('risks list — the Asset column has data (B1-3)', () => {
         expect(row._count?.assetLinks).toBe(0);
     });
 
-    it('does not surface another tenant’s asset link', async () => {
+    it('cannot even STORE another tenant’s asset link any more', async () => {
+        // This test used to build a cross-tenant `AssetRiskLink` — one carrying
+        // the other tenant's id while pointing at OUR risk — and assert the list
+        // query filtered it out. That row is now UNREPRESENTABLE: the composite
+        // FK `[riskId, tenantId] -> Risk[id, tenantId]` refuses it at the
+        // database, so the query no longer has anything to filter.
+        //
+        // The assertion is therefore stronger than it was, and it is kept here
+        // rather than deleted because THIS is the file that documents what the
+        // Asset column may show. A future migration that reverted the composite
+        // FK would make the old hole reachable again, and this is where someone
+        // would look.
         const otherTenant = `t-other-${SUITE}`;
         await globalPrisma.tenant.create({
             data: { id: otherTenant, name: 'other', slug: `other-${SUITE}` },
@@ -141,17 +152,19 @@ describeFn('risks list — the Asset column has data (B1-3)', () => {
         const foreignAsset = await globalPrisma.asset.create({
             data: { tenantId: otherTenant, name: 'Their asset', type: 'APPLICATION' },
         });
-        // A link row carrying the OTHER tenant's id, pointing at our risk.
-        await globalPrisma.assetRiskLink.create({
-            data: { tenantId: otherTenant, assetId: foreignAsset.id, riskId },
-        });
 
+        await expect(
+            globalPrisma.assetRiskLink.create({
+                data: { tenantId: otherTenant, assetId: foreignAsset.id, riskId },
+            }),
+        ).rejects.toThrow(/foreign key|constraint/i);
+
+        // And the list is empty because nothing was stored, not because a
+        // filter hid it — asserted so the case still covers the column.
         const [row] = await rows();
-
         expect(row.assetLinks ?? []).toHaveLength(0);
         expect(row._count?.assetLinks).toBe(0);
 
-        await globalPrisma.assetRiskLink.deleteMany({ where: { tenantId: otherTenant } }).catch(() => {});
         await globalPrisma.asset.deleteMany({ where: { tenantId: otherTenant } }).catch(() => {});
         await globalPrisma.tenant.deleteMany({ where: { id: otherTenant } }).catch(() => {});
     });
