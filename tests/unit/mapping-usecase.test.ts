@@ -134,3 +134,68 @@ describe('getFrameworkMappings — return shape', () => {
         await expect(getFrameworkMappings(noReadCtx)).rejects.toBeDefined();
     });
 });
+
+/**
+ * The join has to work on the control shape PRODUCTION creates.
+ *
+ * Every case above hands the fold controls carrying `annexId: 'A.5.1'`. No
+ * control installed from a framework catalogue looks like that:
+ * `template-projection.ts` writes `code` and never `annexId`, so a real
+ * catalogue control is `{ code: 'A-5.1', annexId: null }`. One ISO clause has
+ * three spellings across this codebase — `5.1` on a FrameworkRequirement,
+ * `A-5.1` on a ControlTemplate, `A.5.1` in the guidance mapping table — and
+ * the fold compared two of them directly.
+ *
+ * So the readiness view reported zero controls against every SOC 2
+ * requirement and every NIS2 area for every tenant whose controls came from
+ * the catalogue, which is all of them, while the suite above stayed green.
+ * These cases fail without the `parseIsoClause` normalisation.
+ */
+describe('getFrameworkMappings — catalogue-shaped controls (annexId is null)', () => {
+    it('joins a control that carries only a hyphenated code', async () => {
+        (MappingRepository.getControlsWithEvidence as jest.Mock).mockResolvedValue([
+            { code: 'A-5.1', annexId: null, status: 'IMPLEMENTED', evidence: [{ status: 'APPROVED' }] },
+            { code: 'A-5.1', annexId: null, status: 'IN_PROGRESS', evidence: [] },
+        ]);
+
+        const res: any = await getFrameworkMappings(readerCtx);
+        const cc1 = res.soc2.find((c: any) => c.code === 'CC1.1');
+
+        expect(cc1.controlCount).toBe(2);
+        expect(cc1.implementedCount).toBe(1);
+        expect(cc1.coverage).toBe(50);
+    });
+
+    it('joins the same control in the NIS2 fold', async () => {
+        (MappingRepository.getControlsWithEvidence as jest.Mock).mockResolvedValue([
+            { code: 'A-5.1', annexId: null, status: 'IMPLEMENTED', evidence: [] },
+        ]);
+
+        const res: any = await getFrameworkMappings(readerCtx);
+        const nis = res.nis2.find((a: any) => a.code === 'NIS2-21.1');
+
+        expect(nis.controlCount).toBe(1);
+        expect(nis.coverage).toBe(100);
+    });
+
+    it('still joins a hand-created control that carries an annexId', async () => {
+        // annexId keeps priority — this is the shape `createControl` writes,
+        // and the fix must not trade one population for the other.
+        (MappingRepository.getControlsWithEvidence as jest.Mock).mockResolvedValue([
+            { code: null, annexId: 'A.5.1', status: 'IMPLEMENTED', evidence: [] },
+        ]);
+
+        const res: any = await getFrameworkMappings(readerCtx);
+        expect(res.soc2.find((c: any) => c.code === 'CC1.1').controlCount).toBe(1);
+    });
+
+    it('does not join a control whose code is not an ISO annex reference', async () => {
+        // 'CC5.1' parses to null, so it must not collide with clause 5.1.
+        (MappingRepository.getControlsWithEvidence as jest.Mock).mockResolvedValue([
+            { code: 'CC5.1', annexId: null, status: 'IMPLEMENTED', evidence: [] },
+        ]);
+
+        const res: any = await getFrameworkMappings(readerCtx);
+        expect(res.soc2.find((c: any) => c.code === 'CC1.1').controlCount).toBe(0);
+    });
+});
