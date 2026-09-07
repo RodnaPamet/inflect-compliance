@@ -88,12 +88,19 @@ const controls = (applied?.templates ?? []) as unknown as StarterControl[];
 const CATALOG_CRITERIA = (applied?.requirements ?? []).map((r) => String(r.code));
 const pack = (applied?.pack ?? {}) as { key?: string; templateCodes?: string[] };
 
-/** The criterion codes a seed program creates — that link lookup's domain. */
+/**
+ * The criterion codes a dev-only seed program states inline.
+ *
+ * `prisma/seed.ts` used to be one of these, and is not any more: its SOC 2
+ * block built the framework a second time and was removed when SOC 2 moved
+ * onto applyCatalogFile. `prisma/seed-catalog.ts` still declares its own
+ * `soc2Reqs`, and is a manual operator CLI that scripts/entrypoint.sh does not
+ * run — so it can still drift from the catalogue production applies.
+ */
 function seededCriterionCodes(rel: string): string[] {
     const block = declarationOf(read(rel), 'soc2Reqs');
     return [...block.matchAll(/code:\s*'([^']+)'/g)].map((m) => m[1]);
 }
-const SEEDED = seededCriterionCodes('prisma/seed.ts');
 
 /** The assessable criteria the framework library declares. */
 const soc2 = loadLibrary(
@@ -208,60 +215,27 @@ describe('SOC 2 Starter Pack — curated control templates', () => {
     });
 });
 
-describe('the seed consumes the fixture in the shape it actually has', () => {
-    /**
-     * This is here because it broke. The fixture became a CatalogFile and
-     * `prisma/seed.ts` still read it as `require(...) as Array<...>` — a cast,
-     * so the compiler kept quiet, and `for...of` threw on an object at
-     * runtime. That took down the WHOLE seed, and the visible symptom was E2E
-     * specs for ISO 27001 and AI governance failing, which have nothing to do
-     * with SOC 2.
-     *
-     * A shape mismatch between a fixture and its consumer is invisible to
-     * every test that reads the fixture — this file included, which was green
-     * throughout. So the assertion has to be about the CONSUMER.
-     *
-     * These are claims about seed.ts AS A PROGRAM — its cast, its field reads
-     * — not proxies for what production ships, so they stay bound to seed.ts.
-     * Dev and CI seed through this block; production does not.
-     */
-    const seedSource = read('prisma/seed.ts');
+/**
+ * The seed.ts consumer-shape describe was DELETED here, not repointed.
+ *
+ * It guarded a real past bug: prisma/seed.ts read
+ * soc2-control-templates.json and treated it as an ARRAY when the file is
+ * `{ _meta, framework, requirements, templates, pack }`. A shape mismatch
+ * between a fixture and its consumer is invisible to every test that reads the
+ * fixture, so the assertions were deliberately about the CONSUMER — its cast,
+ * its field reads — bound to seed.ts with declarationOf and braceBlockAfter.
+ *
+ * That consumer no longer exists. SOC 2 moved onto applyCatalogFile and its
+ * seed.ts block went with it, so there is no hand-rolled reader left to get
+ * the shape wrong: the fixture now reaches the database only through
+ * loadCatalogFile, which validates it against CatalogFileSchema and throws on
+ * a mismatch rather than casting past one.
+ *
+ * declarationOf threw `declaration not found: const soc2Catalog` rather than
+ * matching an empty string, which is why this was noticed at all — a guard
+ * whose subject is renamed away must fail loudly.
+ */
 
-    /**
-     * Bound to the SOC 2 block, not the whole file.
-     *
-     * The first version of this guard asserted `toContain('c.requirementCodes')`
-     * against all of seed.ts. That was unique while SOC 2 was the only fixture
-     * in CatalogFile shape — and stopped being unique the moment four more were
-     * converted, at which point it matched five times and would have passed with
-     * the SOC 2 block reverted to the very cast it exists to forbid. The Class D
-     * ratchet caught it, which is precisely the failure that ratchet names.
-     *
-     * `braceBlockAfter` scopes the read to the loop that consumes the fixture,
-     * so every assertion below can only be satisfied by THIS block.
-     */
-    const soc2Decl = declarationOf(seedSource, 'soc2Catalog');
-    const soc2Controls = declarationOf(seedSource, 'soc2StarterControls');
-    // The anchor is a REGEX, so the parentheses need escaping — passing the
-    // literal silently matches nothing and throws "block anchor not found".
-    const soc2Loop = braceBlockAfter(seedSource, 'for \\(const c of soc2StarterControls\\)');
-
-    it('reads .templates rather than treating the file as an array', () => {
-        expect(soc2Decl).toContain('templates:');
-        expect(soc2Controls).toContain('soc2Catalog.templates');
-        // The old shape, which compiled and threw. If this comes back the seed
-        // dies again and the failures point somewhere else entirely.
-        expect(soc2Decl).not.toMatch(/as Array</);
-    });
-
-    it('reads the renamed and re-typed fields', () => {
-        // `requirements` -> `requirementCodes`, and task strings -> locale
-        // objects. Both renames are silent under a cast.
-        expect(soc2Loop).toContain('c.requirementCodes');
-        expect(soc2Loop).toContain('task.title.en');
-        expect(soc2Loop).toContain('task.description.en');
-    });
-});
 
 describe('SOC 2 criteria — every declaration agrees', () => {
     it("the applied catalogue carries exactly the library's assessable Common Criteria", () => {
@@ -269,21 +243,23 @@ describe('SOC 2 criteria — every declaration agrees', () => {
         expect([...CATALOG_CRITERIA].sort()).toEqual(libraryCC);
     });
 
-    it('prisma/seed.ts creates the same criteria the applied catalogue declares', () => {
-        // The criteria are stated in THREE places: this catalogue (what
-        // production creates), `soc2Reqs` in prisma/seed.ts (what the dev
-        // seed's link lookup resolves against), and
-        // src/data/libraries/soc2-2017.yaml (what the framework means). Let
-        // the dev seed drift and a control that resolves in production silently
-        // fails to link locally — the silent no-link failure this file exists
-        // for, reproduced only on the machine writing the fixture.
-        expect([...SEEDED].sort()).toEqual([...CATALOG_CRITERIA].sort());
-    });
+    // The three-way drift check is now two-way, and that is a REDUCTION IN
+    // RISK rather than in coverage. The criteria were stated in three places:
+    // this catalogue, `soc2Reqs` in prisma/seed.ts, and the library YAML.
+    // seed.ts no longer states them — SOC 2 moved onto applyCatalogFile and
+    // its duplicate block went — so there is one fewer copy to drift. What
+    // remains is asserted above: the catalogue against the library.
 
-    it('prisma/seed-catalog.ts seeds the same criteria as prisma/seed.ts', () => {
-        // Both are dev-only programs; neither reaches a production database.
-        // This is a lockstep check between them, kept because seed-catalog.ts
-        // says in a comment that it is one.
-        expect(seededCriterionCodes('prisma/seed-catalog.ts')).toEqual(SEEDED);
+    it('prisma/seed-catalog.ts states the same criteria the applied catalogue declares', () => {
+        // seed-catalog.ts is a manual operator CLI, run by hand and not by
+        // scripts/entrypoint.sh, and it still declares its own `soc2Reqs`. It
+        // was previously checked against prisma/seed.ts — a lockstep between
+        // two dev-only copies, which said nothing about either matching what
+        // production gets. seed.ts has since stopped stating the criteria, so
+        // the comparison now runs against the catalogue a production seeder
+        // applies: the only copy that reaches a customer.
+        expect([...seededCriterionCodes('prisma/seed-catalog.ts')].sort()).toEqual(
+            [...CATALOG_CRITERIA].sort(),
+        );
     });
 });

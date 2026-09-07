@@ -45,12 +45,7 @@ const SEED = 'prisma/seed.ts';
  * Do not add one to make a test pass: a NEW divergence means a fresh database
  * and a customer database now disagree about what a pack is called.
  */
-const PACK_KEY_DIVERGENCES: Record<string, { dev: string; production: string }> = {
-    SOC2: { dev: 'SOC2_STARTER_PACK', production: 'SOC2_BASELINE' },
-    'CIS-V8': { dev: 'CIS_V8_IG1_PACK', production: 'CIS_V8_IG1' },
-    'OWASP-ASVS': { dev: 'ASVS_L1_PACK', production: 'ASVS_L1' },
-    ISO27701: { dev: 'ISO27701_BASELINE', production: 'ISO27701_CORE' },
-};
+const PACK_KEY_DIVERGENCES: Record<string, { dev: string; production: string }> = {};
 
 /** framework key -> pack key, for every CatalogFile a production seeder applies. */
 function productionPacks(): Map<string, string> {
@@ -131,10 +126,19 @@ describe('the two seeding paths agree on pack keys', () => {
     });
 
     it('the divergence list is not growing', () => {
-        // Four. Was five until NIST SSDF converted — its two dev-only pack
-        // keys went with the seed.ts block that built them, which is what a
-        // conversion is supposed to do to this list.
-        expect(Object.keys(PACK_KEY_DIVERGENCES).length).toBeLessThanOrEqual(4);
+        // EMPTY, and that is the ratchet arriving where it was pointed.
+        //
+        // It held five when written — SOC 2, NIST SSDF, CIS v8, OWASP ASVS and
+        // ISO 27701, each shipping a pack under one key in dev and another in
+        // production. Every entry left the same way: the framework moved onto
+        // applyCatalogFile and the seed.ts block that invented the second key
+        // went with it. None was deleted to make a test pass.
+        //
+        // Kept as an empty record rather than removed, because the assertions
+        // below are what stop a sixth appearing. A new entry means a fresh
+        // database and a customer database now disagree about what a pack is
+        // called, and the entry would be the only thing saying so.
+        expect(Object.keys(PACK_KEY_DIVERGENCES)).toEqual([]);
     });
 
     it('DORA and NIS2 agree, because they have already converted', () => {

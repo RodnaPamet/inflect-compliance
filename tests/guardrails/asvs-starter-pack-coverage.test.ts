@@ -189,10 +189,13 @@ describe('ASVS 4.0.3 — L1 delivery (the catalogue production applies)', () => 
     });
 
     it('declares the pack production actually has', () => {
-        // ASVS_L1 is the key in the live database. seed.ts builds ASVS_L1_PACK,
-        // which reaches dev only — asserted here so the split stays visible.
+        // ASVS_L1 is the key in the live database, and now the only one: the
+        // seed.ts block that built ASVS_L1_PACK has been removed, so there is
+        // no second spelling left to keep visible. The companion assertion
+        // that ASVS_L1_PACK was declared by seed.ts went with it — a witness
+        // pinned to a key whose retirement was the goal.
         expect(catalog?.pack?.key).toBe('ASVS_L1');
-        expect(declaringSources('ASVS_L1_PACK')).toEqual(['prisma/seed.ts']);
+        expect(declaringSources('ASVS_L1_PACK')).toEqual([]);
     });
 
     it('the pack links every shipped template, and only shipped templates', () => {
