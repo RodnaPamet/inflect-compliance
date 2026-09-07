@@ -3627,87 +3627,87 @@
       "tasks": [
         {
           "title": {
-            "en": "Inventory the record classes held and the retention requirement fixing each one"
+            "en": "Inventory the record classes held and the requirement fixing each one's retention"
           },
           "description": {
-            "en": "List each class of record the organisation holds (contracts, financial records, personnel files, audit trails, incident records), and for each one name the system it lives in, its owner, and the specific legal, regulatory, contractual or business requirement that sets how long it must be kept. Where no requirement exists, say so explicitly rather than leaving the cell blank. Attach the completed inventory."
+            "en": "List each class of record the organisation holds — contracts, financial records, personnel files, audit trails, incident records — and against each one name the store holding its authoritative copy, the person accountable for it, and the specific legal, regulatory, contractual or business requirement that sets how long it must be kept. Where an information asset inventory already lists these holdings, take the classes from it rather than surveying them again; what this task adds is the requirement column. Where no external requirement applies and the period is a business decision, say so and name the decision rather than leaving the cell blank. Attach the completed inventory as the population the rest of this control works from."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
           "evidenceHint": {
-            "en": "Records inventory listing record class, holding system, owner and the requirement fixing its retention"
+            "en": "Records inventory listing each record class, the store holding its authoritative copy, its accountable owner, and the requirement fixing its retention"
           },
           "suggestedRole": "Legal/DPO"
         },
         {
           "title": {
-            "en": "Publish a retention schedule giving a period and a disposal method per record class"
+            "en": "Publish a retention schedule giving each record class a period and the event that starts it"
           },
           "description": {
-            "en": "Turn the inventory into a schedule: for every record class state the retention period, the event that starts the clock (creation, contract end, employment end), and how the record is disposed of at the end of it (secure deletion, shredding, cryptographic erasure). Legal/DPO owns the periods; IT Operations confirms each disposal method is achievable in the holding system. Attach the approved schedule."
+            "en": "Turn the inventory into the schedule the rest of the organisation works from: for every record class state the retention period, the event that starts the clock — creation, contract end, employment end, case closure — and carry across the requirement behind it. The schedule settles when a record stops being protected and nothing past that point: how the information is then removed, and from which holdings, is worked out against this schedule by the information deletion control rather than restated here, so the schedule carries no disposal method column. Attach the approved schedule."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
           "evidenceHint": {
-            "en": "Retention schedule showing period, retention trigger and disposal method for each record class"
+            "en": "Approved retention schedule giving the period, the event that starts it and the requirement behind it for every record class"
           },
           "suggestedRole": "Legal/DPO"
         },
         {
           "title": {
-            "en": "Restrict alteration and deletion of records before their retention period ends"
+            "en": "Restrict alteration and early destruction of records for the length of their retention period"
           },
           "description": {
-            "en": "In each system holding records, configure the controls that stop a record being changed or removed early — immutable or write-once storage, retention locks, or removal of delete rights from routine operator accounts — and record which mechanism protects which record class. Where a system cannot enforce it technically, note the compensating control. Attach the configuration exports and the permission listings."
+            "en": "For each store named in the inventory, put in place what stops a record being altered or destroyed before its retention date — write-once storage, a retention lock, withdrawal of delete rights from routine operator accounts, a locked cabinet for paper originals — and record which measure protects which record class. Where a store cannot enforce it, record the compensating measure relied on instead rather than leaving the class unaddressed. Attach the configuration exports, permission listings or written descriptions that show what is actually in force for each class."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
           "evidenceHint": {
-            "en": "Per-system configuration export and permission listing showing the protection applied to each record class"
+            "en": "Per-store record of the measure protecting each record class from alteration and early destruction, with the exports, permission listings or descriptions evidencing each"
           },
           "suggestedRole": "IT Operations"
         },
         {
           "title": {
-            "en": "Dispose of records that have passed their retention date and log each disposal"
+            "en": "Place the records each class gained this period under the protection recorded for it"
           },
           "description": {
-            "en": "Run the disposal due under the schedule for this period, using the disposal method named for that record class. Log each disposal with the record class, the volume or identifiers covered, the date, the method used and who authorised it, so that a record absent from the system can later be shown to have been disposed of deliberately rather than lost."
+            "en": "For every record class that gained records during the period, confirm the new records sit in the store named for that class and under the measure recorded against it, and list those that do not — records left in a working area, an unprotected export, a mailbox or a local drive — with what was done about each. The output is coverage per record class for the period, not a listing of individual records, so a class that gained nothing is recorded as such rather than omitted."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
           "evidenceHint": {
-            "en": "Disposal log for the period, one entry per disposal with class, volume, date, method and authoriser"
+            "en": "Coverage sheet for the period: each record class, whether the records it gained sit under its recorded protection, and the resolution of each that did not"
           },
           "suggestedRole": "IT Operations"
         },
         {
           "title": {
-            "en": "Retrieve a sample of long-retention records to prove they are still readable"
+            "en": "Record every record destroyed early, altered without authority, or missing when called for"
           },
           "description": {
-            "en": "Pick a sample of records that must be kept for long periods or that sit on legacy media or in obsolete file formats, retrieve them, and confirm they open and are complete. Where a record can no longer be read, record the migration or format conversion needed. Attach the retrieval results including the records sampled and the outcome for each."
+            "en": "Capture each occasion in the period when a record still inside its retention period was destroyed before its date, changed without authority, or could not be produced when it was asked for. Give the record class, what happened, how it came to light, and what was done — recovery from another copy, correction of the protection that failed, or acceptance of the loss with its consequence stated. Where nothing occurred, close the period with a nil entry, so an empty log reads as a period examined rather than a period skipped."
           },
-          "phase": "REVIEW",
+          "phase": "OPERATE",
           "sortOrder": 4,
           "evidenceHint": {
-            "en": "Retrieval test record listing the sampled records, the outcome for each, and any remediation raised"
+            "en": "Records protection exception log for the period, one entry per early destruction, unauthorised alteration or failure to produce, with its resolution — or a nil entry for the period"
           },
-          "suggestedRole": "IT Operations"
+          "suggestedRole": "Legal/DPO"
         },
         {
           "title": {
-            "en": "Reconcile records held in each system against the retention schedule"
+            "en": "Retrieve a sample of records and confirm each is complete, unaltered and readable"
           },
           "description": {
-            "en": "Compare what each system actually holds against what the schedule says it should hold, and list two things: records still held past their disposal date, and record classes with fewer records than expected (a sign of premature deletion). Record the resolution for each discrepancy. Attach the reconciliation."
+            "en": "Draw a sample across the classes in the inventory, weighted towards the longest retention periods, legacy media and obsolete file formats, and retrieve each record. Confirm it opens, that it is complete against what the class says it should contain, and that it carries no unexplained change since it was filed. Where a record cannot be read or has lost content, record the migration, format conversion or recovery needed and who owns it. Attach the results listing what was sampled and the outcome of each retrieval."
           },
           "phase": "REVIEW",
           "sortOrder": 5,
           "evidenceHint": {
-            "en": "Reconciliation showing overdue and prematurely-deleted records per system, with the resolution of each"
+            "en": "Retrieval results listing the records sampled, whether each was complete, unaltered and readable, and the remediation raised for each failure"
           },
-          "suggestedRole": "Legal/DPO"
+          "suggestedRole": "IT Operations"
         }
       ]
     },
@@ -6747,71 +6747,71 @@
       "tasks": [
         {
           "title": {
-            "en": "Record what makes each category of information due for deletion and where that due date is fixed"
+            "en": "Record the event that makes each information category due for deletion"
           },
           "description": {
-            "en": "For each category of information the organisation holds, record the event that makes it due for deletion — a retention period expiring, a contract or an account ending, a request from the person it concerns, a project closing — and name where that due date is fixed, whether in a retention schedule the organisation already maintains, a statutory period or a contract term. Take the periods as given rather than setting them here. Where a category is never due for deletion, enter it with the reason. Attach the list, one row per category, as the list the holdings and the deletions are worked from."
+            "en": "For every category of information the organisation holds, record the event that makes it due for removal — a retention period expiring, a contract or an account ending, a project closing, a request from the person the information concerns, or the information no longer being needed for the purpose it was collected for — and name where that event is fixed. Where the retention schedule already fixes it, cite the schedule row and take the period as given: this control sets no periods of its own. Where a category has no row on the schedule, record its trigger and the basis for it here, so no category is left without one. Attach the list, one row per category."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
           "evidenceHint": {
-            "en": "List of information categories, the event that makes each due for deletion, and the schedule, statute or contract that fixes it"
+            "en": "List of information categories with the event that makes each due for deletion and the schedule row, statute, contract or decision that fixes that event"
           },
           "suggestedRole": "Legal/DPO"
         },
         {
           "title": {
-            "en": "List every place a copy of each information category is held"
+            "en": "List every holding that carries a copy of each information category"
           },
           "description": {
-            "en": "For each category on the retention schedule, record the systems, archives, offline media, printed files and other organisations holding a copy, with the person accountable for each holding. A deletion that misses a holding leaves the information in existence, so this list is what later makes a deletion provable. Attach the holdings list cross-referenced to the retention schedule."
+            "en": "Work outwards from the store of the authoritative copy to every other place a copy exists: replicas and reporting systems, backups and archives, offline and removable media, printed files, development and test environments, mailboxes and shared drives, and other organisations processing it on the organisation's behalf. Name the person accountable for each holding. Where an information asset inventory exists it names the primary systems only, so take those as the starting point and extend the list to the copies it does not carry. A deletion that misses a holding leaves the information in existence, so this list is what every later deletion is measured against. Attach it cross-referenced to the categories."
           },
           "phase": "SCOPE",
           "sortOrder": 1,
           "evidenceHint": {
-            "en": "Holdings list per information category, naming each system, archive, medium or third party and its accountable owner"
+            "en": "Holdings list per information category naming every system, backup, archive, medium, environment and third party holding a copy, each with its accountable owner"
           },
           "suggestedRole": "IT Operations"
         },
         {
           "title": {
-            "en": "Record how information is removed at each holding and who performs it"
+            "en": "Record the removal method that puts information beyond recovery at each holding"
           },
           "description": {
-            "en": "For every holding on the list, state the method used to put the information beyond recovery there and the role that carries it out. Where a holding cannot delete on request — an archive written once, a copy under legal hold — record that, the date the copy expires, and the restriction applied to it meanwhile. Attach the method-per-holding table."
+            "en": "For every holding on the list, state how information is put beyond recovery there and the role that carries it out — overwriting in place, destruction of the medium, cryptographic erasure where the copy cannot be reached directly, or a written instruction to the organisation holding it. Where a holding cannot delete on demand, such as an append-only archive, a backup set that only expires as a whole, or a copy under legal hold, record that fact, the date the copy expires by itself, and the restriction that applies to it until then. Attach the method-per-holding table."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
           "evidenceHint": {
-            "en": "Table of holding, removal method, accountable role, and the handling recorded for holdings that cannot delete on request"
+            "en": "Table of holding, removal method and accountable role, and — for holdings that cannot delete on demand — the date the copy expires and the restriction applied meanwhile"
           },
           "suggestedRole": "IT Operations"
         },
         {
           "title": {
-            "en": "Carry out the deletions that fell due and show every recorded holding was cleared"
+            "en": "Clear the information that fell due and mark each recorded holding for it"
           },
           "description": {
-            "en": "Work the list for categories whose deletion event has occurred, clear them, and then set each deletion against the holdings list for its category, marking every system, archive, medium and third party as cleared, still outstanding, or unable to be cleared with the reason and the restriction standing in its place meanwhile. What this produces is a coverage sheet against the holdings list rather than a second record of the disposals themselves: where the organisation already logs a disposal elsewhere, reference that entry rather than repeating it. Attach the deletion coverage record for the period."
+            "en": "Take the categories whose deletion event occurred during the period, remove the information using the method recorded for each of their holdings, then set that work against the holdings list, marking every holding cleared, still outstanding, or unable to be cleared with the reason and the restriction standing in its place meanwhile. What this produces is coverage against the holdings list rather than a second record of the disposals themselves: where a removal is already recorded elsewhere, such as a media withdrawal entry or a contractor's destruction certificate, reference that entry instead of restating it. Attach the coverage record for the period."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
           "evidenceHint": {
-            "en": "Deletion coverage record for the period: each deletion carried out set against every holding recorded for its category, marked cleared, outstanding or unable, with the reason for each exception"
+            "en": "Deletion coverage record for the period: each category cleared set against every holding listed for it, marked cleared, outstanding or unable, with the reason for each exception"
           },
           "suggestedRole": "IT Operations"
         },
         {
           "title": {
-            "en": "Obtain confirmation of deletion from each other organisation holding the information"
+            "en": "Obtain confirmation from each other organisation holding information that fell due"
           },
           "description": {
-            "en": "For every third party on the holdings list carrying information that fell due this period, request written confirmation that it has been removed from their systems and their own copies, and record when the request was made. Attach the confirmations or destruction certificates received, together with the parties that did not answer and the follow-up taken on each."
+            "en": "For every third party on the holdings list carrying a category that fell due this period, ask in writing for confirmation that the information has been removed from their systems, their backups and any copies they passed on further, and record the date the request went out. Attach the confirmations received alongside the parties that have not answered and the follow-up taken on each: a request sent is a different state from a deletion confirmed, and the record has to show which of the two each party is in."
           },
           "phase": "OPERATE",
           "sortOrder": 4,
           "evidenceHint": {
-            "en": "Third-party deletion confirmations or destruction certificates, plus the non-responder list and the follow-up on each"
+            "en": "Third-party deletion confirmations received for the period, plus the outstanding requests with the date sent and the follow-up taken on each"
           },
           "suggestedRole": "Procurement"
         },
@@ -6820,12 +6820,12 @@
             "en": "Search for surviving copies of a sample of information already recorded as deleted"
           },
           "description": {
-            "en": "Take a sample of entries from the deletion record and look for that information in every holding its category lists, including archives and copies held elsewhere. Record what was searched, what was found and how any surviving copy was dealt with. Attach the verification record."
+            "en": "Take a sample from the period's coverage record and look for that information in every holding its category lists, reaching past the systems the deletion touched directly into the backups, archives and third-party copies. Record what was searched, how it was searched, what was found, and how each surviving copy was dealt with. A search that finds nothing is the result; a holding that could not be searched at all is a finding in its own right and is recorded as one rather than passed over. Attach the verification record."
           },
           "phase": "REVIEW",
           "sortOrder": 5,
           "evidenceHint": {
-            "en": "Verification record: items sampled, holdings searched, surviving copies found and how each was resolved"
+            "en": "Verification record: items sampled, holdings searched, surviving copies found, holdings that could not be searched, and the resolution of each"
           },
           "suggestedRole": "Security engineering"
         }
