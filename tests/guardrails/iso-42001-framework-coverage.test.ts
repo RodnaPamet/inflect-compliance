@@ -235,49 +235,57 @@ describe('ISO 42001 references that DO reach production', () => {
     });
 });
 
-describe('ISO 42001 dev-only seed wiring (prisma/seed.ts — reaches no deploy)', () => {
+describe('ISO 42001 delivery', () => {
     /**
-     * Kept, and renamed to stop it reading as a delivery claim. The
-     * attribution assertions here are load-bearing — ISO 42001 is a
-     * copyrighted standard and the metadata IC writes is what records that IC
-     * stores a reference index rather than the text — but seed.ts is the only
-     * place that metadata exists today, so this is where they have to live
-     * until an ISO 42001 CatalogFile does. When one lands, they move to
-     * `catalog.framework.metadata` the way SSDF's did.
+     * This block asserted what `prisma/seed.ts` built, and was right to: the
+     * framework was inline there and reached no production database. It carried
+     * a case named "DELIVERY RATCHET ... flip this on conversion", written to
+     * be true THEN and to fail the day a production seeder picked the framework
+     * up. This is that flip.
      *
-     * Each read is bounded to the declaration it names (`declarationOf`)
-     * rather than matched across the whole file: the old kind check spanned
-     * 200 arbitrary characters between `key:` and `kind:`, which re-forms
-     * across a sibling framework block and is the Class C shape this repo
-     * ratchets down.
+     * Same facts, asserted against the CatalogFile production applies — field
+     * reads on structured data rather than regexes over a file production never
+     * runs.
      */
-    const seed = read('prisma/seed.ts');
+    const catalog = appliedCatalogFor('ISO42001');
 
-    it('reads the ISO 42001 fixture', () => {
-        const data = declarationOf(seed, 'iso42001Data');
-        expect(data).toContain('iso_42001_requirements.json');
+    it('a production seeder applies a ISO 42001 catalogue at all', () => {
+        // DENOMINATOR: every case below is vacuous on null.
+        expect(catalog).not.toBeNull();
+        expect(catalog?.requirements.length).toBeGreaterThanOrEqual(60);
+        expect(catalog?.templates.length).toBeGreaterThanOrEqual(15);
     });
 
-    it('upserts the framework as ISO42001 2023, kind ISO_STANDARD', () => {
-        const framework = declarationOf(seed, 'iso42001');
-        expect(framework).toContain("key: 'ISO42001'");
-        expect(framework).toContain("version: '2023'");
-        expect(framework).toContain("kind: 'ISO_STANDARD'");
+    it('declares the framework as ISO42001 2023, kind ISO_STANDARD', () => {
+        expect(catalog?.framework.key).toBe('ISO42001');
+        expect(catalog?.framework.version).toBe('2023');
+        expect(catalog?.framework.kind).toBe('ISO_STANDARD');
     });
 
-    it('persists ISO provider + copyright disclaimer in framework metadata', () => {
-        const meta = declarationOf(seed, 'iso42001Meta');
-        expect(meta).toContain("provider: 'ISO/IEC'");
-        expect(meta).toContain("license: 'ISO-copyright'");
-        expect(meta).toMatch(/referenceIndexOnly:\s*true/);
-        expect(meta).toMatch(/NOT a reproduction of the/i);
+    it('carries the provenance the licensing depends on', () => {
+        const meta = (catalog?.framework.metadata ?? {}) as Record<string, unknown>;
+        expect(meta.provider).toBe('ISO/IEC');
+        expect(String(meta.copyright).length).toBeGreaterThan(40);
+        expect(catalog?.framework.sourceUrn).toBe('urn:inflect:library:iso-42001');
     });
 
-    it('builds the dev-only ISO42001_BASELINE pack', () => {
-        // Named for what it is: production has no ISO 42001 pack under this
-        // key or any other — see the delivery block above.
-        const pack = declarationOf(seed, 'iso42001Pack');
-        expect(pack).toMatch(/where:\s*\{\s*key:\s*'ISO42001_BASELINE'\s*\}/);
+    it('declares the ISO42001_BASELINE pack over its own templates', () => {
+        expect(catalog?.pack?.key).toBe('ISO42001_BASELINE');
+        const codes = new Set((catalog?.templates ?? []).map((t) => String(t.code)));
+        const packCodes = (catalog?.pack?.templateCodes ?? []) as string[];
+        expect(packCodes.length).toBeGreaterThan(0);
+        expect(packCodes.filter((c) => !codes.has(c))).toEqual([]);
+    });
+
+    it('every template resolves its requirement codes', () => {
+        const declared = new Set((catalog?.requirements ?? []).map((r) => String(r.code)));
+        const dangling: string[] = [];
+        for (const t of catalog?.templates ?? []) {
+            const codes = (t.requirementCodes ?? []) as string[];
+            if (!codes.length) dangling.push(`${String(t.code)}: no requirementCodes`);
+            for (const c of codes) if (!declared.has(c)) dangling.push(`${String(t.code)} -> ${c}`);
+        }
+        expect(dangling).toEqual([]);
     });
 });
 

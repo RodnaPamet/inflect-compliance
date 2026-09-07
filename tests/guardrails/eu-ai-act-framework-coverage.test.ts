@@ -25,12 +25,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
-import {
-    appliedCatalogFor,
-    appliedCatalogueStats,
-    declaringSources,
-    productionDeclaringSources,
-} from '../helpers/applied-catalogue';
+import { appliedCatalogFor, appliedCatalogueStats, declaringSources, productionDeclaringSources } from '../helpers/applied-catalogue';
 import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -122,69 +117,55 @@ describe('EU AI Act seed fixture', () => {
 
 describe('EU AI Act delivery', () => {
     /**
-     * ═══ WHAT WAS WRONG ═══
+     * This block asserted what `prisma/seed.ts` built, and was right to: the
+     * framework was inline there and reached no production database. It carried
+     * a case named "DELIVERY RATCHET ... flip this on conversion", written to
+     * be true THEN and to fail the day a production seeder picked the framework
+     * up. This is that flip.
      *
-     * This block used to be headed "seed wiring (seed.ts)" and decided whether
-     * the EU AI Act was AVAILABLE by grepping `prisma/seed.ts` for the string
-     * `'EU_AI_ACT_BASELINE'`. `prisma/seed.ts` is not run on a production
-     * deploy, so that assertion could not fail while the thing it named was
-     * undeliverable — which is precisely the state the AI Act is in. No
-     * production seeder applies an EU AI Act catalogue (`entrypoint.sh` runs
-     * five seeders; the seven catalogue fixtures between them are soc2, ssdf,
-     * cis-v8-ig1, asvs-l1, iso27701, dora and nis2), so a fresh production
-     * database holds no EU-AI-ACT framework and no EU AI Act pack under any
-     * key. The old assertions read as coverage of a shipped framework.
-     *
-     * So these cases say the true thing instead: the DEV seeder declares it,
-     * production does not. The second half is a DELIVERY RATCHET — the PR that
-     * gives the AI Act a CatalogFile turns it red, and the fix then is to
-     * rewrite it as field reads off `appliedCatalogFor('EU-AI-ACT')`
-     * (framework key / version / kind, plus the pack key PRODUCTION ships,
-     * which for every framework converted so far has NOT been the `*_BASELINE`
-     * name `seed.ts` builds).
+     * Same facts, asserted against the CatalogFile production applies — field
+     * reads on structured data rather than regexes over a file production never
+     * runs.
      */
-    const stats = appliedCatalogueStats();
-    const seed = read('prisma/seed.ts');
+    const catalog = appliedCatalogFor('EU-AI-ACT');
 
-    it('the applied-catalogue scan sees a real production corpus', () => {
-        // DENOMINATOR. Every "production does not have it" case below is
-        // vacuous if the scan reads nothing at all.
-        expect(stats.seeders).toContain('scripts/seed-framework-catalogs.ts');
-        expect(stats.fixtures.length).toBeGreaterThanOrEqual(7);
-        expect(stats.bytes).toBeGreaterThan(10_000);
-        // Control: a framework that IS delivered resolves through the very
-        // same lookup, so the `null` asserted below means absent, not broken.
-        expect(appliedCatalogFor('DORA')).not.toBeNull();
+    it('a production seeder applies a EU AI Act catalogue at all', () => {
+        // DENOMINATOR: every case below is vacuous on null.
+        expect(catalog).not.toBeNull();
+        expect(catalog?.requirements.length).toBeGreaterThanOrEqual(15);
+        expect(catalog?.templates.length).toBeGreaterThanOrEqual(5);
     });
 
-    it('prisma/seed.ts — the dev-only path — declares the framework and its pack', () => {
-        expect(declaringSources('EU-AI-ACT')).toContain('prisma/seed.ts');
-        expect(declaringSources('EU_AI_ACT_BASELINE')).toContain('prisma/seed.ts');
+    it('declares the framework as EU-AI-ACT 2024, kind REGULATION', () => {
+        expect(catalog?.framework.key).toBe('EU-AI-ACT');
+        expect(catalog?.framework.version).toBe('2024');
+        expect(catalog?.framework.kind).toBe('REGULATION');
     });
 
-    it('DELIVERY RATCHET: no production seeder applies the EU AI Act (flip this on conversion)', () => {
-        expect(appliedCatalogFor('EU-AI-ACT')).toBeNull();
-        expect(productionDeclaringSources('EU-AI-ACT')).toEqual([]);
-        expect(productionDeclaringSources('EU_AI_ACT_BASELINE')).toEqual([]);
+    it('carries the provenance the licensing depends on', () => {
+        const meta = (catalog?.framework.metadata ?? {}) as Record<string, unknown>;
+        expect(meta.provider).toBe('European Union');
+        expect(String(meta.copyright).length).toBeGreaterThan(40);
+        expect(catalog?.framework.sourceUrn).toBe('urn:inflect:library:eu-ai-act');
     });
 
-    it('the dev seeder upserts EU-AI-ACT 2024 / REGULATION off the AI Act fixture', () => {
-        // Bound to the declarations, not to the whole 3,000-line file: a bare
-        // `toMatch(/kind:\s*'REGULATION'/)` over all of seed.ts is satisfied by
-        // DORA's block, and a span between two anchors re-forms across it.
-        expect(declarationOf(seed, 'euAiActData')).toContain('fixtures/eu_ai_act_requirements');
-        const upsert = declarationOf(seed, 'euAiAct');
-        expect(upsert).toMatch(/key:\s*'EU-AI-ACT'/);
-        expect(upsert).toMatch(/version:\s*'2024'/);
-        expect(upsert).toMatch(/kind:\s*'REGULATION'/);
+    it('declares the EU_AI_ACT_BASELINE pack over its own templates', () => {
+        expect(catalog?.pack?.key).toBe('EU_AI_ACT_BASELINE');
+        const codes = new Set((catalog?.templates ?? []).map((t) => String(t.code)));
+        const packCodes = (catalog?.pack?.templateCodes ?? []) as string[];
+        expect(packCodes.length).toBeGreaterThan(0);
+        expect(packCodes.filter((c) => !codes.has(c))).toEqual([]);
     });
 
-    it('the dev seeder carries EU provider + public-domain + not-legal-advice metadata', () => {
-        const meta = declarationOf(seed, 'euAiActMeta');
-        expect(meta).toMatch(/provider:\s*'European Union'/);
-        expect(meta).toMatch(/license:\s*'public-domain'/);
-        expect(meta).toMatch(/notLegalAdvice:\s*true/);
-        expect(meta).toMatch(/not legal advice/i);
+    it('every template resolves its requirement codes', () => {
+        const declared = new Set((catalog?.requirements ?? []).map((r) => String(r.code)));
+        const dangling: string[] = [];
+        for (const t of catalog?.templates ?? []) {
+            const codes = (t.requirementCodes ?? []) as string[];
+            if (!codes.length) dangling.push(`${String(t.code)}: no requirementCodes`);
+            for (const c of codes) if (!declared.has(c)) dangling.push(`${String(t.code)} -> ${c}`);
+        }
+        expect(dangling).toEqual([]);
     });
 });
 

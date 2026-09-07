@@ -70,11 +70,25 @@ describe('the two seeding paths agree on pack keys', () => {
     const seed = codeOf(fs.readFileSync(path.join(REPO_ROOT, SEED), 'utf8'));
     const prodPacks = productionPacks();
 
-    it('the scan finds pack keys on both sides (denominator)', () => {
+    it('the scan finds the packs production applies (denominator)', () => {
         // Every assertion below is satisfied by an empty scan, which would
         // report perfect agreement between two things it never read.
-        expect(prodPacks.size).toBeGreaterThanOrEqual(5);
-        expect([...seed.matchAll(/key: '[A-Z0-9_]*(?:PACK|BASELINE|CORE)'/g)].length).toBeGreaterThanOrEqual(8);
+        expect(prodPacks.size).toBeGreaterThanOrEqual(15);
+    });
+
+    it('prisma/seed.ts builds no framework pack at all', () => {
+        // This used to require EIGHT pack keys in seed.ts, because seed.ts was
+        // the other writer and the whole file existed to compare the two.
+        //
+        // It now declares none. Every framework moved onto applyCatalogFile,
+        // so there is no second writer left to disagree — which is why
+        // PACK_KEY_DIVERGENCES is empty and stays that way by construction
+        // rather than by vigilance.
+        //
+        // Asserted rather than deleted: a pack key reappearing in seed.ts
+        // means somebody has started building a framework there again, and
+        // this is where that shows up first.
+        expect([...seed.matchAll(/key: '[A-Z0-9_]*(?:PACK|BASELINE|CORE)'/g)].map((m) => m[0])).toEqual([]);
     });
 
     it('every recorded divergence is real on both sides', () => {

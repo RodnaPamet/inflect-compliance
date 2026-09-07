@@ -1,0 +1,1686 @@
+{
+  "_meta": {
+    "purpose": "OWASP AISVS v1.0 in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
+    "why": "Built inline in prisma/seed.ts, which is not run on production deploys. Extracted from a database seeded by that block, so the shape is carried over exactly rather than re-derived from grouping logic that ran at seed time.",
+    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here — every template carries the generic five, as it did inline.",
+    "deliveredBy": "scripts/seed-framework-catalogs.ts"
+  },
+  "framework": {
+    "key": "OWASP-AISVS",
+    "name": "OWASP AISVS v1.0",
+    "version": "1.0",
+    "kind": "INDUSTRY_STANDARD",
+    "description": "OWASP AI Security Verification Standard v1.0 — AI-security controls for AI-enabled systems.",
+    "sourceUrn": "urn:inflect:library:owasp-aisvs-1.0",
+    "metadata": {
+      "locale": "en",
+      "provider": "OWASP",
+      "packager": "inflect",
+      "publicationDate": "2025-05-01",
+      "license": "CC-BY-SA-4.0",
+      "sourceUrl": "https://github.com/OWASP/AISVS",
+      "referenceIndexOnly": true,
+      "copyright": "OWASP AISVS v1.0 © OWASP Foundation, licensed CC-BY-SA-4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Source: https://github.com/OWASP/AISVS. Inflect stores a reference index (IDs, levels, paraphrased titles) and links to the canonical text."
+    }
+  },
+  "requirements": [
+    {
+      "code": "C1.1.1",
+      "title": "Training data limited to necessary features",
+      "section": "C1 Training Data Integrity & Traceability",
+      "category": "C1 Training Data Integrity & Traceability",
+      "sortOrder": 0
+    },
+    {
+      "code": "C1.1.2",
+      "title": "Inventory all training data sources and origins",
+      "section": "C1 Training Data Integrity & Traceability",
+      "category": "C1 Training Data Integrity & Traceability",
+      "sortOrder": 1
+    },
+    {
+      "code": "C1.1.3",
+      "title": "Protect data integrity in storage and transfer",
+      "section": "C1 Training Data Integrity & Traceability",
+      "category": "C1 Training Data Integrity & Traceability",
+      "sortOrder": 2
+    },
+    {
+      "code": "C1.1.4",
+      "title": "Monitor data for unauthorized modification or corruption",
+      "section": "C1 Training Data Integrity & Traceability",
+      "category": "C1 Training Data Integrity & Traceability",
+      "sortOrder": 3
+    },
+    {
+      "code": "C1.1.5",
+      "title": "Watermark datasets to support attribution",
+      "section": "C1 Training Data Integrity & Traceability",
+      "category": "C1 Training Data Integrity & Traceability",
+      "sortOrder": 4
+    },
+    {
+      "code": "C1.2.1",
+      "title": "Restrict labeling platform access by role",
+      "section": "C1 Training Data Integrity & Traceability",
+      "category": "C1 Training Data Integrity & Traceability",
+      "sortOrder": 5
+    },
+    {
+      "code": "C1.2.2",
+      "title": "Apply cryptographic integrity to labeling artifacts",
+      "section": "C1 Training Data Integrity & Traceability",
+      "category": "C1 Training Data Integrity & Traceability",
+      "sortOrder": 6
+    },
+    {
+      "code": "C1.2.3",
+      "title": "Redact or encrypt sensitive data in labels",
+      "section": "C1 Training Data Integrity & Traceability",
+      "category": "C1 Training Data Integrity & Traceability",
+      "sortOrder": 7
+    },
+    {
+      "code": "C1.3.1",
+      "title": "Detect data poisoning in training pipelines",
+      "section": "C1 Training Data Integrity & Traceability",
+      "category": "C1 Training Data Integrity & Traceability",
+      "sortOrder": 8
+    },
+    {
+      "code": "C1.3.2",
+      "title": "Apply confidence thresholds to auto-generated labels",
+      "section": "C1 Training Data Integrity & Traceability",
+      "category": "C1 Training Data Integrity & Traceability",
+      "sortOrder": 9
+    },
+    {
+      "code": "C1.3.3",
+      "title": "Evaluate models for bias in decisions",
+      "section": "C1 Training Data Integrity & Traceability",
+      "category": "C1 Training Data Integrity & Traceability",
+      "sortOrder": 10
+    },
+    {
+      "code": "C1.3.4",
+      "title": "Remove disallowed content before training",
+      "section": "C1 Training Data Integrity & Traceability",
+      "category": "C1 Training Data Integrity & Traceability",
+      "sortOrder": 11
+    },
+    {
+      "code": "C1.3.5",
+      "title": "Defend against clean-label poisoning attacks",
+      "section": "C1 Training Data Integrity & Traceability",
+      "category": "C1 Training Data Integrity & Traceability",
+      "sortOrder": 12
+    },
+    {
+      "code": "C2.1.1",
+      "title": "Normalize input before tokenization",
+      "section": "C2 Input Validation",
+      "category": "C2 Input Validation",
+      "sortOrder": 13
+    },
+    {
+      "code": "C2.1.2",
+      "title": "Mitigate encoding and representation smuggling",
+      "section": "C2 Input Validation",
+      "category": "C2 Input Validation",
+      "sortOrder": 14
+    },
+    {
+      "code": "C2.1.3",
+      "title": "Screen untrusted input with injection detection",
+      "section": "C2 Input Validation",
+      "category": "C2 Input Validation",
+      "sortOrder": 15
+    },
+    {
+      "code": "C2.1.4",
+      "title": "Reject input exceeding context-window limits",
+      "section": "C2 Input Validation",
+      "category": "C2 Input Validation",
+      "sortOrder": 16
+    },
+    {
+      "code": "C2.1.5",
+      "title": "Restrict character sets via allowlist",
+      "section": "C2 Input Validation",
+      "category": "C2 Input Validation",
+      "sortOrder": 17
+    },
+    {
+      "code": "C2.1.6",
+      "title": "Enforce instruction hierarchy protecting system messages",
+      "section": "C2 Input Validation",
+      "category": "C2 Input Validation",
+      "sortOrder": 18
+    },
+    {
+      "code": "C2.1.7",
+      "title": "Encode reserved tokens as literal characters",
+      "section": "C2 Input Validation",
+      "category": "C2 Input Validation",
+      "sortOrder": 19
+    },
+    {
+      "code": "C2.1.8",
+      "title": "Detect many-shot jailbreak patterns",
+      "section": "C2 Input Validation",
+      "category": "C2 Input Validation",
+      "sortOrder": 20
+    },
+    {
+      "code": "C2.2.1",
+      "title": "Score prompts for harmful content against thresholds",
+      "section": "C2 Input Validation",
+      "category": "C2 Input Validation",
+      "sortOrder": 21
+    },
+    {
+      "code": "C2.2.2",
+      "title": "Evaluate classification for unsupported languages",
+      "section": "C2 Input Validation",
+      "category": "C2 Input Validation",
+      "sortOrder": 22
+    },
+    {
+      "code": "C2.2.3",
+      "title": "Check non-text input for adversarial attacks",
+      "section": "C2 Input Validation",
+      "category": "C2 Input Validation",
+      "sortOrder": 23
+    },
+    {
+      "code": "C2.2.4",
+      "title": "Detect coordinated multi-modal input attacks",
+      "section": "C2 Input Validation",
+      "category": "C2 Input Validation",
+      "sortOrder": 24
+    },
+    {
+      "code": "C3.1.1",
+      "title": "Maintain inventory of deployed model artifacts",
+      "section": "C3 Model Lifecycle Management & Change Control",
+      "category": "C3 Model Lifecycle Management & Change Control",
+      "sortOrder": 25
+    },
+    {
+      "code": "C3.1.2",
+      "title": "Cryptographically sign all model artifacts",
+      "section": "C3 Model Lifecycle Management & Change Control",
+      "category": "C3 Model Lifecycle Management & Change Control",
+      "sortOrder": 26
+    },
+    {
+      "code": "C3.1.3",
+      "title": "Verify signatures at deployment and load",
+      "section": "C3 Model Lifecycle Management & Change Control",
+      "category": "C3 Model Lifecycle Management & Change Control",
+      "sortOrder": 27
+    },
+    {
+      "code": "C3.2.1",
+      "title": "Run automated safety and validation testing",
+      "section": "C3 Model Lifecycle Management & Change Control",
+      "category": "C3 Model Lifecycle Management & Change Control",
+      "sortOrder": 28
+    },
+    {
+      "code": "C3.2.2",
+      "title": "Re-evaluate quantized models against safety suite",
+      "section": "C3 Model Lifecycle Management & Change Control",
+      "category": "C3 Model Lifecycle Management & Change Control",
+      "sortOrder": 29
+    },
+    {
+      "code": "C3.2.3",
+      "title": "Re-test security when models change",
+      "section": "C3 Model Lifecycle Management & Change Control",
+      "category": "C3 Model Lifecycle Management & Change Control",
+      "sortOrder": 30
+    },
+    {
+      "code": "C3.3.1",
+      "title": "Stage rollouts with automated rollback triggers",
+      "section": "C3 Model Lifecycle Management & Change Control",
+      "category": "C3 Model Lifecycle Management & Change Control",
+      "sortOrder": 31
+    },
+    {
+      "code": "C3.3.2",
+      "title": "Restore complete model state on rollback",
+      "section": "C3 Model Lifecycle Management & Change Control",
+      "category": "C3 Model Lifecycle Management & Change Control",
+      "sortOrder": 32
+    },
+    {
+      "code": "C3.3.3",
+      "title": "Isolate runtime state across parallel versions",
+      "section": "C3 Model Lifecycle Management & Change Control",
+      "category": "C3 Model Lifecycle Management & Change Control",
+      "sortOrder": 33
+    },
+    {
+      "code": "C3.4.1",
+      "title": "Separate AI runtime across environment boundaries",
+      "section": "C3 Model Lifecycle Management & Change Control",
+      "category": "C3 Model Lifecycle Management & Change Control",
+      "sortOrder": 34
+    },
+    {
+      "code": "C3.4.2",
+      "title": "Isolate training from production environments",
+      "section": "C3 Model Lifecycle Management & Change Control",
+      "category": "C3 Model Lifecycle Management & Change Control",
+      "sortOrder": 35
+    },
+    {
+      "code": "C3.5.1",
+      "title": "Version and verify models before RLHF",
+      "section": "C3 Model Lifecycle Management & Change Control",
+      "category": "C3 Model Lifecycle Management & Change Control",
+      "sortOrder": 36
+    },
+    {
+      "code": "C3.5.2",
+      "title": "Detect reward hacking during RLHF",
+      "section": "C3 Model Lifecycle Management & Change Control",
+      "category": "C3 Model Lifecycle Management & Change Control",
+      "sortOrder": 37
+    },
+    {
+      "code": "C3.5.3",
+      "title": "Verify output integrity between pipeline stages",
+      "section": "C3 Model Lifecycle Management & Change Control",
+      "category": "C3 Model Lifecycle Management & Change Control",
+      "sortOrder": 38
+    },
+    {
+      "code": "C3.5.4",
+      "title": "Register fine-tuning checkpoints as artifacts",
+      "section": "C3 Model Lifecycle Management & Change Control",
+      "category": "C3 Model Lifecycle Management & Change Control",
+      "sortOrder": 39
+    },
+    {
+      "code": "C4.1.1",
+      "title": "Execute models within isolated sandboxes",
+      "section": "C4 Infrastructure, Configuration & Deployment Security",
+      "category": "C4 Infrastructure, Configuration & Deployment Security",
+      "sortOrder": 40
+    },
+    {
+      "code": "C4.1.2",
+      "title": "Restrict model-loading serialization formats safely",
+      "section": "C4 Infrastructure, Configuration & Deployment Security",
+      "category": "C4 Infrastructure, Configuration & Deployment Security",
+      "sortOrder": 41
+    },
+    {
+      "code": "C4.1.3",
+      "title": "Attest execution-environment integrity for workloads",
+      "section": "C4 Infrastructure, Configuration & Deployment Security",
+      "category": "C4 Infrastructure, Configuration & Deployment Security",
+      "sortOrder": 42
+    },
+    {
+      "code": "C4.1.4",
+      "title": "Protect model weights with confidential inference",
+      "section": "C4 Infrastructure, Configuration & Deployment Security",
+      "category": "C4 Infrastructure, Configuration & Deployment Security",
+      "sortOrder": 43
+    },
+    {
+      "code": "C4.2.1",
+      "title": "Pin, sign, and attest GPU firmware",
+      "section": "C4 Infrastructure, Configuration & Deployment Security",
+      "category": "C4 Infrastructure, Configuration & Deployment Security",
+      "sortOrder": 44
+    },
+    {
+      "code": "C4.2.2",
+      "title": "Use TEE for isolation and memory encryption",
+      "section": "C4 Infrastructure, Configuration & Deployment Security",
+      "category": "C4 Infrastructure, Configuration & Deployment Security",
+      "sortOrder": 45
+    },
+    {
+      "code": "C4.2.3",
+      "title": "Validate GPU integrity via attestation before workloads",
+      "section": "C4 Infrastructure, Configuration & Deployment Security",
+      "category": "C4 Infrastructure, Configuration & Deployment Security",
+      "sortOrder": 46
+    },
+    {
+      "code": "C4.2.4",
+      "title": "Isolate and sanitize GPU memory between workloads",
+      "section": "C4 Infrastructure, Configuration & Deployment Security",
+      "category": "C4 Infrastructure, Configuration & Deployment Security",
+      "sortOrder": 47
+    },
+    {
+      "code": "C4.2.5",
+      "title": "Restrict accelerator interconnects to approved topologies",
+      "section": "C4 Infrastructure, Configuration & Deployment Security",
+      "category": "C4 Infrastructure, Configuration & Deployment Security",
+      "sortOrder": 48
+    },
+    {
+      "code": "C4.3.1",
+      "title": "Authenticate edge devices with strong mechanisms",
+      "section": "C4 Infrastructure, Configuration & Deployment Security",
+      "category": "C4 Infrastructure, Configuration & Deployment Security",
+      "sortOrder": 49
+    },
+    {
+      "code": "C4.3.2",
+      "title": "Sign models before edge deployment",
+      "section": "C4 Infrastructure, Configuration & Deployment Security",
+      "category": "C4 Infrastructure, Configuration & Deployment Security",
+      "sortOrder": 50
+    },
+    {
+      "code": "C4.3.3",
+      "title": "Enforce process and memory isolation at inference",
+      "section": "C4 Infrastructure, Configuration & Deployment Security",
+      "category": "C4 Infrastructure, Configuration & Deployment Security",
+      "sortOrder": 51
+    },
+    {
+      "code": "C4.3.4",
+      "title": "Encrypt model weights with hardware-backed keys",
+      "section": "C4 Infrastructure, Configuration & Deployment Security",
+      "category": "C4 Infrastructure, Configuration & Deployment Security",
+      "sortOrder": 52
+    },
+    {
+      "code": "C4.3.5",
+      "title": "Encrypt mobile models at rest, decrypt securely",
+      "section": "C4 Infrastructure, Configuration & Deployment Security",
+      "category": "C4 Infrastructure, Configuration & Deployment Security",
+      "sortOrder": 53
+    },
+    {
+      "code": "C5.1.1",
+      "title": "Require step-up auth for high-risk AI operations",
+      "section": "C5 Access Control & Identity for AI Components & Users",
+      "category": "C5 Access Control & Identity for AI Components & Users",
+      "sortOrder": 54
+    },
+    {
+      "code": "C5.1.2",
+      "title": "Use short-lived tokens for federated agents",
+      "section": "C5 Access Control & Identity for AI Components & Users",
+      "category": "C5 Access Control & Identity for AI Components & Users",
+      "sortOrder": 55
+    },
+    {
+      "code": "C5.2.1",
+      "title": "Enforce default-deny allow-lists on AI resources",
+      "section": "C5 Access Control & Identity for AI Components & Users",
+      "category": "C5 Access Control & Identity for AI Components & Users",
+      "sortOrder": 56
+    },
+    {
+      "code": "C5.2.2",
+      "title": "Apply end-user authorization context in retrieval",
+      "section": "C5 Access Control & Identity for AI Components & Users",
+      "category": "C5 Access Control & Identity for AI Components & Users",
+      "sortOrder": 57
+    },
+    {
+      "code": "C5.2.3",
+      "title": "Retrieve sensitive data without permanent storage",
+      "section": "C5 Access Control & Identity for AI Components & Users",
+      "category": "C5 Access Control & Identity for AI Components & Users",
+      "sortOrder": 58
+    },
+    {
+      "code": "C5.2.4",
+      "title": "Filter outputs to block unauthorized data exposure",
+      "section": "C5 Access Control & Identity for AI Components & Users",
+      "category": "C5 Access Control & Identity for AI Components & Users",
+      "sortOrder": 59
+    },
+    {
+      "code": "C5.2.5",
+      "title": "Isolate authorization decisions from agent execution",
+      "section": "C5 Access Control & Identity for AI Components & Users",
+      "category": "C5 Access Control & Identity for AI Components & Users",
+      "sortOrder": 60
+    },
+    {
+      "code": "C5.2.6",
+      "title": "Grant privileged access just-in-time with expiry",
+      "section": "C5 Access Control & Identity for AI Components & Users",
+      "category": "C5 Access Control & Identity for AI Components & Users",
+      "sortOrder": 61
+    },
+    {
+      "code": "C5.2.7",
+      "title": "Propagate classification labels to downstream resources",
+      "section": "C5 Access Control & Identity for AI Components & Users",
+      "category": "C5 Access Control & Identity for AI Components & Users",
+      "sortOrder": 62
+    },
+    {
+      "code": "C5.3.1",
+      "title": "Prevent cross-tenant fine-tuning interference",
+      "section": "C5 Access Control & Identity for AI Components & Users",
+      "category": "C5 Access Control & Identity for AI Components & Users",
+      "sortOrder": 63
+    },
+    {
+      "code": "C5.3.2",
+      "title": "Prevent cross-tenant observation on shared compute",
+      "section": "C5 Access Control & Identity for AI Components & Users",
+      "category": "C5 Access Control & Identity for AI Components & Users",
+      "sortOrder": 64
+    },
+    {
+      "code": "C6.1.1",
+      "title": "Scan models for malicious code before import",
+      "section": "C6 Supply Chain Security for Models",
+      "category": "C6 Supply Chain Security for Models",
+      "sortOrder": 65
+    },
+    {
+      "code": "C6.1.2",
+      "title": "Download artifacts only from approved sources",
+      "section": "C6 Supply Chain Security for Models",
+      "category": "C6 Supply Chain Security for Models",
+      "sortOrder": 66
+    },
+    {
+      "code": "C6.1.3",
+      "title": "Make third-party artifacts integrity-verifiable",
+      "section": "C6 Supply Chain Security for Models",
+      "category": "C6 Supply Chain Security for Models",
+      "sortOrder": 67
+    },
+    {
+      "code": "C6.1.4",
+      "title": "Behaviorally test models before non-dev deployment",
+      "section": "C6 Supply Chain Security for Models",
+      "category": "C6 Supply Chain Security for Models",
+      "sortOrder": 68
+    },
+    {
+      "code": "C6.2.1",
+      "title": "Publish version-controlled machine-readable AI BOMs",
+      "section": "C6 Supply Chain Security for Models",
+      "category": "C6 Supply Chain Security for Models",
+      "sortOrder": 69
+    },
+    {
+      "code": "C6.2.2",
+      "title": "Sign AI BOMs before deployment",
+      "section": "C6 Supply Chain Security for Models",
+      "category": "C6 Supply Chain Security for Models",
+      "sortOrder": 70
+    },
+    {
+      "code": "C6.2.3",
+      "title": "Fail builds on incomplete component metadata",
+      "section": "C6 Supply Chain Security for Models",
+      "category": "C6 Supply Chain Security for Models",
+      "sortOrder": 71
+    },
+    {
+      "code": "C7.1.1",
+      "title": "Validate outputs against a defined schema",
+      "section": "C7 Model Behavior, Output Control & Safety Assurance",
+      "category": "C7 Model Behavior, Output Control & Safety Assurance",
+      "sortOrder": 72
+    },
+    {
+      "code": "C7.1.2",
+      "title": "Enforce length limits and termination controls",
+      "section": "C7 Model Behavior, Output Control & Safety Assurance",
+      "category": "C7 Model Behavior, Output Control & Safety Assurance",
+      "sortOrder": 73
+    },
+    {
+      "code": "C7.2.1",
+      "title": "Estimate answer reliability via confidence scoring",
+      "section": "C7 Model Behavior, Output Control & Safety Assurance",
+      "category": "C7 Model Behavior, Output Control & Safety Assurance",
+      "sortOrder": 74
+    },
+    {
+      "code": "C7.2.2",
+      "title": "Block or fall back on low-confidence answers",
+      "section": "C7 Model Behavior, Output Control & Safety Assurance",
+      "category": "C7 Model Behavior, Output Control & Safety Assurance",
+      "sortOrder": 75
+    },
+    {
+      "code": "C7.2.3",
+      "title": "Verify high-risk policy-flagged responses",
+      "section": "C7 Model Behavior, Output Control & Safety Assurance",
+      "category": "C7 Model Behavior, Output Control & Safety Assurance",
+      "sortOrder": 76
+    },
+    {
+      "code": "C7.3.1",
+      "title": "Scan responses and block harmful content",
+      "section": "C7 Model Behavior, Output Control & Safety Assurance",
+      "category": "C7 Model Behavior, Output Control & Safety Assurance",
+      "sortOrder": 77
+    },
+    {
+      "code": "C7.3.2",
+      "title": "Filter system prompts and backend data from output",
+      "section": "C7 Model Behavior, Output Control & Safety Assurance",
+      "category": "C7 Model Behavior, Output Control & Safety Assurance",
+      "sortOrder": 78
+    },
+    {
+      "code": "C7.3.3",
+      "title": "Prevent outputs triggering outbound requests",
+      "section": "C7 Model Behavior, Output Control & Safety Assurance",
+      "category": "C7 Model Behavior, Output Control & Safety Assurance",
+      "sortOrder": 79
+    },
+    {
+      "code": "C7.3.4",
+      "title": "Detect hidden, encoded, or misleading content",
+      "section": "C7 Model Behavior, Output Control & Safety Assurance",
+      "category": "C7 Model Behavior, Output Control & Safety Assurance",
+      "sortOrder": 80
+    },
+    {
+      "code": "C7.4.1",
+      "title": "Include source attribution in RAG responses",
+      "section": "C7 Model Behavior, Output Control & Safety Assurance",
+      "category": "C7 Model Behavior, Output Control & Safety Assurance",
+      "sortOrder": 81
+    },
+    {
+      "code": "C7.4.2",
+      "title": "Derive attributions from retrieval metadata",
+      "section": "C7 Model Behavior, Output Control & Safety Assurance",
+      "category": "C7 Model Behavior, Output Control & Safety Assurance",
+      "sortOrder": 82
+    },
+    {
+      "code": "C7.4.3",
+      "title": "Trace claims to retrieved content chunks",
+      "section": "C7 Model Behavior, Output Control & Safety Assurance",
+      "category": "C7 Model Behavior, Output Control & Safety Assurance",
+      "sortOrder": 83
+    },
+    {
+      "code": "C7.4.4",
+      "title": "Watermark generated media as AI-created",
+      "section": "C7 Model Behavior, Output Control & Safety Assurance",
+      "category": "C7 Model Behavior, Output Control & Safety Assurance",
+      "sortOrder": 84
+    },
+    {
+      "code": "C8.1.1",
+      "title": "Enforce per-tenant uniqueness on vector identifiers",
+      "section": "C8 Memory, Embeddings & Vector Database Security",
+      "category": "C8 Memory, Embeddings & Vector Database Security",
+      "sortOrder": 85
+    },
+    {
+      "code": "C8.1.2",
+      "title": "Keep document metadata tags immutable post-write",
+      "section": "C8 Memory, Embeddings & Vector Database Security",
+      "category": "C8 Memory, Embeddings & Vector Database Security",
+      "sortOrder": 86
+    },
+    {
+      "code": "C8.1.3",
+      "title": "Enforce scope constraints on retrieval operations",
+      "section": "C8 Memory, Embeddings & Vector Database Security",
+      "category": "C8 Memory, Embeddings & Vector Database Security",
+      "sortOrder": 87
+    },
+    {
+      "code": "C8.2.1",
+      "title": "Mask sensitive fields before vectorization",
+      "section": "C8 Memory, Embeddings & Vector Database Security",
+      "category": "C8 Memory, Embeddings & Vector Database Security",
+      "sortOrder": 88
+    },
+    {
+      "code": "C8.2.2",
+      "title": "Flag and quarantine anomalous vectors",
+      "section": "C8 Memory, Embeddings & Vector Database Security",
+      "category": "C8 Memory, Embeddings & Vector Database Security",
+      "sortOrder": 89
+    },
+    {
+      "code": "C8.2.3",
+      "title": "Validate agent outputs before trusted storage",
+      "section": "C8 Memory, Embeddings & Vector Database Security",
+      "category": "C8 Memory, Embeddings & Vector Database Security",
+      "sortOrder": 90
+    },
+    {
+      "code": "C8.2.4",
+      "title": "Detect retrieval-manipulation content early",
+      "section": "C8 Memory, Embeddings & Vector Database Security",
+      "category": "C8 Memory, Embeddings & Vector Database Security",
+      "sortOrder": 91
+    },
+    {
+      "code": "C8.2.5",
+      "title": "Check new content for storage contradictions",
+      "section": "C8 Memory, Embeddings & Vector Database Security",
+      "category": "C8 Memory, Embeddings & Vector Database Security",
+      "sortOrder": 92
+    },
+    {
+      "code": "C8.3.1",
+      "title": "Exclude expired vectors from retrieval",
+      "section": "C8 Memory, Embeddings & Vector Database Security",
+      "category": "C8 Memory, Embeddings & Vector Database Security",
+      "sortOrder": 93
+    },
+    {
+      "code": "C8.3.2",
+      "title": "Provide a memory reset capability",
+      "section": "C8 Memory, Embeddings & Vector Database Security",
+      "category": "C8 Memory, Embeddings & Vector Database Security",
+      "sortOrder": 94
+    },
+    {
+      "code": "C8.3.3",
+      "title": "Retain quarantined content but keep inaccessible",
+      "section": "C8 Memory, Embeddings & Vector Database Security",
+      "category": "C8 Memory, Embeddings & Vector Database Security",
+      "sortOrder": 95
+    },
+    {
+      "code": "C9.1.1",
+      "title": "Enforce per-tool quotas and timeouts",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 96
+    },
+    {
+      "code": "C9.1.2",
+      "title": "Configure and enforce per-execution budgets",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 97
+    },
+    {
+      "code": "C9.1.3",
+      "title": "Provide a swarm-level kill-switch",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 98
+    },
+    {
+      "code": "C9.2.1",
+      "title": "Block privileged actions until human approval",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 99
+    },
+    {
+      "code": "C9.2.2",
+      "title": "Display full action parameters without truncation",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 100
+    },
+    {
+      "code": "C9.2.3",
+      "title": "Classify actions by reversibility impact",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 101
+    },
+    {
+      "code": "C9.2.4",
+      "title": "Enforce reversibility classifications at runtime",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 102
+    },
+    {
+      "code": "C9.2.5",
+      "title": "Bound self-modification capabilities",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 103
+    },
+    {
+      "code": "C9.2.6",
+      "title": "Add AI-augmented review before high-risk execution",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 104
+    },
+    {
+      "code": "C9.2.7",
+      "title": "Protect AI review from prompt-injection manipulation",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 105
+    },
+    {
+      "code": "C9.2.8",
+      "title": "Cryptographically bind approvals to action context",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 106
+    },
+    {
+      "code": "C9.2.9",
+      "title": "Isolate approval credentials from agent runtime",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 107
+    },
+    {
+      "code": "C9.2.10",
+      "title": "Apply highest-impact classification to action chains",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 108
+    },
+    {
+      "code": "C9.3.1",
+      "title": "Execute tools in least-privilege sandboxes",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 109
+    },
+    {
+      "code": "C9.3.2",
+      "title": "Validate tool outputs against schemas",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 110
+    },
+    {
+      "code": "C9.3.3",
+      "title": "Declare privileges and limits in tool manifests",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 111
+    },
+    {
+      "code": "C9.3.4",
+      "title": "Enforce manifest requirements at runtime",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 112
+    },
+    {
+      "code": "C9.3.5",
+      "title": "Isolate untrusted data from tool-calling",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 113
+    },
+    {
+      "code": "C9.3.6",
+      "title": "Separate untrusted tool outputs from agent ops",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 114
+    },
+    {
+      "code": "C9.3.7",
+      "title": "Verify external resources against allow-list",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 115
+    },
+    {
+      "code": "C9.3.8",
+      "title": "Auto-contain tools on policy violations",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 116
+    },
+    {
+      "code": "C9.4.1",
+      "title": "Assign unique cryptographic identity per agent",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 117
+    },
+    {
+      "code": "C9.4.2",
+      "title": "Bind actions to the execution chain",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 118
+    },
+    {
+      "code": "C9.4.3",
+      "title": "Rotate agent identity credentials on schedule",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 119
+    },
+    {
+      "code": "C9.4.4",
+      "title": "Integrity-protect agent state between invocations",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 120
+    },
+    {
+      "code": "C9.5.1",
+      "title": "Enforce fine-grained tool and parameter policies",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 121
+    },
+    {
+      "code": "C9.5.2",
+      "title": "Propagate scope-limited authorization tokens downstream",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 122
+    },
+    {
+      "code": "C9.5.3",
+      "title": "Enforce access control via policy engine",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 123
+    },
+    {
+      "code": "C9.5.4",
+      "title": "Hide secrets from model context and parameters",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 124
+    },
+    {
+      "code": "C9.5.5",
+      "title": "Restrict inter-agent delegation by policy",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 125
+    },
+    {
+      "code": "C9.5.6",
+      "title": "Re-evaluate backend authorization on privileged actions",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 126
+    },
+    {
+      "code": "C9.6.1",
+      "title": "Provide a manual inference kill-switch",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 127
+    },
+    {
+      "code": "C9.6.2",
+      "title": "Block actions when approval deadline expires",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 128
+    },
+    {
+      "code": "C9.6.3",
+      "title": "Provide kill-switch via out-of-band channel",
+      "section": "C9 Orchestration & Agentic Security",
+      "category": "C9 Orchestration & Agentic Security",
+      "sortOrder": 129
+    },
+    {
+      "code": "C10.1.1",
+      "title": "Obtain MCP components from verified trusted sources",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 130
+    },
+    {
+      "code": "C10.1.2",
+      "title": "Permit only allowlisted MCP servers",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 131
+    },
+    {
+      "code": "C10.1.3",
+      "title": "Sandbox locally launched servers",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 132
+    },
+    {
+      "code": "C10.2.1",
+      "title": "Validate access tokens per request",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 133
+    },
+    {
+      "code": "C10.2.2",
+      "title": "Verify token issuer, audience, expiry, scope",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 134
+    },
+    {
+      "code": "C10.2.3",
+      "title": "Avoid storing access tokens or credentials",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 135
+    },
+    {
+      "code": "C10.2.4",
+      "title": "List only user-authorized tools",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 136
+    },
+    {
+      "code": "C10.2.5",
+      "title": "Enforce access control on each tool call",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 137
+    },
+    {
+      "code": "C10.2.6",
+      "title": "Remove session artifacts on termination",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 138
+    },
+    {
+      "code": "C10.2.7",
+      "title": "Avoid forwarding client tokens downstream",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 139
+    },
+    {
+      "code": "C10.3.1",
+      "title": "Use authenticated encrypted HTTP for remote MCP",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 140
+    },
+    {
+      "code": "C10.3.2",
+      "title": "Restrict stdio transport to controlled environments",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 141
+    },
+    {
+      "code": "C10.3.3",
+      "title": "Validate Origin and Host headers",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 142
+    },
+    {
+      "code": "C10.3.4",
+      "title": "Enforce minimum protocol version in responses",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 143
+    },
+    {
+      "code": "C10.3.5",
+      "title": "Constrain tokens with mTLS or DPoP",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 144
+    },
+    {
+      "code": "C10.4.1",
+      "title": "Validate responses against declared schemas",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 145
+    },
+    {
+      "code": "C10.4.2",
+      "title": "Screen responses for indirect prompt injection",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 146
+    },
+    {
+      "code": "C10.4.3",
+      "title": "Reject unrecognized or oversized parameters",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 147
+    },
+    {
+      "code": "C10.4.4",
+      "title": "Enforce strict schema validation everywhere",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 148
+    },
+    {
+      "code": "C10.4.5",
+      "title": "Enforce maximum payload size limits",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 149
+    },
+    {
+      "code": "C10.4.6",
+      "title": "Sign responses with nonce and timestamp",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 150
+    },
+    {
+      "code": "C10.4.7",
+      "title": "Present explicit consent at installation",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 151
+    },
+    {
+      "code": "C10.4.8",
+      "title": "Snapshot tools and re-approve on changes",
+      "section": "C10 Model Context Protocol (MCP) Security",
+      "category": "C10 Model Context Protocol (MCP) Security",
+      "sortOrder": 152
+    },
+    {
+      "code": "C11.1.1",
+      "title": "Run alignment safety training against disallowed content",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 153
+    },
+    {
+      "code": "C11.1.2",
+      "title": "Run version-controlled alignment tests on updates",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 154
+    },
+    {
+      "code": "C11.1.3",
+      "title": "Evaluate models against known adversarial techniques",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 155
+    },
+    {
+      "code": "C11.1.4",
+      "title": "Harden models against adversarial inputs",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 156
+    },
+    {
+      "code": "C11.1.5",
+      "title": "Track harmful-content regressions automatically",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 157
+    },
+    {
+      "code": "C11.2.1",
+      "title": "Avoid returning inferred sensitive attributes",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 158
+    },
+    {
+      "code": "C11.2.2",
+      "title": "Rate-limit per principal against extraction",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 159
+    },
+    {
+      "code": "C11.2.3",
+      "title": "Calibrate outputs to reduce overconfidence",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 160
+    },
+    {
+      "code": "C11.2.4",
+      "title": "Apply differential privacy on sensitive training",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 161
+    },
+    {
+      "code": "C11.2.5",
+      "title": "Simulate membership-inference to random-level accuracy",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 162
+    },
+    {
+      "code": "C11.3.1",
+      "title": "Feed query-pattern analysis to extraction detector",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 163
+    },
+    {
+      "code": "C11.3.2",
+      "title": "Calibrate external responses to shield raw outputs",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 164
+    },
+    {
+      "code": "C11.3.3",
+      "title": "Watermark or fingerprint to identify copies",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 165
+    },
+    {
+      "code": "C11.3.4",
+      "title": "Respond to detected extraction attempts",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 166
+    },
+    {
+      "code": "C11.4.1",
+      "title": "Pass untrusted inputs through anomaly detection",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 167
+    },
+    {
+      "code": "C11.4.2",
+      "title": "Gate actions on flagged anomalies",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 168
+    },
+    {
+      "code": "C11.4.3",
+      "title": "Route poisoning-detection feedback to human review",
+      "section": "C11 Adversarial Robustness",
+      "category": "C11 Adversarial Robustness",
+      "sortOrder": 169
+    },
+    {
+      "code": "C12.1.1",
+      "title": "Log AI interactions with session context",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 170
+    },
+    {
+      "code": "C12.1.2",
+      "title": "Log safety filtering and policy decisions",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 171
+    },
+    {
+      "code": "C12.1.3",
+      "title": "Use a structured schema for inference logs",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 172
+    },
+    {
+      "code": "C12.1.4",
+      "title": "Log RAG retrieval events with query detail",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 173
+    },
+    {
+      "code": "C12.2.1",
+      "title": "Detect jailbreak and prompt-injection attempts",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 174
+    },
+    {
+      "code": "C12.2.2",
+      "title": "Identify unusual conversation and probing patterns",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 175
+    },
+    {
+      "code": "C12.2.3",
+      "title": "Detect AI-specific threats with custom rules",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 176
+    },
+    {
+      "code": "C12.2.4",
+      "title": "Include offending query metadata in alerts",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 177
+    },
+    {
+      "code": "C12.2.5",
+      "title": "Track token usage at granular attribution",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 178
+    },
+    {
+      "code": "C12.2.6",
+      "title": "Monitor traffic for covert-channel indicators",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 179
+    },
+    {
+      "code": "C12.3.1",
+      "title": "Monitor input-distribution changes with validated methods",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 180
+    },
+    {
+      "code": "C12.3.2",
+      "title": "Detect and flag hallucinations in outputs",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 181
+    },
+    {
+      "code": "C12.3.3",
+      "title": "Track hallucination rates as time-series",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 182
+    },
+    {
+      "code": "C12.3.4",
+      "title": "Distinguish behavioral shifts from expected drift",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 183
+    },
+    {
+      "code": "C12.4.1",
+      "title": "Analyze proactive behavior before action execution",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 184
+    },
+    {
+      "code": "C12.4.2",
+      "title": "Audit-log security-critical actions with approver",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 185
+    },
+    {
+      "code": "C12.4.3",
+      "title": "Log kill-switch activations and overrides",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 186
+    },
+    {
+      "code": "C12.5.1",
+      "title": "Record dataset lineage and transformations",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 187
+    },
+    {
+      "code": "C12.5.2",
+      "title": "Log all labeling activities",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 188
+    },
+    {
+      "code": "C12.5.3",
+      "title": "Generate immutable audit records for model changes",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 189
+    },
+    {
+      "code": "C12.5.4",
+      "title": "Tag ingested documents with source and metadata",
+      "section": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "C12 Monitoring, Logging & Anomaly Detection",
+      "sortOrder": 190
+    }
+  ],
+  "templates": [
+    {
+      "code": "AISVS-C1",
+      "title": "C1 Training Data Integrity & Traceability",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "C1.1.1",
+        "C1.1.2",
+        "C1.1.3",
+        "C1.1.4",
+        "C1.1.5",
+        "C1.2.1",
+        "C1.2.2",
+        "C1.2.3",
+        "C1.3.1",
+        "C1.3.2",
+        "C1.3.3",
+        "C1.3.4",
+        "C1.3.5"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C10",
+      "title": "C10 Model Context Protocol (MCP) Security",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "C10.1.1",
+        "C10.1.2",
+        "C10.1.3",
+        "C10.2.1",
+        "C10.2.2",
+        "C10.2.3",
+        "C10.2.4",
+        "C10.2.5",
+        "C10.2.6",
+        "C10.2.7",
+        "C10.3.1",
+        "C10.3.2",
+        "C10.3.3",
+        "C10.3.4",
+        "C10.3.5",
+        "C10.4.1",
+        "C10.4.2",
+        "C10.4.3",
+        "C10.4.4",
+        "C10.4.5",
+        "C10.4.6",
+        "C10.4.7",
+        "C10.4.8"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C11",
+      "title": "C11 Adversarial Robustness",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "C11.1.1",
+        "C11.1.2",
+        "C11.1.3",
+        "C11.1.4",
+        "C11.1.5",
+        "C11.2.1",
+        "C11.2.2",
+        "C11.2.3",
+        "C11.2.4",
+        "C11.2.5",
+        "C11.3.1",
+        "C11.3.2",
+        "C11.3.3",
+        "C11.3.4",
+        "C11.4.1",
+        "C11.4.2",
+        "C11.4.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C12",
+      "title": "C12 Monitoring, Logging & Anomaly Detection",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "C12.1.1",
+        "C12.1.2",
+        "C12.1.3",
+        "C12.1.4",
+        "C12.2.1",
+        "C12.2.2",
+        "C12.2.3",
+        "C12.2.4",
+        "C12.2.5",
+        "C12.2.6",
+        "C12.3.1",
+        "C12.3.2",
+        "C12.3.3",
+        "C12.3.4",
+        "C12.4.1",
+        "C12.4.2",
+        "C12.4.3",
+        "C12.5.1",
+        "C12.5.2",
+        "C12.5.3",
+        "C12.5.4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C2",
+      "title": "C2 Input Validation",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "C2.1.1",
+        "C2.1.2",
+        "C2.1.3",
+        "C2.1.4",
+        "C2.1.5",
+        "C2.1.6",
+        "C2.1.7",
+        "C2.1.8",
+        "C2.2.1",
+        "C2.2.2",
+        "C2.2.3",
+        "C2.2.4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C3",
+      "title": "C3 Model Lifecycle Management & Change Control",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "C3.1.1",
+        "C3.1.2",
+        "C3.1.3",
+        "C3.2.1",
+        "C3.2.2",
+        "C3.2.3",
+        "C3.3.1",
+        "C3.3.2",
+        "C3.3.3",
+        "C3.4.1",
+        "C3.4.2",
+        "C3.5.1",
+        "C3.5.2",
+        "C3.5.3",
+        "C3.5.4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C4",
+      "title": "C4 Infrastructure, Configuration & Deployment Security",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "C4.1.1",
+        "C4.1.2",
+        "C4.1.3",
+        "C4.1.4",
+        "C4.2.1",
+        "C4.2.2",
+        "C4.2.3",
+        "C4.2.4",
+        "C4.2.5",
+        "C4.3.1",
+        "C4.3.2",
+        "C4.3.3",
+        "C4.3.4",
+        "C4.3.5"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C5",
+      "title": "C5 Access Control & Identity for AI Components & Users",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "C5.1.1",
+        "C5.1.2",
+        "C5.2.1",
+        "C5.2.2",
+        "C5.2.3",
+        "C5.2.4",
+        "C5.2.5",
+        "C5.2.6",
+        "C5.2.7",
+        "C5.3.1",
+        "C5.3.2"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C6",
+      "title": "C6 Supply Chain Security for Models",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "C6.1.1",
+        "C6.1.2",
+        "C6.1.3",
+        "C6.1.4",
+        "C6.2.1",
+        "C6.2.2",
+        "C6.2.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C7",
+      "title": "C7 Model Behavior, Output Control & Safety Assurance",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "C7.1.1",
+        "C7.1.2",
+        "C7.2.1",
+        "C7.2.2",
+        "C7.2.3",
+        "C7.3.1",
+        "C7.3.2",
+        "C7.3.3",
+        "C7.3.4",
+        "C7.4.1",
+        "C7.4.2",
+        "C7.4.3",
+        "C7.4.4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C8",
+      "title": "C8 Memory, Embeddings & Vector Database Security",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "C8.1.1",
+        "C8.1.2",
+        "C8.1.3",
+        "C8.2.1",
+        "C8.2.2",
+        "C8.2.3",
+        "C8.2.4",
+        "C8.2.5",
+        "C8.3.1",
+        "C8.3.2",
+        "C8.3.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C9",
+      "title": "C9 Orchestration & Agentic Security",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "C9.1.1",
+        "C9.1.2",
+        "C9.1.3",
+        "C9.2.1",
+        "C9.2.2",
+        "C9.2.3",
+        "C9.2.4",
+        "C9.2.5",
+        "C9.2.6",
+        "C9.2.7",
+        "C9.2.8",
+        "C9.2.9",
+        "C9.2.10",
+        "C9.3.1",
+        "C9.3.2",
+        "C9.3.3",
+        "C9.3.4",
+        "C9.3.5",
+        "C9.3.6",
+        "C9.3.7",
+        "C9.3.8",
+        "C9.4.1",
+        "C9.4.2",
+        "C9.4.3",
+        "C9.4.4",
+        "C9.5.1",
+        "C9.5.2",
+        "C9.5.3",
+        "C9.5.4",
+        "C9.5.5",
+        "C9.5.6",
+        "C9.6.1",
+        "C9.6.2",
+        "C9.6.3"
+      ],
+      "tasks": []
+    }
+  ],
+  "pack": {
+    "key": "AISVS_BASELINE",
+    "name": "OWASP AISVS Baseline Pack",
+    "version": "1.0",
+    "description": "OWASP AISVS v1.0 AI-security controls across all 12 chapters.",
+    "templateCodes": [
+      "AISVS-C1",
+      "AISVS-C10",
+      "AISVS-C11",
+      "AISVS-C12",
+      "AISVS-C2",
+      "AISVS-C3",
+      "AISVS-C4",
+      "AISVS-C5",
+      "AISVS-C6",
+      "AISVS-C7",
+      "AISVS-C8",
+      "AISVS-C9"
+    ]
+  }
+}

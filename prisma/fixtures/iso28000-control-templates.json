@@ -1,145 +1,362 @@
-[
-  {
-    "code": "SCS-CTX",
-    "title": "Supply chain context determination",
-    "category": "ISO28000",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "4.1",
-      "4.2"
-    ]
+{
+  "_meta": {
+    "purpose": "ISO 28000 in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
+    "why": "Built inline in prisma/seed.ts, which is not run on production deploys. Extracted from a database seeded by that block, so the shape is carried over exactly rather than re-derived from grouping logic that ran at seed time.",
+    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here \u2014 every template carries the generic five, as it did inline.",
+    "deliveredBy": "scripts/seed-framework-catalogs.ts",
+    "replaces": "This file WAS a bare array of 15 templates that only prisma/seed.ts read. It is now the CatalogFile a production seeder applies, carrying the same codes, titles and requirement refs \u2014 verified template-for-template against the array it replaces."
   },
-  {
-    "code": "SCS-SCP",
-    "title": "Security management system scope",
-    "category": "ISO28000",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "4.3",
-      "4.4"
-    ]
+  "framework": {
+    "key": "ISO28000",
+    "name": "ISO 28000",
+    "version": "2022",
+    "kind": "ISO_STANDARD",
+    "description": "ISO 28000:2022 Supply Chain Security Management"
   },
-  {
-    "code": "SCS-LDR",
-    "title": "Leadership and security policy",
-    "category": "ISO28000",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "5.1",
-      "5.2"
-    ]
-  },
-  {
-    "code": "SCS-ROL",
-    "title": "Security roles and authorities",
-    "category": "ISO28000",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "5.3"
-    ]
-  },
-  {
-    "code": "SCS-RSK",
-    "title": "Security risk assessment and treatment",
-    "category": "ISO28000",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "6.1",
-      "8.2",
-      "8.3"
-    ]
-  },
-  {
-    "code": "SCS-OBJ",
-    "title": "Security objectives planning",
-    "category": "ISO28000",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "6.2"
-    ]
-  },
-  {
-    "code": "SCS-RES",
-    "title": "Resource and competence management",
-    "category": "ISO28000",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "7.1",
-      "7.2",
-      "7.3"
-    ]
-  },
-  {
-    "code": "SCS-COM",
-    "title": "Communication management",
-    "category": "ISO28000",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "7.4"
-    ]
-  },
-  {
-    "code": "SCS-DOC",
-    "title": "Documented information",
-    "category": "ISO28000",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "7.5"
-    ]
-  },
-  {
-    "code": "SCS-OPC",
-    "title": "Operational control",
-    "category": "ISO28000",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "8.1"
-    ]
-  },
-  {
-    "code": "SCS-SUP",
-    "title": "Supply chain security management",
-    "category": "ISO28000",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "8.4"
-    ]
-  },
-  {
-    "code": "SCS-MON",
-    "title": "Performance monitoring",
-    "category": "ISO28000",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "9.1"
-    ]
-  },
-  {
-    "code": "SCS-AUD",
-    "title": "Internal audit program",
-    "category": "ISO28000",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "9.2"
-    ]
-  },
-  {
-    "code": "SCS-MGR",
-    "title": "Management review",
-    "category": "ISO28000",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "9.3"
-    ]
-  },
-  {
-    "code": "SCS-IMP",
-    "title": "Improvement and corrective action",
-    "category": "ISO28000",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "10.1",
-      "10.2"
+  "requirements": [
+    {
+      "code": "4.1",
+      "title": "Understanding the organization and its context",
+      "section": "Clause 4 - Context of the organization",
+      "category": "Clause 4 - Context of the organization",
+      "sortOrder": 1
+    },
+    {
+      "code": "4.2",
+      "title": "Understanding the needs and expectations of interested parties",
+      "section": "Clause 4 - Context of the organization",
+      "category": "Clause 4 - Context of the organization",
+      "sortOrder": 2
+    },
+    {
+      "code": "4.3",
+      "title": "Determining the scope of the security management system",
+      "section": "Clause 4 - Context of the organization",
+      "category": "Clause 4 - Context of the organization",
+      "sortOrder": 3
+    },
+    {
+      "code": "4.4",
+      "title": "Security management system",
+      "section": "Clause 4 - Context of the organization",
+      "category": "Clause 4 - Context of the organization",
+      "sortOrder": 4
+    },
+    {
+      "code": "5.1",
+      "title": "Leadership and commitment",
+      "section": "Clause 5 - Leadership",
+      "category": "Clause 5 - Leadership",
+      "sortOrder": 5
+    },
+    {
+      "code": "5.2",
+      "title": "Security management policy",
+      "section": "Clause 5 - Leadership",
+      "category": "Clause 5 - Leadership",
+      "sortOrder": 6
+    },
+    {
+      "code": "5.3",
+      "title": "Organizational roles, responsibilities and authorities",
+      "section": "Clause 5 - Leadership",
+      "category": "Clause 5 - Leadership",
+      "sortOrder": 7
+    },
+    {
+      "code": "6.1",
+      "title": "Actions to address security risks and opportunities",
+      "section": "Clause 6 - Planning",
+      "category": "Clause 6 - Planning",
+      "sortOrder": 8
+    },
+    {
+      "code": "6.2",
+      "title": "Security objectives and planning to achieve them",
+      "section": "Clause 6 - Planning",
+      "category": "Clause 6 - Planning",
+      "sortOrder": 9
+    },
+    {
+      "code": "7.1",
+      "title": "Resources",
+      "section": "Clause 7 - Support",
+      "category": "Clause 7 - Support",
+      "sortOrder": 10
+    },
+    {
+      "code": "7.2",
+      "title": "Competence",
+      "section": "Clause 7 - Support",
+      "category": "Clause 7 - Support",
+      "sortOrder": 11
+    },
+    {
+      "code": "7.3",
+      "title": "Awareness",
+      "section": "Clause 7 - Support",
+      "category": "Clause 7 - Support",
+      "sortOrder": 12
+    },
+    {
+      "code": "7.4",
+      "title": "Communication",
+      "section": "Clause 7 - Support",
+      "category": "Clause 7 - Support",
+      "sortOrder": 13
+    },
+    {
+      "code": "7.5",
+      "title": "Documented information",
+      "section": "Clause 7 - Support",
+      "category": "Clause 7 - Support",
+      "sortOrder": 14
+    },
+    {
+      "code": "8.1",
+      "title": "Operational planning and control",
+      "section": "Clause 8 - Operation",
+      "category": "Clause 8 - Operation",
+      "sortOrder": 15
+    },
+    {
+      "code": "8.2",
+      "title": "Security risk assessment",
+      "section": "Clause 8 - Operation",
+      "category": "Clause 8 - Operation",
+      "sortOrder": 16
+    },
+    {
+      "code": "8.3",
+      "title": "Security risk treatment",
+      "section": "Clause 8 - Operation",
+      "category": "Clause 8 - Operation",
+      "sortOrder": 17
+    },
+    {
+      "code": "8.4",
+      "title": "Supply chain security management",
+      "section": "Clause 8 - Operation",
+      "category": "Clause 8 - Operation",
+      "sortOrder": 18
+    },
+    {
+      "code": "9.1",
+      "title": "Monitoring, measurement, analysis and evaluation",
+      "section": "Clause 9 - Performance evaluation",
+      "category": "Clause 9 - Performance evaluation",
+      "sortOrder": 19
+    },
+    {
+      "code": "9.2",
+      "title": "Internal audit",
+      "section": "Clause 9 - Performance evaluation",
+      "category": "Clause 9 - Performance evaluation",
+      "sortOrder": 20
+    },
+    {
+      "code": "9.3",
+      "title": "Management review",
+      "section": "Clause 9 - Performance evaluation",
+      "category": "Clause 9 - Performance evaluation",
+      "sortOrder": 21
+    },
+    {
+      "code": "10.1",
+      "title": "Nonconformity and corrective action",
+      "section": "Clause 10 - Improvement",
+      "category": "Clause 10 - Improvement",
+      "sortOrder": 22
+    },
+    {
+      "code": "10.2",
+      "title": "Continual improvement",
+      "section": "Clause 10 - Improvement",
+      "category": "Clause 10 - Improvement",
+      "sortOrder": 23
+    }
+  ],
+  "templates": [
+    {
+      "code": "SCS-AUD",
+      "title": "Internal audit program",
+      "category": "ISO28000",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "9.2"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "SCS-COM",
+      "title": "Communication management",
+      "category": "ISO28000",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "7.4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "SCS-CTX",
+      "title": "Supply chain context determination",
+      "category": "ISO28000",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "4.1",
+        "4.2"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "SCS-DOC",
+      "title": "Documented information",
+      "category": "ISO28000",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "7.5"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "SCS-IMP",
+      "title": "Improvement and corrective action",
+      "category": "ISO28000",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "10.1",
+        "10.2"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "SCS-LDR",
+      "title": "Leadership and security policy",
+      "category": "ISO28000",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "5.1",
+        "5.2"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "SCS-MGR",
+      "title": "Management review",
+      "category": "ISO28000",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "9.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "SCS-MON",
+      "title": "Performance monitoring",
+      "category": "ISO28000",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "9.1"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "SCS-OBJ",
+      "title": "Security objectives planning",
+      "category": "ISO28000",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "6.2"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "SCS-OPC",
+      "title": "Operational control",
+      "category": "ISO28000",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "8.1"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "SCS-RES",
+      "title": "Resource and competence management",
+      "category": "ISO28000",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "7.1",
+        "7.2",
+        "7.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "SCS-ROL",
+      "title": "Security roles and authorities",
+      "category": "ISO28000",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "5.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "SCS-RSK",
+      "title": "Security risk assessment and treatment",
+      "category": "ISO28000",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "6.1",
+        "8.2",
+        "8.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "SCS-SCP",
+      "title": "Security management system scope",
+      "category": "ISO28000",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "4.3",
+        "4.4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "SCS-SUP",
+      "title": "Supply chain security management",
+      "category": "ISO28000",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "8.4"
+      ],
+      "tasks": []
+    }
+  ],
+  "pack": {
+    "key": "ISO28000_CORE",
+    "name": "ISO 28000 Core Pack",
+    "version": "2022",
+    "description": "ISO 28000 supply chain security core controls.",
+    "templateCodes": [
+      "SCS-AUD",
+      "SCS-COM",
+      "SCS-CTX",
+      "SCS-DOC",
+      "SCS-IMP",
+      "SCS-LDR",
+      "SCS-MGR",
+      "SCS-MON",
+      "SCS-OBJ",
+      "SCS-OPC",
+      "SCS-RES",
+      "SCS-ROL",
+      "SCS-RSK",
+      "SCS-SCP",
+      "SCS-SUP"
     ]
   }
-]
+}

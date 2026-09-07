@@ -1,0 +1,216 @@
+{
+  "_meta": {
+    "purpose": "EU AI Act (2024/1689) in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
+    "why": "Built inline in prisma/seed.ts, which is not run on production deploys. Extracted from a database seeded by that block, so the shape is carried over exactly rather than re-derived from grouping logic that ran at seed time.",
+    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here — every template carries the generic five, as it did inline.",
+    "deliveredBy": "scripts/seed-framework-catalogs.ts"
+  },
+  "framework": {
+    "key": "EU-AI-ACT",
+    "name": "EU AI Act (2024/1689)",
+    "version": "2024",
+    "kind": "REGULATION",
+    "description": "Risk-tiered AI regulation obligations (prohibited / high-risk / limited / GPAI / minimal).",
+    "sourceUrn": "urn:inflect:library:eu-ai-act",
+    "metadata": {
+      "locale": "en",
+      "provider": "European Union",
+      "packager": "inflect",
+      "publicationDate": "2024-06-13",
+      "license": "public-domain",
+      "sourceUrl": "https://eur-lex.europa.eu/eli/reg/2024/1689/oj",
+      "notLegalAdvice": true,
+      "copyright": "Regulation (EU) 2024/1689 is EU legislation in the public domain. Source: https://eur-lex.europa.eu/eli/reg/2024/1689/oj. Risk-tier classification is a tenant + legal-counsel decision; not legal advice."
+    }
+  },
+  "requirements": [
+    {
+      "code": "Art.5",
+      "title": "Prohibited AI practices",
+      "section": "Prohibited AI practices",
+      "category": "Prohibited AI practices",
+      "sortOrder": 0
+    },
+    {
+      "code": "Art.9",
+      "title": "Risk management system",
+      "section": "High-risk AI systems",
+      "category": "High-risk AI systems",
+      "sortOrder": 1
+    },
+    {
+      "code": "Art.10",
+      "title": "Data and data governance",
+      "section": "High-risk AI systems",
+      "category": "High-risk AI systems",
+      "sortOrder": 2
+    },
+    {
+      "code": "Art.11",
+      "title": "Technical documentation",
+      "section": "High-risk AI systems",
+      "category": "High-risk AI systems",
+      "sortOrder": 3
+    },
+    {
+      "code": "Art.12",
+      "title": "Record-keeping",
+      "section": "High-risk AI systems",
+      "category": "High-risk AI systems",
+      "sortOrder": 4
+    },
+    {
+      "code": "Art.13",
+      "title": "Transparency and information to deployers",
+      "section": "High-risk AI systems",
+      "category": "High-risk AI systems",
+      "sortOrder": 5
+    },
+    {
+      "code": "Art.14",
+      "title": "Human oversight",
+      "section": "High-risk AI systems",
+      "category": "High-risk AI systems",
+      "sortOrder": 6
+    },
+    {
+      "code": "Art.15",
+      "title": "Accuracy, robustness and cybersecurity",
+      "section": "High-risk AI systems",
+      "category": "High-risk AI systems",
+      "sortOrder": 7
+    },
+    {
+      "code": "Art.16",
+      "title": "Obligations of providers",
+      "section": "High-risk AI systems",
+      "category": "High-risk AI systems",
+      "sortOrder": 8
+    },
+    {
+      "code": "Art.17",
+      "title": "Quality management system",
+      "section": "High-risk AI systems",
+      "category": "High-risk AI systems",
+      "sortOrder": 9
+    },
+    {
+      "code": "Art.26",
+      "title": "Obligations of deployers",
+      "section": "High-risk AI systems",
+      "category": "High-risk AI systems",
+      "sortOrder": 10
+    },
+    {
+      "code": "Art.27",
+      "title": "Fundamental rights impact assessment",
+      "section": "High-risk AI systems",
+      "category": "High-risk AI systems",
+      "sortOrder": 11
+    },
+    {
+      "code": "Art.50",
+      "title": "Transparency obligations for certain AI systems",
+      "section": "Limited-risk (transparency obligations)",
+      "category": "Limited-risk (transparency obligations)",
+      "sortOrder": 12
+    },
+    {
+      "code": "Art.53",
+      "title": "Obligations for providers of GPAI models",
+      "section": "General-purpose AI models",
+      "category": "General-purpose AI models",
+      "sortOrder": 13
+    },
+    {
+      "code": "Art.55",
+      "title": "Obligations for GPAI models with systemic risk",
+      "section": "General-purpose AI models",
+      "category": "General-purpose AI models",
+      "sortOrder": 14
+    },
+    {
+      "code": "Art.95",
+      "title": "Codes of conduct (voluntary)",
+      "section": "Minimal-risk AI systems",
+      "category": "Minimal-risk AI systems",
+      "sortOrder": 15
+    }
+  ],
+  "templates": [
+    {
+      "code": "EUAIA-00",
+      "title": "Prohibited AI practices",
+      "category": "EU AI Act",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "Art.5"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "EUAIA-01",
+      "title": "High-risk AI systems",
+      "category": "EU AI Act",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "Art.9",
+        "Art.10",
+        "Art.11",
+        "Art.12",
+        "Art.13",
+        "Art.14",
+        "Art.15",
+        "Art.16",
+        "Art.17",
+        "Art.26",
+        "Art.27"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "EUAIA-02",
+      "title": "Limited-risk (transparency obligations)",
+      "category": "EU AI Act",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "Art.50"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "EUAIA-03",
+      "title": "General-purpose AI models",
+      "category": "EU AI Act",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "Art.53",
+        "Art.55"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "EUAIA-04",
+      "title": "Minimal-risk AI systems",
+      "category": "EU AI Act",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "Art.95"
+      ],
+      "tasks": []
+    }
+  ],
+  "pack": {
+    "key": "EU_AI_ACT_BASELINE",
+    "name": "EU AI Act Baseline Pack",
+    "version": "2024",
+    "description": "EU AI Act (2024/1689) obligations across the five risk tiers.",
+    "templateCodes": [
+      "EUAIA-00",
+      "EUAIA-01",
+      "EUAIA-02",
+      "EUAIA-03",
+      "EUAIA-04"
+    ]
+  }
+}

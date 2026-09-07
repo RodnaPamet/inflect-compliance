@@ -1,161 +1,382 @@
-[
-  {
-    "code": "RTS-CTX",
-    "title": "Organization context and interested parties",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "4.1",
-      "4.2"
-    ]
+{
+  "_meta": {
+    "purpose": "ISO 39001 in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
+    "why": "Built inline in prisma/seed.ts, which is not run on production deploys. Extracted from a database seeded by that block, so the shape is carried over exactly rather than re-derived from grouping logic that ran at seed time.",
+    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here \u2014 every template carries the generic five, as it did inline.",
+    "deliveredBy": "scripts/seed-framework-catalogs.ts",
+    "replaces": "This file WAS a bare array of 17 templates that only prisma/seed.ts read. It is now the CatalogFile a production seeder applies, carrying the same codes, titles and requirement refs \u2014 verified template-for-template against the array it replaces."
   },
-  {
-    "code": "RTS-SCP",
-    "title": "RTS management system scope",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "4.3",
-      "4.4"
-    ]
+  "framework": {
+    "key": "ISO39001",
+    "name": "ISO 39001",
+    "version": "2012",
+    "kind": "ISO_STANDARD",
+    "description": "ISO 39001:2012 Road Traffic Safety Management"
   },
-  {
-    "code": "RTS-LDR",
-    "title": "Leadership and RTS policy",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "5.1",
-      "5.2"
-    ]
-  },
-  {
-    "code": "RTS-ROL",
-    "title": "RTS roles and authorities",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "5.3"
-    ]
-  },
-  {
-    "code": "RTS-RSK",
-    "title": "RTS risk and opportunity management",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "6.1"
-    ]
-  },
-  {
-    "code": "RTS-OBJ",
-    "title": "RTS performance factors and objectives",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "6.2"
-    ]
-  },
-  {
-    "code": "RTS-CHG",
-    "title": "RTS change planning",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "6.3"
-    ]
-  },
-  {
-    "code": "RTS-RES",
-    "title": "Resource and competence management",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "7.1",
-      "7.2",
-      "7.3"
-    ]
-  },
-  {
-    "code": "RTS-COM",
-    "title": "Communication management",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "7.4"
-    ]
-  },
-  {
-    "code": "RTS-DOC",
-    "title": "Documented information",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "7.5"
-    ]
-  },
-  {
-    "code": "RTS-OPC",
-    "title": "Operational planning and control",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "8.1"
-    ]
-  },
-  {
-    "code": "RTS-EMR",
-    "title": "Emergency preparedness and response",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "8.2"
-    ]
-  },
-  {
-    "code": "RTS-MON",
-    "title": "Performance monitoring and evaluation",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "9.1"
-    ]
-  },
-  {
-    "code": "RTS-INV",
-    "title": "Crash and incident investigation",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "9.2"
-    ]
-  },
-  {
-    "code": "RTS-AUD",
-    "title": "Internal audit program",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "9.3"
-    ]
-  },
-  {
-    "code": "RTS-MGR",
-    "title": "Management review",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "9.4"
-    ]
-  },
-  {
-    "code": "RTS-IMP",
-    "title": "Improvement and corrective action",
-    "category": "ISO39001",
-    "defaultFrequency": "QUARTERLY",
-    "requirements": [
-      "10.1",
-      "10.2"
+  "requirements": [
+    {
+      "code": "4.1",
+      "title": "Understanding the organization and its context",
+      "section": "Clause 4 - Context of the organization",
+      "category": "Clause 4 - Context of the organization",
+      "sortOrder": 1
+    },
+    {
+      "code": "4.2",
+      "title": "Understanding the needs and expectations of interested parties",
+      "section": "Clause 4 - Context of the organization",
+      "category": "Clause 4 - Context of the organization",
+      "sortOrder": 2
+    },
+    {
+      "code": "4.3",
+      "title": "Determining the scope of the RTS management system",
+      "section": "Clause 4 - Context of the organization",
+      "category": "Clause 4 - Context of the organization",
+      "sortOrder": 3
+    },
+    {
+      "code": "4.4",
+      "title": "Road traffic safety management system",
+      "section": "Clause 4 - Context of the organization",
+      "category": "Clause 4 - Context of the organization",
+      "sortOrder": 4
+    },
+    {
+      "code": "5.1",
+      "title": "Leadership and commitment",
+      "section": "Clause 5 - Leadership",
+      "category": "Clause 5 - Leadership",
+      "sortOrder": 5
+    },
+    {
+      "code": "5.2",
+      "title": "RTS policy",
+      "section": "Clause 5 - Leadership",
+      "category": "Clause 5 - Leadership",
+      "sortOrder": 6
+    },
+    {
+      "code": "5.3",
+      "title": "Organizational roles, responsibilities and authorities",
+      "section": "Clause 5 - Leadership",
+      "category": "Clause 5 - Leadership",
+      "sortOrder": 7
+    },
+    {
+      "code": "6.1",
+      "title": "Actions to address risks and opportunities",
+      "section": "Clause 6 - Planning",
+      "category": "Clause 6 - Planning",
+      "sortOrder": 8
+    },
+    {
+      "code": "6.2",
+      "title": "RTS performance factors, objectives and targets",
+      "section": "Clause 6 - Planning",
+      "category": "Clause 6 - Planning",
+      "sortOrder": 9
+    },
+    {
+      "code": "6.3",
+      "title": "Planning of changes",
+      "section": "Clause 6 - Planning",
+      "category": "Clause 6 - Planning",
+      "sortOrder": 10
+    },
+    {
+      "code": "7.1",
+      "title": "Resources",
+      "section": "Clause 7 - Support",
+      "category": "Clause 7 - Support",
+      "sortOrder": 11
+    },
+    {
+      "code": "7.2",
+      "title": "Competence",
+      "section": "Clause 7 - Support",
+      "category": "Clause 7 - Support",
+      "sortOrder": 12
+    },
+    {
+      "code": "7.3",
+      "title": "Awareness",
+      "section": "Clause 7 - Support",
+      "category": "Clause 7 - Support",
+      "sortOrder": 13
+    },
+    {
+      "code": "7.4",
+      "title": "Communication",
+      "section": "Clause 7 - Support",
+      "category": "Clause 7 - Support",
+      "sortOrder": 14
+    },
+    {
+      "code": "7.5",
+      "title": "Documented information",
+      "section": "Clause 7 - Support",
+      "category": "Clause 7 - Support",
+      "sortOrder": 15
+    },
+    {
+      "code": "8.1",
+      "title": "Operational planning and control",
+      "section": "Clause 8 - Operation",
+      "category": "Clause 8 - Operation",
+      "sortOrder": 16
+    },
+    {
+      "code": "8.2",
+      "title": "Emergency preparedness and response",
+      "section": "Clause 8 - Operation",
+      "category": "Clause 8 - Operation",
+      "sortOrder": 17
+    },
+    {
+      "code": "9.1",
+      "title": "Monitoring, measurement, analysis and evaluation",
+      "section": "Clause 9 - Performance evaluation",
+      "category": "Clause 9 - Performance evaluation",
+      "sortOrder": 18
+    },
+    {
+      "code": "9.2",
+      "title": "Investigation of road traffic crashes and incidents",
+      "section": "Clause 9 - Performance evaluation",
+      "category": "Clause 9 - Performance evaluation",
+      "sortOrder": 19
+    },
+    {
+      "code": "9.3",
+      "title": "Internal audit",
+      "section": "Clause 9 - Performance evaluation",
+      "category": "Clause 9 - Performance evaluation",
+      "sortOrder": 20
+    },
+    {
+      "code": "9.4",
+      "title": "Management review",
+      "section": "Clause 9 - Performance evaluation",
+      "category": "Clause 9 - Performance evaluation",
+      "sortOrder": 21
+    },
+    {
+      "code": "10.1",
+      "title": "Nonconformity and corrective action",
+      "section": "Clause 10 - Improvement",
+      "category": "Clause 10 - Improvement",
+      "sortOrder": 22
+    },
+    {
+      "code": "10.2",
+      "title": "Continual improvement",
+      "section": "Clause 10 - Improvement",
+      "category": "Clause 10 - Improvement",
+      "sortOrder": 23
+    }
+  ],
+  "templates": [
+    {
+      "code": "RTS-AUD",
+      "title": "Internal audit program",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "9.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-CHG",
+      "title": "RTS change planning",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "6.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-COM",
+      "title": "Communication management",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "7.4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-CTX",
+      "title": "Organization context and interested parties",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "4.1",
+        "4.2"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-DOC",
+      "title": "Documented information",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "7.5"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-EMR",
+      "title": "Emergency preparedness and response",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "8.2"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-IMP",
+      "title": "Improvement and corrective action",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "10.1",
+        "10.2"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-INV",
+      "title": "Crash and incident investigation",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "9.2"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-LDR",
+      "title": "Leadership and RTS policy",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "5.1",
+        "5.2"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-MGR",
+      "title": "Management review",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "9.4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-MON",
+      "title": "Performance monitoring and evaluation",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "9.1"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-OBJ",
+      "title": "RTS performance factors and objectives",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "6.2"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-OPC",
+      "title": "Operational planning and control",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "8.1"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-RES",
+      "title": "Resource and competence management",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "7.1",
+        "7.2",
+        "7.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-ROL",
+      "title": "RTS roles and authorities",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "5.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-RSK",
+      "title": "RTS risk and opportunity management",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "6.1"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-SCP",
+      "title": "RTS management system scope",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
+        "4.3",
+        "4.4"
+      ],
+      "tasks": []
+    }
+  ],
+  "pack": {
+    "key": "ISO39001_CORE",
+    "name": "ISO 39001 Core Pack",
+    "version": "2012",
+    "description": "ISO 39001 road traffic safety core controls.",
+    "templateCodes": [
+      "RTS-AUD",
+      "RTS-CHG",
+      "RTS-COM",
+      "RTS-CTX",
+      "RTS-DOC",
+      "RTS-EMR",
+      "RTS-IMP",
+      "RTS-INV",
+      "RTS-LDR",
+      "RTS-MGR",
+      "RTS-MON",
+      "RTS-OBJ",
+      "RTS-OPC",
+      "RTS-RES",
+      "RTS-ROL",
+      "RTS-RSK",
+      "RTS-SCP"
     ]
   }
-]
+}
