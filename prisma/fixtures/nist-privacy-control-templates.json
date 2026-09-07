@@ -740,7 +740,80 @@
         "ID.IM-P7",
         "ID.IM-P8"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Define the boundary of the processing inventory"
+          },
+          "description": {
+            "en": "State which systems, products and services are in scope of the inventory, the criterion that puts one in or out, and who settles a disputed case. Attach the scoping statement naming the business units, sites and hosting arrangements it covers, so a later completeness check has a denominator to measure against."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Record each system, product and service that processes data"
+          },
+          "description": {
+            "en": "For every entity inside the boundary, capture its name, the owner or operator accountable for it, the roles involved in running the processing, and the environment it runs in — where it is located and whether it is internal, hosted, or operated by another party. Attach the inventory as it stands when the entries are complete."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Describe the data actions, purposes, elements and individuals for each entry"
+          },
+          "description": {
+            "en": "Against each inventory entry, record what is done with the data, why each of those actions is performed, which data elements each touches, and which categories of individuals the data relates to. Where one entry serves several purposes, record them separately rather than collapsing them into one line."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Draw the map linking data actions to data elements across entries"
+          },
+          "description": {
+            "en": "Produce a representation — in whatever form the organisation already uses to describe its systems — showing how data moves between inventoried entries, which action occurs at each point, and which data elements are involved. Attach the map and name which inventory entries it covers and which it does not."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Reconcile the inventory against an independent source"
+          },
+          "description": {
+            "en": "Compare the inventory against at least one source not derived from it — procurement records, expenditure records, or owners' own declarations — and record every entity that appears in one and not the other. Record how each discrepancy was resolved and which side was wrong."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Dated reconciliation worksheet naming the independent source used, each discrepancy found, and its resolution."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Review the inventory and map against the scope statement"
+          },
+          "description": {
+            "en": "Confirm that every entity inside the stated boundary carries an owner, purposes, data elements, categories of individuals and an environment, and appears on the map. Record each gap found together with the person who will close it."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Review record naming the reviewer, the entries checked, and the gaps raised with an owner against each."
+          },
+          "suggestedRole": "Management"
+        }
+      ]
     },
     {
       "code": "PRIV-01",
@@ -752,7 +825,69 @@
         "ID.BE-P2",
         "ID.BE-P3"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "State the organisation's role in each data processing relationship"
+          },
+          "description": {
+            "en": "For every relationship in which data passes to or from another party, record what the organisation does with the data, what the other party does, and which side decides why the processing happens at all. Attach the resulting statement of roles, one entry per relationship."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Communicate the role statement to the parties it names"
+          },
+          "description": {
+            "en": "Make the statement available to each party it describes, through whatever channel that relationship already uses, and record which party received which version and when. Where a party disputes the role attributed to it, record the dispute and how it was settled."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Distribution record showing each party, the version issued, the date, and any dispute raised and its outcome."
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Record the organisational priorities that depend on data processing"
+          },
+          "description": {
+            "en": "List the mission and business objectives the organisation is pursuing that rely on processing data, in priority order, with the reason each sits where it does. This is the list a later privacy trade-off is argued against, so it must be specific enough for an argument to be lost against it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Link each priority to the systems it depends on and state their key requirements"
+          },
+          "description": {
+            "en": "For every priority, name the systems, products or services it could not survive without, and record what each must deliver for the priority to hold — availability, accuracy, confidentiality, or something else. Record who those requirements have been communicated to and when."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Review the role statement and priority list against current activity"
+          },
+          "description": {
+            "en": "Compare both documents against the relationships and services the organisation actually runs today, record every change since the last review, and update them. Name anything found running that appears on neither list, and who will decide where it belongs."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Dated review note listing the relationships and priorities checked and each change made or ruled unnecessary."
+          },
+          "suggestedRole": "Management"
+        }
+      ]
     },
     {
       "code": "PRIV-02",
@@ -766,7 +901,80 @@
         "ID.RA-P4",
         "ID.RA-P5"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Record the contextual factors surrounding each data action assessed"
+          },
+          "description": {
+            "en": "For each data action taken from the processing map, capture the factors that shape how a person would experience it: who the individuals are, how visible the processing is to them, how sensitive the data is, and the setting the action occurs in. These factors are the input the assessment is reasoned from, so record them before any judgement of risk is made."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Identify the problems each data action could create for individuals"
+          },
+          "description": {
+            "en": "For every data action in scope, describe what could go wrong for a person rather than for the organisation — the loss, exposure, exclusion or indignity they would experience — and name the data action that would cause it. Record actions judged to create no problem, with the reason, so the judgement is visible rather than absent."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Evaluate analytic inputs and outputs for bias"
+          },
+          "description": {
+            "en": "Where processing derives inferences, scores or decisions, record what goes in, what comes out, and the checks made for skew against the categories of individuals recorded in the inventory. Record the result of each check, including the checks that found nothing and the ones that could not be run, with the reason."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Rank the identified problems by likelihood and impact"
+          },
+          "description": {
+            "en": "Apply the organisation's own likelihood and impact scales to each problem identified and produce a single ordered list. Record the reasoning wherever the ranking runs against expectation, so a reader can see why a severe-sounding problem sits low or a mild one sits high."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Record the response chosen for each prioritised problem and its owner"
+          },
+          "description": {
+            "en": "For each problem on the ranked list, state whether it is being reduced, transferred, avoided or accepted, name the person accountable for the response, and record the date the choice was made. Where a problem is accepted, record what is being accepted on the individual's behalf."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Risk response register showing each prioritised problem, the response chosen, its owner and the decision date."
+          },
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Verify each recorded response was carried out or re-decided"
+          },
+          "description": {
+            "en": "Take the responses recorded since the last pass and check whether each reached the state it claims, following the pointer to whatever the owner offers as proof. List every response marked done that has nothing behind it, and every one still open past its own stated intent, with what happens next."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Review record listing each response, its current state, what was offered as proof, and the responses found unsupported."
+          },
+          "suggestedRole": "Management"
+        }
+      ]
     },
     {
       "code": "PRIV-03",
@@ -780,7 +988,80 @@
         "ID.DE-P4",
         "ID.DE-P5"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Rank the ecosystem parties by the privacy exposure of what they handle"
+          },
+          "description": {
+            "en": "Draw the parties from the processing inventory — service providers, customers, partners, developers and anyone else data reaches — record what data each handles and for what, then place them in priority order against stated criteria. Attach the criteria alongside the ranking so a challenge to a party's position can be answered."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Procurement"
+        },
+        {
+          "title": {
+            "en": "Agree the ecosystem privacy assessment procedure with the functions that must apply it"
+          },
+          "description": {
+            "en": "Write down how a party is assessed before an engagement begins and while it runs, who performs the assessment, who may accept a finding, and what stops an engagement. Circulate it to the functions bound by it and record each one's agreement or objection."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Assess each prioritised party against the agreed procedure"
+          },
+          "description": {
+            "en": "Run the assessment on the parties in priority order, record what was examined and what was found, and note any condition placed on the engagement as a result. Where a party could not be assessed, record why and who accepted proceeding without it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Procurement"
+        },
+        {
+          "title": {
+            "en": "Record the privacy obligations each party is bound to"
+          },
+          "description": {
+            "en": "Per party, capture the obligations that have actually been agreed with them and where those obligations are written down, including any shared or multi-party arrangement the organisation has joined that carries obligations of its own. Where an assessment identified a needed obligation that was not agreed, record that gap against the party."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Obtain an independent evaluation for each high-priority party"
+          },
+          "description": {
+            "en": "Ask each high-priority party for whatever evidence of its conduct exists — an audit result, a test result, a certification, or another party's evaluation — and record what it showed measured against the obligations recorded for that party. Record refusals and non-responses as outcomes rather than leaving the entry blank."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Per-party file holding the evaluation received, its date and source, and the assessor's note of which recorded obligations it did and did not address."
+          },
+          "suggestedRole": "Procurement"
+        },
+        {
+          "title": {
+            "en": "Decide the standing of each party whose evaluation is missing or stale"
+          },
+          "description": {
+            "en": "List the parties with no current evaluation and, for each, record the decision taken — chase, restrict what they receive, accept the gap, or end the engagement — with the person who took it. A party left undecided is the outcome this task exists to prevent."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Decision list naming each party without a current evaluation, the decision taken, the decision-maker and the date."
+          },
+          "suggestedRole": "Management"
+        }
+      ]
     },
     {
       "code": "PRIV-04",
@@ -795,7 +1076,80 @@
         "GV.PO-P5",
         "GV.PO-P6"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Write down the organisation's privacy values and the conditions they place on processing"
+          },
+          "description": {
+            "en": "State the values the organisation holds about data, then translate each into concrete conditions that bind processing — what data may be used for, how long it may be held, and what an individual may ask of it. Values with no condition beneath them are a preamble, so pair each one with at least a condition someone could breach."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Record the privacy responsibilities of each role and where they end"
+          },
+          "description": {
+            "en": "For every workforce role that touches data, state what it is responsible for doing and deciding, and state which of the adjacent responsibilities sit with an external party rather than with the role. Attach the resulting responsibility record, and name the role that resolves a boundary neither side claims."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "HR"
+        },
+        {
+          "title": {
+            "en": "Record the means by which each privacy condition reaches development and operations"
+          },
+          "description": {
+            "en": "Take each condition written down beside the organisation's privacy values and record what carries it into the work of building and running systems — a standard or template it is written into, a default the platform already enforces, a question the change record asks, an approval that cannot be given without it — and for each name where a person doing that work meets it and who is accountable for keeping it there. A condition with nothing carrying it stays as a visible row with its owner named against it. This task records the carrier inside the work; instruction on what the conditions mean is delivered under the awareness control, and the data decision required at each life-cycle stage is recorded separately."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Compile the register of legal, regulatory and contractual privacy requirements that apply"
+          },
+          "description": {
+            "en": "List every legal, regulatory and contractual source that imposes a privacy requirement on the organisation, state in plain terms what each requires it to do, and name the internal policy or process that answers it. Where a requirement has nothing answering it, leave the row visible and name its owner."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Issue the privacy policy set to the workforce"
+          },
+          "description": {
+            "en": "Distribute the values, conditions and responsibility record to everyone bound by them, by whatever means the organisation uses to put a policy in front of staff, and record which version reached whom and when. This closes on the distribution record; instruction on what the responsibilities mean is delivered separately."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Distribution record showing the policy version issued, the population it went to, and the date each part of that population received it."
+          },
+          "suggestedRole": "HR"
+        },
+        {
+          "title": {
+            "en": "Confirm the organisation's governance and risk policies address privacy risk"
+          },
+          "description": {
+            "en": "Read the governance and risk-management policies that are not privacy-specific and record, for each, where privacy risk is addressed and where it is silent. Raise the change needed for each silence and name who will make it."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Review note naming each governance or risk policy read, the privacy provision found in it, and the changes raised where none was found."
+          },
+          "suggestedRole": "Management"
+        }
+      ]
     },
     {
       "code": "PRIV-05",
@@ -807,7 +1161,69 @@
         "GV.RM-P2",
         "GV.RM-P3"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Define how a privacy risk is raised, decided and escalated"
+          },
+          "description": {
+            "en": "Write down who may raise a privacy risk, who may decide a response at each level of severity, what must escalate and to whom, and what happens when a decision is not taken. Attach the process description; it is the thing stakeholders are later asked to agree to."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Express the organisation's privacy risk tolerance in terms a ranked risk can be compared against"
+          },
+          "description": {
+            "en": "State what level of privacy risk the organisation will carry without further escalation and what it will not, using the same likelihood and impact terms in which risks are ranked, so a ranked risk can be placed against it without reinterpretation. A tolerance that cannot be compared to a ranking is a sentiment."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Record how the organisation's ecosystem role shaped that tolerance"
+          },
+          "description": {
+            "en": "For each role the organisation holds in the data processing ecosystem, explain why the tolerance sits where it does — a party acting on another's behalf carries a different exposure than one deciding for itself, and a party others depend on carries more than one that stands alone. Attach the reasoning to the tolerance statement."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Obtain agreement to the process and tolerance from the functions bound by them"
+          },
+          "description": {
+            "en": "Put the process description and tolerance statement to each function that has to apply them, and record each one's agreement or objection together with how objections were settled. An unanswered objection recorded is more useful than a signature that hides it."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Agreement record naming each stakeholder function, the date, and any objection raised with its resolution."
+          },
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Compare recent risk decisions against the stated tolerance"
+          },
+          "description": {
+            "en": "Take the privacy risk decisions made since the last review and place each against the tolerance as written. Record every decision that fell outside it, whether it was escalated as the process requires, and what is being done about the ones that were not."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Review note listing the decisions checked, the tolerance applied to each, and the decisions found outside tolerance with their escalation status."
+          },
+          "suggestedRole": "Management"
+        }
+      ]
     },
     {
       "code": "PRIV-06",
@@ -820,7 +1236,72 @@
         "GV.AT-P3",
         "GV.AT-P4"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Identify the audiences needing privacy instruction and what each must be able to do"
+          },
+          "description": {
+            "en": "Separate the general workforce, senior executives, staff holding named privacy duties, and external parties, and for each record the responsibilities they must be able to carry out afterwards. Draw those responsibilities from the recorded role responsibilities and party obligations rather than restating generic privacy topics."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "HR"
+        },
+        {
+          "title": {
+            "en": "Prepare the instruction material for each audience"
+          },
+          "description": {
+            "en": "Produce material addressed to each audience's own responsibilities — what they decide, what they must not do, and who they escalate to — rather than one set of slides shown to everyone. Attach the material per audience and name who approved its content."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "HR"
+        },
+        {
+          "title": {
+            "en": "Deliver the instruction to each internal audience and record completion"
+          },
+          "description": {
+            "en": "Deliver to the workforce, the senior executives and the staff holding named privacy duties, by whatever means suits each, and record completion per person. Record separately, for the executive and privacy-duty audiences, what their session covered that the general one did not."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Completion record per audience showing the names reached, the material version delivered, and the dates."
+          },
+          "suggestedRole": "HR"
+        },
+        {
+          "title": {
+            "en": "Brief each external party on the privacy responsibilities it holds"
+          },
+          "description": {
+            "en": "Take the obligations recorded for each ecosystem party and put them to the people at that party who must act on them, through the channel that relationship uses. Record which party was briefed, what was covered and who received it, including parties that declined."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Per-party briefing record naming the party, the responsibilities covered, the recipients and the date, including declined or unanswered briefings."
+          },
+          "suggestedRole": "Procurement"
+        },
+        {
+          "title": {
+            "en": "Check delivery against the audience list and follow up those not reached"
+          },
+          "description": {
+            "en": "Compare the completion and briefing records against the audience list, name every person and party still outstanding, and record the follow-up taken for each. Record anyone who cannot be reached and what is being done about their access instead."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Gap list naming each outstanding recipient, the follow-up taken, and the position of anyone who remained unreached."
+          },
+          "suggestedRole": "HR"
+        }
+      ]
     },
     {
       "code": "PRIV-07",
@@ -836,7 +1317,86 @@
         "GV.MT-P6",
         "GV.MT-P7"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Define the changes that force privacy risk to be re-evaluated"
+          },
+          "description": {
+            "en": "List the events that require the risk assessment to be revisited — new or changed processing, a change of environment or party, a shift in the business, a problematic data action — and state who must be told when one occurs and within what the organisation itself sets. Attach the trigger list; it is what the later re-evaluations are measured against."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Define the intake routes for reported problems and individuals' complaints"
+          },
+          "description": {
+            "en": "Write down, for the two populations separately, how a report of a problematic data action from a staff member, researcher or member of the public arrives and how a complaint, concern or question from an individual arrives; where each lands, who analyses it, what response is owed and how it is tracked to a close. Attach the procedure and the contact points it publishes."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Re-evaluate privacy risk for each triggered change and record the outcome"
+          },
+          "description": {
+            "en": "When a listed trigger fires, revisit the affected part of the assessment and record what was reassessed, what changed in the ranking or responses, and what did not. Where a trigger fired and no re-evaluation followed, record that too, with the reason."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Dated re-evaluation record naming the trigger, the processing reassessed, and the change made to the risk or its response."
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Assess practice against the recorded requirements and privacy policies"
+          },
+          "description": {
+            "en": "Take the register of legal, regulatory and contractual requirements together with the privacy policy set, and check what the organisation currently does against each entry. Record the result per entry — met, not met, or unable to determine — and name the owner of every entry not met."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Compliance assessment listing each requirement and policy checked, the result recorded against it, and the owner of each gap."
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Report progress on managing privacy risk to those who must act on it"
+          },
+          "description": {
+            "en": "Issue a report covering what changed in the risk picture, what responses closed, what is overdue and what was learned from reports received, to the people whose decisions depend on it. Record its distribution so silence can later be distinguished from never having been told."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "The report as issued, with its date and distribution list."
+          },
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Review the privacy values, policies and instruction material and communicate what changed"
+          },
+          "description": {
+            "en": "Read them against what the organisation now does and against the problematic data actions handled since the last review, revise what no longer holds, and record what each change was for. Communicate the revisions to the people bound by them and record how."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Change record showing each revision made, the trigger or incident behind it, and how the change was communicated."
+          },
+          "suggestedRole": "Legal/DPO"
+        }
+      ]
     },
     {
       "code": "PRIV-08",
@@ -849,7 +1409,66 @@
         "CT.PO-P3",
         "CT.PO-P4"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Define what makes a data action authorised and how an authorisation ends"
+          },
+          "description": {
+            "en": "State the bases on which the organisation authorises processing — an organisational decision, an individual's agreement, or another basis — and, for each, what must be recorded when an authorisation is given, how it is withdrawn, and what processing must stop when it is. Attach the resulting procedure covering the whole life of an authorisation, not just its grant."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Write the procedure for reviewing, transferring, sharing, altering and deleting data"
+          },
+          "description": {
+            "en": "For each of those actions, record who may request it, who may perform it, what must be checked before it happens, and what is written down afterwards. Include what is done when the action cannot be completed as requested, so an incomplete action has a defined outcome rather than none."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Write the procedure for handling an individual's preference or request"
+          },
+          "description": {
+            "en": "Record how a request or a stated preference is received, how the requester is established as the person concerned, how the data in scope is located across the inventory, what outcome is given back to them, and what is retained about the exchange. Cover the case where the request cannot be met and what the individual is told instead."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Attach the data life cycle to the way systems are built, changed and retired"
+          },
+          "description": {
+            "en": "At each stage of the organisation's own approach to building and changing systems, state what must be decided about the data the system will hold — where it comes from, what it may be used for, how long it stays, and what happens to it when the system goes. Attach the amended life-cycle description showing the data decision required at each stage."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Check a sample of performed actions against the written procedures"
+          },
+          "description": {
+            "en": "Take a sample of data reviews, transfers, disclosures, alterations, deletions and individual requests actually carried out, and compare what was done with what the procedure says. Record each divergence, whether the outcome was still correct, and the procedure step that was skipped or unclear."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Sample review naming the actions examined, the procedure step each was measured against, and every divergence found with its consequence."
+          },
+          "suggestedRole": "Legal/DPO"
+        }
+      ]
     },
     {
       "code": "PRIV-09",
@@ -868,7 +1487,80 @@
         "CT.DM-P9",
         "CT.DM-P10"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Record which data actions each store supports today"
+          },
+          "description": {
+            "en": "For every store holding data in the inventory, record whether a record can be retrieved for review, released for transmission or disclosure, altered, and deleted, and who is able to perform each. Where one of those cannot be done, record it as a gap with a named owner rather than leaving the cell empty."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record how processing permissions and the agreed form travel with data between systems"
+          },
+          "description": {
+            "en": "For each place where data elements leave one system for another, record what conveys the permissions and related values that govern them, the form the data itself is sent in and who agreed that form, and what the receiving side is expected to do with the permissions. Where nothing is conveyed, record that explicitly and name who carries the resulting risk."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Define what each processing log records and justify every field held"
+          },
+          "description": {
+            "en": "For each log kept about data processing, record which events it captures, which fields each entry carries, why each field is necessary for the purpose the log serves, and how long entries are held. Remove the fields that survive no justification, and record who reads the log and when it is looked at."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record the privacy preferences built into algorithmic design objectives"
+          },
+          "description": {
+            "en": "Where processing produces automated decisions or inferences, record the privacy preferences stakeholders hold, how each was turned into a design objective, and how the outputs were compared against those objectives. Record the comparisons that failed as well as those that passed, with what changed as a result."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record each destruction of data against the condition that required it"
+          },
+          "description": {
+            "en": "When data is destroyed, record what was destroyed, the store it left, the retention condition or request that required it, who performed it and when. Include destructions that were attempted and could not be completed, with what remains."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Destruction record naming the data and store, the condition or request that required it, the performer and the date, including incomplete destructions."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Test the data actions and permission arrangements on a real record"
+          },
+          "description": {
+            "en": "Exercise the technical measures the organisation relies on — retrieving, releasing, altering and deleting a record, and conveying its permissions onward — using a real or representative record, and record the expected and observed outcome of each. Record the measures that could not be exercised and why."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Test record naming each measure exercised, the store and record used, the expected outcome, the observed outcome and any measure left untested."
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
     },
     {
       "code": "PRIV-10",
@@ -882,7 +1574,80 @@
         "CT.DP-P4",
         "CT.DP-P5"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Identify the data actions where individuals need not remain identifiable"
+          },
+          "description": {
+            "en": "Go through the processing map and judge, per data action, whether its purpose can be met without identifying the individual, without records being linkable to each other, or without the processing being observable to other parties. Record the judgement and the reason on each action, including the actions judged to need full identification."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Record the disassociation applied to each data action so identified"
+          },
+          "description": {
+            "en": "For every action marked as not needing full identification, record what is actually done to limit identification, linkage or observability, and what identifying material still remains after it. The remaining material is the part a later re-association test is aimed at, so record it precisely rather than as a reassurance."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record where a reference stands in place of an attribute value"
+          },
+          "description": {
+            "en": "List the places where a stand-in is held instead of the value it represents, what each stands for, where the mapping back to the value lives, and who is able to resolve it. Record the places where the value itself is still held although a stand-in would serve."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record the collection and disclosure choices each system offers"
+          },
+          "description": {
+            "en": "For each system or device that allows a choice of which data elements are collected or released, record the setting in force, who set it and when it was last changed. Where a system offers no such choice, record that and name the owner who accepted collecting or releasing everything."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Test whether a disassociated data set can be linked back to an individual"
+          },
+          "description": {
+            "en": "Take a data set the organisation treats as disassociated and attempt, using material the organisation itself holds or could obtain, to link it back to a person. Record what was achievable, what was not, and what the attempt reveals about the residual recorded earlier."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Test record naming the data set, the material used in the attempt, the outcome, and the residual identification found."
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Review the identification retained against current purposes"
+          },
+          "description": {
+            "en": "For each data action, confirm the identification it still carries is required by the purpose it serves today rather than by a purpose it once served. List the actions where identification could now be reduced and name the owner of each reduction."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Review list showing each data action, the identification retained, the purpose relied on, and whether a reduction was raised."
+          },
+          "suggestedRole": "Legal/DPO"
+        }
+      ]
     },
     {
       "code": "PRIV-11",
@@ -893,7 +1658,44 @@
         "CM.PO-P1",
         "CM.PO-P2"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Define what the organisation will tell individuals about its data processing"
+          },
+          "description": {
+            "en": "State which purposes, practices, privacy risks and available options must be communicated, and on what occasions a communication becomes owed — at collection, at a change, on request, after an event. Attach the transparency policy; it is the standard a later sample check measures issued communications against."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Assign the roles that draft, approve and issue privacy communications"
+          },
+          "description": {
+            "en": "Name the role that drafts a privacy communication, the role that approves its content, and the role that speaks when a privacy matter reaches the public, and record where the boundary between them sits and who acts when one is unavailable. Record the assignment against the named roles rather than against individuals who may move."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Check a sample of issued communications against the transparency policy"
+          },
+          "description": {
+            "en": "Take communications actually issued since the last check and confirm each covered what the policy requires for its occasion. Record every omission, the role that approved the communication, and whether the gap lies in the communication or in the policy."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Sample check naming the communications reviewed, the policy points each was measured against, and every omission found with its cause."
+          },
+          "suggestedRole": "Legal/DPO"
+        }
+      ]
     },
     {
       "code": "PRIV-12",
@@ -910,7 +1712,83 @@
         "CM.AW-P7",
         "CM.AW-P8"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Record how each required communication reaches individuals"
+          },
+          "description": {
+            "en": "For every item the transparency policy requires be communicated, record the means by which it currently reaches individuals or the public, where it sits today, and when it was last changed. Where an item is required but reaches nobody, record that as an open row with an owner."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Record what each system shows an individual about the processing of their data"
+          },
+          "description": {
+            "en": "For every system with which individuals interact directly, record what they can see about what is being done with their data and what options they can exercise there. Where a system shows nothing, record that and name the owner of the decision to leave it so."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record what impacted individuals are told and offered after a privacy event"
+          },
+          "description": {
+            "en": "State what a notification to an affected individual must contain, who issues it, and which mitigation options the organisation is prepared to offer — a correction, a deletion, a withdrawal of an authorisation, or another remedy. Attach the notification content and the list of remedies so neither has to be invented under pressure."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Record disclosures, sharing and provenance so an individual account can be produced"
+          },
+          "description": {
+            "en": "Capture, for each disclosure or sharing of data, what was disclosed, to whom and when, and capture for received data where it came from and through whom, in a form that can be retrieved and released on request. Test the retrieval by producing one account end to end."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "An extract produced from the disclosure and provenance records for one named individual or data set, with the date it was produced."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Notify the ecosystem parties holding data when it is corrected or deleted"
+          },
+          "description": {
+            "en": "When a correction or deletion is made, tell the parties that previously received the data or supplied it, and record who was told, what they were told and when. Record the parties that could not be told and what stands in the way."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Notification record naming the change made, the parties told, the date, and any party that could not be reached."
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Solicit individuals' views on the processing and record what came back"
+          },
+          "description": {
+            "en": "Ask individuals directly what they make of the processing and the risks it carries, by whatever means suits the population, and record the responses received and what was done with them. This is the organisation going to individuals; complaints arriving unprompted are handled through the monitoring intake instead."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Record of the solicitation showing who was asked, when, what came back, and the changes considered or made as a result."
+          },
+          "suggestedRole": "Legal/DPO"
+        }
+      ]
     },
     {
       "code": "PRIV-13",
@@ -929,7 +1807,77 @@
         "PR.PO-P9",
         "PR.PO-P10"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Record the baseline configuration each class of system must meet"
+          },
+          "description": {
+            "en": "For each class of system, state the configuration it must start from, which capabilities are on and which are off before it enters service, and the conditions required of the space it physically operates in. Attach the baseline per class and name the role that owns it."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Define how a configuration change is proposed, approved and recorded"
+          },
+          "description": {
+            "en": "State who may propose a change to a system's configuration, what must be assessed before it is approved, who approves it, and what is written down when it is applied. Include how an urgent change is handled and what is done afterwards to bring it back into the record."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Record the response and recovery plans and who executes each step"
+          },
+          "description": {
+            "en": "Capture the plans for responding to an incident, continuing the business through it, and recovering afterwards; for each plan record the steps in order, the person accountable for each, and the systems and data each step depends on. Name what each plan assumes is still available, since that assumption is what the exercise later tests."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record the privacy steps in hiring, role change and departure"
+          },
+          "description": {
+            "en": "For joining, moving and leaving, state what must happen to the person's access, to the data they hold, and to any checks made about them before they are trusted with data, and name who performs each step. Attach the amended people process rather than a separate privacy leaflet beside it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "suggestedRole": "HR"
+        },
+        {
+          "title": {
+            "en": "Write the vulnerability management plan and name who acts on each source of findings"
+          },
+          "description": {
+            "en": "State where the organisation learns about weaknesses in what it runs, how a finding is triaged and ranked, who fixes it, and within what the organisation itself sets. Record what happens to a finding nobody will fix, and who accepts it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 4,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Exercise a restore and a response plan and record what the exercise showed"
+          },
+          "description": {
+            "en": "Restore information from backup and rehearse one response or recovery plan end to end, recording what worked, what did not, how long each took, and the improvements agreed with their owners. Share what the exercise showed about how well the protections held with the parties that rely on them, and record who was told."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Exercise record naming what was restored or rehearsed, the date, the participants, the observed outcome, the improvements agreed, and who the findings were shared with."
+          },
+          "suggestedRole": "IT Operations"
+        }
+      ]
     },
     {
       "code": "PRIV-14",
@@ -944,7 +1892,77 @@
         "PR.AC-P5",
         "PR.AC-P6"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Record who and what holds credentials to each data-processing system"
+          },
+          "description": {
+            "en": "Per system in the inventory, list the individuals, processes and devices holding credentials to it, and name the role that authorises each grant. Record credentials that nobody can account for as findings rather than deleting them silently."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Define how a credential is issued, proved, changed and revoked"
+          },
+          "description": {
+            "en": "State what must be established about a person or device before a credential is issued to it, how strongly a request must be authenticated for each class of transaction the system carries, and what events require a credential to be revoked and within what the organisation itself sets. Attach the procedure covering the whole life of a credential, not only its issue."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record the permissions each role holds and the duties held apart"
+          },
+          "description": {
+            "en": "For every role, record the permissions granted to it, why the role needs each of them, and which pairs of duties must not rest with the same person. Record the places where separation is not currently possible, with who accepted that and what compensates for it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record how physical access to data and devices is controlled"
+          },
+          "description": {
+            "en": "For each location holding data or devices that process it, record what limits who may enter, who authorises an entry, and what is recorded about entries that happen. Include locations operated by another party on the organisation's behalf and what is known about them."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "suggestedRole": "Facilities"
+        },
+        {
+          "title": {
+            "en": "Record how systems are reached from outside and how the network is kept separated"
+          },
+          "description": {
+            "en": "List the routes by which systems can be reached from outside the organisation's own network, who may use each and what is required of them, and record how the parts of the network holding data are kept apart from the parts that have no need of it. Record every route that exists without an owner."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 4,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Audit the credential and permission records against what the systems actually grant"
+          },
+          "description": {
+            "en": "Compare the recorded holders and permissions against what each system grants today, one system at a time, and record every difference — an account with more than its role, a holder no longer present, a permission granted outside the process. Record the correction made or the acceptance taken for each difference."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Audit worksheet naming the systems compared, each difference found between record and grant, and the correction or acceptance recorded against it."
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
     },
     {
       "code": "PRIV-15",
@@ -961,7 +1979,77 @@
         "PR.DS-P7",
         "PR.DS-P8"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Record the protection applied to data at rest in each store"
+          },
+          "description": {
+            "en": "For every store in the inventory, record what protects the data held there, who is able to lift that protection, and where a copy of the same data exists outside the production environment together with what separates that copy from production. A copy nobody listed is the finding this task exists to surface."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record the protection applied to each data flow between systems"
+          },
+          "description": {
+            "en": "For every flow on the processing map, record what protects the data while it moves, what the receiving side is required to do to keep it protected, and who agreed that arrangement. Record flows travelling with no protection as open rows with an owner rather than omitting them."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record what happens to data when a system is removed, transferred or disposed of"
+          },
+          "description": {
+            "en": "By class of system, state what must happen to the data it holds before it leaves the organisation's control, who performs that, who confirms it was done, and what is retained as proof. Include systems handed to another party and systems that leave with a person."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Record the capacity each service needs and how a shortfall becomes known"
+          },
+          "description": {
+            "en": "For every service whose unavailability would affect individuals, record the capacity it requires to serve them, how the organisation learns it is running short, and who is told when that happens. Record services where nobody would learn until it failed, and name the owner."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Record what limits data leaving the organisation by each available route"
+          },
+          "description": {
+            "en": "Enumerate the routes by which data could leave — onward transfers, exports, correspondence, portable devices, third-party services — and record what limits each one and who may authorise an exception. Where a route has no limit at all, record it and name the owner who carries it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 4,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Verify the integrity of software, information and hardware and record what was found"
+          },
+          "description": {
+            "en": "Carry out the checks the organisation relies on to confirm that software, firmware, held information and hardware are as they should be, and record for each what was verified, what the check expects and what it actually found. Record the assets that could not be checked and why."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Check record naming each asset verified, the date, the expected result, the observed result, and the assets left unverified with the reason."
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
     },
     {
       "code": "PRIV-16",
@@ -972,7 +2060,58 @@
         "PR.MA-P1",
         "PR.MA-P2"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Record which assets need controlled maintenance and the tools approved for it"
+          },
+          "description": {
+            "en": "List the assets that hold or process data whose maintenance must be controlled, and record for each which tools may be used on it and who approves adding a tool to that list. Attach the asset and tool lists together, since a log is later checked against both."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Define how maintenance performed from outside the premises is approved and bounded"
+          },
+          "description": {
+            "en": "State who approves a maintenance session conducted from elsewhere, what the person performing it is permitted to reach, what prevents them reaching more, and what must be recorded about the session while it runs. Include what happens when a session must proceed before approval and how it is brought back into the record."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Log each maintenance and repair with the asset, the person and the tools used"
+          },
+          "description": {
+            "en": "For every maintenance or repair carried out, record the asset, the date, the person who performed it, the tools used and, where the work was done from outside the premises, the approval that permitted it. Record work performed by another party in the same log rather than in that party's own records only."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Maintenance log entries showing the asset, date, person, tools used and, for work performed remotely, the approval reference."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Check the maintenance log against the approvals and the approved tool list"
+          },
+          "description": {
+            "en": "Take the logged work since the last check and confirm each remote session had an approval that covered it and each tool used appears on the approved list. Record every exception, whether the asset involved holds data, and what was done about it."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Review record naming the log entries checked and each session or tool found outside the approvals, with the action taken."
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
     },
     {
       "code": "PRIV-17",
@@ -985,7 +2124,80 @@
         "PR.PT-P3",
         "PR.PT-P4"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Record which removable media are permitted and what may be placed on them"
+          },
+          "description": {
+            "en": "State the classes of removable media that may be used, on which systems, what data may be placed on them, and who may authorise an exception; where none is permitted, record that as the position. Attach the resulting statement and name who holds each exception granted so far."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Record the capabilities every deployed system offers against the need for them"
+          },
+          "description": {
+            "en": "Name the list of deployed systems this is worked from and state what it covers and what it leaves out, so the count is checkable rather than assumed. For every system on that list, record the functions, services and interfaces it actually offers, mark which are essential to its purpose and which are not, and name an owner for each that is not; where several systems are deployed from one baseline, record them as a class and name its members, so each finding still lands on a named system. Compare what each offers against the baseline recorded for its class and record where the deployed system has drifted from it, together with any system on the list the enumeration could not reach and why."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Record the protection applied to the paths carrying communications and control traffic"
+          },
+          "description": {
+            "en": "For each path over which systems communicate with each other or are managed and controlled, record what protects the traffic on it, who may use the path, and what would follow if the path were interfered with. This covers the management and control channels themselves; the protection of data flows described in the processing map is recorded separately."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record the arrangements that keep each service available when a part of it fails"
+          },
+          "description": {
+            "en": "For every service carrying a stated resilience requirement, record what happens when a component of it fails, what takes over, and what an individual relying on the service would experience during the failure. Record the services with no arrangement at all and the owner who accepted that."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Remove or account for each enabled capability found unnecessary"
+          },
+          "description": {
+            "en": "For every capability marked non-essential on a deployed system, either remove it and record what was removed and when, or record why it must remain and who accepted its remaining. Record the removals that were attempted and could not be completed."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Per-system record showing each non-essential capability, the action taken, the date, and the named acceptance for any that remain."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Review each granted removable-media exception and decide whether it stands"
+          },
+          "description": {
+            "en": "List the exceptions in force, confirm the need that justified each still exists, and record the decision to continue, narrow or withdraw it. Record the holder of every exception withdrawn and how they were told."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Review list naming each exception in force, its holder, the justification checked, the decision taken and the date."
+          },
+          "suggestedRole": "IT Operations"
+        }
+      ]
     }
   ],
   "pack": {
