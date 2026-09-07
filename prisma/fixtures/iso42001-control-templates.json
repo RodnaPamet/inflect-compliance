@@ -1,0 +1,694 @@
+{
+  "_meta": {
+    "purpose": "ISO/IEC 42001:2023 in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
+    "why": "Built inline in prisma/seed.ts, which is not run on production deploys. Extracted from a database seeded by that block, so the shape is carried over exactly rather than re-derived from grouping logic that ran at seed time.",
+    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here — every template carries the generic five, as it did inline.",
+    "deliveredBy": "scripts/seed-framework-catalogs.ts"
+  },
+  "framework": {
+    "key": "ISO42001",
+    "name": "ISO/IEC 42001:2023",
+    "version": "2023",
+    "kind": "ISO_STANDARD",
+    "description": "AI Management System (AIMS) — requirements + Annex A controls.",
+    "sourceUrn": "urn:inflect:library:iso-42001",
+    "metadata": {
+      "locale": "en",
+      "provider": "ISO/IEC",
+      "packager": "inflect",
+      "publicationDate": "2023-12-18",
+      "license": "ISO-copyright",
+      "sourceUrl": "https://www.iso.org/standard/81230",
+      "referenceIndexOnly": true,
+      "copyright": "Structural outline of ISO/IEC 42001:2023 (clause + Annex A control numbers with paraphrased titles), NOT a reproduction of the copyrighted ISO text. Purchase the full standard from ISO."
+    }
+  },
+  "requirements": [
+    {
+      "code": "4.1",
+      "title": "Understand the organization and its AI context",
+      "section": "Clause 4 Context of the organization",
+      "category": "Clause 4 Context of the organization",
+      "sortOrder": 0
+    },
+    {
+      "code": "4.2",
+      "title": "Determine needs and expectations of interested parties",
+      "section": "Clause 4 Context of the organization",
+      "category": "Clause 4 Context of the organization",
+      "sortOrder": 1
+    },
+    {
+      "code": "4.3",
+      "title": "Determine the scope of the AI management system",
+      "section": "Clause 4 Context of the organization",
+      "category": "Clause 4 Context of the organization",
+      "sortOrder": 2
+    },
+    {
+      "code": "4.4",
+      "title": "Establish and maintain the AI management system",
+      "section": "Clause 4 Context of the organization",
+      "category": "Clause 4 Context of the organization",
+      "sortOrder": 3
+    },
+    {
+      "code": "5.1",
+      "title": "Top-management leadership and commitment to the AIMS",
+      "section": "Clause 5 Leadership",
+      "category": "Clause 5 Leadership",
+      "sortOrder": 4
+    },
+    {
+      "code": "5.2",
+      "title": "Establish an AI policy",
+      "section": "Clause 5 Leadership",
+      "category": "Clause 5 Leadership",
+      "sortOrder": 5
+    },
+    {
+      "code": "5.3",
+      "title": "Assign AI roles, responsibilities and authorities",
+      "section": "Clause 5 Leadership",
+      "category": "Clause 5 Leadership",
+      "sortOrder": 6
+    },
+    {
+      "code": "6.1",
+      "title": "Actions to address AI risks and opportunities (assessment, treatment, impact)",
+      "section": "Clause 6 Planning",
+      "category": "Clause 6 Planning",
+      "sortOrder": 7
+    },
+    {
+      "code": "6.2",
+      "title": "Set AI objectives and plans to achieve them",
+      "section": "Clause 6 Planning",
+      "category": "Clause 6 Planning",
+      "sortOrder": 8
+    },
+    {
+      "code": "6.3",
+      "title": "Plan changes to the AI management system",
+      "section": "Clause 6 Planning",
+      "category": "Clause 6 Planning",
+      "sortOrder": 9
+    },
+    {
+      "code": "7.1",
+      "title": "Provide resources for the AIMS",
+      "section": "Clause 7 Support",
+      "category": "Clause 7 Support",
+      "sortOrder": 10
+    },
+    {
+      "code": "7.2",
+      "title": "Ensure competence of people affecting AI performance",
+      "section": "Clause 7 Support",
+      "category": "Clause 7 Support",
+      "sortOrder": 11
+    },
+    {
+      "code": "7.3",
+      "title": "Ensure awareness of the AI policy and roles",
+      "section": "Clause 7 Support",
+      "category": "Clause 7 Support",
+      "sortOrder": 12
+    },
+    {
+      "code": "7.4",
+      "title": "Determine internal and external AI communication",
+      "section": "Clause 7 Support",
+      "category": "Clause 7 Support",
+      "sortOrder": 13
+    },
+    {
+      "code": "7.5",
+      "title": "Create and control documented information",
+      "section": "Clause 7 Support",
+      "category": "Clause 7 Support",
+      "sortOrder": 14
+    },
+    {
+      "code": "8.1",
+      "title": "Operational planning and control of AI processes",
+      "section": "Clause 8 Operation",
+      "category": "Clause 8 Operation",
+      "sortOrder": 15
+    },
+    {
+      "code": "8.2",
+      "title": "Perform the AI risk assessment",
+      "section": "Clause 8 Operation",
+      "category": "Clause 8 Operation",
+      "sortOrder": 16
+    },
+    {
+      "code": "8.3",
+      "title": "Implement the AI risk treatment",
+      "section": "Clause 8 Operation",
+      "category": "Clause 8 Operation",
+      "sortOrder": 17
+    },
+    {
+      "code": "8.4",
+      "title": "Perform the AI system impact assessment",
+      "section": "Clause 8 Operation",
+      "category": "Clause 8 Operation",
+      "sortOrder": 18
+    },
+    {
+      "code": "9.1",
+      "title": "Monitor, measure, analyse and evaluate the AIMS",
+      "section": "Clause 9 Performance evaluation",
+      "category": "Clause 9 Performance evaluation",
+      "sortOrder": 19
+    },
+    {
+      "code": "9.2",
+      "title": "Conduct internal audits of the AIMS",
+      "section": "Clause 9 Performance evaluation",
+      "category": "Clause 9 Performance evaluation",
+      "sortOrder": 20
+    },
+    {
+      "code": "9.3",
+      "title": "Conduct management review of the AIMS",
+      "section": "Clause 9 Performance evaluation",
+      "category": "Clause 9 Performance evaluation",
+      "sortOrder": 21
+    },
+    {
+      "code": "10.1",
+      "title": "Drive continual improvement of the AIMS",
+      "section": "Clause 10 Improvement",
+      "category": "Clause 10 Improvement",
+      "sortOrder": 22
+    },
+    {
+      "code": "10.2",
+      "title": "Manage nonconformity and corrective action",
+      "section": "Clause 10 Improvement",
+      "category": "Clause 10 Improvement",
+      "sortOrder": 23
+    },
+    {
+      "code": "A.2.2",
+      "title": "Establish a written AI policy framework",
+      "section": "A.2 Policies related to AI",
+      "category": "A.2 Policies related to AI",
+      "sortOrder": 24
+    },
+    {
+      "code": "A.2.3",
+      "title": "Align the AI policy with other organizational policies",
+      "section": "A.2 Policies related to AI",
+      "category": "A.2 Policies related to AI",
+      "sortOrder": 25
+    },
+    {
+      "code": "A.2.4",
+      "title": "Review the AI policy at planned intervals",
+      "section": "A.2 Policies related to AI",
+      "category": "A.2 Policies related to AI",
+      "sortOrder": 26
+    },
+    {
+      "code": "A.3.2",
+      "title": "Define AI roles and accountability structures",
+      "section": "A.3 Internal organization",
+      "category": "A.3 Internal organization",
+      "sortOrder": 27
+    },
+    {
+      "code": "A.3.3",
+      "title": "Establish a mechanism for reporting concerns",
+      "section": "A.3 Internal organization",
+      "category": "A.3 Internal organization",
+      "sortOrder": 28
+    },
+    {
+      "code": "A.4.2",
+      "title": "Document an inventory of AI system resources",
+      "section": "A.4 Resources for AI systems",
+      "category": "A.4 Resources for AI systems",
+      "sortOrder": 29
+    },
+    {
+      "code": "A.4.3",
+      "title": "Record dataset provenance and characteristics",
+      "section": "A.4 Resources for AI systems",
+      "category": "A.4 Resources for AI systems",
+      "sortOrder": 30
+    },
+    {
+      "code": "A.4.4",
+      "title": "Track algorithms, models and tooling dependencies",
+      "section": "A.4 Resources for AI systems",
+      "category": "A.4 Resources for AI systems",
+      "sortOrder": 31
+    },
+    {
+      "code": "A.4.5",
+      "title": "Record computing infrastructure and environments",
+      "section": "A.4 Resources for AI systems",
+      "category": "A.4 Resources for AI systems",
+      "sortOrder": 32
+    },
+    {
+      "code": "A.4.6",
+      "title": "Identify the people and competencies involved",
+      "section": "A.4 Resources for AI systems",
+      "category": "A.4 Resources for AI systems",
+      "sortOrder": 33
+    },
+    {
+      "code": "A.5.2",
+      "title": "Define a repeatable AI impact-assessment process",
+      "section": "A.5 Assessing impacts of AI systems",
+      "category": "A.5 Assessing impacts of AI systems",
+      "sortOrder": 34
+    },
+    {
+      "code": "A.5.3",
+      "title": "Document impact-assessment findings and records",
+      "section": "A.5 Assessing impacts of AI systems",
+      "category": "A.5 Assessing impacts of AI systems",
+      "sortOrder": 35
+    },
+    {
+      "code": "A.5.4",
+      "title": "Evaluate effects on individuals and groups",
+      "section": "A.5 Assessing impacts of AI systems",
+      "category": "A.5 Assessing impacts of AI systems",
+      "sortOrder": 36
+    },
+    {
+      "code": "A.5.5",
+      "title": "Assess broader societal impacts",
+      "section": "A.5 Assessing impacts of AI systems",
+      "category": "A.5 Assessing impacts of AI systems",
+      "sortOrder": 37
+    },
+    {
+      "code": "A.6.1.2",
+      "title": "Set responsible AI development objectives",
+      "section": "A.6 AI system life cycle",
+      "category": "A.6 AI system life cycle",
+      "sortOrder": 38
+    },
+    {
+      "code": "A.6.1.3",
+      "title": "Document responsible design and development processes",
+      "section": "A.6 AI system life cycle",
+      "category": "A.6 AI system life cycle",
+      "sortOrder": 39
+    },
+    {
+      "code": "A.6.2.2",
+      "title": "Capture functional and non-functional requirements",
+      "section": "A.6 AI system life cycle",
+      "category": "A.6 AI system life cycle",
+      "sortOrder": 40
+    },
+    {
+      "code": "A.6.2.3",
+      "title": "Maintain design and development documentation",
+      "section": "A.6 AI system life cycle",
+      "category": "A.6 AI system life cycle",
+      "sortOrder": 41
+    },
+    {
+      "code": "A.6.2.4",
+      "title": "Define verification and validation methodologies",
+      "section": "A.6 AI system life cycle",
+      "category": "A.6 AI system life cycle",
+      "sortOrder": 42
+    },
+    {
+      "code": "A.6.2.5",
+      "title": "Create a deployment plan with release criteria",
+      "section": "A.6 AI system life cycle",
+      "category": "A.6 AI system life cycle",
+      "sortOrder": 43
+    },
+    {
+      "code": "A.6.2.6",
+      "title": "Establish operation and performance monitoring",
+      "section": "A.6 AI system life cycle",
+      "category": "A.6 AI system life cycle",
+      "sortOrder": 44
+    },
+    {
+      "code": "A.6.2.7",
+      "title": "Provide technical documentation for audiences",
+      "section": "A.6 AI system life cycle",
+      "category": "A.6 AI system life cycle",
+      "sortOrder": 45
+    },
+    {
+      "code": "A.6.2.8",
+      "title": "Log events across the system life cycle",
+      "section": "A.6 AI system life cycle",
+      "category": "A.6 AI system life cycle",
+      "sortOrder": 46
+    },
+    {
+      "code": "A.7.2",
+      "title": "Manage data for development and enhancement",
+      "section": "A.7 Data for AI systems",
+      "category": "A.7 Data for AI systems",
+      "sortOrder": 47
+    },
+    {
+      "code": "A.7.3",
+      "title": "Document dataset origin and selection rationale",
+      "section": "A.7 Data for AI systems",
+      "category": "A.7 Data for AI systems",
+      "sortOrder": 48
+    },
+    {
+      "code": "A.7.4",
+      "title": "Define and verify data-quality criteria",
+      "section": "A.7 Data for AI systems",
+      "category": "A.7 Data for AI systems",
+      "sortOrder": 49
+    },
+    {
+      "code": "A.7.5",
+      "title": "Track data lineage and transformation history",
+      "section": "A.7 Data for AI systems",
+      "category": "A.7 Data for AI systems",
+      "sortOrder": 50
+    },
+    {
+      "code": "A.7.6",
+      "title": "Document data-preparation techniques used",
+      "section": "A.7 Data for AI systems",
+      "category": "A.7 Data for AI systems",
+      "sortOrder": 51
+    },
+    {
+      "code": "A.8.2",
+      "title": "Provide user-facing system documentation",
+      "section": "A.8 Information for interested parties",
+      "category": "A.8 Information for interested parties",
+      "sortOrder": 52
+    },
+    {
+      "code": "A.8.3",
+      "title": "Enable an external problem-reporting mechanism",
+      "section": "A.8 Information for interested parties",
+      "category": "A.8 Information for interested parties",
+      "sortOrder": 53
+    },
+    {
+      "code": "A.8.4",
+      "title": "Plan incident-notification communication",
+      "section": "A.8 Information for interested parties",
+      "category": "A.8 Information for interested parties",
+      "sortOrder": 54
+    },
+    {
+      "code": "A.8.5",
+      "title": "Share relevant AI system information proactively",
+      "section": "A.8 Information for interested parties",
+      "category": "A.8 Information for interested parties",
+      "sortOrder": 55
+    },
+    {
+      "code": "A.9.2",
+      "title": "Define responsible-use operational processes",
+      "section": "A.9 Use of AI systems",
+      "category": "A.9 Use of AI systems",
+      "sortOrder": 56
+    },
+    {
+      "code": "A.9.3",
+      "title": "Set responsible-use objectives",
+      "section": "A.9 Use of AI systems",
+      "category": "A.9 Use of AI systems",
+      "sortOrder": 57
+    },
+    {
+      "code": "A.9.4",
+      "title": "Prevent scope creep from the intended purpose",
+      "section": "A.9 Use of AI systems",
+      "category": "A.9 Use of AI systems",
+      "sortOrder": 58
+    },
+    {
+      "code": "A.10.2",
+      "title": "Allocate accountability across the AI supply chain",
+      "section": "A.10 Third-party and customer relationships",
+      "category": "A.10 Third-party and customer relationships",
+      "sortOrder": 59
+    },
+    {
+      "code": "A.10.3",
+      "title": "Assess and manage supplier AI expectations",
+      "section": "A.10 Third-party and customer relationships",
+      "category": "A.10 Third-party and customer relationships",
+      "sortOrder": 60
+    },
+    {
+      "code": "A.10.4",
+      "title": "Incorporate customer obligations into the approach",
+      "section": "A.10 Third-party and customer relationships",
+      "category": "A.10 Third-party and customer relationships",
+      "sortOrder": 61
+    }
+  ],
+  "templates": [
+    {
+      "code": "AIMS-00",
+      "title": "Clause 4 Context of the organization",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "4.1",
+        "4.2",
+        "4.3",
+        "4.4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-01",
+      "title": "Clause 5 Leadership",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "5.1",
+        "5.2",
+        "5.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-02",
+      "title": "Clause 6 Planning",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "6.1",
+        "6.2",
+        "6.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-03",
+      "title": "Clause 7 Support",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "7.1",
+        "7.2",
+        "7.3",
+        "7.4",
+        "7.5"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-04",
+      "title": "Clause 8 Operation",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "8.1",
+        "8.2",
+        "8.3",
+        "8.4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-05",
+      "title": "Clause 9 Performance evaluation",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "9.1",
+        "9.2",
+        "9.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-06",
+      "title": "Clause 10 Improvement",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "10.1",
+        "10.2"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-07",
+      "title": "A.2 Policies related to AI",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "A.2.2",
+        "A.2.3",
+        "A.2.4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-08",
+      "title": "A.3 Internal organization",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "A.3.2",
+        "A.3.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-09",
+      "title": "A.4 Resources for AI systems",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "A.4.2",
+        "A.4.3",
+        "A.4.4",
+        "A.4.5",
+        "A.4.6"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-10",
+      "title": "A.5 Assessing impacts of AI systems",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "A.5.2",
+        "A.5.3",
+        "A.5.4",
+        "A.5.5"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-11",
+      "title": "A.6 AI system life cycle",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "A.6.1.2",
+        "A.6.1.3",
+        "A.6.2.2",
+        "A.6.2.3",
+        "A.6.2.4",
+        "A.6.2.5",
+        "A.6.2.6",
+        "A.6.2.7",
+        "A.6.2.8"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-12",
+      "title": "A.7 Data for AI systems",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "A.7.2",
+        "A.7.3",
+        "A.7.4",
+        "A.7.5",
+        "A.7.6"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-13",
+      "title": "A.8 Information for interested parties",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "A.8.2",
+        "A.8.3",
+        "A.8.4",
+        "A.8.5"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-14",
+      "title": "A.9 Use of AI systems",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "A.9.2",
+        "A.9.3",
+        "A.9.4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-15",
+      "title": "A.10 Third-party and customer relationships",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "A.10.2",
+        "A.10.3",
+        "A.10.4"
+      ],
+      "tasks": []
+    }
+  ],
+  "pack": {
+    "key": "ISO42001_BASELINE",
+    "name": "ISO 42001 AIMS Baseline Pack",
+    "version": "2023",
+    "description": "ISO/IEC 42001:2023 AI management system clauses + Annex A controls.",
+    "templateCodes": [
+      "AIMS-00",
+      "AIMS-01",
+      "AIMS-02",
+      "AIMS-03",
+      "AIMS-04",
+      "AIMS-05",
+      "AIMS-06",
+      "AIMS-07",
+      "AIMS-08",
+      "AIMS-09",
+      "AIMS-10",
+      "AIMS-11",
+      "AIMS-12",
+      "AIMS-13",
+      "AIMS-14",
+      "AIMS-15"
+    ]
+  }
+}

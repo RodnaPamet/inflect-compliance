@@ -92,7 +92,7 @@ describe('catalog-check sees the whole catalogue', () => {
         expect(expected.size).toBeGreaterThan(300);
     });
 
-    it('covers all three shipped fixture shapes', () => {
+    it('covers every fixture shape that still ships', () => {
         // Asserts the SHAPES are still represented in the corpus, derived from
         // the fixtures themselves.
         //
@@ -108,9 +108,20 @@ describe('catalog-check sees the whole catalogue', () => {
         // population is retirable, and the guard cannot know which. Deriving
         // the census removes the choice.
         const shapes = shapeCensus();
-        expect(shapes.get('bare array') ?? 0).toBeGreaterThan(0);
         expect(shapes.get('CatalogFile') ?? 0).toBeGreaterThan(0);
         expect(shapes.get('{ _meta, controls }') ?? 0).toBeGreaterThan(0);
+
+        // THE BARE ARRAY HAS RETIRED, and that is the conversion arc finishing
+        // rather than a scan going blind. Every bare-array template fixture —
+        // DORA, NIS2, ISO 9001, ISO 28000, ISO 39001 — became a CatalogFile
+        // applied by a production seeder. Seventeen CatalogFiles and one
+        // { _meta, controls } now carry every template code the repo ships.
+        //
+        // Asserted as ABSENT rather than dropped from the census: the shape is
+        // still one catalog-check can read, and a bare array reappearing means
+        // a fixture was added the old way, bypassing CatalogFileSchema and the
+        // delivery it brings. This is where that shows up.
+        expect(shapes.get('bare array') ?? 0).toBe(0);
     });
 
     it("the script's own expectation matches, template for template", () => {

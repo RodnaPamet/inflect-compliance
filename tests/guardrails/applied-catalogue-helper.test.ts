@@ -92,30 +92,23 @@ describe('the applied-catalogue helper', () => {
         expect(productionDeclaringSources('SSDF_CORE')).not.toEqual([]);
     });
 
-    it('finds a key that only seed.ts declares, and does not call it production', () => {
-        // The mirror case, and the one that makes the sweep worth doing: a key
-        // seed.ts declares alone reaches dev and no customer, and the helper
-        // must say both halves of that.
+    it('no pack key is declared by seed.ts alone any more', () => {
+        // This case used to find a pack key seed.ts declared that production
+        // did not, and assert the helper reported both halves. Its own comment
+        // said what to do when none remained: "If this is undefined, every
+        // pack seed.ts builds now also reaches production — the end state of
+        // the conversions, and a reason to DELETE this case rather than repair
+        // it."
         //
-        // DERIVED, not named. This case used to pin SSDF_STARTER_PACK, and
-        // retiring that pack — a correct change, the whole point of the
-        // conversions — turned the guard red for a framework that had just
-        // been fixed. That is the hardcoded-witness defect this suite has
-        // already removed from two other guards; keeping it here would have
-        // been the third, and every remaining dev-only pack key is scheduled
-        // for the same retirement.
-        const seedOnly = [...appliedSources().find((s) => !s.reachesProduction)!.text.matchAll(
-            /key: '([A-Z0-9_]*(?:PACK|BASELINE|CORE))'/g,
-        )]
+        // That end state arrived: seed.ts builds no framework and declares no
+        // pack. So the case is inverted rather than deleted, because the
+        // property is still worth holding — a pack key appearing in seed.ts
+        // alone means somebody has started building a framework there again.
+        const seedText = appliedSources().find((x) => !x.reachesProduction)!.text;
+        const seedOnly = [...seedText.matchAll(/key: '([A-Z0-9_]*(?:PACK|BASELINE|CORE))'/g)]
             .map((m) => m[1])
-            .find((k) => productionDeclaringSources(k).length === 0);
-
-        // If this is undefined, every pack seed.ts builds now also reaches
-        // production — the end state of the conversions, and a reason to
-        // delete this case rather than repair it.
-        expect(seedOnly).toBeDefined();
-        expect(declaringSources(seedOnly!)).toEqual(['prisma/seed.ts']);
-        expect(productionDeclaringSources(seedOnly!)).toEqual([]);
+            .filter((k) => productionDeclaringSources(k).length === 0);
+        expect(seedOnly).toEqual([]);
     });
 
     it('returns nothing for a key nothing declares', () => {

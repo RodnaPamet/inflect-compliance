@@ -88,12 +88,7 @@ const INTERNAL_CONTROLS = 'internal-controls.json';
  * Do not add an entry to make this pass. A NEW template fixture with no
  * delivery path is the bug this file is named for.
  */
-const TEMPLATES_UNDELIVERED: Record<string, string> = {
-    'iso9001-control-templates.json':
-        'ISO 9001. Bare-array fixture, no prod path. Frozen for content (no source library) but the DELIVERY gap is independent of that.',
-    'iso28000-control-templates.json': 'ISO 28000. As ISO 9001.',
-    'iso39001-control-templates.json': 'ISO 39001. As ISO 9001.',
-};
+const TEMPLATES_UNDELIVERED: Record<string, string> = {};
 
 /** Fixtures listed in CATALOG_FIXTURES in the catalog seeder. */
 function catalogFixtures(): Set<string> {
@@ -197,7 +192,7 @@ describe('the shipped catalogue can reach production', () => {
             (n, f) => n + (carry.get(f) ?? 0),
             0,
         );
-        expect(Object.keys(TEMPLATES_UNDELIVERED).length).toBeLessThanOrEqual(3);
-        expect(undelivered).toBeLessThanOrEqual(54);
+        expect(Object.keys(TEMPLATES_UNDELIVERED)).toEqual([]);
+        expect(undelivered).toBe(0);
     });
 });

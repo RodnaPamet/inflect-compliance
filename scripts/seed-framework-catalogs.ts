@@ -68,6 +68,12 @@ const CATALOG_FIXTURES = [
     'prisma/fixtures/owasp-asi-control-templates.json',
     'prisma/fixtures/imda-mgf-control-templates.json',
     'prisma/fixtures/nist-privacy-control-templates.json',
+    'prisma/fixtures/iso9001-control-templates.json',
+    'prisma/fixtures/iso28000-control-templates.json',
+    'prisma/fixtures/iso39001-control-templates.json',
+    'prisma/fixtures/iso42001-control-templates.json',
+    'prisma/fixtures/owasp-aisvs-control-templates.json',
+    'prisma/fixtures/eu-ai-act-control-templates.json',
 ];
 
 const DRY_RUN = process.argv.includes('--dry-run');

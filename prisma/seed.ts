@@ -1095,370 +1095,133 @@ Reviewed at least annually.` },
     console.log(`✅ Agent risk assessment v${agentRisk.questionSetVersion} — ${agentRisk.domains.length} domains + ${agentRisk.questions.length} questions seeded`);
 
     // ISO 9001
-    const iso9001Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/iso9001_clauses',
-        require('./fixtures/iso9001_clauses.json'),
+    // ─── ISO9001 — one writer, shared with production ───
+    //
+    // Framework, requirements, templates and pack were THREE separate spans
+    // here, scattered across 600 lines, and prisma/seed.ts is not run on
+    // production deploys — so a fresh database or a restore got none of it.
+    // The fixture was a bare array only this file read; it is now the
+    // CatalogFile a production seeder applies, carrying the same codes,
+    // titles and requirement refs, verified template-for-template.
+    const iso9001Result = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/iso9001-control-templates.json'),
+        'prisma/fixtures/iso9001-control-templates.json',
     );
-    const iso9001 = await prisma.framework.upsert({
-        where: { key_version: { key: 'ISO9001', version: '2015' } },
-        update: { name: 'ISO 9001', description: 'ISO 9001:2015 Quality Management Systems' },
-        create: { key: 'ISO9001', name: 'ISO 9001', version: '2015', kind: 'ISO_STANDARD', description: 'ISO 9001:2015 Quality Management Systems' },
-    });
-    const iso9001ReqMap: Record<string, string> = {};
-    for (const req of iso9001Data) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: iso9001.id, code: req.key } },
-            update: { title: req.title, section: req.section, sortOrder: req.sortOrder },
-            create: { frameworkId: iso9001.id, code: req.key, title: req.title, section: req.section, category: req.section, sortOrder: req.sortOrder },
-        });
-        iso9001ReqMap[req.key] = r.id;
-    }
-    console.log(`✅ ISO 9001 framework + ${iso9001Data.length} requirements seeded`);
+    console.log(
+        `✅ ISO9001: ${iso9001Result.requirements.upserted} requirements, ` +
+            `${iso9001Result.templates.created} templates, ` +
+            `pack ${iso9001Result.pack?.key ?? '-'}`,
+    );
 
     // ISO 28000
-    const iso28000Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/iso28000_clauses',
-        require('./fixtures/iso28000_clauses.json'),
+    // ─── ISO28000 — one writer, shared with production ───
+    //
+    // Framework, requirements, templates and pack were THREE separate spans
+    // here, scattered across 600 lines, and prisma/seed.ts is not run on
+    // production deploys — so a fresh database or a restore got none of it.
+    // The fixture was a bare array only this file read; it is now the
+    // CatalogFile a production seeder applies, carrying the same codes,
+    // titles and requirement refs, verified template-for-template.
+    const iso28000Result = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/iso28000-control-templates.json'),
+        'prisma/fixtures/iso28000-control-templates.json',
     );
-    const iso28000 = await prisma.framework.upsert({
-        where: { key_version: { key: 'ISO28000', version: '2022' } },
-        update: { name: 'ISO 28000', description: 'ISO 28000:2022 Supply Chain Security Management' },
-        create: { key: 'ISO28000', name: 'ISO 28000', version: '2022', kind: 'ISO_STANDARD', description: 'ISO 28000:2022 Supply Chain Security Management' },
-    });
-    const iso28000ReqMap: Record<string, string> = {};
-    for (const req of iso28000Data) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: iso28000.id, code: req.key } },
-            update: { title: req.title, section: req.section, sortOrder: req.sortOrder },
-            create: { frameworkId: iso28000.id, code: req.key, title: req.title, section: req.section, category: req.section, sortOrder: req.sortOrder },
-        });
-        iso28000ReqMap[req.key] = r.id;
-    }
-    console.log(`✅ ISO 28000 framework + ${iso28000Data.length} requirements seeded`);
+    console.log(
+        `✅ ISO28000: ${iso28000Result.requirements.upserted} requirements, ` +
+            `${iso28000Result.templates.created} templates, ` +
+            `pack ${iso28000Result.pack?.key ?? '-'}`,
+    );
 
     // ISO 39001
-    const iso39001Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/iso39001_clauses',
-        require('./fixtures/iso39001_clauses.json'),
+    // ─── ISO39001 — one writer, shared with production ───
+    //
+    // Framework, requirements, templates and pack were THREE separate spans
+    // here, scattered across 600 lines, and prisma/seed.ts is not run on
+    // production deploys — so a fresh database or a restore got none of it.
+    // The fixture was a bare array only this file read; it is now the
+    // CatalogFile a production seeder applies, carrying the same codes,
+    // titles and requirement refs, verified template-for-template.
+    const iso39001Result = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/iso39001-control-templates.json'),
+        'prisma/fixtures/iso39001-control-templates.json',
     );
-    const iso39001 = await prisma.framework.upsert({
-        where: { key_version: { key: 'ISO39001', version: '2012' } },
-        update: { name: 'ISO 39001', description: 'ISO 39001:2012 Road Traffic Safety Management' },
-        create: { key: 'ISO39001', name: 'ISO 39001', version: '2012', kind: 'ISO_STANDARD', description: 'ISO 39001:2012 Road Traffic Safety Management' },
-    });
-    const iso39001ReqMap: Record<string, string> = {};
-    for (const req of iso39001Data) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: iso39001.id, code: req.key } },
-            update: { title: req.title, section: req.section, sortOrder: req.sortOrder },
-            create: { frameworkId: iso39001.id, code: req.key, title: req.title, section: req.section, category: req.section, sortOrder: req.sortOrder },
-        });
-        iso39001ReqMap[req.key] = r.id;
-    }
-    console.log(`✅ ISO 39001 framework + ${iso39001Data.length} requirements seeded`);
+    console.log(
+        `✅ ISO39001: ${iso39001Result.requirements.upserted} requirements, ` +
+            `${iso39001Result.templates.created} templates, ` +
+            `pack ${iso39001Result.pack?.key ?? '-'}`,
+    );
 
     console.log('✅ SOC2 + NIS2 + ISO9001 + ISO28000 + ISO39001 frameworks seeded');
 
 
 
 
-    // ─── ISO 9001 Control Templates ───
-    const iso9001Templates = fixtureArray<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>(
-        'fixtures/iso9001-control-templates',
-        require('./fixtures/iso9001-control-templates.json'),
-    );
-    for (const t of iso9001Templates) {
-        const existing = await prisma.controlTemplate.findUnique({ where: { code: t.code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
-            }
-            for (const rk of t.requirements) {
-                if (iso9001ReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: iso9001ReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    console.log('✅ ISO 9001 control templates seeded');
 
-    // ─── ISO 28000 Control Templates ───
-    const iso28000Templates = fixtureArray<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>(
-        'fixtures/iso28000-control-templates',
-        require('./fixtures/iso28000-control-templates.json'),
-    );
-    for (const t of iso28000Templates) {
-        const existing = await prisma.controlTemplate.findUnique({ where: { code: t.code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
-            }
-            for (const rk of t.requirements) {
-                if (iso28000ReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: iso28000ReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    console.log('✅ ISO 28000 control templates seeded');
 
-    // ─── ISO 39001 Control Templates ───
-    const iso39001Templates = fixtureArray<{ code: string; title: string; category: string; defaultFrequency: ControlFrequency; requirements: string[] }>(
-        'fixtures/iso39001-control-templates',
-        require('./fixtures/iso39001-control-templates.json'),
-    );
-    for (const t of iso39001Templates) {
-        const existing = await prisma.controlTemplate.findUnique({ where: { code: t.code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: { code: t.code, title: t.title, category: t.category, defaultFrequency: t.defaultFrequency },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
-            }
-            for (const rk of t.requirements) {
-                if (iso39001ReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: iso39001ReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    console.log('✅ ISO 39001 control templates seeded');
 
     // ─── Framework Packs ───
 
 
 
-    // ─── OWASP AISVS v1.0 — AI Security Verification Standard ───
-    // CC-BY-SA-4.0 (OWASP). Inflect stores a REFERENCE INDEX (canonical IDs +
-    // verification levels + paraphrased titles), NOT the verbatim requirement
-    // prose; the full text stays at the OWASP source. metadataJson carries the
-    // OWASP attribution + license the framework picker surfaces. Rides the
-    // generic framework/pack machinery — no AISVS-specific code paths.
-    const aisvsData = fixtureArray<{ key: string; section: string; level: string; sortOrder: number; title: string }>(
-        'fixtures/owasp_aisvs_requirements',
-        require('./fixtures/owasp_aisvs_requirements.json'),
+    // ─── OWASP-AISVS — one writer, shared with production ───
+    //
+    // Built inline here, and prisma/seed.ts is not run on production deploys,
+    // so production has never held this framework: not the framework row, not
+    // its templates, not its pack. The fixture was extracted from a database
+    // seeded by the block this replaces, so the templates, categories,
+    // frequencies and requirement links are exactly what its runtime grouping
+    // produced rather than a re-derivation of it.
+    const aisvsResult = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/owasp-aisvs-control-templates.json'),
+        'prisma/fixtures/owasp-aisvs-control-templates.json',
     );
-    const aisvsMeta = JSON.stringify({
-        locale: 'en',
-        provider: 'OWASP',
-        packager: 'inflect',
-        publicationDate: '2025-05-01',
-        license: 'CC-BY-SA-4.0',
-        sourceUrl: 'https://github.com/OWASP/AISVS',
-        referenceIndexOnly: true,
-        copyright:
-            'OWASP AISVS v1.0 © OWASP Foundation, licensed CC-BY-SA-4.0 ' +
-            '(https://creativecommons.org/licenses/by-sa/4.0/). Source: ' +
-            'https://github.com/OWASP/AISVS. Inflect stores a reference index ' +
-            '(IDs, levels, paraphrased titles) and links to the canonical text.',
-    });
-    const aisvs = await prisma.framework.upsert({
-        where: { key_version: { key: 'OWASP-AISVS', version: '1.0' } },
-        update: { name: 'OWASP AISVS v1.0', kind: 'INDUSTRY_STANDARD', description: 'OWASP AI Security Verification Standard v1.0 — AI-security controls for AI-enabled systems.', metadataJson: aisvsMeta, sourceUrn: 'urn:inflect:library:owasp-aisvs-1.0' },
-        create: { key: 'OWASP-AISVS', name: 'OWASP AISVS v1.0', version: '1.0', kind: 'INDUSTRY_STANDARD', description: 'OWASP AI Security Verification Standard v1.0 — AI-security controls for AI-enabled systems.', metadataJson: aisvsMeta, sourceUrn: 'urn:inflect:library:owasp-aisvs-1.0' },
-    });
-    const aisvsReqMap: Record<string, string> = {};
-    for (const req of aisvsData) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: aisvs.id, code: req.key } },
-            update: { title: req.title, section: req.section, sortOrder: req.sortOrder },
-            create: { frameworkId: aisvs.id, code: req.key, title: req.title, section: req.section, category: req.section, sortOrder: req.sortOrder },
-        });
-        aisvsReqMap[req.key] = r.id;
-    }
-    // One control template per AISVS chapter (12), each linked to its chapter's
-    // requirements — keeps the installable pack chapter-scoped.
-    const aisvsChapters = new Map<string, { title: string; reqs: string[] }>();
-    for (const req of aisvsData) {
-        const ch = req.key.split('.')[0]; // 'C1'..'C12'
-        if (!aisvsChapters.has(ch)) aisvsChapters.set(ch, { title: req.section, reqs: [] });
-        aisvsChapters.get(ch)!.reqs.push(req.key);
-    }
-    for (const [ch, info] of aisvsChapters) {
-        const code = `AISVS-${ch}`;
-        const existing = await prisma.controlTemplate.findUnique({ where: { code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: { code, title: info.title, category: 'OWASP AISVS', defaultFrequency: 'QUARTERLY' },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
-            }
-            for (const rk of info.reqs) {
-                if (aisvsReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: aisvsReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    const aisvsTmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'AISVS-' } } });
-    const aisvsPack = await prisma.frameworkPack.upsert({
-        where: { key: 'AISVS_BASELINE' },
-        update: { name: 'OWASP AISVS Baseline Pack', frameworkId: aisvs.id, version: '1.0' },
-        create: { key: 'AISVS_BASELINE', name: 'OWASP AISVS Baseline Pack', frameworkId: aisvs.id, version: '1.0', description: 'OWASP AISVS v1.0 AI-security controls across all 12 chapters.' },
-    });
-    for (const tmpl of aisvsTmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: aisvsPack.id, templateId: tmpl.id } },
-            create: { packId: aisvsPack.id, templateId: tmpl.id }, update: {},
-        });
-    }
-    console.log(`✅ OWASP AISVS framework + ${aisvsData.length} requirements + ${aisvsChapters.size} chapter packs seeded`);
+    console.log(
+        `✅ OWASP-AISVS: ${aisvsResult.requirements.upserted} requirements, ` +
+            `${aisvsResult.templates.created} templates, ` +
+            `pack ${aisvsResult.pack?.key ?? '-'}`,
+    );
 
-    // ─── ISO/IEC 42001:2023 — AI Management System ───
-    // COPYRIGHTED ISO standard: IC stores a structural outline (clause + Annex A
-    // control numbers + paraphrased titles), NOT the verbatim ISO text — mirrors
-    // the ISO 27001 handling. Rides the generic framework/pack machinery.
-    const iso42001Data = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/iso_42001_requirements',
-        require('./fixtures/iso_42001_requirements.json'),
+    // ─── ISO42001 — one writer, shared with production ───
+    //
+    // Built inline here, and prisma/seed.ts is not run on production deploys,
+    // so production has never held this framework: not the framework row, not
+    // its templates, not its pack. The fixture was extracted from a database
+    // seeded by the block this replaces, so the templates, categories,
+    // frequencies and requirement links are exactly what its runtime grouping
+    // produced rather than a re-derivation of it.
+    const iso42001Result = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/iso42001-control-templates.json'),
+        'prisma/fixtures/iso42001-control-templates.json',
     );
-    const iso42001Meta = JSON.stringify({
-        locale: 'en',
-        provider: 'ISO/IEC',
-        packager: 'inflect',
-        publicationDate: '2023-12-18',
-        license: 'ISO-copyright',
-        sourceUrl: 'https://www.iso.org/standard/81230',
-        referenceIndexOnly: true,
-        copyright:
-            'Structural outline of ISO/IEC 42001:2023 (clause + Annex A control ' +
-            'numbers with paraphrased titles), NOT a reproduction of the ' +
-            'copyrighted ISO text. Purchase the full standard from ISO.',
-    });
-    const iso42001 = await prisma.framework.upsert({
-        where: { key_version: { key: 'ISO42001', version: '2023' } },
-        update: { name: 'ISO/IEC 42001:2023', kind: 'ISO_STANDARD', description: 'AI Management System (AIMS) — requirements + Annex A controls.', metadataJson: iso42001Meta, sourceUrn: 'urn:inflect:library:iso-42001' },
-        create: { key: 'ISO42001', name: 'ISO/IEC 42001:2023', version: '2023', kind: 'ISO_STANDARD', description: 'AI Management System (AIMS) — requirements + Annex A controls.', metadataJson: iso42001Meta, sourceUrn: 'urn:inflect:library:iso-42001' },
-    });
-    const iso42001ReqMap: Record<string, string> = {};
-    for (const req of iso42001Data) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: iso42001.id, code: req.key } },
-            update: { title: req.title, section: req.section, sortOrder: req.sortOrder },
-            create: { frameworkId: iso42001.id, code: req.key, title: req.title, section: req.section, category: req.section, sortOrder: req.sortOrder },
-        });
-        iso42001ReqMap[req.key] = r.id;
-    }
-    // One control template per top-level grouping (clauses 4-10 + Annex A.2-A.10).
-    const iso42001Groups = new Map<string, { title: string; reqs: string[] }>();
-    for (const req of iso42001Data) {
-        const group = req.section; // already the grouping label
-        if (!iso42001Groups.has(group)) iso42001Groups.set(group, { title: group, reqs: [] });
-        iso42001Groups.get(group)!.reqs.push(req.key);
-    }
-    let iso42001GroupIdx = 0;
-    for (const [, info] of iso42001Groups) {
-        const code = `AIMS-${String(iso42001GroupIdx++).padStart(2, '0')}`;
-        const existing = await prisma.controlTemplate.findUnique({ where: { code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: { code, title: info.title, category: 'ISO 42001', defaultFrequency: 'ANNUALLY' },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
-            }
-            for (const rk of info.reqs) {
-                if (iso42001ReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: iso42001ReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    const iso42001Tmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'AIMS-' } } });
-    const iso42001Pack = await prisma.frameworkPack.upsert({
-        where: { key: 'ISO42001_BASELINE' },
-        update: { name: 'ISO 42001 AIMS Baseline Pack', frameworkId: iso42001.id, version: '2023' },
-        create: { key: 'ISO42001_BASELINE', name: 'ISO 42001 AIMS Baseline Pack', frameworkId: iso42001.id, version: '2023', description: 'ISO/IEC 42001:2023 AI management system clauses + Annex A controls.' },
-    });
-    for (const tmpl of iso42001Tmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: iso42001Pack.id, templateId: tmpl.id } },
-            create: { packId: iso42001Pack.id, templateId: tmpl.id }, update: {},
-        });
-    }
-    console.log(`✅ ISO 42001 framework + ${iso42001Data.length} requirements + ${iso42001Groups.size} group packs seeded`);
+    console.log(
+        `✅ ISO42001: ${iso42001Result.requirements.upserted} requirements, ` +
+            `${iso42001Result.templates.created} templates, ` +
+            `pack ${iso42001Result.pack?.key ?? '-'}`,
+    );
 
-    // ─── EU AI Act — Regulation (EU) 2024/1689 ───
-    // EU legislation = PUBLIC DOMAIN: obligation text may be used directly.
-    // Modelled risk-tiered (prohibited / high-risk / limited / GPAI / minimal);
-    // tier classification is a tenant + counsel decision, NOT legal advice.
-    // Rides the generic framework/pack machinery.
-    const euAiActData = fixtureArray<{ key: string; section: string; sortOrder: number; title: string }>(
-        'fixtures/eu_ai_act_requirements',
-        require('./fixtures/eu_ai_act_requirements.json'),
+    // ─── EU-AI-ACT — one writer, shared with production ───
+    //
+    // Built inline here, and prisma/seed.ts is not run on production deploys,
+    // so production has never held this framework: not the framework row, not
+    // its templates, not its pack. The fixture was extracted from a database
+    // seeded by the block this replaces, so the templates, categories,
+    // frequencies and requirement links are exactly what its runtime grouping
+    // produced rather than a re-derivation of it.
+    const euAiActResult = await applyCatalogFile(
+        prisma,
+        loadCatalogFile('prisma/fixtures/eu-ai-act-control-templates.json'),
+        'prisma/fixtures/eu-ai-act-control-templates.json',
     );
-    const euAiActMeta = JSON.stringify({
-        locale: 'en',
-        provider: 'European Union',
-        packager: 'inflect',
-        publicationDate: '2024-06-13',
-        license: 'public-domain',
-        sourceUrl: 'https://eur-lex.europa.eu/eli/reg/2024/1689/oj',
-        notLegalAdvice: true,
-        copyright:
-            'Regulation (EU) 2024/1689 is EU legislation in the public domain. ' +
-            'Source: https://eur-lex.europa.eu/eli/reg/2024/1689/oj. Risk-tier ' +
-            'classification is a tenant + legal-counsel decision; not legal advice.',
-    });
-    const euAiAct = await prisma.framework.upsert({
-        where: { key_version: { key: 'EU-AI-ACT', version: '2024' } },
-        update: { name: 'EU AI Act (2024/1689)', kind: 'REGULATION', description: 'Risk-tiered AI regulation obligations (prohibited / high-risk / limited / GPAI / minimal).', metadataJson: euAiActMeta, sourceUrn: 'urn:inflect:library:eu-ai-act' },
-        create: { key: 'EU-AI-ACT', name: 'EU AI Act (2024/1689)', version: '2024', kind: 'REGULATION', description: 'Risk-tiered AI regulation obligations (prohibited / high-risk / limited / GPAI / minimal).', metadataJson: euAiActMeta, sourceUrn: 'urn:inflect:library:eu-ai-act' },
-    });
-    const euAiActReqMap: Record<string, string> = {};
-    for (const req of euAiActData) {
-        const r = await prisma.frameworkRequirement.upsert({
-            where: { frameworkId_code: { frameworkId: euAiAct.id, code: req.key } },
-            update: { title: req.title, section: req.section, sortOrder: req.sortOrder },
-            create: { frameworkId: euAiAct.id, code: req.key, title: req.title, section: req.section, category: req.section, sortOrder: req.sortOrder },
-        });
-        euAiActReqMap[req.key] = r.id;
-    }
-    // One control template per risk tier.
-    const euAiActTiers = new Map<string, { title: string; reqs: string[] }>();
-    for (const req of euAiActData) {
-        if (!euAiActTiers.has(req.section)) euAiActTiers.set(req.section, { title: req.section, reqs: [] });
-        euAiActTiers.get(req.section)!.reqs.push(req.key);
-    }
-    let euTierIdx = 0;
-    for (const [, info] of euAiActTiers) {
-        const code = `EUAIA-${String(euTierIdx++).padStart(2, '0')}`;
-        const existing = await prisma.controlTemplate.findUnique({ where: { code } });
-        if (!existing) {
-            const tmpl = await prisma.controlTemplate.create({
-                data: { code, title: info.title, category: 'EU AI Act', defaultFrequency: 'ANNUALLY' },
-            });
-            for (const task of GENERIC_TEMPLATE_TASKS) {
-                await prisma.controlTemplateTask.create({ data: { templateId: tmpl.id, title: task.title, description: task.description } });
-            }
-            for (const rk of info.reqs) {
-                if (euAiActReqMap[rk]) {
-                    await prisma.controlTemplateRequirementLink.create({ data: { templateId: tmpl.id, requirementId: euAiActReqMap[rk] } }).catch(() => { });
-                }
-            }
-        }
-    }
-    const euAiActTmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'EUAIA-' } } });
-    const euAiActPack = await prisma.frameworkPack.upsert({
-        where: { key: 'EU_AI_ACT_BASELINE' },
-        update: { name: 'EU AI Act Baseline Pack', frameworkId: euAiAct.id, version: '2024' },
-        create: { key: 'EU_AI_ACT_BASELINE', name: 'EU AI Act Baseline Pack', frameworkId: euAiAct.id, version: '2024', description: 'EU AI Act (2024/1689) obligations across the five risk tiers.' },
-    });
-    for (const tmpl of euAiActTmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: euAiActPack.id, templateId: tmpl.id } },
-            create: { packId: euAiActPack.id, templateId: tmpl.id }, update: {},
-        });
-    }
-    console.log(`✅ EU AI Act framework + ${euAiActData.length} obligations + ${euAiActTiers.size} risk-tier packs seeded`);
+    console.log(
+        `✅ EU-AI-ACT: ${euAiActResult.requirements.upserted} requirements, ` +
+            `${euAiActResult.templates.created} templates, ` +
+            `pack ${euAiActResult.pack?.key ?? '-'}`,
+    );
 
     // ─── OWASP-ASI — one writer, shared with production ───
     //
@@ -1674,47 +1437,8 @@ Reviewed at least annually.` },
     console.log(`✅ Internal Controls: ${ic.templates.created} created / ${ic.templates.updated} updated templates + ${ic.requirementLinks} policy-mediated requirement links`);
     console.log(`✅ Internal Controls authored tasks: ${ic.fixtureTaskCount} in fixture -> created ${ic.created}, updated ${ic.updated}, unchanged ${ic.unchanged}, deprecated ${ic.deprecated}`);
 
-    // ISO 9001 Pack
-    const iso9001Tmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'QMS-' } } });
-    const iso9001Pack = await prisma.frameworkPack.upsert({
-        where: { key: 'ISO9001_CORE' },
-        update: { name: 'ISO 9001 Core Pack', frameworkId: iso9001.id, version: '2015' },
-        create: { key: 'ISO9001_CORE', name: 'ISO 9001 Core Pack', frameworkId: iso9001.id, version: '2015', description: 'ISO 9001 quality management core controls.' },
-    });
-    for (const tmpl of iso9001Tmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: iso9001Pack.id, templateId: tmpl.id } },
-            create: { packId: iso9001Pack.id, templateId: tmpl.id }, update: {},
-        });
-    }
 
-    // ISO 28000 Pack
-    const iso28000Tmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'SCS-' } } });
-    const iso28000Pack = await prisma.frameworkPack.upsert({
-        where: { key: 'ISO28000_CORE' },
-        update: { name: 'ISO 28000 Core Pack', frameworkId: iso28000.id, version: '2022' },
-        create: { key: 'ISO28000_CORE', name: 'ISO 28000 Core Pack', frameworkId: iso28000.id, version: '2022', description: 'ISO 28000 supply chain security core controls.' },
-    });
-    for (const tmpl of iso28000Tmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: iso28000Pack.id, templateId: tmpl.id } },
-            create: { packId: iso28000Pack.id, templateId: tmpl.id }, update: {},
-        });
-    }
 
-    // ISO 39001 Pack
-    const iso39001Tmpls = await prisma.controlTemplate.findMany({ where: { code: { startsWith: 'RTS-' } } });
-    const iso39001Pack = await prisma.frameworkPack.upsert({
-        where: { key: 'ISO39001_CORE' },
-        update: { name: 'ISO 39001 Core Pack', frameworkId: iso39001.id, version: '2012' },
-        create: { key: 'ISO39001_CORE', name: 'ISO 39001 Core Pack', frameworkId: iso39001.id, version: '2012', description: 'ISO 39001 road traffic safety core controls.' },
-    });
-    for (const tmpl of iso39001Tmpls) {
-        await prisma.packTemplateLink.upsert({
-            where: { packId_templateId: { packId: iso39001Pack.id, templateId: tmpl.id } },
-            create: { packId: iso39001Pack.id, templateId: tmpl.id }, update: {},
-        });
-    }
 
     console.log('✅ All Framework Packs seeded');
 
