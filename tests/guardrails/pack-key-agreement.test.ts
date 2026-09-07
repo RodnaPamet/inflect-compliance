@@ -47,7 +47,6 @@ const SEED = 'prisma/seed.ts';
  */
 const PACK_KEY_DIVERGENCES: Record<string, { dev: string; production: string }> = {
     SOC2: { dev: 'SOC2_STARTER_PACK', production: 'SOC2_BASELINE' },
-    'NIST-SSDF': { dev: 'SSDF_STARTER_PACK', production: 'SSDF_CORE' },
     'CIS-V8': { dev: 'CIS_V8_IG1_PACK', production: 'CIS_V8_IG1' },
     'OWASP-ASVS': { dev: 'ASVS_L1_PACK', production: 'ASVS_L1' },
     ISO27701: { dev: 'ISO27701_BASELINE', production: 'ISO27701_CORE' },
@@ -132,8 +131,10 @@ describe('the two seeding paths agree on pack keys', () => {
     });
 
     it('the divergence list is not growing', () => {
-        // Five on 2026-09-06. Each framework conversion removes its own.
-        expect(Object.keys(PACK_KEY_DIVERGENCES).length).toBeLessThanOrEqual(5);
+        // Four. Was five until NIST SSDF converted — its two dev-only pack
+        // keys went with the seed.ts block that built them, which is what a
+        // conversion is supposed to do to this list.
+        expect(Object.keys(PACK_KEY_DIVERGENCES).length).toBeLessThanOrEqual(4);
     });
 
     it('DORA and NIS2 agree, because they have already converted', () => {

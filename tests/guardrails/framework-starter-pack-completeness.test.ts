@@ -65,7 +65,7 @@ const STARTER_PACKS: Record<string, { frameworkKey: string; packKey: string }> =
     'DORA-2022': { frameworkKey: 'DORA', packKey: 'DORA_BASELINE' },
     'EU-AI-ACT-2024': { frameworkKey: 'EU-AI-ACT', packKey: 'EU_AI_ACT_BASELINE' },
     'NIST-PF-1.0': { frameworkKey: 'NIST-PRIVACY', packKey: 'NIST_PRIVACY_BASELINE' },
-    'NIST-SSDF-800-218': { frameworkKey: 'NIST-SSDF', packKey: 'SSDF_STARTER_PACK' },
+    'NIST-SSDF-800-218': { frameworkKey: 'NIST-SSDF', packKey: 'SSDF_CORE' },
     'AISVS-1.0': { frameworkKey: 'OWASP-AISVS', packKey: 'AISVS_BASELINE' },
     'ISO27701-2019': { frameworkKey: 'ISO27701', packKey: 'ISO27701_BASELINE' },
     'CIS-CONTROLS-V8': { frameworkKey: 'CIS-V8', packKey: 'CIS_V8_IG1_PACK' },
