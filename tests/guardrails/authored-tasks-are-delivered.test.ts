@@ -98,12 +98,6 @@ const KNOWN_UNDELIVERED: Record<string, string> = {};
  * content, exactly as ISO 27001's did.
  */
 const DELIVERED_WITHOUT_AUTHORED_TASKS: Record<string, string> = {
-    'owasp-asi-control-templates.json':
-        'OWASP Agentic AI Top 10 — 10 templates. Delivered 2026-09-07; authoring not yet done.',
-    'imda-mgf-control-templates.json':
-        'IMDA MGF — 4 templates, one per governance dimension. Delivered 2026-09-07; authoring not yet done.',
-    'nist-privacy-control-templates.json':
-        'NIST Privacy Framework — 18 templates, one per privacy Category. Delivered 2026-09-07; authoring not yet done.',
     'iso9001-control-templates.json':
         'ISO 9001 — 22 templates. FROZEN for content in control-task-actionability: no source library exists to author from. Delivery and content are separate axes, and this entry records only the second.',
     'iso28000-control-templates.json':
@@ -229,15 +223,14 @@ describe('authored tasks have a delivery path', () => {
     });
 
     it('the delivered-without-authored-tasks list is not growing', () => {
-        // NINE. Three from the first delivery round, six from the final
-        // conversions.
+        // SIX. It was nine: three from the first delivery round and six from
+        // the final conversions. The three from that first round — OWASP ASI,
+        // IMDA MGF and NIST Privacy — are authored now and have removed
+        // themselves, which is the mechanism working.
         //
-        // The number went UP because delivery outran authoring, which is the
-        // right order: content that reaches no database helps nobody, and a
-        // fixture wired without authored tasks still ships the generic five
-        // rather than nothing. Three of the nine (ISO 9001 / 28000 / 39001)
-        // are frozen for content and may never leave; the other six are
-        // queued. Each authoring PR removes its own entry.
-        expect(Object.keys(DELIVERED_WITHOUT_AUTHORED_TASKS)).toHaveLength(9);
+        // Of the six left, ISO 9001 / 28000 / 39001 are frozen for content and
+        // may never leave; the other three are queued. Each authoring PR
+        // removes its own entry.
+        expect(Object.keys(DELIVERED_WITHOUT_AUTHORED_TASKS)).toHaveLength(6);
     });
 });

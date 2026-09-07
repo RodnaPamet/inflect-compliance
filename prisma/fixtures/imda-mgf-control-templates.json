@@ -171,7 +171,92 @@
         "MGF-1.4",
         "MGF-1.5"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Define the AI risk categories and the tolerance for each"
+          },
+          "description": {
+            "en": "List the kinds of harm the organisation recognises for its AI and agentic use — to people, to data, to the business and to third parties — and against each category state the exposure it is prepared to accept and the point beyond which a deployment may not proceed. Attach the agreed taxonomy showing a tolerance recorded against every category and the date it was agreed."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "The agreed risk taxonomy with a tolerance statement against every category, dated."
+          },
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Record who holds each AI governance decision"
+          },
+          "description": {
+            "en": "For each decision that governs AI use — approving a deployment, accepting a residual risk, changing an authority limit, withdrawing a deployment — record the role that holds it and the person currently in that role, and, where the organisation names one, whoever acts in their absence. Where a body rather than an individual holds a decision, record its membership at the date of writing. Attach the decision-rights record showing a current holder against every decision listed; a decision with no holder is the gap this task exists to surface."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Decision-rights record naming a current holder for every AI governance decision, with the body's membership recorded where a body holds one."
+          },
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Declare the authority limits of each agentic deployment"
+          },
+          "description": {
+            "en": "For every deployment that can act rather than only advise, record what it may do on its own, what it must not do, the data and systems within its reach, and the consequence or value threshold above which it must hand back to a person. Attach one declaration per deployment, agreed by the person holding the decision right for it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "An agreed authority declaration for each deployment able to take action on its own."
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Assess the risks that arise where deployments act in combination"
+          },
+          "description": {
+            "en": "Where one deployment passes work to, or depends on the output of, another, list the combinations that exist and assess what can go wrong only because they are joined — an error carried forward unchecked, a loop between them, or an authority reached in aggregate that neither holds alone. Attach the assessment with a treatment decision recorded against each combination."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Assessment covering each identified combination of interacting deployments and the treatment agreed for it."
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Assess each externally supplied agent or model before it is taken into use"
+          },
+          "description": {
+            "en": "Before adopting a component the organisation did not build, record what it established about the component's intended use, its known limits, how it handles data given to it, and how changes and support are provided — naming against each what the organisation relied on to establish it, whether an answer from a supplier, published documentation or a model card, a licence, or a test the organisation ran itself, and recording the points it could not establish by any means. Record the residual risk accepted against the tolerances and who accepted it. Attach the completed assessment for every third-party component adopted in the period; where none was adopted, record that."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Pre-adoption assessments for the third-party agents and models taken into use in the period, each naming what was established, the basis for it, the points left unestablished and the risk accepted — or a dated statement that no third-party component was adopted."
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Compare the deployments now running against the recorded tolerances"
+          },
+          "description": {
+            "en": "Read the current set of deployments against the risk taxonomy and the authority declarations, and record each case where a deployment operates outside what was declared for it, or has produced a risk the taxonomy does not name. Attach the comparison listing every deployment checked, with the corrections made or the tolerance changes agreed."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Dated comparison naming every deployment reviewed and the disposition of each discrepancy found."
+          },
+          "suggestedRole": "Management"
+        }
+      ]
     },
     {
       "code": "MGF-D2",
@@ -184,7 +269,92 @@
         "MGF-2.3",
         "MGF-2.4"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Classify the decisions each deployment takes part in by consequence"
+          },
+          "description": {
+            "en": "Group the decisions AI touches by what follows from getting them wrong, and for each group record the involvement a person has — deciding, approving before the outcome takes effect, or reviewing afterwards — and why that level fits the consequence. Attach the classification with every current deployment mapped to a group."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Decision classification mapping each deployment to a consequence group and its stated level of human involvement."
+          },
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Name the person accountable for each deployed agent"
+          },
+          "description": {
+            "en": "Against every deployment record the individual answerable for what it does in service, what specifically they are answerable for, and the date that accountability was set and by whom. Where the organisation names someone to hold it while that person is unavailable, record them too. Attach the ownership record showing a current named person against every deployment; a deployment with no named person is the gap this task exists to surface."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Ownership record naming a current accountable person for every deployment, with the date each accountability was set."
+          },
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Record who may stop a deployment and how they do it"
+          },
+          "description": {
+            "en": "For each deployment record the people who may pause or withdraw it, the route by which they do so, when those people are available and how they are reached at the times the deployment is running — 'not reachable outside working hours, and the deployment does not run then' being an answer to record rather than a gap to close — and how quickly the stop takes effect once ordered. Attach the record showing a named stop authority, a route and a stated availability against every deployment."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Stop-authority record per deployment naming who may stop it, the route, the stated availability of those named, and the time the stop takes to take effect."
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Give reviewers the failure modes they are expected to catch"
+          },
+          "description": {
+            "en": "For each decision group where a person reviews AI output, record what those reviewers are told about where the deployment is known to be wrong or weak, what information is placed in front of them at the moment of review, and how they record a disagreement. Attach the briefing material issued and the list of reviewers who received it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Reviewer briefing material per decision group and the record of who received it."
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record the interventions and stops actually exercised"
+          },
+          "description": {
+            "en": "Capture each occasion a person overrode, escalated, paused or withdrew a deployment: what prompted it, who acted, what was decided, and whether and when the deployment resumed. Attach the period's record with an outcome closed on every entry."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Intervention and escalation records for the period, each showing a trigger, an actor and a closed outcome."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Measure how often human review changes the outcome"
+          },
+          "description": {
+            "en": "Take a sample of reviewed decisions from the period and record how often the reviewer departed from what the deployment proposed, what those departures found, and where review never departs at all. Attach the sample, the counts, and the action agreed wherever review is not adding a decision."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Sampled review results with departure counts per decision group and the agreed action."
+          },
+          "suggestedRole": "Management"
+        }
+      ]
     },
     {
       "code": "MGF-D3",
@@ -199,7 +369,92 @@
         "MGF-3.5",
         "MGF-3.6"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Record where each deployment's inputs and retained data come from"
+          },
+          "description": {
+            "en": "For every deployment record the sources feeding it, what it keeps between uses and for how long, who can reach that retained material, and what may not be placed into it. Attach the record showing a named source, a retention position and an access holder for each deployment."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Per-deployment record of input sources, retained data, retention period and who may reach it."
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record what is captured for each decision, tool call and action"
+          },
+          "description": {
+            "en": "Set down, per deployment, what is kept when it acts — the request, the intermediate steps, the external calls made, the output, and the person or system it served — how long that is held, who may retrieve it, and how a single past action would be reconstructed from it. Attach the capture description and one worked reconstruction of a past action end to end."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Capture description per deployment plus one reconstructed action trail from request to outcome."
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record the limits on what one deployment may ask another to do"
+          },
+          "description": {
+            "en": "Where deployments pass work between themselves, record which may call which, what may be asked and what may not cross that boundary, and against each pairing state how a request exceeding those limits is prevented, refused or escalated — a capability the calling deployment cannot express, a separation that carries no route between the two, and a runtime check that rejects the call are all answers, and the answer given should be the one that is actually in place. Attach the constraint record for every pairing identified. Where an out-of-limit request did arise during the period, record it and its disposition; where none arose, record that."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Inter-deployment constraint record for every pairing, each naming how an exceeding request is prevented, refused or escalated, together with the out-of-limit requests seen in the period and their disposition, or a statement that none arose."
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Reconcile each agent identity's access against its declared authority"
+          },
+          "description": {
+            "en": "List the systems, actions and credentials each non-human identity holds, compare that against the authority declared for its deployment, and record every difference as either a removal made or an exception accepted with a reason and an owner; include how those credentials are issued and how they are withdrawn when a deployment ends. Attach the reconciliation for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Dated reconciliation listing every agent identity, the access it holds and the disposition of each difference."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Test each deployment against its declared limits before release and after change"
+          },
+          "description": {
+            "en": "Before a deployment enters service, and again when it or a supplied component changes, run tests that include deliberate attempts to push it past its declared limits; record what was tried, what was found, what was corrected and what was accepted before release. Attach the test records with a disposition recorded against every finding."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Pre-release and post-change test records showing the attempts made and a disposition per finding."
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Review each AI incident and record what changed as a result"
+          },
+          "description": {
+            "en": "For every event where a deployment acted outside its limits, caused harm, or had to be stopped, record how it was noticed, who responded, what was done at the time, and the change made afterwards to the deployment, its limits or its oversight. Attach the period's incident records, each closed with a change or a stated reason none was needed."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Incident records for the period, each showing detection, response and the resulting change or reasoned decision not to change."
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
     },
     {
       "code": "MGF-D4",
@@ -212,7 +467,92 @@
         "MGF-4.3",
         "MGF-4.4"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Record the agreed AI-disclosure wording and its owner for each deployment"
+          },
+          "description": {
+            "en": "For every deployment, record the wording that tells a person AI is involved, the person accountable for that wording, and the date they last agreed it — including the wording used where an exchange begins with a person and is handed over to a deployment, and naming any deployment for which no wording has yet been agreed. Where the organisation already keeps an inventory of the points at which its deployments address people, record the wording and its owner against that inventory rather than compiling a second one. Attach the wording record showing an owner and an agreement date against every deployment."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Per-deployment record of the AI-disclosure wording, its accountable owner and the date last agreed, including any deployment where no wording has yet been agreed."
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Describe each deployment's capabilities and limits in user-facing terms"
+          },
+          "description": {
+            "en": "Write, for the people who use it, what the deployment can do, what it cannot, the conditions under which it is known to be unreliable, and how a failure shows itself to them. Attach the description issued for each deployment and the date the accountable owner last agreed it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Issued capability-and-limit description per deployment, dated and attributed to its accountable owner."
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Write the guidance that tells users when to check the output themselves"
+          },
+          "description": {
+            "en": "Set out what a user should do differently because AI is involved — which outputs to verify before acting on them, what not to put into the deployment, and what to do when an output looks wrong — and record where that guidance reaches each group of users. Attach the guidance text with its placement recorded per user group."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Operating guidance text with the placement recorded for each user group it is meant to reach."
+          },
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Record the choices and the redress route offered to users"
+          },
+          "description": {
+            "en": "For each deployment record what a user may decline, turn off, or ask to be redone or decided by a person, where they raise it, who answers, and within what commitment. Attach the record naming a route for every deployment, with evidence the route is reachable from the point of use."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Per-deployment record of user choices and the redress route, with proof the route is reachable from the point of use."
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Record the user objections and redress cases received"
+          },
+          "description": {
+            "en": "Capture each request to opt out, correct, contest, or have a person re-decide an AI outcome: what was asked, who handled it, what was decided, and when the user was told. Attach the period's cases, each closed with an outcome and a date the user was answered."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Redress cases for the period, each showing the request, the handler, the decision and the date the user was answered."
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Compare the published wording against what the deployments now do"
+          },
+          "description": {
+            "en": "Read the disclosures, capability descriptions and user guidance against the deployments as they currently behave, and record each place the wording overstates, understates or no longer describes them. Attach the comparison listing every published text checked, the corrections made, and the date each was reissued."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 5,
+          "evidenceHint": {
+            "en": "Dated comparison naming every published text checked and the correction or reissue date for each discrepancy."
+          },
+          "suggestedRole": "Management"
+        }
+      ]
     }
   ],
   "pack": {

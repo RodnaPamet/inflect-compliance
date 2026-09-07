@@ -102,7 +102,66 @@
       "requirementCodes": [
         "ASI01"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Record the authorised objective for each deployed agent"
+          },
+          "description": {
+            "en": "For every agent in service, write down the outcome it is permitted to pursue, the actions it must not take even when asked to, and the person accountable for that statement. Attach the per-agent objective statements; an agent with no statement is in scope of this control and not yet covered."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "List the sources whose content reaches each agent's instruction channel"
+          },
+          "description": {
+            "en": "For each agent, enumerate everything that ends up in what the agent reads as direction — the requester's own words, retrieved documents, results returned by tools, file and message contents — and mark which of those sources the organisation does not control. Attach the per-agent list of sources with the untrusted ones identified."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 1,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record the treatment applied to each untrusted source"
+          },
+          "description": {
+            "en": "For every source marked untrusted, record what the organisation has done so content arriving from it cannot restate the agent's objective, whatever means was chosen. Name the change made, the date it took effect and who made it, and attach the record alongside the source list."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Review a sample of agent runs against the recorded objective"
+          },
+          "description": {
+            "en": "Draw runs from the period for each agent, read what the agent was asked to do and what it went on to do, and mark any run that pursued something outside its recorded objective. For each marked run, record what caused the deviation and what was done about it."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "The sampled run records for the period with the reviewer's finding on each, and for every run judged out of objective the cause identified and the action taken."
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Reassess each recorded objective against how the agent is now used"
+          },
+          "description": {
+            "en": "Set the objective statements beside the work the sampled runs show people actually sending the agent, and judge whether the statement still describes its job. Record objectives that have drifted, statements for agents no longer running, and agents in service with no statement, together with the corrections agreed."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "suggestedRole": "Engineering lead"
+        }
+      ]
     },
     {
       "code": "ASI-02",
@@ -112,7 +171,66 @@
       "requirementCodes": [
         "ASI02"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "List the tools each agent may invoke and the effect of each"
+          },
+          "description": {
+            "en": "For every agent, name every tool or action it can call, and for each one say whether it reads, changes or spends something and on which system. Attach the per-agent tool list with the owner of each target system named."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record the limits placed on each tool an agent may invoke"
+          },
+          "description": {
+            "en": "For every entry on the tool list, write down what constrains a call — which arguments are permitted, which targets are in range, what size, value or count a call may not exceed — and what happens to a call that falls outside those limits. Attach the limits record against each tool."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Withdraw from each agent the tools its work does not require"
+          },
+          "description": {
+            "en": "Compare the tool list against what the agent's recorded work actually needs, remove the surplus from that agent's reach, and record what was withdrawn, from which agent and on what date. Where a surplus tool is retained, record the reason and who accepted it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Examine the tool invocations recorded in the period against the agreed limits"
+          },
+          "description": {
+            "en": "Go through the invocations agents made during the period and pick out calls that breached a recorded limit, targeted a system not on the tool list, or were refused. For each such call record what was decided about it and, where the call indicates a real attempt at misuse, the follow-up raised — wherever the organisation records follow-up. Where the period's invocations produced nothing outside the limits, record the invocations examined and that none breached a recorded limit."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "The invocation records examined for the period, the calls flagged with the disposition reached and the follow-up raised for each — or, where nothing was flagged, the records examined and the statement that no call fell outside the recorded limits."
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Reassess the tool limits against the calls that were refused or flagged"
+          },
+          "description": {
+            "en": "Using the flagged and refused calls, judge for each limit whether it sits where it should — too tight and it is blocking legitimate work, too loose and it caught nothing it should have. Record the limits changed, the reasoning, and who approved each change."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "suggestedRole": "Engineering lead"
+        }
+      ]
     },
     {
       "code": "ASI-03",
@@ -122,7 +240,66 @@
       "requirementCodes": [
         "ASI03"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Record the identity each agent authenticates with and the rights it carries"
+          },
+          "description": {
+            "en": "For every agent, name the account or credential it presents to each system it reaches, list the rights that account holds there, and name the person accountable for it. Attach the register; an agent authenticating as a person or sharing an identity with another agent is recorded as such."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Record how an action an agent takes for a person is attributed to both"
+          },
+          "description": {
+            "en": "Where an agent acts on someone's behalf, write down how the requesting person is carried into the record the target system keeps, so an action can later be traced to the agent and to the person who asked for it. Attach this for each agent that acts on behalf of a person, and note the cases where only the agent is recorded."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record how each agent credential is issued, held and withdrawn"
+          },
+          "description": {
+            "en": "For every identity on the register, state who may issue it, where the secret is held and who can reach it, what event triggers its withdrawal, and who performs that withdrawal. Attach the record against the register entry."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Withdraw the identities of agents retired from service"
+          },
+          "description": {
+            "en": "For each agent taken out of service during the period, remove the identities it held on every system named on the register and confirm with each system that the access no longer works. Record any identity that could not be withdrawn and why."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "The identities withdrawn in the period with the agent, the date, the person who requested it, and the confirmation from each target system that access no longer works."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Compare the rights recorded for each agent identity against the rights its systems now grant"
+          },
+          "description": {
+            "en": "For every identity on the register, read back the rights each target system currently grants it, and set those beside both the rights recorded on the register and the work the agent is authorised to do. Record rights the system grants that the register does not show, rights the agent's recorded work does not require, and the reduction raised for each; where a right is kept deliberately, record the reason and who accepted it. Where an identity is shared with a person or with another agent, record that its rights cannot be attributed to one agent, and what was decided about separating it or accepting it as it stands."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "suggestedRole": "Security engineering"
+        }
+      ]
     },
     {
       "code": "ASI-04",
@@ -132,7 +309,66 @@
       "requirementCodes": [
         "ASI04"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "List the externally supplied components each agent depends on"
+          },
+          "description": {
+            "en": "For every agent, name the models, tool integrations, prompt or skill packs, and any third-party agents it relies on, recording the supplier and the version in use for each. Attach the per-agent component list with the supplier named against every entry."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record what was established about each component before it was adopted"
+          },
+          "description": {
+            "en": "For every entry on the component list, write down what the organisation determined about its origin and fitness before putting it into service — where it came from, how it was obtained, what was examined — and who accepted it on that basis. Attach the acceptance record; components already in use with no such record are listed for retrospective assessment."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Procurement"
+        },
+        {
+          "title": {
+            "en": "Record how a change to each supplied component reaches the organisation"
+          },
+          "description": {
+            "en": "For every supplier on the list, state how the organisation learns that a component has a new version, a defect or has been withdrawn, who receives that notice, and what they do with it. Attach the record, and note suppliers for which no such route exists."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Assess each component change received before it is taken into service"
+          },
+          "description": {
+            "en": "For every new version, defect notice or withdrawal received during the period, record what was assessed about it and the decision reached — adopt, defer, or refuse and replace. Record the person who decided and the date the decision took effect."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "The component changes received in the period, each with the assessment recorded, the decision to adopt, defer or refuse, the decider and the date."
+          },
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Reconcile the component list against what the agents are running"
+          },
+          "description": {
+            "en": "Compare the suppliers and versions recorded on the list with the components the agents in service are actually using. Record every discrepancy — a version in use that was never assessed, a listed component no longer present, an agent depending on something absent from the list — and raise the correction for each."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "suggestedRole": "Security engineering"
+        }
+      ]
     },
     {
       "code": "ASI-05",
@@ -142,7 +378,66 @@
       "requirementCodes": [
         "ASI05"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Identify where an agent's output is executed rather than read"
+          },
+          "description": {
+            "en": "Go through each agent and record every point at which what it produces is run rather than presented to a person — code, queries, commands, or configuration applied to a system — naming the system that executes it and the person who owns that system. Attach the list of execution points per agent."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record what the executing environment can reach at each point"
+          },
+          "description": {
+            "en": "For every execution point, write down the data, networks and accounts available to whatever runs the agent's output, and what it is prevented from reaching. Attach the record so each point on the list carries a stated boundary rather than an assumption."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Reduce each executing environment's reach to what the work requires"
+          },
+          "description": {
+            "en": "Compare the reach recorded at each point against what the agent's work actually needs, remove the access that is not needed, and record what was removed at which point and on what date. Where reach is retained beyond the need, record the reason and who accepted it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Review the record of executions performed on the agents' behalf"
+          },
+          "description": {
+            "en": "Go through the executions carried out for agents during the period and pick out those that failed, were refused, or touched something outside the boundary recorded for that point. Record the cause of each and the action taken."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "The execution records for the period with the reviewer's note on every execution that failed, was refused, or reached beyond the recorded boundary, and the action taken for each."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Reassess which agent outputs need to be executed at all"
+          },
+          "description": {
+            "en": "Revisit each execution point and judge whether the agent's output must be run automatically or could instead be delivered for a person to act on. Record the decision for each point, the reasoning, and any point retired as a result."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "suggestedRole": "Engineering lead"
+        }
+      ]
     },
     {
       "code": "ASI-06",
@@ -152,7 +447,66 @@
       "requirementCodes": [
         "ASI06"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Catalogue what each agent retains between runs"
+          },
+          "description": {
+            "en": "For every agent, record each store whose contents are read back into a later run — prior conversations, notes the agent wrote for itself, indexed documents, cached results — with where it is held and how long entries persist. Attach the catalogue of stores per agent."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record who or what can write to each retained store"
+          },
+          "description": {
+            "en": "For every store in the catalogue, name the people, systems and agents able to add or alter an entry, and mark the sources the organisation does not control. Attach the record against each store; a store anyone can write to is identified as such."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 1,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record the origin held alongside each entry in a retained store"
+          },
+          "description": {
+            "en": "For every store, state what is kept with an entry to show where it came from and when it arrived, so a suspect entry can be traced to its source and its siblings found. Attach the record, naming the stores where entries currently carry no origin."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Purge the retained entries identified in the period as wrong or untrusted"
+          },
+          "description": {
+            "en": "At least once in the period, assemble the entries identified as having come from an untrusted source or as being incorrect — those raised by the origin review, by reports of an agent returning wrong content, and by any incident touching a store — then remove each from its store and from anything derived from it, and confirm the agent no longer returns it. Record what was removed, from which store and on whose authority. Where the period identified no such entry, record the stores checked, the routes of identification consulted, and that nothing required removal."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "For the period, the removals made — the entry, the store, the person who authorised it and confirmation the agent no longer returns the content — or, where nothing was identified, the dated record of the stores checked, the routes consulted and the statement that no entry required removal."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Examine a sample of retained entries against their recorded origin"
+          },
+          "description": {
+            "en": "Draw entries from each store and check that the origin held with them is present and consistent with the sources recorded as able to write there. Record entries whose origin is missing, and entries traced to a source not on the record for that store, with the follow-up raised for each."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "suggestedRole": "Security engineering"
+        }
+      ]
     },
     {
       "code": "ASI-07",
@@ -162,7 +516,66 @@
       "requirementCodes": [
         "ASI07"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Map the exchanges between agents and the parties at each end"
+          },
+          "description": {
+            "en": "Record every path along which one agent passes work, results or direction to another, naming both ends, whether either sits outside the organisation, and what the message carries. Attach the map; a path where the far end belongs to another party is marked as such."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record how each end establishes who it is exchanging with"
+          },
+          "description": {
+            "en": "For every path on the map, state what the receiving side relies on to accept that the sender is the agent it claims to be, and what the sender relies on in return. Attach the record and name the paths on which neither end establishes anything."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Record how each exchange is protected between the two ends"
+          },
+          "description": {
+            "en": "For every path, write down what prevents a message being read or altered between sender and receiver, and what the receiver does with a message that arrives failing that protection. Attach the record against each path on the map."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Review the exchanges refused or left unattributed during the period"
+          },
+          "description": {
+            "en": "Go through the inter-agent messages that were rejected, failed their protection, or could not be attributed to a known sender. Record the cause of each and the action taken, distinguishing configuration faults from attempts to inject a message into a chain."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "The refused or unattributed exchanges for the period, each with its cause, the classification reached, and the action taken."
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Reconcile the exchange map against the exchanges actually observed"
+          },
+          "description": {
+            "en": "Compare the paths used during the period with the paths on the map. Record every exchange occurring on a path that is not mapped, every mapped path that has fallen out of use, and the correction raised for each."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "suggestedRole": "Engineering lead"
+        }
+      ]
     },
     {
       "code": "ASI-08",
@@ -172,7 +585,66 @@
       "requirementCodes": [
         "ASI08"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Trace the chains in which one agent's output drives a further action"
+          },
+          "description": {
+            "en": "For each agent, record what consumes its output — another agent, a change to a system, a message sent onward — and how far a single input can travel before a person sees it. Attach the chain descriptions with the longest unattended stretch marked on each."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Set a bound on how far each chain may run before it halts"
+          },
+          "description": {
+            "en": "For each chain, agree and record the ceiling past which it stops rather than continues — a count of actions, a volume changed, an amount spent, an elapsed duration, or a combination. Record who set each bound and on what basis, and attach it against the chain."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record how each chain is halted, who may halt it and when they are available"
+          },
+          "description": {
+            "en": "For each chain on the map, state the means by which it is stopped mid-flight, name the people able to invoke that means, and record the hours during which each of them is available. Where nobody is available at some hours, record that plainly and state what holds the chain in the meantime — the bound recorded for it, or a rule that the chain does not run unattended at those hours. Describe as well the state left behind when a chain stops part-way. Attach the record against each chain so the means, the named people, their availability and the residue are all known in advance."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Halt a live chain by the recorded means and record what happened"
+          },
+          "description": {
+            "en": "Choose a chain from the map, stop it using the recorded means, and note how long passed between the decision and the chain actually stopping, whether it stopped completely, and what work was left part-done. Record any step of the recorded procedure that did not work as written."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "The exercise record: the chain halted, who invoked it, the elapsed time from decision to full stop, what was left part-done, and any step of the procedure found to be wrong."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Reassess each bound against the volumes the chains actually reached"
+          },
+          "description": {
+            "en": "Compare the ceilings recorded for each chain against the highest counts, volumes, spend and durations observed over the period. Record the bounds that were never approached, the bounds that halted legitimate work, and the adjustments agreed with the person accountable for each chain."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "suggestedRole": "Management"
+        }
+      ]
     },
     {
       "code": "ASI-09",
@@ -182,7 +654,66 @@
       "requirementCodes": [
         "ASI09"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "List the points at which an agent addresses a person"
+          },
+          "description": {
+            "en": "For each agent, record every audience it communicates with — staff, customers, suppliers — the channel used, and whether the person on the other end can currently tell they are dealing with an agent. Attach the list with the channels lacking that disclosure marked."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Disclose on each channel that the counterparty is an agent"
+          },
+          "description": {
+            "en": "Agree the wording that tells a person they are dealing with an agent and where in the exchange it appears, put it in place on each channel from the list, and record the wording used per channel. Note any channel where disclosure was judged unnecessary and who accepted that."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Record which decisions may not rest on an agent's output alone"
+          },
+          "description": {
+            "en": "Name the decisions and actions within reach of these agents where a person must form their own judgement before acting, identify who that person is, and state what they are given in order to judge. Attach the record so a reviewer can see which outputs are advisory and which are acted on directly."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Brief the staff who act on agent requests on what to refuse"
+          },
+          "description": {
+            "en": "Take the people who receive requests originating from an agent through what an agent will and will not ask of them, and through the route for reporting a request that falls outside that. Record who was briefed, on what date, and what material they were given."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 3,
+          "suggestedRole": "HR"
+        },
+        {
+          "title": {
+            "en": "Review the reports of suspicious agent requests received"
+          },
+          "description": {
+            "en": "Go through the reports raised during the period, establish for each whether the request came from a sanctioned agent, from an agent operating outside its remit, or from something imitating one, and record the finding and the action taken. Note reports where the reporting person received no answer."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "The reports received in the period, each with the finding on where the request originated, the action taken, and the response given to the person who reported it."
+          },
+          "suggestedRole": "Security engineering"
+        }
+      ]
     },
     {
       "code": "ASI-10",
@@ -192,7 +723,69 @@
       "requirementCodes": [
         "ASI10"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Register every agent approved to operate, naming its owner and approver"
+          },
+          "description": {
+            "en": "Record each agent the organisation has approved to run, what it is for, the person accountable for it while it runs, and who granted the approval. Attach the register; it is the reference against which anything found running is judged."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Record how an agent obtains approval before it starts operating"
+          },
+          "description": {
+            "en": "State who may approve an agent to run, what they are shown before deciding, and how the approval is recorded so it can be found afterwards. Attach the record, and name the routes by which an agent could reach production without passing through it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Search for agents running without an entry on the register"
+          },
+          "description": {
+            "en": "Look across the places an agent could be operating and compare what is found against the register. Record every agent found, whether it matches a register entry, and for each unmatched one the owner traced and the disposition decided."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "The search performed for the period, the agents found, and for each unmatched agent the owner traced and the disposition decided."
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Decommission the agents found operating without approval"
+          },
+          "description": {
+            "en": "Stop each unapproved agent identified, remove the access and credentials it held, and confirm it is no longer running. Record the removal, or — where the agent is judged legitimate — the approval granted retrospectively and by whom."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "For each unapproved agent: the date it was stopped, who authorised that, the access and credentials withdrawn with it, and confirmation it is no longer running."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Reassess the approval route against the agents found unregistered"
+          },
+          "description": {
+            "en": "Using the period's findings, establish why each unregistered agent escaped the register — a gap in the approval route, an owner who left, a path into production that bypasses approval — and record the changes agreed to close each gap."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "suggestedRole": "Engineering lead"
+        }
+      ]
     }
   ],
   "pack": {
