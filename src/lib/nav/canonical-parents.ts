@@ -38,6 +38,7 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/agent-proposals': { href: '/admin/mcp', label: 'MCP' },
     '/agent-runs': { href: '/admin/mcp', label: 'MCP' },
     '/admin/mcp/agent-receipts': { href: '/admin/mcp', label: 'MCP' },
+    '/admin/mcp/quarantine': { href: '/admin/mcp', label: 'MCP' },
 
     // Admin subpages
     '/admin/agents': { href: '/admin', label: 'Admin' },

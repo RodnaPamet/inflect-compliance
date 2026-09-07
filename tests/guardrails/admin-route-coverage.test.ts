@@ -111,6 +111,11 @@ const ADMIN_ONLY_ROUTES = [
     // The assessor-facing governance pack — read-only, gated by the same
     // `admin/agents` subtree rule as the register itself.
     'admin/agents/reports/route.ts',
+    // Quarantine triage — the proposals the agentic output guard refused, with
+    // the content that was attempted. Read-only, gated on
+    // `admin.agent_registry` by its own rule in ROUTE_PERMISSIONS (nothing in
+    // that map matches /admin/mcp/**, so the rule is what gates the path).
+    'admin/mcp/quarantine/route.ts',
     'admin/device-tokens/route.ts',
     'admin/device-tokens/[tokenId]/route.ts',
     'admin/dsar-requests/route.ts',
