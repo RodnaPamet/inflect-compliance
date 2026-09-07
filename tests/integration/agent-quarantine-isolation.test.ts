@@ -25,6 +25,7 @@ import { PrismaClient, MembershipStatus, Role } from '@prisma/client';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
+import { NO_POLICY_CARD } from '@/lib/agentic/policy-card';
 import {
     createAgentProposal,
     listAgentProposals,
@@ -123,6 +124,11 @@ beforeAll(async () => {
             kind: 'RISK',
             payload: INJECTION(id),
             rationale: `proposed for ${id}`,
+            // No card in force — this fixture models a proposal arriving with
+            // no policy card, which is exactly what NO_POLICY_CARD (0) means.
+            // It was omitted and the suite still passed: jest strips types, so
+            // only `tsc` saw that a REQUIRED field was missing.
+            policyCardVersion: NO_POLICY_CARD,
         });
         // Assert in the FIXTURE, not only in a test: if the guard stops
         // quarantining this corpus entry the suite must fail here, loudly,
@@ -136,6 +142,7 @@ beforeAll(async () => {
             kind: 'RISK',
             payload: CLEAN(id),
             rationale: `proposed for ${id}`,
+            policyCardVersion: NO_POLICY_CARD,
         });
         if (good.status !== 'PENDING') {
             throw new Error(`fixture: expected a PENDING proposal, got ${good.status}`);
