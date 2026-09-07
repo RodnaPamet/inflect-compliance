@@ -1,4 +1,4 @@
-import { SquareCheck, Workflow, BadgeCheck, Robot } from '@/components/ui/icons/nucleo';
+import { SquareCheck, Workflow, BadgeCheck, Robot, ShieldSlash } from '@/components/ui/icons/nucleo';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -86,6 +86,18 @@ export default async function McpAdminPage({
             icon: BadgeCheck,
             title: t('mcp.receiptsTitle'),
             description: t('mcp.receiptsDesc'),
+        },
+        {
+            // Last on purpose: every card above is a surface you visit in the
+            // ordinary course of running agents. This one is the surface you
+            // visit when something tried to write through them, and the rows
+            // behind it never reach any of the others — the review queue
+            // excludes a quarantined proposal unconditionally.
+            href: tenantHref('/admin/mcp/quarantine'),
+            id: 'mcp-quarantine-card',
+            icon: ShieldSlash,
+            title: t('mcp.quarantineTitle'),
+            description: t('mcp.quarantineDesc'),
         },
     ];
 

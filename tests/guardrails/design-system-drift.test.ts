@@ -120,6 +120,14 @@ const MIGRATED_PAGES = [
     'incidents/page.tsx',
     'incidents/IncidentsClient.tsx',
     'incidents/[incidentId]/page.tsx',
+    // Quarantine triage — what the agentic output guard refused, and the
+    // content it was asked to write. Token-clean from the start (semantic
+    // content-*/bg-*/border-* only; EntityListPage + DataTable + EmptyState +
+    // InlineNotice + Sheet + CopyText + Heading primitives, Nucleo icons, no
+    // legacy btn/badge/glass-card). Promoted on landing rather than parked in
+    // the unmigrated tally.
+    'admin/mcp/quarantine/page.tsx',
+    'admin/mcp/quarantine/QuarantineClient.tsx',
 ];
 
 const RAW_COLOR_RE = /\b(?:text|bg|border)-(?:slate|gray|neutral|zinc)-\d{2,3}\b/g;
