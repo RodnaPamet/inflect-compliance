@@ -81,6 +81,9 @@ import {
  * delay from {@link LOGIN_PROGRESSIVE_POLICY} before the expensive
  * bcrypt verify. `unref` is not needed — the timer runs to
  * completion inside the auth request.
+ *
+ * This is the production default for {@link AuthenticateOptions.sleepImpl};
+ * nothing but that one seam reads it.
  */
 function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -137,6 +140,47 @@ export interface AuthenticateInput {
     requestId?: string;
 }
 
+/**
+ * Injectable seams. Every field is optional and defaults to the
+ * production implementation, so `authenticateWithPassword(input)` — the
+ * only shape any call site in `src/` uses — is byte-for-byte the
+ * behaviour it had before this parameter existed.
+ */
+export interface AuthenticateOptions {
+    /**
+     * How the progressive-delay tier from {@link LOGIN_PROGRESSIVE_POLICY}
+     * is served. Called ONCE per attempt, and only when the decision's
+     * `delayMs` is greater than zero, with that exact number.
+     *
+     * Defaults to a real `setTimeout` sleep. A test supplies a recorder
+     * so it can assert the delay that was REQUESTED instead of measuring
+     * the time that ELAPSED — the elapsed form needed a real 5-second
+     * sleep and a ceiling only 1.4x above it, so it failed on a loaded
+     * machine for a correct implementation (#2350).
+     *
+     * The DEFAULT arm is itself under test — every injected test stays
+     * green if `?? sleep` becomes `?? (async () => undefined)`, i.e. if
+     * the Epic A.3 delay is deleted in production. "serves that delay on
+     * a REAL timer when nothing is injected" in
+     * tests/unit/auth-brute-force.test.ts is the only test that reddens
+     * on that mutation across the eleven suites that can reach this
+     * function (that population, and how it was bounded, is written up
+     * in that file's header). Keep it wired to this default if you move
+     * the seam.
+     *
+     * ## Not the timing-equalisation path, on purpose
+     * `dummyVerify` — the bcrypt-cost burn that makes a lockout
+     * indistinguishable from a wrong password (see the module header) —
+     * is called directly and is NOT routed through here. That is the
+     * point: a caller who passes a no-op `sleepImpl` shortens the
+     * progressive delay and changes NOTHING about the equalisation, so
+     * the seam cannot be used to open a timing oracle. The lockout
+     * branch below reaches `dummyVerify` without consulting this field
+     * at all.
+     */
+    sleepImpl?: (ms: number) => Promise<void>;
+}
+
 // ── Chokepoint ─────────────────────────────────────────────────────────
 
 /**
@@ -155,10 +199,12 @@ export interface AuthenticateInput {
  */
 export async function authenticateWithPassword(
     input: AuthenticateInput,
+    options: AuthenticateOptions = {},
 ): Promise<AuthResult> {
     const email = (input.email ?? '').trim().toLowerCase();
     const password = input.password ?? '';
     const requestId = input.requestId;
+    const sleepImpl = options.sleepImpl ?? sleep;
 
     // Empty input — fast path that still burns bcrypt time so an attacker
     // can't distinguish empty-input early-return from real verify latency.
@@ -239,7 +285,7 @@ export async function authenticateWithPassword(
         // feel it past tier thresholds — intentional; the typo-
         // allowance is the free attempts below tier 1.
         if (decision.delayMs > 0) {
-            await sleep(decision.delayMs);
+            await sleepImpl(decision.delayMs);
         }
     }
 

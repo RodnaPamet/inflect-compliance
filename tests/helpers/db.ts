@@ -587,31 +587,135 @@ export function prismaTestClient(): any {
 }
 
 /**
- * Truncate all application tables in the test database.
+ * The tables `resetDatabase` names explicitly. Everything reachable from
+ * one of these by a foreign key is cleared too, by CASCADE — measured at
+ * 105 of the 221 public base tables on 2026-09-07 against the migrated
+ * `inflect_test` schema. So this list is a set of ROOTS, not an
+ * inventory: a new child table of `Control` needs no entry here.
+ *
+ * Every name must exist. `resolveResetTables` refuses the whole reset if
+ * one does not — see the note on that function for why silence was worse.
+ *
+ * ── Six names were removed on 2026-09-07
+ * They had stopped naming tables and were failing into a bare `catch {}`
+ * on every single call. Five of the six cost nothing: they had simply
+ * been renamed, and each successor is reached anyway as the child of a
+ * root that IS listed (verified against the cascade closure above):
+ *
+ *     ControlRiskLink   → RiskControl              (child of Control, Risk)
+ *     ControlAssetLink  → ControlAsset             (child of Control, Asset)
+ *     TestPlan          → ControlTestPlan          (child of Control)
+ *     TestRun           → ControlTestRun           (child of ControlTestPlan)
+ *     TestRunEvidence   → ControlTestEvidenceLink  (child of ControlTestRun)
+ *
+ * The sixth is not like the others and is worth knowing about:
+ * `Membership` → `TenantMembership`, whose parents are `Tenant` and
+ * `User` — NEITHER of which is a root here. So it is NOT in the cascade
+ * closure, and this helper has silently not been clearing memberships
+ * since the rename. That is left as-is deliberately: adding it would
+ * change what every `beforeEach(() => resetDatabase(...))` in the suite
+ * sees (memberships would vanish while their tenants and users
+ * survived), which is a behavioural decision for whoever needs it and
+ * not something to smuggle in beside a flake fix. It is written down
+ * here so the next reader is not the third person to rediscover it.
+ */
+export const RESET_TABLES: readonly string[] = [
+    'AuditLog', 'TaskLink', 'TaskComment', 'TaskWatcher', 'Task',
+    'EvidenceReview', 'Evidence', 'FileRecord',
+    'ControlRequirementLink',
+    'Control', 'Risk', 'Asset',
+    'AuditPackItem', 'AuditPack', 'AuditCycle',
+    'PolicyVersion', 'Policy',
+    'VendorDocument', 'VendorAssessment', 'VendorContact', 'Vendor',
+    'Framework', 'FrameworkRequirement',
+];
+
+/**
+ * Check every name in `tables` against `information_schema` and return
+ * them, or throw naming the ones that are not there.
+ *
+ * ## Why this exists
+ * The truncate loop this replaced wrapped each statement in a bare
+ * `catch {}` commented "Table may not exist in schema — skip silently".
+ * A renamed or mistyped table therefore became a no-op that nothing
+ * reported: the reset quietly stopped resetting that table and every
+ * suite stayed green until one of them saw a row it did not create.
+ * Six of the twenty-nine names in the old list were in exactly that
+ * state, and had been for long enough that nobody could say when.
+ *
+ * An absence has to be distinguishable from a success, so this refuses
+ * loudly instead. Split out from `resetDatabase` so the refusal is
+ * reachable from a test with a name that does not exist — proving the
+ * check can fail is the only way to know it can also pass for a reason.
+ */
+export async function resolveResetTables(
+    prisma: PrismaClient,
+    tables: readonly string[] = RESET_TABLES,
+): Promise<string[]> {
+    // No parameters and no interpolation: the whole public table list
+    // comes back and the comparison happens in JS.
+    const rows = await prisma.$queryRawUnsafe<{ table_name: string }[]>(
+        `SELECT table_name FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
+    );
+    const present = new Set(rows.map((r) => r.table_name));
+    const missing = tables.filter((t) => !present.has(t));
+    if (missing.length > 0) {
+        throw new Error(
+            `[test-db] resetDatabase cannot run: ${missing.length} of ${tables.length} ` +
+                `listed table(s) do not exist in the test database — ${missing.join(', ')}. ` +
+                `A name here that names nothing is a table that silently stops being reset. ` +
+                `Either the migration that renamed or dropped it needs the same edit in ` +
+                `RESET_TABLES (tests/helpers/db.ts), or the test database is behind ` +
+                `\`prisma migrate deploy\`.`,
+        );
+    }
+    // Returned in the caller's order, so concurrent resets request the
+    // same locks in the same sequence and cannot deadlock against
+    // each other.
+    return tables.filter((t) => present.has(t));
+}
+
+/**
+ * Truncate the application tables in the test database.
  * Preserves system tables (_prisma_migrations, etc).
- * Uses TRUNCATE CASCADE for PostgreSQL.
+ *
+ * ## One statement, on purpose
+ * This used to issue one `TRUNCATE TABLE x CASCADE` per table in a loop
+ * — twenty-nine statements (six of which always threw and were
+ * swallowed), each its own round trip, each taking and then releasing
+ * its own ACCESS EXCLUSIVE lock. On an idle machine that is merely
+ * wasteful. Under concurrent load each acquisition queues behind
+ * whatever else is touching that table, and the total is bounded by
+ * nothing the caller controls: the reported symptom was
+ * `tests/integration/agent-registry-isolation.test.ts` failing its
+ * `beforeAll` with "Exceeded timeout of 30000 ms for a hook" while
+ * passing on an idle box (#2350).
+ *
+ * Postgres takes a list, so all of it is one statement: one round trip,
+ * one lock-acquisition phase, and the locks held together for a single
+ * transaction rather than taken and dropped twenty-nine times.
+ *
+ * Measured 2026-09-07 on an isolated clone of the migrated test schema,
+ * all tables empty, on the shared dev box (8 cores, Postgres on
+ * 127.0.0.1:5434), per-reset medians:
+ *
+ *   one client, load average ~4 :  10.5s → 4.7s
+ *   four clients on one DB,
+ *   load average ~5             :  31.6s → 9.6s   (worst sample 38.4s → 20.6s)
+ *
+ * The second row is the one that matters: the old median alone exceeded
+ * the 30s hook budget. These are wall-clock figures from one machine
+ * under a stated load — they are here to show the SHAPE of the change,
+ * and nothing asserts them.
  */
 export async function resetDatabase(prisma: PrismaClient): Promise<void> {
-    const tables = [
-        'AuditLog', 'TaskLink', 'TaskComment', 'TaskWatcher', 'Task',
-        'EvidenceReview', 'Evidence', 'FileRecord',
-        'ControlRequirementLink', 'ControlRiskLink', 'ControlAssetLink',
-        'Control', 'Risk', 'Asset',
-        'AuditPackItem', 'AuditPack', 'AuditCycle',
-        'PolicyVersion', 'Policy',
-        'TestRunEvidence', 'TestRun', 'TestPlan',
-        'VendorDocument', 'VendorAssessment', 'VendorContact', 'Vendor',
-        'Membership', 'Framework', 'FrameworkRequirement',
-    ];
-
-    // Use raw SQL for speed — TRUNCATE CASCADE handles FK constraints
-    for (const table of tables) {
-        try {
-            await prisma.$executeRawUnsafe(`TRUNCATE TABLE "${table}" CASCADE`);
-        } catch {
-            // Table may not exist in schema — skip silently
-        }
-    }
+    const tables = await resolveResetTables(prisma);
+    if (tables.length === 0) return;
+    // Safe to interpolate: every name survived the information_schema
+    // check above, so each is a real identifier in this database.
+    const list = tables.map((t) => `"${t}"`).join(', ');
+    await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${list} CASCADE`);
 }
 
 /**
