@@ -169,6 +169,11 @@ function satisfies(version: string, range: string): boolean {
 //    'peer-bridge'  — reconciles a peer-dependency mismatch. Drop as
 //                     soon as upstream's peer range includes what we
 //                     run; a bridge, not a destination.
+//    'upstream-defect'
+//                   — holds us BELOW a released version that is
+//                     broken. Drop when upstream ships the fix; the
+//                     entry must name the first bad version so that
+//                     question is answerable without archaeology.
 //
 //  `patchedFrom` (security only) — the version the advisory was FIXED
 //  in. This is the fact that was missing when `hono` decayed: with it
@@ -190,9 +195,21 @@ interface OverrideEntry {
      * schema, which is the failure this registry exists to prevent.
      * (The `npm` entry carried GHSA-4v6q-8jgv-6q2j for exactly that
      * reason; the id resolves to nothing.)
+     *
+     * `upstream-defect` — the pinned package shipped a BUG, not a
+     * vulnerability, and the pin holds us below it until upstream
+     * fixes it. Same argument as `bundle-vehicle`: forcing it into
+     * `security` would mean inventing an advisory id for something no
+     * advisory database has, and this registry exists to stop exactly
+     * that. It is distinguished from `peer-bridge` because nothing is
+     * mismatched — the graph is consistent, the code is simply wrong —
+     * so the exit condition is "upstream ships a fix", not "upstream
+     * widens a range".
      */
-    kind: 'security' | 'peer-bridge' | 'bundle-vehicle';
+    kind: 'security' | 'peer-bridge' | 'bundle-vehicle' | 'upstream-defect';
     reason: string;
+    /** `upstream-defect` only — the first released version carrying the bug. */
+    brokenFrom?: string;
     advisory?: string;
     patchedFrom?: string;
     /**
@@ -371,11 +388,20 @@ describe('package.json overrides — effective and explained', () => {
         // even in the window before its override lands — and so the
         // freshness script can trust the shape of what it reads.
         const malformed = Object.entries(OVERRIDE_REGISTRY).filter(([, e]) => {
-            if (!['security', 'peer-bridge', 'bundle-vehicle'].includes(e.kind)) return true;
+            if (!['security', 'peer-bridge', 'bundle-vehicle', 'upstream-defect'].includes(e.kind)) return true;
             // A vehicle pin must NOT carry advisory facts — that is the
             // whole point of the kind. Recording them here would put
             // the invented-id problem back, one indirection down.
             if (e.kind === 'bundle-vehicle' && (e.advisory || e.patchedFrom)) return true;
+            // Same rule as bundle-vehicle: no invented advisory facts. But an
+            // upstream-defect pin DOES owe the reader the version the defect
+            // landed in — that is the fact that makes "can we drop this yet?"
+            // answerable, and it is the analogue of `patchedFrom`.
+            if (e.kind === 'upstream-defect') {
+                if (e.advisory || e.patchedFrom) return true;
+                if (!/^\d+\.\d+\.\d+$/.test(e.brokenFrom ?? '')) return true;
+            }
+            if (e.kind !== 'upstream-defect' && e.brokenFrom !== undefined) return true;
             if (typeof e.reason !== 'string' || e.reason.length <= 40) return true;
             if (e.kind === 'security') {
                 if (!/^(GHSA-|CVE-)/.test(e.advisory ?? '')) return true;
