@@ -10,6 +10,7 @@ import { seedInternalControls, type PolicyFrameworkMap } from './control-templat
 import { applyCatalogFile } from './catalog-applier';
 import { loadCatalogFile } from './catalog-loader';
 import { fixtureArray, fixtureObject } from './fixture-io';
+import { parseIsoClause } from '@/lib/controls/control-taxonomy';
 
 // Prisma 7 — adapter is required for PrismaClient construction.
 const prisma = new PrismaClient({
@@ -1583,23 +1584,31 @@ Reviewed at least annually.` },
     // Re-fetched by its unique key: the upsert that used to bind `iso27001`
     // moved into applyCatalogFile above. Framework.key is @unique.
     //
-    // NOTE, and deliberately NOT fixed here: this block is already a no-op.
-    // Seeded controls carry annexId 'A.5.1' while requirement codes are '5.1',
-    // so `annexMap[code]` never resolves and ControlRequirementLink has 0 rows
-    // in a fresh dev database (verified). The E2E coverage-metrics data this
-    // exists to seed has never been created. Fixing it here would make the
-    // delivery proof measure a deliberate behaviour change as well as a move,
-    // so it is preserved exactly and filed separately.
+    // This block was a no-op until now, and the note that recorded it was
+    // right: seeded controls carry annexId 'A.5.1' while requirement codes are
+    // '5.1', so `annexMap[code]` never resolved and ControlRequirementLink had
+    // 0 rows in a fresh dev database. The E2E coverage-metrics data this
+    // exists to seed had never once been created.
+    //
+    // It is fixed by normalising both sides to a bare clause through
+    // `parseIsoClause`, the same helper `categorizeControl` uses. Controls
+    // installed from a catalogue carry `code` ('A-5.1') and no annexId at
+    // all, so both spellings have to be accepted or the fix only works for
+    // the four hand-seeded demo controls.
     const iso27001Fw = await prisma.framework.findUniqueOrThrow({ where: { key: 'ISO27001' } });
     const annexReqs = await prisma.frameworkRequirement.findMany({
         where: { frameworkId: iso27001Fw.id },
     });
-    for (const r of annexReqs) annexMap[r.code] = r.id;
+    for (const r of annexReqs) {
+        const clause = parseIsoClause(r.code);
+        if (clause) annexMap[clause] = r.id;
+    }
     for (const ctrl of tenantControls) {
-        // Seed-created controls use annexId like 'A.5.1' which matches the
-        // requirement code directly.
-        const code = ctrl.annexId ?? '';
-        const reqId = annexMap[code];
+        // A control reaches here by either route: hand-seeded with an
+        // annexId ('A.5.1'), or installed from a catalogue template with a
+        // code ('A-5.1') and no annexId. Both normalise to '5.1'.
+        const clause = parseIsoClause(ctrl.annexId) ?? parseIsoClause(ctrl.code);
+        const reqId = clause ? annexMap[clause] : undefined;
         if (!reqId) continue;
         const existing = await prisma.controlRequirementLink.findFirst({
             where: { controlId: ctrl.id, requirementId: reqId },
