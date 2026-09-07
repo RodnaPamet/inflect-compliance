@@ -242,9 +242,13 @@ describe('CIS v8 — cyber-hygiene risk templates (dev seeder only)', () => {
     // assert something false. The describe was renamed to say so out loud.
     const seed = read('prisma/seed.ts');
 
-    it('reads the CIS requirement fixture (dev path)', () => {
-        expect(seed).toContain('cis-v8-requirements.json');
-    });
+    // 'reads the CIS requirement fixture (dev path)' was DELETED rather than
+    // repointed. It asserted that prisma/seed.ts contains
+    // 'cis-v8-requirements.json', which was true while seed.ts built CIS v8 a
+    // second time. That block is gone — the CatalogFile carries the 56
+    // requirements and a production seeder applies them — so the assertion had
+    // no subject left. The requirements are covered by the delivery describe
+    // above, against the file production actually reads.
 
     it('seeds CIS cyber-hygiene risk templates on the shared RiskTemplate path', () => {
         const block = seed.slice(seed.indexOf('cisRiskTemplates'));
