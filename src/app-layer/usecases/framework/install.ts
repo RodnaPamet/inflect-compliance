@@ -75,24 +75,24 @@ export async function installPack(ctx: RequestContext, packKey: string) {
     });
     if (!pack) throw notFound('Pack not found');
 
-    // Internal controls are NOT a standalone pack: they are global
-    // ControlTemplates mapped (policy-mediated) to framework requirements.
-    // Installing a framework pack ALSO populates the internal controls whose
-    // requirement mappings reference THIS framework (and that aren't already the
-    // pack's own templates), plus their policy links. `installedTemplates` is the
-    // pack's own controls + those mapped internal controls.
-    const packTemplateIds = pack.templateLinks.map((l) => l.template.id);
-    const mappedInternalTemplates = await db.controlTemplate.findMany({
-        where: {
-            id: { notIn: packTemplateIds },
-            requirementLinks: { some: { requirement: { frameworkId: pack.frameworkId } } },
-        },
-        include: { tasks: { orderBy: { sortOrder: 'asc' } }, requirementLinks: true },
-    });
-    const installedTemplates = [
-        ...pack.templateLinks.map((l) => l.template),
-        ...mappedInternalTemplates,
-    ];
+    // A pack installs EXACTLY the controls its standard defines, and nothing
+    // else: 93 for ISO/IEC 27001:2022 Annex A, and likewise for every other
+    // framework. The number a customer sees must be the number in the standard.
+    //
+    // This previously also swept in every global ControlTemplate carrying a
+    // requirement link into this framework, on the reasoning that the
+    // internal-controls library is not a standalone pack and is otherwise
+    // unreachable. The effect: installing ISO 27001 created 233 controls --
+    // the 93 Annex A controls plus the 140 internal controls whose related
+    // policies happen to map, policy-mediated, to some Annex A requirement.
+    // `previewPackInstall` counted only the pack's own templates, so the
+    // wizard promised 93 and delivered 233.
+    //
+    // Reachability for the internal-controls library is a real problem but a
+    // separate one, and it needs its own install path -- see
+    // prisma/control-template-seed.ts. It is not a decision a framework pack
+    // should make on the tenant's behalf.
+    const installedTemplates = pack.templateLinks.map((l) => l.template);
 
     // ISO27001 has 93 controls × (lookup + create + 5 default tasks +
     // requirement-link upserts), which is too much work for the default

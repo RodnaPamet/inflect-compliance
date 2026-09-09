@@ -14,8 +14,10 @@
  *
  * Framework key/version, template codes and pack key are suite-unique so the
  * suite is parallel-safe (ControlTemplate.code + FrameworkPack.key are global
- * unique columns) and so `installPack`'s "also install internal controls mapped
- * to this framework" arm cannot pull in templates from another pack.
+ * unique columns). `installPack` no longer has an "also install internal
+ * controls mapped to this framework" arm — a pack installs exactly its own
+ * templates — but the suite-unique naming is still what keeps parallel runs
+ * from colliding on those global unique columns.
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';

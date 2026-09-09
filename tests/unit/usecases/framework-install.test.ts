@@ -61,10 +61,11 @@ const mockLog = logEvent as jest.MockedFunction<typeof logEvent>;
 
 beforeEach(() => {
     jest.clearAllMocks();
-    // installPack now also pulls in framework-mapped internal-control templates
-    // via a top-level `controlTemplate.findMany`. Default it to none so pack
-    // tests exercise only the pack's own templates; tests that assert on the
-    // template query override with `mockResolvedValueOnce`.
+    // A pack install must touch ONLY the pack's own templates. This default
+    // keeps `controlTemplate.findMany` harmless for the paths that do use it
+    // (installSingleTemplate / bulkInstallTemplates); the pack-scope test below
+    // deliberately makes it return a mapped internal control to prove installPack
+    // ignores it.
     mockTemplateFindMany.mockResolvedValue([] as never);
 });
 
@@ -464,15 +465,29 @@ describe('installPack — stage-3c additions', () => {
         expect(result.mappingsCreated).toBe(3);
     });
 
-    it('also installs framework-mapped internal controls and links their related policies', async () => {
-        // Pack itself has no templates …
+    it("installs ONLY the pack's own templates — never framework-mapped internal controls", async () => {
+        // Regression: installing ISO 27001 created 233 controls, not 93. The pack's
+        // own 93 Annex A templates, plus every global ControlTemplate that happened
+        // to carry a requirement link into the same framework — 140 internal
+        // controls reached policy-mediated. A pack installs the standard's controls
+        // and nothing else, so the count a customer sees is the count in the standard.
         mockPackFind.mockResolvedValueOnce({
             key: 'iso', name: 'ISO', frameworkId: 'fw-1',
             framework: { key: 'ISO27001' },
-            templateLinks: [],
+            templateLinks: [
+                {
+                    template: {
+                        id: 't-1', code: 'A.5.1', title: 'T', description: 'd', category: 'GOV',
+                        defaultFrequency: 'ANNUAL',
+                        relatedPolicies: null,
+                        tasks: [],
+                        requirementLinks: [{ requirementId: 'r-1' }],
+                    },
+                },
+            ],
         } as never);
-        // … but an internal-control ControlTemplate is mapped to this framework.
-        mockTemplateFindMany.mockResolvedValueOnce([
+        // An internal control IS mapped to this framework. It must be ignored.
+        mockTemplateFindMany.mockResolvedValue([
             {
                 id: 'ic-1', code: 'ICN-001', title: 'Internal ctrl', description: 'd', category: 'GOV',
                 defaultFrequency: 'ANNUAL',
@@ -483,14 +498,13 @@ describe('installPack — stage-3c additions', () => {
             },
         ] as never);
 
-        const controlCreate = jest.fn().mockResolvedValue({ id: 'c-ic' });
+        const controlCreate = jest.fn().mockResolvedValue({ id: 'c-1' });
         const policyCreateMany = jest.fn().mockResolvedValue({ count: 1 });
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
             fn({
                 control: { findFirst: jest.fn().mockResolvedValue(null), create: controlCreate },
                 task: { create: jest.fn() },
                 controlRequirementLink: { create: jest.fn(), upsert: jest.fn() },
-                // tenant has the policy the internal control references
                 policy: { findMany: jest.fn().mockResolvedValue([{ id: 'p-1', title: 'Access Management Policy' }]) },
                 policyControlLink: { createMany: policyCreateMany },
             } as never),
@@ -498,24 +512,17 @@ describe('installPack — stage-3c additions', () => {
 
         const result = await installPack(makeRequestContext('ADMIN'), 'iso');
 
-        // The mapped internal control was created …
-        expect(controlCreate).toHaveBeenCalledWith(expect.objectContaining({
-            data: expect.objectContaining({ code: 'ICN-001', objective: 'obj', testingMethodology: 'tm' }),
-        }));
+        // Exactly the pack's one template — the mapped internal control is absent.
         expect(result.controlsCreated).toBe(1);
-        // … and its related policy resolved to a PolicyControlLink.
-        expect(policyCreateMany).toHaveBeenCalledWith(expect.objectContaining({
-            data: [expect.objectContaining({ policyId: 'p-1', controlId: 'c-ic' })],
-            skipDuplicates: true,
-        }));
-        expect(result.policyLinksCreated).toBe(1);
-        // The template query is framework-scoped, excluding the pack's own templates.
-        expect(mockTemplateFindMany).toHaveBeenCalledWith(expect.objectContaining({
-            where: expect.objectContaining({
-                requirementLinks: { some: { requirement: { frameworkId: 'fw-1' } } },
-            }),
-        }));
+        const createdCodes = controlCreate.mock.calls.map((c) => (c[0] as { data: { code: string } }).data.code);
+        expect(createdCodes).toEqual(['A.5.1']);
+        expect(createdCodes).not.toContain('ICN-001');
+
+        // And it never even asks for framework-mapped templates: the old sweep is
+        // gone rather than merely filtered afterwards.
+        expect(mockTemplateFindMany).not.toHaveBeenCalled();
     });
+
 });
 
 describe('installSingleTemplate — stage-3c additions', () => {
