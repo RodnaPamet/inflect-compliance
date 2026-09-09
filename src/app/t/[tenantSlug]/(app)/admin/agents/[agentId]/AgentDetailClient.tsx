@@ -131,7 +131,16 @@ export function AgentDetailClient({
                     label: t('agentDetail.tabPolicy'),
                     disabled: !perms.canEditPolicyCard,
                 },
-                { key: 'tools', label: t('agentDetail.tabTools'), disabled: !perms.canGrantTools },
+                // NOT disabled on `canGrantTools`, unlike the policy card.
+                // This tab hosts TWO independently-gated resources: the
+                // per-agent grants (admin.agent_tool_exposure) and the
+                // tenant-wide manifest pins, which have no rule of their own
+                // and fall to the admin.agent_registry catch-all the page has
+                // already required. Disabling the tab on the narrower key hid
+                // the supply-chain pins — the ASI04 tool-poisoning surface —
+                // from an operator entitled to read them. The tab gates the
+                // grants section internally instead.
+                { key: 'tools', label: t('agentDetail.tabTools') },
                 { key: 'coverage', label: t('agentDetail.tabCoverage') },
                 { key: 'breaker', label: t('agentDetail.tabBreaker') },
             ]}

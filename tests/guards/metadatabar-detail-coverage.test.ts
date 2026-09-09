@@ -113,6 +113,24 @@ const DETAIL_PAGES: DetailPageEntry[] = [
     },
 ];
 
+/**
+ * Comments stripped before the scan, using the same shape as
+ * admin-datatable-no-double-card and eight other guards.
+ *
+ * Without it this guard counted its own subject matter: three tab files
+ * carried a docstring saying "a hand-rolled <dl> rather than `<MetadataBar>`,
+ * which has no call site anywhere in the product" — a comment explaining a
+ * deliberate NON-adoption — and the guard reported all three as adopters. A
+ * check that fires on prose about the thing, rather than on the thing, tells
+ * the next author to delete the explanation instead of the usage, which is
+ * exactly backwards.
+ */
+function stripComments(src: string): string {
+    return src
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^[ \t]*\/\/.*$/gm, '');
+}
+
 describe("MetaStrip detail-page coverage", () => {
     it("every registered detail page exists in the codebase", () => {
         const missing: string[] = [];
@@ -180,7 +198,7 @@ describe("MetaStrip detail-page coverage", () => {
                 if (entry.isDirectory()) {
                     walk(full);
                 } else if (/\.tsx$/.test(entry.name)) {
-                    const content = fs.readFileSync(full, "utf8");
+                    const content = stripComments(fs.readFileSync(full, "utf8"));
                     if (/<MetadataBar\b/.test(content)) {
                         offenders.push(path.relative(ROOT, full));
                     }

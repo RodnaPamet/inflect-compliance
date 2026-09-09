@@ -95,7 +95,17 @@ export default async function AgentDetailPage({
             // the route, and be refused by the usecase. Gated on the route key
             // alone, the button renders for someone who cannot use it.
             perms={{
-                canManageRegistry: ctx.appPermissions.admin.agent_registry,
+                // ANDed with `canWrite`, not the route key alone. Every
+                // mutating risk-assessment and register usecase opens with
+                // `assertCanWrite(ctx)` (agent-risk-assessment.ts:197,:256,:608),
+                // which reads the role-tier `ctx.permissions.canWrite` rather
+                // than the permissions blob — the same two-layer split that
+                // makes `canCloseBreaker` a conjunction below. An AUDITOR
+                // granted `admin.agent_registry` passes the route and is
+                // refused by the usecase, so the key alone renders answer
+                // controls that 403 on submit.
+                canManageRegistry:
+                    ctx.appPermissions.admin.agent_registry && ctx.permissions.canWrite,
                 canEditPolicyCard: ctx.appPermissions.admin.agent_policy_card,
                 canGrantTools: ctx.appPermissions.admin.agent_tool_exposure,
                 canKill: ctx.appPermissions.admin.agent_kill_switch,
