@@ -69,6 +69,7 @@ import {
 } from '@/components/ui/accordion';
 import {
     categorizeControl,
+    frameworkShortLabel,
     ISO27001_DOMAIN_ORDER,
 } from '@/lib/controls/control-taxonomy';
 import { applicabilityState } from '@/lib/controls/control-applicability';
@@ -141,6 +142,28 @@ interface ControlListItem {
      *  (rows fetched with `?includeDeleted=true`). */
     deletedAt?: string | null;
     deletedByUserId?: string | null;
+    /**
+     * Every framework this control is mapped to, deduped from its requirement
+     * links server-side. Optional because older cached payloads and the
+     * optimistic rows created on the client carry no links yet.
+     */
+    frameworks?: Array<{ key: string; name: string }>;
+}
+
+/**
+ * Labels for the Framework column: every framework the control is actually
+ * mapped to, shortened for a badge.
+ *
+ * Falls back to `categorizeControl`'s code-derived label when the row carries
+ * no links — a custom control a tenant wrote itself has no requirement links
+ * and would otherwise render as an em dash where it used to show something.
+ */
+function frameworkLabels(control: ControlListItem): string[] {
+    if (control.frameworks?.length) {
+        return control.frameworks.map((f) => frameworkShortLabel(f.key, f.name));
+    }
+    const derived = categorizeControl(control)?.frameworkLabel;
+    return derived ? [derived] : [];
 }
 
 interface ControlsClientProps {
@@ -1129,21 +1152,41 @@ function ControlsPageInner({
             ),
         },
         {
-            // Framework column — split out of `category` (2026-06-07).
-            // The framework a control belongs to, derived via
-            // `categorizeControl`, as a small uppercase tag.
+            // Framework column — split out of `category` (2026-06-07),
+            // made data-driven and MULTI-VALUED on 2026-09-09.
+            //
+            // It renders every framework the control is mapped to, read from
+            // its requirement links, because one control legitimately belongs
+            // to several at once: an internal control sits in its own Internal
+            // Control domain and, through the policies it references, in
+            // ISO 27001 Annex A and NIS2 Article 21(2).
+            //
+            // It used to be `categorizeControl(c)?.frameworkLabel` — a regex
+            // over the control's CODE. That could only ever name one framework,
+            // and it knew nothing about codes it had no prefix rule for, so
+            // every ICN-* internal control rendered blank. The regex survives
+            // as the fallback inside `frameworkLabels`, for custom controls
+            // that have no requirement links to read.
             id: 'framework',
             header: t('colHeaders.framework'),
-            accessorFn: (c) => categorizeControl(c)?.frameworkLabel || '',
+            // Joined so the column still sorts and text-filters as one string.
+            accessorFn: (c) => frameworkLabels(c).join(', '),
             cell: ({ row }) => {
-                const label = categorizeControl(row.original)?.frameworkLabel;
-                if (!label) {
+                const labels = frameworkLabels(row.original);
+                if (!labels.length) {
                     return <span className="text-xs text-content-subtle">—</span>;
                 }
                 return (
-                    <span className="inline-flex items-center rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-content-muted">
-                        {label}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-1">
+                        {labels.map((label) => (
+                            <span
+                                key={label}
+                                className="inline-flex items-center rounded border border-border-subtle bg-bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-content-muted"
+                            >
+                                {label}
+                            </span>
+                        ))}
+                    </div>
                 );
             },
         },

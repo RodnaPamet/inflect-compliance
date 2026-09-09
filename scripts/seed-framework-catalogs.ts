@@ -74,6 +74,13 @@ const CATALOG_FIXTURES = [
     'prisma/fixtures/iso42001-control-templates.json',
     'prisma/fixtures/owasp-aisvs-control-templates.json',
     'prisma/fixtures/eu-ai-act-control-templates.json',
+    // Last on purpose. This one carries no standard of its own — it gives the
+    // 151-control internal-controls library a framework and a pack so a tenant
+    // can install it deliberately, instead of receiving it as a side effect of
+    // installing an unrelated standard (which is what made ISO 27001 install
+    // 233 controls). Its template CONTENT is written by
+    // seed-control-template-tasks.ts, which runs after this.
+    'prisma/fixtures/internal-controls-catalog.json',
 ];
 
 const DRY_RUN = process.argv.includes('--dry-run');

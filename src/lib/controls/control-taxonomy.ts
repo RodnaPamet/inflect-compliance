@@ -199,6 +199,46 @@ export const FRAMEWORK_LABELS: Record<string, string> = {
     nist80053: 'NIST 800-53',
 };
 
+/**
+ * Short badge labels for frameworks a control is MAPPED to, keyed by
+ * `Framework.key` as the database spells it.
+ *
+ * Separate from `FRAMEWORK_LABELS` above, which is keyed by the taxonomy's own
+ * lowercase slugs and drives the code-prefix DERIVATION. This one is for the
+ * list's Framework column, which reads real requirement links and so sees
+ * whatever keys the catalogue defines.
+ *
+ * It exists because `Framework.name` is authored for a heading, not a badge:
+ * "SOC 2 (Trust Services Criteria)", "Digital Operational Resilience Act".
+ * Anything absent here falls back to the name, which is correct for keys that
+ * are already short — "Internal Control" needs no abbreviation.
+ */
+export const FRAMEWORK_KEY_LABELS: Record<string, string> = {
+    ISO27001: 'ISO 27001',
+    ISO27701: 'ISO 27701',
+    ISO9001: 'ISO 9001',
+    ISO28000: 'ISO 28000',
+    ISO39001: 'ISO 39001',
+    ISO42001: 'ISO 42001',
+    NIS2: 'NIS2',
+    SOC2: 'SOC 2',
+    DORA: 'DORA',
+    'NIST-SSDF': 'NIST SSDF',
+    'NIST-PRIVACY': 'NIST Privacy',
+    'CIS-V8': 'CIS v8',
+    'OWASP-ASVS': 'ASVS',
+    'OWASP-AISVS': 'AISVS',
+    'OWASP-ASI': 'OWASP ASI',
+    'EU-AI-ACT': 'EU AI Act',
+    'IMDA-MGF': 'IMDA MGF',
+    INTERNAL_CONTROLS: 'Internal Control',
+};
+
+/** Badge label for one mapped framework. Falls back to its authored name. */
+export function frameworkShortLabel(key: string, name: string): string {
+    return FRAMEWORK_KEY_LABELS[key] ?? FRAMEWORK_KEY_LABELS[key.toUpperCase()] ?? name;
+}
+
 /** Fallback label for the "framework couldn't be determined" bucket. */
 export const UNCLASSIFIED_FRAMEWORK_KEY = 'other';
 export const UNCATEGORIZED_LABEL = 'Uncategorized';

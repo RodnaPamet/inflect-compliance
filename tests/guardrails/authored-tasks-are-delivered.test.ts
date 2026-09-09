@@ -97,6 +97,28 @@ const KNOWN_UNDELIVERED: Record<string, string> = {};
  * So the gap is named here. An entry leaves when its fixture gains authored
  * content, exactly as ISO 27001's did.
  */
+/**
+ * Fixtures a production seeder applies that declare templates but deliberately
+ * declare NO tasks, because the authored tasks for those same templates live in
+ * a different fixture that a different production seeder writes.
+ *
+ * This is NOT the gap `DELIVERED_WITHOUT_AUTHORED_TASKS` records. An entry
+ * there means the content does not exist and someone has to write it. An entry
+ * here means the content exists, is delivered, and is simply declared
+ * elsewhere — so requiring tasks in this file would not add content, it would
+ * DESTROY it: `reconcileTemplateTasks` deprecates every live row a non-empty
+ * run does not match, and this file's templates are matched by the other one.
+ *
+ * The exemption is falsifiable rather than a mute: the test below requires the
+ * named sibling to exist, to be delivered by a production seeder, and to
+ * actually carry authored tasks. If the tasks move or vanish, this stops
+ * passing.
+ */
+const TASKS_AUTHORED_IN_SIBLING_FIXTURE: Record<string, string> = {
+    'internal-controls-catalog.json':
+        "internal-controls.json — the 151 ICN-* templates' authored tasks are declared there and written by scripts/seed-control-template-tasks.ts. This file exists only to give the library a framework, its 23 category requirements and a pack of its own, so a tenant installs it deliberately instead of receiving it as a side effect of installing an unrelated standard.",
+};
+
 const DELIVERED_WITHOUT_AUTHORED_TASKS: Record<string, string> = {
     'iso9001-control-templates.json':
         'ISO 9001 — 22 templates. FROZEN for content in control-task-actionability: no source library exists to author from. Delivery and content are separate axes, and this entry records only the second.',
@@ -182,8 +204,31 @@ describe('authored tasks have a delivery path', () => {
             });
         const withTasks = new Set(authored.map((a) => a.file));
         expect(
-            named.filter((f) => !withTasks.has(f) && !DELIVERED_WITHOUT_AUTHORED_TASKS[f]),
+            named.filter(
+                (f) =>
+                    !withTasks.has(f) &&
+                    !DELIVERED_WITHOUT_AUTHORED_TASKS[f] &&
+                    !TASKS_AUTHORED_IN_SIBLING_FIXTURE[f],
+            ),
         ).toEqual([]);
+    });
+
+    it('every tasks-authored-in-a-sibling entry names a sibling that really delivers them', () => {
+        // The exemption is only honest while the sibling it points at exists,
+        // is applied by a production seeder, and still carries authored tasks.
+        // Three ways it could rot, all caught here — otherwise this list is
+        // just a mute with a paragraph attached.
+        const withTasks = new Set(authored.map((a) => a.file));
+        const broken: string[] = [];
+        for (const [file, reason] of Object.entries(TASKS_AUTHORED_IN_SIBLING_FIXTURE)) {
+            const sibling = reason.split(/[\s—]/)[0];
+            if (!fs.existsSync(path.join(FIXTURE_DIR, file))) broken.push(`${file}: fixture missing`);
+            if (!seederSource.includes(file)) broken.push(`${file}: not wired for delivery`);
+            if (!fs.existsSync(path.join(FIXTURE_DIR, sibling))) broken.push(`${file}: sibling ${sibling} missing`);
+            if (!seederSource.includes(sibling)) broken.push(`${file}: sibling ${sibling} not delivered`);
+            if (!withTasks.has(sibling)) broken.push(`${file}: sibling ${sibling} carries no authored tasks`);
+        }
+        expect(broken).toEqual([]);
     });
 
     it('every exempt fixture is real, still undelivered, and still carries tasks', () => {
