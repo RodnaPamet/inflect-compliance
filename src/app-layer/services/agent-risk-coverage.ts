@@ -11,10 +11,16 @@
  * Three inputs decide a risk's status, and they are deliberately not
  * interchangeable:
  *
- *   • `scopedToAgent` — an `AiSystemRequirementLink` from the agent's required
- *     AI-system entry to this requirement. This is the ONLY per-agent signal
- *     in the model. Without it the readout would be identical for every agent
- *     in the tenant, which is a tenant readout wearing an agent's name.
+ *   • `applicability` — derived from the agent's own declared exposure profile
+ *     by `agent-risk-applicability.ts`. This is the per-agent signal, and the
+ *     constraint it exists to satisfy is unchanged: without a term that can
+ *     differ between two agents, the readout is identical for every agent in
+ *     the tenant, which is a tenant readout wearing an agent's name. It is a
+ *     DERIVATION from the register's mandatory columns, not an operator's
+ *     applicability decision — the product has no surface for the latter.
+ *     Contrast `Control.applicability`, which the same product records with a
+ *     justification, a decider and a timestamp; nobody signs this one, and a
+ *     NOT_APPLICABLE here is exactly as durable as the column it reads.
  *   • `directControls` — tenant controls linked to the agentic requirement
  *     itself. Evidence that the risk is treated; not evidence it is treated
  *     for this agent.
@@ -33,7 +39,19 @@
  *
  * Status vocabulary is `GapStatus` from cross-framework-traceability, reused
  * verbatim rather than re-spelled, so the conservative semantics documented
- * for gap analysis (RELATED never counts as coverage) hold here too.
+ * for gap analysis (RELATED never counts as coverage) hold here too, widened
+ * LOCALLY to `AgentRiskStatus` for the N/A case. `GapStatus` itself is NOT
+ * widened: it is shared with cross-framework-traceability and its four-value
+ * semantics are load-bearing there.
+ *
+ * WHAT COVERED MEANS, SAID PLAINLY BECAUSE THE WORD OVER-PROMISES. COVERED is
+ * "this risk applies to this agent, and the tenant holds a control linked
+ * directly to it". It does NOT mean the control demonstrably governs this
+ * agent: the model has no per-agent control attachment — `ControlRequirementLink`
+ * is tenant-wide — so applicability × tenant control is the strongest claim
+ * available. Read 80% as "eight of the ten agentic risks that apply to this
+ * agent have a control behind them somewhere in this workspace", never as
+ * "eight controls were tested against this agent".
  */
 import {
     determineGapStatus,
@@ -44,6 +62,10 @@ import {
     MAPPING_STRENGTH_RANK,
     type MappingStrengthValue,
 } from '../domain/requirement-mapping.types';
+import type {
+    AgentRiskApplicability,
+    ApplicabilityBasis,
+} from './agent-risk-applicability';
 
 /** A tenant control that stands behind a risk, directly or by inheritance. */
 export interface CoveringControl {
@@ -79,32 +101,66 @@ export interface AgentRiskCoverageInput {
     readonly code: string;
     readonly title: string;
     readonly section: string | null;
-    readonly scopedToAgent: boolean;
+    /** Derived from the register — see `agent-risk-applicability.ts`. */
+    readonly applicability: AgentRiskApplicability;
+    /**
+     * An `AiSystemRequirementLink` naming this requirement. INFORMATIONAL here
+     * and never a gate: the query layer honours it as an operator override by
+     * forcing `applicability` true before classification, so by the time a row
+     * reaches this function the decision is already folded in. Carried through
+     * so the UI can say a human also recorded the scope.
+     */
+    readonly explicitlyScoped: boolean;
     readonly directControls: readonly CoveringControl[];
     readonly inheritedFrom: readonly InheritedCoverage[];
 }
 
-/** Why a risk is not COVERED — the single next action, not a diagnosis list. */
-export type AgentRiskCoverageReason = 'NOT_SCOPED' | 'NO_CONTROL';
+/**
+ * Why a risk is not COVERED — the single next action, not a diagnosis list.
+ *
+ * `NOT_SCOPED` is RETIRED. Under a derived rule there is no "applicable but
+ * unscoped" state: either the risk applies, in which case the only thing that
+ * can be missing is a control, or it does not, which is its own status.
+ */
+export type AgentRiskCoverageReason = 'NO_CONTROL' | 'NOT_APPLICABLE';
+
+/**
+ * `GapStatus` plus the one value gap analysis has no use for. Widened HERE and
+ * not in `cross-framework-traceability`: a framework requirement is never "not
+ * applicable to a framework", and adding a fifth value there would reach every
+ * consumer of `determineGapStatus`.
+ */
+export type AgentRiskStatus = GapStatus | 'NOT_APPLICABLE';
 
 export interface AgentRiskCoverageEntry extends AgentRiskCoverageInput {
-    readonly status: GapStatus;
+    readonly status: AgentRiskStatus;
     readonly reason: AgentRiskCoverageReason | null;
+    /** The register column that puts this risk out of scope; null when it applies. */
+    readonly applicabilityBasis: ApplicabilityBasis | null;
     /** Inherited routes that carry at least one control, strongest first. */
     readonly inheritedFrom: readonly InheritedCoverage[];
 }
 
 export interface AgentRiskCoverageSummary {
+    /** Every risk the framework carries. NOT the coverage denominator. */
     readonly total: number;
-    /** Scoped to the agent AND directly controlled. */
+    /**
+     * The denominator. `total` minus the risks the register puts out of scope
+     * for THIS agent, which is what makes the percentage a statement about the
+     * agent rather than about the catalogue.
+     */
+    readonly applicableTotal: number;
+    /** Applicable AND directly controlled. */
     readonly covered: readonly string[];
-    /** Controlled, but not for this agent — or reached only by a mapping. */
+    /** Reached only by a cross-framework mapping — never a full coverage claim. */
     readonly partiallyCovered: readonly string[];
     /** Reached only by RELATED mappings: awareness, never a coverage claim. */
     readonly reviewNeeded: readonly string[];
-    /** Nothing at all. The list an assessor reads first. */
+    /** Applicable, and nothing at all behind it. The list an assessor reads first. */
     readonly uncovered: readonly string[];
-    /** covered / total, rounded. Conservative: PARTIAL does not count. */
+    /** The register says this agent lacks the capability the risk names. */
+    readonly notApplicable: readonly string[];
+    /** covered / applicableTotal, rounded. Conservative: PARTIAL does not count. */
     readonly coveragePercent: number;
 }
 
@@ -145,37 +201,62 @@ export function classifyAgentRiskCoverage(input: AgentRiskCoverageInput): AgentR
         if (STATUS_RANK[capped] > STATUS_RANK[inheritedStatus]) inheritedStatus = capped;
     }
 
-    let status: GapStatus;
-    if (input.scopedToAgent && hasDirect) status = 'COVERED';
-    else if (hasDirect) status = 'PARTIALLY_COVERED';
+    // The short-circuit sits AFTER the sorting and dropping above, not before
+    // it: which routes carry controls is a fact either way, and an N/A entry
+    // that still names the tenant's ISO 42001 control is the thing that lets a
+    // reader argue with the applicability call instead of taking it on trust.
+    if (!input.applicability.applicable) {
+        return {
+            ...input,
+            inheritedFrom: inherited,
+            status: 'NOT_APPLICABLE',
+            reason: 'NOT_APPLICABLE',
+            applicabilityBasis: input.applicability.basis,
+        };
+    }
+
+    let status: AgentRiskStatus;
+    if (hasDirect) status = 'COVERED';
     else status = inheritedStatus;
 
-    const reason: AgentRiskCoverageReason | null =
-        status === 'COVERED' ? null : input.scopedToAgent ? 'NO_CONTROL' : 'NOT_SCOPED';
+    const reason: AgentRiskCoverageReason | null = status === 'COVERED' ? null : 'NO_CONTROL';
 
-    return { ...input, inheritedFrom: inherited, status, reason };
+    return { ...input, inheritedFrom: inherited, status, reason, applicabilityBasis: null };
 }
 
 /**
- * Partition the classified risks into four disjoint code lists.
+ * Partition the classified risks into five disjoint code lists.
  *
- * The four lists always sum to `total`, and both suites assert that partition
+ * The five lists always sum to `total`, and both suites assert that partition
  * explicitly rather than trusting it: a status added later without a bucket
  * here would silently vanish from every readout instead of failing loudly.
+ *
+ * The PERCENTAGE is over `applicableTotal`, not `total`. Measuring against the
+ * catalogue would count risks this tool has just declared do not apply, which
+ * is the arithmetic that makes "the percentage means something" false — and it
+ * is why the scoped denominator ships with the applicability rule rather than
+ * after it.
  */
 export function summariseAgentRiskCoverage(
     entries: readonly AgentRiskCoverageEntry[],
 ): AgentRiskCoverageSummary {
-    const pick = (s: GapStatus) => entries.filter((e) => e.status === s).map((e) => e.code);
+    const pick = (s: AgentRiskStatus) => entries.filter((e) => e.status === s).map((e) => e.code);
     const covered = pick('COVERED');
+    const notApplicable = pick('NOT_APPLICABLE');
     const total = entries.length;
+    const applicableTotal = total - notApplicable.length;
 
     return {
         total,
+        applicableTotal,
         covered,
         partiallyCovered: pick('PARTIALLY_COVERED'),
         reviewNeeded: pick('REVIEW_NEEDED'),
         uncovered: pick('NOT_COVERED'),
-        coveragePercent: total > 0 ? Math.round((covered.length / total) * 100) : 0,
+        notApplicable,
+        // Zero rather than NaN when nothing applies — an agent every risk is
+        // N/A for has not been found to cover none of them.
+        coveragePercent:
+            applicableTotal > 0 ? Math.round((covered.length / applicableTotal) * 100) : 0,
     };
 }

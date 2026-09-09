@@ -133,7 +133,15 @@ const ROOT = path.resolve(__dirname, '../..');
 // rendered suite, both diffs edit this one line, the merge is CLEAN, and main
 // is left wrong by one. RE-MEASURE immediately before merge and take the number
 // from the failure message, never from arithmetic on the two sides.
-const RENDERED_TEST_FLOOR = 261;
+// 261 → 268 (2026-09-09): seven rendered suites for the agent detail page —
+// one per tab, plus the kill-switch action and banner. Live measured in this
+// tree with `ls tests/rendered/*.test.tsx | wc -l` = 268. The guard PASSED at
+// 268 against 261 (slack 7 of 8), so this raise is not forced by a red build —
+// it is the point of the ratchet. Leaving it would mean all seven of the suites
+// this PR adds could be deleted with a green build, which is the regression the
+// floor exists to refuse, and it would leave the next author at slack 8 of 8:
+// the trap the paragraph above describes, primed again.
+const RENDERED_TEST_FLOOR = 268;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
@@ -142,7 +150,13 @@ const RENDERED_TEST_FLOOR = 261;
 // calendar.spec.ts — the compliance calendar's first browser-level
 // coverage, which proves its query-string state survives a real
 // navigation (jsdom can only prove the params get written).
-const E2E_SPEC_FLOOR = 47;
+// 47 → 49 (2026-09-09): `agent-detail.spec.ts` — the first e2e spec for ANY
+// agentic surface. Until it existed, "reachable from the UI" was a grep result;
+// the spec clicks the register row, which is what actually proves it. Live
+// measured in this tree with `ls tests/e2e/*.spec.ts | wc -l` = 49 (the extra
+// one over the previous floor arrived from another branch, which is why this
+// takes the MEASURED count rather than 48).
+const E2E_SPEC_FLOOR = 49;
 const REGISTRY_FLOOR = 5;
 
 /** Max a live count may exceed its floor before the floor must rise. */

@@ -234,7 +234,16 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 0.9;
 // the earned primary of its own dialog region (modal-action-order requires
 // a modal's confirm action to be primary). The KRI page's create button stays
 // its canonical page primary; the edit-modal save is the +1.
-const MAX_PRIMARY_COUNT = 156;
+// Agent detail page (2026-09-09) — bumped 156 → 158 for the two modal
+// confirms on the new /admin/agents/[agentId] tabs: the policy-card version
+// save and the risk-assessment "complete" commit. Each is the earned primary
+// of its own dialog region, and modal-action-order REQUIRES a modal's last
+// footer button to be primary or destructive — neither action is destructive
+// (one writes a new card version, the other scores an assessment), so primary
+// is the only variant both guards accept. The other four tabs were demoted to
+// secondary rather than bumping this further: a control inside a tab panel is
+// not the page's primary action. Measured = 158, ceiling = 158, no headroom.
+const MAX_PRIMARY_COUNT = 158;
 
 describe("primary:secondary ratio direction", () => {
     const counts = (() => {

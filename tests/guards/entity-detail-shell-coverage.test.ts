@@ -55,6 +55,11 @@ const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
   { page: "src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx", entity: "Test run" },
   // NIS2 Article 23 incident response
   { page: "src/app/t/[tenantSlug]/(app)/incidents/[incidentId]/page.tsx", entity: "Incident" },
+  // Agent register — server page delegates to AgentDetailClient, which mounts
+  // <EntityDetailLayout> (same pattern as access-reviews and BIA). This page is
+  // the first UI for the policy card, tool pins, ASI coverage and the circuit
+  // breaker; before it they were reachable only by API.
+  { page: "src/app/t/[tenantSlug]/(app)/admin/agents/[agentId]/AgentDetailClient.tsx", entity: "Registered agent" },
   // Business Continuity (BIA) — server page delegates to BiaDetailClient
   // which mounts <EntityDetailLayout> (same pattern as access-reviews).
   { page: "src/app/t/[tenantSlug]/(app)/audits/business-continuity/[id]/BiaDetailClient.tsx", entity: "Business impact analysis" },

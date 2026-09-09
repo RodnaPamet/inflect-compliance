@@ -128,6 +128,15 @@ const MIGRATED_PAGES = [
     // the unmigrated tally.
     'admin/mcp/quarantine/page.tsx',
     'admin/mcp/quarantine/QuarantineClient.tsx',
+    // Agent detail — the first UI for the policy card, tool pins, ASI coverage
+    // and the circuit breaker. Token-clean from the start (semantic
+    // content-*/bg-*/border-* only; EntityDetailLayout + MetaStrip +
+    // StatusBadge + skeleton primitives, no raw color utilities, no legacy
+    // btn/badge/glass-card). Promoted on landing rather than parked in the
+    // unmigrated tally.
+    'admin/agents/[agentId]/page.tsx',
+    'admin/agents/[agentId]/AgentDetailClient.tsx',
+    'admin/agents/[agentId]/loading.tsx',
 ];
 
 const RAW_COLOR_RE = /\b(?:text|bg|border)-(?:slate|gray|neutral|zinc)-\d{2,3}\b/g;

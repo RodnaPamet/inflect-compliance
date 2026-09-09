@@ -271,7 +271,21 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 240;
  *     gets far enough to be classified by its PATH instead of dropping out
  *     one step earlier.
  */
-const UNANALYSABLE_READ_BASELINE = 1449;
+// 1447 → 1448 (2026-09-09): ONE read, named here so it is not mistaken for a
+// wave. `tests/rendered/agent-detail-kill-switch.test.tsx` reads
+// `src/lib/agentic/kill-switch.ts` to assert that the drill-canary id the
+// client duplicates still equals the server's `KILL_SWITCH_DRILL_AGENT_ID` —
+// the client cannot import it, because that module reaches Prisma and would
+// pull it into a browser bundle, so the literal is duplicated by design and
+// this is the only thing holding the two copies together. Rename the
+// server-side one alone and the banner's canary filter silently stops matching,
+// which brings back a permanent false alarm on every tenant.
+//
+// It lands in `path-not-constant`, which already holds 911 reads of the exact
+// same `path.join(__dirname, …)` shape, so it adds nothing new to hide behind.
+// Note this baseline was LOWERED 1449 → 1447 earlier today when the tree
+// improved; it is still below where it started.
+const UNANALYSABLE_READ_BASELINE = 1448;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

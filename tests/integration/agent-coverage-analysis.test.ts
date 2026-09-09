@@ -20,10 +20,13 @@
  *      42001 controls, and still starts above zero: the shipped
  *      `iso-42001-to-owasp-agentic.yaml` mapping, imported through the real
  *      mapping-set importer, lights three risks as partially covered.
- *   D  the per-agent gate. Same tenant as A, same controls, an agent whose
- *      AI-system entry was never scoped. Nothing is COVERED. Delete the
- *      `scopedToAgent` conjunction and this is the test that fails — every
- *      other assertion in the file would still pass.
+ *   D  two representations of one framework — a tenant whose controls and
+ *      scope links all hang off the SEEDED rows rather than the library ones.
+ *   E  the per-agent gate (a second agent inside tenant A). Same tenant, same
+ *      controls, a DIFFERENT register entry: zero tool grants and autonomy 0.
+ *      It reads a different percentage from A's first agent. Make the
+ *      applicability term constant — in either direction — and this is the
+ *      test that fails; every other assertion in the file would still pass.
  *   F  the ISMS holder, built as `prisma/seed.ts` ACTUALLY writes ISO 27001:
  *      key `ISO27001`, Annex A numbered `5.15` (the library numbers the same
  *      control `A.5.15`), and — for the half of the run that models an
@@ -106,8 +109,14 @@ interface Fixture {
     agentId: string;
 }
 const fx: Record<string, Fixture> = {};
-/** Tenant A's second agent: registered, but never scoped to any risk. */
-let unscopedAgentId = '';
+/**
+ * Tenant A's second agent: autonomy 0, no tool grants, no scope links. Its
+ * register entry is the only thing that differs from A's first agent.
+ */
+let bareAgentId = '';
+let bareAgentSystemId = '';
+/** The LIBRARY requirement row for ASI02 — the override path's target. */
+let asi02RequirementId = '';
 
 const ctxFor = (tenantId: string) =>
     makeRequestContext('OWNER', {
@@ -167,6 +176,20 @@ async function linkControl(
 }
 
 /**
+ * One tool grant, which is the whole of the ASI02 applicability term.
+ *
+ * Every tenant's PRIMARY agent gets one: they are meant to be ordinary agents,
+ * and without a grant ASI02 would read NOT_APPLICABLE for all of them — which
+ * would quietly shorten tenant A's `covered: ['ASI01','ASI02']` rather than
+ * fail loudly. Tenant A's SECOND agent deliberately gets none.
+ */
+async function grantTool(tenantId: string, agentId: string): Promise<void> {
+    await prisma.registeredAgentTool.create({
+        data: { tenantId, agentId, toolName: 'list_risks', grantedByUserId: fx[tenantId].userId },
+    });
+}
+
+/**
  * `resetDatabase` truncates none of the agent-register tables, so the suite
  * clears its own. AuditLog / TenantMembership go through
  * `session_replication_role = 'replica'` because the immutable-audit-log
@@ -212,6 +235,7 @@ describeFn('per-agent agentic-risk coverage', () => {
 
         const asi = await requirementIds('OWASP-ASI-TOP10');
         const iso = await requirementIds('ISO42001-2023');
+        asi02RequirementId = asi.get('ASI02')!;
 
         // The seeded representation of the same two frameworks, alongside the
         // imported one. Tenant D's whole posture hangs off THESE rows.
@@ -269,6 +293,7 @@ describeFn('per-agent agentic-risk coverage', () => {
                 ownerUserId: user.id,
             });
             fx[tenantId].agentId = agent.id;
+            await grantTool(tenantId, agent.id);
 
             // Every tenant scopes its agent's AI-system entry to all ten risks:
             // the scope is held constant so the differences below are about
@@ -315,20 +340,24 @@ describeFn('per-agent agentic-risk coverage', () => {
         }
 
         // A second agent in tenant A, on its own AI-system entry, with NO
-        // requirement links at all.
-        const unscopedSystem = await prisma.aiSystem.create({
-            data: { tenantId: TA, name: 'Unscoped agent host', ownerUserId: fx[TA].userId },
+        // requirement links, NO tool grants and autonomy 0 — the least-exposed
+        // register entry the CHECK constraints allow. Everything else about it
+        // (tenant, controls, framework) matches A's first agent, so any
+        // difference in its readout is the register entry and nothing else.
+        const bareSystem = await prisma.aiSystem.create({
+            data: { tenantId: TA, name: 'Bare agent host', ownerUserId: fx[TA].userId },
         });
-        const unscoped = await createRegisteredAgent(ctxFor(TA), {
-            aiSystemId: unscopedSystem.id,
-            name: 'Unscoped agent',
-            autonomyLevel: 1,
+        const bare = await createRegisteredAgent(ctxFor(TA), {
+            aiSystemId: bareSystem.id,
+            name: 'Suggest-only agent',
+            autonomyLevel: 0,
             dataAccessScope: 'READ_METADATA',
             reversibility: 'REVERSIBLE',
             provenance: 'FIRST_PARTY',
             ownerUserId: fx[TA].userId,
         });
-        unscopedAgentId = unscoped.id;
+        bareAgentId = bare.id;
+        bareAgentSystemId = bareSystem.id;
     });
 
     afterAll(async () => {
@@ -368,7 +397,10 @@ describeFn('per-agent agentic-risk coverage', () => {
             const cascading = byCode.get('ASI08')!;
             expect(cascading.status).toBe('NOT_COVERED');
             expect(cascading.reason).toBe('NO_CONTROL');
-            expect(cascading.scopedToAgent).toBe(true);
+            // Autonomy 3, so the ASI08 gate does not fire — this really is an
+            // open gap and not a risk the register excused.
+            expect(cascading.applicabilityBasis).toBeNull();
+            expect(cascading.explicitlyScoped).toBe(true);
             expect(cascading.directControls).toEqual([]);
 
             const hijack = byCode.get('ASI01')!;
@@ -377,15 +409,19 @@ describeFn('per-agent agentic-risk coverage', () => {
             expect(hijack.directControls.map((c) => c.code)).toEqual(['A-ASI01']);
         });
 
-        it('partitions all ten risks across the four buckets', async () => {
+        it('partitions all ten risks across the five buckets', async () => {
             const { summary } = await computeAgentRiskCoverage(ctxFor(TA), fx[TA].agentId);
             const all = [
                 ...summary.covered,
                 ...summary.partiallyCovered,
                 ...summary.reviewNeeded,
                 ...summary.uncovered,
+                ...summary.notApplicable,
             ].sort();
             expect(all).toEqual(ASI_CODES);
+            // Nothing is out of scope for this agent, so the denominator is
+            // the whole framework and the 20% above is 2/10.
+            expect(summary.applicableTotal).toBe(10);
         });
     });
 
@@ -520,17 +556,22 @@ describeFn('per-agent agentic-risk coverage', () => {
             ]);
         });
 
-        it('still says NO_CONTROL, not NOT_SCOPED, for the risks the ISMS cannot reach', async () => {
+        it('says NO_CONTROL for the risks the ISMS cannot reach, and excuses none of them', async () => {
             const report = await computeAgentRiskCoverage(ctxFor(TF), fx[TF].agentId);
             const rogue = report.entries.find((e) => e.code === 'ASI05')!;
 
             // The scope links hang off the SEEDED ASI rows, so this doubles as
-            // the ASI-side family check: get that wrong and every reason here
-            // flips to NOT_SCOPED while the coverage lists stay the same.
-            expect(rogue.scopedToAgent).toBe(true);
+            // the ASI-side family check: get that wrong and `explicitlyScoped`
+            // reads false here while the coverage lists stay the same.
+            expect(rogue.explicitlyScoped).toBe(true);
             expect(rogue.status).toBe('NOT_COVERED');
             expect(rogue.reason).toBe('NO_CONTROL');
+            expect(rogue.applicabilityBasis).toBeNull();
             expect(rogue.inheritedFrom).toEqual([]);
+            // F's agent is autonomy 3 and holds a grant, so all ten apply: the
+            // 0% above is the inherited cap and NOT a shrunken denominator.
+            expect(report.summary.applicableTotal).toBe(10);
+            expect(report.summary.notApplicable).toEqual([]);
         });
 
         it('reads identically once the seed writes the sourceUrn', async () => {
@@ -560,24 +601,82 @@ describeFn('per-agent agentic-risk coverage', () => {
     });
 
     describe('E — the per-agent gate', () => {
-        it('covers nothing for an agent whose AI-system entry was never scoped', async () => {
-            const report = await computeAgentRiskCoverage(ctxFor(TA), unscopedAgentId);
+        it('reads two agents in ONE tenant, behind the SAME controls, differently', async () => {
+            const a = await computeAgentRiskCoverage(ctxFor(TA), fx[TA].agentId);
+            const b = await computeAgentRiskCoverage(ctxFor(TA), bareAgentId);
 
-            // Tenant A holds the SAME two agentic controls this whole time.
-            expect(report.summary.covered).toEqual([]);
-            expect(report.summary.partiallyCovered).toEqual(['ASI01', 'ASI02']);
-            expect(report.summary.uncovered).toEqual([
-                'ASI03', 'ASI04', 'ASI05', 'ASI06', 'ASI07', 'ASI08', 'ASI09', 'ASI10',
-            ]);
+            // This is the property the module header actually cares about, and
+            // it is written as a divergence rather than as two absolute lists
+            // on purpose: a derivation that is constant — true OR false —
+            // satisfies every other expectation in this file and fails here.
+            expect(a.summary.coveragePercent).not.toBe(b.summary.coveragePercent);
+
+            expect(a.summary.covered).toEqual(['ASI01', 'ASI02']);
+            expect(a.summary.notApplicable).toEqual([]);
+            expect(a.summary.applicableTotal).toBe(10);
+            expect(a.summary.coveragePercent).toBe(20);
+
+            // Zero tool grants takes ASI02 out; autonomy 0 takes ASI08 out.
+            // Tenant A's control on ASI02 is still there and still does not
+            // apply to this agent — 1 of 8, not 2 of 10.
+            expect(b.summary.covered).toEqual(['ASI01']);
+            expect(b.summary.notApplicable).toEqual(['ASI02', 'ASI08']);
+            expect(b.summary.applicableTotal).toBe(8);
+            expect(b.summary.coveragePercent).toBe(13);
         });
 
-        it('names the missing scope as the reason, not a missing control', async () => {
-            const report = await computeAgentRiskCoverage(ctxFor(TA), unscopedAgentId);
-            const hijack = report.entries.find((e) => e.code === 'ASI01')!;
+        it('names the register column behind each risk it puts out of scope', async () => {
+            const report = await computeAgentRiskCoverage(ctxFor(TA), bareAgentId);
+            const byCode = new Map(report.entries.map((e) => [e.code, e]));
 
-            expect(hijack.scopedToAgent).toBe(false);
-            expect(hijack.reason).toBe('NOT_SCOPED');
-            expect(hijack.directControls.map((c) => c.code)).toEqual(['A-ASI01']);
+            const toolMisuse = byCode.get('ASI02')!;
+            expect(toolMisuse.status).toBe('NOT_APPLICABLE');
+            expect(toolMisuse.reason).toBe('NOT_APPLICABLE');
+            expect(toolMisuse.applicabilityBasis).toBe('NO_TOOL_GRANTS');
+            // The tenant's control is still reported against it. An assessor is
+            // owed the chance to disagree with the applicability call, which
+            // means seeing what would have covered the risk if it applied.
+            expect(toolMisuse.directControls.map((c) => c.code)).toEqual(['A-ASI02']);
+
+            expect(byCode.get('ASI08')!.applicabilityBasis).toBe('SUGGEST_ONLY');
+            // Fail-closed everywhere else: ASI01 still applies to an agent that
+            // can call nothing, because caller-supplied input is itself an
+            // injection channel and no column can switch that off.
+            expect(byCode.get('ASI01')!.status).toBe('COVERED');
+            expect(byCode.get('ASI09')!.applicabilityBasis).toBeNull();
+        });
+
+        it('lets an explicit AI-system requirement link force a risk back in scope', async () => {
+            // The override path, and the only thing that exercises it. A human
+            // who recorded the scope beats a derivation from two columns —
+            // otherwise the product silently overrules an operator.
+            const before = await computeAgentRiskCoverage(ctxFor(TA), bareAgentId);
+            expect(before.summary.notApplicable).toContain('ASI02');
+
+            const link = await prisma.aiSystemRequirementLink.create({
+                data: {
+                    tenantId: TA,
+                    aiSystemId: bareAgentSystemId,
+                    requirementId: asi02RequirementId,
+                },
+            });
+            try {
+                const after = await computeAgentRiskCoverage(ctxFor(TA), bareAgentId);
+                const toolMisuse = after.entries.find((e) => e.code === 'ASI02')!;
+
+                expect(toolMisuse.explicitlyScoped).toBe(true);
+                expect(toolMisuse.status).toBe('COVERED');
+                expect(toolMisuse.applicabilityBasis).toBeNull();
+                expect(after.summary.notApplicable).toEqual(['ASI08']);
+                expect(after.summary.applicableTotal).toBe(9);
+                // ASI08 is untouched: the override is per requirement, not a
+                // blanket "this agent is in scope for everything" switch.
+                expect(
+                    after.entries.find((e) => e.code === 'ASI08')!.applicabilityBasis,
+                ).toBe('SUGGEST_ONLY');
+            } finally {
+                await prisma.aiSystemRequirementLink.delete({ where: { id: link.id } });
+            }
         });
     });
 });

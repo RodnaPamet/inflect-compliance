@@ -73,6 +73,8 @@ describe('No duplicate admin guards on pages', () => {
             'OWNER-only (admin.tenant_lifecycle) — the page decides whether this product may disable accounts in the customer’s own directory, which is authority of the same class as tenant deletion; the layout’s admin.view would let a non-OWNER admin reach it and read the API 403 as a broken backend',
         'integrations/page.tsx':
             'gates ONE link (admin.tenant_lifecycle) to the OWNER-only leaver-pass report; the page itself stays admin.view, so an ADMIN is never offered a door that closes on them',
+        'agents/[agentId]/page.tsx':
+            'gated on admin.agent_registry, checked SERVER-side before the agent is read — the header alone carries the autonomy rung, data scope, reversibility and both risk tiers, so a holder of admin.view without the register key would otherwise read the whole governing profile off a rendered MetaStrip while every tab underneath 403s',
     };
 
     function findPageFiles(dir: string): string[] {
@@ -150,12 +152,42 @@ describe('No duplicate admin guards on pages', () => {
             expect(fs.existsSync(full)).toBe(true);
 
             const content = fs.readFileSync(full, 'utf-8');
-            expect(content).toContain('RequirePermission');
-            expect(content).toContain('resource="admin"');
+
+            // Two idioms express the same thing, and the assertion has to see
+            // both. A CLIENT page wraps itself in `RequirePermission`; a SERVER
+            // page reads `ctx.appPermissions.admin.<key>` and returns the
+            // fallback before it fetches anything. Asserting only the client
+            // shape did not make server pages safe, it made them unable to be
+            // allowlisted — the first one to need a stricter gate would have
+            // had to move its check somewhere the scan cannot see, or drop it.
+            //
+            // Deliberately NOT relaxed to "mentions a permission somewhere":
+            // each branch still has to name a key, and the key still has to be
+            // narrower than the layout's own `admin.view`.
+            const clientGate =
+                content.includes('RequirePermission') && content.includes('resource="admin"');
+            // Anchored on the REFUSAL — `if (!ctx.appPermissions.admin.x)` —
+            // and not on a mention of the key. A bare
+            // /appPermissions\.admin\.(\w+)/ sweep reads the props a page
+            // threads DOWN to its client (`canGrantTools:
+            // ctx.appPermissions.admin.agent_tool_exposure`) as evidence of a
+            // gate, so it passed unchanged when the gate was degraded to
+            // `admin.view` and again when it was deleted outright. It was
+            // measuring that the file talks about permissions, which every
+            // such page does by construction.
+            const serverGateKeys = [
+                ...content.matchAll(/if\s*\(\s*!\s*ctx\.appPermissions\.admin\.([a-z_]+)\s*\)/g),
+            ].map((m) => m[1]);
+            const serverGate = serverGateKeys.some((k) => k !== 'view');
+
+            expect(clientGate || serverGate).toBe(true);
+
             // Negative half, paired with the positives above: the exemption is
             // for a NARROWER gate. Re-declaring the layout's own `admin.view`
-            // is the redundancy this describe block exists to refuse.
-            expect(content).not.toContain('action="view"');
+            // is the redundancy this describe block exists to refuse — in
+            // whichever idiom it is written.
+            if (clientGate) expect(content).not.toContain('action="view"');
+            if (!clientGate) expect(serverGateKeys).not.toEqual(['view']);
             expect(STRICTER_GUARD_PAGES[relPath].length).toBeGreaterThan(20);
         }
     });
