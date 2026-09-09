@@ -1931,6 +1931,24 @@ exports[`API contract — per-schema snapshots schema: ControlListItem 1`] = `
         }
       ]
     },
+    "frameworks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "name"
+        ]
+      }
+    },
     "_count": {
       "type": "object",
       "properties": {
