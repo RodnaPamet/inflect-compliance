@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -390,6 +390,39 @@ export function MobileDrawer({ open, onClose, children }: MobileDrawerProps) {
         description: 'Close navigation drawer',
     });
 
+    // Return focus to whatever opened the drawer.
+    //
+    // This is the other half of making the closed drawer `inert`, not a
+    // separate nicety. Focus does not survive its own container becoming
+    // inert: the browser moves it to `<body>`, so a keyboard user who opened
+    // the drawer, tabbed into it and closed it lands at the top of the
+    // document with no idea where they are. Before the drawer was inert the
+    // focus simply STAYED on an off-screen element, which was worse and is
+    // why this was not visible as a bug — one broken behaviour was hiding
+    // another.
+    //
+    // The opener is captured rather than passed in: the trigger lives in a
+    // sibling component (the header's hamburger), and threading a ref through
+    // `AppShell` to reach it would couple two components that currently share
+    // only `open`/`onClose`. `document.activeElement` at the moment of opening
+    // is the same element in every path that can open this.
+    const openerRef = useRef<HTMLElement | null>(null);
+    useEffect(() => {
+        if (open) {
+            openerRef.current =
+                document.activeElement instanceof HTMLElement ? document.activeElement : null;
+            return;
+        }
+        const opener = openerRef.current;
+        openerRef.current = null;
+        // Only reclaim focus the drawer is actually losing. On first mount —
+        // and on any close the user did not trigger from inside — focus is
+        // somewhere legitimate and stealing it would be its own bug.
+        if (opener && opener.isConnected && document.activeElement === document.body) {
+            opener.focus();
+        }
+    }, [open]);
+
     // Lock body scroll when open
     useEffect(() => {
         if (open) {
@@ -419,7 +452,43 @@ export function MobileDrawer({ open, onClose, children }: MobileDrawerProps) {
                 data-sheet-overlay={open ? 'true' : undefined}
             />
 
-            {/* Drawer */}
+            {/* Drawer.
+
+                A CLOSED drawer stays MOUNTED — the transform below is the
+                open/close animation and unmounting would delete it, along with
+                the motion-language transition every overlay in this codebase
+                shares — so "closed" has to be expressed to assistive tech and
+                to the tab order by attribute, not by absence. Off-screen is a
+                visual state and nothing more: a `translate-x` moves no element
+                out of the accessibility tree and takes nothing out of the tab
+                order, so before this the drawer's close button and every nav
+                link in `children` were reachable by Tab from any page, and a
+                screen reader was told a modal dialog was open at all times.
+
+                `inert` is the single answer in a browser: it makes the whole
+                subtree unfocusable AND hides it from the accessibility tree.
+                The older recipe — `aria-hidden` plus `tabIndex={-1}` on every
+                focusable descendant — is worse here for a concrete reason, not
+                a stylistic one: the descendants are `children` supplied by
+                `AppShell`, so the sweep would have to reach into markup this
+                component does not own and be re-applied by every future caller.
+                React 19 supports `inert` as a boolean prop (React 18 needed the
+                `inert=""` string hack); the repo is on 19.2, so this renders.
+
+                `aria-hidden` rides along as the compatibility half, and it is
+                NOT redundant with `inert` in practice: axe's role queries,
+                Playwright's role engine, jsdom/Testing-Library and pre-2022
+                Safari/Firefox all honour `aria-hidden` and none of them
+                implement `inert` — Playwright resolving `getByRole('dialog')`
+                to this node is how the bug was found. Pairing the two is safe:
+                `aria-hidden` over focusable descendants is a violation only
+                while they are still focusable, and axe-core resolves `inert`
+                (`isInertAncestors`) before that rule fires.
+
+                `aria-modal` is a claim about the REST of the page — "everything
+                outside me is inert" — so it is asserted only while the drawer
+                is actually open. Stated unconditionally it was false in the
+                state the drawer spends nearly all its life in. */}
             <div
                 className={`
                     fixed inset-y-0 left-0 z-50 w-64 bg-bg-default border-r border-border-subtle
@@ -427,7 +496,9 @@ export function MobileDrawer({ open, onClose, children }: MobileDrawerProps) {
                     ${open ? 'translate-x-0' : '-translate-x-full'}
                 `}
                 role="dialog"
-                aria-modal="true"
+                aria-modal={open ? true : undefined}
+                aria-hidden={open ? undefined : true}
+                inert={!open}
                 aria-label={tn('navigationMenu')}
                 data-testid="nav-drawer"
                 data-open={open ? 'true' : 'false'}
