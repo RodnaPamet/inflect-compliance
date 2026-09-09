@@ -4525,6 +4525,23 @@
         "errorFallback": "Агентът не можа да бъде регистриран."
       }
     },
+    "agentDetail": {
+      "tabOverview": "Преглед",
+      "tabRisk": "Оценка на риска",
+      "tabPolicy": "Политика",
+      "tabTools": "Инструменти",
+      "tabCoverage": "ASI покритие",
+      "tabBreaker": "Предпазител",
+      "metaAutonomy": "Автономност",
+      "metaAccess": "Достъп до данни",
+      "metaReversibility": "Обратимост",
+      "metaProvenance": "Произход",
+      "metaTier": "Ниво на агента",
+      "metaAiAct": "ЕС AI Акт",
+      "unscored": "Без оценка",
+      "unclassified": "Некласифициран",
+      "loadingAria": "Зареждане на агента"
+    },
     "mcp": {
       "title": "MCP",
       "description": "Инструменти за агенти (Model Context Protocol) с човек в цикъла — опашката за одобрение и оркестраторът.",

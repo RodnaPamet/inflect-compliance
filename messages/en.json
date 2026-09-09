@@ -4525,6 +4525,23 @@
         "errorFallback": "Could not register the agent."
       }
     },
+    "agentDetail": {
+      "tabOverview": "Overview",
+      "tabRisk": "Risk assessment",
+      "tabPolicy": "Policy card",
+      "tabTools": "Tools",
+      "tabCoverage": "ASI coverage",
+      "tabBreaker": "Circuit breaker",
+      "metaAutonomy": "Autonomy",
+      "metaAccess": "Data access",
+      "metaReversibility": "Reversibility",
+      "metaProvenance": "Provenance",
+      "metaTier": "Agent tier",
+      "metaAiAct": "EU AI Act",
+      "unscored": "Unscored",
+      "unclassified": "Unclassified",
+      "loadingAria": "Loading agent"
+    },
     "mcp": {
       "title": "MCP",
       "description": "Agent (Model Context Protocol) human-in-the-loop tools — the approval queue and the orchestrator.",

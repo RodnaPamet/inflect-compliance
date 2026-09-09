@@ -147,6 +147,7 @@ export const SUBPAGES: readonly string[] = [
 
     // Admin subpages
     '/admin/agents',
+    '/admin/agents/[agentId]',
     // Review quality — reached from the agent register, not the sidebar. The
     // read surface for whether approvals on the proposal queue mean anything.
     '/admin/agents/review-quality',
