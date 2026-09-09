@@ -80,7 +80,55 @@ const controlListSelect = {
     // R2-P4 — count links + evidence↔control joins so the list Evidence
     // column agrees with the detail Evidence tab badge (which counts both).
     _count: { select: { evidenceLinks: true, evidenceControlLinks: true } },
+    // Every framework this control is mapped to, through its requirement
+    // links. The list's Framework column renders ALL of them, because one
+    // control genuinely belongs to several: an internal control sits in its
+    // own Internal Control domain AND, through the policies it references,
+    // in ISO 27001 Annex A and NIS2 Article 21(2).
+    //
+    // Projected to a deduped `frameworks` array by `withFrameworks` before it
+    // leaves the repository — the raw link rows are join noise on the wire,
+    // and a control with 6 links to one framework must render one badge.
+    requirementLinks: {
+        select: {
+            requirement: {
+                select: { framework: { select: { key: true, name: true } } },
+            },
+        },
+    },
 } as const;
+
+/** One framework a control is mapped to, as the list column renders it. */
+export interface ControlFrameworkRef {
+    key: string;
+    name: string;
+}
+
+type WithRequirementLinks = {
+    requirementLinks?: Array<{ requirement: { framework: { key: string; name: string } | null } | null }>;
+};
+
+/**
+ * Replace the raw requirement-link rows with the deduped set of frameworks
+ * they reach, ordered by name so the badges are stable between renders.
+ *
+ * Deduping is the point: a control mapped to eight ISO 27001 clauses has
+ * eight links and one framework.
+ */
+function withFrameworks<T extends WithRequirementLinks>(rows: T[]): Array<Omit<T, 'requirementLinks'> & { frameworks: ControlFrameworkRef[] }> {
+    return rows.map((row) => {
+        const { requirementLinks, ...rest } = row;
+        const byKey = new Map<string, ControlFrameworkRef>();
+        for (const link of requirementLinks ?? []) {
+            const fw = link?.requirement?.framework;
+            if (fw?.key) byKey.set(fw.key, { key: fw.key, name: fw.name });
+        }
+        return {
+            ...rest,
+            frameworks: [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name)),
+        };
+    });
+}
 
 export class ControlRepository {
     static async list(
@@ -92,14 +140,16 @@ export class ControlRepository {
         return traceRepository('control.list', ctx, async () => {
             const where = ControlRepository._buildWhere(ctx, filters);
 
-            return db.control.findMany({
-                where,
-                orderBy: [{ code: 'asc' }, { annexId: 'asc' }],
-                select: controlListSelect,
-                // Bounded even on the legacy no-`take` list path — cap at 500
-                // so an unpaginated call can't stream an unbounded result set.
-                take: options.take ?? 500,
-            });
+            return withFrameworks(
+                await db.control.findMany({
+                    where,
+                    orderBy: [{ code: 'asc' }, { annexId: 'asc' }],
+                    select: controlListSelect,
+                    // Bounded even on the legacy no-`take` list path — cap at 500
+                    // so an unpaginated call can't stream an unbounded result set.
+                    take: options.take ?? 500,
+                }),
+            );
         });
     }
 
@@ -114,12 +164,14 @@ export class ControlRepository {
                 where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), cursorWhere];
             }
 
-            const items = await db.control.findMany({
-                where,
-                orderBy: CURSOR_ORDER_BY,
-                take: limit + 1,
-                select: controlListSelect,
-            });
+            const items = withFrameworks(
+                await db.control.findMany({
+                    where,
+                    orderBy: CURSOR_ORDER_BY,
+                    take: limit + 1,
+                    select: controlListSelect,
+                }),
+            );
 
             const { trimmedItems, nextCursor, hasNextPage } = computePageInfo(items, limit);
             return { items: trimmedItems, pageInfo: { nextCursor, hasNextPage } };

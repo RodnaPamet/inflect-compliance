@@ -63,7 +63,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 import { callExpressionOf, codeOf, declarationOf, functionBodyOf } from '../helpers/source-blocks';
-import { appliedCatalogFor, appliedSources, declaringSources } from '../helpers/applied-catalogue';
+import { appliedCatalogFor, appliedSources, declaringSources, productionDeclaringSources } from '../helpers/applied-catalogue';
 
 const ROOT = path.resolve(__dirname, '../..');
 // SOURCE reads are comment-masked at the seam, so a comment naming a fixture
@@ -138,12 +138,55 @@ describe('Internal Controls delivery', () => {
         expect(body).toContain('policyMap[policy]');
     });
 
-    it('is still NOT wired as a pack or framework of its own, anywhere applied', () => {
-        // Widened from `prisma/seed.ts` to the whole applied corpus (dev seeder
-        // + every fixture a production seeder names), so a standalone Internal
-        // Controls pack cannot reappear via the catalogue route either.
-        expect(declaringSources('INTERNAL_CONTROLS')).toEqual([]);
-        expect(declaringSources('INTERNAL-CONTROLS')).toEqual([]);
+    it('IS wired as its own framework and pack, and a production seeder applies it', () => {
+        // INVERTED 2026-09-09. This asserted the opposite for as long as the
+        // library had no framework of its own — correct then, because its only
+        // route into a tenant was `installPack`'s framework-wide sweep of every
+        // template mapped to the framework being installed. That sweep made
+        // installing ISO 27001 create 233 controls where Annex A defines 93, so
+        // it was removed, and removing it left these 151 templates seeded and
+        // unreachable. They now have a framework and a pack of their own, which
+        // is what a tenant installs deliberately.
+        //
+        // Asserting PRODUCTION reach, not mere presence, is the whole lesson of
+        // this file's header: the library was previously "delivered" by a seeder
+        // production never runs.
+        const sources = productionDeclaringSources('INTERNAL_CONTROLS');
+        expect(sources.length).toBeGreaterThan(0);
+        expect(sources.some((f) => f.includes('internal-controls-catalog'))).toBe(true);
+
+        // And the pack that carries the 151 templates.
+        expect(productionDeclaringSources('INTERNAL_CONTROLS_PACK').length).toBeGreaterThan(0);
+    });
+
+    it('the framework it is wired to declares one requirement per category, and every control maps to one', () => {
+        const catalog = appliedCatalogFor('INTERNAL_CONTROLS');
+        expect(catalog).toBeTruthy();
+
+        const reqCodes = new Set((catalog?.requirements ?? []).map((r) => String(r.code)));
+        const categories = new Set(controls.map((c) => String(c.category)));
+        // The requirements ARE the library's own categories — nothing invented.
+        expect(reqCodes.size).toBe(categories.size);
+
+        // Every ICN control is in the catalogue and points at exactly one of them.
+        const templates = catalog?.templates ?? [];
+        expect(templates.length).toBe(controls.length);
+        for (const t of templates) {
+            const codes = (t.requirementCodes ?? []) as string[];
+            expect(codes.length).toBe(1);
+            expect(reqCodes.has(codes[0])).toBe(true);
+        }
+    });
+
+    it('the catalogue carries no tasks, so it cannot deprecate the authored ones', () => {
+        // `reconcileTemplateTasks` returns early on an empty array. The authored
+        // tasks on these templates are written by control-template-seed.ts, and
+        // a non-empty `tasks` here would reconcile against THAT content and
+        // deprecate every row it did not match.
+        const catalog = appliedCatalogFor('INTERNAL_CONTROLS');
+        for (const t of catalog?.templates ?? []) {
+            expect((t.tasks ?? []) as unknown[]).toHaveLength(0);
+        }
     });
 });
 

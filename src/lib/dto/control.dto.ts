@@ -35,6 +35,14 @@ export const ControlListItemDTOSchema = z.object({
     createdAt: z.string().optional(),
     updatedAt: z.string().optional(),
     owner: UserRefSchema.nullable().optional(),
+    /**
+     * Every framework this control is mapped to, deduped from its requirement
+     * links by the repository. Drives the list's Framework column, which shows
+     * all of them — one control can sit in several standards at once.
+     */
+    frameworks: z
+        .array(z.object({ key: z.string(), name: z.string() }))
+        .optional(),
     _count: z.object({
         // EP-3 — Evidence entities reach the control through the join.
         evidenceControlLinks: z.number().optional(),
