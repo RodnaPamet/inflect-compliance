@@ -19,7 +19,11 @@ export default async function AgentDetailLoading() {
             aria-label={t('agentDetail.loadingAria')}
             className="space-y-section animate-fadeIn"
         >
-            <SkeletonDetailTabs />
+            {/* Six, not the default four — the skeleton is a promise about
+                the shape that is about to arrive, and a tab bar that grows by
+                two on hydration is the layout shift a skeleton exists to
+                prevent. */}
+            <SkeletonDetailTabs tabCount={6} />
         </div>
     );
 }

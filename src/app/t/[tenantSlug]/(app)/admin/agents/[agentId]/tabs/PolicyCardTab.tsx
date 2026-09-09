@@ -1,6 +1,6 @@
 'use client';
 
-import type { AgentTabProps } from './types';
+import type { PolicyCardTabProps } from './types';
 
 /**
  * SCAFFOLD — replaced by the policyCard lane.
@@ -9,6 +9,6 @@ import type { AgentTabProps } from './types';
  * "coming soon" in a compliance product is a claim about a control surface,
  * and this page ships only tabs that are real.
  */
-export function PolicyCardTab(_props: AgentTabProps) {
+export function PolicyCardTab(_props: PolicyCardTabProps) {
     return null;
 }

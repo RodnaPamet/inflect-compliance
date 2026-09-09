@@ -42,9 +42,11 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
 
     // Admin subpages
     '/admin/agents': { href: '/admin', label: 'Admin' },
+    // The detail page's structural parent is the register, not Admin — an
+    // operator who opened one agent is one step from the list of all of them.
+    '/admin/agents/[agentId]': { href: '/admin/agents', label: 'Agents' },
     // The ASI09 review-quality report hangs off the agent register: it is a
     // view OF those agents' review queue, so back goes to them, not to Admin.
-    '/admin/agents/[agentId]': { href: '/admin/agents', label: 'Agents' },
     '/admin/agents/review-quality': { href: '/admin/agents', label: 'Agents' },
     '/admin/api-keys': { href: '/admin', label: 'Admin' },
     '/admin/audit-log': { href: '/admin', label: 'Admin' },

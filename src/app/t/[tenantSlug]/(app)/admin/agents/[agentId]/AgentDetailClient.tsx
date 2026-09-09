@@ -11,6 +11,7 @@ import { PolicyCardTab } from './tabs/PolicyCardTab';
 import { ToolsTab } from './tabs/ToolsTab';
 import { CoverageTab } from './tabs/CoverageTab';
 import { CircuitBreakerTab } from './tabs/CircuitBreakerTab';
+import { AgentKillSwitchAction, AgentKillSwitchBanner } from './AgentKillSwitchAction';
 
 export interface AgentSummary {
     id: string;
@@ -22,6 +23,24 @@ export interface AgentSummary {
     provenance: string;
     riskTier: string | null;
     aiActRiskTier: string | null;
+}
+
+/**
+ * Resolved on the server, because the shell decides which tabs are reachable
+ * before any tab mounts. See `page.tsx` for why `canCloseBreaker` is the one
+ * flag that is a conjunction.
+ */
+export interface AgentDetailPermissions {
+    /** `admin.agent_registry` — status moves, risk assessment, coverage, breaker reads. */
+    canManageRegistry: boolean;
+    /** `admin.agent_policy_card` — gates the policy-card GET, not only its writes. */
+    canEditPolicyCard: boolean;
+    /** `admin.agent_tool_exposure` — gates the tools GET, not only its writes. */
+    canGrantTools: boolean;
+    /** `admin.agent_kill_switch` — engage and lift, independently grantable. */
+    canKill: boolean;
+    /** `admin.agent_registry` AND the role-tier admin check the usecase asserts. */
+    canCloseBreaker: boolean;
 }
 
 const TAB_KEYS = ['overview', 'risk', 'policy', 'tools', 'coverage', 'breaker'] as const;
@@ -38,9 +57,11 @@ function statusVariant(status: string): StatusBadgeVariant {
 export function AgentDetailClient({
     tenantSlug,
     agent,
+    perms,
 }: {
     tenantSlug: string;
     agent: AgentSummary;
+    perms: AgentDetailPermissions;
 }) {
     const t = useTranslations('admin');
     const [tab, setTab] = useState<TabKey>('overview');
@@ -90,23 +111,74 @@ export function AgentDetailClient({
                 </span>
             }
             meta={<MetaStrip items={meta} />}
+            actions={
+                <AgentKillSwitchAction
+                    agentId={agent.id}
+                    canKill={perms.canKill}
+                    refreshToken={refreshToken}
+                />
+            }
             tabs={[
                 { key: 'overview', label: t('agentDetail.tabOverview') },
                 { key: 'risk', label: t('agentDetail.tabRisk') },
-                { key: 'policy', label: t('agentDetail.tabPolicy') },
-                { key: 'tools', label: t('agentDetail.tabTools') },
+                // Disabled, not hidden. The two narrow keys gate the GET as
+                // well as the write, so a holder of the register key alone
+                // opens either tab and is refused on the read. A greyed tab
+                // says the surface exists and is not yours; a missing one says
+                // the product does not have it.
+                {
+                    key: 'policy',
+                    label: t('agentDetail.tabPolicy'),
+                    disabled: !perms.canEditPolicyCard,
+                },
+                { key: 'tools', label: t('agentDetail.tabTools'), disabled: !perms.canGrantTools },
                 { key: 'coverage', label: t('agentDetail.tabCoverage') },
                 { key: 'breaker', label: t('agentDetail.tabBreaker') },
             ]}
             activeTab={tab}
             onTabChange={setTab}
         >
-            {tab === 'overview' && <OverviewTab {...props} onChanged={refresh} />}
-            {tab === 'risk' && <RiskAssessmentTab {...props} onChanged={refresh} />}
-            {tab === 'policy' && <PolicyCardTab {...props} onChanged={refresh} />}
-            {tab === 'tools' && <ToolsTab {...props} onChanged={refresh} />}
+            {/* Outside the tab switch: a kill in force stops this agent on
+                every surface, so it is not the property of whichever tab
+                happens to be open. The layout has no slot above the panel, so
+                this is the highest place it can go. */}
+            <AgentKillSwitchBanner
+                agentId={agent.id}
+                canKill={perms.canKill}
+                refreshToken={refreshToken}
+            />
+            {tab === 'overview' && (
+                <OverviewTab
+                    {...props}
+                    onChanged={refresh}
+                    canManageRegistry={perms.canManageRegistry}
+                />
+            )}
+            {tab === 'risk' && (
+                <RiskAssessmentTab
+                    {...props}
+                    onChanged={refresh}
+                    canManageRegistry={perms.canManageRegistry}
+                />
+            )}
+            {tab === 'policy' && (
+                <PolicyCardTab
+                    {...props}
+                    onChanged={refresh}
+                    canEditPolicyCard={perms.canEditPolicyCard}
+                />
+            )}
+            {tab === 'tools' && (
+                <ToolsTab {...props} onChanged={refresh} canGrantTools={perms.canGrantTools} />
+            )}
             {tab === 'coverage' && <CoverageTab {...props} />}
-            {tab === 'breaker' && <CircuitBreakerTab {...props} onChanged={refresh} />}
+            {tab === 'breaker' && (
+                <CircuitBreakerTab
+                    {...props}
+                    onChanged={refresh}
+                    canCloseBreaker={perms.canCloseBreaker}
+                />
+            )}
         </EntityDetailLayout>
     );
 }

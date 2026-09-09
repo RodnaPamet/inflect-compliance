@@ -1,6 +1,6 @@
 'use client';
 
-import type { AgentTabProps } from './types';
+import type { CircuitBreakerTabProps } from './types';
 
 /**
  * SCAFFOLD — replaced by the circuitBreaker lane.
@@ -9,6 +9,6 @@ import type { AgentTabProps } from './types';
  * "coming soon" in a compliance product is a claim about a control surface,
  * and this page ships only tabs that are real.
  */
-export function CircuitBreakerTab(_props: AgentTabProps) {
+export function CircuitBreakerTab(_props: CircuitBreakerTabProps) {
     return null;
 }

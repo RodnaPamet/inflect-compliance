@@ -1,6 +1,6 @@
 'use client';
 
-import type { AgentTabProps } from './types';
+import type { RegistryWritableTabProps } from './types';
 
 /**
  * SCAFFOLD — replaced by the riskAssessment lane.
@@ -9,6 +9,6 @@ import type { AgentTabProps } from './types';
  * "coming soon" in a compliance product is a claim about a control surface,
  * and this page ships only tabs that are real.
  */
-export function RiskAssessmentTab(_props: AgentTabProps) {
+export function RiskAssessmentTab(_props: RegistryWritableTabProps) {
     return null;
 }
