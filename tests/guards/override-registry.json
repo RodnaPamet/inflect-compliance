@@ -92,9 +92,9 @@
     },
     "sharp": {
         "kind": "security",
-        "advisory": "GHSA-f88m-g3jw-g9cj",
-        "patchedFrom": "0.35.0",
-        "reason": "HIGH libvips CVEs (CVE-2026-33327/33328/35590/35591) inherited by sharp <0.35.0, pulled transitively via next@16. Pinned to an exact 0.35.3 — deliberately STRICTER than the 0.35.0 fix — in #1694 to clear the moderate+ npm-audit gate that had turned main red fleet-wide. patchedFrom records the upstream fix (0.35.0), not our floor; corrected from 0.35.3 on 2026-07-25 so the recorded fact matches the advisory."
+        "advisory": "GHSA-rgj7-g3m4-5g8c",
+        "patchedFrom": "0.35.4",
+        "reason": "TWO advisories have set this floor in turn; the CURRENT one is the libheif pair. (1) 2026-07: HIGH libvips CVEs (CVE-2026-33327/33328/35590/35591) inherited by sharp <0.35.0, pulled transitively via next@16, fixed upstream in 0.35.0. #1694 pinned an exact 0.35.3 — deliberately stricter than the fix — to clear the moderate+ npm-audit gate that had turned main red fleet-wide. (2) 2026-09-09: GHSA-rgj7-g3m4-5g8c, HIGH, sharp's bundled libheif (GHSA-g89c-p67h-r497 + GHSA-2jg2-4ch7-h545), vulnerable range `< 0.35.4`. It landed against the exact 0.35.3 pin and turned BOTH the npm-audit gate and the Trivy image scan red on every open PR simultaneously — Trivy reported it as its single finding, `Total: 1 (HIGH: 1)`, status `fixed`, fixed version 0.35.4. `patchedFrom` now records 0.35.4, the upstream fix for the advisory currently setting the floor; the 0.35.0 figure it replaces belonged to advisory (1), which 0.35.4 also satisfies. Not exemptible: the gate's own rule is that an allowlist entry requires the advisory to be genuinely unfixable, and a released version resolves this one. Note the bump also restored 16 `libc` discriminators the lockfile had lost — glibc on the @img/sharp-linux-* variants and musl on the @img/sharp-linuxmusl-* ones. Without them both candidates carry an identical `os: [linux], cpu: [x64]` and nothing distinguishes them, which matters because the runtime image is node:24-alpine. Do not regenerate this lockfile with a tool that strips them again."
     },
     "valibot": {
         "kind": "security",
