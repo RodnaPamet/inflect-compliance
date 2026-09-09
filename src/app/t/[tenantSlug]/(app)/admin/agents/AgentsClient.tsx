@@ -251,6 +251,19 @@ function AgentsInner({ initialRows, tenantSlug, owners, vendors, canWrite }: Pro
     // model mid-click and kills row interaction (#1678).
     const getAgentRowId = useCallback((r: AgentRow) => r.id, []);
 
+    // The register's only route to the detail page. Without it that page is
+    // reachable by typing the URL and by nothing else — `grep -rn
+    // 'admin/agents/\${' src/` returned only the page's own docstring — so
+    // every per-agent surface it hosts (the policy card, the tool pins, the ASI
+    // coverage, the circuit breaker, the kill switch) stayed as unreachable as
+    // it was before the page existed. `onRowClick` is also what makes DataTable
+    // mount its trailing chevron column, so the row ADVERTISES that it opens.
+    const handleAgentRowClick = useCallback(
+        (row: { original: AgentRow }) =>
+            router.push(`/t/${tenantSlug}/admin/agents/${row.original.id}`),
+        [router, tenantSlug],
+    );
+
     return (
         <>
             <EntityListPage<AgentRow>
@@ -284,6 +297,7 @@ function AgentsInner({ initialRows, tenantSlug, owners, vendors, canWrite }: Pro
                     data: rows,
                     columns,
                     getRowId: getAgentRowId,
+                    onRowClick: handleAgentRowClick,
                     resourceName: (plural) =>
                         plural
                             ? t('agentRegistry.resourcePlural')

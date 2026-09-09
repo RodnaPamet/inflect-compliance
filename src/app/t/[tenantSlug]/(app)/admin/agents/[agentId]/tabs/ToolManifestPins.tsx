@@ -14,13 +14,12 @@
  * gets read as "this agent's tools", and the reader then under-estimates what
  * an approval does by a factor of the whole register.
  *
- * The argument for that placement was that this section stays reachable on its
- * OWN key, `admin.agent_registry`, which the page already required. It does not
- * today: the shell disables the whole tools tab on `!canGrantTools`, so a
- * register-key holder without tool exposure reaches no pin screen anywhere in
- * the product. `ToolsTab`'s header carries the escalation; this file is written
- * as though the gate were correct, because that is the change being asked for
- * rather than a reason to fold this section into the grants permission.
+ * The argument for that placement is that this section stays reachable on its
+ * OWN key, `admin.agent_registry`, which the page already required — and it
+ * does. The shell briefly disabled the whole tools tab on `!canGrantTools`,
+ * which meant a register-key holder without tool exposure reached no pin screen
+ * anywhere in the product; that gate is gone, and `ToolsTab` now renders its
+ * two halves independently.
  *
  * ## What the pin is actually watching
  *

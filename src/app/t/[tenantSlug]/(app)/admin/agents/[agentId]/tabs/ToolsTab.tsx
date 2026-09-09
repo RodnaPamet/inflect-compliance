@@ -581,8 +581,8 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
                     // Not an error and not an empty list: the read itself needs
                     // a key this principal does not hold. Saying which authority
                     // is missing is the whole content of this panel — the 403
-                    // body never names it. Currently unreachable through the
-                    // shell; see the header for why it stays.
+                    // body never names it. Reachable: the shell does not disable
+                    // this tab, precisely so the pins below stay readable.
                     <InlineNotice variant="info" title={t('agentDetail.tools.forbiddenTitle')}>
                         {t('agentDetail.tools.forbiddenBody')}
                     </InlineNotice>
