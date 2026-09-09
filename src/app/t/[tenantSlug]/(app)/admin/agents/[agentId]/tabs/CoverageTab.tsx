@@ -24,9 +24,10 @@ import type { AgentTabProps } from './types';
  * OWASP ASI01–ASI10 coverage for one registered agent.
  *
  * Read-only, and it takes no `onChanged` for that reason: nothing on this
- * panel writes, so there is no news for the shell to broadcast. Scoping a risk
- * to an agent happens on the AI-system entry and linking a control happens on
- * the control — both elsewhere, both deliberately not duplicated here.
+ * panel writes, so there is no news for the shell to broadcast. Changing what
+ * applies happens on the REGISTER (grant a tool, raise the autonomy level) and
+ * linking a control happens on the control — both elsewhere, both deliberately
+ * not duplicated here.
  *
  * FOUR ABSENCES THIS PANEL HAS TO KEEP APART, because collapsing any two of
  * them is a misreport on a compliance surface. Each one is an absence, and the
@@ -44,22 +45,23 @@ import type { AgentTabProps } from './types';
  *     so it would send the reader to a page provably missing the row.
  *   • `frameworkInstalled: true` with no entries — installed, holds no
  *     requirement rows. Also not zero coverage.
- *   • `scopedToAgent: false` — no `AiSystemRequirementLink` ties the risk to
- *     this agent's AI system. That is MISSING INFORMATION, not a decision
- *     that the risk does not apply, and the panel must not launder one into
- *     the other. Read `usecases/ai-system.ts`: the only production writer of
- *     that table links EU-AI-ACT / ISO 42001 obligations, whose requirement
- *     ids are disjoint from the ASI rows — so on a real tenant TODAY every
- *     ASI risk arrives unscoped. A panel that files those under "not in scope
- *     for this agent" in a neutral tone reports zero findings for every
- *     tenant in the product. They get their own section, worded as a fact
- *     about the data, and `nothingScoped` says so once at the top.
- *   • uncovered AND in scope — the finding. It sorts first, on its own.
+ *   • `status: 'NOT_APPLICABLE'` — the service DERIVED, from a mandatory
+ *     register column, that this agent lacks the capability the risk names:
+ *     zero tool grants for ASI02, autonomy 0 for ASI08. This one is the
+ *     narrow exception to the rule above, and only because it is not an
+ *     absence at all — it is a column with a value, enforced server-side, and
+ *     every such row renders the exact basis so a reader can check it against
+ *     the register instead of taking the word "applicable" on trust. THE
+ *     WARNING STILL STANDS and now attaches to the basis strings: "no tool
+ *     grants" means this agent cannot invoke a tool through the MCP tool door
+ *     today, NOT that it touches nothing, and it flips the moment somebody
+ *     grants one, with no record that it ever did not.
+ *   • uncovered — the finding. It sorts first, on its own.
  *
  * Because of that, the Uncovered tile takes its tone from the API's
- * `uncovered` count and NOT from the in-scope subset: an uncovered risk is a
- * finding until somebody has affirmatively recorded that it does not apply,
- * and no surface in this product records that yet.
+ * `uncovered` count: an uncovered risk is a finding until the register itself
+ * shows the agent cannot reach it, and the risks where it does show that are
+ * counted separately, never folded in here.
  *
  * Inherited coverage is labelled as inherited everywhere it appears and never
  * presented as covered: the service caps a cross-framework route at
@@ -73,6 +75,7 @@ const COVERAGE_STATUSES = [
     'PARTIALLY_COVERED',
     'REVIEW_NEEDED',
     'NOT_COVERED',
+    'NOT_APPLICABLE',
 ] as const;
 type CoverageStatus = (typeof COVERAGE_STATUSES)[number];
 
@@ -113,23 +116,35 @@ interface CoverageEntry {
     code: string;
     title: string;
     section: string | null;
-    scopedToAgent: boolean;
+    /**
+     * An operator linked this agent's AI-system entry to the risk. It forces
+     * the risk in scope server-side and is NOT the coverage gate — carried
+     * only so the panel can tell a derived scope from a recorded one.
+     */
+    explicitlyScoped: boolean;
     directControls: CoveringControl[];
     inheritedFrom: InheritedCoverage[];
     /** One of `COVERAGE_STATUSES` today — see `asCoverageStatus` for why the
      *  declared type is wider than the values the service emits. */
     status: string;
-    /** `NOT_SCOPED` | `NO_CONTROL` today; unknown codes render no line at all
-     *  rather than a sentence this build cannot vouch for. */
+    /** `NO_CONTROL` | `NOT_APPLICABLE` today; unknown codes render no line at
+     *  all rather than a sentence this build cannot vouch for. */
     reason: string | null;
+    /** `NO_TOOL_GRANTS` | `SUGGEST_ONLY` on an N/A row; null when the risk
+     *  applies. An unknown basis renders nothing rather than a guess. */
+    applicabilityBasis: string | null;
 }
 
 interface CoverageSummary {
+    /** Every risk the framework carries. NOT the coverage denominator. */
     total: number;
+    /** The denominator: `total` minus the risks the register puts out of scope. */
+    applicableTotal: number;
     covered: string[];
     partiallyCovered: string[];
     reviewNeeded: string[];
     uncovered: string[];
+    notApplicable: string[];
     coveragePercent: number;
 }
 
@@ -153,11 +168,6 @@ interface AgentRiskCoverageReport {
 }
 
 /**
- * Unscoped entries never read from this table: NOT_COVERED means one thing
- * when the risk is scoped to the agent and another when nothing has been
- * scoped at all, so `RiskEntryCard` resolves that pair before it reaches here.
- */
-/**
  * The six buckets the entry list is partitioned into, in the order the panel
  * renders them. Named as a type so the partition below is a total function
  * over it — every entry lands in exactly one, `unrecognised` included.
@@ -168,13 +178,16 @@ type GroupKey =
     | 'partial'
     | 'unrecognised'
     | 'covered'
-    | 'notScoped';
+    | 'notApplicable';
 
 const STATUS_VARIANT: Record<CoverageStatus, StatusBadgeVariant> = {
     COVERED: 'success',
     PARTIALLY_COVERED: 'warning',
     REVIEW_NEEDED: 'info',
     NOT_COVERED: 'error',
+    // Neutral, and deliberately not 'success'. "Does not apply" is not an
+    // achievement and must not read as one on a compliance surface.
+    NOT_APPLICABLE: 'neutral',
 };
 
 export function CoverageTab({ tenantSlug, agentId, refreshToken }: AgentTabProps) {
@@ -188,11 +201,13 @@ export function CoverageTab({ tenantSlug, agentId, refreshToken }: AgentTabProps
         void mutate();
     }, [refreshToken, mutate]);
 
-    // The uncovered list the API returns is one bucket; an assessor reads two.
-    // Splitting it here rather than in the tiles keeps the API's partition
-    // intact above and the actionable ordering below.
+    // The API's five disjoint lists, re-ordered into the sequence an assessor
+    // reads: the finding first, the reassurance last. No entry is reclassified
+    // on the way — the panel used to split `uncovered` by scope, and it no
+    // longer needs to, because the service now reports the two meanings as two
+    // statuses.
     //
-    // Written as one exhaustive pass rather than five independent filters so
+    // Written as one exhaustive pass rather than six independent filters so
     // that every entry provably lands somewhere: the `default` arm is what
     // stops an unrecognised status from being dropped in silence.
     const groups = useMemo(() => {
@@ -202,12 +217,19 @@ export function CoverageTab({ tenantSlug, agentId, refreshToken }: AgentTabProps
             partial: [],
             unrecognised: [],
             covered: [],
-            notScoped: [],
+            notApplicable: [],
         };
         for (const entry of data?.entries ?? []) {
             switch (asCoverageStatus(entry.status)) {
                 case 'NOT_COVERED':
-                    (entry.scopedToAgent ? buckets.openGaps : buckets.notScoped).push(entry);
+                    // Every NOT_COVERED is now an open gap. The status no
+                    // longer carries two meanings: a risk the register puts
+                    // out of scope arrives as NOT_APPLICABLE instead, so there
+                    // is nothing left for the panel to disambiguate.
+                    buckets.openGaps.push(entry);
+                    break;
+                case 'NOT_APPLICABLE':
+                    buckets.notApplicable.push(entry);
                     break;
                 case 'REVIEW_NEEDED':
                     buckets.reviewNeeded.push(entry);
@@ -302,11 +324,11 @@ export function CoverageTab({ tenantSlug, agentId, refreshToken }: AgentTabProps
 
     const { summary } = data;
 
-    // Not `notScoped.length === summary.total`: a PARTIALLY_COVERED entry is
-    // also unscoped (a direct control that nothing ties to this agent), so
-    // that test would miss a tenant whose every risk is unscoped but not all
-    // uncovered. The claim being made is about the links, so read the links.
-    const nothingScoped = data.entries.every((entry) => !entry.scopedToAgent);
+    // An agent nobody has scored. Its exposure profile — the two columns every
+    // applicability call below is derived from — is a declaration nobody has
+    // reviewed, which qualifies every figure on this panel without changing
+    // any of them. A report-level caveat, deliberately not a sixth status.
+    const unassessed = data.agent.riskTier === null;
 
     const sections = [
         {
@@ -353,35 +375,33 @@ export function CoverageTab({ tenantSlug, agentId, refreshToken }: AgentTabProps
             showReason: false,
         },
         {
-            // Last, and the reason line is suppressed: the heading above it
-            // already says these are unscoped, and repeating it on every row
-            // would make the section read like ten separate findings. The
-            // copy states what the data says — no link exists — and stops
-            // short of the applicability decision nothing in the product has
-            // actually made.
-            key: 'notScoped',
-            entries: groups.notScoped,
-            heading: t('agentDetail.coverage.notScopedHeading', {
-                count: groups.notScoped.length,
+            // Last, and the generic reason line is suppressed: the heading
+            // already says these do not apply, and repeating it on every row
+            // would make the section read like ten separate findings. Each row
+            // still renders its own BASIS, which is the part that is specific
+            // enough to check — `RiskEntryCard` shows that independently of
+            // `showReason`.
+            key: 'notApplicable',
+            entries: groups.notApplicable,
+            heading: t('agentDetail.coverage.notApplicableHeading', {
+                count: groups.notApplicable.length,
             }),
-            description: t('agentDetail.coverage.notScopedDescription'),
+            description: t('agentDetail.coverage.notApplicableDescription'),
             showReason: false,
         },
     ];
 
     return (
         <div className="space-y-section">
-            {nothingScoped && (
+            {unassessed && (
                 // Above the summary, because it qualifies every number below
-                // it: COVERED requires a scope link, so with none the
-                // percentage is pinned at 0 by construction and reads as a
-                // measurement when it is the absence of one.
-                <InlineNotice
-                    variant="warning"
-                    title={t('agentDetail.coverage.nothingScopedTitle')}
-                    data-testid="agent-coverage-nothing-scoped"
-                >
-                    <p>{t('agentDetail.coverage.nothingScopedBody')}</p>
+                // it. The old banner here warned that nothing had been scoped
+                // and the percentage was therefore pinned at 0 — a state that
+                // no longer exists, since applicability is derived rather than
+                // linked. What is still worth saying is weaker and true: the
+                // register entry the derivation reads has never been reviewed.
+                <InlineNotice variant="info" data-testid="agent-coverage-unassessed">
+                    <p>{t('agentDetail.coverage.unassessedNotice')}</p>
                 </InlineNotice>
             )}
 
@@ -422,9 +442,12 @@ export function CoverageTab({ tenantSlug, agentId, refreshToken }: AgentTabProps
                         aria-label={t('agentDetail.coverage.progressAria')}
                     />
                     <p className="text-sm text-content-default">
+                        {/* `applicableTotal`, NOT `total`. Measuring against
+                            the catalogue would count risks this panel is
+                            simultaneously reporting as out of scope. */}
                         {t('agentDetail.coverage.coveredOf', {
                             covered: summary.covered.length,
-                            total: summary.total,
+                            applicable: summary.applicableTotal,
                         })}
                     </p>
                     {/* The percentage is conservative by construction and says
@@ -433,6 +456,13 @@ export function CoverageTab({ tenantSlug, agentId, refreshToken }: AgentTabProps
                         risk. */}
                     <p className="text-xs text-content-muted">
                         {t('agentDetail.coverage.conservativeNote')}
+                    </p>
+                    {/* And where the denominator came from. A shrunken
+                        denominator flatters the percentage, so the rule behind
+                        it is stated on the same card rather than left to be
+                        discovered in the section at the bottom. */}
+                    <p className="text-xs text-content-muted">
+                        {t('agentDetail.coverage.derivedScopeNote')}
                     </p>
                 </div>
             </Card>
@@ -459,24 +489,32 @@ export function CoverageTab({ tenantSlug, agentId, refreshToken }: AgentTabProps
                     />
                 </Card>
                 <Card density="compact">
-                    {/* Tone follows the API's uncovered count, NOT the in-scope
-                        subset. Scoping is the only thing that moves a risk out
-                        of this tile, and nothing in the product scopes an ASI
-                        requirement to an AI system — so keying the tone off
-                        `openGaps` painted a neutral "0 in scope" tile over ten
-                        uncontrolled risks on every real tenant, which reads as
-                        "no findings". An uncovered risk stays a finding until
-                        somebody affirmatively records that it does not apply.
-                        The description carries the split so the tile still
-                        reconciles with the two sections below. */}
+                    {/* Tone follows the API's uncovered count. Only the
+                        REGISTER moves a risk out of this tile now, and it does
+                        so by naming a capability the agent provably lacks — so
+                        the count here is a count of findings, with nothing
+                        laundered into it and nothing quietly dropped from it.
+                        The description names what sits outside the tile, so
+                        the tile still reconciles with the sections below. */}
                     <KPIStat
                         value={summary.uncovered.length}
                         label={t('agentDetail.coverage.countUncovered')}
                         tone={summary.uncovered.length > 0 ? 'critical' : 'default'}
-                        description={t('agentDetail.coverage.uncoveredSplit', {
-                            scoped: groups.openGaps.length,
-                            unscoped: groups.notScoped.length,
-                        })}
+                        description={
+                            /* Zero is its own key, not an ICU `=0` arm. The
+                               locale checker extracts placeholders with
+                               /\{([a-zA-Z0-9_]+)/, so an English sub-message
+                               beginning with a word — `{Every risk ...}` —
+                               reads as a placeholder named `Every`, while the
+                               Bulgarian arm beginning in Cyrillic matches
+                               nothing, and the pair drifts. Every one of the
+                               67 other plurals in the repo avoids the form. */
+                            summary.notApplicable.length === 0
+                                ? t('agentDetail.coverage.applicableSplitNone')
+                                : t('agentDetail.coverage.applicableSplit', {
+                                      notApplicable: summary.notApplicable.length,
+                                  })
+                        }
                     />
                 </Card>
             </div>
@@ -528,6 +566,7 @@ function RiskEntryCard({
         PARTIALLY_COVERED: t('agentDetail.coverage.status.partiallyCovered'),
         REVIEW_NEEDED: t('agentDetail.coverage.status.reviewNeeded'),
         NOT_COVERED: t('agentDetail.coverage.status.notCovered'),
+        NOT_APPLICABLE: t('agentDetail.coverage.status.notApplicable'),
     };
     // `NO_CONTROL` says "no DIRECT control" and nothing else. The service sets
     // it whenever a scoped risk falls short of COVERED, and both routes to
@@ -537,8 +576,22 @@ function RiskEntryCard({
     // above the very controls it denied. Scoped + direct is COVERED, which
     // carries no reason at all, so "directly" is true everywhere this shows.
     const reasonLabels: Record<string, string> = {
-        NOT_SCOPED: t('agentDetail.coverage.reason.notScoped'),
         NO_CONTROL: t('agentDetail.coverage.reason.noDirectControl'),
+        NOT_APPLICABLE: t('agentDetail.coverage.reason.notApplicable'),
+    };
+    // The register column and value that put the risk out of scope, named so a
+    // reader can check the claim against the register in one click. An
+    // unrecognised basis renders NOTHING rather than a sentence this build
+    // cannot vouch for — the same rule the reason labels follow.
+    const basisLabels: Record<string, string> = {
+        // `zeroToolGrants`, not `noToolGrants`: a key whose last segment
+        // matches /^no[A-Z]/ is read by `empty-state-tone` as an empty-state
+        // TITLE and held to the "No X yet" voice — no trailing period, no
+        // explanatory tail. This value is neither a title nor an empty state,
+        // it is a sentence explaining why a risk was excused, so it takes a
+        // name the heuristic does not claim.
+        NO_TOOL_GRANTS: t('agentDetail.coverage.basis.zeroToolGrants'),
+        SUGGEST_ONLY: t('agentDetail.coverage.basis.suggestOnly'),
     };
     const strengthLabels: Record<MappingStrength, string> = {
         EQUAL: t('agentDetail.coverage.strength.equal'),
@@ -549,23 +602,18 @@ function RiskEntryCard({
     };
 
     const status = asCoverageStatus(entry.status);
-    // NOT_COVERED means two different things depending on scope, so the badge
-    // reads the pair rather than the status alone. "Not scoped" is the fact;
-    // the badge deliberately does not say "not in scope", which would assert a
-    // decision about applicability that nothing in the data supports.
-    const notScoped = status === 'NOT_COVERED' && !entry.scopedToAgent;
     // An unrecognised status shows its raw code in a neutral badge — the same
     // fallback the mapping strengths and control statuses use. Naming what the
     // API said beats inventing a label for it.
-    const badgeLabel = notScoped
-        ? t('agentDetail.coverage.status.notScoped')
-        : status
-          ? statusLabels[status]
-          : entry.status;
-    const badgeVariant: StatusBadgeVariant = notScoped || !status
-        ? 'neutral'
-        : STATUS_VARIANT[status];
+    const badgeLabel = status ? statusLabels[status] : entry.status;
+    const badgeVariant: StatusBadgeVariant = status ? STATUS_VARIANT[status] : 'neutral';
     const reasonLabel = entry.reason ? reasonLabels[entry.reason] : undefined;
+    // Rendered independently of `showReason`: the N/A section suppresses the
+    // generic reason line because its heading already says it, but the basis
+    // is the specific, checkable half and must survive that suppression.
+    const basisLabel = entry.applicabilityBasis
+        ? basisLabels[entry.applicabilityBasis]
+        : undefined;
 
     return (
         <Card as="li" density="compact" className="space-y-compact">
@@ -591,6 +639,8 @@ function RiskEntryCard({
             {showReason && reasonLabel && (
                 <p className="text-xs text-content-muted">{reasonLabel}</p>
             )}
+
+            {basisLabel && <p className="text-xs text-content-muted">{basisLabel}</p>}
 
             {entry.directControls.length > 0 && (
                 <div className="space-y-tight">

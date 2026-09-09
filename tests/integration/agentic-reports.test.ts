@@ -346,6 +346,12 @@ async function seedTenantOne(): Promise<void> {
         where: { id: s.agents.A1 },
         select: { aiSystemId: true },
     });
+    // The OPERATOR OVERRIDE path. Applicability is derived from the register,
+    // and an explicit link is the one thing that beats the derivation — a
+    // recorded human decision that the risk applies. ASI01 applies to every
+    // agent anyway, so this row changes no number here; it exists so the
+    // override path is exercised by a report-level suite rather than only by
+    // the coverage suite's own fixture.
     await prisma.aiSystemRequirementLink.create({
         data: { tenantId: T1, aiSystemId: a1System.aiSystemId, requirementId: asiRequirementIds.ASI01 },
     });
@@ -750,23 +756,29 @@ describe('ASI01–ASI10 coverage per agent', () => {
         expect(report.body.framework?.key).toBe('OWASP-ASI');
 
         // Fixture: control AC-1 → ASI01, AC-2 → ASI02, nothing → ASI03.
-        // Only A1's AI system is scoped to ASI01.
-        //   A1: ASI01 COVERED (scoped + direct), ASI02 PARTIAL, ASI03 UNCOVERED
-        //   A2..A5: ASI01 PARTIAL, ASI02 PARTIAL, ASI03 UNCOVERED
+        // Tool grants are the ASI02 applicability term — A1 holds two, A4 one,
+        // A2/A3/A5 none — and every T1 agent is above autonomy 0.
+        //   A1, A4: ASI01 COVERED, ASI02 COVERED, ASI03 UNCOVERED
+        //   A2, A3, A5: ASI01 COVERED, ASI02 NOT APPLICABLE, ASI03 UNCOVERED
         expectMeasured(report.metrics['asi.agents_in_scope'], 5);
         expectMeasured(report.metrics['asi.risks_in_framework'], 3);
         // Every agent leaves ASI03 uncovered, so none is fully covered. A real
-        // zero over a real population.
+        // zero over a real population, and N/A risks do not soften it.
         expectMeasured(report.metrics['asi.agents_fully_covered'], 0);
-        // ASI03 alone has neither a covering nor a partially covering agent.
+        // ASI03 alone. ASI02 is covered for two agents, so it is not a
+        // population-wide gap; ASI01 is covered for all five.
         expectMeasured(report.metrics['asi.risks_covered_by_no_agent'], 1);
 
         const byName = new Map(report.body.agents.map((a) => [a.name, a]));
-        expect(byName.get('Ops agent')?.covered).toEqual(['ASI01']);
-        expect(byName.get('Ops agent')?.partiallyCovered).toEqual(['ASI02']);
+        expect(byName.get('Ops agent')?.covered).toEqual(['ASI01', 'ASI02']);
+        expect(byName.get('Ops agent')?.partiallyCovered).toEqual([]);
+        expect(byName.get('Ops agent')?.notApplicable).toEqual([]);
         expect(byName.get('Ops agent')?.uncovered).toEqual(['ASI03']);
-        expect(byName.get('Nightly sweeper')?.covered).toEqual([]);
-        expect(byName.get('Nightly sweeper')?.partiallyCovered).toEqual(['ASI01', 'ASI02']);
+        // Same tenant, same two controls, one column different: nobody has
+        // granted the sweeper a tool, so ASI02 does not apply to it.
+        expect(byName.get('Nightly sweeper')?.covered).toEqual(['ASI01']);
+        expect(byName.get('Nightly sweeper')?.partiallyCovered).toEqual([]);
+        expect(byName.get('Nightly sweeper')?.notApplicable).toEqual(['ASI02']);
         expect(byName.get('Nightly sweeper')?.uncovered).toEqual(['ASI03']);
     });
 
@@ -775,15 +787,21 @@ describe('ASI01–ASI10 coverage per agent', () => {
         const byCode = new Map(report.body.risks.map((r) => [r.code, r]));
 
         expect(report.body.risks.map((r) => r.code)).toEqual(['ASI01', 'ASI02', 'ASI03']);
-        // ASI01: A1 covered, the other four partial.
+        // ASI01 applies to every agent and every agent has AC-1 behind it.
         expect(byCode.get('ASI01')).toMatchObject({
-            agentsCovered: 1, agentsPartiallyCovered: 4, agentsReviewNeeded: 0, agentsUncovered: 0,
+            agentsCovered: 5, agentsPartiallyCovered: 0, agentsReviewNeeded: 0,
+            agentsUncovered: 0, agentsNotApplicable: 0,
         });
+        // The column that proves the transpose files N/A separately. Get this
+        // branch wrong and these three land in `agentsUncovered`, reporting a
+        // risk the register says they cannot reach as an open finding.
         expect(byCode.get('ASI02')).toMatchObject({
-            agentsCovered: 0, agentsPartiallyCovered: 5, agentsUncovered: 0,
+            agentsCovered: 2, agentsPartiallyCovered: 0, agentsUncovered: 0,
+            agentsNotApplicable: 3,
         });
         expect(byCode.get('ASI03')).toMatchObject({
             agentsCovered: 0, agentsPartiallyCovered: 0, agentsUncovered: 5,
+            agentsNotApplicable: 0,
         });
     });
 
@@ -791,16 +809,21 @@ describe('ASI01–ASI10 coverage per agent', () => {
         const report = await buildAsiCoverageReport(ctxFor(T2));
 
         // T2 has ONE control, on ASI01 only. T1's AC-2 covers ASI02 and must
-        // not reach here — a leak would show up as ASI02 becoming partial.
+        // not reach here — a leak would show up as ASI02 becoming covered.
         expectMeasured(report.metrics['asi.agents_in_scope'], 1);
         expectMeasured(report.metrics['asi.risks_in_framework'], 3);
-        expectMeasured(report.metrics['asi.risks_covered_by_no_agent'], 2);
+        // ONE, not two. B1 holds no tool grants, so ASI02 applies to nobody in
+        // this population — and a risk that applies to no agent is not an open
+        // gap for every agent. Drop the N/A term from the metric and this
+        // reads 2, which is the same absence-as-finding error in a number.
+        expectMeasured(report.metrics['asi.risks_covered_by_no_agent'], 1);
 
         const b1 = report.body.agents[0];
         expect(b1.name).toBe('Tenant two agent');
-        expect(b1.covered).toEqual([]);
-        expect(b1.partiallyCovered).toEqual(['ASI01']);
-        expect(b1.uncovered).toEqual(['ASI02', 'ASI03']);
+        expect(b1.covered).toEqual(['ASI01']);
+        expect(b1.partiallyCovered).toEqual([]);
+        expect(b1.notApplicable).toEqual(['ASI02']);
+        expect(b1.uncovered).toEqual(['ASI03']);
     });
 
     it('reports an agentless tenant’s coverage as NO POPULATION, not 0%', async () => {

@@ -268,11 +268,19 @@ export interface AsiAgentRow {
     agentId: string;
     name: string;
     status: string;
-    /** Four DISJOINT code lists. A percentage cannot answer "which risk is open". */
+    /** Five DISJOINT code lists. A percentage cannot answer "which risk is open". */
     covered: string[];
     partiallyCovered: string[];
     reviewNeeded: string[];
     uncovered: string[];
+    /**
+     * Risks the agent's own register row puts out of scope — zero tool grants
+     * for ASI02, autonomy 0 for ASI08. A separate list rather than a silent
+     * omission: an assessor is owed the count they can check against the
+     * register, and folding these into `uncovered` would report a capability
+     * the agent provably lacks as an open finding.
+     */
+    notApplicable: string[];
 }
 
 /** One risk, across every agent — the column an assessor reads down. */
@@ -283,6 +291,7 @@ export interface AsiRiskRow {
     agentsPartiallyCovered: number;
     agentsReviewNeeded: number;
     agentsUncovered: number;
+    agentsNotApplicable: number;
 }
 
 export interface AsiCoverageBody {
@@ -328,6 +337,7 @@ export async function buildAsiCoverageReport(
         partiallyCovered: [...r.summary.partiallyCovered],
         reviewNeeded: [...r.summary.reviewNeeded],
         uncovered: [...r.summary.uncovered],
+        notApplicable: [...r.summary.notApplicable],
     }));
 
     // The transpose. SEEDED from the framework's own risk list so every risk
@@ -345,6 +355,7 @@ export async function buildAsiCoverageReport(
                 agentsPartiallyCovered: 0,
                 agentsReviewNeeded: 0,
                 agentsUncovered: 0,
+                agentsNotApplicable: 0,
             },
         ]),
     );
@@ -357,8 +368,15 @@ export async function buildAsiCoverageReport(
                 agentsPartiallyCovered: 0,
                 agentsReviewNeeded: 0,
                 agentsUncovered: 0,
+                agentsNotApplicable: 0,
             };
-            if (entry.status === 'COVERED') row.agentsCovered += 1;
+            // NOT_APPLICABLE is tested FIRST and explicitly. The trailing
+            // `else` is a catch-all for "everything that is not one of the
+            // three named statuses", so without this branch an N/A entry would
+            // be filed under `agentsUncovered` — a risk the register says the
+            // agent cannot reach, reported as an open finding against it.
+            if (entry.status === 'NOT_APPLICABLE') row.agentsNotApplicable += 1;
+            else if (entry.status === 'COVERED') row.agentsCovered += 1;
             else if (entry.status === 'PARTIALLY_COVERED') row.agentsPartiallyCovered += 1;
             else if (entry.status === 'REVIEW_NEEDED') row.agentsReviewNeeded += 1;
             else row.agentsUncovered += 1;
@@ -391,8 +409,18 @@ export async function buildAsiCoverageReport(
                     .length,
             ),
             'asi.risks_covered_by_no_agent': coverageMeasure(
-                () => risks.filter((r) => r.agentsCovered === 0 && r.agentsPartiallyCovered === 0)
-                    .length,
+                // The N/A term is not a nicety. A risk that applies to NOBODY
+                // in the population — ASI02 in a tenant whose every agent holds
+                // zero tool grants — has no agent covering it by definition, so
+                // without this it is reported as an open gap for everybody,
+                // which is the same absence-as-finding error the derivation
+                // exists to stop. `<` not `<=`: one applicable agent leaving it
+                // uncovered still makes it a gap.
+                () => risks.filter(
+                    (r) => r.agentsCovered === 0
+                        && r.agentsPartiallyCovered === 0
+                        && r.agentsNotApplicable < agents.length,
+                ).length,
             ),
         },
         { frameworkInstalled, framework, agents, risks },

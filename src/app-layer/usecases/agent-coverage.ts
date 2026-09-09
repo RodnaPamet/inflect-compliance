@@ -33,6 +33,20 @@
  * Annex A `5.15` where the library numbers it `A.5.15` (so a code-equality
  * join would have reached nothing even after the family collapsed).
  *
+ * `loadAgentScopes` IS NO LONGER THE GATE, AND THE NEXT READER MUST KNOW IT.
+ * `AiSystemRequirementLink` gated applicability until this module derived it
+ * instead, and the gate could only ever be false: the table's only production
+ * writer links EU-AI-ACT / ISO 42001 obligation ids, which are disjoint from
+ * the ASI rows, so COVERED was unreachable and every risk read "not scoped" on
+ * every real tenant. Applicability now comes from the agent's own declared
+ * exposure profile (`services/agent-risk-applicability.ts`), and a link onto an
+ * ASI requirement survives as an explicit OPERATOR OVERRIDE that forces the
+ * risk back in scope — a recorded human decision beats a derivation. Nothing
+ * here writes that table, and nothing should start: it is the EU AI-Act
+ * obligation table, its rows land in the Annex IV / Article 9 / Annex V
+ * conformity drafts, and ten OWASP rows in there would change what an already
+ * hash-chained `obligationsLinked` figure means.
+ *
  * Read-only. No audit event: this reads existing links, it changes nothing.
  */
 import { notFound } from '@/lib/errors/types';
@@ -47,6 +61,12 @@ import {
     type CoveringControl,
     type InheritedCoverage,
 } from '../services/agent-risk-coverage';
+import {
+    agentRiskApplicability,
+    APPLIES,
+    type AgentExposureProfile,
+} from '../services/agent-risk-applicability';
+import { isAgentRegistrationEnforced } from '@/lib/agentic/agent-registration-gate';
 import {
     MAPPING_STRENGTH_RANK,
     type MappingStrengthValue,
@@ -108,10 +128,12 @@ export interface AgentRiskCoverageReport {
 
 const EMPTY_SUMMARY: AgentRiskCoverageSummary = {
     total: 0,
+    applicableTotal: 0,
     covered: [],
     partiallyCovered: [],
     reviewNeeded: [],
     uncovered: [],
+    notApplicable: [],
     coveragePercent: 0,
 };
 
@@ -181,13 +203,21 @@ export interface TenantAgentRiskCoverage {
     readonly agents: readonly AgentRiskCoverageReport[];
 }
 
-/** The shape both entry points hand in — a subset of the repository's select. */
+/**
+ * The shape both entry points hand in — a subset of the repository's select.
+ *
+ * `autonomyLevel` and `isLegacyPlaceholder` are here because applicability is
+ * derived from them. No repository change was needed: `listSelect` already
+ * carries both and `getById` spreads it.
+ */
 interface CoverageSubject {
     id: string;
     name: string;
     status: unknown;
     riskTier: unknown;
     aiSystemId: string;
+    autonomyLevel: number;
+    isLegacyPlaceholder: boolean;
 }
 
 /**
@@ -208,6 +238,8 @@ async function buildCoverageReports(
             ? null
             : String(agent.riskTier),
         aiSystemId: agent.aiSystemId,
+        autonomyLevel: agent.autonomyLevel,
+        isLegacyPlaceholder: agent.isLegacyPlaceholder,
     }));
 
     const catalogue: CatalogueEntry[] = await db.framework.findMany({
@@ -252,27 +284,61 @@ async function buildCoverageReports(
 
     const riskRequirementIds = risks.flatMap((r) => r.requirementIds);
 
-    const [scopeByAiSystem, directControlsByRequirement, inheritedByRiskCode] =
-        await Promise.all([
-            loadAgentScopes(db, ctx, views.map((a) => a.aiSystemId), riskRequirementIds),
-            loadControlsByRequirement(db, ctx, riskRequirementIds),
-            loadInheritedCoverage(db, ctx, catalogue, risks),
-        ]);
+    const [
+        scopeByAiSystem,
+        directControlsByRequirement,
+        inheritedByRiskCode,
+        toolGrantCounts,
+        registrationEnforced,
+    ] = await Promise.all([
+        loadAgentScopes(db, ctx, views.map((a) => a.aiSystemId), riskRequirementIds),
+        loadControlsByRequirement(db, ctx, riskRequirementIds),
+        loadInheritedCoverage(db, ctx, catalogue, risks),
+        loadToolGrantCounts(db, ctx, views.map((a) => a.id)),
+        // Tenant-wide, so it joins the same fan-out rather than the per-agent
+        // map. It is a precondition of the ASI02 exemption, not a lifecycle
+        // flag: the grant allowlist is only consulted for a credential bound to
+        // a live ACTIVE agent, so in a tenant that has switched the register
+        // off an empty grant list denies nothing and the exemption's premise
+        // does not hold. See `agent-risk-applicability.ts`.
+        isAgentRegistrationEnforced(ctx.tenantId),
+    ]);
 
-    const reports = views.map((agent) => {
+    // The two derivation inputs are destructured OUT of the reported `agent`
+    // rather than carried on it. They are inputs to the classification, not
+    // part of this endpoint's response shape, and spreading a view that holds
+    // them would widen the wire contract by two undeclared fields — the kind
+    // of drift nobody notices until a consumer starts depending on it.
+    const reports = views.map(({ autonomyLevel, isLegacyPlaceholder, ...agent }) => {
         const scopedRequirementIds = scopeByAiSystem.get(agent.aiSystemId) ?? new Set<string>();
-        const entries = risks.map((risk) =>
-            classifyAgentRiskCoverage({
+        // Built ONCE per agent, outside the per-risk map: the profile is a
+        // property of the agent, and rebuilding it ten times would invite
+        // somebody to move a read in here later.
+        const profile: AgentExposureProfile = {
+            autonomyLevel,
+            toolGrantCount: toolGrantCounts.get(agent.id) ?? 0,
+            isLegacyPlaceholder,
+            registrationEnforced,
+        };
+        const entries = risks.map((risk) => {
+            const explicitlyScoped = risk.requirementIds.some((id) => scopedRequirementIds.has(id));
+            return classifyAgentRiskCoverage({
                 code: risk.code,
                 title: risk.title,
                 section: risk.section,
-                scopedToAgent: risk.requirementIds.some((id) => scopedRequirementIds.has(id)),
+                explicitlyScoped,
+                // A human's recorded decision beats a derivation. An operator
+                // who linked this agent's AI system to an ASI requirement has
+                // said the risk applies; nothing derived may overrule that.
+                applicability: explicitlyScoped
+                    ? APPLIES
+                    : agentRiskApplicability(risk.code, profile),
                 directControls: dedupeControls(
                     risk.requirementIds.flatMap((id) => directControlsByRequirement.get(id) ?? []),
                 ),
                 inheritedFrom: inheritedByRiskCode.get(risk.code) ?? [],
-            }),
-        );
+            });
+        });
 
         return {
             agent,
@@ -339,6 +405,11 @@ async function loadAgenticRisks(db: PrismaTx, frameworkIds: string[]): Promise<A
 /**
  * Each agent's own scope: `AiSystemRequirementLink` rows for its AI system.
  *
+ * An OVERRIDE input, not the gate — see the module header. Nothing writes ASI
+ * rows into this table, so on a real tenant it returns nothing and the derived
+ * rule decides; a row that IS there is an operator's recorded decision and
+ * forces the risk in scope.
+ *
  * ONE query for every agent, keyed by AI-system id. A per-agent read here would
  * be the N+1 the matrix exists to avoid, and two agents can legitimately share
  * nothing — an AI-system id absent from the returned map has NO scoped
@@ -367,6 +438,35 @@ async function loadAgentScopes(
         else out.set(link.aiSystemId, new Set([link.requirementId]));
     }
     return out;
+}
+
+/**
+ * How many tools each agent holds a grant for.
+ *
+ * ONE `groupBy` for every agent, and it belongs in the shared `Promise.all`
+ * rather than inside the per-agent map — a count read in that loop is the N+1
+ * the matrix exists to avoid, and it is the one refactor that would trip the
+ * query-shape guardrail. An agent ABSENT from the returned map has ZERO grants:
+ * that is a fact the allowlist states outright ("EMPTY MEANS NONE… an agent
+ * nobody has granted anything to can call nothing"), not a lookup miss, which
+ * is why the caller reads it as `?? 0` rather than treating it as unknown.
+ *
+ * `RegisteredAgentTool` carries no `deletedAt` — a revoked grant is a deleted
+ * row — so there is no soft-delete rail to add here.
+ */
+async function loadToolGrantCounts(
+    db: PrismaTx,
+    ctx: RequestContext,
+    agentIds: readonly string[],
+): Promise<Map<string, number>> {
+    if (agentIds.length === 0) return new Map();
+
+    const rows = await db.registeredAgentTool.groupBy({
+        by: ['agentId'],
+        where: { tenantId: ctx.tenantId, agentId: { in: [...new Set(agentIds)] } },
+        _count: { _all: true },
+    });
+    return new Map(rows.map((r) => [r.agentId, r._count._all]));
 }
 
 /**

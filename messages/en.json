@@ -4905,8 +4905,8 @@
         "measuredAgainst": "Measured against {framework}",
         "percentValue": "{percent}%",
         "progressAria": "Agentic risk coverage",
-        "coveredOf": "{covered} of {total} agentic risks are covered for this agent",
-        "conservativeNote": "A risk counts as covered only when it is scoped to this agent and a control is linked to it directly. Inherited coverage never counts towards this figure.",
+        "coveredOf": "{covered} of {applicable} applicable agentic risks are covered for this agent",
+        "conservativeNote": "A risk counts as covered only when it applies to this agent and a control is linked to it directly. Inherited coverage never counts towards this figure, and a control linked in this workspace is not evidence that it was tested against this agent.",
         "countCovered": "Covered",
         "countPartial": "Partially covered",
         "countReview": "Review needed",
@@ -4916,9 +4916,9 @@
         "reviewHeading": "Review needed ({count})",
         "reviewDescription": "Reached only by a related cross-framework mapping. That is awareness, not a coverage claim — confirm each one by hand before relying on it.",
         "partialHeading": "Partially covered ({count})",
-        "partialDescription": "A control exists, but it is not scoped to this agent, or it arrives only through a cross-framework mapping. A mapping is Inflect's judgement that two obligations overlap, so it never counts as full coverage.",
+        "partialDescription": "Reached only through a cross-framework mapping. A mapping is Inflect's judgement that two obligations overlap, so it never counts as full coverage.",
         "coveredHeading": "Covered ({count})",
-        "coveredDescription": "Scoped to this agent and linked directly to a control.",
+        "coveredDescription": "Applies to this agent and linked directly to a control.",
         "directHeading": "Direct controls",
         "inheritedHeading": "Inherited coverage",
         "frameworkEmptyTitle": "The installed framework carries no requirements",
@@ -4934,11 +4934,11 @@
           "partiallyCovered": "Partially covered",
           "reviewNeeded": "Review needed",
           "notCovered": "Not covered",
-          "notScoped": "Not scoped"
+          "notApplicable": "Not applicable"
         },
         "reason": {
-          "notScoped": "Not scoped to this agent",
-          "noDirectControl": "No control is linked directly to this risk"
+          "noDirectControl": "No control is linked directly to this risk",
+          "notApplicable": "The register shows this agent lacks the capability this risk names"
         },
         "strength": {
           "equal": "Equivalent",
@@ -4958,13 +4958,18 @@
         },
         "notAvailableTitle": "The OWASP ASI framework is not in this deployment's catalogue",
         "notAvailableBody": "Nothing here has been assessed against ASI01–ASI10, so there is no coverage figure to show. That is not the same as zero coverage — there is nothing yet to measure this agent against. The agentic-risk library is part of the product catalogue rather than a workspace setting, so it cannot be added from inside this workspace; an operator has to load it.",
-        "notScopedHeading": "Not scoped to this agent ({count})",
-        "notScopedDescription": "This agent's AI system is not linked to these risks, so Inflect cannot tell whether they apply to it. An absent link is missing information, not a decision that the risk is out of scope.",
-        "nothingScopedTitle": "Nothing has been scoped to this agent, so this panel is measuring nothing",
-        "nothingScopedBody": "Coverage is read from the requirement links on this agent's AI system, and it holds none for the agentic risks below. A risk cannot count as covered until it is scoped, so the figure below stays at 0% however many controls this workspace holds. Read it as an absence of assessment, not as an assessment of zero.",
-        "uncoveredSplit": "{scoped} in scope for this agent · {unscoped} not scoped to it",
         "unrecognisedHeading": "Unrecognised status ({count})",
-        "unrecognisedDescription": "Inflect does not recognise the coverage status reported for these risks, so they are listed here rather than counted as covered or as a gap — neither reading is supported. Report this: it means the panel and the service disagree about what a status can be."
+        "unrecognisedDescription": "Inflect does not recognise the coverage status reported for these risks, so they are listed here rather than counted as covered or as a gap — neither reading is supported. Report this: it means the panel and the service disagree about what a status can be.",
+        "derivedScopeNote": "Which risks apply is derived from this agent's own register entry — its tool grants and its autonomy level. Nobody has recorded an applicability decision for this agent, and the derivation changes the moment either column does.",
+        "applicableSplit": "{notApplicable, plural, one {# risk does not apply to this agent and is not counted here} other {# risks do not apply to this agent and are not counted here}}",
+        "unassessedNotice": "This agent has never been risk-assessed, so the register entry these figures are derived from is a declaration nobody has reviewed.",
+        "notApplicableHeading": "Not applicable to this agent ({count})",
+        "notApplicableDescription": "This agent's register entry says it lacks the capability each of these risks names, and the platform enforces that lack server-side. It is derived from the register, not an applicability decision anyone recorded — grant this agent a tool or raise its autonomy level and the risk is back in scope, with no record that it ever was not.",
+        "basis": {
+          "zeroToolGrants": "This agent holds no tool grants, so it can call no tool. That is about the tool boundary only — it does not mean the agent touches nothing.",
+          "suggestOnly": "This agent is registered at autonomy 0 — it suggests only and takes no action of its own."
+        },
+        "applicableSplitNone": "Every risk in the framework applies to this agent"
       },
       "breaker": {
         "stateHeading": "Breaker state",

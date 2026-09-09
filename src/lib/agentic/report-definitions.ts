@@ -209,6 +209,9 @@ export const METRIC_DEFINITIONS = {
             ...AGENT_ROW_EXCLUSIONS,
             'agents with any risk in the review-needed bucket — a route that ' +
                 'needs a human decision is not coverage',
+            'risks the register shows do not apply to that agent (zero tool ' +
+                'grants for ASI02, autonomy 0 for ASI08) — they are neither ' +
+                'covered nor a gap, so they cannot keep an agent out of this count',
         ],
     },
     'asi.risks_covered_by_no_agent': {
@@ -216,10 +219,15 @@ export const METRIC_DEFINITIONS = {
         label: 'Agentic risks no agent covers',
         population: 'the distinct risk codes counted by asi.risks_in_framework',
         moment: 'AS_OF_GENERATION',
-        includes: ['a risk that is uncovered or review-needed for every agent'],
+        includes: [
+            'a risk that is uncovered or review-needed for every agent it ' +
+                'applies to, and applies to at least one of them',
+        ],
         excludes: [
             'risks covered for at least one agent, however many others leave ' +
                 'them open — this is a floor, not an average',
+            'risks that apply to no agent in the population — nobody covering ' +
+                'a risk nobody is exposed to is not a gap',
         ],
     },
 
