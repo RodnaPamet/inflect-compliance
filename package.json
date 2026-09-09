@@ -313,7 +313,7 @@
     "@typescript-eslint/eslint-plugin": "$@typescript-eslint/eslint-plugin",
     "@typescript-eslint/parser": "^8.67.0",
     "typescript-eslint": "^8.67.0",
-    "nwsapi": ">=2.2.16 <2.2.26",
+    "nwsapi": ">=2.2.16 <2.2.25",
     "jsdom": {
       "ws": "^8.21.0"
     },
