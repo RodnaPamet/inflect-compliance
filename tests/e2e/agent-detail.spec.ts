@@ -222,7 +222,22 @@ test.describe('Agent detail page', () => {
             // The dialog is a Radix portal, so it is located off `page`, not
             // `main`.
             await stopAgent.click();
-            const dialog = page.getByRole('dialog');
+
+            // Scoped by the reason field, NOT a bare `getByRole('dialog')`.
+            //
+            // The app's navigation drawer sits permanently in the DOM as
+            // `<div role="dialog" aria-modal="true" data-testid="nav-drawer">`,
+            // closed only by a `-translate-x-full` transform — which Playwright
+            // still reports as VISIBLE. It does not collide while the modal is
+            // open, because Radix marks background content `aria-hidden` and
+            // that removes the drawer from the accessibility tree; the moment
+            // the modal closes the drawer reappears to the query, so a bare
+            // `toBeHidden()` on `getByRole('dialog')` can never pass. Filtering
+            // on a control only this modal owns keeps the locator pointed at
+            // the thing under test in both states.
+            const dialog = page
+                .getByRole('dialog')
+                .filter({ has: page.locator('#agent-kill-reason') });
             await expect(dialog).toBeVisible({ timeout: 15_000 });
             await expect(dialog).toContainText('Stop this agent');
             await expect(dialog.locator('#agent-kill-reason')).toBeVisible();
@@ -230,7 +245,7 @@ test.describe('Agent detail page', () => {
             // Closed again without committing: this spec proves reachability,
             // and a real kill would leave the banner over every later step.
             await dialog.getByRole('button', { name: 'Cancel' }).click();
-            await expect(dialog).toBeHidden({ timeout: 10_000 });
+            await expect(dialog).toHaveCount(0, { timeout: 10_000 });
         });
 
         await test.step('six tabs, and selecting one swaps the panel', async () => {
