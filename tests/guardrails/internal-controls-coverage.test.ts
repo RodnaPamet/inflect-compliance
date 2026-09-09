@@ -7,8 +7,20 @@
  * the control-detail Overview + Tests tabs post-install) and its related-policy
  * names. Framework mapping is policy-mediated: a curated policy→ISO27001/NIS2 map
  * (`internal-controls-policy-framework-map.json`) drives ControlTemplateRequirementLink
- * seeding, and installing ANY framework pack also populates the internal controls
- * mapped to that framework + resolves their related policies to PolicyControlLinks.
+ * seeding.
+ *
+ * ═══ THESE CONTROLS CURRENTLY HAVE NO INSTALL PATH ═══
+ *
+ * Installing a framework pack USED TO also populate every internal control
+ * mapped to that framework. That was withdrawn: a pack must install exactly the
+ * controls its standard defines, and the sweep made ISO 27001 install 233
+ * controls instead of 93. The policy-mediated requirement links below are still
+ * seeded and still correct — but nothing consumes them any more, so the 151
+ * ICN-* templates are seeded and unreachable by tenants.
+ *
+ * That is a known, deliberate gap, not an oversight: giving this library its own
+ * install path is the follow-up. Until then the assertions here certify that the
+ * catalogue is DELIVERED, not that it is reachable.
  *
  * ═══ WHAT WAS WRONG ═══
  *
@@ -41,8 +53,9 @@
  *   - the Control + ControlTemplate models carry the new fields (migration);
  *   - the writer creates policy-mediated requirement links, and internal
  *     controls are still NOT wired as a pack/framework anywhere applied;
- *   - install copies the new fields, populates framework-mapped internal controls,
- *     and resolves related policies to PolicyControlLinks;
+ *   - install copies the new fields and resolves related policies to
+ *     PolicyControlLinks, and does NOT sweep in framework-mapped internal
+ *     controls (a pack installs its standard's controls and nothing else);
  *   - the policy→framework map has no dangling codes and covers the control set;
  *   - the detail DTO exposes the new fields so the UI can render them.
  */
@@ -200,10 +213,15 @@ describe('Internal Controls wiring', () => {
         // themselves are covered behaviourally, per field, in
         // tests/unit/control-template-projection.test.ts.
         expect(install).toContain('controlDataFromTemplate');
-        // Installing a framework pack pulls in internal controls mapped to it.
-        expect(install).toContain('mappedInternalTemplates');
-        expect(install).toMatch(/requirement:\s*\{\s*frameworkId:\s*pack\.frameworkId\s*\}/);
-        // …and resolves their related policies to PolicyControlLinks.
+        // A framework pack installs ONLY the controls its standard defines.
+        // The framework-wide sweep that ALSO pulled in every global template
+        // carrying a requirement link into the same framework is gone: it made
+        // installing ISO 27001 create 233 controls (93 Annex A + 140 internal)
+        // where the standard defines 93, while the preview step counted only
+        // the pack's own 93. See usecases/framework/install.ts.
+        expect(install).not.toContain('mappedInternalTemplates');
+        expect(install).not.toMatch(/requirement:\s*\{\s*frameworkId:\s*pack\.frameworkId\s*\}/);
+        // Related-policy resolution still applies — to the pack's own templates.
         expect(install).toContain('policyControlLink.createMany');
         expect(install).toContain('linkPolicies');
     });
