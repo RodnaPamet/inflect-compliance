@@ -166,11 +166,24 @@ test.describe('Agent detail page', () => {
         });
 
         await test.step('the detail page opens and names the agent', async () => {
-            // Clicked, not navigated to. This is the assertion the whole page
-            // exists for — a `goto` would pass even if the register offered no
-            // route, which is exactly the state that shipped before this.
+            // DOUBLE click, not single, and not a `goto`.
+            //
+            // `dblclick` because the DataTable primitive gives single click to
+            // SELECTION whenever selection is enabled — which is the default,
+            // and the register does not turn it off — and fires `onRowClick`
+            // on double click as "the unambiguous open-detail gesture"
+            // (tests/guards/datatable-row-double-click.test.ts locks all three
+            // row paths to that rule). A single click here selects the row and
+            // navigates nowhere, which is exactly how this spec failed first
+            // time out. `tests/e2e/entity-detail-layout.spec.ts:62` is the
+            // house precedent.
+            //
+            // And a click at all rather than `page.goto`, because a goto would
+            // pass even if the register offered no route to this page — which
+            // is the state that actually shipped until this branch.
             const targetRow = main.getByRole('row').filter({ hasText: agentName });
-            await targetRow.click();
+            await expect(targetRow).toBeVisible({ timeout: 20_000 });
+            await targetRow.dblclick();
             await page.waitForURL(`**/t/${tenantSlug}/admin/agents/${agentId}`, {
                 timeout: 20_000,
             });
