@@ -150,21 +150,31 @@ declare module 'next-auth/jwt' {
  * Load the user's tenant + org membership claims into the JWT from the
  * database.
  *
- * Runs at sign-in AND on an explicit `useSession().update()`
- * (trigger === 'update'). The Edge tenant-access gate authorizes slugs
- * straight from these claims with NO DB hit, so a membership the user
- * gains AFTER sign-in — a freshly-created tenant, an accepted invite,
- * org auto-provisioning — is invisible to the gate until these claims
- * are refreshed. Without the update-trigger refresh the only way to
- * pick up a new membership is a full re-login. This is the single
- * source of truth for those claims; the sign-in path and the
- * update-trigger path both call it so they can never drift.
+ * Runs at sign-in, on an explicit session update (trigger === 'update'),
+ * and on the jwt callback's throttled 5-minute check. The Edge
+ * tenant-access gate authorizes slugs straight from these claims with NO
+ * DB hit, so a membership the user gains AFTER sign-in — a freshly-created
+ * tenant, an accepted invite, org auto-provisioning — is invisible to the
+ * gate until these claims are refreshed.
+ *
+ * The update trigger alone was not enough, and the reason is structural
+ * rather than an oversight: provoking it requires a client-side call, the
+ * app mounts no `<SessionProvider>`, and the one place that needs an
+ * IMMEDIATE refresh (`NewTenantForm`, which navigates into the tenant it
+ * just created) hand-rolls the POST to `/api/auth/session`. That covers a
+ * user acting on their own behalf and nothing else — a membership granted
+ * BY someone else arrives in a request the affected user never makes. The
+ * periodic call is what closes that gap; the update trigger remains as the
+ * low-latency path for the create-then-navigate flow.
+ *
+ * This is the single source of truth for those claims; all three callers
+ * use it so they can never drift.
  *
  * `fallbackUserId` is consulted only when the email→User lookup misses
  * (a defensive sign-in edge case before the adapter commits the row);
  * on an update the user always exists so the lookup succeeds.
  */
-async function applyMembershipClaims(
+export async function applyMembershipClaims(
     token: JWT,
     fallbackUserId?: string,
 ): Promise<void> {
@@ -805,7 +815,28 @@ export const authOptions: NextAuthOptions = {
                 }
             }
 
-            // Throttled sessionVersion check (5-minute interval).
+            // Throttled revocation check AND membership-claims refresh
+            // (5-minute interval, one shared timestamp).
+            //
+            // The refresh is here because it is the only place it can be.
+            // Membership claims are minted at sign-in and re-minted on
+            // `trigger: 'update'`, and that update can only be provoked by the
+            // client — but the app deliberately mounts no `<SessionProvider>`,
+            // so `useSession().update()` is unavailable and only one form in
+            // the product (`NewTenantForm`) hand-rolls the equivalent POST to
+            // `/api/auth/session`. Every other way a membership appears —
+            // org auto-provisioning, an accepted invite, an admin adding you to
+            // a tenant — happens in a request the affected user is not making,
+            // so no client-side refresh can ever reach it. Before this, those
+            // memberships were invisible to the Edge gate and to the workspace
+            // switcher until a full re-login, with nothing on screen to say so:
+            // the org page rendered (it is DB-gated server-side) while the
+            // switcher, which reads only the token, said the user belonged to
+            // no organizations.
+            //
+            // Revocation is checked BEFORE the refresh, because the refresh
+            // overwrites `token.sessionVersion` with the value it is compared
+            // against — reversing them would make every revocation a no-op.
             if (typeof token.sessionVersion === 'number' && token.userId) {
                 const SESSION_CHECK_INTERVAL = 300; // seconds
                 const now = Math.floor(Date.now() / 1000);
@@ -819,6 +850,19 @@ export const authOptions: NextAuthOptions = {
                         if (currentUser && currentUser.sessionVersion > token.sessionVersion) {
                             return { ...token, error: 'SessionRevoked' };
                         }
+                        // Claims re-read from the database on the same cadence.
+                        // This also SHRINKS the token when a membership is
+                        // revoked: previously a removed membership stayed in the
+                        // JWT until re-login, so the Edge gate kept authorizing
+                        // the slug (the authoritative server-side gate refused
+                        // it, so this was stale defence-in-depth rather than a
+                        // breach — but the gate was answering from a token that
+                        // no longer described reality).
+                        if (token.email) {
+                            await applyMembershipClaims(token);
+                        }
+                        // Stamped LAST so a failed read retries on the next
+                        // request instead of being skipped for five minutes.
                         token.sessionVersionCheckedAt = now;
                     } catch {
                         // Fail open on telemetry-side failures.
