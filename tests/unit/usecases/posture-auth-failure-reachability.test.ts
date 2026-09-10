@@ -155,7 +155,7 @@ const gcpArgs = () => ({
 beforeEach(() => {
     jest.clearAllMocks();
     decrypt.mockReturnValue(JSON.stringify({
-        accessKeyId: 'AKIAIOSFODNN7EXAMPLE',
+        accessKeyId: 'AKIAIOSFODNN7EXAMPLE',  // pragma: allowlist secret — AWS's own published documentation placeholder (docs.aws.amazon.com), not a credential. The point of this test is that the counts-only message never echoes it.
         secretAccessKey: 'x'.repeat(40),
     }));
 });
@@ -189,13 +189,13 @@ describe('aws-posture — a revoked credential is RECORDED, never accused', () =
         // The column is served to the browser by `GET /admin/integrations`.
         // Counts and the exit code only — never `run_error`, `reason`, stderr.
         const db = makeDb();
-        collectorRun({ err: exitedWith(2), stdout: allErrored, stderr: 'InvalidClientTokenId for AKIAIOSFODNN7EXAMPLE' });
+        collectorRun({ err: exitedWith(2), stdout: allErrored, stderr: 'InvalidClientTokenId for AKIAIOSFODNN7EXAMPLE' });  // pragma: allowlist secret — AWS's own published documentation placeholder (docs.aws.amazon.com), not a credential. The point of this test is that the counts-only message never echoes it.
 
         await runAwsPostureCollection({ tenantId: TENANT, connectionId: CONN, now: NOW });
 
         const msg = persisted(db).errorMessage ?? '';
         expect(msg).not.toContain('InvalidClientTokenId');
-        expect(msg).not.toContain('AKIAIOSFODNN7EXAMPLE');
+        expect(msg).not.toContain('AKIAIOSFODNN7EXAMPLE');  // pragma: allowlist secret — AWS's own published documentation placeholder (docs.aws.amazon.com), not a credential. The point of this test is that the counts-only message never echoes it.
         expect(msg).not.toContain('GetCallerIdentity');
     });
 
