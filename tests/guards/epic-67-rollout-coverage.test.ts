@@ -122,6 +122,21 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         handlers: ['handleBulkApply'],
     },
     {
+        // The identity roster is the only surface that can set OR clear the
+        // never-offboard flag, and it shipped with the asymmetry backwards:
+        // PROTECTING (the safe direction) opened a modal and demanded a reason,
+        // while RELEASING fired the PATCH straight off the row button. Nothing
+        // here pointed at this page, so the ratchet that exists to catch a
+        // missing deferral never looked at it. Releasing hands an AUTOMATIC
+        // leaver pass standing authority to disable a real directory account on
+        // its next run, and the usecase NULLs the three protection columns and
+        // writes a hash-chained audit row — deferring the commit is what keeps
+        // Undo real rather than cosmetic.
+        file: 'src/app/t/[tenantSlug]/(app)/admin/integrations/identity-accounts/page.tsx',
+        name: 'Directory account protection release (identity roster)',
+        handlers: ['releaseProtection'],
+    },
+    {
         // The processes/automation surface had ZERO Epic 67 sites, while
         // AutomationRuleStatus.ARCHIVED and DELETE /automation/rules/[id] both
         // shipped with no UI ever calling the route — so a rule could never be

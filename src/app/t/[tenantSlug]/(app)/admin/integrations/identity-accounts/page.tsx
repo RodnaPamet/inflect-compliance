@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
 import { Textarea } from '@/components/ui/textarea';
+import { useToastWithUndo } from '@/components/ui/hooks';
 
 interface AccountRow {
     id: string;
@@ -44,6 +45,7 @@ export default function IdentityAccountsPage() {
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
+    const triggerUndoToast = useToastWithUndo();
     const [rows, setRows] = useState<AccountRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
@@ -54,6 +56,13 @@ export default function IdentityAccountsPage() {
     const [reason, setReason] = useState('');
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState(false);
+    // The RELEASE path's own error surface. `saveError` above is rendered
+    // inside Modal.Body, which only mounts while `protecting` is non-null — so
+    // a failed release (the 403 an ADMIN gets on this very page, or a dropped
+    // connection) had nowhere at all to show, and the account stayed protected
+    // while the operator was told nothing. An undo toast that reports nothing
+    // when the PATCH fails would be a worse lie than no toast.
+    const [releaseError, setReleaseError] = useState(false);
 
     const load = useCallback(async () => {
         setError(false);
@@ -91,6 +100,57 @@ export default function IdentityAccountsPage() {
             setSaving(false);
         }
     }, [apiUrl, load]);
+
+    // RELEASING IS THE DESTRUCTIVE DIRECTION, and until now it was the only one
+    // with no guard: protecting opened a modal and demanded a reason, releasing
+    // fired the PATCH straight off the row button. The asymmetry ran backwards.
+    // Releasing is not recoverable by re-protecting — the usecase NULLs
+    // protectedAt, protectedByUserId and protectionReason and writes a
+    // hash-chained audit row, so re-protecting records a NEW fact rather than
+    // restoring the old one, and on an AUTOMATIC write policy this click is the
+    // last thing between a live account and a 05:00 disable.
+    //
+    // Hence the house undo-toast convention (docs/destructive-actions.md) and
+    // not a confirm dialog: the commit is DEFERRED, so Undo inside the window
+    // means the PATCH never fires at all and no audit row is ever written.
+    const releaseProtection = (account: AccountRow) => {
+        // 1. Snapshot the operator's visible state.
+        const previous = rows;
+        setReleaseError(false);
+        // 2. Optimistic release — the row reads unprotected immediately. The
+        //    toast IS the pending indicator; no row-level spinner.
+        setRows((rs) =>
+            rs.map((r) =>
+                r.id === account.id ? { ...r, isProtected: false, protectionReason: null } : r,
+            ),
+        );
+        // 3. Trigger the toast — this is what schedules the real PATCH.
+        triggerUndoToast({
+            message: t('identityAccounts.released'),
+            undoMessage: t('identityAccounts.undo'),
+            action: async () => {
+                const res = await fetch(apiUrl(`/admin/identity-account-protection/${account.id}`), {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    // Releasing needs no reason — see the usecase, which
+                    // deliberately refuses to require one and discards a
+                    // non-null reason on this direction anyway.
+                    body: JSON.stringify({ isProtected: false, reason: null }),
+                });
+                if (!res.ok) throw new Error('release failed');
+                // Refetch for the same reason the protect path does: the server
+                // owns protectedAt and protectedByUserId.
+                await load();
+            },
+            // Undo and commit-failure restore the same snapshot — "the row came
+            // back" must look identical either way.
+            undoAction: () => setRows(previous),
+            onError: () => {
+                setRows(previous);
+                setReleaseError(true);
+            },
+        });
+    };
 
     const cols = createColumns<AccountRow>([
         { accessorKey: 'provider', header: t('integrations.colProvider'), cell: ({ getValue }) => <StatusBadge variant="info">{getValue()}</StatusBadge> },
@@ -159,8 +219,7 @@ export default function IdentityAccountsPage() {
                         disabled={saving}
                         onClick={() => {
                             if (row.original.isProtected) {
-                                // Releasing needs no reason — see the usecase.
-                                void setProtection(row.original, false, null);
+                                releaseProtection(row.original);
                             } else {
                                 setSaveError(false);
                                 setReason('');
@@ -185,6 +244,14 @@ export default function IdentityAccountsPage() {
             <p className="text-sm text-content-muted">{t('identityAccounts.intro')}</p>
 
             <Card className="space-y-default p-6">
+                {/* Outside the {protecting && …} modal on purpose: this is the
+                    release path's only visible failure, and the modal never
+                    mounts on it. */}
+                {releaseError && (
+                    <InlineNotice variant="error" onDismiss={() => setReleaseError(false)}>
+                        {t('identityAccounts.releaseError')}
+                    </InlineNotice>
+                )}
                 {error ? (
                     <InlineNotice variant="error">{t('identityAccounts.loadError')}</InlineNotice>
                 ) : loading ? (

@@ -5644,6 +5644,9 @@
       "release": "Release",
       "protectPrompt": "Why must this account never be offboarded automatically?",
       "protectError": "Couldn't change protection for this account.",
+      "released": "Protection released",
+      "undo": "Undo",
+      "releaseError": "Couldn't release protection — this account is still protected.",
       "reasonLabel": "Reason",
       "cancel": "Cancel"
     },
