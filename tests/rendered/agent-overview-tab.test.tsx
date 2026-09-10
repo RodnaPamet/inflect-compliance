@@ -591,7 +591,13 @@ describe('the non-enforcing copy says the agent\'s own limits stop applying', ()
     // `verdict.agentId` is null, so they are precisely the sentences that owe
     // the reader this. ACTIVE is the state in which the three controls DO
     // apply, and it gets the opposite claim below.
-    for (const status of ['DRAFT', 'SUSPENDED', 'RETIRED'] as const) {
+    // SUSPENDED is NOT in this loop, and its absence is the #2399 change.
+    // DRAFT and RETIRED still lose the three controls in a non-enforcing
+    // tenant: `governedAgentIdOf` deliberately does not govern for them, on the
+    // reasoning that nobody put a DRAFT agent into service and a RETIRED one is
+    // out of it. A SUSPENDED agent governs, so its controls apply — which is the
+    // opposite claim, asserted separately below.
+    for (const status of ['DRAFT', 'RETIRED'] as const) {
         it(`the non-enforcing ${status} sentence names all three controls that come off`, () => {
             const copy = catalogue(`stateBodyUnenforced.${status}`);
 
@@ -601,15 +607,35 @@ describe('the non-enforcing copy says the agent\'s own limits stop applying', ()
         });
     }
 
-    it('the non-enforcing suspend dialog names all three too', () => {
-        // The dialog is the screen somebody commits on, so it carries the same
-        // three names as the paragraph rather than a shortened version.
+    it('the non-enforcing SUSPENDED sentence says the controls APPLY, and tools are refused', () => {
+        // The inverse of the loop above, and the sentence #2399 made true.
+        // Before it, suspending an agent in a non-enforcing tenant WIDENED the
+        // credential — the allowlist, both autonomy terms, the card, the breaker
+        // and the AGENT arm of its own kill switch all dropped at once.
+        const copy = catalogue('stateBodyUnenforced.SUSPENDED');
+
+        expect(copy).toMatch(/every tool call is refused/i);
+        expect(copy).toMatch(/apply again/i);
+        // Still accepted at REGISTRATION — that is the whole of what the flag
+        // controls, and the sentence must not imply the credential is dead.
+        expect(copy).toMatch(/still accepted at registration/i);
+        // And the honest limit: this refuses TOOLS, not everything.
+        expect(copy).toMatch(/framework catalogue/i);
+        expect(copy).not.toMatch(/widens/i);
+    });
+
+    it('the non-enforcing suspend DIALOG carries the same claim as the paragraph', () => {
         const copy = catalogue('suspendScopeUnenforced');
 
-        expect(copy).toMatch(/granted tools/i);
-        expect(copy).toMatch(/autonomy ceiling/i);
-        expect(copy).toMatch(/policy card/i);
+        expect(copy).toMatch(/refused every tool call at the boundary/i);
+        expect(copy).toMatch(/apply again/i);
+        expect(copy).toMatch(/framework catalogue is not refused/i);
+        expect(copy).not.toMatch(/widens/i);
     });
+
+    // The "names all three that come off" dialog check is gone: after #2399 the
+    // dialog's subject is a SUSPENDED agent, whose controls apply rather than
+    // come off. Its replacement is the pair above, which asserts the inverse.
 
     it('the ACTIVE sentence makes the opposite claim — while it is active, they apply', () => {
         // The companion that stops the three checks above from being satisfied
@@ -705,7 +731,16 @@ describe('one lever, one word — this tab suspends, it does not kill', () => {
         for (const label of overviewActions) {
             expect(killActions).not.toContain(label);
         }
-        expect(KILL.engagePrompt).toMatch(/which suspending it does not/i);
+        // The kill switch and suspension are still DIFFERENT controls, and this
+        // asserts the difference that survives #2399. It used to read "which
+        // suspending it does not" — true when suspension reached no boundary at
+        // all, false now that a suspended agent governs. What remains: the kill
+        // switch acts inside a run already under way, covers the resources door,
+        // and has workspace-wide and platform-wide forms.
+        expect(KILL.engagePrompt).toMatch(/inside a run already in progress/i);
+        expect(KILL.engagePrompt).toMatch(/framework catalogue/i);
+        expect(KILL.engagePrompt).toMatch(/workspace-wide or platform-wide/i);
+        expect(KILL.engagePrompt).not.toMatch(/which suspending it does not/i);
         expect(JSON.stringify(EN)).not.toMatch(/kill[\s-]?switch/i);
     });
 });

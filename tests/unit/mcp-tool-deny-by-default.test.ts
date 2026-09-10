@@ -176,6 +176,11 @@ function invocationFor(shape: InvocationShape = {}): McpInvocation {
             permissions: ctx.permissions,
         },
         agentId: granted === null ? null : 'agent-1',
+        // Mirrors `agentId`. `granted === null` is this fixture's spelling of
+        // "no agent at all", which is the population whose whole catalogue
+        // must stay loadable — the regression fence for #2399's fix.
+        governedAgentId: granted === null ? null : 'agent-1',
+        agentStanding: granted === null ? ('no_binding' as const) : ('vouched' as const),
         grantedTools: granted === null ? null : new Set(granted),
         offeredTools: shape.offered === undefined ? [...CATALOGUE] : [...shape.offered],
         audience: null,

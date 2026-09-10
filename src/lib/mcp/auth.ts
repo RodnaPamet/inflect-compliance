@@ -68,6 +68,7 @@ import { extractBearerToken, resolveApiKeyById, verifyApiKey } from '@/lib/auth/
 import {
     assertRegisteredAgent,
     evaluateAgentRegistration,
+    governedAgentIdOf,
     type AgentGateVerdict,
 } from '@/lib/agentic/agent-registration-gate';
 import {
@@ -327,43 +328,84 @@ export async function buildMcpInvocation(
         }
     }
 
-    // Deny-by-default exposure list, read fresh per request so a revoke takes
-    // effect on the next call. `null` when the caller is bound to no live ACTIVE
-    // agent — a signed-in human, or a tenant that has switched the register off.
-    // See `agent-tool-exposure.ts` for why that is not an exposure bypass.
+    // The agent the register VOUCHES for. Keys the grant list, the policy card's
+    // identity, and every existing reader of `inv.agentId`.
     const agentId = verdict.agentId;
-    const grantedTools = agentId ? await listGrantedToolNames(ctx.tenantId, agentId) : null;
+
+    // The agent whose own controls GOVERN this call — the vouched one, or one an
+    // operator has suspended. `governedAgentIdOf` is the single place the
+    // SUSPENDED-only rule is spelled; do not re-derive it here or downstream.
+    const governedAgentId = governedAgentIdOf(verdict);
+
+    // Deny-by-default exposure, read fresh per request so a revoke takes effect
+    // on the next call. THREE answers, not two:
+    //
+    //   a Set of names — the vouched agent's grants.
+    //   an EMPTY Set   — an agent that GOVERNS but is not vouched for, i.e.
+    //                    suspended. `isToolExposed` reads an empty set as
+    //                    deny-all, which is what `listGrantedToolNames`' own
+    //                    docstring already says an empty set means.
+    //   `null`         — no governed agent at all: a signed-in human, an
+    //                    ordinary integration key, a tenant that switched the
+    //                    register off, a DRAFT or RETIRED binding. No list to
+    //                    consult; see `agent-tool-exposure.ts` for why that is
+    //                    not an exposure bypass.
+    //
+    // The suspended case does NOT read `RegisteredAgentTool`. Its grant rows are
+    // intact and irrelevant: the refusal is about the agent's standing, not
+    // about its grants, and consulting them would make a stopped agent's reach
+    // depend on a list again — which is the thing the operator just overrode.
+    const grantedTools =
+        agentId !== null
+            ? await listGrantedToolNames(ctx.tenantId, agentId)
+            : governedAgentId !== null
+              ? new Set<string>()
+              : null;
 
     // The agent's policy card, read fresh per request for the same reason the
     // grants are: an operator who narrows a card has to see the NEXT call
-    // refused, not the next deploy. `null` when there is no agent, and `null`
-    // when the agent has no card — two different states with the same answer
-    // here, because in both of them there is no declared policy to apply, and a
-    // card that does not exist must never read as a card that forbids
-    // everything.
-    const inForce = agentId ? await loadPolicyCardInForce(ctx.tenantId, agentId) : null;
+    // refused, not the next deploy.
+    //
+    // Keyed off the GOVERNED agent. A suspended agent with an authored card is
+    // exactly the caller its card was written about, and skipping it meant the
+    // governance artefact existed, had been authored, and was silently not
+    // applied — while `WorkflowRun` still pinned its version into a write-once,
+    // hash-chained column. `null` still means "no declared policy to apply" —
+    // an agent with no card, or no governed agent at all — and an absent card
+    // must never read as a card that forbids everything.
+    const inForce = governedAgentId
+        ? await loadPolicyCardInForce(ctx.tenantId, governedAgentId)
+        : null;
 
     // The autonomy ceiling: min(key max, agent's registered level, tier cap).
     //
-    // The tier term is 3/10's, and it is the one that can DENY outright: an
-    // agent that resolved but has never been scored gets `DENY_CEILING`, which
-    // is below rung 0, so no tool reaches it. An agent that did NOT resolve —
-    // a human, an ordinary integration key, a tenant with the register switched
-    // off — contributes no term at all. Those two states are both spelled
-    // `null` on the verdict and mean opposite things, so the object below is
-    // built once, by name, rather than by passing `verdict.riskTier` to a
-    // function that cannot tell them apart.
-    const resolvedAgentTier = verdict.agentId === null ? null : { riskTier: verdict.riskTier };
+    // Both agent-side terms are keyed off the GOVERNED agent, and that closes a
+    // premise `autonomy-ceiling.ts` states in its header: that a null `keyMax`
+    // is safe "because the AGENT term is always present for an agent-bound
+    // credential". Suspension used to make BOTH agent terms absent at once
+    // while the credential stayed bound, so the min collapsed to
+    // `min([UNCLAMPED])` = 6 — a ceiling no tier can reach (LOW caps at 4,
+    // CRITICAL at 1). Suspending a CRITICAL agent promoted it from read-only to
+    // propose-capable. Adding terms to a `min` can only narrow, so this cannot
+    // widen anything.
+    //
+    // The tier term is still built by NAME rather than by passing
+    // `verdict.riskTier` to a function that cannot tell the two nulls apart: "no
+    // governed agent" contributes no term, "a governed agent nobody assessed"
+    // DENIES.
+    const governedTier = governedAgentId === null ? null : { riskTier: verdict.riskTier };
     const autonomyCeiling = resolveAutonomyCeiling({
         keyMax: keyCtx.apiKeyMaxAutonomy,
-        agentAutonomy: verdict.autonomyLevel,
-        riskTierCeiling: riskTierCeilingFor(resolvedAgentTier),
+        agentAutonomy: governedAgentId === null ? null : verdict.autonomyLevel,
+        riskTierCeiling: riskTierCeilingFor(governedTier),
     });
 
     return {
         ctx,
         principal,
         agentId,
+        governedAgentId,
+        agentStanding: verdict.standing,
         grantedTools,
         // The catalogue SNAPSHOT — a copy, taken now, of what this build offers.
         //
@@ -383,7 +425,7 @@ export async function buildMcpInvocation(
         // Carried so a refusal can say WHY the ceiling is where it is. A
         // denial reading `ceiling: -1` with no tier beside it sends an operator
         // to the agent's autonomy level, which is not the thing refusing.
-        riskTier: verdict.agentId === null ? null : verdict.riskTier,
+        riskTier: governedAgentId === null ? null : verdict.riskTier,
         credential: {
             apiKeyId: keyCtx.apiKeyId ?? null,
             tokenExpiresAt: options.tokenExpiresAt ?? null,

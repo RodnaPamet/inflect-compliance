@@ -154,7 +154,12 @@ const ROOT = path.resolve(__dirname, '../..');
 // being fixed; it is the ratchet doing its job — at slack 2 the two suites
 // those PRs added could have been deleted with a green build, which is the
 // regression the floor exists to refuse.
-const RENDERED_TEST_FLOOR = 270;
+// 270 → 271 (2026-09-10): the suite #2405 added
+// (`tests/rendered/agent-register-owner-column.test.tsx`). #2405 deliberately
+// left this alone and said so, because #2388 was open at the same time and two
+// branches raising one constant merge cleanly while leaving main short. Both
+// have landed; live measured on main after they did.
+const RENDERED_TEST_FLOOR = 271;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

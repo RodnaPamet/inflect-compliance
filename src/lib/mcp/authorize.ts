@@ -108,6 +108,7 @@ import {
     evaluateCardReach,
     type PolicyCardInForce,
 } from '@/lib/agentic/policy-card-evaluation';
+import type { AgentGateStanding } from '@/lib/agentic/agent-registration-gate';
 import { reserveDailyAction } from '@/lib/agentic/policy-card-store';
 import {
     openBreakerGate,
@@ -168,11 +169,46 @@ export interface McpInvocation {
     /** The principal's own authority. See agent-authority.ts. */
     principal: AgentPrincipal;
     /**
-     * The registered agent the credential speaks for, when it resolved to a live
-     * ACTIVE one. `null` means the tenant is not enforcing the register — see
-     * `agent-tool-exposure.ts` for why that is not an exposure bypass.
+     * The registered agent the register VOUCHES for — non-null only when a live
+     * ACTIVE agent resolved.
+     *
+     * `null` does NOT mean "the tenant is not enforcing the register", which is
+     * what this docstring used to say and what #2399 was. It is `null` for a
+     * signed-in human, an ordinary integration key, a tenant with the register
+     * off, a binding the register cannot produce, AND an agent an operator
+     * suspended. Only `agentStanding` tells those apart.
+     *
+     * This field keys the tool grants and the agent's identity in the trail. It
+     * is NOT what a control asking "is this agent stopped" should read — see
+     * `governedAgentId`. `agent-tool-exposure.ts` explains why a genuinely
+     * unbound credential is not an exposure bypass.
      */
     agentId: string | null;
+    /**
+     * The agent whose own register-side controls apply to this call: the
+     * vouched agent, or one an operator has SUSPENDED.
+     *
+     * Every AGENT-KEYED CONTROL reads this and not `agentId` — the kill
+     * switch's AGENT arm, the circuit breaker, the autonomy ceiling's agent
+     * terms, the behavioural ledger, and the policy card. Each of those was
+     * skipped for a suspended agent because it keyed off the vouched id, and
+     * "skipped" is allow-all at every one of them: an agent-scoped kill switch
+     * engaged against an agent that was ALSO suspended stopped nothing and
+     * wrote no `agent_killed` row, and a breaker latched OPEN was never read.
+     *
+     * See `governedAgentIdOf` in `agentic/agent-registration-gate.ts`, which is
+     * the only place the standing rule is applied.
+     */
+    governedAgentId: string | null;
+    /**
+     * Which of the seven register situations produced this invocation. Carried
+     * so a REFUSAL can name the term that is actually binding: this file's own
+     * header argues, and `assertAutonomy` argues again, that a refusal naming
+     * the wrong term is the defect — an operator handed "an administrator must
+     * grant it in the agent register" for a suspended agent whose grant rows
+     * are intact edits the wrong record.
+     */
+    agentStanding: AgentGateStanding;
     /**
      * The tools this agent is granted. `null` when there is no agent, which is
      * the only state that skips the exposure check.
@@ -274,6 +310,14 @@ export type McpDenialReason =
     | 'credential_expired'
     | 'tool_not_offered'
     | 'tool_not_granted'
+    /**
+     * The agent is SUSPENDED in the register. Its own reason rather than
+     * `tool_not_granted` because the two have completely different fixes:
+     * activate the agent, versus grant it a tool. Reachable only where the
+     * registration gate did not already refuse — a non-enforcing tenant, or the
+     * workflow-engine path, which never ran the gate at all.
+     */
+    | 'agent_suspended'
     | 'tool_manifest_unapproved'
     | 'circuit_breaker_open'
     | 'autonomy_denied'
@@ -433,7 +477,7 @@ export async function resolveOfferedTool<T extends { name: string }>(
 
     await denyToolCall(inv.ctx, 'tool_not_offered', {
         tool: name,
-        agentId: inv.agentId,
+        agentId: inv.governedAgentId,
         message:
             `The tool "${name}" was not offered when this session began, so it ` +
             'cannot be loaded by it. A tool that appears after a run has started ' +
@@ -492,7 +536,7 @@ export async function resolveOfferedTool<T extends { name: string }>(
  * cycle is this control failing at the one moment it matters.
  */
 async function assertNotKilled(inv: McpInvocation, target: string): Promise<void> {
-    const kill = await resolveKillState(inv.ctx.tenantId, inv.agentId);
+    const kill = await resolveKillState(inv.ctx.tenantId, inv.governedAgentId);
     if (kill === null) return;
 
     // The nightly drill drives this same gate against a canary agent id, and its
@@ -500,12 +544,12 @@ async function assertNotKilled(inv: McpInvocation, target: string): Promise<void
     // the same series is how operators learn to ignore it. The label is derived
     // from the target agent id rather than passed in, so no caller can mark a
     // real refusal as a drill.
-    const drill = inv.agentId === KILL_SWITCH_DRILL_AGENT_ID;
+    const drill = inv.governedAgentId === KILL_SWITCH_DRILL_AGENT_ID;
     recordAgentKillRefusal({ scope: kill.scope, drill });
 
     await denyToolCall(inv.ctx, 'agent_killed', {
         tool: target,
-        agentId: inv.agentId,
+        agentId: inv.governedAgentId,
         // Names WHAT is stopped and WHO lifts it. It does NOT echo the reason
         // text an administrator typed: that is tenant content, and the caller in
         // the scenario this defends against is the thing that was just stopped.
@@ -533,7 +577,7 @@ async function assertAudience(inv: McpInvocation, target: string): Promise<void>
     if (audienceCovers(inv.audience, target)) return;
     await denyToolCall(inv.ctx, 'audience_denied', {
         tool: target,
-        agentId: inv.agentId,
+        agentId: inv.governedAgentId,
         // Names the audience the caller ALREADY HOLDS and the one it asked for
         // — both already known to it — and nothing else. An actionable message
         // for a misconfigured integration; no new information for a prober.
@@ -564,7 +608,7 @@ async function assertCredentialLive(inv: McpInvocation, target: string): Promise
     if (!isTokenLive(inv.credential.tokenExpiresAt, now)) {
         await denyToolCall(inv.ctx, 'credential_expired', {
             tool: target,
-            agentId: inv.agentId,
+            agentId: inv.governedAgentId,
             message: 'This MCP token has expired. Exchange a new one.',
             extra: { basis: 'exchanged_token' },
         });
@@ -583,7 +627,7 @@ async function assertCredentialLive(inv: McpInvocation, target: string): Promise
     if (failure === 'expired') {
         await denyToolCall(inv.ctx, 'credential_expired', {
             tool: target,
-            agentId: inv.agentId,
+            agentId: inv.governedAgentId,
             message: 'The API key behind this request has expired.',
             extra: { basis: 'api_key' },
         });
@@ -592,7 +636,7 @@ async function assertCredentialLive(inv: McpInvocation, target: string): Promise
 
     await denyToolCall(inv.ctx, 'credential_revoked', {
         tool: target,
-        agentId: inv.agentId,
+        agentId: inv.governedAgentId,
         message:
             'The API key behind this request has been revoked. Every further ' +
             'tool call is refused, including within a run already in progress.',
@@ -643,7 +687,7 @@ async function assertAutonomy(
 
     await denyToolCall(inv.ctx, 'autonomy_denied', {
         tool: target,
-        agentId: inv.agentId,
+        agentId: inv.governedAgentId,
         message,
         extra: {
             required,
@@ -722,7 +766,7 @@ async function assertWithinPolicyCard(
         // make a tenant that runs no agents indistinguishable from one running
         // agents nobody has written a card for.
         recordPolicyCardEvaluation({
-            outcome: inv.agentId === null ? 'no_agent' : 'no_card',
+            outcome: inv.governedAgentId === null ? 'no_agent' : 'no_card',
             surface,
         });
         return;
@@ -735,7 +779,7 @@ async function assertWithinPolicyCard(
             // named an agent (`buildMcpInvocation` loads no card without one).
             // The fallback is a label, not a guess — it would show up as its own
             // series rather than silently joining another agent's.
-            agentId: inv.agentId ?? 'unattributed',
+            agentId: inv.governedAgentId ?? 'unattributed',
             rule: verdict.rule,
             escalate: verdict.escalate,
             riskTier: inv.riskTier,
@@ -743,7 +787,7 @@ async function assertWithinPolicyCard(
         });
         return denyToolCall(inv.ctx, 'policy_card_denied', {
             tool: target,
-            agentId: inv.agentId,
+            agentId: inv.governedAgentId,
             message: verdict.message,
             extra: {
                 // Per-rule detail FIRST, so the three fields an operator triages
@@ -896,7 +940,7 @@ async function assertToolManifestPinned(
 
     await denyToolCall(inv.ctx, 'tool_manifest_unapproved', {
         tool: tool.name,
-        agentId: inv.agentId,
+        agentId: inv.governedAgentId,
         message:
             `The definition of the "${tool.name}" tool has changed since it was ` +
             'approved for this tenant. An administrator must review and re-approve ' +
@@ -939,14 +983,14 @@ async function assertCircuitBreakerClosed(
     inv: McpInvocation,
     toolName: string,
 ): Promise<BreakerLatch | null> {
-    if (inv.agentId === null) return null;
-    const latch = await openBreakerGate(inv.ctx.tenantId, inv.agentId);
+    if (inv.governedAgentId === null) return null;
+    const latch = await openBreakerGate(inv.ctx.tenantId, inv.governedAgentId);
 
     if (latch !== null && latch.state === 'OPEN') {
-        recordAgentBreakerRefusal({ agentId: inv.agentId });
+        recordAgentBreakerRefusal({ agentId: inv.governedAgentId });
         await denyToolCall(inv.ctx, 'circuit_breaker_open', {
             tool: toolName,
-            agentId: inv.agentId,
+            agentId: inv.governedAgentId,
             message:
                 'This agent is stopped: its behaviour diverged from its own established ' +
                 'pattern and its circuit breaker latched open. An administrator must ' +
@@ -1025,12 +1069,21 @@ export async function authorizeToolCall(
 
     // 4. Deny-by-default exposure.
     if (!isToolExposed(inv, tool.name)) {
-        await denyToolCall(inv.ctx, 'tool_not_granted', {
+        // A suspended agent gets its OWN reason and its own message. Reusing
+        // `tool_not_granted` would send the operator to the grant list, which is
+        // intact and is not what is refusing — the exact defect class this
+        // file's header and `assertAutonomy` both argue against, one level down.
+        const suspended = inv.agentStanding === 'suspended';
+        await denyToolCall(inv.ctx, suspended ? 'agent_suspended' : 'tool_not_granted', {
             tool: tool.name,
-            agentId: inv.agentId,
-            message:
-                `This agent is not granted the "${tool.name}" tool. An administrator ` +
-                'must grant it in the agent register before it can be called.',
+            agentId: inv.governedAgentId,
+            message: suspended
+                ? 'This agent is suspended in the register, so it may not call tools. ' +
+                  'An administrator must activate it. Its tool grants are unchanged ' +
+                  'and apply again when it is activated.'
+                : `This agent is not granted the "${tool.name}" tool. An administrator ` +
+                  'must grant it in the agent register before it can be called.',
+            extra: suspended ? { standing: inv.agentStanding } : undefined,
         });
     }
 
@@ -1056,7 +1109,7 @@ export async function authorizeToolCall(
             if (!isAppError(err)) throw err;
             await denyToolCall(inv.ctx, 'capability_denied', {
                 tool: tool.name,
-                agentId: inv.agentId,
+                agentId: inv.governedAgentId,
                 message: err.message,
                 extra: { capability: tool.capability },
             });
@@ -1071,7 +1124,7 @@ export async function authorizeToolCall(
         if (!isAppError(err)) throw err;
         await denyToolCall(inv.ctx, 'scope_denied', {
             tool: tool.name,
-            agentId: inv.agentId,
+            agentId: inv.governedAgentId,
             message: err.message,
             extra: {
                 resource: tool.resourceScope.resource,
@@ -1108,7 +1161,7 @@ export async function authorizeToolCall(
             if (!isAppError(err)) throw err;
             await denyToolCall(inv.ctx, 'policy_denied', {
                 tool: tool.name,
-                agentId: inv.agentId,
+                agentId: inv.governedAgentId,
                 message: 'Permission denied',
                 extra: { policy: authorize.policy, basis: authorize.basis },
             });
@@ -1120,10 +1173,10 @@ export async function authorizeToolCall(
     //     swallows its own failure, because turning an observability write into
     //     an outage for a call ten checks have already allowed is the wrong
     //     trade in the only direction that matters.
-    if (inv.agentId !== null) {
+    if (inv.governedAgentId !== null) {
         await recordAuthorizedCall(
             inv.ctx.tenantId,
-            inv.agentId,
+            inv.governedAgentId,
             breakerLatch,
             tool.capabilityClass,
             tool.name,

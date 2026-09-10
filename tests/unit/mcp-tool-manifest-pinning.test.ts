@@ -250,6 +250,8 @@ function invocation(): McpInvocation {
             permissions: ctx.permissions,
         },
         agentId: 'agent-1',
+        governedAgentId: 'agent-1',
+        agentStanding: 'vouched' as const,
         grantedTools: new Set(['list_risks', 'list_evidence_expiring']),
         audience: null,
         autonomyCeiling: 6,
