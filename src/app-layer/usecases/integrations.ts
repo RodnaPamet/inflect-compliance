@@ -21,6 +21,7 @@ import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import '../integrations/bootstrap';
 import { registry } from '../integrations/registry';
 import { isScheduledCheckProvider } from '../integrations/types';
+import { isPostureProvider } from '../integrations/posture-providers';
 import type { CheckResult, EvidencePayload } from '../integrations/types';
 import { encryptField, decryptField } from '@/lib/security/encryption';
 import { logEvent } from '../events/audit';
@@ -932,14 +933,26 @@ export async function getIntegrationDiagnostics(ctx: RequestContext) {
  * GAP-3 — per-connection freshness for the admin integrations-health view.
  *
  * For every ENABLED connection, the seconds since its last SUCCESSFUL
- * (PASSED) IntegrationExecution. A connection whose collector has silently
- * died — or that has never once succeeded — surfaces as `isStale`. Two
- * bounded queries (enabled connections + a grouped max(PASSED) per
- * connection); never a per-connection query in a loop.
+ * IntegrationExecution. A connection whose collector has silently died — or
+ * that has never once succeeded — surfaces as `isStale`. Two bounded queries
+ * (enabled connections + a grouped max-per-connection over any status);
+ * never a per-connection query in a loop.
+ *
+ * WHAT COUNTS AS A SUCCESS is provider-dependent, and the split is deliberate:
+ * cloud-posture providers (`isPostureProvider`) count PASSED **or** FAILED,
+ * because a posture benchmark that reaches the account and finds a gap
+ * persists FAILED — a successful collection with an unwelcome answer, which
+ * is exactly the distinction the collectors already encode when they
+ * `clearAuthFailure` on FAILED as well as PASSED. Every other provider counts
+ * PASSED only: github and servicenow emit FAILED for "found a gap" too, but a
+ * genuinely broken one of those is the commoner cause, and widening fleet-wide
+ * would let a dead connector read "collected" for up to 48 h longer than it
+ * should. See `integrations/posture-providers.ts`.
  *
  * The DB-backed OTel gauge `integration.connection.freshness_seconds`
  * (src/lib/observability/connection-freshness.ts) reports the same signal
- * platform-wide for alerting; this is the tenant-scoped, on-demand view.
+ * platform-wide for alerting; this is the tenant-scoped, on-demand view, and
+ * the two share the provider predicate so they cannot drift.
  */
 export async function getConnectionsHealth(ctx: RequestContext) {
     return runInTenantContext(ctx, async (db) => {
@@ -956,10 +969,28 @@ export async function getConnectionsHealth(ctx: RequestContext) {
         }
 
         const connIds = connections.map((c) => c.id);
-        // Latest SUCCESSFUL (PASSED) run — the "last success" signal.
+        // Latest SUCCESSFUL run — the "last success" signal. Split by provider
+        // so the status allowlist widens for posture WITHOUT widening for
+        // anything else, and still in ONE grouped query (an OR of the two
+        // (id-set, allowlist) pairs), not a query per provider.
+        const posturePassedIds: string[] = [];
+        const otherPassedIds: string[] = [];
+        for (const c of connections) (isPostureProvider(c.provider) ? posturePassedIds : otherPassedIds).push(c.id);
+        const succeededWhere: Prisma.IntegrationExecutionWhereInput[] = [];
+        // Posture: a FAILED benchmark READ the account and found a gap, so it
+        // collected. Explicit allowlist, never `{ not: 'ERROR' }` — that would
+        // admit RUNNING (every posture run inserts one at its start) and reset
+        // the clock on a job that has not finished.
+        if (posturePassedIds.length > 0) {
+            succeededWhere.push({ status: { in: ['PASSED', 'FAILED'] }, connectionId: { in: posturePassedIds } });
+        }
+        // Everything else: PASSED only.
+        if (otherPassedIds.length > 0) {
+            succeededWhere.push({ status: { in: ['PASSED'] }, connectionId: { in: otherPassedIds } });
+        }
         const groupedPassed = await db.integrationExecution.groupBy({
             by: ['connectionId'],
-            where: { tenantId: ctx.tenantId, status: 'PASSED', connectionId: { in: connIds } },
+            where: { tenantId: ctx.tenantId, OR: succeededWhere },
             _max: { completedAt: true, executedAt: true },
         });
         // P1 — latest run of ANY status. Freshness must reflect activity, not
