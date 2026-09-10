@@ -50,6 +50,18 @@ export type CredentialLivenessFailure =
  * Scoped by `(id, tenantId)` rather than by id alone: this query decides whether
  * an agent goes on acting, and it does not get to rely on the caller having
  * already established which tenant the key belongs to.
+ *
+ * ## This is the canonical definition of "live", and it has a second reader
+ *
+ * The two lines below are the whole definition, and one other place has to
+ * agree with them: `RegisteredAgentRepository.getById` restates them as a
+ * Prisma `where` to count an agent's live credentials for the agent detail
+ * page. It cannot import this function — a JS predicate over a fetched row and
+ * a relation filter are not the same shape — so ANY column added here (a
+ * `disabledAt`, a tenant-level freeze) must be added to that filter in the same
+ * change. Otherwise the page goes on printing a number of credentials that this
+ * function has already stopped accepting, which reads to an operator as
+ * "suspending this agent cuts off N callers" when it cuts off fewer.
  */
 export async function checkCredentialLiveness(
     apiKeyId: string,
