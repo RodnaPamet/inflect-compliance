@@ -24,24 +24,43 @@
  *     whose two tiers DIFFER and check the EU AI Act fact carries the system's
  *     value and that the agent's own tier is nowhere on the tab.
  *
- *   • **The bound-credential count is unfiltered.** `_count.apiKeys` counts the
- *     relation, and `TenantApiKey` keeps revoked rows (`revokedAt` set, never
- *     deleted) and expired ones. Copy that turned that number into "# API keys
- *     stop being accepted" told an operator holding two revoked keys and
- *     nothing live that they were cutting off traffic which had already
- *     stopped. Zero is the one honest reading — no rows at all means no live
- *     ones — and it gets its own sentence saying suspending changes nothing
- *     that runs.
+ *   • **The credential count is the LIVE count, and zero is its own
+ *     sentence.** `getById` filters revoked and expired keys out of
+ *     `_count.apiKeys`, so the number the tab prints is what stops being
+ *     accepted. THAT FILTER IS NOT PINNED HERE — a rendered test cannot see a
+ *     Prisma select — it is pinned in
+ *     `tests/integration/agent-registry-isolation.test.ts`, which counts two
+ *     live keys against four bound ones. What this file owes the claim is the
+ *     other half: that the tab prints the number the payload carried, and that
+ *     zero takes a separate sentence in both places rather than inheriting the
+ *     plural's wording.
  *
- *   • **Enforcement is conditional, and the copy says so.**
- *     `evaluateAgentRegistration` refuses a non-ACTIVE agent only when
- *     `isAgentRegistrationEnforced` is true, and `requireRegisteredAgent` is a
- *     tenant switch. A workspace that has switched it off gets a register that
- *     RECORDS the suspension and a gate that lets the credentials through — so
- *     a panel promising an emergency stop would be promising that workspace
- *     something the gate does not do. The tab cannot read the flag (the
- *     settings route is gated on `admin.manage`, which a registry-key holder
- *     need not hold), so naming the condition is the only honest move.
+ *   • **Enforcement is READ, not guessed.** `evaluateAgentRegistration`
+ *     refuses a non-ACTIVE agent only when `requireRegisteredAgent` is on, and
+ *     that is a tenant switch: a workspace that has switched it off gets a
+ *     register which RECORDS the suspension and a gate that lets the
+ *     credentials through. The copy used to open four sentences with "If this
+ *     workspace requires registered agents, …" because the tab could not tell
+ *     which world it was in. `getRegisteredAgent` now returns
+ *     `registrationEnforced`, so the tests below render the SAME agent under
+ *     both flags and pin EACH branch to its own catalogue sentence. Inequality
+ *     alone was not enough and the hole was live: `: ''` for the non-enforcing
+ *     branch differs from the enforcing sentence too, and it passed.
+ *
+ *     The non-enforcing sentences also owe the reader more than "the register
+ *     records it and stops nothing", because that is FALSE — a non-ACTIVE
+ *     agent stops resolving at the tool boundary, which removes its granted
+ *     tools, its autonomy ceiling and its policy card from the credential.
+ *     Suspension in a non-enforcing tenant WIDENS what that key may do. The
+ *     block near the foot of this file pins that in the copy, with the
+ *     mechanism written out.
+ *
+ *   • **The supplier and the owner are named where the payload allows.** The
+ *     register's select carries `vendor { id, name }` and `owner { id, name,
+ *     email }`, so a third-party agent names its supplier instead of offering
+ *     a bare link, and an owner with no display name falls back to an address
+ *     rather than to a phrase. Both fallbacks are still exercised, because
+ *     both are still reachable.
  *
  *   • **One lever, one word.** The words "kill switch" appear nowhere on this
  *     tab; its word is "suspend". The kill switch is a real second control —
@@ -128,6 +147,34 @@ const AGENT_DETAIL = (
 const EN = AGENT_DETAIL.overview;
 const KILL = AGENT_DETAIL.kill;
 
+/**
+ * A catalogue string the component and `messages/*.json` must land in ONE
+ * commit, read with a failure message that says so.
+ *
+ * `stateBodyUnenforced.*` and `suspendScopeUnenforced` are new keys. Between a
+ * commit that ships this component and one that ships the catalogue, next-intl
+ * renders each of them as its own dotted path — and indexing the absent table
+ * would fail here as a bare `TypeError: Cannot read properties of undefined`,
+ * which reads like a broken test rather than a missing key.
+ * `tests/guards/i18n-keys-resolve.test.ts` is red on the identical cause in
+ * that window, so this throws too (never skips) and only says why.
+ */
+function catalogue(path: string): string {
+    const value = path
+        .split('.')
+        .reduce<unknown>(
+            (o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),
+            EN as unknown,
+        );
+    if (typeof value !== 'string')
+        throw new Error(
+            `messages/en.json has no admin.agentDetail.overview.${path}. The component and the ` +
+                'catalogue land in one commit; between them this file and ' +
+                'tests/guards/i18n-keys-resolve.test.ts are both red on that one cause.',
+        );
+    return value;
+}
+
 /** The shape of `GET /admin/agents/:agentId` as this tab narrows it. */
 interface Agent {
     description: string | null;
@@ -139,9 +186,11 @@ interface Agent {
     vendorId: string | null;
     isLegacyPlaceholder: boolean;
     createdAt: string;
-    owner: { name: string | null } | null;
+    vendor?: { name: string | null } | null;
+    owner: { name: string | null; email: string | null } | null;
     aiSystem: { id: string; riskTier: 'PROHIBITED' | 'HIGH' | 'LIMITED' | 'MINIMAL' | null } | null;
     _count: { apiKeys: number };
+    registrationEnforced: boolean;
 }
 
 function makeAgent(overrides: Partial<Agent> = {}): Agent {
@@ -155,9 +204,13 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
         vendorId: null,
         isLegacyPlaceholder: false,
         createdAt: '2026-07-01T09:00:00.000Z',
-        owner: { name: 'Dana Iveagh' },
+        owner: { name: 'Dana Iveagh', email: 'dana@acme.test' },
         aiSystem: { id: 'sys-1', riskTier: 'LIMITED' },
         _count: { apiKeys: 2 },
+        // The default is the state most tenants are in — an absent
+        // `TenantSecuritySettings` row reads as ENFORCING — so every test that
+        // is not about the flag renders the enforcing copy.
+        registrationEnforced: true,
         ...overrides,
     };
 }
@@ -323,90 +376,284 @@ describe('the two taxonomies are never crossed', () => {
     });
 });
 
-describe('the bound-credential count says what it counts', () => {
-    it('states that revoked and expired keys are included', () => {
+describe('the credential count is the number the payload carried, and zero is its own sentence', () => {
+    // NOTE what is deliberately NOT asserted here: that the number is LIVE.
+    // That is a property of the repository's filtered `_count`, invisible to a
+    // component that receives an integer, so it is pinned where it can be
+    // observed, in `tests/integration/agent-registry-isolation.test.ts` (two
+    // live against four bound). The catalogue check further down asserts only
+    // that the COPY claims liveness rather than acceptance — a wording claim,
+    // which would indeed still pass on a tab handed an unfiltered count, and
+    // which is why it is not filed as evidence for the filter.
+    // The assertions below compare against the catalogue STRING rather than
+    // against a rendered "3". The next-intl mock substitutes `{name}`-shaped
+    // placeholders and does not evaluate ICU plurals, so a counted sentence
+    // arrives as its own `{count, plural, …}` template — which makes it a
+    // perfectly good marker for WHICH branch the component chose, and a
+    // useless one for the number inside it. Choosing the branch is the claim.
+    it('takes the counted sentence for a nonzero count, not the empty one', () => {
         renderTab(makeAgent({ _count: { apiKeys: 3 } }));
 
-        const value = fact(EN.credentialsLabel);
-        expect(value).toHaveTextContent(/revoked and expired/i);
-        // The label alone would let a reader take the number for live
-        // credentials; the value is where the qualification has to live.
-        expect(EN.credentialsLabel).toBe('Bound credentials');
+        expect(factValue(EN.credentialsLabel)).toBe(EN.credentialsValue);
+        expect(factValue(EN.credentialsLabel)).not.toBe(EN.credentialsNone);
     });
 
-    it('the suspend confirmation repeats what the number is NOT', () => {
+    it('the suspend confirmation takes the counted sentence too', () => {
         renderTab(makeAgent({ status: 'ACTIVE', _count: { apiKeys: 3 } }));
         fireEvent.click(screen.getByRole('button', { name: EN.suspendAction }));
 
         expect(screen.getByText(EN.suspendTitle)).toBeInTheDocument();
-        const body = document.body.textContent ?? '';
-        expect(body).toMatch(/includes any already revoked or expired/i);
-        expect(body).toMatch(/not a count of what is still live/i);
-        // The retired sentence, by its shape: it turned an unfiltered count
-        // into a claim about traffic that had already stopped.
-        expect(body).not.toMatch(/stop being accepted/i);
-        expect(EN.suspendCredentials).not.toMatch(/stop being accepted/i);
+        // Two renderings of one fact, and they came apart once already — the
+        // dialog made a claim about the number that the profile row did not.
+        expect(screen.getByText(EN.suspendCredentials)).toBeInTheDocument();
+        expect(screen.queryByText(EN.suspendCredentialsNone)).not.toBeInTheDocument();
     });
 
-    it('zero says suspending changes nothing that runs', () => {
+    it('zero takes its own sentence in both places, never the plural', () => {
         renderTab(makeAgent({ status: 'ACTIVE', _count: { apiKeys: 0 } }));
 
         expect(factValue(EN.credentialsLabel)).toBe(EN.credentialsNone);
 
         fireEvent.click(screen.getByRole('button', { name: EN.suspendAction }));
         expect(screen.getByText(EN.suspendCredentialsNone)).toBeInTheDocument();
-        expect(EN.suspendCredentialsNone).toMatch(/changes nothing that runs/i);
-        // Zero is the branch that must NOT inherit the plural's hedge — there
-        // is nothing there to be revoked or expired.
+        // The negative's companion is the line above: the zero sentence IS on
+        // screen, so "the plural is not" cannot pass on an empty dialog.
         expect(screen.queryByText(EN.suspendCredentials)).not.toBeInTheDocument();
     });
 });
 
-describe('the availability copy names the enforcement condition', () => {
-    it('a suspended agent states the case where the requirement is OFF', () => {
-        renderTab(makeAgent({ status: 'SUSPENDED' }));
+describe('the profile names the supplier and reaches the owner', () => {
+    it('names the supplier in the link when the payload carries a vendor', () => {
+        renderTab(
+            makeAgent({
+                provenance: 'THIRD_PARTY',
+                vendorId: 'vendor-9',
+                vendor: { name: 'Northwind Automation Ltd' },
+            }),
+        );
 
-        expect(screen.getByText(EN.availabilityHeading)).toBeInTheDocument();
-        expect(screen.getByText(EN.stateBody.SUSPENDED)).toBeInTheDocument();
-        // Both halves of the switch, in one sentence: a tenant that turned
-        // `requireRegisteredAgent` off gets a recorded suspension and a gate
-        // that stops nothing.
-        expect(EN.stateBody.SUSPENDED).toMatch(/If this workspace requires registered agents/i);
-        expect(EN.stateBody.SUSPENDED).toMatch(
-            /if that requirement is off, the register records the suspension but does not stop them/i,
+        const link = screen.getByTestId('agent-overview-vendor-link');
+        expect(link).toHaveTextContent('Northwind Automation Ltd');
+        // The generic label is what the page said for this agent's whole life,
+        // and it is what comes back if the select stops carrying the name.
+        expect(link).not.toHaveTextContent(EN.supplierLink);
+    });
+
+    it('falls back to the generic label when the vendor row has no name', () => {
+        // The companion, and not a hypothetical: `Vendor.name` is free text.
+        renderTab(
+            makeAgent({ provenance: 'THIRD_PARTY', vendorId: 'vendor-9', vendor: { name: null } }),
+        );
+
+        expect(screen.getByTestId('agent-overview-vendor-link')).toHaveTextContent(
+            EN.supplierLink,
         );
     });
 
-    it('an active agent conditions the promise rather than asserting a stop', () => {
-        renderTab(makeAgent({ status: 'ACTIVE' }));
+    it('shows the owner EMAIL when the display name was never set', () => {
+        renderTab(makeAgent({ owner: { name: null, email: 'ops@acme.test' } }));
 
-        expect(screen.getByText(EN.stateBody.ACTIVE)).toBeInTheDocument();
-        // The ORDER is the assertion: the condition governs the clause that
-        // promises the refusal, rather than trailing it as a footnote.
-        expect(EN.stateBody.ACTIVE).toMatch(
-            /If this workspace requires registered agents, suspending it refuses them/i,
-        );
+        expect(factValue(EN.ownerLabel)).toBe('ops@acme.test');
+        // `ownerUserId` is NOT NULL behind a real FK — this row has an owner,
+        // and the page must not answer the accountability question with a
+        // sentence about a missing label when it holds an address.
+        expect(factValue(EN.ownerLabel)).not.toBe(EN.ownerEmpty);
     });
 
-    it('a draft agent conditions it too — the enforcement claim is never unqualified', () => {
-        renderTab(makeAgent({ status: 'DRAFT' }));
+    it('prefers the name over the email — the email is a fallback, not the answer', () => {
+        renderTab(makeAgent({ owner: { name: 'Dana Iveagh', email: 'dana@acme.test' } }));
 
-        expect(screen.getByText(EN.stateBody.DRAFT)).toBeInTheDocument();
-        expect(EN.stateBody.DRAFT).toMatch(
-            /If this workspace requires registered agents, its credentials are refused/i,
-        );
+        expect(factValue(EN.ownerLabel)).toBe('Dana Iveagh');
     });
 
-    it('the confirmation names the condition AND the run already in flight', () => {
-        renderTab(makeAgent({ status: 'ACTIVE' }));
+    it('says the NAME is not recorded only when the payload carries neither', () => {
+        renderTab(makeAgent({ owner: { name: null, email: null } }));
+
+        expect(factValue(EN.ownerLabel)).toBe(EN.ownerEmpty);
+        // And the phrase denies a label, never the accountability itself.
+        expect(EN.ownerEmpty).toBe('Name not recorded');
+    });
+});
+
+describe('the availability copy is chosen by the tenant\'s enforcement flag', () => {
+    /** The one paragraph under the Availability heading, as a reader sees it. */
+    function availabilityCopy(): string {
+        const heading = screen.getByText(EN.availabilityHeading);
+        const paragraph = heading.parentElement?.querySelector('p');
+        if (!paragraph) throw new Error('no paragraph under the Availability heading');
+        return (paragraph.textContent ?? '').trim();
+    }
+
+    for (const status of ['DRAFT', 'ACTIVE', 'SUSPENDED', 'RETIRED'] as const) {
+        it(`a ${status} agent reads differently for an enforcing and a non-enforcing tenant`, () => {
+            // Rendered TWICE from one fixture, changing only the flag: a tab
+            // that ignored `registrationEnforced` hands both readers one
+            // sentence, and it is false for one of them.
+            const enforcing = renderTab(makeAgent({ status, registrationEnforced: true }));
+            const underEnforcement = availabilityCopy();
+            enforcing.unmount();
+
+            renderTab(makeAgent({ status, registrationEnforced: false }));
+            const withoutEnforcement = availabilityCopy();
+
+            // Inequality alone DOES NOT BITE, and that was a real hole: a
+            // branch that renders the empty string also differs from the
+            // enforcing sentence, so `: ''` in place of the unenforced lookup
+            // passed — and an empty Availability paragraph is a worse answer
+            // than the hedge this change removes. Both branches are therefore
+            // pinned to the exact catalogue string. That fails on '', on a
+            // stray key path, on the two branches being swapped, and on either
+            // sentence being edited out from under the claim.
+            expect(underEnforcement).not.toBe(withoutEnforcement);
+            expect(underEnforcement).toBe(EN.stateBody[status]);
+            expect(withoutEnforcement).toBe(catalogue(`stateBodyUnenforced.${status}`));
+
+            // And the de-hedge itself, pinned on the catalogue: the enforcing
+            // sentence no longer opens with a condition the tab can now
+            // answer, and the non-enforcing one names the world it is in.
+            expect(EN.stateBody[status]).not.toMatch(/If this workspace requires/i);
+            expect(catalogue(`stateBodyUnenforced.${status}`)).toMatch(
+                /does not require registered agents/i,
+            );
+        });
+    }
+
+    it('the suspend confirmation swaps its scope sentence on the same flag', () => {
+        // The dialog is where somebody commits, so it must not keep the
+        // enforcing sentence for a tenant whose gate will let the credentials
+        // through — that reader is being told traffic stops when it does not.
+        const enforcing = renderTab(makeAgent({ status: 'ACTIVE', registrationEnforced: true }));
         fireEvent.click(screen.getByRole('button', { name: EN.suspendAction }));
-
         expect(screen.getByText(EN.suspendScope)).toBeInTheDocument();
-        expect(EN.suspendScope).toMatch(/if that requirement is off, the suspension is recorded but stops nothing/i);
-        // Registration is evaluated once per invocation, so suspension refuses
-        // the NEXT request; an operator reading "suspended" as "halted mid-run"
-        // has been told something untrue.
+        // The half that is true under EITHER flag, kept as a claim on the copy
+        // because it is the one an operator gets wrong on their own:
+        // registration is evaluated once per invocation, so suspension refuses
+        // the NEXT request and a run already in flight finishes.
         expect(EN.suspendScope).toMatch(/A run already under way is not affected/i);
+        enforcing.unmount();
+
+        renderTab(makeAgent({ status: 'ACTIVE', registrationEnforced: false }));
+        fireEvent.click(screen.getByRole('button', { name: EN.suspendAction }));
+        // Companion: the dialog IS open — its title is on screen — so the
+        // absence below is a swapped sentence, not an unrendered one.
+        expect(screen.getByText(EN.suspendTitle)).toBeInTheDocument();
+        // The SWAP, not merely the absence. `: null` in place of the unenforced
+        // string left the title on screen and the scope paragraph gone, and the
+        // absence-only assertion passed on it — a commit dialog that tells a
+        // non-enforcing operator nothing at all about scope.
+        expect(screen.getByText(catalogue('suspendScopeUnenforced'))).toBeInTheDocument();
+        expect(screen.queryByText(EN.suspendScope)).not.toBeInTheDocument();
+    });
+});
+
+/**
+ * WHY "STOPS NOTHING" IS NOT AN ACCEPTABLE SENTENCE HERE, and what the copy has
+ * to say instead.
+ *
+ * `evaluateAgentRegistration` sets `verdict.agentId = null` for any agent that
+ * is not ACTIVE, and it does that WHETHER OR NOT the tenant enforces
+ * (`src/lib/agentic/agent-registration-gate.ts` — the `enforcing` flag only
+ * decides whether a `reason` is returned and the call is refused). Three
+ * controls downstream key off exactly that null, and every one of them OPENS UP
+ * when it arrives:
+ *
+ *   • the tool allowlist — `src/lib/mcp/auth.ts`
+ *     `const grantedTools = agentId ? await listGrantedToolNames(…) : null`,
+ *     and `src/lib/mcp/authorize.ts` `isToolExposed` is
+ *     `if (inv.grantedTools === null) return true;` — every tool in the build
+ *     becomes loadable;
+ *   • the autonomy ceiling — `riskTierCeilingFor(null)` is `UNCLAMPED` and
+ *     `agentAutonomy: verdict.autonomyLevel` is null, so neither the tier cap
+ *     nor the agent's registered level contributes a term;
+ *   • the policy card — `const inForce = agentId ? await loadPolicyCardInForce(…) : null`.
+ *
+ * So for a tenant with the register switched off, suspending an ACTIVE agent
+ * does not merely fail to stop its credentials: it REMOVES the three limits the
+ * register was placing on them, leaving whatever the key itself permits. Copy
+ * that stops at "stops nothing" reads as "changes nothing", and it is read on
+ * the one screen where somebody commits to the change.
+ *
+ * These are catalogue-level assertions with no render, in the same form as the
+ * namespace-collision check at the foot of this file: the claim is about what
+ * the string says, the render that puts it on screen is pinned above, and the
+ * component has no branch left that could make the sentence true or false.
+ */
+describe('the non-enforcing copy says the agent\'s own limits stop applying', () => {
+    // Every needle below is a LITERAL regex at its own call site, rather than
+    // three `[name, pattern]` tuples iterated in a loop. `toMatch(pattern)`
+    // over a loop variable is exactly the `identifier-unresolved` shape
+    // `tests/guardrails/assertion-span-reach-ratchet.test.ts` counts as
+    // un-analysable, and it fails the run rather than merely reading worse:
+    // the tuple form put the ceiling at 59 against 57. The repetition is the
+    // price of the spans staying readable to the analyser.
+    //
+    // DRAFT, SUSPENDED and RETIRED are precisely the states in which
+    // `verdict.agentId` is null, so they are precisely the sentences that owe
+    // the reader this. ACTIVE is the state in which the three controls DO
+    // apply, and it gets the opposite claim below.
+    for (const status of ['DRAFT', 'SUSPENDED', 'RETIRED'] as const) {
+        it(`the non-enforcing ${status} sentence names all three controls that come off`, () => {
+            const copy = catalogue(`stateBodyUnenforced.${status}`);
+
+            expect(copy).toMatch(/granted tools/i);
+            expect(copy).toMatch(/autonomy ceiling/i);
+            expect(copy).toMatch(/policy card/i);
+        });
+    }
+
+    it('the non-enforcing suspend dialog names all three too', () => {
+        // The dialog is the screen somebody commits on, so it carries the same
+        // three names as the paragraph rather than a shortened version.
+        const copy = catalogue('suspendScopeUnenforced');
+
+        expect(copy).toMatch(/granted tools/i);
+        expect(copy).toMatch(/autonomy ceiling/i);
+        expect(copy).toMatch(/policy card/i);
+    });
+
+    it('the ACTIVE sentence makes the opposite claim — while it is active, they apply', () => {
+        // The companion that stops the three checks above from being satisfied
+        // by a boilerplate paragraph pasted into all four states. ACTIVE is the
+        // one state where the register's limits reach the tool boundary even
+        // with enforcement off, so its sentence must NOT say they stop
+        // applying.
+        expect(catalogue('stateBodyUnenforced.ACTIVE')).toMatch(
+            /does not require registered agents/i,
+        );
+        expect(catalogue('stateBodyUnenforced.ACTIVE')).not.toMatch(/stop applying/i);
+        expect(catalogue('stateBodyUnenforced.ACTIVE')).toMatch(/do apply/i);
+    });
+
+    it('no non-enforcing sentence stops at "stops nothing"', () => {
+        // The exact phrasing this block exists to keep out. Positive companion
+        // first, so this is not a check on four empty strings.
+        for (const status of ['DRAFT', 'ACTIVE', 'SUSPENDED', 'RETIRED'] as const) {
+            expect(catalogue(`stateBodyUnenforced.${status}`).length).toBeGreaterThan(80);
+            expect(catalogue(`stateBodyUnenforced.${status}`)).not.toMatch(/stops nothing/i);
+        }
+        expect(catalogue('suspendScopeUnenforced').length).toBeGreaterThan(80);
+        expect(catalogue('suspendScopeUnenforced')).not.toMatch(/stops nothing/i);
+    });
+
+    it('the credential count claims LIVENESS, not acceptance', () => {
+        // The count is `revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt >
+        // now)` — the register's answer to "is this key still a key". It is NOT
+        // the answer to "would a call on it be accepted": the kill switch and
+        // the circuit breaker both refuse at the TOOL BOUNDARY without touching
+        // `revokedAt` or `expiresAt` (`src/lib/agentic/kill-switch.ts`: "the
+        // check lives at the TOOL BOUNDARY, as step 0 of `authorizeToolCall`"),
+        // so with a kill engaged this number is nonzero and nothing is being
+        // accepted. The dialog may say the keys are live; it may not say they
+        // are accepted.
+        expect(EN.suspendCredentials).toMatch(/live/i);
+        expect(EN.suspendCredentials).not.toMatch(/accepted/i);
+        expect(EN.suspendCredentialsNone).toMatch(/live/i);
+        expect(EN.suspendCredentialsNone).not.toMatch(/accepted/i);
+        // The profile row is the same fact in fewer words and must not drift
+        // from it.
+        expect(EN.credentialsLabel).toMatch(/live/i);
+        expect(EN.credentialsValue).toMatch(/live/i);
+        expect(EN.credentialsNone).toMatch(/live/i);
     });
 });
 

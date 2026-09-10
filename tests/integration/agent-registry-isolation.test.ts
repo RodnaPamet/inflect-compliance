@@ -575,3 +575,174 @@ describe('retirement waits for the review queue; suspension does not', () => {
         expect(proposal.agentId).toBe(seeded[T1].agentId);
     });
 });
+
+/**
+ * What the DETAIL read says about an agent, as opposed to what the register
+ * list says. Three claims, all of them "the number or the name the page prints
+ * is the one the database is actually holding":
+ *
+ *   • the credential count is LIVE credentials, not bound ones. `TenantApiKey`
+ *     keeps revoked rows (`revokedAt` set, never deleted) and expired ones, and
+ *     both keep their `agentId` — so an unfiltered count told an operator about
+ *     to suspend an agent that they were cutting off traffic which had already
+ *     stopped;
+ *   • a THIRD_PARTY agent names its supplier. The relation existed and the
+ *     select did not ask for it, so the profile could offer a link and never a
+ *     name;
+ *   • `registrationEnforced` comes down with the agent, because every sentence
+ *     the detail page writes about a suspended agent is conditional on it and
+ *     the page cannot read the settings route (gated on `admin.manage`).
+ *
+ * Its own agent, its own vendor, its own keys: the suite's shared T1 agent is
+ * RETIRED by the block above, and a fixture that depends on describe order is
+ * a fixture that breaks when somebody inserts a test.
+ */
+describe('the detail read reports live credentials, the supplier, and the enforcement flag', () => {
+    let agentId = '';
+    let vendorId = '';
+    let aiSystemId = '';
+    const keyIds: string[] = [];
+
+    const HOUR = 60 * 60 * 1000;
+
+    beforeAll(async () => {
+        const vendor = await prisma.vendor.create({
+            data: { tenantId: T1, name: 'Northwind Automation Ltd' },
+        });
+        vendorId = vendor.id;
+
+        // Its own AI-system entry: `RegisteredAgent.aiSystemId` is UNIQUE, so
+        // borrowing the suite's shared one makes the create fail on the
+        // constraint rather than on anything this block is about.
+        const aiSystem = await prisma.aiSystem.create({
+            data: { tenantId: T1, name: 'Supplier host', ownerUserId: seeded[T1].ownerUserId },
+        });
+        aiSystemId = aiSystem.id;
+
+        const agent = await createRegisteredAgent(ctxFor(T1), {
+            aiSystemId,
+            name: 'Supplier-built reconciler',
+            autonomyLevel: 2,
+            dataAccessScope: 'READ_TENANT_DATA',
+            reversibility: 'REVERSIBLE',
+            provenance: 'THIRD_PARTY',
+            vendorId,
+            ownerUserId: seeded[T1].ownerUserId,
+        });
+        agentId = agent.id;
+
+        // Four bound keys, two of which are still LIVE. Live, not "accepted":
+        // liveness is `revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt >
+        // now)`, which is the whole of what this count knows, and the kill
+        // switch and the circuit breaker both refuse at the tool boundary
+        // without touching either column. The two live ones differ in HOW they
+        // are live — no expiry at all, and an expiry in the future — because
+        // `expiresAt: null` and `expiresAt > now` are separate arms of the
+        // filter and a single live key would exercise only one.
+        const keys = [
+            { name: 'live, no expiry', expiresAt: null, revokedAt: null },
+            { name: 'live, expires later', expiresAt: new Date(Date.now() + HOUR), revokedAt: null },
+            { name: 'revoked', expiresAt: null, revokedAt: new Date() },
+            { name: 'expired', expiresAt: new Date(Date.now() - HOUR), revokedAt: null },
+        ];
+        for (const [i, k] of keys.entries()) {
+            const row = await prisma.tenantApiKey.create({
+                data: {
+                    tenantId: T1,
+                    name: k.name,
+                    keyPrefix: `iflk_t${i}`,
+                    keyHash: `hash-live-count-probe-${i}`,
+                    createdById: seeded[T1].ownerUserId,
+                    agentId,
+                    expiresAt: k.expiresAt,
+                    revokedAt: k.revokedAt,
+                },
+            });
+            keyIds.push(row.id);
+        }
+    });
+
+    afterAll(async () => {
+        // The keys go FIRST and they are not optional. The composite FK from
+        // `TenantApiKey` to the agent is `onDelete: Restrict`, so the suite's
+        // own `clearOwnRows` teardown cannot delete this agent while a key
+        // still points at it — leaving them behind takes the whole file down
+        // in teardown, which reads as an unrelated failure.
+        await prisma.tenantApiKey.deleteMany({ where: { id: { in: keyIds } } });
+        if (agentId) await prisma.registeredAgent.deleteMany({ where: { id: agentId } });
+        if (aiSystemId) await prisma.aiSystem.deleteMany({ where: { id: aiSystemId } });
+        if (vendorId) await prisma.vendor.deleteMany({ where: { id: vendorId } });
+        await prisma.tenantSecuritySettings.deleteMany({ where: { tenantId: { in: [T1, T2] } } });
+    });
+
+    it('counts only the credentials that are still live', async () => {
+        const agent = await getRegisteredAgent(ctxFor(T1), agentId);
+        expect(agent._count.apiKeys).toBe(2);
+    });
+
+    it('all four keys really are bound — otherwise the count above proves nothing', async () => {
+        // The companion. `toBe(2)` passes just as happily against an agent
+        // whose revoked and expired keys were never created, so read the
+        // relation as superuser and count what the filter had to exclude.
+        const bound = await prisma.tenantApiKey.findMany({
+            where: { agentId },
+            select: { id: true, revokedAt: true, expiresAt: true },
+        });
+        expect(bound).toHaveLength(4);
+        expect(bound.filter((k) => k.revokedAt !== null)).toHaveLength(1);
+        expect(bound.filter((k) => k.expiresAt !== null && k.expiresAt < new Date())).toHaveLength(1);
+    });
+
+    it('the register LIST still counts every bound key — the filter is the detail read only', async () => {
+        // Not an accident and not a gap: `listSelect` is a module-level object,
+        // so a `new Date()` in it would be evaluated once at import and a
+        // long-lived process would filter against the "now" of its last deploy.
+        // The Keys column therefore keeps meaning "bound", and this asserts the
+        // two reads deliberately disagree rather than one having been missed.
+        const rows = await listRegisteredAgents(ctxFor(T1));
+        const listed = rows.find((r) => r.id === agentId);
+        expect(listed?._count.apiKeys).toBe(4);
+    });
+
+    it('names the supplier, rather than leaving the page a bare vendor id', async () => {
+        const agent = await getRegisteredAgent(ctxFor(T1), agentId);
+        expect(agent.vendor?.name).toBe('Northwind Automation Ltd');
+        // The id is still carried — the profile links to the vendor record
+        // whether or not the name resolved.
+        expect(agent.vendorId).toBe(vendorId);
+    });
+
+    it('carries the owner email, so a nameless owner is still somebody you can reach', async () => {
+        const agent = await getRegisteredAgent(ctxFor(T1), agentId);
+        // The fixture user was created with an email and no name, which is
+        // exactly the row the register used to render as "Unassigned".
+        expect(agent.owner?.name).toBeNull();
+        expect(agent.owner?.email).toBe(`owner@${T1}.test`);
+    });
+
+    it('reports enforcement ON when the tenant has no security-settings row at all', async () => {
+        // An absent row reads as ENFORCING — see `isAgentRegistrationEnforced`.
+        // This is the state most tenants are in, so it is the state the copy is
+        // wrong about if the flag is ever defaulted the other way.
+        await prisma.tenantSecuritySettings.deleteMany({ where: { tenantId: T1 } });
+        const agent = await getRegisteredAgent(ctxFor(T1), agentId);
+        expect(agent.registrationEnforced).toBe(true);
+    });
+
+    it('reports enforcement OFF for a tenant that switched the register off', async () => {
+        await prisma.tenantSecuritySettings.create({
+            data: { tenantId: T1, requireRegisteredAgent: false },
+        });
+        const agent = await getRegisteredAgent(ctxFor(T1), agentId);
+        expect(agent.registrationEnforced).toBe(false);
+
+        // And back on, from the same row: the flag tracks the column rather
+        // than the presence of a settings row.
+        await prisma.tenantSecuritySettings.update({
+            where: { tenantId: T1 },
+            data: { requireRegisteredAgent: true },
+        });
+        const again = await getRegisteredAgent(ctxFor(T1), agentId);
+        expect(again.registrationEnforced).toBe(true);
+    });
+});

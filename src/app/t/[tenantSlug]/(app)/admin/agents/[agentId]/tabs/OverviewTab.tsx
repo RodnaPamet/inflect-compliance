@@ -51,19 +51,41 @@ interface AgentDetail {
     riskTierScoredAt: string | null;
     vendorId: string | null;
     /**
-     * OPTIONAL because the detail select does not ask for it today, not
-     * because the column is soft: `RegisteredAgent.vendor` is a real relation
-     * and a CHECK constraint refuses `THIRD_PARTY` with no vendor. Typed here
-     * so the supplier is named the moment the select carries it, rather than
-     * this tab needing a second change to notice. Absent — today, always — the
-     * render falls back to the generic link label.
+     * The supplier, now that the register's select carries
+     * `vendor { id, name }`. Still OPTIONAL, and the fallback below is still
+     * live: a FIRST_PARTY agent has no vendor at all, and `Vendor.name` is
+     * free text somebody could have left blank. The one case that must never
+     * happen — a THIRD_PARTY agent naming no supplier — is refused by a CHECK
+     * constraint in the database rather than papered over here.
      */
     vendor?: { name: string | null } | null;
     isLegacyPlaceholder: boolean;
     createdAt: string;
-    owner: { name: string | null } | null;
+    /**
+     * The accountable human. `ownerUserId` is NOT NULL behind a real FK, so
+     * the row is always there; `name` is the nullable half, and `email` is the
+     * identifier that survives a display name nobody set.
+     */
+    owner: { name: string | null; email: string | null } | null;
     aiSystem: { id: string; riskTier: 'PROHIBITED' | 'HIGH' | 'LIMITED' | 'MINIMAL' | null } | null;
+    /**
+     * LIVE credentials. `getById` filters revoked and expired keys out of this
+     * count — unlike the register list's Keys column, which still counts
+     * everything bound. The copy below says "live" BECAUSE of that filter: if
+     * the filtered `_count` ever leaves the repository, the copy is a lie.
+     */
     _count: { apiKeys: number };
+    /**
+     * Whether `requireRegisteredAgent` is ON for this tenant — i.e. whether
+     * the register is consulted at all when a credential registers.
+     *
+     * A tenant-wide fact carried on the agent payload because every sentence
+     * this tab writes about a suspended agent depends on it, and the tab
+     * cannot read it itself: `GET /admin/security-settings` is gated on
+     * `admin.manage`, while this page only guarantees `admin.agent_registry`,
+     * so a client fetch would 403 for exactly the operators who live here.
+     */
+    registrationEnforced: boolean;
 }
 
 /** The only two moves `POST ./status` accepts — RETIRED lives on DELETE. */
@@ -268,22 +290,25 @@ export function OverviewTab({
 
                 <dl className="grid gap-default sm:grid-cols-2">
                     <Fact label={t('agentDetail.overview.ownerLabel')}>
-                        {/* The fallback says the NAME is missing, not the owner.
-                            `RegisteredAgent.ownerUserId` is NOT NULL behind a
-                            real FK — the schema calls it "the accountable
-                            human" and the two-person rule downstream compares
-                            it — while `User.name` is nullable. So the only way
-                            to reach this branch is an owner on record whose
-                            display name is not set, and the register's own
-                            surface saying "Unassigned" about them would deny
-                            an accountability the database is holding. Reading
-                            the name is all this payload can do: the select
-                            carries `owner { id, name }` and no email. */}
-                        {agent.owner?.name ?? (
-                            <span className="text-content-muted">
-                                {t('agentDetail.overview.ownerEmpty')}
-                            </span>
-                        )}
+                        {/* Name, then EMAIL, then the phrase — and the order is
+                            the point. `RegisteredAgent.ownerUserId` is NOT NULL
+                            behind a real FK (the schema calls it "the
+                            accountable human", and the two-person rule
+                            downstream compares it) while `User.name` is
+                            nullable, so a missing name is a missing DISPLAY
+                            NAME and never a missing owner. The email is in the
+                            select now, which means the last resort on a page
+                            whose question is "who answers for this agent" is an
+                            address somebody can write to, rather than a
+                            sentence about the absence of a label. The phrase
+                            keeps the third rung: it is what is left when the
+                            payload carries neither. */}
+                        {agent.owner?.name ??
+                            agent.owner?.email ?? (
+                                <span className="text-content-muted">
+                                    {t('agentDetail.overview.ownerEmpty')}
+                                </span>
+                            )}
                     </Fact>
 
                     <Fact label={t('agentDetail.overview.modelRefLabel')}>
@@ -297,19 +322,17 @@ export function OverviewTab({
                     <Fact label={t('agentDetail.overview.provenanceLabel')}>
                         <span className="flex flex-wrap items-center gap-tight">
                             {t(`agentDetail.overview.provenanceValue.${agent.provenance}`)}
-                            {/* The supplier BY NAME when the payload carries one,
-                                by link either way. `RegisteredAgent` does have a
-                                `vendor` relation, but the detail select does not
-                                ask for it, so today this payload holds `vendorId`
-                                alone — and the only honest things to do with a
-                                bare UUID are print it or offer a way to go and
-                                read the name. Naming the supplier in place needs
-                                `vendor: { select: { id: true, name: true } }`
-                                added to the repository's select, which is not
-                                this lane's file; the fallback below means that
-                                one-line change is all it takes, with no second
-                                edit here. Until then the vendor record is where
-                                third-party risk for this agent lives. */}
+                            {/* The supplier BY NAME, by link either way. The
+                                register's select carries `vendor { id, name }`
+                                now, so a third-party agent names its supplier
+                                in place instead of offering a bare UUID behind
+                                a generic "open the record" label — naming the
+                                third party is what a third-party
+                                accountability surface owes its reader. The
+                                generic label survives as the fallback, for a
+                                vendor row whose free-text name was left blank;
+                                the link is keyed on `vendorId` rather than on
+                                the relation, so it renders either way. */}
                             {agent.vendorId && (
                                 <Link
                                     href={`/t/${tenantSlug}/vendors/${agent.vendorId}`}
@@ -363,16 +386,18 @@ export function OverviewTab({
                     </Fact>
 
                     <Fact label={t('agentDetail.overview.credentialsLabel')}>
-                        {/* `_count.apiKeys` is UNFILTERED — `listSelect` counts
-                            the relation, and `TenantApiKey` keeps revoked rows
-                            (`revokedAt` is set, never deleted) and expired ones
-                            (`expiresAt` in the past). So the copy says what the
-                            number counts rather than letting the reader take it
-                            for live credentials. The fix that would let this
-                            read plainly is a filtered `_count` in the route's
-                            select, which is not this lane's file. Zero is the
-                            one honest reading either way: no rows at all means
-                            no live ones. */}
+                        {/* `_count.apiKeys` is the LIVE count: `getById`
+                            filters out `revokedAt`-set rows and expired ones,
+                            so the copy states "live API keys" plainly instead
+                            of hedging about what the number includes. Zero now
+                            means no key bound to this agent is still live — it
+                            does NOT mean none was ever bound, which is why the
+                            zero branch reads "None live" rather than "None
+                            bound". Nor does a nonzero count mean calls WOULD be
+                            accepted: the kill switch and the circuit breaker
+                            refuse at the tool boundary without touching
+                            `revokedAt` or `expiresAt`, so the copy says "live"
+                            and stops there. */}
                         {agent._count.apiKeys === 0
                             ? t('agentDetail.overview.credentialsNone')
                             : t('agentDetail.overview.credentialsValue', {
@@ -397,18 +422,25 @@ export function OverviewTab({
             <Card as="section" className="space-y-default">
                 <Heading level={2}>{t('agentDetail.overview.availabilityHeading')}</Heading>
 
-                {/* The state sentences name the CONDITION on enforcement rather
-                    than asserting it. `evaluateAgentRegistration` refuses a
-                    non-ACTIVE agent only when `isAgentRegistrationEnforced` is
-                    true, and `TenantSecuritySettings.requireRegisteredAgent` is
-                    a tenant switch — an absent row reads as on, so the claim is
-                    right for most workspaces and false for one that opted out.
-                    A panel that promised an emergency stop to that workspace
-                    would be promising something the gate does not do. The tab
-                    cannot read the flag itself: the settings route is gated on
-                    `admin.manage`, which a registry-key holder need not have. */}
+                {/* TWO sentence sets, chosen by the tenant's own enforcement
+                    flag, because one status means different things under each.
+                    `evaluateAgentRegistration` refuses a non-ACTIVE agent only
+                    when `requireRegisteredAgent` is on; with it off the register
+                    records the state and the gate lets the credentials through.
+                    This copy used to open four sentences with "If this workspace
+                    requires registered agents, …" precisely because it could not
+                    tell which world it was in — and a conditional is the worst
+                    thing to hand somebody mid-incident, because it makes the
+                    reader do the lookup the page refused to do. Now
+                    `registrationEnforced` comes down with the agent and each
+                    reader gets the unconditional sentence that is true of their
+                    workspace. */}
                 <p className="text-sm text-content-muted">
-                    {t(`agentDetail.overview.stateBody.${agent.status}`)}
+                    {t(
+                        agent.registrationEnforced
+                            ? `agentDetail.overview.stateBody.${agent.status}`
+                            : `agentDetail.overview.stateBodyUnenforced.${agent.status}`,
+                    )}
                 </p>
 
                 {unscored && (
@@ -495,30 +527,44 @@ export function OverviewTab({
                     <Modal.Body>
                         {failure && <InlineNotice variant="error">{failure}</InlineNotice>}
                         <p className="text-sm text-content-muted">
-                            {/* What suspension does and does not reach, in both
-                                directions. Registration is evaluated once per
-                                invocation, so this refuses the NEXT request and
-                                leaves a run already in flight alone — an operator
-                                who reads "suspended" as "halted mid-run" has been
-                                told something untrue. And the refusal itself is
-                                conditional on this workspace requiring registered
-                                agents; with that switch off the register records
-                                the suspension and the gate lets the credentials
-                                through, so the sentence names the condition rather
-                                than promising a stop. */}
-                            {t('agentDetail.overview.suspendScope')}
+                            {/* What suspension does and does not reach. One half
+                                is true either way and stays in both strings:
+                                registration is evaluated once per invocation, so
+                                this refuses the NEXT request and touches nothing
+                                already running — an operator who reads
+                                "suspended" as "halted mid-run" has been told
+                                something untrue. The flag decides the other
+                                half. An enforcing tenant is told the
+                                credentials are refused. A tenant that has opted
+                                out is told the harder thing: suspension does not
+                                refuse them and it WIDENS them. A non-ACTIVE
+                                agent makes `verdict.agentId` null
+                                (`agent-registration-gate.ts`), and three
+                                controls key off exactly that null and open up —
+                                `grantedTools` goes null so `isToolExposed`
+                                returns true for every tool, `riskTierCeilingFor`
+                                is UNCLAMPED with no `agentAutonomy` term, and
+                                `loadPolicyCardInForce` is skipped. "Stops
+                                nothing" reads as "changes nothing" and this is
+                                the dialog where somebody commits. */}
+                            {agent.registrationEnforced
+                                ? t('agentDetail.overview.suspendScope')
+                                : t('agentDetail.overview.suspendScopeUnenforced')}
                         </p>
                         <p className="mt-1 text-sm text-content-muted">
-                            {/* The count is BOUND credentials, not live ones —
-                                revoked and expired keys keep their `agentId` and
-                                stay in the relation. This paragraph used to turn
-                                that number into a claim ("# API keys ... stop
-                                being accepted"), which for an agent holding two
-                                revoked keys and nothing live told the operator
-                                they were cutting off traffic that had already
-                                stopped, while the zero branch that would have
-                                said so never fired. It now reports what the
-                                number is and what it is not.
+                            {/* The count is LIVE credentials now that
+                                `getById` filters revoked and expired keys out of
+                                it, so this paragraph can state again what
+                                suspension does to them. That claim was retired
+                                once — as "# API keys ... stop being accepted"
+                                over an UNFILTERED count, which for an agent
+                                holding two revoked keys and nothing live told
+                                the operator they were cutting off traffic that
+                                had already stopped, while the zero branch that
+                                would have said so never fired. What makes it
+                                safe to state again is the FILTER, not the
+                                rewording: move the `_count` override out of the
+                                repository and this sentence lies again.
 
                                 Zero is its own key, not an ICU `=0` branch.
                                 The locale checker extracts placeholders with
