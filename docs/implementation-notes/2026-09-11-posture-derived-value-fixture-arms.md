@@ -145,6 +145,13 @@ differ, so no single literal is byte-identical to either arm's value.
 - **P4 is not redundant with P1, and that was measured rather than argued.**
   Setting `arm1.conn` to `arm0.exec`'s value fails P4 and leaves P1 GREEN.
 
+- **The claim that the guard covers axes that do not exist yet was proved, not
+  asserted.** A brand-new axis added to both cloud arms with one shared value
+  fails P1 and P4, both naming it. A new axis added to ONE arm only fails P3's
+  axis-set agreement check and nothing else — that is the quiet case, because
+  the missing side reads `undefined`, the flattener drops it, and the axis stops
+  being compared at all.
+
 - **The probe harness was not committed.** It rewrites both collectors in place,
   needs `ts-jest` diagnostics off, and would sit inside `eslint .`'s scope for no
   ongoing benefit. The durable artefact is the guard; the harness is described

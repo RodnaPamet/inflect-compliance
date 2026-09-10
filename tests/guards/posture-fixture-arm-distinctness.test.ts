@@ -59,6 +59,18 @@
  *   P3  the axis floor cut to 0                                -> P3 green, and the
  *       one-arm table above then passes P1/P4 — the floor is what makes them bite.
  *
+ * And the two that matter most, because they are why this is a guard rather than
+ * one more hand-written axis assertion — an axis that did NOT exist when it was
+ * written:
+ *
+ *   P1/P4  a BRAND-NEW axis added to both cloud arms with one shared value
+ *          -> 2 failed, both naming it: `newAxis: "shared-value" | "shared-value"`
+ *          and `"shared-value": arm 0 arm.newAxis == arm 1 arm.newAxis`.
+ *   P3     a new axis added to ONE arm only -> 1 failed, and only there. This is
+ *          the quiet case: the missing side reads `undefined`, the flattener
+ *          drops it, and the axis silently stops being compared at all. The
+ *          axis-set agreement check is the only thing that sees it.
+ *
  * The full round-1 measurements (an independent value-position AST walk of both
  * collectors, and a runtime observation of every derived site) are in
  * `docs/implementation-notes/2026-09-11-posture-derived-value-fixture-arms.md`.
