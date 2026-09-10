@@ -7829,7 +7829,19 @@
         "approveBlocked": "Approval is unavailable while the changes cannot be shown."
       },
       "signatureRecorded": "{recorded} of {required} approvals recorded — a second reviewer must sign",
-      "awaitingSecond": "Awaiting a second approver"
+      "awaitingSecond": "Awaiting a second approver",
+      "guard": {
+        "flaggedBadge": "Guard flagged",
+        "cleanBadge": "Guard clean",
+        "unscannedBadge": "Never scanned",
+        "flaggedNotice": "The agentic output guard flagged this proposal's content — a rule fired, nothing was malicious, so it was queued for you rather than quarantined. Read the proposed changes against the rule that matched before approving.",
+        "rulesLabel": "Rules fired:",
+        "unscannedNotice": "This proposal predates the agentic output guard, so it was never scanned. That is not the same as being found clean — nothing checked this content.",
+        "confirmTitle": "Approve content the guard flagged?",
+        "confirmBody": "The agentic output guard flagged this proposal. Approving it creates the real compliance record from content that matched a known injection pattern.",
+        "confirmApprove": "Approve anyway",
+        "confirmCancel": "Go back"
+      }
     },
     "runs": {
       "accessMessage": "You do not have permission to view agent runs. Contact your workspace administrator to request access.",
@@ -7864,7 +7876,6 @@
       "colDigest": "Content digest",
       "kindOperation": "{operation} {kind}",
       "unattributed": "Unattributed credential",
-      "noRules": "No rule ids recorded",
       "none": "—",
       "resourceSingular": "quarantined proposal",
       "resourcePlural": "quarantined proposals",
@@ -7886,6 +7897,9 @@
       "sheetRationale": "Agent rationale",
       "sheetPayload": "Attempted content",
       "sheetPayloadWarning": "Attacker-supplied text, shown inert. Do not paste it into anything that will act on it."
+    },
+    "guard": {
+      "noRules": "No rule ids recorded"
     }
   },
   "securityTesting": {

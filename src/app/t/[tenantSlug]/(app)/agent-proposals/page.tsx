@@ -51,6 +51,26 @@ export default async function AgentProposalsPage({
         rationale: p.rationale,
         proposedViaKeyId: p.proposedViaKeyId,
         createdAt: p.createdAt.toISOString(),
+        // ─── The agentic output guard's verdict, forwarded ───────────────
+        //
+        // `guardAgentProposal` returns FLAGGED when a rule fired but nothing
+        // was malicious, and `createAgentProposal` writes those rows
+        // `status = 'PENDING'` — so they are listed here, beside the clean
+        // ones, and until this projection carried the verdict they were
+        // INDISTINGUISHABLE from them. The reviewer is the only control on a
+        // FLAGGED proposal (quarantine is the terminal state, and it is
+        // filtered out of this listing entirely), so a reviewer told nothing
+        // is a control that is not there.
+        //
+        // `guardInputDigest` is forwarded for a reason that is not display:
+        // `guardVerdict` is NOT NULL DEFAULT 'CLEAN', so a row written before
+        // the guard existed reads CLEAN without ever having been scanned. The
+        // digest is written only by a scan that actually ran, which is the one
+        // fact that tells "found nothing" apart from "never looked" — see
+        // `resolveProposalGuardState`.
+        guardVerdict: p.guardVerdict,
+        guardRuleIds: p.guardRuleIds,
+        guardInputDigest: p.guardInputDigest,
         // Non-null by `buildProposalDiffs`' contract (an entry per input); the
         // fallback exists so a contract change cannot render a card with no diff
         // and an approve button beside it. PAYLOAD_UNREADABLE is not reviewable,
