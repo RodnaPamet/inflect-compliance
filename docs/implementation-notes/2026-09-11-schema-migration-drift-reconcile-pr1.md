@@ -36,7 +36,7 @@ Eighteen statements were removed by describing reality in the schema:
 | 7 `@default` clauses the DB has and the schema did not | 5 | `@default([])` on six `String[]`; `@default("{}")` on `AgentActionReceipt.scannedSummary`, which is `jsonb DEFAULT '{}'::jsonb` — an empty OBJECT, so `@default([])` would have been the wrong shape |
 | 2 plain-btree indexes the DB has and the schema did not | 2 | `@@index([evidenceFileRecordId])` on `AccessReview`, `@@index([tenantId, spDriveId, spItemId])` on `Policy` — both confirmed `USING btree` in `pg_indexes` before declaring them |
 | 1 index whose DB name differs from Prisma's default | 1 | `map: "UserCalendarEventMapping_identity_key"` on the five-column `@@unique` |
-| 6 referential-action clauses where the DB is right | 10 (4 drops + 4 re-adds, 2 FKs unchanged in count) | `onDelete: Restrict` on `AgentCircuitBreaker.closedByUserId`; `NoAction` on the inert clauses of `ProcessMapSnapshot` ×3 and `ReadinessSnapshot` ×1 |
+| 5 FKs where the DB is right (7 newly declared clause tokens: 4 `onDelete` + 3 `onUpdate`) | 10 (5 drops + 5 re-adds) | `onDelete: Restrict` on `AgentCircuitBreaker.closedByUserId`; `NoAction` on the inert clauses of `ProcessMapSnapshot` ×3 and `ReadinessSnapshot` ×1 |
 
 `AgentCircuitBreaker.closedByUserId` is the one where the DB's own migration
 argues its case, and the schema comment now quotes it
@@ -99,7 +99,8 @@ shrunk residue knows the fix is to update the file, not to revert.
 ## Decisions
 
 - **No `prisma generate` in this PR, and no migration.** The only client-visible
-  effect of the new `@default`s is that four create-inputs become optional,
+  effect of the new `@default`s is that ONE field changes type (`scannedSummary`), across nine generated input types; the six
+  `String[] @default([])` change the generated client not at all,
   which is a widening; nothing needed a code change.
 - **The gate runs on all four test shards** rather than in a fifth job with its
   own Postgres. Four redundant ~2-second diffs buy the property that no shard

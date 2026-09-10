@@ -94,6 +94,20 @@ const GUARDRAILS: ReadonlyArray<{
         pillar: 'release-bot push identity (GH006 freeze)',
         anchors: ['create-github-app-token', 'RELEASE_APP_ID', 'skip ci'],
     },
+    {
+        // ADDED 2026-09-11 (#2367). The enforcement half of the
+        // migrations-reproduce-the-schema property is ONE ci.yml step, so
+        // deleting that step is a green pass. An adversarial review proved
+        // it: the step removed, 12 ci.yml-reading suites and 148 tests all
+        // stayed green while the residue file stopped being enforced.
+        file: 'tests/guardrails/schema-drift-gate-runs-in-ci.test.ts',
+        pillar: 'fresh-DB schema-drift gate presence (#2367)',
+        anchors: [
+            'db:check-schema-drift',
+            'continue-on-error',
+            'prisma/fresh-db-schema-drift.expected.sql',
+        ],
+    },
 ];
 
 /** Count `it(` / `it.each(` assertion blocks in a test file. */
@@ -119,7 +133,7 @@ describe('CI/CD pipeline-integrity — guard the guards', () => {
         });
     });
 
-    it('every registry pillar is distinct and the set is complete (5 guardrails)', () => {
+    it('every registry pillar is distinct and the set is complete (6 guardrails)', () => {
         // A drive-by deletion of one entry shrinks this count; the number is
         // the explicit contract for "how many pipeline guardrails exist", and
         // it is meant to make a removal deliberate rather than incidental.
@@ -128,8 +142,11 @@ describe('CI/CD pipeline-integrity — guard the guards', () => {
         // and `deploy-workflow` both guarded `.github/workflows/deploy.yml`,
         // deleted with the unapplied AWS estate. This is the count doing its
         // job — the deletion could not be silent.
-        expect(GUARDRAILS).toHaveLength(5);
-        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(5);
+        // 5 -> 6 on 2026-09-11 (#2367): the fresh-DB schema-drift gate.
+        // The number was read off this assertion's own failure message
+        // ("Received length: 6"), not computed.
+        expect(GUARDRAILS).toHaveLength(6);
+        expect(new Set(GUARDRAILS.map((g) => g.file)).size).toBe(6);
     });
 });
 
