@@ -82,7 +82,31 @@ export const MAX_DISABLE_SHARE = 0.1;
 export const SHARE_RULE_FLOOR = 5;
 
 export interface BreakerInput {
-    /** How many accounts this run proposes to disable. */
+    /**
+     * How many accounts this run would NEWLY disable.
+     *
+     * AN ACT, NEVER A STANDING STATE — and that distinction is the whole
+     * contract of this field, because everything above reasons about it as a
+     * batch size. An account that is ALREADY in a disabled state is not part of
+     * this number, and neither is one a per-candidate rail will refuse before
+     * any write is issued (protected, the connection's own bind, mastered
+     * elsewhere, observed too long ago). Those are rows the run will INSPECT,
+     * and inspecting is not disabling.
+     *
+     * THE INVARIANT: this number must be able to go DOWN. A count of a standing
+     * state cannot. The states a caller is tempted to include here are each
+     * permanent — an account, once disabled, stays disabled and stays a
+     * candidate; a protected account stays protected — so a numerator built
+     * from them only ever grows, and the first run that crosses a cap is
+     * followed by every subsequent run crossing it too. The breaker then
+     * latches shut forever while reporting each night as a deliberate refusal,
+     * which is the failure mode a safety rail can least afford: it stops the
+     * thing it guards and looks like it is working. That is #2290, and it cost
+     * a tenant its whole leaver path.
+     *
+     * A caller therefore computes this from the candidates it would actually
+     * WRITE for, before the loop — see `disableAccountsForLeaver`.
+     */
     readonly proposed: number;
     /**
      * Accounts known in the directory for this provider.
@@ -91,6 +115,14 @@ export interface BreakerInput {
      * inflates the computed share and would refuse correct batches; worse, a
      * population of 0 with a non-zero batch means we know nothing about the
      * directory and must not be writing to it at all.
+     *
+     * MEASURED THE SAME WAY AS THE NUMERATOR, or the share means nothing. The
+     * two halves of a fraction have to count the same kind of thing over the
+     * same set — narrowing one alone moves the ratio for a reason that is not
+     * about the batch at all. Note the directions differ, so they are not
+     * interchangeable edits: shrinking the numerator can only WITHDRAW a
+     * refusal, while shrinking the denominator can newly CREATE one, on the
+     * rail that disables real accounts.
      */
     readonly population: number;
 }

@@ -504,6 +504,49 @@ describe('the batch', () => {
         expect(disableBatch.mock.calls[0][2]).toMatchObject({ population: 400 });
     });
 
+    it('hands the batch every candidate, WITH the state the breaker counts', async () => {
+        // The counterpart to the population assertion above, and the other half
+        // of the fraction. This file mocks both `findLeaverCandidates` and
+        // `disableAccountsForLeaver`, so it can never compose a numerator — its
+        // job is to prove the SEAM carries what the numerator is made from.
+        //
+        // Two claims at once, and #2290 needs both:
+        //   • `lastObservedEnabled` survives the hop. Without it every candidate
+        //     reads as unknown, the numerator falls back to counting rows, and
+        //     the breaker latches shut at the sixth cumulative leaver.
+        //   • the already-disabled candidate is still HANDED OVER. It must stay
+        //     in the batch — its `!state.enabled` decision is what settles a
+        //     stranded INDETERMINATE journal row — so the fix belongs in the
+        //     count, never in the list.
+        const live = {
+            linkId: 'l1',
+            externalUserId: 'x1',
+            onPremisesSyncEnabled: false,
+            lastObservedEnabled: true,
+        };
+        const alreadyOff = {
+            linkId: 'l2',
+            externalUserId: 'x2',
+            onPremisesSyncEnabled: false,
+            lastObservedEnabled: false,
+        };
+        findCandidates.mockResolvedValue([live, alreadyOff]);
+        disableBatch.mockResolvedValue({
+            results: [
+                { outcome: 'DRY_RUN', linkId: 'l1' },
+                { outcome: 'ALREADY_DISABLED', linkId: 'l2' },
+            ],
+        });
+
+        const r = await run();
+
+        expect(r.status).toBe('PASSED');
+        // toEqual, not toMatchObject: an omitted `lastObservedEnabled` is
+        // `undefined`, and toMatchObject would ignore it — which is exactly the
+        // silent drop this asserts against.
+        expect(disableBatch.mock.calls[0][2].candidates).toEqual([live, alreadyOff]);
+    });
+
     it('tallies the outcomes it got back', async () => {
         disableBatch.mockResolvedValue({
             results: [{ outcome: 'DRY_RUN' }, { outcome: 'DRY_RUN' }, { outcome: 'REFUSED_TARGET' }],
