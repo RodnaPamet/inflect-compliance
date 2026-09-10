@@ -322,6 +322,26 @@ export interface DisableAccountInput {
      * being a hidden query inside the write path.
      */
     readonly isProtected?: boolean;
+    /**
+     * Was this account ENABLED the last time a sync observed it? Absent = unknown.
+     *
+     * Read where the population is assembled, for the same reason the field
+     * above is — and consumed in exactly ONE place: the blast-radius numerator
+     * in `disableAccountsForLeaver`.
+     *
+     * IT IS NOT A RAIL, and must never become one. A candidate this reports as
+     * already disabled still goes through `decideAndDisable`, because the
+     * `!state.enabled` branch there is what settles a stranded INDETERMINATE
+     * journal row from LIVE evidence and audits the reconciliation. Filtering
+     * such a candidate out of the batch would close that loop forever, from a
+     * stored observation that is exactly the evidence the branch refuses to
+     * settle on.
+     *
+     * ABSENT MEANS COUNT IT. The numerator tests `!== false`, so a producer
+     * that forgets this field fails toward counting the candidate rather than
+     * silently shrinking the batch the breaker is measuring.
+     */
+    readonly lastObservedEnabled?: boolean;
 }
 
 /**
@@ -962,8 +982,53 @@ export async function disableAccountsForLeaver(
     writer: DirectoryWriter,
     input: LeaverBatchInput,
 ): Promise<{ refused?: string; results: LeaverDisableResult[] }> {
+    // ═══ THE NUMERATOR IS A COUNT OF WRITES, NOT A COUNT OF ROWS ═══
+    //
+    // `input.candidates.length` stood here, and it is a standing STATE rather
+    // than an act. A candidate is any link whose worker is TERMINATED, whose
+    // link is fresh and uncontradicted — with no predicate at all on the
+    // account. So the list keeps every account this pass will refuse anyway:
+    // ones already disabled, break-glass ones, the connection's own bind, ones
+    // mastered on-premises, ones whose on-prem state is too old to act on.
+    //
+    // Each of those five is PERMANENT, and TERMINATED is a one-way flip, so the
+    // count only ever grew: disable a leaver tonight and it is still a
+    // candidate tomorrow, and the night after, alongside the next one. Once the
+    // cumulative total crossed the cap the breaker refused the WHOLE batch —
+    // by design, no trimming — every night from then on, including the one
+    // genuinely new leaver in it. The subsystem stopped offboarding while
+    // presenting itself as a deliberate nightly refusal. (#2290)
+    //
+    // So count what this pass would NEWLY disable. Every term below is a rail
+    // that refuses the candidate later in this same pass, evaluated here from
+    // data already in hand — no query, no network, and no second implementation
+    // of a safety rail: `resolveWriteTarget` is the same pure function
+    // `decideAndDisable` consults, called with the same fields.
+    //
+    // This can only ever LOWER the numerator, never raise it, which is why it
+    // is safe on the one rail in the product that disables real accounts: it
+    // can withdraw a refusal, and it can never authorise a write that the
+    // per-candidate rails below would not have authorised anyway.
+    //
+    // The mode is deliberately NOT a term. DRY_RUN writes nothing, but a dry
+    // run exists to show what the pass WOULD do — measuring its blast radius as
+    // zero would hide the very number an operator is watching for seven days.
+    const wouldWrite = input.candidates.filter(
+        (c) =>
+            // `!== false`: absent is unknown, and unknown must count. A producer
+            // that forgets the field cannot quietly shrink the batch.
+            c.lastObservedEnabled !== false &&
+            !c.isProtected &&
+            !matchesSelf(c, writer.selfAccountIds) &&
+            resolveWriteTarget({
+                provider: writer.provider,
+                onPremisesSyncEnabled: c.onPremisesSyncEnabled,
+                onPremStateObservedAt: c.onPremStateObservedAt,
+            }).allowed,
+    ).length;
+
     const verdict = checkDisableBlastRadius({
-        proposed: input.candidates.length,
+        proposed: wouldWrite,
         population: input.population,
     });
     if (!verdict.allowed) {
@@ -972,14 +1037,19 @@ export async function disableAccountsForLeaver(
         // would make a single bad roster look like a hundred problems.
         recordIdentityBatchRefused({
             provider: writer.provider,
-            proposed: input.candidates.length,
+            proposed: wouldWrite,
             population: input.population,
         });
+        // BOTH numbers. The refusal text quotes the batch, so the log line has
+        // to be able to say how many rows were merely inspected to arrive at
+        // it — otherwise "refusing to disable 6 of 400" and a candidate list of
+        // 51 are two facts an operator cannot reconcile.
         logger.warn('leaver batch refused by blast-radius breaker', {
             component: 'identity-disable-account',
             tenantId: ctx.tenantId,
             provider: writer.provider,
-            proposed: input.candidates.length,
+            proposed: wouldWrite,
+            candidates: input.candidates.length,
             population: input.population,
         });
         return { refused: verdict.reason, results: [] };
@@ -1161,6 +1231,10 @@ export async function findLeaverCandidates(
                         externalUserId: true,
                         email: true,
                         isProtected: true,
+                        // The last observed account state, for the blast-radius
+                        // NUMERATOR — never for the WHERE clause above. See the
+                        // mapping below.
+                        status: true,
                         onPremisesSyncEnabled: true,
                         onPremStateObservedAt: true,
                     },
@@ -1177,6 +1251,18 @@ export async function findLeaverCandidates(
             // path — so a dry run reports the refusal without the write path
             // needing a hidden lookup to explain it.
             isProtected: r.connectedAccount.isProtected,
+            // Already disabled? The same equivalence the snapshot reader uses
+            // (`enabled === (status === 'ACTIVE')`): the sync records SUSPENDED
+            // exactly when the directory reports the account disabled, and
+            // DEPROVISIONED reads as not-enabled too, matching the live writer.
+            //
+            // Carried, NOT filtered on. There is deliberately no `status`
+            // predicate in the WHERE above: an already-disabled candidate must
+            // still reach `decideAndDisable`, whose `!state.enabled` branch is
+            // the only thing that settles a stranded INDETERMINATE journal row
+            // and emits its reconciliation audit. What this field changes is the
+            // breaker's numerator, and nothing else.
+            lastObservedEnabled: r.connectedAccount.status === 'ACTIVE',
             onPremisesSyncEnabled: r.connectedAccount.onPremisesSyncEnabled,
             // A timestamp on the row IS the observation, and it is carried WHOLE
             // rather than collapsed to a boolean here.

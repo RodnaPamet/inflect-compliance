@@ -766,6 +766,191 @@ describe('the batch gate', () => {
         expect(w.disabled).toEqual([]);
     });
 
+    // ─────────────────────────────────────────────────────────────────────
+    // THE NUMERATOR IS A COUNT OF WRITES, NOT A COUNT OF ROWS (#2290)
+    //
+    // The breaker is a correct pure function, and it was being handed the
+    // wrong quantity: `candidates.length`, a standing state that only grows.
+    // Nothing ever leaves the candidate list — TERMINATED is a one-way flip,
+    // the reconciler keeps stamping the link fresh, and an account disabled
+    // but still present never becomes DEPROVISIONED — so the count crossed the
+    // cap and stayed across it, and the leaver path refused every batch from
+    // then on while looking like a deliberate nightly refusal.
+    //
+    // These cases assert the composition of the numerator. The arithmetic is
+    // pinned next door in identity-write-breaker.test.ts, which cannot catch
+    // this: a pure function has no way to notice its caller counting the wrong
+    // thing.
+    // ─────────────────────────────────────────────────────────────────────
+    it('does not count candidates that are ALREADY disabled', async () => {
+        // Six candidates in a directory of ten, five of them disabled long ago
+        // and still on the list forever. Counting them makes it 6 of 10 — 60% —
+        // and the whole batch is refused, including the one person who actually
+        // left last night. One real write is not a blast radius.
+        const w = fakeWriter({
+            readState: async (id: string) => ({
+                enabled: id === 'live-1',
+                priorState: { accountEnabled: id === 'live-1' },
+            }),
+        });
+        const candidates = [
+            input({ linkId: 'l-live', externalUserId: 'live-1', lastObservedEnabled: true }),
+            ...Array.from({ length: 5 }, (_, i) =>
+                input({ linkId: `l-off-${i}`, externalUserId: `off-${i}`, lastObservedEnabled: false }),
+            ),
+        ];
+
+        const r = await disableAccountsForLeaver(ctx, w, { candidates, population: 10 });
+
+        expect(r.refused).toBeUndefined();
+        expect(w.disabled).toEqual(['live-1']);
+        // The five stay in the batch and are still DECIDED — the already-disabled
+        // branch is what settles a stranded journal row, so excluding them from
+        // the COUNT must never mean excluding them from the pass.
+        expect(r.results.map((x) => x.outcome)).toEqual([
+            'DISABLED',
+            'ALREADY_DISABLED',
+            'ALREADY_DISABLED',
+            'ALREADY_DISABLED',
+            'ALREADY_DISABLED',
+            'ALREADY_DISABLED',
+        ]);
+    });
+
+    it('does not count candidates a rail will refuse — the break-glass flag', async () => {
+        // Stated once and asserted per rail, so a rail added later inherits the
+        // question. A protected account is refused before any directory contact
+        // and is protected permanently, so counting it is counting a write that
+        // provably never happens — and one that can never stop not happening.
+        const w = fakeWriter();
+        const candidates = [
+            input({ linkId: 'l-live', externalUserId: 'live-1' }),
+            ...Array.from({ length: 5 }, (_, i) =>
+                input({ linkId: `l-svc-${i}`, externalUserId: `svc-${i}`, isProtected: true }),
+            ),
+        ];
+
+        const r = await disableAccountsForLeaver(ctx, w, { candidates, population: 10 });
+
+        expect(r.refused).toBeUndefined();
+        expect(w.disabled).toEqual(['live-1']);
+        expect(r.results.filter((x) => x.outcome === 'REFUSED_PROTECTED')).toHaveLength(5);
+    });
+
+    it('does not count candidates a rail will refuse — mastered on-premises', async () => {
+        // Same shape, different rail. `onPremisesSyncEnabled: true` is refused
+        // by the write target because the write would be reverted at the next
+        // Azure AD Connect cycle — and it stays true for as long as the object
+        // is mastered on-prem, which is to say permanently.
+        const w = fakeWriter();
+        const candidates = [
+            input({ linkId: 'l-live', externalUserId: 'live-1' }),
+            ...Array.from({ length: 5 }, (_, i) =>
+                input({
+                    linkId: `l-hybrid-${i}`,
+                    externalUserId: `hybrid-${i}`,
+                    onPremisesSyncEnabled: true,
+                }),
+            ),
+        ];
+
+        const r = await disableAccountsForLeaver(ctx, w, { candidates, population: 10 });
+
+        expect(r.refused).toBeUndefined();
+        expect(w.disabled).toEqual(['live-1']);
+        expect(r.results.filter((x) => x.outcome === 'REFUSED_TARGET')).toHaveLength(5);
+    });
+
+    it('does NOT latch: ten nights, ten leavers, ten disables in a tenant of ten', async () => {
+        // The regression test for the ISSUE rather than for the arithmetic.
+        //
+        // Each night adds one leaver and keeps every previous one — because
+        // nothing removes them — so the candidate list grows to the size of the
+        // directory. On the old numerator night 6 refused (6 of 10 = 60%) and
+        // every night after it refused too: the breaker latched shut, and the
+        // product stopped offboarding while reporting a deliberate refusal.
+        const off = new Set<string>();
+        const w = fakeWriter({
+            // A REAL prior state: `beginWrite` refuses to journal an empty one,
+            // and a refusal there would settle as INDETERMINATE and never reach
+            // the writer at all.
+            readState: async (id: string) => ({
+                enabled: !off.has(id),
+                priorState: { accountEnabled: !off.has(id) },
+            }),
+            disable: async (id: string) => {
+                off.add(id);
+            },
+        });
+
+        const leavers: string[] = [];
+        for (let night = 1; night <= 10; night++) {
+            leavers.push(`leaver-${night}`);
+            // Last night's leaver is disabled in the directory now, and STILL a
+            // candidate. That is the whole mechanism.
+            const candidates = leavers.map((id, i) =>
+                input({ linkId: `l-${i}`, externalUserId: id, lastObservedEnabled: !off.has(id) }),
+            );
+
+            const r = await disableAccountsForLeaver(ctx, w, { candidates, population: 10 });
+
+            // The night number travels with the assertion; a bare toBeUndefined
+            // reports "6 !== undefined" and says nothing about which night.
+            expect({ night, refused: r.refused }).toEqual({ night, refused: undefined });
+            expect(off.has(`leaver-${night}`)).toBe(true);
+        }
+        expect(off.size).toBe(10);
+    });
+
+    it('a refusal names the BATCH it refused, and says how many rows it inspected', async () => {
+        // When the breaker DOES fire, the two numbers must both be reportable.
+        // "Refusing to disable 6 of 10" is a claim about six real writes; the
+        // operator also has to be able to see that twelve rows were looked at,
+        // or the refusal cannot be reconciled with the candidate count in the
+        // pass record beside it.
+        const w = fakeWriter({
+            readState: async (id: string) => ({ enabled: id.startsWith('live'), priorState: {} }),
+        });
+        const candidates = [
+            ...Array.from({ length: 6 }, (_, i) =>
+                input({ linkId: `l-live-${i}`, externalUserId: `live-${i}`, lastObservedEnabled: true }),
+            ),
+            ...Array.from({ length: 6 }, (_, i) =>
+                input({ linkId: `l-off-${i}`, externalUserId: `off-${i}`, lastObservedEnabled: false }),
+            ),
+        ];
+
+        const r = await disableAccountsForLeaver(ctx, w, { candidates, population: 10 });
+
+        expect(r.refused).toMatch(/6 of 10/);
+        expect(w.disabled).toEqual([]);
+        expect(recordBatchRefused).toHaveBeenCalledWith({
+            provider: 'entra-id',
+            proposed: 6,
+            population: 10,
+        });
+        const warn = (logger.warn as jest.Mock).mock.calls.find(
+            (c) => c[0] === 'leaver batch refused by blast-radius breaker',
+        );
+        expect(warn?.[1]).toMatchObject({ proposed: 6, candidates: 12, population: 10 });
+    });
+
+    it('an ABSENT last-observed state counts, so a forgetful producer cannot shrink the batch', async () => {
+        // `!== false`, not `=== true`. Unknown must fail toward counting: a
+        // producer that stops setting the field would otherwise silently take
+        // the whole tenant out of the numerator and leave the cap unable to
+        // fire — a rail switched off by an omission, with every test green.
+        const w = fakeWriter();
+        const candidates = Array.from({ length: 6 }, (_, i) =>
+            input({ linkId: `l-${i}`, externalUserId: `ext-${i}` }),
+        );
+
+        const r = await disableAccountsForLeaver(ctx, w, { candidates, population: 10 });
+
+        expect(r.refused).toMatch(/6 of 10/);
+        expect(w.disabled).toEqual([]);
+    });
+
     it('a plausible batch proceeds and returns one result per candidate', async () => {
         const w = fakeWriter();
         const candidates = [input({ externalUserId: 'a' }), input({ externalUserId: 'b' })];
@@ -943,6 +1128,7 @@ describe('candidate selection demands FRESH link evidence', () => {
                     externalUserId: 'x1',
                     email: 'a@corp.example',
                     isProtected: true,
+                    status: 'ACTIVE',
                     onPremisesSyncEnabled: true,
                     onPremStateObservedAt: observedAt,
                 },
@@ -955,6 +1141,7 @@ describe('candidate selection demands FRESH link evidence', () => {
                 externalUserId: 'x1',
                 email: 'a@corp.example',
                 isProtected: true,
+                lastObservedEnabled: true,
                 onPremisesSyncEnabled: true,
                 onPremStateObservedAt: observedAt,
             },
@@ -982,6 +1169,45 @@ describe('candidate selection demands FRESH link evidence', () => {
         expect(out[0].onPremStateObservedAt).toBeNull();
     });
 
+    it('carries the account STATE the breaker counts, without filtering on it', async () => {
+        // Two claims, and they pull in opposite directions on purpose.
+        //
+        // The blast-radius numerator has to know which candidates are already
+        // disabled, or it counts a standing state that only ever grows and the
+        // breaker latches shut (#2290). So the state must be CARRIED.
+        //
+        // And it must NOT become a predicate. An already-disabled candidate is
+        // still the path that settles a stranded INDETERMINATE journal row from
+        // live evidence — `decideAndDisable`'s `!state.enabled` branch — so
+        // dropping it from the list here would close that loop forever, on the
+        // strength of exactly the stored observation that branch refuses to
+        // settle from.
+        const account = (over: Record<string, unknown>) => ({
+            externalUserId: 'x',
+            email: 'a@corp.example',
+            isProtected: false,
+            onPremisesSyncEnabled: false,
+            onPremStateObservedAt: null,
+            ...over,
+        });
+        db.identityAccountLink.findMany.mockResolvedValue([
+            { id: 'l1', connectedAccount: account({ status: 'ACTIVE' }) },
+            // The sync writes SUSPENDED exactly when the directory reports the
+            // account disabled, and DEPROVISIONED reads as not-enabled too —
+            // the same equivalence the snapshot reader uses.
+            { id: 'l2', connectedAccount: account({ status: 'SUSPENDED' }) },
+            { id: 'l3', connectedAccount: account({ status: 'DEPROVISIONED' }) },
+        ]);
+
+        const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+
+        expect(out.map((c) => c.lastObservedEnabled)).toEqual([true, false, false]);
+        // Still three CANDIDATES. The count is the only thing the state changes.
+        expect(out).toHaveLength(3);
+        const q = db.identityAccountLink.findMany.mock.calls[0][0];
+        expect(q.where.connectedAccount).toEqual({ provider: 'entra-id' });
+    });
+
     it('SELECTS the email, which is the only thing that makes the self-lockout guard work', async () => {
         // Two hops, and both need pinning. The mapping assertion above cannot do
         // it alone: with a mock row that omits `email`, the mapping yields
@@ -1006,6 +1232,12 @@ describe('candidate selection demands FRESH link evidence', () => {
             // because a mock row without the key maps to `undefined` and
             // `toEqual` ignores it.
             isProtected: true,
+            // The blast-radius numerator's producer. Dropping this from the
+            // select maps every row to `lastObservedEnabled: false`, which
+            // reads as "already disabled" for the WHOLE tenant — so the
+            // breaker measures a batch of zero and the cap it exists to
+            // enforce stops being able to fire at all.
+            status: true,
             onPremisesSyncEnabled: true,
             // The observation timestamp. Dropping it from the select maps to
             // `undefined`, which the rail reads as NOT observed — so the whole
