@@ -7,14 +7,15 @@
     "crossFrameworkMappings": "NOT duplicated here. Each control keeps its policy-mediated ISO 27001 / NIS2 requirement links from internal-controls-policy-framework-map.json; applyCatalogFile upserts links and never deletes, so a control ends up mapped to Internal Control AND to whichever standards its policies reach.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts",
     "generated": "2026-09-09",
-    "count": 151
+    "count": 151,
+    "requirementLayers": "TWO layers, deliberately. IC-<DOMAIN> (23) group the library into the domains it already carries. IC-NNN (151) are one-to-one with the controls and are what makes coverage honest: with domains alone, implementing the single cheapest control in each of the 23 domains — 23 of 151, 15.2% of the library — reads as 100% framework coverage, an 84.8-point overstatement. Every template maps to BOTH its domain and its own requirement."
   },
   "framework": {
     "key": "INTERNAL_CONTROLS",
     "name": "Internal Control",
     "version": "1.0",
     "kind": "CUSTOM",
-    "description": "A deduped library of 151 internal controls imported from a customer GRC export. Grouped into 23 operational domains rather than the clauses of a published standard, and cross-mapped to ISO/IEC 27001:2022 Annex A and NIS2 Article 21(2) through the policies each control references.",
+    "description": "A deduped library of 151 internal controls imported from a customer GRC export. Organised into 23 operational domains, with one requirement per control so coverage reflects controls implemented rather than domains touched. Cross-mapped to ISO/IEC 27001:2022 Annex A and NIS2 Article 21(2) through the policies each control references.",
     "metadata": {
       "provenance": "Customer GRC export, deduped by control name.",
       "notAStandard": "This is an internal control library, not a published standard. Its requirements are the domains the library itself is organised into; no external clause text is reproduced.",
@@ -29,163 +30,1371 @@
     {
       "code": "IC-ACCESS-MANAGEMENT",
       "title": "Access Management",
-      "summary": "Access Management — 9 internal controls in this domain.",
+      "summary": "Access Management — grouping requirement covering the 9 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Access Management",
       "sortOrder": 10
     },
     {
       "code": "IC-ASSET-MANAGEMENT",
       "title": "Asset Management",
-      "summary": "Asset Management — 7 internal controls in this domain.",
+      "summary": "Asset Management — grouping requirement covering the 7 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Asset Management",
       "sortOrder": 20
     },
     {
       "code": "IC-AWARENESS-MANAGEMENT",
       "title": "Awareness Management",
-      "summary": "Awareness Management — 1 internal control in this domain.",
+      "summary": "Awareness Management — grouping requirement covering the 1 internal control in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Awareness Management",
       "sortOrder": 30
     },
     {
       "code": "IC-BACKUP",
       "title": "Backup",
-      "summary": "Backup — 4 internal controls in this domain.",
+      "summary": "Backup — grouping requirement covering the 4 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Backup",
       "sortOrder": 40
     },
     {
       "code": "IC-BUSINESS-CONTINUITY",
       "title": "Business Continuity",
-      "summary": "Business Continuity — 4 internal controls in this domain.",
+      "summary": "Business Continuity — grouping requirement covering the 4 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Business Continuity",
       "sortOrder": 50
     },
     {
       "code": "IC-CHANGE-AND-CONFIGURATION-MANAGEMENT",
       "title": "Change and Configuration Management",
-      "summary": "Change and Configuration Management — 3 internal controls in this domain.",
+      "summary": "Change and Configuration Management — grouping requirement covering the 3 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Change and Configuration Management",
       "sortOrder": 60
     },
     {
       "code": "IC-CLOUD-SERVICES",
       "title": "Cloud Services",
-      "summary": "Cloud Services — 3 internal controls in this domain.",
+      "summary": "Cloud Services — grouping requirement covering the 3 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Cloud Services",
       "sortOrder": 70
     },
     {
       "code": "IC-COMMUNICATION-SECURITY",
       "title": "Communication Security",
-      "summary": "Communication Security — 3 internal controls in this domain.",
+      "summary": "Communication Security — grouping requirement covering the 3 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Communication Security",
       "sortOrder": 80
     },
     {
       "code": "IC-COMPLIANCE-MANAGEMENT",
       "title": "Compliance Management",
-      "summary": "Compliance Management — 2 internal controls in this domain.",
+      "summary": "Compliance Management — grouping requirement covering the 2 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Compliance Management",
       "sortOrder": 90
     },
     {
       "code": "IC-DOCUMENTS-AND-RECORDS",
       "title": "Documents and Records",
-      "summary": "Documents and Records — 2 internal controls in this domain.",
+      "summary": "Documents and Records — grouping requirement covering the 2 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Documents and Records",
       "sortOrder": 100
     },
     {
       "code": "IC-HARDENING",
       "title": "Hardening",
-      "summary": "Hardening — 14 internal controls in this domain.",
+      "summary": "Hardening — grouping requirement covering the 14 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Hardening",
       "sortOrder": 110
     },
     {
       "code": "IC-HUMAN-RESOURCES-SECURITY",
       "title": "Human Resources Security",
-      "summary": "Human Resources Security — 5 internal controls in this domain.",
+      "summary": "Human Resources Security — grouping requirement covering the 5 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Human Resources Security",
       "sortOrder": 120
     },
     {
       "code": "IC-ICS-OT-SECURITY",
       "title": "ICS/OT Security",
-      "summary": "ICS/OT Security — 1 internal control in this domain.",
+      "summary": "ICS/OT Security — grouping requirement covering the 1 internal control in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "ICS/OT Security",
       "sortOrder": 130
     },
     {
       "code": "IC-INCIDENT-MANAGEMENT",
       "title": "Incident Management",
-      "summary": "Incident Management — 3 internal controls in this domain.",
+      "summary": "Incident Management — grouping requirement covering the 3 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Incident Management",
       "sortOrder": 140
     },
     {
       "code": "IC-INFORMATION-SECURITY",
       "title": "Information Security",
-      "summary": "Information Security — 12 internal controls in this domain.",
+      "summary": "Information Security — grouping requirement covering the 12 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Information Security",
       "sortOrder": 150
     },
     {
       "code": "IC-INTERNAL-CONTROL",
       "title": "Internal Control",
-      "summary": "Internal Control — 11 internal controls in this domain.",
+      "summary": "Internal Control — grouping requirement covering the 11 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Internal Control",
       "sortOrder": 160
     },
     {
       "code": "IC-IT-SECURITY",
       "title": "IT Security",
-      "summary": "IT Security — 10 internal controls in this domain.",
+      "summary": "IT Security — grouping requirement covering the 10 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "IT Security",
       "sortOrder": 170
     },
     {
       "code": "IC-LOGGING-AND-MONITORING",
       "title": "Logging and Monitoring",
-      "summary": "Logging and Monitoring — 6 internal controls in this domain.",
+      "summary": "Logging and Monitoring — grouping requirement covering the 6 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Logging and Monitoring",
       "sortOrder": 180
     },
     {
       "code": "IC-PHYSICAL-SECURITY",
       "title": "Physical Security",
-      "summary": "Physical Security — 10 internal controls in this domain.",
+      "summary": "Physical Security — grouping requirement covering the 10 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Physical Security",
       "sortOrder": 190
     },
     {
       "code": "IC-PRIVACY",
       "title": "Privacy",
-      "summary": "Privacy — 22 internal controls in this domain.",
+      "summary": "Privacy — grouping requirement covering the 22 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Privacy",
       "sortOrder": 200
     },
     {
       "code": "IC-RISK-MANAGEMENT",
       "title": "Risk Management",
-      "summary": "Risk Management — 9 internal controls in this domain.",
+      "summary": "Risk Management — grouping requirement covering the 9 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Risk Management",
       "sortOrder": 210
     },
     {
       "code": "IC-SECURE-DEVELOPMENT",
       "title": "Secure Development",
-      "summary": "Secure Development — 8 internal controls in this domain.",
+      "summary": "Secure Development — grouping requirement covering the 8 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Secure Development",
       "sortOrder": 220
     },
     {
       "code": "IC-SUPPLIER-MANAGEMENT",
       "title": "Supplier Management",
-      "summary": "Supplier Management — 2 internal controls in this domain.",
+      "summary": "Supplier Management — grouping requirement covering the 2 internal controls in this domain. Satisfied when the domain has any control in place; per-control coverage is measured by the IC-NNN requirements.",
       "category": "Supplier Management",
       "sortOrder": 230
+    },
+    {
+      "code": "IC-001",
+      "title": "Information Security Integration in Project Management",
+      "summary": "Satisfied by internal control ICN-001.",
+      "category": "Secure Development",
+      "section": "Secure Development",
+      "sortOrder": 1000
+    },
+    {
+      "code": "IC-002",
+      "title": "Anomalous Activity Monitoring Control",
+      "summary": "Satisfied by internal control ICN-002.",
+      "category": "Logging and Monitoring",
+      "section": "Logging and Monitoring",
+      "sortOrder": 1001
+    },
+    {
+      "code": "IC-003",
+      "title": "Privileged Utility Program Management",
+      "summary": "Satisfied by internal control ICN-003.",
+      "category": "Access Management",
+      "section": "Access Management",
+      "sortOrder": 1002
+    },
+    {
+      "code": "IC-004",
+      "title": "Retention of Personal Information",
+      "summary": "Satisfied by internal control ICN-004.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1003
+    },
+    {
+      "code": "IC-005",
+      "title": "Third-Party Disclosure Consent Verification",
+      "summary": "Satisfied by internal control ICN-005.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1004
+    },
+    {
+      "code": "IC-006",
+      "title": "Access to Personal Information",
+      "summary": "Satisfied by internal control ICN-006.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1005
+    },
+    {
+      "code": "IC-007",
+      "title": "Response Team Structure Management",
+      "summary": "Satisfied by internal control ICN-007.",
+      "category": "Internal Control",
+      "section": "Internal Control",
+      "sortOrder": 1006
+    },
+    {
+      "code": "IC-008",
+      "title": "Risk Treatment Plan Implementation",
+      "summary": "Satisfied by internal control ICN-008.",
+      "category": "Risk Management",
+      "section": "Risk Management",
+      "sortOrder": 1007
+    },
+    {
+      "code": "IC-009",
+      "title": "Secure Area Access and Activity Control",
+      "summary": "Satisfied by internal control ICN-009.",
+      "category": "Physical Security",
+      "section": "Physical Security",
+      "sortOrder": 1008
+    },
+    {
+      "code": "IC-010",
+      "title": "Secure Development and Testing Control",
+      "summary": "Satisfied by internal control ICN-010.",
+      "category": "Secure Development",
+      "section": "Secure Development",
+      "sortOrder": 1009
+    },
+    {
+      "code": "IC-011",
+      "title": "Engagement with Special Interest Groups",
+      "summary": "Satisfied by internal control ICN-011.",
+      "category": "Information Security",
+      "section": "Information Security",
+      "sortOrder": 1010
+    },
+    {
+      "code": "IC-012",
+      "title": "Cloud Service Management",
+      "summary": "Satisfied by internal control ICN-012.",
+      "category": "Cloud Services",
+      "section": "Cloud Services",
+      "sortOrder": 1011
+    },
+    {
+      "code": "IC-013",
+      "title": "Physical Security Perimeter Audit",
+      "summary": "Satisfied by internal control ICN-013.",
+      "category": "Physical Security",
+      "section": "Physical Security",
+      "sortOrder": 1012
+    },
+    {
+      "code": "IC-014",
+      "title": "Information and Asset Use Compliance",
+      "summary": "Satisfied by internal control ICN-014.",
+      "category": "Asset Management",
+      "section": "Asset Management",
+      "sortOrder": 1013
+    },
+    {
+      "code": "IC-015",
+      "title": "Script Allowlisting Control",
+      "summary": "Satisfied by internal control ICN-015.",
+      "category": "IT Security",
+      "section": "IT Security",
+      "sortOrder": 1014
+    },
+    {
+      "code": "IC-016",
+      "title": "Environment Segregation Control",
+      "summary": "Satisfied by internal control ICN-016.",
+      "category": "Secure Development",
+      "section": "Secure Development",
+      "sortOrder": 1015
+    },
+    {
+      "code": "IC-017",
+      "title": "Data Subject Information Request Management",
+      "summary": "Satisfied by internal control ICN-017.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1016
+    },
+    {
+      "code": "IC-018",
+      "title": "Information Security Policy Compliance",
+      "summary": "Satisfied by internal control ICN-018.",
+      "category": "Information Security",
+      "section": "Information Security",
+      "sortOrder": 1017
+    },
+    {
+      "code": "IC-019",
+      "title": "Network Services Security",
+      "summary": "Satisfied by internal control ICN-019.",
+      "category": "Hardening",
+      "section": "Hardening",
+      "sortOrder": 1018
+    },
+    {
+      "code": "IC-020",
+      "title": "Correction and Amendment of Personal Information",
+      "summary": "Satisfied by internal control ICN-020.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1019
+    },
+    {
+      "code": "IC-021",
+      "title": "Physical Entry Security Control",
+      "summary": "Satisfied by internal control ICN-021.",
+      "category": "Physical Security",
+      "section": "Physical Security",
+      "sortOrder": 1020
+    },
+    {
+      "code": "IC-022",
+      "title": "Secure Development Lifecycle Compliance",
+      "summary": "Satisfied by internal control ICN-022.",
+      "category": "Secure Development",
+      "section": "Secure Development",
+      "sortOrder": 1021
+    },
+    {
+      "code": "IC-023",
+      "title": "Data Storage Integrity",
+      "summary": "Satisfied by internal control ICN-023.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1022
+    },
+    {
+      "code": "IC-024",
+      "title": "POI Device Inspection Compliance",
+      "summary": "Satisfied by internal control ICN-024.",
+      "category": "Risk Management",
+      "section": "Risk Management",
+      "sortOrder": 1023
+    },
+    {
+      "code": "IC-025",
+      "title": "Personal Information Collection Control",
+      "summary": "Satisfied by internal control ICN-025.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1024
+    },
+    {
+      "code": "IC-026",
+      "title": "Secure Facility Management",
+      "summary": "Satisfied by internal control ICN-026.",
+      "category": "Physical Security",
+      "section": "Physical Security",
+      "sortOrder": 1025
+    },
+    {
+      "code": "IC-027",
+      "title": "Clear Desk and Screen Compliance Check",
+      "summary": "Satisfied by internal control ICN-027.",
+      "category": "IT Security",
+      "section": "IT Security",
+      "sortOrder": 1026
+    },
+    {
+      "code": "IC-028",
+      "title": "Sensitive Information Access Management",
+      "summary": "Satisfied by internal control ICN-028.",
+      "category": "Asset Management",
+      "section": "Asset Management",
+      "sortOrder": 1027
+    },
+    {
+      "code": "IC-029",
+      "title": "Personal Information Accuracy and Relevance",
+      "summary": "Satisfied by internal control ICN-029.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1028
+    },
+    {
+      "code": "IC-030",
+      "title": "Incident Management Compliance",
+      "summary": "Satisfied by internal control ICN-030.",
+      "category": "Incident Management",
+      "section": "Incident Management",
+      "sortOrder": 1029
+    },
+    {
+      "code": "IC-031",
+      "title": "Management Responsibilities Compliance",
+      "summary": "Satisfied by internal control ICN-031.",
+      "category": "Information Security",
+      "section": "Information Security",
+      "sortOrder": 1030
+    },
+    {
+      "code": "IC-032",
+      "title": "Personnel Screening and Verification Control",
+      "summary": "Satisfied by internal control ICN-032.",
+      "category": "Human Resources Security",
+      "section": "Human Resources Security",
+      "sortOrder": 1031
+    },
+    {
+      "code": "IC-033",
+      "title": "PII Privacy Compliance",
+      "summary": "Satisfied by internal control ICN-033.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1032
+    },
+    {
+      "code": "IC-034",
+      "title": "CVV Retention Prevention",
+      "summary": "Satisfied by internal control ICN-034.",
+      "category": "Backup",
+      "section": "Backup",
+      "sortOrder": 1033
+    },
+    {
+      "code": "IC-035",
+      "title": "DHCP Inventory Update",
+      "summary": "Satisfied by internal control ICN-035.",
+      "category": "Asset Management",
+      "section": "Asset Management",
+      "sortOrder": 1034
+    },
+    {
+      "code": "IC-036",
+      "title": "Stakeholder Coordination in Incident Response",
+      "summary": "Satisfied by internal control ICN-036.",
+      "category": "Incident Management",
+      "section": "Incident Management",
+      "sortOrder": 1035
+    },
+    {
+      "code": "IC-037",
+      "title": "Post-Termination Information Security Responsibilities",
+      "summary": "Satisfied by internal control ICN-037.",
+      "category": "Human Resources Security",
+      "section": "Human Resources Security",
+      "sortOrder": 1036
+    },
+    {
+      "code": "IC-038",
+      "title": "Disciplinary Process Compliance",
+      "summary": "Satisfied by internal control ICN-038.",
+      "category": "Information Security",
+      "section": "Information Security",
+      "sortOrder": 1037
+    },
+    {
+      "code": "IC-039",
+      "title": "Business Continuity Exercise Programme",
+      "summary": "Satisfied by internal control ICN-039.",
+      "category": "Internal Control",
+      "section": "Internal Control",
+      "sortOrder": 1038
+    },
+    {
+      "code": "IC-040",
+      "title": "Internal Responsibility Accountability",
+      "summary": "Satisfied by internal control ICN-040.",
+      "category": "Human Resources Security",
+      "section": "Human Resources Security",
+      "sortOrder": 1039
+    },
+    {
+      "code": "IC-041",
+      "title": "Passive Asset Discovery and Inventory Update",
+      "summary": "Satisfied by internal control ICN-041.",
+      "category": "Asset Management",
+      "section": "Asset Management",
+      "sortOrder": 1040
+    },
+    {
+      "code": "IC-042",
+      "title": "Email Gateway File Type Filtering",
+      "summary": "Satisfied by internal control ICN-042.",
+      "category": "Communication Security",
+      "section": "Communication Security",
+      "sortOrder": 1041
+    },
+    {
+      "code": "IC-043",
+      "title": "Logging Management",
+      "summary": "Satisfied by internal control ICN-043.",
+      "category": "Logging and Monitoring",
+      "section": "Logging and Monitoring",
+      "sortOrder": 1042
+    },
+    {
+      "code": "IC-044",
+      "title": "Change Management Oversight",
+      "summary": "Satisfied by internal control ICN-044.",
+      "category": "Change and Configuration Management",
+      "section": "Change and Configuration Management",
+      "sortOrder": 1043
+    },
+    {
+      "code": "IC-045",
+      "title": "Compliance Review Control",
+      "summary": "Satisfied by internal control ICN-045.",
+      "category": "Compliance Management",
+      "section": "Compliance Management",
+      "sortOrder": 1044
+    },
+    {
+      "code": "IC-046",
+      "title": "Audit Log Retention Compliance",
+      "summary": "Satisfied by internal control ICN-046.",
+      "category": "Logging and Monitoring",
+      "section": "Logging and Monitoring",
+      "sortOrder": 1045
+    },
+    {
+      "code": "IC-047",
+      "title": "Unauthorized Asset Management",
+      "summary": "Satisfied by internal control ICN-047.",
+      "category": "Asset Management",
+      "section": "Asset Management",
+      "sortOrder": 1046
+    },
+    {
+      "code": "IC-048",
+      "title": "ISMS Review and Monitoring",
+      "summary": "Satisfied by internal control ICN-048.",
+      "category": "Information Security",
+      "section": "Information Security",
+      "sortOrder": 1047
+    },
+    {
+      "code": "IC-049",
+      "title": "Disclosure Record-Keeping and Monitoring",
+      "summary": "Satisfied by internal control ICN-049.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1048
+    },
+    {
+      "code": "IC-050",
+      "title": "Audit Testing Security Control",
+      "summary": "Satisfied by internal control ICN-050.",
+      "category": "Hardening",
+      "section": "Hardening",
+      "sortOrder": 1049
+    },
+    {
+      "code": "IC-051",
+      "title": "Email Authentication and Verification",
+      "summary": "Satisfied by internal control ICN-051.",
+      "category": "Communication Security",
+      "section": "Communication Security",
+      "sortOrder": 1050
+    },
+    {
+      "code": "IC-052",
+      "title": "Utility Protection and Resilience",
+      "summary": "Satisfied by internal control ICN-052.",
+      "category": "Business Continuity",
+      "section": "Business Continuity",
+      "sortOrder": 1051
+    },
+    {
+      "code": "IC-053",
+      "title": "POI Device Inspection",
+      "summary": "Satisfied by internal control ICN-053.",
+      "category": "Physical Security",
+      "section": "Physical Security",
+      "sortOrder": 1052
+    },
+    {
+      "code": "IC-054",
+      "title": "Records Protection and Management Control",
+      "summary": "Satisfied by internal control ICN-054.",
+      "category": "Documents and Records",
+      "section": "Documents and Records",
+      "sortOrder": 1053
+    },
+    {
+      "code": "IC-055",
+      "title": "Authority Contact Compliance",
+      "summary": "Satisfied by internal control ICN-055.",
+      "category": "Information Security",
+      "section": "Information Security",
+      "sortOrder": 1054
+    },
+    {
+      "code": "IC-056",
+      "title": "Documented Procedures Compliance",
+      "summary": "Satisfied by internal control ICN-056.",
+      "category": "Information Security",
+      "section": "Information Security",
+      "sortOrder": 1055
+    },
+    {
+      "code": "IC-057",
+      "title": "Storage Media Lifecycle Management",
+      "summary": "Satisfied by internal control ICN-057.",
+      "category": "Physical Security",
+      "section": "Physical Security",
+      "sortOrder": 1056
+    },
+    {
+      "code": "IC-058",
+      "title": "Data Leakage Prevention",
+      "summary": "Satisfied by internal control ICN-058.",
+      "category": "Hardening",
+      "section": "Hardening",
+      "sortOrder": 1057
+    },
+    {
+      "code": "IC-059",
+      "title": "Centralized AAA Management",
+      "summary": "Satisfied by internal control ICN-059.",
+      "category": "Access Management",
+      "section": "Access Management",
+      "sortOrder": 1058
+    },
+    {
+      "code": "IC-060",
+      "title": "Secure SAD Deletion",
+      "summary": "Satisfied by internal control ICN-060.",
+      "category": "Backup",
+      "section": "Backup",
+      "sortOrder": 1059
+    },
+    {
+      "code": "IC-061",
+      "title": "Vulnerability Management Control",
+      "summary": "Satisfied by internal control ICN-061.",
+      "category": "Hardening",
+      "section": "Hardening",
+      "sortOrder": 1060
+    },
+    {
+      "code": "IC-062",
+      "title": "Equipment Maintenance Compliance",
+      "summary": "Satisfied by internal control ICN-062.",
+      "category": "IT Security",
+      "section": "IT Security",
+      "sortOrder": 1061
+    },
+    {
+      "code": "IC-063",
+      "title": "Active Network Asset Discovery",
+      "summary": "Satisfied by internal control ICN-063.",
+      "category": "Access Management",
+      "section": "Access Management",
+      "sortOrder": 1062
+    },
+    {
+      "code": "IC-064",
+      "title": "Web Filtering Compliance",
+      "summary": "Satisfied by internal control ICN-064.",
+      "category": "IT Security",
+      "section": "IT Security",
+      "sortOrder": 1063
+    },
+    {
+      "code": "IC-065",
+      "title": "Intellectual Property Rights Compliance",
+      "summary": "Satisfied by internal control ICN-065.",
+      "category": "Information Security",
+      "section": "Information Security",
+      "sortOrder": 1064
+    },
+    {
+      "code": "IC-066",
+      "title": "Network Security Compliance",
+      "summary": "Satisfied by internal control ICN-066.",
+      "category": "Hardening",
+      "section": "Hardening",
+      "sortOrder": 1065
+    },
+    {
+      "code": "IC-067",
+      "title": "Function Segregation and Security Control",
+      "summary": "Satisfied by internal control ICN-067.",
+      "category": "Hardening",
+      "section": "Hardening",
+      "sortOrder": 1066
+    },
+    {
+      "code": "IC-068",
+      "title": "Internal Control Deficiency Assessment and Communication",
+      "summary": "Satisfied by internal control ICN-068.",
+      "category": "Information Security",
+      "section": "Information Security",
+      "sortOrder": 1067
+    },
+    {
+      "code": "IC-069",
+      "title": "Malware Protection Compliance",
+      "summary": "Satisfied by internal control ICN-069.",
+      "category": "IT Security",
+      "section": "IT Security",
+      "sortOrder": 1068
+    },
+    {
+      "code": "IC-070",
+      "title": "Information Security Training Compliance",
+      "summary": "Satisfied by internal control ICN-070.",
+      "category": "Awareness Management",
+      "section": "Awareness Management",
+      "sortOrder": 1069
+    },
+    {
+      "code": "IC-071",
+      "title": "Segregation of Duties Compliance",
+      "summary": "Satisfied by internal control ICN-071.",
+      "category": "Access Management",
+      "section": "Access Management",
+      "sortOrder": 1070
+    },
+    {
+      "code": "IC-072",
+      "title": "Objective Clarity and Risk Assessment Control",
+      "summary": "Satisfied by internal control ICN-072.",
+      "category": "Risk Management",
+      "section": "Risk Management",
+      "sortOrder": 1071
+    },
+    {
+      "code": "IC-073",
+      "title": "Configuration Management Compliance",
+      "summary": "Satisfied by internal control ICN-073.",
+      "category": "Change and Configuration Management",
+      "section": "Change and Configuration Management",
+      "sortOrder": 1072
+    },
+    {
+      "code": "IC-074",
+      "title": "Physical Security Monitoring Control",
+      "summary": "Satisfied by internal control ICN-074.",
+      "category": "Physical Security",
+      "section": "Physical Security",
+      "sortOrder": 1073
+    },
+    {
+      "code": "IC-075",
+      "title": "Test Information Security Management",
+      "summary": "Satisfied by internal control ICN-075.",
+      "category": "Secure Development",
+      "section": "Secure Development",
+      "sortOrder": 1074
+    },
+    {
+      "code": "IC-076",
+      "title": "Input Validation and Recording",
+      "summary": "Satisfied by internal control ICN-076.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1075
+    },
+    {
+      "code": "IC-077",
+      "title": "Breach Notification Compliance",
+      "summary": "Satisfied by internal control ICN-077.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1076
+    },
+    {
+      "code": "IC-078",
+      "title": "URL Request Audit Logging",
+      "summary": "Satisfied by internal control ICN-078.",
+      "category": "Logging and Monitoring",
+      "section": "Logging and Monitoring",
+      "sortOrder": 1077
+    },
+    {
+      "code": "IC-079",
+      "title": "Privileged Access Rights Management",
+      "summary": "Satisfied by internal control ICN-079.",
+      "category": "Access Management",
+      "section": "Access Management",
+      "sortOrder": 1078
+    },
+    {
+      "code": "IC-080",
+      "title": "Warning and Communication Procedures",
+      "summary": "Satisfied by internal control ICN-080.",
+      "category": "Internal Control",
+      "section": "Internal Control",
+      "sortOrder": 1079
+    },
+    {
+      "code": "IC-081",
+      "title": "Legal Compliance Verification",
+      "summary": "Satisfied by internal control ICN-081.",
+      "category": "Compliance Management",
+      "section": "Compliance Management",
+      "sortOrder": 1080
+    },
+    {
+      "code": "IC-082",
+      "title": "Business Continuity Strategy Review",
+      "summary": "Satisfied by internal control ICN-082.",
+      "category": "Internal Control",
+      "section": "Internal Control",
+      "sortOrder": 1081
+    },
+    {
+      "code": "IC-083",
+      "title": "Sector-Specific Risk Tolerance Analysis",
+      "summary": "Satisfied by internal control ICN-083.",
+      "category": "Risk Management",
+      "section": "Risk Management",
+      "sortOrder": 1082
+    },
+    {
+      "code": "IC-084",
+      "title": "Capacity Management Oversight",
+      "summary": "Satisfied by internal control ICN-084.",
+      "category": "Cloud Services",
+      "section": "Cloud Services",
+      "sortOrder": 1083
+    },
+    {
+      "code": "IC-085",
+      "title": "Equipment Security and Protection",
+      "summary": "Satisfied by internal control ICN-085.",
+      "category": "Physical Security",
+      "section": "Physical Security",
+      "sortOrder": 1084
+    },
+    {
+      "code": "IC-086",
+      "title": "Confidentiality Agreement Compliance",
+      "summary": "Satisfied by internal control ICN-086.",
+      "category": "Human Resources Security",
+      "section": "Human Resources Security",
+      "sortOrder": 1085
+    },
+    {
+      "code": "IC-087",
+      "title": "Information Deletion Verification",
+      "summary": "Satisfied by internal control ICN-087.",
+      "category": "Cloud Services",
+      "section": "Cloud Services",
+      "sortOrder": 1086
+    },
+    {
+      "code": "IC-088",
+      "title": "Inquiry and Complaints Resolution",
+      "summary": "Satisfied by internal control ICN-088.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1087
+    },
+    {
+      "code": "IC-089",
+      "title": "Threat Identification and Documentation",
+      "summary": "Satisfied by internal control ICN-089.",
+      "category": "Risk Management",
+      "section": "Risk Management",
+      "sortOrder": 1088
+    },
+    {
+      "code": "IC-090",
+      "title": "Dormant Account Management",
+      "summary": "Satisfied by internal control ICN-090.",
+      "category": "Access Management",
+      "section": "Access Management",
+      "sortOrder": 1089
+    },
+    {
+      "code": "IC-091",
+      "title": "Data Masking Compliance",
+      "summary": "Satisfied by internal control ICN-091.",
+      "category": "Hardening",
+      "section": "Hardening",
+      "sortOrder": 1090
+    },
+    {
+      "code": "IC-092",
+      "title": "BCMS Effectiveness and Maintenance",
+      "summary": "Satisfied by internal control ICN-092.",
+      "category": "Internal Control",
+      "section": "Internal Control",
+      "sortOrder": 1091
+    },
+    {
+      "code": "IC-093",
+      "title": "Use of Personal Information Control",
+      "summary": "Satisfied by internal control ICN-093.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1092
+    },
+    {
+      "code": "IC-094",
+      "title": "Effective Data Discovery Compliance",
+      "summary": "Satisfied by internal control ICN-094.",
+      "category": "Logging and Monitoring",
+      "section": "Logging and Monitoring",
+      "sortOrder": 1093
+    },
+    {
+      "code": "IC-095",
+      "title": "Secure Coding Compliance",
+      "summary": "Satisfied by internal control ICN-095.",
+      "category": "Secure Development",
+      "section": "Secure Development",
+      "sortOrder": 1094
+    },
+    {
+      "code": "IC-096",
+      "title": "Clock Synchronization Control",
+      "summary": "Satisfied by internal control ICN-096.",
+      "category": "IT Security",
+      "section": "IT Security",
+      "sortOrder": 1095
+    },
+    {
+      "code": "IC-097",
+      "title": "Risk Management Process Verification",
+      "summary": "Satisfied by internal control ICN-097.",
+      "category": "Risk Management",
+      "section": "Risk Management",
+      "sortOrder": 1096
+    },
+    {
+      "code": "IC-098",
+      "title": "Secure System Engineering Compliance",
+      "summary": "Satisfied by internal control ICN-098.",
+      "category": "Secure Development",
+      "section": "Secure Development",
+      "sortOrder": 1097
+    },
+    {
+      "code": "IC-099",
+      "title": "Secure Asset and Software Management",
+      "summary": "Satisfied by internal control ICN-099.",
+      "category": "Hardening",
+      "section": "Hardening",
+      "sortOrder": 1098
+    },
+    {
+      "code": "IC-100",
+      "title": "Explicit Consent for Sensitive Data",
+      "summary": "Satisfied by internal control ICN-100.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1099
+    },
+    {
+      "code": "IC-101",
+      "title": "Secure Equipment Disposal and Reuse Control",
+      "summary": "Satisfied by internal control ICN-101.",
+      "category": "IT Security",
+      "section": "IT Security",
+      "sortOrder": 1100
+    },
+    {
+      "code": "IC-102",
+      "title": "Network Segregation Compliance",
+      "summary": "Satisfied by internal control ICN-102.",
+      "category": "Hardening",
+      "section": "Hardening",
+      "sortOrder": 1101
+    },
+    {
+      "code": "IC-103",
+      "title": "Risk Mitigation Control Activities",
+      "summary": "Satisfied by internal control ICN-103.",
+      "category": "Risk Management",
+      "section": "Risk Management",
+      "sortOrder": 1102
+    },
+    {
+      "code": "IC-104",
+      "title": "Secure Disposal of Personal Information",
+      "summary": "Satisfied by internal control ICN-104.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1103
+    },
+    {
+      "code": "IC-105",
+      "title": "Cybersecurity Risk Assessment Implementation",
+      "summary": "Satisfied by internal control ICN-105.",
+      "category": "Risk Management",
+      "section": "Risk Management",
+      "sortOrder": 1104
+    },
+    {
+      "code": "IC-106",
+      "title": "Off-Premises Asset Security Control",
+      "summary": "Satisfied by internal control ICN-106.",
+      "category": "Physical Security",
+      "section": "Physical Security",
+      "sortOrder": 1105
+    },
+    {
+      "code": "IC-107",
+      "title": "Threat Intelligence Management",
+      "summary": "Satisfied by internal control ICN-107.",
+      "category": "Hardening",
+      "section": "Hardening",
+      "sortOrder": 1106
+    },
+    {
+      "code": "IC-108",
+      "title": "ICT Continuity Readiness Control",
+      "summary": "Satisfied by internal control ICN-108.",
+      "category": "Business Continuity",
+      "section": "Business Continuity",
+      "sortOrder": 1107
+    },
+    {
+      "code": "IC-109",
+      "title": "Cabling Security Control",
+      "summary": "Satisfied by internal control ICN-109.",
+      "category": "Physical Security",
+      "section": "Physical Security",
+      "sortOrder": 1108
+    },
+    {
+      "code": "IC-110",
+      "title": "System Processing Compliance",
+      "summary": "Satisfied by internal control ICN-110.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1109
+    },
+    {
+      "code": "IC-111",
+      "title": "Automated Software Inventory Management",
+      "summary": "Satisfied by internal control ICN-111.",
+      "category": "Asset Management",
+      "section": "Asset Management",
+      "sortOrder": 1110
+    },
+    {
+      "code": "IC-112",
+      "title": "Recovery Process Documentation",
+      "summary": "Satisfied by internal control ICN-112.",
+      "category": "Internal Control",
+      "section": "Internal Control",
+      "sortOrder": 1111
+    },
+    {
+      "code": "IC-113",
+      "title": "DNS Query Audit Logging",
+      "summary": "Satisfied by internal control ICN-113.",
+      "category": "Logging and Monitoring",
+      "section": "Logging and Monitoring",
+      "sortOrder": 1112
+    },
+    {
+      "code": "IC-114",
+      "title": "Information Classification and Labeling Compliance",
+      "summary": "Satisfied by internal control ICN-114.",
+      "category": "Documents and Records",
+      "section": "Documents and Records",
+      "sortOrder": 1113
+    },
+    {
+      "code": "IC-115",
+      "title": "Privacy Notice Communication Control",
+      "summary": "Satisfied by internal control ICN-115.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1114
+    },
+    {
+      "code": "IC-116",
+      "title": "Data Subject Consent Management",
+      "summary": "Satisfied by internal control ICN-116.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1115
+    },
+    {
+      "code": "IC-117",
+      "title": "Unauthorized Extension Restriction",
+      "summary": "Satisfied by internal control ICN-117.",
+      "category": "IT Security",
+      "section": "IT Security",
+      "sortOrder": 1116
+    },
+    {
+      "code": "IC-118",
+      "title": "Output Delivery Management",
+      "summary": "Satisfied by internal control ICN-118.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1117
+    },
+    {
+      "code": "IC-119",
+      "title": "Organizational Structure Compliance",
+      "summary": "Satisfied by internal control ICN-119.",
+      "category": "Information Security",
+      "section": "Information Security",
+      "sortOrder": 1118
+    },
+    {
+      "code": "IC-120",
+      "title": "Network Architecture Documentation Control",
+      "summary": "Satisfied by internal control ICN-120.",
+      "category": "Hardening",
+      "section": "Hardening",
+      "sortOrder": 1119
+    },
+    {
+      "code": "IC-121",
+      "title": "Secure Authentication Control",
+      "summary": "Satisfied by internal control ICN-121.",
+      "category": "Access Management",
+      "section": "Access Management",
+      "sortOrder": 1120
+    },
+    {
+      "code": "IC-122",
+      "title": "Information Transfer Security Control",
+      "summary": "Satisfied by internal control ICN-122.",
+      "category": "Communication Security",
+      "section": "Communication Security",
+      "sortOrder": 1121
+    },
+    {
+      "code": "IC-123",
+      "title": "Third-Party Privacy Compliance",
+      "summary": "Satisfied by internal control ICN-123.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1122
+    },
+    {
+      "code": "IC-124",
+      "title": "Software Installation Management",
+      "summary": "Satisfied by internal control ICN-124.",
+      "category": "Change and Configuration Management",
+      "section": "Change and Configuration Management",
+      "sortOrder": 1123
+    },
+    {
+      "code": "IC-125",
+      "title": "Competence Management",
+      "summary": "Satisfied by internal control ICN-125.",
+      "category": "Internal Control",
+      "section": "Internal Control",
+      "sortOrder": 1124
+    },
+    {
+      "code": "IC-126",
+      "title": "ICS/OT Security Management",
+      "summary": "Satisfied by internal control ICN-126.",
+      "category": "ICS/OT Security",
+      "section": "ICS/OT Security",
+      "sortOrder": 1125
+    },
+    {
+      "code": "IC-127",
+      "title": "Cryptography Management and Key Control",
+      "summary": "Satisfied by internal control ICN-127.",
+      "category": "Hardening",
+      "section": "Hardening",
+      "sortOrder": 1126
+    },
+    {
+      "code": "IC-128",
+      "title": "Business Continuity Plan Documentation and Maintenance",
+      "summary": "Satisfied by internal control ICN-128.",
+      "category": "Internal Control",
+      "section": "Internal Control",
+      "sortOrder": 1127
+    },
+    {
+      "code": "IC-129",
+      "title": "Security Event Reporting Control",
+      "summary": "Satisfied by internal control ICN-129.",
+      "category": "Incident Management",
+      "section": "Incident Management",
+      "sortOrder": 1128
+    },
+    {
+      "code": "IC-130",
+      "title": "Business Impact Analysis (BIA)",
+      "summary": "Satisfied by internal control ICN-130.",
+      "category": "Internal Control",
+      "section": "Internal Control",
+      "sortOrder": 1129
+    },
+    {
+      "code": "IC-131",
+      "title": "Redundancy for Information Processing Facilities",
+      "summary": "Satisfied by internal control ICN-131.",
+      "category": "Business Continuity",
+      "section": "Business Continuity",
+      "sortOrder": 1130
+    },
+    {
+      "code": "IC-132",
+      "title": "Payment Card Data Retention Control",
+      "summary": "Satisfied by internal control ICN-132.",
+      "category": "Backup",
+      "section": "Backup",
+      "sortOrder": 1131
+    },
+    {
+      "code": "IC-133",
+      "title": "Information Security Roles Compliance Check",
+      "summary": "Satisfied by internal control ICN-133.",
+      "category": "Information Security",
+      "section": "Information Security",
+      "sortOrder": 1132
+    },
+    {
+      "code": "IC-134",
+      "title": "Risk Appetite Compliance Check",
+      "summary": "Satisfied by internal control ICN-134.",
+      "category": "Risk Management",
+      "section": "Risk Management",
+      "sortOrder": 1133
+    },
+    {
+      "code": "IC-135",
+      "title": "Source Code Access Management",
+      "summary": "Satisfied by internal control ICN-135.",
+      "category": "Access Management",
+      "section": "Access Management",
+      "sortOrder": 1134
+    },
+    {
+      "code": "IC-136",
+      "title": "Access and Identity Security Management",
+      "summary": "Satisfied by internal control ICN-136.",
+      "category": "Access Management",
+      "section": "Access Management",
+      "sortOrder": 1135
+    },
+    {
+      "code": "IC-137",
+      "title": "Trusted DNS Server Configuration",
+      "summary": "Satisfied by internal control ICN-137.",
+      "category": "Hardening",
+      "section": "Hardening",
+      "sortOrder": 1136
+    },
+    {
+      "code": "IC-138",
+      "title": "Outsourced Development Oversight",
+      "summary": "Satisfied by internal control ICN-138.",
+      "category": "Supplier Management",
+      "section": "Supplier Management",
+      "sortOrder": 1137
+    },
+    {
+      "code": "IC-139",
+      "title": "Endpoint Device Security Compliance",
+      "summary": "Satisfied by internal control ICN-139.",
+      "category": "IT Security",
+      "section": "IT Security",
+      "sortOrder": 1138
+    },
+    {
+      "code": "IC-140",
+      "title": "Supplier Security Compliance",
+      "summary": "Satisfied by internal control ICN-140.",
+      "category": "Supplier Management",
+      "section": "Supplier Management",
+      "sortOrder": 1139
+    },
+    {
+      "code": "IC-141",
+      "title": "Information Security Continuity Control",
+      "summary": "Satisfied by internal control ICN-141.",
+      "category": "Business Continuity",
+      "section": "Business Continuity",
+      "sortOrder": 1140
+    },
+    {
+      "code": "IC-142",
+      "title": "POS SSL/TLS Security Assurance",
+      "summary": "Satisfied by internal control ICN-142.",
+      "category": "Hardening",
+      "section": "Hardening",
+      "sortOrder": 1141
+    },
+    {
+      "code": "IC-143",
+      "title": "Application Security Compliance",
+      "summary": "Satisfied by internal control ICN-143.",
+      "category": "Secure Development",
+      "section": "Secure Development",
+      "sortOrder": 1142
+    },
+    {
+      "code": "IC-144",
+      "title": "Data Specification Management",
+      "summary": "Satisfied by internal control ICN-144.",
+      "category": "Privacy",
+      "section": "Privacy",
+      "sortOrder": 1143
+    },
+    {
+      "code": "IC-145",
+      "title": "Employment Agreement Compliance",
+      "summary": "Satisfied by internal control ICN-145.",
+      "category": "Human Resources Security",
+      "section": "Human Resources Security",
+      "sortOrder": 1144
+    },
+    {
+      "code": "IC-146",
+      "title": "BCMS Awareness and Training",
+      "summary": "Satisfied by internal control ICN-146.",
+      "category": "Internal Control",
+      "section": "Internal Control",
+      "sortOrder": 1145
+    },
+    {
+      "code": "IC-147",
+      "title": "BCMS Documentation and Capability Evaluation",
+      "summary": "Satisfied by internal control ICN-147.",
+      "category": "Internal Control",
+      "section": "Internal Control",
+      "sortOrder": 1146
+    },
+    {
+      "code": "IC-148",
+      "title": "Information Backup Verification",
+      "summary": "Satisfied by internal control ICN-148.",
+      "category": "Backup",
+      "section": "Backup",
+      "sortOrder": 1147
+    },
+    {
+      "code": "IC-149",
+      "title": "Remote Work Security Compliance",
+      "summary": "Satisfied by internal control ICN-149.",
+      "category": "IT Security",
+      "section": "IT Security",
+      "sortOrder": 1148
+    },
+    {
+      "code": "IC-150",
+      "title": "Asset Inventory Management",
+      "summary": "Satisfied by internal control ICN-150.",
+      "category": "Asset Management",
+      "section": "Asset Management",
+      "sortOrder": 1149
+    },
+    {
+      "code": "IC-151",
+      "title": "Control Activities Implementation and Management",
+      "summary": "Satisfied by internal control ICN-151.",
+      "category": "Information Security",
+      "section": "Information Security",
+      "sortOrder": 1150
     }
   ],
   "templates": [
@@ -194,7 +1403,8 @@
       "title": "Information Security Integration in Project Management",
       "category": "Secure Development",
       "requirementCodes": [
-        "IC-SECURE-DEVELOPMENT"
+        "IC-SECURE-DEVELOPMENT",
+        "IC-001"
       ],
       "tasks": []
     },
@@ -203,7 +1413,8 @@
       "title": "Anomalous Activity Monitoring Control",
       "category": "Logging and Monitoring",
       "requirementCodes": [
-        "IC-LOGGING-AND-MONITORING"
+        "IC-LOGGING-AND-MONITORING",
+        "IC-002"
       ],
       "tasks": []
     },
@@ -212,7 +1423,8 @@
       "title": "Privileged Utility Program Management",
       "category": "Access Management",
       "requirementCodes": [
-        "IC-ACCESS-MANAGEMENT"
+        "IC-ACCESS-MANAGEMENT",
+        "IC-003"
       ],
       "tasks": []
     },
@@ -221,7 +1433,8 @@
       "title": "Retention of Personal Information",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-004"
       ],
       "tasks": []
     },
@@ -230,7 +1443,8 @@
       "title": "Third-Party Disclosure Consent Verification",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-005"
       ],
       "tasks": []
     },
@@ -239,7 +1453,8 @@
       "title": "Access to Personal Information",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-006"
       ],
       "tasks": []
     },
@@ -248,7 +1463,8 @@
       "title": "Response Team Structure Management",
       "category": "Internal Control",
       "requirementCodes": [
-        "IC-INTERNAL-CONTROL"
+        "IC-INTERNAL-CONTROL",
+        "IC-007"
       ],
       "tasks": []
     },
@@ -257,7 +1473,8 @@
       "title": "Risk Treatment Plan Implementation",
       "category": "Risk Management",
       "requirementCodes": [
-        "IC-RISK-MANAGEMENT"
+        "IC-RISK-MANAGEMENT",
+        "IC-008"
       ],
       "tasks": []
     },
@@ -266,7 +1483,8 @@
       "title": "Secure Area Access and Activity Control",
       "category": "Physical Security",
       "requirementCodes": [
-        "IC-PHYSICAL-SECURITY"
+        "IC-PHYSICAL-SECURITY",
+        "IC-009"
       ],
       "tasks": []
     },
@@ -275,7 +1493,8 @@
       "title": "Secure Development and Testing Control",
       "category": "Secure Development",
       "requirementCodes": [
-        "IC-SECURE-DEVELOPMENT"
+        "IC-SECURE-DEVELOPMENT",
+        "IC-010"
       ],
       "tasks": []
     },
@@ -284,7 +1503,8 @@
       "title": "Engagement with Special Interest Groups",
       "category": "Information Security",
       "requirementCodes": [
-        "IC-INFORMATION-SECURITY"
+        "IC-INFORMATION-SECURITY",
+        "IC-011"
       ],
       "tasks": []
     },
@@ -293,7 +1513,8 @@
       "title": "Cloud Service Management",
       "category": "Cloud Services",
       "requirementCodes": [
-        "IC-CLOUD-SERVICES"
+        "IC-CLOUD-SERVICES",
+        "IC-012"
       ],
       "tasks": []
     },
@@ -302,7 +1523,8 @@
       "title": "Physical Security Perimeter Audit",
       "category": "Physical Security",
       "requirementCodes": [
-        "IC-PHYSICAL-SECURITY"
+        "IC-PHYSICAL-SECURITY",
+        "IC-013"
       ],
       "tasks": []
     },
@@ -311,7 +1533,8 @@
       "title": "Information and Asset Use Compliance",
       "category": "Asset Management",
       "requirementCodes": [
-        "IC-ASSET-MANAGEMENT"
+        "IC-ASSET-MANAGEMENT",
+        "IC-014"
       ],
       "tasks": []
     },
@@ -320,7 +1543,8 @@
       "title": "Script Allowlisting Control",
       "category": "IT Security",
       "requirementCodes": [
-        "IC-IT-SECURITY"
+        "IC-IT-SECURITY",
+        "IC-015"
       ],
       "tasks": []
     },
@@ -329,7 +1553,8 @@
       "title": "Environment Segregation Control",
       "category": "Secure Development",
       "requirementCodes": [
-        "IC-SECURE-DEVELOPMENT"
+        "IC-SECURE-DEVELOPMENT",
+        "IC-016"
       ],
       "tasks": []
     },
@@ -338,7 +1563,8 @@
       "title": "Data Subject Information Request Management",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-017"
       ],
       "tasks": []
     },
@@ -347,7 +1573,8 @@
       "title": "Information Security Policy Compliance",
       "category": "Information Security",
       "requirementCodes": [
-        "IC-INFORMATION-SECURITY"
+        "IC-INFORMATION-SECURITY",
+        "IC-018"
       ],
       "tasks": []
     },
@@ -356,7 +1583,8 @@
       "title": "Network Services Security",
       "category": "Hardening",
       "requirementCodes": [
-        "IC-HARDENING"
+        "IC-HARDENING",
+        "IC-019"
       ],
       "tasks": []
     },
@@ -365,7 +1593,8 @@
       "title": "Correction and Amendment of Personal Information",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-020"
       ],
       "tasks": []
     },
@@ -374,7 +1603,8 @@
       "title": "Physical Entry Security Control",
       "category": "Physical Security",
       "requirementCodes": [
-        "IC-PHYSICAL-SECURITY"
+        "IC-PHYSICAL-SECURITY",
+        "IC-021"
       ],
       "tasks": []
     },
@@ -383,7 +1613,8 @@
       "title": "Secure Development Lifecycle Compliance",
       "category": "Secure Development",
       "requirementCodes": [
-        "IC-SECURE-DEVELOPMENT"
+        "IC-SECURE-DEVELOPMENT",
+        "IC-022"
       ],
       "tasks": []
     },
@@ -392,7 +1623,8 @@
       "title": "Data Storage Integrity",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-023"
       ],
       "tasks": []
     },
@@ -401,7 +1633,8 @@
       "title": "POI Device Inspection Compliance",
       "category": "Risk Management",
       "requirementCodes": [
-        "IC-RISK-MANAGEMENT"
+        "IC-RISK-MANAGEMENT",
+        "IC-024"
       ],
       "tasks": []
     },
@@ -410,7 +1643,8 @@
       "title": "Personal Information Collection Control",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-025"
       ],
       "tasks": []
     },
@@ -419,7 +1653,8 @@
       "title": "Secure Facility Management",
       "category": "Physical Security",
       "requirementCodes": [
-        "IC-PHYSICAL-SECURITY"
+        "IC-PHYSICAL-SECURITY",
+        "IC-026"
       ],
       "tasks": []
     },
@@ -428,7 +1663,8 @@
       "title": "Clear Desk and Screen Compliance Check",
       "category": "IT Security",
       "requirementCodes": [
-        "IC-IT-SECURITY"
+        "IC-IT-SECURITY",
+        "IC-027"
       ],
       "tasks": []
     },
@@ -437,7 +1673,8 @@
       "title": "Sensitive Information Access Management",
       "category": "Asset Management",
       "requirementCodes": [
-        "IC-ASSET-MANAGEMENT"
+        "IC-ASSET-MANAGEMENT",
+        "IC-028"
       ],
       "tasks": []
     },
@@ -446,7 +1683,8 @@
       "title": "Personal Information Accuracy and Relevance",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-029"
       ],
       "tasks": []
     },
@@ -455,7 +1693,8 @@
       "title": "Incident Management Compliance",
       "category": "Incident Management",
       "requirementCodes": [
-        "IC-INCIDENT-MANAGEMENT"
+        "IC-INCIDENT-MANAGEMENT",
+        "IC-030"
       ],
       "tasks": []
     },
@@ -464,7 +1703,8 @@
       "title": "Management Responsibilities Compliance",
       "category": "Information Security",
       "requirementCodes": [
-        "IC-INFORMATION-SECURITY"
+        "IC-INFORMATION-SECURITY",
+        "IC-031"
       ],
       "tasks": []
     },
@@ -473,7 +1713,8 @@
       "title": "Personnel Screening and Verification Control",
       "category": "Human Resources Security",
       "requirementCodes": [
-        "IC-HUMAN-RESOURCES-SECURITY"
+        "IC-HUMAN-RESOURCES-SECURITY",
+        "IC-032"
       ],
       "tasks": []
     },
@@ -482,7 +1723,8 @@
       "title": "PII Privacy Compliance",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-033"
       ],
       "tasks": []
     },
@@ -491,7 +1733,8 @@
       "title": "CVV Retention Prevention",
       "category": "Backup",
       "requirementCodes": [
-        "IC-BACKUP"
+        "IC-BACKUP",
+        "IC-034"
       ],
       "tasks": []
     },
@@ -500,7 +1743,8 @@
       "title": "DHCP Inventory Update",
       "category": "Asset Management",
       "requirementCodes": [
-        "IC-ASSET-MANAGEMENT"
+        "IC-ASSET-MANAGEMENT",
+        "IC-035"
       ],
       "tasks": []
     },
@@ -509,7 +1753,8 @@
       "title": "Stakeholder Coordination in Incident Response",
       "category": "Incident Management",
       "requirementCodes": [
-        "IC-INCIDENT-MANAGEMENT"
+        "IC-INCIDENT-MANAGEMENT",
+        "IC-036"
       ],
       "tasks": []
     },
@@ -518,7 +1763,8 @@
       "title": "Post-Termination Information Security Responsibilities",
       "category": "Human Resources Security",
       "requirementCodes": [
-        "IC-HUMAN-RESOURCES-SECURITY"
+        "IC-HUMAN-RESOURCES-SECURITY",
+        "IC-037"
       ],
       "tasks": []
     },
@@ -527,7 +1773,8 @@
       "title": "Disciplinary Process Compliance",
       "category": "Information Security",
       "requirementCodes": [
-        "IC-INFORMATION-SECURITY"
+        "IC-INFORMATION-SECURITY",
+        "IC-038"
       ],
       "tasks": []
     },
@@ -536,7 +1783,8 @@
       "title": "Business Continuity Exercise Programme",
       "category": "Internal Control",
       "requirementCodes": [
-        "IC-INTERNAL-CONTROL"
+        "IC-INTERNAL-CONTROL",
+        "IC-039"
       ],
       "tasks": []
     },
@@ -545,7 +1793,8 @@
       "title": "Internal Responsibility Accountability",
       "category": "Human Resources Security",
       "requirementCodes": [
-        "IC-HUMAN-RESOURCES-SECURITY"
+        "IC-HUMAN-RESOURCES-SECURITY",
+        "IC-040"
       ],
       "tasks": []
     },
@@ -554,7 +1803,8 @@
       "title": "Passive Asset Discovery and Inventory Update",
       "category": "Asset Management",
       "requirementCodes": [
-        "IC-ASSET-MANAGEMENT"
+        "IC-ASSET-MANAGEMENT",
+        "IC-041"
       ],
       "tasks": []
     },
@@ -563,7 +1813,8 @@
       "title": "Email Gateway File Type Filtering",
       "category": "Communication Security",
       "requirementCodes": [
-        "IC-COMMUNICATION-SECURITY"
+        "IC-COMMUNICATION-SECURITY",
+        "IC-042"
       ],
       "tasks": []
     },
@@ -572,7 +1823,8 @@
       "title": "Logging Management",
       "category": "Logging and Monitoring",
       "requirementCodes": [
-        "IC-LOGGING-AND-MONITORING"
+        "IC-LOGGING-AND-MONITORING",
+        "IC-043"
       ],
       "tasks": []
     },
@@ -581,7 +1833,8 @@
       "title": "Change Management Oversight",
       "category": "Change and Configuration Management",
       "requirementCodes": [
-        "IC-CHANGE-AND-CONFIGURATION-MANAGEMENT"
+        "IC-CHANGE-AND-CONFIGURATION-MANAGEMENT",
+        "IC-044"
       ],
       "tasks": []
     },
@@ -590,7 +1843,8 @@
       "title": "Compliance Review Control",
       "category": "Compliance Management",
       "requirementCodes": [
-        "IC-COMPLIANCE-MANAGEMENT"
+        "IC-COMPLIANCE-MANAGEMENT",
+        "IC-045"
       ],
       "tasks": []
     },
@@ -599,7 +1853,8 @@
       "title": "Audit Log Retention Compliance",
       "category": "Logging and Monitoring",
       "requirementCodes": [
-        "IC-LOGGING-AND-MONITORING"
+        "IC-LOGGING-AND-MONITORING",
+        "IC-046"
       ],
       "tasks": []
     },
@@ -608,7 +1863,8 @@
       "title": "Unauthorized Asset Management",
       "category": "Asset Management",
       "requirementCodes": [
-        "IC-ASSET-MANAGEMENT"
+        "IC-ASSET-MANAGEMENT",
+        "IC-047"
       ],
       "tasks": []
     },
@@ -617,7 +1873,8 @@
       "title": "ISMS Review and Monitoring",
       "category": "Information Security",
       "requirementCodes": [
-        "IC-INFORMATION-SECURITY"
+        "IC-INFORMATION-SECURITY",
+        "IC-048"
       ],
       "tasks": []
     },
@@ -626,7 +1883,8 @@
       "title": "Disclosure Record-Keeping and Monitoring",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-049"
       ],
       "tasks": []
     },
@@ -635,7 +1893,8 @@
       "title": "Audit Testing Security Control",
       "category": "Hardening",
       "requirementCodes": [
-        "IC-HARDENING"
+        "IC-HARDENING",
+        "IC-050"
       ],
       "tasks": []
     },
@@ -644,7 +1903,8 @@
       "title": "Email Authentication and Verification",
       "category": "Communication Security",
       "requirementCodes": [
-        "IC-COMMUNICATION-SECURITY"
+        "IC-COMMUNICATION-SECURITY",
+        "IC-051"
       ],
       "tasks": []
     },
@@ -653,7 +1913,8 @@
       "title": "Utility Protection and Resilience",
       "category": "Business Continuity",
       "requirementCodes": [
-        "IC-BUSINESS-CONTINUITY"
+        "IC-BUSINESS-CONTINUITY",
+        "IC-052"
       ],
       "tasks": []
     },
@@ -662,7 +1923,8 @@
       "title": "POI Device Inspection",
       "category": "Physical Security",
       "requirementCodes": [
-        "IC-PHYSICAL-SECURITY"
+        "IC-PHYSICAL-SECURITY",
+        "IC-053"
       ],
       "tasks": []
     },
@@ -671,7 +1933,8 @@
       "title": "Records Protection and Management Control",
       "category": "Documents and Records",
       "requirementCodes": [
-        "IC-DOCUMENTS-AND-RECORDS"
+        "IC-DOCUMENTS-AND-RECORDS",
+        "IC-054"
       ],
       "tasks": []
     },
@@ -680,7 +1943,8 @@
       "title": "Authority Contact Compliance",
       "category": "Information Security",
       "requirementCodes": [
-        "IC-INFORMATION-SECURITY"
+        "IC-INFORMATION-SECURITY",
+        "IC-055"
       ],
       "tasks": []
     },
@@ -689,7 +1953,8 @@
       "title": "Documented Procedures Compliance",
       "category": "Information Security",
       "requirementCodes": [
-        "IC-INFORMATION-SECURITY"
+        "IC-INFORMATION-SECURITY",
+        "IC-056"
       ],
       "tasks": []
     },
@@ -698,7 +1963,8 @@
       "title": "Storage Media Lifecycle Management",
       "category": "Physical Security",
       "requirementCodes": [
-        "IC-PHYSICAL-SECURITY"
+        "IC-PHYSICAL-SECURITY",
+        "IC-057"
       ],
       "tasks": []
     },
@@ -707,7 +1973,8 @@
       "title": "Data Leakage Prevention",
       "category": "Hardening",
       "requirementCodes": [
-        "IC-HARDENING"
+        "IC-HARDENING",
+        "IC-058"
       ],
       "tasks": []
     },
@@ -716,7 +1983,8 @@
       "title": "Centralized AAA Management",
       "category": "Access Management",
       "requirementCodes": [
-        "IC-ACCESS-MANAGEMENT"
+        "IC-ACCESS-MANAGEMENT",
+        "IC-059"
       ],
       "tasks": []
     },
@@ -725,7 +1993,8 @@
       "title": "Secure SAD Deletion",
       "category": "Backup",
       "requirementCodes": [
-        "IC-BACKUP"
+        "IC-BACKUP",
+        "IC-060"
       ],
       "tasks": []
     },
@@ -734,7 +2003,8 @@
       "title": "Vulnerability Management Control",
       "category": "Hardening",
       "requirementCodes": [
-        "IC-HARDENING"
+        "IC-HARDENING",
+        "IC-061"
       ],
       "tasks": []
     },
@@ -743,7 +2013,8 @@
       "title": "Equipment Maintenance Compliance",
       "category": "IT Security",
       "requirementCodes": [
-        "IC-IT-SECURITY"
+        "IC-IT-SECURITY",
+        "IC-062"
       ],
       "tasks": []
     },
@@ -752,7 +2023,8 @@
       "title": "Active Network Asset Discovery",
       "category": "Access Management",
       "requirementCodes": [
-        "IC-ACCESS-MANAGEMENT"
+        "IC-ACCESS-MANAGEMENT",
+        "IC-063"
       ],
       "tasks": []
     },
@@ -761,7 +2033,8 @@
       "title": "Web Filtering Compliance",
       "category": "IT Security",
       "requirementCodes": [
-        "IC-IT-SECURITY"
+        "IC-IT-SECURITY",
+        "IC-064"
       ],
       "tasks": []
     },
@@ -770,7 +2043,8 @@
       "title": "Intellectual Property Rights Compliance",
       "category": "Information Security",
       "requirementCodes": [
-        "IC-INFORMATION-SECURITY"
+        "IC-INFORMATION-SECURITY",
+        "IC-065"
       ],
       "tasks": []
     },
@@ -779,7 +2053,8 @@
       "title": "Network Security Compliance",
       "category": "Hardening",
       "requirementCodes": [
-        "IC-HARDENING"
+        "IC-HARDENING",
+        "IC-066"
       ],
       "tasks": []
     },
@@ -788,7 +2063,8 @@
       "title": "Function Segregation and Security Control",
       "category": "Hardening",
       "requirementCodes": [
-        "IC-HARDENING"
+        "IC-HARDENING",
+        "IC-067"
       ],
       "tasks": []
     },
@@ -797,7 +2073,8 @@
       "title": "Internal Control Deficiency Assessment and Communication",
       "category": "Information Security",
       "requirementCodes": [
-        "IC-INFORMATION-SECURITY"
+        "IC-INFORMATION-SECURITY",
+        "IC-068"
       ],
       "tasks": []
     },
@@ -806,7 +2083,8 @@
       "title": "Malware Protection Compliance",
       "category": "IT Security",
       "requirementCodes": [
-        "IC-IT-SECURITY"
+        "IC-IT-SECURITY",
+        "IC-069"
       ],
       "tasks": []
     },
@@ -815,7 +2093,8 @@
       "title": "Information Security Training Compliance",
       "category": "Awareness Management",
       "requirementCodes": [
-        "IC-AWARENESS-MANAGEMENT"
+        "IC-AWARENESS-MANAGEMENT",
+        "IC-070"
       ],
       "tasks": []
     },
@@ -824,7 +2103,8 @@
       "title": "Segregation of Duties Compliance",
       "category": "Access Management",
       "requirementCodes": [
-        "IC-ACCESS-MANAGEMENT"
+        "IC-ACCESS-MANAGEMENT",
+        "IC-071"
       ],
       "tasks": []
     },
@@ -833,7 +2113,8 @@
       "title": "Objective Clarity and Risk Assessment Control",
       "category": "Risk Management",
       "requirementCodes": [
-        "IC-RISK-MANAGEMENT"
+        "IC-RISK-MANAGEMENT",
+        "IC-072"
       ],
       "tasks": []
     },
@@ -842,7 +2123,8 @@
       "title": "Configuration Management Compliance",
       "category": "Change and Configuration Management",
       "requirementCodes": [
-        "IC-CHANGE-AND-CONFIGURATION-MANAGEMENT"
+        "IC-CHANGE-AND-CONFIGURATION-MANAGEMENT",
+        "IC-073"
       ],
       "tasks": []
     },
@@ -851,7 +2133,8 @@
       "title": "Physical Security Monitoring Control",
       "category": "Physical Security",
       "requirementCodes": [
-        "IC-PHYSICAL-SECURITY"
+        "IC-PHYSICAL-SECURITY",
+        "IC-074"
       ],
       "tasks": []
     },
@@ -860,7 +2143,8 @@
       "title": "Test Information Security Management",
       "category": "Secure Development",
       "requirementCodes": [
-        "IC-SECURE-DEVELOPMENT"
+        "IC-SECURE-DEVELOPMENT",
+        "IC-075"
       ],
       "tasks": []
     },
@@ -869,7 +2153,8 @@
       "title": "Input Validation and Recording",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-076"
       ],
       "tasks": []
     },
@@ -878,7 +2163,8 @@
       "title": "Breach Notification Compliance",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-077"
       ],
       "tasks": []
     },
@@ -887,7 +2173,8 @@
       "title": "URL Request Audit Logging",
       "category": "Logging and Monitoring",
       "requirementCodes": [
-        "IC-LOGGING-AND-MONITORING"
+        "IC-LOGGING-AND-MONITORING",
+        "IC-078"
       ],
       "tasks": []
     },
@@ -896,7 +2183,8 @@
       "title": "Privileged Access Rights Management",
       "category": "Access Management",
       "requirementCodes": [
-        "IC-ACCESS-MANAGEMENT"
+        "IC-ACCESS-MANAGEMENT",
+        "IC-079"
       ],
       "tasks": []
     },
@@ -905,7 +2193,8 @@
       "title": "Warning and Communication Procedures",
       "category": "Internal Control",
       "requirementCodes": [
-        "IC-INTERNAL-CONTROL"
+        "IC-INTERNAL-CONTROL",
+        "IC-080"
       ],
       "tasks": []
     },
@@ -914,7 +2203,8 @@
       "title": "Legal Compliance Verification",
       "category": "Compliance Management",
       "requirementCodes": [
-        "IC-COMPLIANCE-MANAGEMENT"
+        "IC-COMPLIANCE-MANAGEMENT",
+        "IC-081"
       ],
       "tasks": []
     },
@@ -923,7 +2213,8 @@
       "title": "Business Continuity Strategy Review",
       "category": "Internal Control",
       "requirementCodes": [
-        "IC-INTERNAL-CONTROL"
+        "IC-INTERNAL-CONTROL",
+        "IC-082"
       ],
       "tasks": []
     },
@@ -932,7 +2223,8 @@
       "title": "Sector-Specific Risk Tolerance Analysis",
       "category": "Risk Management",
       "requirementCodes": [
-        "IC-RISK-MANAGEMENT"
+        "IC-RISK-MANAGEMENT",
+        "IC-083"
       ],
       "tasks": []
     },
@@ -941,7 +2233,8 @@
       "title": "Capacity Management Oversight",
       "category": "Cloud Services",
       "requirementCodes": [
-        "IC-CLOUD-SERVICES"
+        "IC-CLOUD-SERVICES",
+        "IC-084"
       ],
       "tasks": []
     },
@@ -950,7 +2243,8 @@
       "title": "Equipment Security and Protection",
       "category": "Physical Security",
       "requirementCodes": [
-        "IC-PHYSICAL-SECURITY"
+        "IC-PHYSICAL-SECURITY",
+        "IC-085"
       ],
       "tasks": []
     },
@@ -959,7 +2253,8 @@
       "title": "Confidentiality Agreement Compliance",
       "category": "Human Resources Security",
       "requirementCodes": [
-        "IC-HUMAN-RESOURCES-SECURITY"
+        "IC-HUMAN-RESOURCES-SECURITY",
+        "IC-086"
       ],
       "tasks": []
     },
@@ -968,7 +2263,8 @@
       "title": "Information Deletion Verification",
       "category": "Cloud Services",
       "requirementCodes": [
-        "IC-CLOUD-SERVICES"
+        "IC-CLOUD-SERVICES",
+        "IC-087"
       ],
       "tasks": []
     },
@@ -977,7 +2273,8 @@
       "title": "Inquiry and Complaints Resolution",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-088"
       ],
       "tasks": []
     },
@@ -986,7 +2283,8 @@
       "title": "Threat Identification and Documentation",
       "category": "Risk Management",
       "requirementCodes": [
-        "IC-RISK-MANAGEMENT"
+        "IC-RISK-MANAGEMENT",
+        "IC-089"
       ],
       "tasks": []
     },
@@ -995,7 +2293,8 @@
       "title": "Dormant Account Management",
       "category": "Access Management",
       "requirementCodes": [
-        "IC-ACCESS-MANAGEMENT"
+        "IC-ACCESS-MANAGEMENT",
+        "IC-090"
       ],
       "tasks": []
     },
@@ -1004,7 +2303,8 @@
       "title": "Data Masking Compliance",
       "category": "Hardening",
       "requirementCodes": [
-        "IC-HARDENING"
+        "IC-HARDENING",
+        "IC-091"
       ],
       "tasks": []
     },
@@ -1013,7 +2313,8 @@
       "title": "BCMS Effectiveness and Maintenance",
       "category": "Internal Control",
       "requirementCodes": [
-        "IC-INTERNAL-CONTROL"
+        "IC-INTERNAL-CONTROL",
+        "IC-092"
       ],
       "tasks": []
     },
@@ -1022,7 +2323,8 @@
       "title": "Use of Personal Information Control",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-093"
       ],
       "tasks": []
     },
@@ -1031,7 +2333,8 @@
       "title": "Effective Data Discovery Compliance",
       "category": "Logging and Monitoring",
       "requirementCodes": [
-        "IC-LOGGING-AND-MONITORING"
+        "IC-LOGGING-AND-MONITORING",
+        "IC-094"
       ],
       "tasks": []
     },
@@ -1040,7 +2343,8 @@
       "title": "Secure Coding Compliance",
       "category": "Secure Development",
       "requirementCodes": [
-        "IC-SECURE-DEVELOPMENT"
+        "IC-SECURE-DEVELOPMENT",
+        "IC-095"
       ],
       "tasks": []
     },
@@ -1049,7 +2353,8 @@
       "title": "Clock Synchronization Control",
       "category": "IT Security",
       "requirementCodes": [
-        "IC-IT-SECURITY"
+        "IC-IT-SECURITY",
+        "IC-096"
       ],
       "tasks": []
     },
@@ -1058,7 +2363,8 @@
       "title": "Risk Management Process Verification",
       "category": "Risk Management",
       "requirementCodes": [
-        "IC-RISK-MANAGEMENT"
+        "IC-RISK-MANAGEMENT",
+        "IC-097"
       ],
       "tasks": []
     },
@@ -1067,7 +2373,8 @@
       "title": "Secure System Engineering Compliance",
       "category": "Secure Development",
       "requirementCodes": [
-        "IC-SECURE-DEVELOPMENT"
+        "IC-SECURE-DEVELOPMENT",
+        "IC-098"
       ],
       "tasks": []
     },
@@ -1076,7 +2383,8 @@
       "title": "Secure Asset and Software Management",
       "category": "Hardening",
       "requirementCodes": [
-        "IC-HARDENING"
+        "IC-HARDENING",
+        "IC-099"
       ],
       "tasks": []
     },
@@ -1085,7 +2393,8 @@
       "title": "Explicit Consent for Sensitive Data",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-100"
       ],
       "tasks": []
     },
@@ -1094,7 +2403,8 @@
       "title": "Secure Equipment Disposal and Reuse Control",
       "category": "IT Security",
       "requirementCodes": [
-        "IC-IT-SECURITY"
+        "IC-IT-SECURITY",
+        "IC-101"
       ],
       "tasks": []
     },
@@ -1103,7 +2413,8 @@
       "title": "Network Segregation Compliance",
       "category": "Hardening",
       "requirementCodes": [
-        "IC-HARDENING"
+        "IC-HARDENING",
+        "IC-102"
       ],
       "tasks": []
     },
@@ -1112,7 +2423,8 @@
       "title": "Risk Mitigation Control Activities",
       "category": "Risk Management",
       "requirementCodes": [
-        "IC-RISK-MANAGEMENT"
+        "IC-RISK-MANAGEMENT",
+        "IC-103"
       ],
       "tasks": []
     },
@@ -1121,7 +2433,8 @@
       "title": "Secure Disposal of Personal Information",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-104"
       ],
       "tasks": []
     },
@@ -1130,7 +2443,8 @@
       "title": "Cybersecurity Risk Assessment Implementation",
       "category": "Risk Management",
       "requirementCodes": [
-        "IC-RISK-MANAGEMENT"
+        "IC-RISK-MANAGEMENT",
+        "IC-105"
       ],
       "tasks": []
     },
@@ -1139,7 +2453,8 @@
       "title": "Off-Premises Asset Security Control",
       "category": "Physical Security",
       "requirementCodes": [
-        "IC-PHYSICAL-SECURITY"
+        "IC-PHYSICAL-SECURITY",
+        "IC-106"
       ],
       "tasks": []
     },
@@ -1148,7 +2463,8 @@
       "title": "Threat Intelligence Management",
       "category": "Hardening",
       "requirementCodes": [
-        "IC-HARDENING"
+        "IC-HARDENING",
+        "IC-107"
       ],
       "tasks": []
     },
@@ -1157,7 +2473,8 @@
       "title": "ICT Continuity Readiness Control",
       "category": "Business Continuity",
       "requirementCodes": [
-        "IC-BUSINESS-CONTINUITY"
+        "IC-BUSINESS-CONTINUITY",
+        "IC-108"
       ],
       "tasks": []
     },
@@ -1166,7 +2483,8 @@
       "title": "Cabling Security Control",
       "category": "Physical Security",
       "requirementCodes": [
-        "IC-PHYSICAL-SECURITY"
+        "IC-PHYSICAL-SECURITY",
+        "IC-109"
       ],
       "tasks": []
     },
@@ -1175,7 +2493,8 @@
       "title": "System Processing Compliance",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-110"
       ],
       "tasks": []
     },
@@ -1184,7 +2503,8 @@
       "title": "Automated Software Inventory Management",
       "category": "Asset Management",
       "requirementCodes": [
-        "IC-ASSET-MANAGEMENT"
+        "IC-ASSET-MANAGEMENT",
+        "IC-111"
       ],
       "tasks": []
     },
@@ -1193,7 +2513,8 @@
       "title": "Recovery Process Documentation",
       "category": "Internal Control",
       "requirementCodes": [
-        "IC-INTERNAL-CONTROL"
+        "IC-INTERNAL-CONTROL",
+        "IC-112"
       ],
       "tasks": []
     },
@@ -1202,7 +2523,8 @@
       "title": "DNS Query Audit Logging",
       "category": "Logging and Monitoring",
       "requirementCodes": [
-        "IC-LOGGING-AND-MONITORING"
+        "IC-LOGGING-AND-MONITORING",
+        "IC-113"
       ],
       "tasks": []
     },
@@ -1211,7 +2533,8 @@
       "title": "Information Classification and Labeling Compliance",
       "category": "Documents and Records",
       "requirementCodes": [
-        "IC-DOCUMENTS-AND-RECORDS"
+        "IC-DOCUMENTS-AND-RECORDS",
+        "IC-114"
       ],
       "tasks": []
     },
@@ -1220,7 +2543,8 @@
       "title": "Privacy Notice Communication Control",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-115"
       ],
       "tasks": []
     },
@@ -1229,7 +2553,8 @@
       "title": "Data Subject Consent Management",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-116"
       ],
       "tasks": []
     },
@@ -1238,7 +2563,8 @@
       "title": "Unauthorized Extension Restriction",
       "category": "IT Security",
       "requirementCodes": [
-        "IC-IT-SECURITY"
+        "IC-IT-SECURITY",
+        "IC-117"
       ],
       "tasks": []
     },
@@ -1247,7 +2573,8 @@
       "title": "Output Delivery Management",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-118"
       ],
       "tasks": []
     },
@@ -1256,7 +2583,8 @@
       "title": "Organizational Structure Compliance",
       "category": "Information Security",
       "requirementCodes": [
-        "IC-INFORMATION-SECURITY"
+        "IC-INFORMATION-SECURITY",
+        "IC-119"
       ],
       "tasks": []
     },
@@ -1265,7 +2593,8 @@
       "title": "Network Architecture Documentation Control",
       "category": "Hardening",
       "requirementCodes": [
-        "IC-HARDENING"
+        "IC-HARDENING",
+        "IC-120"
       ],
       "tasks": []
     },
@@ -1274,7 +2603,8 @@
       "title": "Secure Authentication Control",
       "category": "Access Management",
       "requirementCodes": [
-        "IC-ACCESS-MANAGEMENT"
+        "IC-ACCESS-MANAGEMENT",
+        "IC-121"
       ],
       "tasks": []
     },
@@ -1283,7 +2613,8 @@
       "title": "Information Transfer Security Control",
       "category": "Communication Security",
       "requirementCodes": [
-        "IC-COMMUNICATION-SECURITY"
+        "IC-COMMUNICATION-SECURITY",
+        "IC-122"
       ],
       "tasks": []
     },
@@ -1292,7 +2623,8 @@
       "title": "Third-Party Privacy Compliance",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-123"
       ],
       "tasks": []
     },
@@ -1301,7 +2633,8 @@
       "title": "Software Installation Management",
       "category": "Change and Configuration Management",
       "requirementCodes": [
-        "IC-CHANGE-AND-CONFIGURATION-MANAGEMENT"
+        "IC-CHANGE-AND-CONFIGURATION-MANAGEMENT",
+        "IC-124"
       ],
       "tasks": []
     },
@@ -1310,7 +2643,8 @@
       "title": "Competence Management",
       "category": "Internal Control",
       "requirementCodes": [
-        "IC-INTERNAL-CONTROL"
+        "IC-INTERNAL-CONTROL",
+        "IC-125"
       ],
       "tasks": []
     },
@@ -1319,7 +2653,8 @@
       "title": "ICS/OT Security Management",
       "category": "ICS/OT Security",
       "requirementCodes": [
-        "IC-ICS-OT-SECURITY"
+        "IC-ICS-OT-SECURITY",
+        "IC-126"
       ],
       "tasks": []
     },
@@ -1328,7 +2663,8 @@
       "title": "Cryptography Management and Key Control",
       "category": "Hardening",
       "requirementCodes": [
-        "IC-HARDENING"
+        "IC-HARDENING",
+        "IC-127"
       ],
       "tasks": []
     },
@@ -1337,7 +2673,8 @@
       "title": "Business Continuity Plan Documentation and Maintenance",
       "category": "Internal Control",
       "requirementCodes": [
-        "IC-INTERNAL-CONTROL"
+        "IC-INTERNAL-CONTROL",
+        "IC-128"
       ],
       "tasks": []
     },
@@ -1346,7 +2683,8 @@
       "title": "Security Event Reporting Control",
       "category": "Incident Management",
       "requirementCodes": [
-        "IC-INCIDENT-MANAGEMENT"
+        "IC-INCIDENT-MANAGEMENT",
+        "IC-129"
       ],
       "tasks": []
     },
@@ -1355,7 +2693,8 @@
       "title": "Business Impact Analysis (BIA)",
       "category": "Internal Control",
       "requirementCodes": [
-        "IC-INTERNAL-CONTROL"
+        "IC-INTERNAL-CONTROL",
+        "IC-130"
       ],
       "tasks": []
     },
@@ -1364,7 +2703,8 @@
       "title": "Redundancy for Information Processing Facilities",
       "category": "Business Continuity",
       "requirementCodes": [
-        "IC-BUSINESS-CONTINUITY"
+        "IC-BUSINESS-CONTINUITY",
+        "IC-131"
       ],
       "tasks": []
     },
@@ -1373,7 +2713,8 @@
       "title": "Payment Card Data Retention Control",
       "category": "Backup",
       "requirementCodes": [
-        "IC-BACKUP"
+        "IC-BACKUP",
+        "IC-132"
       ],
       "tasks": []
     },
@@ -1382,7 +2723,8 @@
       "title": "Information Security Roles Compliance Check",
       "category": "Information Security",
       "requirementCodes": [
-        "IC-INFORMATION-SECURITY"
+        "IC-INFORMATION-SECURITY",
+        "IC-133"
       ],
       "tasks": []
     },
@@ -1391,7 +2733,8 @@
       "title": "Risk Appetite Compliance Check",
       "category": "Risk Management",
       "requirementCodes": [
-        "IC-RISK-MANAGEMENT"
+        "IC-RISK-MANAGEMENT",
+        "IC-134"
       ],
       "tasks": []
     },
@@ -1400,7 +2743,8 @@
       "title": "Source Code Access Management",
       "category": "Access Management",
       "requirementCodes": [
-        "IC-ACCESS-MANAGEMENT"
+        "IC-ACCESS-MANAGEMENT",
+        "IC-135"
       ],
       "tasks": []
     },
@@ -1409,7 +2753,8 @@
       "title": "Access and Identity Security Management",
       "category": "Access Management",
       "requirementCodes": [
-        "IC-ACCESS-MANAGEMENT"
+        "IC-ACCESS-MANAGEMENT",
+        "IC-136"
       ],
       "tasks": []
     },
@@ -1418,7 +2763,8 @@
       "title": "Trusted DNS Server Configuration",
       "category": "Hardening",
       "requirementCodes": [
-        "IC-HARDENING"
+        "IC-HARDENING",
+        "IC-137"
       ],
       "tasks": []
     },
@@ -1427,7 +2773,8 @@
       "title": "Outsourced Development Oversight",
       "category": "Supplier Management",
       "requirementCodes": [
-        "IC-SUPPLIER-MANAGEMENT"
+        "IC-SUPPLIER-MANAGEMENT",
+        "IC-138"
       ],
       "tasks": []
     },
@@ -1436,7 +2783,8 @@
       "title": "Endpoint Device Security Compliance",
       "category": "IT Security",
       "requirementCodes": [
-        "IC-IT-SECURITY"
+        "IC-IT-SECURITY",
+        "IC-139"
       ],
       "tasks": []
     },
@@ -1445,7 +2793,8 @@
       "title": "Supplier Security Compliance",
       "category": "Supplier Management",
       "requirementCodes": [
-        "IC-SUPPLIER-MANAGEMENT"
+        "IC-SUPPLIER-MANAGEMENT",
+        "IC-140"
       ],
       "tasks": []
     },
@@ -1454,7 +2803,8 @@
       "title": "Information Security Continuity Control",
       "category": "Business Continuity",
       "requirementCodes": [
-        "IC-BUSINESS-CONTINUITY"
+        "IC-BUSINESS-CONTINUITY",
+        "IC-141"
       ],
       "tasks": []
     },
@@ -1463,7 +2813,8 @@
       "title": "POS SSL/TLS Security Assurance",
       "category": "Hardening",
       "requirementCodes": [
-        "IC-HARDENING"
+        "IC-HARDENING",
+        "IC-142"
       ],
       "tasks": []
     },
@@ -1472,7 +2823,8 @@
       "title": "Application Security Compliance",
       "category": "Secure Development",
       "requirementCodes": [
-        "IC-SECURE-DEVELOPMENT"
+        "IC-SECURE-DEVELOPMENT",
+        "IC-143"
       ],
       "tasks": []
     },
@@ -1481,7 +2833,8 @@
       "title": "Data Specification Management",
       "category": "Privacy",
       "requirementCodes": [
-        "IC-PRIVACY"
+        "IC-PRIVACY",
+        "IC-144"
       ],
       "tasks": []
     },
@@ -1490,7 +2843,8 @@
       "title": "Employment Agreement Compliance",
       "category": "Human Resources Security",
       "requirementCodes": [
-        "IC-HUMAN-RESOURCES-SECURITY"
+        "IC-HUMAN-RESOURCES-SECURITY",
+        "IC-145"
       ],
       "tasks": []
     },
@@ -1499,7 +2853,8 @@
       "title": "BCMS Awareness and Training",
       "category": "Internal Control",
       "requirementCodes": [
-        "IC-INTERNAL-CONTROL"
+        "IC-INTERNAL-CONTROL",
+        "IC-146"
       ],
       "tasks": []
     },
@@ -1508,7 +2863,8 @@
       "title": "BCMS Documentation and Capability Evaluation",
       "category": "Internal Control",
       "requirementCodes": [
-        "IC-INTERNAL-CONTROL"
+        "IC-INTERNAL-CONTROL",
+        "IC-147"
       ],
       "tasks": []
     },
@@ -1517,7 +2873,8 @@
       "title": "Information Backup Verification",
       "category": "Backup",
       "requirementCodes": [
-        "IC-BACKUP"
+        "IC-BACKUP",
+        "IC-148"
       ],
       "tasks": []
     },
@@ -1526,7 +2883,8 @@
       "title": "Remote Work Security Compliance",
       "category": "IT Security",
       "requirementCodes": [
-        "IC-IT-SECURITY"
+        "IC-IT-SECURITY",
+        "IC-149"
       ],
       "tasks": []
     },
@@ -1535,7 +2893,8 @@
       "title": "Asset Inventory Management",
       "category": "Asset Management",
       "requirementCodes": [
-        "IC-ASSET-MANAGEMENT"
+        "IC-ASSET-MANAGEMENT",
+        "IC-150"
       ],
       "tasks": []
     },
@@ -1544,7 +2903,8 @@
       "title": "Control Activities Implementation and Management",
       "category": "Information Security",
       "requirementCodes": [
-        "IC-INFORMATION-SECURITY"
+        "IC-INFORMATION-SECURITY",
+        "IC-151"
       ],
       "tasks": []
     }

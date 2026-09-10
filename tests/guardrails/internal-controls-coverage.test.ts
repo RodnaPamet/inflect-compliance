@@ -159,23 +159,56 @@ describe('Internal Controls delivery', () => {
         expect(productionDeclaringSources('INTERNAL_CONTROLS_PACK').length).toBeGreaterThan(0);
     });
 
-    it('the framework it is wired to declares one requirement per category, and every control maps to one', () => {
+    it('declares BOTH requirement layers, and every control maps to its domain AND itself', () => {
+        // TWO layers, and the second one is what keeps coverage honest.
+        //
+        // With domain requirements alone, implementing the single cheapest
+        // control in each of the 23 domains — 23 of 151 controls, 15.2% of the
+        // library — reads as 23/23 = 100% framework coverage. An 84.8-point
+        // overstatement, in a product whose entire job is not overstating
+        // readiness. The IC-NNN requirements are one-to-one with the controls,
+        // so coverage measures controls implemented, not domains touched.
         const catalog = appliedCatalogFor('INTERNAL_CONTROLS');
         expect(catalog).toBeTruthy();
 
-        const reqCodes = new Set((catalog?.requirements ?? []).map((r) => String(r.code)));
+        const reqs = (catalog?.requirements ?? []).map((r) => String(r.code));
         const categories = new Set(controls.map((c) => String(c.category)));
-        // The requirements ARE the library's own categories — nothing invented.
-        expect(reqCodes.size).toBe(categories.size);
+        const perControl = reqs.filter((c) => /^IC-\d{3}$/.test(c));
+        const domainReqs = reqs.filter((c) => !/^IC-\d{3}$/.test(c));
 
-        // Every ICN control is in the catalogue and points at exactly one of them.
+        // Domain layer: the library's own categories, nothing invented.
+        expect(domainReqs.length).toBe(categories.size);
+        // Per-control layer: exactly one per control, no more, no fewer.
+        expect(perControl.length).toBe(controls.length);
+        // No duplicate codes across the two layers.
+        expect(new Set(reqs).size).toBe(reqs.length);
+
+        // Each IC-NNN corresponds to the ICN-NNN of the same number.
+        const expected = controls.map((c) => 'IC-' + /^ICN-(\d{3})$/.exec(String(c.code))![1]).sort();
+        expect(perControl.slice().sort()).toEqual(expected);
+
+        // Every template maps to exactly two: its domain and its own requirement.
         const templates = catalog?.templates ?? [];
         expect(templates.length).toBe(controls.length);
+        const reqSet = new Set(reqs);
         for (const t of templates) {
-            const codes = (t.requirementCodes ?? []) as string[];
-            expect(codes.length).toBe(1);
-            expect(reqCodes.has(codes[0])).toBe(true);
+            const codes = ((t.requirementCodes ?? []) as string[]);
+            expect(codes.length).toBe(2);
+            for (const c of codes) expect(reqSet.has(c)).toBe(true);
+            const own = 'IC-' + /^ICN-(\d{3})$/.exec(String(t.code))![1];
+            expect(codes).toContain(own);
+            expect(codes.filter((c) => /^IC-\d{3}$/.test(c))).toEqual([own]);
         }
+    });
+
+    it('coverage cannot be inflated by the domain layer', () => {
+        // The property, stated directly rather than left implicit in the counts
+        // above: the number of requirements a tenant must satisfy to reach 100%
+        // is at least the number of controls. If someone later drops the
+        // per-control layer to tidy the Mappings tab, this is what fails.
+        const catalog = appliedCatalogFor('INTERNAL_CONTROLS');
+        const reqs = (catalog?.requirements ?? []).length;
+        expect(reqs).toBeGreaterThanOrEqual(controls.length);
     });
 
     it('the catalogue carries no tasks, so it cannot deprecate the authored ones', () => {
