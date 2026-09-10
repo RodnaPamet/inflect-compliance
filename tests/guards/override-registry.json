@@ -1,9 +1,9 @@
 {
     "mysql2": {
         "kind": "security",
-        "advisory": "GHSA-3f6p-5ww8-9rcr",
-        "patchedFrom": "3.22.0",
-        "reason": "MySQL2 auth-plugin downgrade to mysql_clear_password leaking plaintext credentials (high), published 2026-09-01, vulnerable < 3.22.0. It turned main red on 6b9d2f835 and every push after it, including branches touching no dependencies. Reached via prisma -> mysql2, and it lands in the PRODUCTION audit for the same reason as the deepmerge-ts entry above: `prisma` (the CLI) is a production dependency here, not only @prisma/client. A version bump does NOT fix it — prisma 7.10.0, the version this repo is already on, still pins mysql2 at exactly 3.15.3, so an override is the only route to a patched release. Not allowlisted in security/audit-allowlist.json because that file's own rule is that an exemption must be genuinely unfixable, and 3.22.0 exists. Almost certainly unreachable in this product: the datasource is PostgreSQL and Prisma loads the mysql2 driver only for a mysql datasource, so the vulnerable auth handshake never executes — recorded as context for whoever reviews this, NOT as the justification, since the fix is one line and costs nothing. Verified with the repo's own gate: `node scripts/audit-gate.mjs` reports PASSED with the two tracked image-size exemptions matched and in date."
+        "advisory": "GHSA-rgwj-5xj2-c3m3",
+        "patchedFrom": "3.23.1",
+        "reason": "Unbounded zlib inflate in the compressed MySQL protocol handler — a decompression-bomb DoS (medium, GHSA-rgwj-5xj2-c3m3, published 2026-08-31, vulnerable <= 3.23.0). Floor raised 3.22.0 -> 3.23.1 on 2026-09-10: the old floor cleared only the auth-plugin downgrade leaking plaintext credentials (GHSA-3f6p-5ww8-9rcr, high, fixed 3.22.0) and was itself inside this newer range, so the override read as protection while permitting every affected 3.22.x/3.23.0. 3.23.1 clears all seven non-withdrawn mysql2 advisories — it is the highest first_patched_version in the 3.x line. Reached via prisma -> mysql2, and it lands in the PRODUCTION audit for the same reason as the deepmerge-ts entry above: `prisma` (the CLI) is a production dependency here, not only @prisma/client. A version bump does NOT fix it — prisma 7.10.0, the version this repo is already on, still pins mysql2 at exactly 3.15.3, so an override is the only route to a patched release. Not allowlisted in security/audit-allowlist.json because that file's own rule is that an exemption must be genuinely unfixable, and 3.23.1 exists. Almost certainly unreachable in this product: the datasource is PostgreSQL and Prisma loads the mysql2 driver only for a mysql datasource, so neither the vulnerable auth handshake nor the compressed-protocol path ever executes — recorded as context for whoever reviews this, NOT as the justification, since the fix is one line and costs nothing. The lockfile already resolves 3.24.3, so this bump changes no installed version."
     },
     "deepmerge-ts": {
         "kind": "security",
@@ -49,9 +49,9 @@
     },
     "fast-uri": {
         "kind": "security",
-        "advisory": "GHSA-v2hh-gcrm-f6hx",
-        "patchedFrom": "3.1.4",
-        "reason": "HIGH advisory affecting >=3.0.0 <=3.1.3, fixed 3.1.4, reached through the Ajv/schema-validation chain. Floor raised 3.1.3 → 3.1.4 on 2026-07-25: the old floor cleared only the earlier IDN host-confusion (GHSA-4c8g-83qw-93j6, fixed 3.1.3) and was itself inside the newer range. The lockfile already resolves 3.1.4."
+        "advisory": "GHSA-5jgf-p345-68v8",
+        "patchedFrom": "3.1.6",
+        "reason": "Four HIGH advisories published together on 2026-09-02, all fixed in 3.1.6 and all reached through the Ajv/schema-validation chain (@hookform/resolvers -> ajv -> fast-uri, a PRODUCTION path): host confusion via skipped IDN canonicalization on scheme-relative references (GHSA-5jgf-p345-68v8, recorded above), SSRF via malformed IPv6 normalization (GHSA-f65p-4m7j-42xc), SSRF via repeated hostname percent-decoding (GHSA-fph4-wmhf-6fwf) and host confusion via percent-encoded scheme normalization (GHSA-jqff-g426-hqxp). Floor raised 3.1.5 -> 3.1.6 on 2026-09-10; 3.1.6 is the highest first_patched_version in the 3.x line, so it clears all eleven non-withdrawn fast-uri advisories. The lockfile already resolves 3.1.7, so this bump changes no installed version. Note for the next reader, because this entry had drifted: the floor moved 3.1.4 -> 3.1.5 in #1784 to clear the backslash-authority-introducer host confusion (GHSA-7p8r-x3mc-p8w7, fixed 3.1.5), but `advisory`/`patchedFrom` were left recording the older GHSA-v2hh-gcrm-f6hx (fixed 3.1.4). Check B tolerates that direction by design — a floor ABOVE `patchedFrom` is just a later bump — so nothing went red, and the entry quietly stopped naming the threat the floor was actually defending against. That is the one job the scheduled freshness script does and the offline guard cannot: discover that a NEWER advisory exists. Once its finding is recorded here as `patchedFrom`, check B turns blocking CI red until the override floor is raised to match. So when you act on an Override Freshness issue, update `advisory`/`patchedFrom` FIRST and let the guard tell you which floors it now demands."
     },
     "hono": {
         "kind": "security",
@@ -86,9 +86,9 @@
     },
     "js-yaml": {
         "kind": "security",
-        "advisory": "GHSA-5p4m-2wfm-xmqj",
-        "patchedFrom": "4.3.1",
-        "reason": "Quadratic CPU consumption in `!!omap` resolution (CVE-2026-59870, high), affecting js-yaml >=4.0.0 <4.3.1 and >=3.0.0 <3.15.1. Reached transitively through cosmiconfig and @eslint/eslintrc in the dev tree. Range-KEYED (`js-yaml@>=4.0.0 <4.3.1`) so it moves ONLY the vulnerable 4.x instances and leaves the separate @istanbuljs/load-nyc-config pin on the 3.x API; that pin carries its own floor of ^3.15.1 for the 3.x branch of the SAME advisory. Supersedes GHSA-52cp-r559-cp3m (CVE-2026-59869, fixed at 4.3.0) — that floor was correct when written and stopped patching once this advisory landed, which is the failure `scripts/check-override-freshness.mjs` exists to catch and did catch."
+        "advisory": "GHSA-2883-xcg3-v3hh",
+        "patchedFrom": "4.3.2",
+        "reason": "Prototype-pollution-adjacent parsing defect in the same `!!omap`/merge-key family as its predecessors (GHSA-2883-xcg3-v3hh, high, published 2026-09-08), affecting js-yaml >=4.0.0 <4.3.2 and >=3.0.0 <3.15.2. Reached transitively through cosmiconfig (requests ^4.1.0) and @eslint/eslintrc (requests ^4.3.0) in the DEV tree only — the one production js-yaml is the direct `^5.4.1` dependency, whose 5.x line is clear from 5.2.2 — so this never reaches `npm audit --omit=dev`. Range-KEYED so it moves ONLY the vulnerable 4.x instances and leaves the separate @istanbuljs/load-nyc-config pin (which requests ^3.13.1) on the 3.x API; that pin carries its own floor of ^3.15.2 for the 3.x branch of the SAME advisory. Both halves were raised together on 2026-09-10: 4.3.1 -> 4.3.2 and 3.15.1 -> 3.15.2, and the key's upper bound moved with the replacement (`<4.3.1` -> `<4.3.2`) so the targeted range keeps describing the advisory's actual vulnerable set. Mechanism, measured rather than assumed, because it is counter-intuitive: the REPLACEMENT floor is what moves the tree, not the key. `npm install --package-lock-only` preserves any resolution that still satisfies, so at `^4.3.1` both instances stayed pinned at exactly 4.3.1 across a full re-resolve even though 4.3.2 was published; raising the replacement to `^4.3.2` is what forced them up. Supersedes GHSA-5p4m-2wfm-xmqj (fixed 4.3.1), which superseded GHSA-52cp-r559-cp3m (CVE-2026-59869, fixed 4.3.0)."
     },
     "sharp": {
         "kind": "security",
