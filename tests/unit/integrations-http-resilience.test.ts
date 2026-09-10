@@ -205,6 +205,60 @@ describe('createResilientFetch', () => {
         expect(fetchImpl).toHaveBeenCalledTimes(3);
     });
 
+    it('records the status it gave up on, and calls a 429 a throttle', async () => {
+        const fetchImpl = jest.fn(async () => res(429));
+        const r = recorder();
+        const f = createResilientFetch({
+            fetchImpl: fetchImpl as unknown as typeof fetch,
+            maxAttempts: 3,
+            rand: () => 0,
+            ...r,
+        });
+
+        const err = await f('https://api.example.com/x').catch((e) => e);
+        expect(err.lastStatus).toBe(429);
+        expect(err.message).toMatch(/Rate limited/);
+    });
+
+    it('does NOT call an exhausted 500 a throttle — it names the status instead', async () => {
+        // `classifyStatus` sorts every status >= 500 to 'retryable' and this
+        // loop throws ONE class for all of them, so a Graph that simply keeps
+        // 500-ing arrived downstream wearing "Rate limited with no
+        // Retry-After". On the Entra write path that reaches an operator as
+        // advice to back off and wait for tomorrow's 05:00 leaver pass — the
+        // one response that is exactly wrong, because the pass then fails
+        // identically every night while the leaver stays enabled.
+        const fetchImpl = jest.fn(async () => res(500));
+        const r = recorder();
+        const f = createResilientFetch({
+            fetchImpl: fetchImpl as unknown as typeof fetch,
+            maxAttempts: 3,
+            rand: () => 0,
+            ...r,
+        });
+
+        const err = await f('https://api.example.com/x').catch((e) => e);
+        // The CLASS is unchanged on purpose: `classifyError` and
+        // `shouldBypassQueueRetry` both key on it, and the retry / queue-bypass
+        // behaviour must stay bit-identical for every other integration.
+        expect(err).toBeInstanceOf(IntegrationRateLimitedError);
+        expect(err.lastStatus).toBe(500);
+        expect(err.retryAfterMs).toBeNull();
+        expect(err.message).not.toMatch(/Rate limited/);
+        expect(err.message).toMatch(/HTTP 500/);
+        expect(err.message).toContain('api.example.com/x');
+        expect(fetchImpl).toHaveBeenCalledTimes(3);
+    });
+
+    it('defaults lastStatus to null, so a construction that never learned it reads as before', async () => {
+        // Every pre-existing call site passes two arguments. Keeping today's
+        // wording for a null status is what makes this a message-and-field
+        // change rather than a breaking one.
+        const err = new IntegrationRateLimitedError('https://api.example.com/x', null);
+        expect(err.lastStatus).toBeNull();
+        expect(err.message).toBe('Rate limited with no Retry-After: https://api.example.com/x');
+    });
+
     it('retries a timeout, since a slow remote may simply be slow', async () => {
         const fetchImpl = jest
             .fn()

@@ -146,6 +146,7 @@ import {
 } from '../../http-resilience';
 import { fetchOAuthToken } from '../../oauth-token-fetch';
 import { logger } from '@/lib/observability/logger';
+import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 const LOGIN_BASE = 'https://login.microsoftonline.com';
@@ -354,7 +355,7 @@ export class EntraPrivilegedTargetError extends DirectoryWriteError {
  * evaluated and rejected the request, nothing was mutated — which the contract
  * can only read off this class. And the original message embeds
  * `/users/<objectId>`, which `markAuthFailure` would persist into an
- * unencrypted, UI-rendered column.
+ * unencrypted column the admin API serves out.
  *
  * `cause` keeps the original so that if the write path is ever handed a
  * `connectionId`, a caller can unwrap it and decide — deliberately leaving that
@@ -385,9 +386,12 @@ export class EntraCredentialRejectedError extends DirectoryWriteError {
         //
         // The objectId-leak concern is specific to `IntegrationAuthError`,
         // whose own message embeds `/users/<objectId>` — carrying THAT into the
-        // unencrypted, UI-rendered `authFailureReason` column is the thing to
-        // decide about at the call site. The string form is Graph's error
-        // message or code, which names no account.
+        // unencrypted `authFailureReason` column, which `GET /admin/integrations`
+        // serves to the browser, is the thing to decide about at the call site.
+        // (No component RENDERS that column; this comment used to say one did.
+        // The rule stands on the persistence and the API response, not on a
+        // screen.) The string form is Graph's error message or code, which
+        // names no account.
         this.cause = cause;
     }
 }
@@ -733,6 +737,12 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
      * and routing through `fetchOAuthToken`, which is what turns a
      * `400 invalid_client` from an expired secret into a classified auth failure
      * instead of a generic one.
+     *
+     * The exchange runs through `this.doFetch`, which is the CLOAKED transport:
+     * a 403 or 404 from the STS arrives wearing `CLOAKED_STATUS`, so the failure
+     * below must read `trueStatus(res)` and not `res.status`. `fetchOAuthToken`
+     * hands the Response back untouched for anything other than a 400, so the
+     * cloak header survives the round trip.
      */
     private async token(forceRefresh = false): Promise<CachedToken> {
         const cached = this.cached;
@@ -755,7 +765,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
             },
             this.doFetch,
         );
-        if (!res.ok) throw new Error(`Entra token exchange failed (HTTP ${res.status})`);
+        if (!res.ok) throw new Error(`Entra token exchange failed (HTTP ${trueStatus(res)})`);
         const json = (await res.json()) as { access_token?: string; expires_in?: number };
         if (!json.access_token) throw new Error('Entra token exchange returned no access_token');
 
@@ -815,8 +825,8 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
      * promised by the module docblock is actually enforced: an
      * `IntegrationAuthError` raised by the shared classifier — the class
      * `markAuthFailure` keys on, carrying `/users/<objectId>` in a message that
-     * would be persisted into an unencrypted, UI-rendered column — cannot leave
-     * this object.
+     * would be persisted into an unencrypted column the admin API serves out —
+     * cannot leave this object.
      *
      * NOTE ON CONTAINMENT: the orchestrator calls this OUTSIDE its try/catch, so
      * anything thrown here aborts the whole batch rather than failing one
@@ -1265,9 +1275,13 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
     /**
      * A THROWN transport failure — go and look before reporting it.
      *
-     * This is the inversion the journal exists to prevent. A 503/504/timeout
-     * that exhausts the attempt budget surfaces as `IntegrationRateLimitedError`
-     * or `IntegrationTimeoutError`, but the write MAY ALREADY HAVE LANDED. If
+     * This is the inversion the journal exists to prevent. A lost response —
+     * on the real write path a deadline (`IntegrationTimeoutError`) or a raw
+     * socket throw, since `this.writeFetch` is the BOUNDED fetch and nothing
+     * above it retries or classifies — but the write MAY ALREADY HAVE LANDED.
+     * (`IntegrationRateLimitedError` can only arrive here from an injected
+     * transport, or if a future edit puts the retrying fetch back under the
+     * PATCH; it is handled below rather than assumed away.) If
      * that were reported as a refusal, `disableAccount` would settle the row
      * FAILED, `findRestorableState` (which reads APPLIED / INDETERMINATE) would
      * never see it, and the captured prior state — the only surviving copy of
@@ -1287,7 +1301,15 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
         }
 
         const detail = err instanceof Error ? err.message : String(err);
-        const throttled = err instanceof IntegrationRateLimitedError;
+        // Only an ACTUAL throttle earns the throttle wording. `classifyStatus`
+        // sorts every 5xx to retryable and the resilient transport throws this
+        // one class for all of them, so `instanceof` alone told an operator to
+        // back off and wait for tomorrow's pass while Graph was plainly 500-ing
+        // — the one response that is exactly wrong. `lastStatus === null` keeps
+        // today's wording for a construction that never learned the status.
+        const throttled =
+            err instanceof IntegrationRateLimitedError &&
+            (err.lastStatus === 429 || err.lastStatus === null);
 
         const observed = await this.readEnabledQuietly(id);
         if (observed === false) {
@@ -1296,7 +1318,15 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
                 {
                     component: 'integration-entra-id-writer',
                     externalUserId: id,
-                    error: detail,
+                    // pino redacts the FIELD beside this one but cannot reach
+                    // inside a string, and `detail` is a transport message
+                    // carrying `/users/<objectGUID>`. Scrub it: this line is
+                    // stamped with the tenant and lands in an aggregator with
+                    // no RLS and no retention story. The `DirectoryWriteError`
+                    // thrown below is deliberately NOT scrubbed — that reaches
+                    // an operator through a tenant-scoped, access-controlled
+                    // surface where naming the account is the whole point.
+                    error: redactDirectoryIdentifiers(detail, id),
                 },
             );
             return;

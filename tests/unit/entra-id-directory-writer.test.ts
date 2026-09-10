@@ -13,6 +13,20 @@
  * hides it from the operator sweep at the same time. Those two assertions are
  * the reason this file exists; the rest guard the ways you get there.
  */
+// EVERY level, not just the two asserted below: a mock that lists a subset of
+// an interface decides which half of the code under test runs, and the writer
+// logs at info as well as warn on branches these tests drive.
+jest.mock('@/lib/observability/logger', () => ({
+    logger: {
+        trace: jest.fn(),
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        fatal: jest.fn(),
+    },
+}));
+import { logger } from '@/lib/observability/logger';
 import {
     DirectoryWriteError,
     type DirectoryAccountState,
@@ -165,6 +179,7 @@ let realFetch: typeof fetch;
 let globalFetchSpy: jest.Mock;
 
 beforeEach(() => {
+    for (const fn of Object.values(logger)) (fn as jest.Mock).mockClear();
     realFetch = global.fetch;
     globalFetchSpy = jest.fn(() => {
         throw new Error('a test reached the REAL network');
@@ -844,6 +859,35 @@ describe('definitivelyNotApplied — proven refusal vs lost response', () => {
         expect((err as Error).message).toMatch(/throttled beyond the absorb budget/);
     });
 
+    it('an exhausted 500 wearing the same class is NOT described as a throttle', async () => {
+        // Same class, different cause. "Throttled beyond the absorb budget"
+        // tells an operator to back off, raise a Graph quota, or wait for
+        // tomorrow's 05:00 pass. If Graph is 500-ing, waiting is exactly wrong:
+        // the pass fails identically every night and the leaver stays enabled
+        // for as long as the operator believes they are being rate-limited.
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            {
+                when: isPatch,
+                reply: () =>
+                    new IntegrationRateLimitedError(
+                        'https://graph.microsoft.com/v1.0/users/x',
+                        null,
+                        500,
+                    ),
+            },
+            { when: isUserGet, reply: () => json(graphUser()) },
+        ]);
+        const { writer, state } = await ready(impl);
+
+        const err = await writer.disable(USER_ID, state).catch((e: unknown) => e);
+        expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(false);
+        expect((err as Error).message).not.toMatch(/throttled beyond/);
+        // The status the operator can act on rides through instead.
+        expect((err as Error).message).toMatch(/HTTP 500/);
+    });
+
     it('a lost response whose write LANDED resolves normally', async () => {
         const { impl, calls } = scriptedFetch([
             tokenRoute(TOKEN_WITH_WRITE),
@@ -888,7 +932,18 @@ describe('definitivelyNotApplied — proven refusal vs lost response', () => {
         // the exchange for the write did not.
         const captured: DirectoryAccountState = {
             enabled: true,
-            priorState: { accountEnabled: true, onPremisesSyncEnabled: false, id: USER_ID },
+            priorState: {
+                accountEnabled: true,
+                onPremisesSyncEnabled: false,
+                // `onPremStateObserved: true` was MISSING, and its absence made
+                // this test pass for the wrong reason entirely: `disable`
+                // refuses at the on-prem observation rail BEFORE it asks for a
+                // token, so the assertions below were satisfied by a rail
+                // refusal and the token-500 branch this test is named for was
+                // never entered. Real `readState` output always carries it.
+                onPremStateObserved: true,
+                id: USER_ID,
+            },
         };
         const { impl, calls } = scriptedFetch([
             { when: isToken, reply: () => new Response('', { status: 500 }) },
@@ -902,6 +957,15 @@ describe('definitivelyNotApplied — proven refusal vs lost response', () => {
         // dispatched is proven-unapplied, because no request existed.
         expect((err as DirectoryWriteError).definitivelyNotApplied).toBe(true);
         expect(calls.filter(isPatch)).toHaveLength(0);
+        // …and the TEXT has to be true as well as the flag. `classifyStatus`
+        // sorts every 5xx to retryable and the exhausted-retry arm throws one
+        // class for all of them, so this message read "Rate limited with no
+        // Retry-After" for a plain 500 — telling an operator to wait out a
+        // throttle while Graph's STS was simply erroring. This test drove that
+        // exact branch and asserted only the flag, which is why the misreport
+        // survived a dedicated refusal-branch coverage pass.
+        expect((err as Error).message).not.toMatch(/Rate limited/);
+        expect((err as Error).message).toMatch(/HTTP 500/);
     });
 });
 
@@ -1293,6 +1357,33 @@ describe('a token exchange that does not produce a token', () => {
         );
         expect(calls.filter(isUserGet)).toHaveLength(0);
     });
+
+    // 400 above is the ONE failure status the cloak does not intercept, which is
+    // exactly why that test was green while these two were broken. The token
+    // exchange runs through `this.doFetch` — `createResilientFetch` composed
+    // over `cloakLocallyClassified` — so an STS 403 or 404 arrives wearing
+    // CLOAKED_STATUS with the real status in `x-inflect-cloaked-status`.
+    // Reading `res.status` there reported "HTTP 460", a status that does not
+    // exist: the operator searches Microsoft's docs, finds nothing, and
+    // concludes the product is broken instead of going to look at app consent,
+    // a conditional-access policy on the STS, or a corporate egress proxy.
+    it.each([403, 404])(
+        'reports a cloaked token-endpoint %s by its TRUE status, never the 460 sentinel',
+        async (status) => {
+            const { impl, calls } = scriptedFetch([
+                { when: isToken, reply: () => json({ error: 'access_denied' }, status) },
+            ]);
+            const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+
+            const err = await writer.readState(USER_ID).catch((e: unknown) => e);
+            expect((err as Error).message).toMatch(
+                new RegExp(`Entra token exchange failed \\(HTTP ${status}\\)`),
+            );
+            // The sentinel must not survive into anything an operator reads.
+            expect((err as Error).message).not.toContain('460');
+            expect(calls.filter(isUserGet)).toHaveLength(0);
+        },
+    );
 
     it('treats a 200 with no access_token as a failure rather than sending "Bearer undefined"', async () => {
         const { impl, calls } = scriptedFetch([
@@ -1856,6 +1947,49 @@ describe('a lost response, and what the confirming read can and cannot prove', (
         expect((err as Error).cause).toBe(thrown);
         // One GET for the capture and none after: no confirming read happened.
         expect(calls.filter(isUserGet)).toHaveLength(1);
+    });
+
+    it('logs a lost PATCH without writing the object GUID to stdout', async () => {
+        // pino redacts a bare key at the ROOT and cannot reach inside a string.
+        // `externalUserId` is censored; `error` — the transport's own message,
+        // which carries `/v1.0/users/<objectGUID>` because `safeUrl` keeps the
+        // pathname — was not. A log line has no RLS, no tenant scope and no
+        // retention policy, and this one is stamped with the tenant, so that is
+        // a terminated worker's directory identifier landing in whatever
+        // aggregator the deployment uses.
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isMemberOf, reply: () => json({ value: [] }) },
+            {
+                when: isPatch,
+                reply: () =>
+                    new IntegrationTimeoutError(
+                        `https://graph.microsoft.com/v1.0/users/${USER_ID}`,
+                        30_000,
+                    ),
+            },
+            // Capture first, then a confirming read that observes the end state
+            // — the arm that logs "treating as applied".
+            { when: isUserGet, reply: (n) => json(graphUser({ accountEnabled: n === 0 })) },
+        ]);
+        const { writer, state } = await ready(impl);
+
+        await expect(writer.disable(USER_ID, state)).resolves.toBeUndefined();
+
+        const warn = (logger.warn as jest.Mock).mock.calls.find((c) =>
+            String(c[0]).includes('lost its response'),
+        );
+        // Positive control: the line was emitted, so the assertions below are
+        // about a scrub rather than about an absent log.
+        expect(warn).toBeDefined();
+        const fields = warn?.[1] as { error?: string; externalUserId?: string };
+        expect(fields.error).not.toContain(USER_ID);
+        expect(fields.error).toContain('{account}');
+        // The host and route survive, so the line is still diagnosable.
+        expect(fields.error).toContain('graph.microsoft.com');
+        // `externalUserId` stays: pino censors that key, and it is the
+        // correlation handle an operator needs to join this to the journal.
+        expect(fields.externalUserId).toBe(USER_ID);
     });
 
     it('goes and looks when the post-401 RETRY is the attempt that loses its response', async () => {

@@ -103,25 +103,56 @@ export class IntegrationAuthError extends IntegrationTerminalError {
 }
 
 /**
- * Throttled for longer than we are willing to hold a worker.
+ * The retry budget ran out on a retryable failure.
  *
  * Carries `retryAfterMs` so the job layer can say WHEN rather than just that it
  * failed — and so a metric can show throttle pressure rather than a generic
  * error rate.
+ *
+ * It also carries `lastStatus`, because THE CLASS NAME IS NOT A DIAGNOSIS.
+ * `classifyStatus` sorts every status >= 500 to `'retryable'`, and the loop
+ * below throws this one class for every exhausted retryable — so a Graph that
+ * simply keeps 500-ing arrives here wearing a name that says the remote asked
+ * us to slow down. The message is therefore conditional: only a 429, or a
+ * status we never learned, is described as a throttle. Everything else says
+ * which status kept failing, so an operator reading a leaver pass that disabled
+ * nobody is not sent off to raise a quota that was never the problem.
+ *
+ * `lastStatus` defaults to null — a construction that does not know the status
+ * (a caller outside this module, a test) keeps today's wording, and every
+ * existing call site still type-checks.
  */
 export class IntegrationRateLimitedError extends Error {
     readonly retryAfterMs: number | null;
+    /** The status of the response we gave up on. `null` = not known here. */
+    readonly lastStatus: number | null;
     readonly kind: FailureKind = 'retryable';
 
-    constructor(url: string, retryAfterMs: number | null) {
-        super(
-            retryAfterMs == null
-                ? `Rate limited with no Retry-After: ${url}`
-                : `Rate limited for ${retryAfterMs}ms: ${url}`,
-        );
+    constructor(url: string, retryAfterMs: number | null, lastStatus: number | null = null) {
+        super(rateLimitedMessage(url, retryAfterMs, lastStatus));
         this.name = 'IntegrationRateLimitedError';
         this.retryAfterMs = retryAfterMs;
+        this.lastStatus = lastStatus;
     }
+}
+
+/** Say what actually happened. A throttle only when the status says throttle. */
+function rateLimitedMessage(
+    url: string,
+    retryAfterMs: number | null,
+    lastStatus: number | null,
+): string {
+    if (lastStatus != null && lastStatus !== 429) {
+        // A non-429 CAN still carry a Retry-After (a 503 during maintenance is
+        // the usual one), and that number is worth keeping — it is just not
+        // evidence of throttling.
+        return retryAfterMs == null
+            ? `Gave up retrying (HTTP ${lastStatus}): ${url}`
+            : `Gave up retrying (HTTP ${lastStatus}, Retry-After ${retryAfterMs}ms): ${url}`;
+    }
+    return retryAfterMs == null
+        ? `Rate limited with no Retry-After: ${url}`
+        : `Rate limited for ${retryAfterMs}ms: ${url}`;
 }
 
 /** Statuses where retrying the same request can plausibly succeed. */
@@ -297,9 +328,13 @@ export function createResilientFetch(opts: ResilientFetchOptions = {}): typeof f
 
     return async function resilientFetchImpl(input, init) {
         // Host + path only. These errors are PERSISTED to
-        // IntegrationConnection.authFailureReason and rendered in the UI, so a
-        // raw URL here would write an access token from the query string into
-        // the database — the exact leak bounded-fetch's safeUrl exists to stop.
+        // IntegrationConnection.authFailureReason, which `GET /admin/integrations`
+        // selects and spreads into its response — so a raw URL here would write
+        // an access token from the query string into the database and then hand
+        // it back out over the API. The exact leak bounded-fetch's safeUrl
+        // exists to stop. (Not "rendered in the UI", which this comment claimed
+        // for a long time: no component reads that column — see safeUrl's
+        // docblock in bounded-fetch.ts.)
         const url = safeUrl(input);
         const provider = providerLabelFor(url);
         let lastRetryable: unknown;
@@ -346,13 +381,13 @@ export function createResilientFetch(opts: ResilientFetchOptions = {}): typeof f
                 });
                 recordIntegrationThrottled({ provider, outcome: 'deferred', retryAfterMs });
                 recordIntegrationHttpAttempts({ provider, attempts: attempt, outcome: 'throttled' });
-                throw new IntegrationRateLimitedError(url, retryAfterMs);
+                throw new IntegrationRateLimitedError(url, retryAfterMs, res.status);
             }
 
             if (attempt === maxAttempts) {
                 recordIntegrationThrottled({ provider, outcome: 'deferred', retryAfterMs });
                 recordIntegrationHttpAttempts({ provider, attempts: attempt, outcome: 'throttled' });
-                throw new IntegrationRateLimitedError(url, retryAfterMs);
+                throw new IntegrationRateLimitedError(url, retryAfterMs, res.status);
             }
 
             // Absorbed: we are about to wait it out and try again in-process.

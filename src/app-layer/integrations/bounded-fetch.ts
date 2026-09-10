@@ -66,6 +66,7 @@
  * @see tests/unit/integrations-bounded-fetch.test.ts
  */
 import { logger } from '@/lib/observability/logger';
+import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
 
 /** One ordinary API call. Matches the AD LDAP bound so the layer is coherent. */
 export const DEFAULT_TIMEOUT_MS = 30_000;
@@ -98,8 +99,15 @@ export class IntegrationTimeoutError extends Error {
  *
  * Exported because every integration error message that names a URL must go
  * through here. `http-resilience.ts` persists its auth-failure message to
- * `IntegrationConnection.authFailureReason` and shows it in the UI, so a raw
- * `input.url` there would write an access token into the database.
+ * `IntegrationConnection.authFailureReason`, so a raw `input.url` there would
+ * write an access token into the database.
+ *
+ * That column is NOT rendered anywhere — this comment used to say it was, and
+ * three siblings said the same. `GET /admin/integrations` selects it and
+ * spreads the whole row into its response, so it is served to the browser, but
+ * no component reads it and there is no banner. The hygiene rule is unchanged;
+ * only its reason is. It is "persisted unencrypted and served over the API",
+ * not "on screen".
  */
 export function safeUrl(input: RequestInfo | URL): string {
     try {
@@ -143,9 +151,25 @@ export function createBoundedFetch(timeoutMs: number = DEFAULT_TIMEOUT_MS): type
                 (err as { name?: unknown }).name === 'TimeoutError'
             ) {
                 const url = safeUrl(input);
+                // `safeUrl` drops the query string but KEEPS the pathname, and
+                // on a directory write path that pathname is
+                // `/v1.0/users/<objectGUID>` — a terminated worker's identifier
+                // on a line pino also stamps with the tenant. pino's redaction
+                // matches a bare key at the root and cannot reach inside a
+                // string, so the scrub has to happen here.
+                //
+                // The THROWN error keeps the unscrubbed url on purpose: its
+                // consumers scrub at their own boundary (the Entra writer does,
+                // in `settleLostResponse`), and some of them pass it on to an
+                // operator through a surface that IS tenant-scoped and
+                // access-controlled, where naming the account is the use of it
+                // — the asymmetry identity-disable-account.ts states. No
+                // `externalUserId` is passed because this module is generic and
+                // has none — the GUID shape match is what catches an Entra
+                // object id, and host + route survive it intact.
                 logger.warn('integration request timed out', {
                     component: 'integrations',
-                    url,
+                    url: redactDirectoryIdentifiers(url),
                     timeoutMs,
                 });
                 throw new IntegrationTimeoutError(url, timeoutMs);
