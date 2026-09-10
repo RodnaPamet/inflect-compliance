@@ -5672,6 +5672,7 @@
       "statusPassed": "Ran — complete",
       "statusPartial": "Ran — report truncated",
       "statusRefused": "Ran and refused",
+      "statusError": "Failed — pass threw",
       "truncatedShort": "Truncated",
       "truncated": "This report was cut short. Only the first {shown} decisions were recorded — the pass made more than that.",
       "detailHeading": "{provider} — pass of {ran}",
