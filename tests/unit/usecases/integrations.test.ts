@@ -83,6 +83,7 @@ import { encryptField } from '@/lib/security/encryption';
 import { logEvent } from '@/app-layer/events/audit';
 import { prisma } from '@/lib/prisma';
 import { makeRequestContext } from '../../helpers/make-context';
+import { fakeExecutionGroupBy, type FakeExecution } from '../../helpers/execution-status-groupby';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<typeof runInTenantContext>;
 const mockGetProvider = registry.getProvider as jest.MockedFunction<typeof registry.getProvider>;
@@ -499,5 +500,145 @@ describe('getConnectionsHealth', () => {
         expect(byId.never.hasEverSucceeded).toBe(false);
         expect(byId.never.lastSuccessAt).toBeNull();
         expect(res.staleCount).toBe(2);
+    });
+
+    // ─── #2252 — the status allowlist is scoped to POSTURE providers ───
+    //
+    // A posture benchmark that reaches the account and finds a gap persists
+    // FAILED. Reading PASSED alone made every real posture connection show
+    // "Never succeeded" forever. Widening it FLEET-wide was rejected: github
+    // and servicenow emit FAILED for "found a gap" too, but a genuinely broken
+    // one of those is the commoner cause and would then read collected for up
+    // to 48 h longer than it should.
+    //
+    // These cases evaluate the real `where` against a fake execution table
+    // (tests/helpers/execution-status-groupby.ts) rather than stubbing the
+    // grouped result, so they are about the predicate, not about a fixture.
+
+    /** db stub whose groupBy answers BOTH queries from one execution table. */
+    function withExecutions(
+        conns: Array<{ id: string; provider: string; name: string }>,
+        executions: FakeExecution[],
+    ) {
+        const groupBy = fakeExecutionGroupBy(executions);
+        mockRunInTx.mockImplementationOnce(async (_ctx, fn) =>
+            fn({
+                integrationConnection: {
+                    findMany: jest.fn().mockResolvedValue(
+                        conns.map((c) => ({
+                            ...c,
+                            createdAt: minsAgo(10_000),
+                            lastTestedAt: null,
+                            lastTestStatus: null,
+                        })),
+                    ),
+                },
+                integrationExecution: { groupBy },
+            } as never),
+        );
+        return groupBy;
+    }
+
+    it('a posture connection whose ONLY execution is FAILED reads as collected and is not stale', async () => {
+        withExecutions(
+            [
+                { id: 'aws1', provider: 'aws-posture', name: 'AWS prod' },
+                { id: 'az1', provider: 'azure-posture', name: 'Azure prod' },
+                { id: 'gcp1', provider: 'gcp-posture', name: 'GCP prod' },
+            ],
+            [
+                { connectionId: 'aws1', status: 'FAILED', completedAt: minsAgo(30), executedAt: minsAgo(31) },
+                { connectionId: 'az1', status: 'FAILED', completedAt: minsAgo(30), executedAt: minsAgo(31) },
+                { connectionId: 'gcp1', status: 'FAILED', completedAt: minsAgo(30), executedAt: minsAgo(31) },
+            ],
+        );
+
+        const res = await getConnectionsHealth(makeRequestContext('ADMIN'));
+        expect(res.connections).toHaveLength(3);
+        for (const row of res.connections) {
+            expect(row.hasEverSucceeded).toBe(true);
+            expect(row.lastSuccessAt).toBe(minsAgo(30).toISOString());
+            expect(row.secondsSinceLastSuccess).toBe(30 * 60);
+            expect(row.isStale).toBe(false);
+        }
+        expect(res.staleCount).toBe(0);
+    });
+
+    it('a github or servicenow connection whose ONLY execution is FAILED still reads as never-succeeded', async () => {
+        withExecutions(
+            [
+                { id: 'gh1', provider: 'github', name: 'GitHub org' },
+                { id: 'snow1', provider: 'servicenow', name: 'ServiceNow' },
+            ],
+            [
+                { connectionId: 'gh1', status: 'FAILED', completedAt: minsAgo(30), executedAt: minsAgo(31) },
+                { connectionId: 'snow1', status: 'FAILED', completedAt: minsAgo(30), executedAt: minsAgo(31) },
+            ],
+        );
+
+        const res = await getConnectionsHealth(makeRequestContext('ADMIN'));
+        expect(res.connections).toHaveLength(2);
+        for (const row of res.connections) {
+            expect(row.hasEverSucceeded).toBe(false);
+            expect(row.lastSuccessAt).toBeNull();
+            expect(row.secondsSinceLastSuccess).toBeNull();
+            // P1's activity signal is untouched — the run DID happen, it just
+            // was not a success for this provider.
+            expect(row.lastRunAt).toBe(minsAgo(30).toISOString());
+        }
+    });
+
+    it('an OLD FAILED-only run is stale for both, but only posture records a last success', async () => {
+        const fiveDays = 60 * 24 * 5;
+        withExecutions(
+            [
+                { id: 'aws1', provider: 'aws-posture', name: 'AWS prod' },
+                { id: 'gh1', provider: 'github', name: 'GitHub org' },
+            ],
+            [
+                { connectionId: 'aws1', status: 'FAILED', completedAt: minsAgo(fiveDays), executedAt: null },
+                { connectionId: 'gh1', status: 'FAILED', completedAt: minsAgo(fiveDays), executedAt: null },
+            ],
+        );
+
+        const res = await getConnectionsHealth(makeRequestContext('ADMIN'));
+        const byId = Object.fromEntries(res.connections.map((c) => [c.connectionId, c]));
+        expect(byId.aws1.isStale).toBe(true);
+        expect(byId.aws1.hasEverSucceeded).toBe(true);
+        expect(byId.aws1.secondsSinceLastSuccess).toBe(fiveDays * 60);
+        expect(byId.gh1.isStale).toBe(true);
+        expect(byId.gh1.hasEverSucceeded).toBe(false);
+        expect(res.staleCount).toBe(2);
+    });
+
+    it('a posture connection whose only execution is RUNNING is NOT collected (allowlist, not NOT-ERROR)', async () => {
+        withExecutions(
+            [{ id: 'aws1', provider: 'aws-posture', name: 'AWS prod' }],
+            [
+                // An orphaned RUNNING row from a killed worker. A
+                // `{ not: 'ERROR' }` denylist would admit it and report a
+                // last success for a job that never finished.
+                { connectionId: 'aws1', status: 'RUNNING', completedAt: null, executedAt: minsAgo(30) },
+            ],
+        );
+
+        const [row] = (await getConnectionsHealth(makeRequestContext('ADMIN'))).connections;
+        expect(row.hasEverSucceeded).toBe(false);
+        expect(row.lastSuccessAt).toBeNull();
+    });
+
+    it('ERROR / PENDING / NOT_APPLICABLE never count as a posture collection', async () => {
+        withExecutions(
+            [{ id: 'aws1', provider: 'aws-posture', name: 'AWS prod' }],
+            [
+                { connectionId: 'aws1', status: 'ERROR', completedAt: minsAgo(5), executedAt: null },
+                { connectionId: 'aws1', status: 'PENDING', completedAt: minsAgo(4), executedAt: null },
+                { connectionId: 'aws1', status: 'NOT_APPLICABLE', completedAt: minsAgo(3), executedAt: null },
+            ],
+        );
+
+        const [row] = (await getConnectionsHealth(makeRequestContext('ADMIN'))).connections;
+        expect(row.hasEverSucceeded).toBe(false);
+        expect(row.lastSuccessAt).toBeNull();
     });
 });

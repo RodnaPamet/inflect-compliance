@@ -55,13 +55,29 @@ import { logger } from '@/lib/observability/logger';
 import { enqueue } from './queue';
 import { fanOut, dispatchJobId, DAILY_BUCKET_MS } from './fan-out';
 import type { JobName } from './types';
+import { isPostureProvider, POSTURE_PROVIDER_IDS, type PostureProviderId } from '@/app-layer/integrations/posture-providers';
 
-/** Provider id → the collect job that services it. */
-const POSTURE_JOB_BY_PROVIDER: Record<string, JobName> = {
+/**
+ * Provider id → the collect job that services it.
+ *
+ * Keyed by `PostureProviderId` rather than `string`, so this map and
+ * `POSTURE_PROVIDER_IDS` (integrations/posture-providers.ts — also read by the
+ * freshness surfaces) cannot drift: a cloud added to one without the other is
+ * a compile error, in both directions.
+ */
+const POSTURE_JOB_BY_PROVIDER: Record<PostureProviderId, JobName> = {
     'aws-posture': 'aws-posture-collect',
     'azure-posture': 'azure-posture-collect',
     'gcp-posture': 'gcp-posture-collect',
 };
+
+/**
+ * The collect job for a raw `IntegrationConnection.provider` string, or
+ * undefined when that provider is not a posture collector at all.
+ */
+function postureJobFor(provider: string): JobName | undefined {
+    return isPostureProvider(provider) ? POSTURE_JOB_BY_PROVIDER[provider] : undefined;
+}
 
 /**
  * Page size for the cursor drain. Not a cap — the loop continues until the
@@ -77,7 +93,7 @@ export async function runCloudPostureCollectDispatch(): Promise<{
     failed: number;
     byProvider: Record<string, number>;
 }> {
-    const providers = Object.keys(POSTURE_JOB_BY_PROVIDER);
+    const providers: string[] = [...POSTURE_PROVIDER_IDS];
     const byProvider: Record<string, number> = {};
     let connections = 0;
     let dispatched = 0;
@@ -104,7 +120,7 @@ export async function runCloudPostureCollectDispatch(): Promise<{
         // miss means the map and the filter have drifted apart.
         const routable = page.filter((c) => {
             connections++;
-            return Boolean(POSTURE_JOB_BY_PROVIDER[c.provider]);
+            return postureJobFor(c.provider) !== undefined;
         });
 
         // Deterministic id per (connection, UTC day) + isolated failures. Both
@@ -114,7 +130,8 @@ export async function runCloudPostureCollectDispatch(): Promise<{
             'cloud-posture',
             (conn) => ({ tenantId: conn.tenantId, connectionId: conn.id, provider: conn.provider }),
             async (conn) => {
-                const job = POSTURE_JOB_BY_PROVIDER[conn.provider];
+                // Non-null: `routable` kept only rows postureJobFor resolves.
+                const job = postureJobFor(conn.provider)!;
                 await enqueue(
                     job,
                     { tenantId: conn.tenantId, connectionId: conn.id },
