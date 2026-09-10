@@ -419,6 +419,85 @@ describe('AwsPostureProvider.runCheck — verdicts', () => {
     });
 });
 
+describe('AwsPostureProvider.runCheck — the breadth fact (#2252)', () => {
+    const input = () => ({
+        parsed: { checkType: 'soc2' },
+        connectionConfig: { benchmark: 'soc2', ...CREDS },
+    });
+
+    it('records `noControlObserved` and a counts-only message when nothing was observed', async () => {
+        // The AWS collector is a SEPARATE code path from the shared core, and
+        // the two drifting apart is the historical failure mode here (#2284) —
+        // so the same pair of assertions is made against both.
+        cliResult({
+            err: exitCode(2),
+            stdout: benchmarkJson([powerpipeErroredControl('a'), powerpipeErroredControl('b')]),
+        });
+
+        const res = await provider().runCheck(input() as never);
+
+        expect(res.status).toBe('ERROR');
+        expect(res.details).toMatchObject({ noControlObserved: true, collectorExitCode: 2 });
+        expect(res.errorMessage).toBe(
+            '2 error / 0 unreadable of 2 controls (collector exit 2) — no control produced an observation',
+        );
+    });
+
+    it('withholds it when one control observed, even with an AuthFailure on another', async () => {
+        // steampipe-plugin-aws#75 — a disabled opt-in region on a HEALTHY
+        // account produces the same `AuthFailure` text a rejected credential
+        // does. The single `ok` is what settles it; the text is never read.
+        cliResult({
+            err: exitCode(1),
+            stdout: benchmarkJson([
+                control('a', 'ok'),
+                control('b', 'alarm'),
+                powerpipeErroredControl('c', 'operation error EC2: DescribeInstances, https response error StatusCode: 401, api error AuthFailure: AWS was not able to validate the provided access credentials'),
+            ]),
+        });
+
+        const res = await provider().runCheck(input() as never);
+
+        expect(res.status).toBe('FAILED');
+        expect(res.details).not.toHaveProperty('noControlObserved');
+        // FAILED is a successful collection reporting a gap — nothing to say.
+        expect(res.errorMessage).toBeUndefined();
+    });
+
+    it('keeps provider text and credentials out of the persisted message', async () => {
+        // `errorMessage` reaches `IntegrationExecution.errorMessage`, which the
+        // admin route serves to the browser. Counts and the exit code only.
+        cliResult({
+            err: exitCode(2),
+            stdout: benchmarkJson([
+                powerpipeErroredControl('a', 'AccessDenied: arn:aws:iam::123456789012:role/Reader is not authorized'),
+            ]),
+            stderr: 'AKIA_TEST_KEY rejected',
+        });
+
+        const res = await provider().runCheck(input() as never);
+
+        expect(res.errorMessage).not.toContain('arn:aws:iam::');
+        expect(res.errorMessage).not.toContain('AKIA_TEST_KEY');
+        expect(res.errorMessage).not.toContain('AccessDenied');
+        expect(res.errorMessage).toBe(
+            '1 error / 0 unreadable of 1 controls (collector exit 2) — no control produced an observation',
+        );
+    });
+
+    it('claims nothing on a run that did not complete', async () => {
+        cliResult({
+            err: Object.assign(new Error('killed'), { signal: 'SIGTERM' }),
+            stdout: benchmarkJson([powerpipeErroredControl('a')]),
+        });
+
+        const res = await provider().runCheck(input() as never);
+
+        expect(res.summary).toBe('Powerpipe collector did not complete the run.');
+        expect(res.details).not.toHaveProperty('noControlObserved');
+    });
+});
+
 describe('AwsPostureProvider.mapResultToEvidence', () => {
     const input = { parsed: { checkType: 'soc2' } } as never;
 

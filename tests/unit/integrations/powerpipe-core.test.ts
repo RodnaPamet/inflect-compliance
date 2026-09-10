@@ -43,6 +43,7 @@ import {
 } from '@/app-layer/integrations/cloud-posture/powerpipe-core';
 import {
     powerpipeControl,
+    powerpipeErroredControl,
     type PowerpipeRowStatus,
 } from '../../helpers/powerpipe-benchmark-fixture';
 
@@ -629,7 +630,12 @@ describe('runPowerpipeBenchmark — verdict ladder', () => {
         expect(res.status).toBe('ERROR');
         expect(res.summary).toBe('bench: 1 ok / 0 alarm / 1 error / 0 skip / 0 unknown of 2');
         expect(res.summaryObj?.counts.error).toBe(1);
-        expect(res.errorMessage).toBeUndefined();
+        // #2252: an ERROR verdict used to persist `errorMessage: null`, which
+        // showed an operator a blank failure. It now carries the counts — and
+        // ONLY the counts. `noControlObserved` is NOT claimed here: control
+        // `a` returned `ok`, so the credential demonstrably authenticated.
+        expect(res.errorMessage).toBe('1 error / 0 unreadable of 2 controls (collector exit 0)');
+        expect(res.details).not.toHaveProperty('noControlObserved');
     });
 
     it('ranks alarm above error — a FAILED verdict is not masked by an error', async () => {
@@ -650,6 +656,97 @@ describe('runPowerpipeBenchmark — verdict ladder', () => {
             controls: [{ id: 'a', status: 'ok' }],
             truncated: false,
         });
+    });
+});
+
+// ─── the breadth fact (#2252) ────────────────────────────────────────
+
+describe('runPowerpipeBenchmark — noControlObserved + counts-only errorMessage', () => {
+    const errored = (id: string, message?: string) =>
+        powerpipeErroredControl(`x.control.${id}`, message);
+
+    it('records `noControlObserved` when a completed run answered NOTHING', async () => {
+        // The revoked-credential shape: powerpipe exits 2, every control is in
+        // the `setError` state, and not one produced an observation.
+        const res = await runPowerpipeBenchmark({
+            benchmarkId: 'bench',
+            env: emptyEnv(),
+            secretValues: [],
+            exec: fakeExec(benchmarkJson([errored('a'), errored('b')]), { ok: false, code: 2 }),
+        });
+        expect(res.status).toBe('ERROR');
+        expect(res.details).toMatchObject({ noControlObserved: true, collectorExitCode: 2 });
+        expect(res.errorMessage).toBe(
+            '2 error / 0 unreadable of 2 controls (collector exit 2) — no control produced an observation',
+        );
+    });
+
+    it('does NOT record it when one control observed — the opt-in-region false positive', async () => {
+        // steampipe-plugin-aws#75: a HEALTHY account with one disabled opt-in
+        // region errors some controls and answers others. The provider text on
+        // the errored control is the same `AuthFailure` string a rejected
+        // credential produces, which is exactly why the predicate never reads
+        // it — the single `ok` is what decides.
+        const res = await runPowerpipeBenchmark({
+            benchmarkId: 'bench',
+            env: emptyEnv(),
+            secretValues: [],
+            exec: fakeExec(
+                benchmarkJson([
+                    control('a', 'ok'),
+                    errored('b', 'operation error EC2: DescribeInstances, https response error StatusCode: 401, api error AuthFailure: AWS was not able to validate the provided access credentials'),
+                ]),
+                { ok: false, code: 2 },
+            ),
+        });
+        expect(res.status).toBe('ERROR');
+        expect(res.details).not.toHaveProperty('noControlObserved');
+        expect(res.errorMessage).toBe('1 error / 0 unreadable of 2 controls (collector exit 2)');
+    });
+
+    it('never quotes provider text — the message carries counts and the exit code only', async () => {
+        const SECRET_ISH = 'arn:aws:iam::123456789012:role/InflectPostureReader';
+        const res = await runPowerpipeBenchmark({
+            benchmarkId: 'bench',
+            env: emptyEnv(),
+            secretValues: [],
+            exec: fakeExec(
+                benchmarkJson([errored('a', `AccessDenied: ${SECRET_ISH} is not authorized`)]),
+                { ok: false, code: 2, stderr: `Error: ${SECRET_ISH} rejected` },
+            ),
+        });
+        // `errorMessage` is persisted to `IntegrationExecution.errorMessage`,
+        // which `GET /admin/integrations` serves to the browser. Nothing from
+        // `run_error`, `reason` or stderr may reach it.
+        expect(res.errorMessage).not.toContain(SECRET_ISH);
+        expect(res.errorMessage).not.toContain('AccessDenied');
+        expect(res.errorMessage).toMatch(/^\d+ error \/ \d+ unreadable of \d+ controls \(collector exit 2\)/);
+    });
+
+    it('claims nothing on a run that did NOT complete', async () => {
+        // `did-not-complete` says nothing about the credential at all, so the
+        // breadth fact must be absent even though zero controls were observed.
+        const res = await runPowerpipeBenchmark({
+            benchmarkId: 'bench',
+            env: emptyEnv(),
+            secretValues: [],
+            exec: fakeExec(benchmarkJson([errored('a')]), { ok: false, signal: 'SIGTERM' }),
+        });
+        expect(res.status).toBe('ERROR');
+        expect(res.summary).toBe('Powerpipe collector did not complete the run.');
+        expect(res.details).not.toHaveProperty('noControlObserved');
+    });
+
+    it('leaves a PASSED run untouched — no errorMessage, no breadth key', async () => {
+        const res = await runPowerpipeBenchmark({
+            benchmarkId: 'bench',
+            env: emptyEnv(),
+            secretValues: [],
+            exec: fakeExec(benchmarkJson([control('a', 'ok')])),
+        });
+        expect(res.status).toBe('PASSED');
+        expect(res.errorMessage).toBeUndefined();
+        expect(res.details).not.toHaveProperty('noControlObserved');
     });
 });
 

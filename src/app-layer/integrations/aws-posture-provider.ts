@@ -24,6 +24,7 @@ import {
     classifyPowerpipeExit,
     collectorDiagnostics,
     describeChildExit,
+    noControlObserved,
     powerpipeRunCompleted,
     powerpipeVerdict,
     POWERPIPE_EXIT_CONTROLS_ERROR,
@@ -480,11 +481,28 @@ export class AwsPostureProvider implements ScheduledCheckProvider {
         // control is not a passing one (`unknown` joins `error`), and an exit-2
         // run is never PASSED.
         const status: CheckResult['status'] = powerpipeVerdict(summary.counts, outcome);
+        // Whether the run answered ANY control. This is the breadth fact a
+        // credential rejection produces and a healthy account cannot (#2252);
+        // it is RECORDED, never acted on — nothing downstream of here calls
+        // `markAuthFailure`.
+        const allErrored = noControlObserved(summary.counts, outcome);
+        // COUNTS ONLY. An ERROR verdict used to persist `errorMessage: null`,
+        // so the one surface an operator has showed a revoked credential as a
+        // blank failure (and `executor-registry` drops a null message from the
+        // job record entirely). This makes the failure legible without ever
+        // quoting provider TEXT: no `run_error`, no `reason`, no stderr — so
+        // no role ARN, subscription GUID or service-account email can reach
+        // `IntegrationExecution.errorMessage`, which is served to the browser.
+        const errorMessage = status === 'ERROR'
+            ? `${summary.counts.error} error / ${summary.counts.unknown} unreadable of ${summary.counts.total} controls (collector exit ${exit.code ?? 'none'})`
+                + (allErrored ? ' — no control produced an observation' : '')
+            : undefined;
         return {
             status,
             summary: `${benchmark}: ${summary.counts.ok} ok / ${summary.counts.alarm} alarm / ${summary.counts.error} error / ${summary.counts.skip} skip / ${summary.counts.unknown} unknown of ${summary.counts.total}`,
-            details: { ...summary, ...diagnostics },
+            details: { ...summary, ...diagnostics, ...(allErrored ? { noControlObserved: true } : {}) },
             durationMs: Date.now() - start,
+            ...(errorMessage ? { errorMessage } : {}),
         };
     }
 

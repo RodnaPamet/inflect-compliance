@@ -175,3 +175,45 @@ export function powerpipeVerdict(
     if (outcome === 'completed-control-errors') return 'ERROR';
     return 'PASSED';
 }
+
+/**
+ * The full per-control census a completed run produces. Declared here rather
+ * than imported from `aws-posture-provider` (which imports THIS module) so the
+ * predicate below stays dependency-free; it is structurally the same object as
+ * `BenchmarkSummary.counts`.
+ */
+export interface PowerpipeObservationCounts extends PowerpipeVerdictCounts {
+    ok: number;
+    skip: number;
+    total: number;
+}
+
+/**
+ * True when the run COMPLETED, parsed controls, and not one of them produced an
+ * observation — every legible control errored.
+ *
+ * This is the only shape a rejected credential can produce and one a healthy
+ * account cannot: a single `ok` or `alarm` anywhere is proof the credential
+ * authenticated at least once, which is what kills the recorded opt-in-region
+ * false positive (steampipe-plugin-aws#75) without reading a byte of provider
+ * text. It records a fact; it does not accuse a credential — see the residual
+ * in `usecases/aws-posture.ts`'s comment block, and note that NOTHING here
+ * calls `markAuthFailure`.
+ *
+ * `error === total` is the whole population, so `unknown` controls disqualify
+ * it on purpose: "we could not read this control object" is a fact about our
+ * parse, not about the account, and a run carrying one is not evidence that
+ * every control was answered with a rejection. The three explicit zero checks
+ * are implied by that equality while counts sum to `total`; they are spelled
+ * out so the predicate does not silently depend on an invariant computed
+ * elsewhere.
+ */
+export function noControlObserved(
+    counts: PowerpipeObservationCounts,
+    outcome: PowerpipeOutcome,
+): boolean {
+    return powerpipeRunCompleted(outcome)
+        && counts.total > 0
+        && counts.ok === 0 && counts.alarm === 0 && counts.skip === 0
+        && counts.error === counts.total;
+}
