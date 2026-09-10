@@ -532,6 +532,153 @@ describe('package.json overrides — effective and explained', () => {
         });
     });
 
+    describe('E. an inert note names the floor the override ACTUALLY has', () => {
+        // ─── The failure this catches, which has already happened ────
+        //
+        // `currentlyInert` exists so an override that rewrites nothing
+        // is a DECLARED state rather than an accident. Check C keeps
+        // the declaration honest in both directions — inert-but-biting
+        // fails, biting-but-undeclared fails. What neither check reads
+        // is the note's PROSE, and the prose carries a load-bearing
+        // number: the floor that re-applies if the package returns.
+        //
+        // `hono`'s note said "the 4.12.27 floor" from the day it was
+        // written (#1779, 2026-08-03). #1784 raised the spec to
+        // ^4.12.34 the NEXT day and left the sentence behind, and it
+        // stayed wrong for 38 days — through a scheduled freshness
+        // report naming hono as floor-vulnerable, and through an issue
+        // filed to delete the override on the strength of it. Nothing
+        // was red, because every existing check reads the SPEC or the
+        // registry FACTS, and the one field describing the spec in
+        // words was outside all of them. That is the same
+        // note-goes-stale decay `currentlyInert` was invented to
+        // prevent, one level up, in the field that prevents it.
+        //
+        // ─── Why the check is scoped to floor SENTENCES ─────────────
+        //
+        // "Every version the note mentions must equal the floor" is
+        // wrong, and `tar` is the counter-example that proves it: its
+        // note correctly states that npm's bundle "carries tar
+        // 7.5.19" — a true fact about a version BELOW the 7.5.21
+        // floor, and the whole reason the override cannot bite. A rule
+        // that reddened on it would push someone to delete a real
+        // measurement to satisfy a schema, which is the failure this
+        // registry exists to stop.
+        //
+        // So the unit is the sentence and the trigger word is `floor`.
+        // A sentence that talks about the floor AND names versions is
+        // making a claim about the spec; the note must then name the
+        // spec's real floor in at least one such sentence. History
+        // prose is unharmed — a note may narrate "4.12.27 -> 4.12.34
+        // -> 4.13.5" as long as the number the override actually has
+        // is among the ones it claims. What fails is the case that bit
+        // us: the only floor the note names is one the override no
+        // longer has.
+        //
+        // ─── Why "pin" is NOT a trigger word ────────────────────────
+        //
+        // Measured, not assumed: `tar`'s note says "bumping the `npm`
+        // pin to ^11.18.0", a sentence naming two versions, neither of
+        // them tar's floor. Adding `pin` to the trigger set would
+        // redden a correct note. `floor` is the word this repo uses
+        // for the thing being checked, so it is the only trigger.
+
+        /**
+         * The inert overrides today, pinned by EXACT equality rather
+         * than a `>=` count. A count floor lets one entry go inert
+         * while another stops being inert and reports green; and an
+         * empty selection — `currentlyInert` renamed, or the last
+         * inert override gone — would make every assertion below
+         * iterate zero times. Both are the vacuous pass this list
+         * refuses. Read these values off the failure message, never
+         * compute them.
+         */
+        const INERT_OVERRIDES_TODAY = ['@hono/node-server', 'hono', 'tar'];
+
+        /**
+         * Of those, the ones whose note makes a VERSIONED floor claim
+         * — i.e. the subjects the per-claim assertions below are
+         * generated from. `tar` is deliberately absent: its note uses
+         * the word `floor` with no version beside it.
+         */
+        const FLOOR_CLAIMING_NOTES_TODAY = ['@hono/node-server', 'hono'];
+
+        /** Sentence boundary — `7.5.19.` splits, `7.5.19` does not. */
+        const SENTENCES = /(?<=[.!?])\s+/;
+        const VERSION = /\d+\.\d+\.\d+/g;
+
+        const inertOverrides = overrides
+            .map((o) => ({ o, entry: OVERRIDE_REGISTRY[o.name] }))
+            .filter(({ entry }) => typeof entry?.currentlyInert === 'string');
+
+        /** Specs whose floor cannot be read — reported, never skipped. */
+        const unreadableSpec: string[] = [];
+        /** One entry per inert note that makes a versioned floor claim. */
+        const floorClaims: Array<{
+            override: string;
+            actualFloor: string;
+            claimed: string[];
+        }> = [];
+
+        for (const { o, entry } of inertOverrides) {
+            const floor = parseVersion(o.spec.replace(/^[\^~]/, ''));
+            if (!floor) {
+                // A conjunction range or a dangling `$ref` has no
+                // single floor. Silently dropping it is how a detector
+                // reports full coverage of the subset it happens to
+                // understand — the defect one level up.
+                unreadableSpec.push(`${o.key} -> ${o.spec}`);
+                continue;
+            }
+            const claimed = new Set<string>();
+            for (const sentence of entry!.currentlyInert!.split(SENTENCES)) {
+                if (!/\bfloors?\b/i.test(sentence)) continue;
+                for (const v of sentence.match(VERSION) ?? []) claimed.add(v);
+            }
+            if (claimed.size === 0) continue;
+            floorClaims.push({
+                override: o.key,
+                actualFloor: floor.join('.'),
+                claimed: [...claimed],
+            });
+        }
+
+        it('has inert overrides to examine (an empty selection is not a pass)', () => {
+            expect(inertOverrides.map(({ o }) => o.key).sort()).toEqual(
+                INERT_OVERRIDES_TODAY,
+            );
+        });
+
+        it('every inert override has a readable floor', () => {
+            expect(unreadableSpec).toEqual([]);
+        });
+
+        it('the notes making a versioned floor claim are the expected ones', () => {
+            // The per-claim assertions are generated from this list. If
+            // it empties — the prose reworded to avoid the word
+            // `floor`, or the versions dropped out of it — the `for`
+            // below emits no `it` at all and the suite still passes.
+            // This is the assertion that refuses that outcome.
+            expect(floorClaims.map((c) => c.override).sort()).toEqual(
+                FLOOR_CLAIMING_NOTES_TODAY,
+            );
+        });
+
+        for (const claim of floorClaims) {
+            it(`${claim.override}: currentlyInert names the ${claim.actualFloor} floor its spec actually has`, () => {
+                expect({
+                    override: claim.override,
+                    claimed: claim.claimed,
+                    namesTheActualFloor: claim.claimed.includes(claim.actualFloor),
+                }).toEqual({
+                    override: claim.override,
+                    claimed: claim.claimed,
+                    namesTheActualFloor: true,
+                });
+            });
+        }
+    });
+
     describe('comparator sanity', () => {
         // Every assertion above is only as trustworthy as `satisfies`.
         // A comparator that returned `true` unconditionally would make
