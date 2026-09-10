@@ -141,7 +141,20 @@ const ROOT = path.resolve(__dirname, '../..');
 // this PR adds could be deleted with a green build, which is the regression the
 // floor exists to refuse, and it would leave the next author at slack 8 of 8:
 // the trap the paragraph above describes, primed again.
-const RENDERED_TEST_FLOOR = 268;
+// 268 → 270 (2026-09-10): the two suites #2388 and #2389 each added, paid as
+// one debt rather than by either PR. Both deliberately left it alone and said
+// so: raising it in both would have merged cleanly and left main at 269 with
+// live at 270, and raising it to a computed 270 from inside either one is
+// arithmetic on two sides — the mistake this file's own comment forbids, and
+// too-high is the silent direction. Live measured on main AFTER both landed
+// (`ls tests/rendered/*.test.tsx | wc -l` = 270), which is the only reading
+// that could not have been wrong.
+//
+// The guard was PASSING at 268 (slack 2 of 8). This raise is not a red build
+// being fixed; it is the ratchet doing its job — at slack 2 the two suites
+// those PRs added could have been deleted with a green build, which is the
+// regression the floor exists to refuse.
+const RENDERED_TEST_FLOOR = 270;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
