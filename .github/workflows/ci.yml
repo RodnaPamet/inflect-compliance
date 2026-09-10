@@ -498,6 +498,31 @@ jobs:
       - name: Apply Prisma migrations
         run: ./node_modules/.bin/prisma migrate deploy
 
+      # ── Gate: do the migrations reproduce prisma/schema? ──
+      # BLOCKING, and it has to sit exactly here: the database one line
+      # above was built from an empty Postgres by `migrate deploy` and
+      # nothing has touched it yet, so it IS "what prisma/migrations
+      # builds". Any later in the job and the suite's own fixtures are in
+      # it; any earlier and there is nothing to compare.
+      #
+      # The check diffs that fresh database against prisma/schema and
+      # fails on ANY difference from the committed residue in
+      # prisma/fresh-db-schema-drift.expected.sql — in EITHER direction.
+      # A new drift statement means somebody changed the schema without a
+      # migration (or wrote a migration that does not match it). A residue
+      # line that stops appearing means an intentional divergence was
+      # "fixed", or the residue legitimately shrank and the file was not
+      # updated in the same commit — that second case is the expected
+      # outcome of the referential-action PR (issue #2367), and the file's
+      # header says so, so shrinking it is a diff to review, not a revert.
+      #
+      # It runs once per shard. That is 4 redundant executions of a
+      # ~2-second diff, and it buys the property that no shard can be
+      # green against a database that disagrees with the schema — cheaper
+      # than a fifth job with its own Postgres service.
+      - name: "Gate: fresh-DB schema drift"
+        run: npm run db:check-schema-drift
+
       # ── Jest: unit + integration tests (sharded) ──
       # Each matrix worker runs Jest's deterministic 1-of-N hash split.
       # `--shard` keeps each test file on exactly one shard, so per-DB-row

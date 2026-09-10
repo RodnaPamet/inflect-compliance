@@ -105,9 +105,19 @@ model ProcessMapSnapshot {
   createdAt       DateTime @default(now())
   createdByUserId String
 
-  tenant     Tenant     @relation(fields: [tenantId], references: [id])
-  processMap ProcessMap @relation(fields: [processMapId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  createdBy  User       @relation("ProcessMapSnapshotCreatedBy", fields: [createdByUserId], references: [id])
+  /// NoAction, not Prisma's default Restrict/Cascade.
+  /// 20260526100000_p5_pra_process_map_snapshot wrote `tenantId` and
+  /// `createdByUserId` as bare `REFERENCES` clauses and gave `processMapId`
+  /// only an `ON DELETE CASCADE`, so Postgres supplied NO ACTION for every
+  /// action it was not told about — both sides of two FKs and the ON UPDATE of
+  /// the third. Nothing in this DB is
+  /// deferrable (`SELECT count(*) FROM pg_constraint WHERE contype='f' AND
+  /// condeferrable` = 0), so NO ACTION and RESTRICT fire at exactly the same
+  /// moment and reject exactly the same deletes — and Tenant/User ids are
+  /// immutable cuids, so ON UPDATE never runs either. Declared as reality.
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  processMap ProcessMap @relation(fields: [processMapId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  createdBy  User       @relation("ProcessMapSnapshotCreatedBy", fields: [createdByUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([processMapId, version])
   @@index([tenantId, processMapId, version])

@@ -166,7 +166,6 @@ const FK_INDEX_EXEMPT: Record<string, string> = {
     'AccessReview.createdByUserId': R_ACTOR,
     'AccessReview.closedByUserId': R_ACTOR,
     'AccessReview.deletedByUserId': R_ACTOR,
-    'AccessReview.evidenceFileRecordId': R_ONE_TO_ONE,
     'AccessReviewDecision.decidedByUserId': R_ACTOR,
     'AccessReviewDecision.executedByUserId': R_ACTOR,
     'AccessReviewConnectedDecision.decidedByUserId': R_ACTOR,
