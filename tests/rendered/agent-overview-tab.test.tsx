@@ -402,10 +402,29 @@ describe('the availability copy names the enforcement condition', () => {
         fireEvent.click(screen.getByRole('button', { name: EN.suspendAction }));
 
         expect(screen.getByText(EN.suspendScope)).toBeInTheDocument();
-        expect(EN.suspendScope).toMatch(/if that requirement is off, the suspension is recorded but stops nothing/i);
+        // Until #2399 this asserted "if that requirement is off, the suspension
+        // is recorded but stops nothing" — which was true of the REGISTRATION
+        // gate and false overall: a suspended agent's credential lost its tool
+        // allowlist, both autonomy terms, its policy card, its breaker and the
+        // AGENT arm of its own kill switch, so suspension WIDENED it. The
+        // sentence now says what suspension does, and these are the three
+        // claims that make it true.
+        expect(EN.suspendScope).toMatch(/tool calls are refused at the boundary/i);
+        expect(EN.suspendScope).toMatch(
+            /autonomy ceiling, its policy card and its stop controls apply again/i,
+        );
+        // The enforcing/non-enforcing difference is now ONLY about registration,
+        // which is the whole of what the flag was ever supposed to control.
+        expect(EN.suspendScope).toMatch(/also refused at registration/i);
+        // And the honest limit: this refuses TOOLS. The resources door still
+        // serves the framework catalogue, so the copy must not read as
+        // "deny-all" — the same over-claim in the other direction.
+        expect(EN.suspendScope).toMatch(/framework catalogue is not refused/i);
+        expect(EN.suspendScope).not.toMatch(/stops nothing/i);
         // Registration is evaluated once per invocation, so suspension refuses
         // the NEXT request; an operator reading "suspended" as "halted mid-run"
-        // has been told something untrue.
+        // has been told something untrue. Still true after #2399 — the fix
+        // changes invocation assembly, not a run in flight.
         expect(EN.suspendScope).toMatch(/A run already under way is not affected/i);
     });
 });
@@ -458,7 +477,17 @@ describe('one lever, one word — this tab suspends, it does not kill', () => {
         for (const label of overviewActions) {
             expect(killActions).not.toContain(label);
         }
-        expect(KILL.engagePrompt).toMatch(/which suspending it does not/i);
+        // The kill switch and suspension are still DIFFERENT controls, and this
+        // asserts the difference that survives #2399 rather than the one that
+        // does not. It used to read "which suspending it does not" — true when
+        // suspension reached no boundary at all, false now that a suspended
+        // agent governs. What remains is that the kill switch acts inside a run
+        // already under way, covers the resources door, and has workspace-wide
+        // and platform-wide forms; suspension has none of those.
+        expect(KILL.engagePrompt).toMatch(/inside a run already in progress/i);
+        expect(KILL.engagePrompt).toMatch(/framework catalogue/i);
+        expect(KILL.engagePrompt).toMatch(/workspace-wide or platform-wide/i);
+        expect(KILL.engagePrompt).not.toMatch(/which suspending it does not/i);
         expect(JSON.stringify(EN)).not.toMatch(/kill[\s-]?switch/i);
     });
 });
