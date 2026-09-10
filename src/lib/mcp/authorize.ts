@@ -169,9 +169,19 @@ export interface McpInvocation {
     /** The principal's own authority. See agent-authority.ts. */
     principal: AgentPrincipal;
     /**
-     * The registered agent the credential speaks for, when it resolved to a live
-     * ACTIVE one. `null` means the tenant is not enforcing the register — see
-     * `agent-tool-exposure.ts` for why that is not an exposure bypass.
+     * The registered agent the register VOUCHES for — non-null only when a live
+     * ACTIVE agent resolved.
+     *
+     * `null` does NOT mean "the tenant is not enforcing the register", which is
+     * what this docstring used to say and what #2399 was. It is `null` for a
+     * signed-in human, an ordinary integration key, a tenant with the register
+     * off, a binding the register cannot produce, AND an agent an operator
+     * suspended. Only `agentStanding` tells those apart.
+     *
+     * This field keys the tool grants and the agent's identity in the trail. It
+     * is NOT what a control asking "is this agent stopped" should read — see
+     * `governedAgentId`. `agent-tool-exposure.ts` explains why a genuinely
+     * unbound credential is not an exposure bypass.
      */
     agentId: string | null;
     /**
