@@ -146,6 +146,11 @@ function invocationFor(
             permissions: ctx.permissions,
         },
         agentId: AGENT,
+        // `governedAgentId` mirrors `agentId` here because this fixture models
+        // an ACTIVE registered agent — the only standing where the two agree.
+        // #2399 split them so a SUSPENDED agent still governs while not vouched.
+        governedAgentId: AGENT,
+        agentStanding: 'vouched' as const,
         grantedTools: new Set(['list_risks', 'get_framework_status']),
         offeredTools: [...MCP_TOOL_NAMES],
         audience: null,
@@ -220,7 +225,17 @@ describe('every evaluation is counted exactly once', () => {
         // `buildMcpInvocation` actually produces for a non-agent caller — the
         // exposure allowlist has nothing to apply. Spelled out so the fixture is
         // a state the builder can reach rather than a convenient impossibility.
-        const human = { ...invocationFor(null), agentId: null, grantedTools: null };
+        const human = {
+            ...invocationFor(null),
+            agentId: null,
+            // Overridden alongside `agentId`, not left to the spread: a
+            // governed id leaking through here would make this a SUSPENDED
+            // agent rather than a human, and the `no_agent` outcome below is
+            // exactly the claim that distinction now carries.
+            governedAgentId: null,
+            agentStanding: 'no_binding' as const,
+            grantedTools: null,
+        };
         await runReadTool(human, 'list_risks', {});
 
         expect(evaluations.mock.calls).toEqual([[{ outcome: 'no_agent', surface: 'tool' }]]);

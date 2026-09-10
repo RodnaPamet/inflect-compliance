@@ -120,6 +120,11 @@ function invocationFor(over: Partial<McpInvocation> = {}): McpInvocation {
             permissions: ctx.permissions,
         },
         agentId: AGENT,
+        // `governedAgentId` mirrors `agentId` here because this fixture models
+        // an ACTIVE registered agent — the only standing where the two agree.
+        // #2399 split them so a SUSPENDED agent still governs while not vouched.
+        governedAgentId: AGENT,
+        agentStanding: 'vouched' as const,
         grantedTools: new Set(['list_risks']),
         offeredTools: [...MCP_TOOL_NAMES],
         audience: null,
@@ -273,14 +278,54 @@ describe('a call that any gate refuses leaves no trace in the ledger', () => {
 
 describe('an invocation with no registered agent never touches the breaker', () => {
     it('reads no latch and writes no observation', async () => {
-        // `agentId: null` is the tenant not enforcing the register. The breaker
-        // is a control that LEARNS, and there is nothing to attribute a window
-        // to — deny-by-default lives in the tool grants, which already are.
+        // No GOVERNED agent — a human, an ordinary integration key, or a tenant
+        // that switched the register off. The breaker is a control that LEARNS,
+        // and there is nothing to attribute a window to; deny-by-default lives
+        // in the tool grants, which for this caller are also absent.
+        //
+        // `governedAgentId` is overridden alongside `agentId`, not left to the
+        // builder. Since #2399 the breaker keys off the GOVERNED id, so a
+        // governed id leaking through here would make this a SUSPENDED agent —
+        // whose breaker MUST be read — and the assertion below would be
+        // pinning the opposite of what this test is named for.
         await expect(
-            runReadTool(invocationFor({ agentId: null, grantedTools: null }), 'list_risks', {}),
+            runReadTool(
+                invocationFor({
+                    agentId: null,
+                    governedAgentId: null,
+                    agentStanding: 'no_binding',
+                    grantedTools: null,
+                }),
+                'list_risks',
+                {},
+            ),
         ).resolves.toBeDefined();
 
         expect(breakerFind).not.toHaveBeenCalled();
         expect(executeRaw).not.toHaveBeenCalled();
+    });
+
+    it('DOES read the latch for a suspended agent — the #2399 case', async () => {
+        // The companion, and the reason the test above needed the explicit
+        // override. A suspended agent reaches this door in a non-enforcing
+        // tenant (and on the workflow-engine path in any tenant), and before
+        // #2399 `assertCircuitBreakerClosed` returned early on a null vouched
+        // id — so a breaker latched OPEN against it refused nothing and no
+        // observation was ever recorded. Without this case, "never touches the
+        // breaker" would be satisfied by a gate that never touches it at all.
+        await expect(
+            runReadTool(
+                invocationFor({
+                    agentId: null,
+                    governedAgentId: AGENT,
+                    agentStanding: 'suspended',
+                    grantedTools: new Set<string>(),
+                }),
+                'list_risks',
+                {},
+            ),
+        ).rejects.toThrow();
+
+        expect(breakerFind).toHaveBeenCalled();
     });
 });

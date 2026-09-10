@@ -139,6 +139,11 @@ function invocationFor(
             permissions: ctx.permissions,
         },
         agentId: 'agent-1',
+        // `governedAgentId` mirrors `agentId` here because this fixture models
+        // an ACTIVE registered agent — the only standing where the two agree.
+        // #2399 split them so a SUSPENDED agent still governs while not vouched.
+        governedAgentId: 'agent-1',
+        agentStanding: 'vouched' as const,
         grantedTools: new Set(['list_risks', 'list_controls']),
         offeredTools: [...MCP_TOOL_NAMES],
         audience,

@@ -150,6 +150,8 @@ function invocationFor(
             permissions: ctx.permissions,
         },
         agentId: 'agent-1',
+        governedAgentId: 'agent-1',
+        agentStanding: 'vouched' as const,
         grantedTools: new Set(['list_risks', 'get_framework_status']),
         // The catalogue snapshot `buildMcpInvocation` takes. Everything this
         // suite calls is on it, so the loader never refuses and every assertion

@@ -136,7 +136,7 @@ async function assertFrameworkScope(inv: McpInvocation, uri: string): Promise<vo
         if (!isAppError(err)) throw err;
         await denyToolCall(inv.ctx, 'scope_denied', {
             tool: MCP_RESOURCES_AUDIENCE,
-            agentId: inv.agentId,
+            agentId: inv.governedAgentId,
             message: err.message,
             extra: { resource: 'frameworks', action: 'read', uri },
         });
