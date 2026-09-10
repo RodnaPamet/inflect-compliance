@@ -58,7 +58,8 @@ import {
     getAgentPolicyCard,
     updateAgentPolicyCard,
 } from '@/app-layer/usecases/agent-policy-card';
-import { POLICY_CARD_RULES } from '@/lib/agentic/policy-card';
+import { ACTION_CAP_LADDER, POLICY_CARD_RULES } from '@/lib/agentic/policy-card';
+import { ceilingForRiskTier } from '@/lib/agentic/autonomy-ceiling';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -677,6 +678,383 @@ describeFn('a seeded policy card is one the tool boundary can actually exercise'
 
             const res = await callTool(token, 'list_risks');
             expect(errorOf(res.json)).toMatch(/does not permit/);
+        });
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // 6. And the same for the TIER: a re-assessment that lowers the cap
+    //    does not reach back into the card either, so the card is left
+    //    above it — and the editor must not then refuse every edit.
+    // ─────────────────────────────────────────────────────────────────
+    //
+    // `assertAutonomyRaiseWithinTier` judges the MOVE, the shape its two
+    // siblings already had (`assertRaiseWithinTier` in the register,
+    // `assertDataScopeRaiseWithinDeclaration` above). It used to judge the
+    // resulting VALUE, which refused every edit to a card left above the cap —
+    // including the narrowings that make the agent smaller and touch no rung
+    // the complaint is about. Nothing is loosened: the tier cap is a live term
+    // in `min(key, agent.autonomyLevel, tierCap)` at every call, so the stale
+    // rung on the card grants nothing while it stands.
+    describe('a card left above a LOWERED tier cap can still be edited', () => {
+        let agentId = '';
+
+        beforeAll(async () => {
+            // HIGH (score 17): autonomy 1 + READ_TENANT_DATA 4 + REVERSIBLE 0 +
+            // first-party 0 + 12 for an unanswered questionnaire. Cap 2, which
+            // is what the seed writes.
+            agentId = await scoredAgent('tier-drop', 'READ_TENANT_DATA');
+            await createAgentPolicyCard(ctx(), agentId);
+        });
+
+        it('the re-assessment lowers the cap under the card, and rewrites nothing', async () => {
+            const before = await prisma.registeredAgent.findUniqueOrThrow({
+                where: { id: agentId },
+                select: { riskTier: true },
+            });
+            expect(before.riskTier).toBe('HIGH');
+
+            // Through the register's own write path: egress floors at HIGH and
+            // takes the score to 27 (1 + 8 + 6 + 0 + 12), which is CRITICAL —
+            // cap 1, one rung BELOW the card's autonomy. The re-score writes
+            // back because the new tier is higher; it never lowers a tier.
+            await updateRegisteredAgent(ctx(), agentId, {
+                dataAccessScope: 'EXTERNAL_EGRESS',
+                reversibility: 'TERMINAL',
+            });
+            const after = await prisma.registeredAgent.findUniqueOrThrow({
+                where: { id: agentId },
+                select: { riskTier: true },
+            });
+            expect(after.riskTier).toBe('CRITICAL');
+            expect(ceilingForRiskTier(after.riskTier)).toBe(1);
+
+            // The card is untouched — a stored version is never rewritten — so
+            // it now declares more autonomy than the tier permits. That state
+            // is what the rest of this block is about.
+            const card = await getAgentPolicyCard(ctx(), agentId);
+            expect(card.card?.inForce?.maxAutonomyLevel).toBe(2);
+            expect(card.card?.currentVersion).toBe(1);
+        });
+
+        it('a narrowing that touches no rung the cap is about is ACCEPTED', async () => {
+            const card = await getAgentPolicyCard(ctx(), agentId);
+            const inForce = card.card?.inForce;
+            if (!inForce) throw new Error('expected a version in force');
+
+            // One rung DOWN the budget ladder, and autonomy left exactly where
+            // it is. This is the edit the value reading refused: it raises
+            // nothing, it makes the agent smaller, and the only thing wrong
+            // with the card is an axis it does not touch.
+            const perDay = ACTION_CAP_LADDER[ACTION_CAP_LADDER.indexOf(
+                inForce.maxActionsPerDay as (typeof ACTION_CAP_LADDER)[number],
+            ) - 1];
+            expect(perDay).toBeLessThan(inForce.maxActionsPerDay);
+
+            await expect(
+                updateAgentPolicyCard(
+                    ctx(),
+                    agentId,
+                    edit(1, {
+                        permittedTools: [...inForce.permittedTools],
+                        maxDataScope: inForce.maxDataScope as Scope,
+                        maxAutonomyLevel: inForce.maxAutonomyLevel,
+                        maxActionsPerRun: inForce.maxActionsPerRun,
+                        maxActionsPerDay: perDay,
+                    }),
+                ),
+            ).resolves.toMatchObject({ version: 2 });
+        });
+
+        it('but a RAISE is still refused, and still names both numbers', async () => {
+            // The half that says the gate was made one-directional rather than
+            // deleted. One rung up from 2 is a legal ladder step, so only the
+            // tier cap can refuse it.
+            const card = await getAgentPolicyCard(ctx(), agentId);
+            const inForce = card.card?.inForce;
+            if (!inForce) throw new Error('expected a version in force');
+
+            const err = await updateAgentPolicyCard(
+                ctx(),
+                agentId,
+                edit(2, {
+                    permittedTools: [...inForce.permittedTools],
+                    maxDataScope: inForce.maxDataScope as Scope,
+                    maxAutonomyLevel: inForce.maxAutonomyLevel + 1,
+                    maxActionsPerRun: inForce.maxActionsPerRun,
+                    maxActionsPerDay: inForce.maxActionsPerDay,
+                }),
+            ).catch((e: Error) => e);
+
+            // Each half on its own — a span joining them would re-form across a
+            // message that had kept one fact and lost the other.
+            expect((err as Error).message).toMatch(/This card caps autonomy at 3/);
+            expect((err as Error).message).toMatch(/caps it at 1/);
+
+            // And nothing was appended.
+            expect(
+                await prisma.agentPolicyCardVersion.count({
+                    where: { tenantId: TENANT, card: { agentId } },
+                }),
+            ).toBe(2);
+        });
+
+        it('and the repair — bringing autonomy under the cap — goes through', async () => {
+            const card = await getAgentPolicyCard(ctx(), agentId);
+            const inForce = card.card?.inForce;
+            if (!inForce) throw new Error('expected a version in force');
+
+            await expect(
+                updateAgentPolicyCard(
+                    ctx(),
+                    agentId,
+                    edit(2, {
+                        permittedTools: [...inForce.permittedTools],
+                        maxDataScope: inForce.maxDataScope as Scope,
+                        maxAutonomyLevel: 1,
+                        maxActionsPerRun: inForce.maxActionsPerRun,
+                        maxActionsPerDay: inForce.maxActionsPerDay,
+                    }),
+                ),
+            ).resolves.toMatchObject({ version: 3 });
+        });
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // 7. THE GET PAYLOAD ITSELF.
+    //
+    //    Blocks 1-6 go through the WRITE paths. This one pins the READ,
+    //    because the read is the other half of the same contract and the
+    //    half this issue is named after: the editor's ladders are bounded
+    //    by `riskTier` and `dataAccessScope`, its disclosure is bounded by
+    //    `withheld`, and its version trail names an actor — and every one
+    //    of those was composed in the client from fields the GET did not
+    //    send. A suite that asserted only the write paths would have
+    //    passed against a GET that sent none of them, which is exactly the
+    //    defect. So each field is asserted against a value the payload
+    //    cannot have got from anywhere else on the response.
+    // ─────────────────────────────────────────────────────────────────
+    describe('the GET carries what the editor is bounded by', () => {
+        let agentId = '';
+        let token = '';
+        const NAMED = `${USER}-named`;
+        const NAMED_EMAIL = `${SUITE}-named@example.test`;
+        const namedCtx = () =>
+            makeRequestContext('OWNER', {
+                tenantId: TENANT,
+                tenantSlug: TENANT,
+                userId: NAMED,
+            });
+
+        beforeAll(async () => {
+            // A SECOND actor, and one who has a `name` — the suite's own USER
+            // deliberately has none. Two versions written by two different
+            // people is what makes `name ?? email` an assertion about
+            // precedence rather than about whichever field happens to be set.
+            await prisma.user.upsert({
+                where: { id: NAMED },
+                update: { name: 'Ada Lovelace' },
+                create: {
+                    id: NAMED,
+                    email: NAMED_EMAIL,
+                    emailHash: hashForLookup(NAMED_EMAIL),
+                    name: 'Ada Lovelace',
+                },
+            });
+            await prisma.tenantMembership.upsert({
+                where: { tenantId_userId: { tenantId: TENANT, userId: NAMED } },
+                update: { role: 'OWNER', status: 'ACTIVE' },
+                create: { tenantId: TENANT, userId: NAMED, role: 'OWNER', status: 'ACTIVE' },
+            });
+
+            // Registered at READ_TENANT_DATA (HIGH, cap 2) and granted
+            // `list_risks`, which the seeded card CAN exercise — so v1 withholds
+            // nothing and the withheld disclosure below is produced by the edit
+            // rather than by the seed.
+            agentId = await scoredAgent('get-payload', 'READ_TENANT_DATA');
+            await grantAgentTool(ctx(), agentId, { toolName: 'list_risks' });
+            await createAgentPolicyCard(ctx(), agentId);
+            await activateRegisteredAgent(ctx(), agentId);
+            token = await mintKey(agentId);
+
+            // v2, written by the OTHER user: the card narrows to READ_METADATA
+            // and drops the tool. The GRANT is untouched — narrowing a card
+            // never revokes anything — so `list_risks` is now a standing grant
+            // the card in force cannot exercise.
+            await updateAgentPolicyCard(
+                namedCtx(),
+                agentId,
+                edit(1, {
+                    permittedTools: [],
+                    maxDataScope: 'READ_METADATA',
+                    maxAutonomyLevel: 2,
+                    maxActionsPerRun: 10,
+                    maxActionsPerDay: 100,
+                }),
+            );
+        });
+
+        it("returns the AGENT's two ceilings, which are not the card's", async () => {
+            const payload = await getAgentPolicyCard(ctx(), agentId);
+            const agent = await prisma.registeredAgent.findUniqueOrThrow({
+                where: { id: agentId },
+                select: { riskTier: true, dataAccessScope: true },
+            });
+
+            expect(payload.riskTier).toBe(agent.riskTier);
+            expect(payload.dataAccessScope).toBe(agent.dataAccessScope);
+
+            // Neither is a constant, and neither can be read off the card: the
+            // tier is SCORED (HIGH, cap 2) and the register still declares
+            // READ_TENANT_DATA while the card in force now stops one rung
+            // lower. A payload echoing the card, or defaulting either field,
+            // gives a different answer here.
+            expect(payload.riskTier).toBe('HIGH');
+            expect(ceilingForRiskTier(payload.riskTier)).toBe(2);
+            expect(payload.dataAccessScope).toBe('READ_TENANT_DATA');
+            expect(payload.card?.inForce?.maxDataScope).toBe('READ_METADATA');
+        });
+
+        it('returns the grants the card in force cannot exercise, with the CEILING that stops each', async () => {
+            const payload = await getAgentPolicyCard(ctx(), agentId);
+            if (payload.card === null) throw new Error('expected a card');
+
+            // The grant stands: narrowing the card revoked nothing.
+            expect(
+                (
+                    await prisma.registeredAgentTool.findMany({
+                        where: { tenantId: TENANT, agentId },
+                        select: { toolName: true },
+                    })
+                ).map((t) => t.toolName),
+            ).toEqual(['list_risks']);
+
+            // NULL means "the version in force could not be read"; this card
+            // reads fine, so the answer is a list.
+            expect(payload.withheld).not.toBeNull();
+            expect(payload.withheld?.map((w) => w.toolName)).toEqual(['list_risks']);
+
+            // And the REASON is ceiling-based, not "the card does not permit
+            // it". `withholdingReasonForTool` never consults `permittedTools` —
+            // the card in force both drops the tool AND stops below its base
+            // rung, and the disclosure reports the rung. That is what the copy
+            // on this panel has to say, and why it says "the ceiling it ran
+            // into" rather than "the card does not permit them".
+            expect(payload.withheld?.map((w) => w.reason)).toEqual(['DATA_SCOPE_ABOVE_CARD']);
+            expect(payload.withheld?.[0]?.requires).toBe('READ_TENANT_DATA');
+            expect(payload.withheld?.[0]?.permits).toBe('READ_METADATA');
+
+            // The runtime agrees, which is what makes "every call is refused"
+            // a fact this panel reports rather than a claim it makes.
+            expect(errorOf((await callTool(token, 'list_risks')).json)).toMatch(/does not permit/);
+        });
+
+        it('and answers with an EMPTY list, not null, for a card that withholds nothing', async () => {
+            // The healthy shape, from the same code path. Without this the
+            // withheld assertion above would pass against a payload that
+            // returned every grant unconditionally.
+            const clean = await scoredAgent('get-payload-clean', 'READ_TENANT_DATA');
+            await grantAgentTool(ctx(), clean, { toolName: 'list_risks' });
+            await createAgentPolicyCard(ctx(), clean);
+
+            const payload = await getAgentPolicyCard(ctx(), clean);
+            if (payload.card === null) throw new Error('expected a card');
+            expect(payload.card.inForce?.permittedTools).toEqual(['list_risks']);
+            expect(payload.withheld).toEqual([]);
+        });
+
+        it('resolves each version actor to a display name, and never invents one', async () => {
+            const payload = await getAgentPolicyCard(ctx(), agentId);
+            if (payload.card === null) throw new Error('expected a card');
+            const byVersion = new Map(payload.versions.map((v) => [v.version, v]));
+            expect(byVersion.size).toBe(2);
+
+            // v2 was written by the user who HAS a name, so the name wins.
+            expect(byVersion.get(2)?.createdByUserId).toBe(NAMED);
+            expect(byVersion.get(2)?.createdByName).toBe('Ada Lovelace');
+
+            // v1 was written by the user who has none — `name ?? email`,
+            // resolved server-side so the client never holds an address it has
+            // nothing to do with. Two different actors, two different answers,
+            // out of ONE batched lookup.
+            expect(byVersion.get(1)?.createdByUserId).toBe(USER);
+            expect(byVersion.get(1)?.createdByName).toBe(`${TENANT}@example.test`);
+
+            // The raw id stays on the row and is never a stand-in for a name:
+            // a client that rendered `createdByName` can never print a cuid.
+            for (const version of payload.versions) {
+                expect(version.createdByName).not.toBe(version.createdByUserId);
+            }
+        });
+
+        it('carries the same two ceilings BEFORE there is a card to bound', async () => {
+            // The no-card branch. The editor is not open yet, but the seed
+            // preview is derived from both fields and the surface names the
+            // ceilings rather than only their consequences — and this is the
+            // branch a `card: null` early return is easiest to forget on.
+            const bare = await scoredAgent('get-payload-nocard', 'READ_METADATA');
+            const payload = await getAgentPolicyCard(ctx(), bare);
+            const agent = await prisma.registeredAgent.findUniqueOrThrow({
+                where: { id: bare },
+                select: { riskTier: true, dataAccessScope: true },
+            });
+
+            expect(payload.card).toBeNull();
+            expect(payload.dataAccessScope).toBe('READ_METADATA');
+            expect(payload.riskTier).toBe(agent.riskTier);
+            expect(payload.riskTier).not.toBeNull();
+        });
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // 8. The sentinel is never a number in a sentence.
+    // ─────────────────────────────────────────────────────────────────
+    describe('an unscored tier names the assessment, never a cap of -1', () => {
+        it('refuses the raise with the sentence its register sibling already uses', async () => {
+            const agentId = await scoredAgent('unscored-cap', 'READ_TENANT_DATA');
+            await createAgentPolicyCard(ctx(), agentId);
+
+            // Written straight to the row on purpose. No product write path
+            // clears `riskTier` today — `createAgentPolicyCard` refuses an
+            // unscored agent outright, and a re-score never lowers a tier to
+            // null — so this state is reachable only by a future path or a
+            // hand-edited row. The sentence exists for exactly that case, and
+            // `ceilingForRiskTier` resolving it to DENY_CEILING (-1) is what
+            // used to leak "caps it at -1" into an operator's face.
+            //
+            // BOTH columns, because the schema will not have it otherwise:
+            // `RegisteredAgent_riskTier_scoredAt_paired_check` asserts
+            // `("riskTier" IS NULL) = ("riskTierScoredAt" IS NULL)`, so
+            // UNSCORED is a state of the pair and not of one column. Clearing
+            // the tier alone is refused by Postgres — which is itself worth
+            // knowing here: the only unscored agent that can exist is one
+            // nothing has ever scored.
+            await prisma.registeredAgent.update({
+                where: { id: agentId },
+                data: { riskTier: null, riskTierScoredAt: null },
+            });
+
+            const err = await updateAgentPolicyCard(
+                ctx(),
+                agentId,
+                edit(1, {
+                    permittedTools: [],
+                    maxDataScope: 'READ_TENANT_DATA',
+                    maxAutonomyLevel: 3,
+                    maxActionsPerRun: 10,
+                    maxActionsPerDay: 100,
+                }),
+            ).catch((e: Error) => e);
+
+            expect((err as Error).message).toMatch(/has not been risk-assessed/);
+            expect((err as Error).message).toMatch(/Complete its agent risk assessment first/);
+            // The sentinel itself never reaches the operator.
+            expect((err as Error).message).not.toMatch(/-1/);
+            // And it is still a REFUSAL, so nothing was appended.
+            expect(
+                await prisma.agentPolicyCardVersion.count({
+                    where: { tenantId: TENANT, card: { agentId } },
+                }),
+            ).toBe(1);
         });
     });
 });
