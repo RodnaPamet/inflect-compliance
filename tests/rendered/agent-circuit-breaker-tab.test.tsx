@@ -33,9 +33,14 @@
  *     it, and the difference has to be legible BEFORE the radio is picked —
  *     an operator choosing the more comfortable-sounding of two enum labels is
  *     exactly how an unrecoverable history wipe gets clicked;
- *   • the baseline block is a FLOOR. It counts the 48-row page the route
- *     returned while the detector reads back over 168, so reporting it as the
- *     detector's population is a claim this panel cannot make;
+ *   • the baseline block reports the DETECTOR'S look-back. It used to count
+ *     the 48-row page the route returned while the detector read back over
+ *     168, so the panel hedged it as a floor; the figures are now counted over
+ *     the detector's own population, and the three things that make that true
+ *     are pinned below — the sentence names the look-back rather than the page,
+ *     the hour still filling is not presented as counted, and neither is the
+ *     window awaiting a verdict, which is the row the detector JUDGES and is
+ *     never part of the baseline it is judged against;
  *   • nothing here recovers on its own. There is no half-open probe, no
  *     timeout and no auto-close in the implementation, so a rogue agent could
  *     simply wait one out — every mention of automatic recovery on this
@@ -91,6 +96,9 @@ jest.mock('@/lib/hooks/use-tenant-swr', () => ({
 import { CircuitBreakerTab } from '@/app/t/[tenantSlug]/(app)/admin/agents/[agentId]/tabs/CircuitBreakerTab';
 import { TenantProvider } from '@/lib/tenant-context-provider';
 import { getPermissionsForRole } from '@/lib/permissions';
+// The same formatter the row uses, so the row lookup below cannot drift from
+// the rendering on a locale or format change.
+import { formatDateTime } from '@/lib/format-date';
 
 // ─── the real en.json copy, which is what the operator actually reads ───
 
@@ -100,8 +108,22 @@ const BREAKER = (
     }
 ).admin.agentDetail.breaker;
 
-/** A leaf string from the breaker catalogue. */
-const S = (key: string): string => BREAKER[key] as string;
+/**
+ * A leaf string from the breaker catalogue.
+ *
+ * Throws by name rather than returning `undefined`. A missing key handed to a
+ * matcher produces "Unable to find an element with the text: undefined", which
+ * says nothing about which key is absent — and next-intl renders a missing key
+ * as its own dotted path, so a `toHaveTextContent('agentDetail.…')` assertion
+ * would go GREEN on exactly the failure it is supposed to catch.
+ */
+const S = (key: string): string => {
+    const value = BREAKER[key];
+    if (typeof value !== 'string') {
+        throw new Error(`messages/en.json has no admin.agentDetail.breaker.${key}`);
+    }
+    return value;
+};
 const BADGE = BREAKER.badge as Record<string, string>;
 const TITLE = BREAKER.postureTitle as Record<string, string>;
 const BODY = BREAKER.postureBody as Record<string, string>;
@@ -157,6 +179,10 @@ interface BreakerPayload {
     riskTier: string | null;
     breaker: BreakerRow | null;
     windows: WindowRow[];
+    /** The hour still filling, from the server's clock. */
+    currentWindowStart: string;
+    /** The complete window awaiting a verdict, or `null` when none is. */
+    pendingVerdictWindowStart: string | null;
     baseline: BaselineBlock;
     windowsToTrip: number;
     closeReasons: string[];
@@ -164,6 +190,8 @@ interface BreakerPayload {
 
 const REQUIRED_WINDOWS = 12;
 const REQUIRED_OBSERVATIONS = 200;
+/** `BASELINE_WINDOW_LIMIT` as the route reports it. */
+const LOOKBACK_WINDOWS = 168;
 
 /** Short of both thresholds, which is the ordinary state of a young agent. */
 const SHORT_BASELINE: BaselineBlock = {
@@ -171,9 +199,17 @@ const SHORT_BASELINE: BaselineBlock = {
     observations: 37,
     requiredWindows: REQUIRED_WINDOWS,
     requiredObservations: REQUIRED_OBSERVATIONS,
-    lookbackWindows: 168,
+    lookbackWindows: LOOKBACK_WINDOWS,
 };
 
+/**
+ * Newest first, and internally consistent with `makeBreaker()` below: the 09:00
+ * row is the hour STILL FILLING, so it carries no verdict — nothing has judged
+ * it — and the breaker's `lastEvaluatedWindow` is that hour, meaning the 08:00
+ * row is the one it judged and 'STEADY' is the verdict it got. A fixture with a
+ * verdict on the filling hour renders a Steady badge beside "not counted yet",
+ * a state the detector cannot produce.
+ */
 const WINDOWS: WindowRow[] = [
     {
         windowStart: '2026-09-01T09:00:00.000Z',
@@ -182,7 +218,7 @@ const WINDOWS: WindowRow[] = [
         orchestrateCalls: 0,
         toolNames: ['risk.read', 'evidence.read'],
         anomalous: false,
-        verdict: 'STEADY',
+        verdict: null,
     },
     {
         windowStart: '2026-09-01T08:00:00.000Z',
@@ -230,11 +266,50 @@ function makePayload(over: Partial<BreakerPayload> = {}): BreakerPayload {
         riskTier: 'HIGH',
         breaker: makeBreaker(),
         windows: WINDOWS,
+        // The newest ledger row IS the hour still filling — the ordinary state
+        // of a live agent, and the case the counted labels have to distinguish.
+        currentWindowStart: WINDOWS[0].windowStart,
+        // Nothing awaiting a verdict, which is what `lastEvaluatedWindow`
+        // pointing at the current hour means: this hour's judgement has landed,
+        // so the row it judged has joined the baseline and both complete rows
+        // are Counted. The awaiting-verdict state is exercised through
+        // `AWAITING_VERDICT` below.
+        pendingVerdictWindowStart: null,
         baseline: SHORT_BASELINE,
         windowsToTrip: 3,
         closeReasons: ['ACCEPTED_NEW_BASELINE', 'RESOLVED'],
         ...over,
     };
+}
+
+/**
+ * The state where the newest COMPLETE window has not been judged yet — which is
+ * every moment between an agent's window closing and its next authorized call.
+ * Internally consistent: the 08:00 row carries no verdict because none has been
+ * reached for it, and the latch still points at the hour before.
+ */
+const AWAITING_VERDICT: Partial<BreakerPayload> = {
+    windows: [WINDOWS[0], { ...WINDOWS[1], verdict: null }, WINDOWS[2]],
+    pendingVerdictWindowStart: WINDOWS[1].windowStart,
+    breaker: makeBreaker({
+        lastEvaluatedWindow: '2026-09-01T07',
+        lastVerdictAt: '2026-09-01T08:00:00.000Z',
+    }),
+};
+
+/**
+ * The ledger rows, newest first, with the row count pinned.
+ *
+ * The count is asserted HERE because every caller indexes into the result: a
+ * panel that dropped or reordered a row would otherwise change what `rows[1]`
+ * means and take the assertions with it.
+ */
+function ledgerRows(expected: number = WINDOWS.length): HTMLElement[] {
+    const rows = within(screen.getByTestId('agent-breaker-windows-table')).getAllByRole(
+        'listitem',
+    );
+    expect(rows).toHaveLength(expected);
+    return rows;
 }
 
 const TENANT_CTX = {
@@ -558,50 +633,71 @@ describe('the two close reasons are not two spellings of OK', () => {
     });
 });
 
-describe('the baseline block is a floor, not the detector population', () => {
-    it('scopes the count to the windows this panel actually counted', () => {
+describe('the baseline block reports the detector look-back, not the page', () => {
+    it('scopes the sentence to the look-back the payload advertises', () => {
         renderTab(makePayload());
 
+        // The count in the sentence is the look-back the `baseline` block
+        // declares — the same number the detector reads back over.
         const explain = screen.getByText(
-            fill(S('baselineExplainCounted'), { count: WINDOWS.length }),
+            fill(S('baselineExplainCounted'), { count: LOOKBACK_WINDOWS }),
         );
         expect(explain).toBeInTheDocument();
-        // The sentence has to name BOTH halves: which windows were counted,
-        // and that the figure is a lower bound on what the detector holds.
-        expect(explain.textContent).toMatch(/3 most recent windows/);
-        expect(explain.textContent).toMatch(/floor rather than its exact population/i);
+        // And NOT the ledger page beneath it, which is what the figure used to
+        // be counted over. Asserted through the same catalogue string with the
+        // other number substituted, so this cannot pass on a wording change.
+        expect(pageText()).not.toContain(
+            fill(S('baselineExplainCounted'), { count: WINDOWS.length }),
+        );
+
+        // The Fact tile beside it states the same number, from the same field.
+        // Two renderings of 168 on one card have to come from one source: a
+        // tile reading the page while the sentence reads the look-back is the
+        // original defect with a smaller blast radius. Only the POSITIVE here —
+        // `baselineLookbackValue` is "{count} windows", so the page-scoped
+        // negative would match `streakCount`'s "0 of 3 windows" and assert
+        // nothing about this tile at all.
+        expect(
+            screen.getByText(fill(S('baselineLookbackValue'), { count: LOOKBACK_WINDOWS })),
+        ).toBeInTheDocument();
     });
 
-    it('a short count is reported as a floor, never as proof the detector is short', () => {
+    it('reports a short count without scoping it to a page', () => {
         renderTab(makePayload());
 
-        expect(
-            screen.getByText(fill(S('baselineCountedShort'), { count: WINDOWS.length })),
-        ).toBeInTheDocument();
+        // Rendered with NO count parameter: the sentence is about the
+        // detector's figures now, and a page size has nothing to qualify.
+        expect(screen.getByText(S('baselineCountedShort'))).toBeInTheDocument();
         expect(screen.queryByText(S('baselineCountedEnough'))).not.toBeInTheDocument();
+        // NOT `not.toContain(fill(S('baselineCountedShort'), { count: 3 }))`.
+        // `fill` is a substitution, so on a value with no `{count}` it is the
+        // IDENTITY — that negative asserted the absence of the very sentence
+        // the line above requires to be present, and passed only while the
+        // catalogue still carried the placeholder. The page-scoping claim is
+        // pinned where it can actually be pinned: no number the panel could
+        // have taken off the ledger page appears in the sentence at all. That
+        // the CATALOGUE has dropped the placeholder is a separate assertion,
+        // in 'renders this lane's merged catalogue values' below, so this test
+        // stays a statement about the rendering.
+        const short = screen.getByText(S('baselineCountedShort'));
+        expect(short.textContent).not.toMatch(new RegExp(`\\b${WINDOWS.length}\\b`));
 
         // The retired copy, by its own words. It read "none is judged", which
-        // this panel cannot know — the count saturates at the returned page,
-        // so a short count here is consistent with a detector that has a
-        // baseline and is actively judging.
+        // the panel cannot know from arithmetic: judgement is lazy, so a
+        // sufficient count is what the NEXT verdict will find, not a verdict.
         expect(pageText()).not.toMatch(/none is judged/i);
     });
 
-    it('a cleared count claims only "at least this much", not the whole population', () => {
+    it('stops presenting the pair as progress once the threshold is met', () => {
         renderTab(
             makePayload({
                 baseline: { ...SHORT_BASELINE, windows: 30, observations: 900 },
             }),
         );
 
-        const enough = screen.getByText(S('baselineCountedEnough'));
-        expect(enough).toBeInTheDocument();
-        expect(enough.textContent).toMatch(/at least this much history/i);
-        expect(
-            screen.queryByText(fill(S('baselineCountedShort'), { count: WINDOWS.length })),
-        ).not.toBeInTheDocument();
+        expect(screen.getByText(S('baselineCountedEnough'))).toBeInTheDocument();
+        expect(screen.queryByText(S('baselineCountedShort'))).not.toBeInTheDocument();
 
-        // Past its threshold the pair stops presenting itself as progress —
         // "30 of 12" read as a progress bar long after it had stopped being one.
         expect(
             screen.getByText(fill(S('baselineMet'), { have: 30, required: REQUIRED_WINDOWS })),
@@ -609,6 +705,85 @@ describe('the baseline block is a floor, not the detector population', () => {
         expect(
             screen.queryByText(fill(S('baselineProgress'), { have: 30, required: REQUIRED_WINDOWS })),
         ).not.toBeInTheDocument();
+    });
+
+    it('does not present the hour still filling as counted', () => {
+        renderTab(makePayload());
+
+        const rows = ledgerRows();
+
+        // The complete windows still say Counted — without this the assertion
+        // below would pass on a panel that had simply stopped labelling rows.
+        expect(within(rows[1]).getByText(S('countedYes'))).toBeInTheDocument();
+        expect(within(rows[2]).getByText(S('countedYes'))).toBeInTheDocument();
+        // The filling hour does not, because the baseline figures above do not
+        // count it: labelling it Counted would leave an operator adding up one
+        // more counted row than the panel reports.
+        expect(within(rows[0]).queryByText(S('countedYes'))).not.toBeInTheDocument();
+        // It is still IN the ledger — the row exists and carries its activity.
+        expect(within(rows[0]).getByText(formatDateTime(WINDOWS[0].windowStart))).toBeInTheDocument();
+    });
+
+    it('does not present the window awaiting a verdict as counted', () => {
+        renderTab(makePayload(AWAITING_VERDICT));
+
+        const rows = ledgerRows();
+
+        // The oldest row is Counted, and it is the positive companion: without
+        // it the negative below would pass on a panel that had simply stopped
+        // labelling rows at all.
+        expect(within(rows[2]).getByText(S('countedYes'))).toBeInTheDocument();
+        // The newest COMPLETE row is not, because it is the row the detector
+        // judges next and no window is part of the baseline it is judged
+        // against. Counting it is what let the panel report "12 of 12" at
+        // exactly `MIN_BASELINE_WINDOWS` while the detector's next verdict was
+        // NO_BASELINE.
+        expect(within(rows[1]).queryByText(S('countedYes'))).not.toBeInTheDocument();
+        // Still in the ledger, and still carrying the badge for a window
+        // nothing has judged — the two halves of the row agree.
+        expect(
+            within(rows[1]).getByText(formatDateTime(WINDOWS[1].windowStart)),
+        ).toBeInTheDocument();
+        expect(within(rows[1]).getByText(S('verdictPending'))).toBeInTheDocument();
+    });
+
+    it('labels the whole ledger from the catalogue, not from a raw key path', () => {
+        // RED until this lane's `messages/en.json` values are merged, and that
+        // is the point of it. `countedPending` and `countedAwaitingVerdict` are
+        // new keys reached through an exhaustive switch of literal `t('…')`
+        // calls, so `tests/guards/i18n-keys-resolve.test.ts` names them too —
+        // but a guard over `src` cannot see whether the ROW an operator reads
+        // ends up as a sentence or as `admin.agentDetail.breaker.countedPending`.
+        // This is that check, at the rendering.
+        renderTab(makePayload(AWAITING_VERDICT));
+
+        const rawKeyPaths = within(screen.getByTestId('agent-breaker-windows-table'))
+            .queryAllByText(/agentDetail\.breaker\./)
+            .map((el) => el.textContent);
+
+        expect(rawKeyPaths).toEqual([]);
+    });
+
+    it('renders this lane\'s merged catalogue values, not the stale ones', () => {
+        // RED until the same merge, for the two VALUE changes the component
+        // now depends on. Collected rather than asserted one by one, so a
+        // single run names everything the catalogue is still missing instead of
+        // stopping at the first line.
+        const stale: string[] = [];
+        if (/\{count\}/.test(S('baselineCountedShort'))) {
+            stale.push(
+                'baselineCountedShort still carries {count} — the component passes no ' +
+                    'count, so next-intl leaves the placeholder on screen for the operator',
+            );
+        }
+        if (/floor rather than its exact population/i.test(S('baselineExplainCounted'))) {
+            stale.push(
+                'baselineExplainCounted still hedges the figures as a floor — they are ' +
+                    "the detector's own population now, and the hedge was the fix's premise",
+            );
+        }
+
+        expect(stale).toEqual([]);
     });
 });
 

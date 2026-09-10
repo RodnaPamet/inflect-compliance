@@ -43,6 +43,8 @@ import {
     MIN_BASELINE_OBSERVATIONS,
     MIN_BASELINE_WINDOWS,
     WINDOWS_TO_TRIP,
+    windowKeyFor,
+    windowStartFor,
     type BreakerCloseReason,
 } from '@/lib/agentic/circuit-breaker';
 import { recordAgentBreakerClose } from '@/lib/observability/integration-metrics';
@@ -91,27 +93,131 @@ export async function getAgentCircuitBreaker(ctx: RequestContext, agentId: strin
             },
         });
 
-        const windows = await db.agentBehaviourWindow.findMany({
-            where: { tenantId: ctx.tenantId, agentId },
-            orderBy: { windowStart: 'desc' },
-            take: WINDOW_PAGE,
-            select: {
-                windowStart: true,
-                readCalls: true,
-                proposeCalls: true,
-                orchestrateCalls: true,
-                toolNames: true,
-                anomalous: true,
-                verdict: true,
-            },
-        });
+        // One clock read, shared by the look-back bound and the
+        // already-judged test below. Reading `new Date()` twice could straddle
+        // an hour boundary and produce a payload whose figures and whose row
+        // labels disagree about which hour is which.
+        const now = new Date();
+        // The window still filling is EXCLUDED from the baseline figures below,
+        // for the reason `evaluateWindow` excludes it: a partial hour is not a
+        // sample, and counting one would let this panel report "12 of 12
+        // windows" — an operator's cue that the agent is being judged — an hour
+        // before the detector agrees. It stays IN the ledger page, which is the
+        // agent's activity as it happened; `currentWindowStart` travels with it
+        // so the client can say which row that is rather than re-deriving the
+        // hour boundary from a clock this server has already read.
+        const currentWindowStart = windowStartFor(now);
 
+        const [windows, lookback] = await Promise.all([
+            db.agentBehaviourWindow.findMany({
+                where: { tenantId: ctx.tenantId, agentId },
+                orderBy: { windowStart: 'desc' },
+                take: WINDOW_PAGE,
+                select: {
+                    windowStart: true,
+                    readCalls: true,
+                    proposeCalls: true,
+                    orchestrateCalls: true,
+                    toolNames: true,
+                    anomalous: true,
+                    verdict: true,
+                },
+            }),
+            // The baseline figures are read over the DETECTOR'S OWN LOOK-BACK,
+            // not over the page above. Filtering the page was the defect this
+            // query replaces: `WINDOW_PAGE` is how many rows the ledger table
+            // shows, so the reported baseline saturated at 48 and never moved
+            // again while the payload advertised a 168-window look-back beside
+            // it — a surface stating a lookback it had not performed.
+            //
+            // Same predicate and the same bound as `evaluateWindow`'s baseline
+            // read (circuit-breaker-store.ts): windows since the epoch, newest
+            // first, `BASELINE_WINDOW_LIMIT + 1` rows. The `+ 1` is not slack —
+            // it is the row the detector JUDGES, which is never part of the
+            // baseline it is judged against (`rows.slice(1)` there). Taking 168
+            // and counting all of them would count a 168-row window shifted one
+            // row off the detector's, and at exactly `MIN_BASELINE_WINDOWS`
+            // that one row is the difference between this panel saying the
+            // detector has a baseline and the detector answering NO_BASELINE.
+            //
+            // Rows rather than `count` + `aggregate`, and deliberately: the cap
+            // is a ROW cap on the newest windows, not a predicate. A
+            // `count({ where: { anomalous: false }, take: BASELINE_WINDOW_LIMIT })`
+            // counts up to 168 ACCEPTED rows, so on any agent with an anomalous
+            // window in range it reaches further back than the detector ever
+            // reads and reports history the verdict was not judged against —
+            // the same class of error as the page filter, pointing the other
+            // way. The detector takes the newest rows and drops the anomalous
+            // ones AFTERWARDS, so this does too. Bounded at 168 four-column
+            // rows, which is why reading them is affordable.
+            db.agentBehaviourWindow.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    agentId,
+                    // A `gte: undefined` would read as "no lower bound" through
+                    // Prisma's undefined-stripping, which is right here but only
+                    // by accident; spelled out, because an epoch that silently
+                    // stopped applying would re-admit history a re-baseline
+                    // discarded.
+                    windowStart:
+                        breaker === null
+                            ? { lt: currentWindowStart }
+                            : { gte: breaker.baselineEpoch, lt: currentWindowStart },
+                },
+                orderBy: { windowStart: 'desc' },
+                take: BASELINE_WINDOW_LIMIT + 1,
+                select: {
+                    windowStart: true,
+                    readCalls: true,
+                    proposeCalls: true,
+                    orchestrateCalls: true,
+                    anomalous: true,
+                },
+            }),
+        ]);
+
+        // One bounded query per READ, not per agent: this usecase serves a
+        // single agent's detail panel and has no `map` over agents. If these
+        // figures are ever wanted for a LIST, this must become one aggregate
+        // for every agent in the shared `Promise.all` — the shape
+        // `loadToolGrantCounts` in `agent-coverage.ts` exists to hold — because
+        // a per-agent read inside that loop is the N+1 that surface is built to
+        // avoid.
+
+        // Has this hour's judgement already happened? `evaluateWindow` runs at
+        // most once per window and refuses on exactly this test
+        // (`latch.lastEvaluatedWindow === currentKey`), so it is the test that
+        // says which row is the SUBJECT of the next verdict:
+        //
+        //   • not yet judged this hour — the next evaluation lands in this hour,
+        //     judges `lookback[0]` and reads `lookback[1..]` as its baseline;
+        //   • already judged this hour — nothing more happens until the hour
+        //     turns, and by then `lookback[0]` has joined the baseline (the row
+        //     `observeToolCall` wrote for the hour still filling becomes the
+        //     newest complete one, and is what gets judged instead).
+        //
+        // Both readings are the detector's baseline AS IT STANDS, which is the
+        // question this panel answers. Excluding `lookback[0]` unconditionally
+        // would understate an actively-judged agent by one window and, worse,
+        // print "awaiting its verdict" on a ledger row already showing the
+        // verdict it got.
+        const judgementPending =
+            breaker === null || breaker.lastEvaluatedWindow !== windowKeyFor(now);
+        // Which ledger row that is, for the client's label. `null` once the
+        // hour's verdict has landed — there is then no row awaiting one.
+        const pendingVerdictWindowStart = judgementPending
+            ? (lookback[0]?.windowStart ?? null)
+            : null;
         // Counted over the ACCEPTED history only — the same population the
         // detector judges against — so the surface's "12 of 12 windows" agrees
-        // with the verdict rather than with a bigger, friendlier number.
-        const accepted = windows.filter(
-            (w) => !w.anomalous && (breaker === null || w.windowStart >= breaker.baselineEpoch),
-        );
+        // with the verdict rather than with a bigger, friendlier number. The
+        // anomalous drop happens AFTER the row slice, in that order, because
+        // that is the order `evaluateWindow` + `evaluateCircuitBreaker` apply
+        // them: the cap is a row cap, and filtering first would reach further
+        // back than the detector ever reads.
+        const accepted = (
+            judgementPending ? lookback.slice(1) : lookback.slice(0, BASELINE_WINDOW_LIMIT)
+        ).filter((w) => !w.anomalous);
 
         return {
             agentId: agent.id,
@@ -124,6 +230,13 @@ export async function getAgentCircuitBreaker(ctx: RequestContext, agentId: strin
             // against.
             breaker,
             windows,
+            /** Which ledger row is the hour still filling. See above. */
+            currentWindowStart,
+            /**
+             * Which ledger row is awaiting a verdict, and so is NOT in the
+             * figures below. `null` when this hour's verdict has already landed.
+             */
+            pendingVerdictWindowStart,
             baseline: {
                 windows: accepted.length,
                 observations: accepted.reduce(

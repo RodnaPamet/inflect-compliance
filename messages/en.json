@@ -5069,13 +5069,15 @@
         "closeErrorNotOpen": "This breaker is not open — someone else closed it, or it never tripped. Nothing was recorded against your name and the panel has been refreshed.",
         "closeErrorForbidden": "Closing a breaker needs workspace-administrator rights, not only agent-register access.",
         "closeErrorGeneric": "The circuit breaker could not be closed.",
-        "baselineExplainCounted": "Counted over the {count} most recent windows listed below — anomalous windows and anything recorded before the epoch are excluded, the same exclusions the detector applies. This is not the detector's whole look-back, so read these figures as a floor rather than its exact population.",
-        "baselineCountedEnough": "The windows counted here already clear both thresholds, so the detector has at least this much history to judge against.",
-        "baselineCountedShort": "The windows counted here do not clear both thresholds. This panel counts only the {count} most recent windows, so a short count here is a floor rather than proof the detector is short — its own last verdict is the authority on that.",
+        "baselineExplainCounted": "Counted over the detector's own look-back — the {count} windows it reads back over since the epoch, with the anomalous ones, the hour still filling and the window awaiting its verdict excluded, exactly as the detector excludes them. These are its figures, not a sample of them.",
+        "baselineCountedEnough": "These figures clear both thresholds, so the detector has enough accepted history to judge against. Whether it has judged with it is a separate question — the posture above is the last verdict it actually reached, and nothing re-reads these figures on a schedule.",
+        "baselineCountedShort": "These figures do not clear both thresholds, and the detector will not judge until they do. A no-baseline verdict is that refusal, not an all-clear.",
         "baselineMet": "{have} — threshold of {required} met",
         "windowCalls": "{read} read · {propose} propose · {orchestrate} orchestrate",
         "windowTools": "Tools: {tools}",
-        "windowNoTools": "No tool names recorded"
+        "windowNoTools": "No tool names recorded",
+        "countedPending": "Not counted yet — still filling",
+        "countedAwaitingVerdict": "Not counted — awaiting its verdict"
       }
     },
     "mcp": {
