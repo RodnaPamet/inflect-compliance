@@ -333,6 +333,15 @@ describe('a read-only agent that starts proposing latches OPEN, and a human clos
         // above happened to leave behind.
         const anomalous = view.windows.filter((w) => w.anomalous).length;
         expect(anomalous).toBe(2);
+        // Why the equality below survives the newest-window exclusion, spelled
+        // out because it is not luck. The fixture drives `evaluateWindow` with
+        // a clock in 2026-09-01 while the panel reads the real one, so as far
+        // as this payload is concerned the current hour has NOT been judged and
+        // the newest row is the subject of the next verdict — excluded from the
+        // figures. It is also the anomalous window that tripped the breaker, so
+        // it was already excluded, and the two exclusions overlap exactly.
+        expect(view.pendingVerdictWindowStart).toEqual(view.windows[0].windowStart);
+        expect(view.windows[0].anomalous).toBe(true);
         expect(view.baseline.windows).toBe(view.windows.length - anomalous);
         expect(view.baseline.windows).toBeGreaterThanOrEqual(view.baseline.requiredWindows);
     });

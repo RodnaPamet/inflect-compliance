@@ -42,7 +42,13 @@ export interface AgentRow {
     provenance: string;
     riskTier: string | null;
     isLegacyPlaceholder: boolean;
-    owner: { id: string; name: string | null } | null;
+    /**
+     * The accountable human. `RegisteredAgent.ownerUserId` is NOT NULL behind a
+     * real FK, so a register row always HAS one; `name` is the nullable half
+     * and `email` is what the column falls back to when nobody set a display
+     * name. Both are read — see the Agent column's cell.
+     */
+    owner: { id: string; name: string | null; email: string | null } | null;
     aiSystem: { id: string; riskTier: string; classificationClauseId: string | null } | null;
     _count: { apiKeys: number };
 }
@@ -146,10 +152,36 @@ function AgentsInner({ initialRows, tenantSlug, owners, vendors, canWrite }: Pro
                             <div className="truncate font-medium text-content-default">
                                 {row.original.name}
                             </div>
+                            {/* Name, then EMAIL, then "Name not recorded" —
+                                never "Unassigned". `ownerUserId` is NOT NULL
+                                behind a real FK (the schema calls it "the
+                                accountable human", and the two-person rule
+                                downstream compares it); only `User.name` is
+                                nullable. So the fallback is reachable ONLY for
+                                an owner who is on record with no display name,
+                                and the register — the surface whose whole job
+                                is to answer "who is accountable for this
+                                agent" — was answering "nobody" about somebody
+                                the database is holding. The email rung comes
+                                first because an address is something a reader
+                                can act on.
+
+                                The last rung reaches across to the DETAIL
+                                page's own key rather than minting a second
+                                string in `agentRegistry`, and that is
+                                deliberate: the two surfaces answer one
+                                question about one agent, and #2380 was them
+                                answering it differently. One key is the only
+                                arrangement in which they cannot drift apart
+                                again. `agentRegistry.noOwner` — "Unassigned" —
+                                is what this rendered before, and nothing
+                                should render it again. */}
                             <div className="truncate text-xs text-content-subtle">
                                 {row.original.isLegacyPlaceholder
                                     ? t('agentRegistry.legacyPlaceholder')
-                                    : (row.original.owner?.name ?? t('agentRegistry.noOwner'))}
+                                    : (row.original.owner?.name ??
+                                       row.original.owner?.email ??
+                                       t('agentDetail.overview.ownerEmpty'))}
                             </div>
                         </div>
                     ),

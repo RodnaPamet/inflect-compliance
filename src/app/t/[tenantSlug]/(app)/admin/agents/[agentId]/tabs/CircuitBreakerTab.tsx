@@ -129,6 +129,22 @@ interface BreakerPayload {
     /** NULL means never observed. See the header — it is not `CLOSED`. */
     breaker: BreakerRow | null;
     windows: WindowRow[];
+    /**
+     * The hour still filling, from the server's clock. The newest ledger row
+     * may be it, and that row is NOT in the baseline figures — see
+     * `countedStanding`. Read from the payload rather than computed here: a
+     * client clock that disagreed with the server's by a second would label the
+     * wrong row.
+     */
+    currentWindowStart: string;
+    /**
+     * The complete window awaiting a verdict, which is the SUBJECT of the next
+     * judgement and so is not part of the baseline it will be judged against.
+     * `null` once this hour's verdict has landed — the row has joined the
+     * baseline by then and the server says so rather than making this client
+     * re-derive it from a latch pointer.
+     */
+    pendingVerdictWindowStart: string | null;
     baseline: BaselineBlock;
     windowsToTrip: number;
     /** The vocabulary, from the server that owns it. Never re-typed here. */
@@ -160,10 +176,11 @@ function posture(breaker: BreakerRow | null): Posture {
     // congratulating the operator on the click they just made.
     if (breaker.lastVerdict === 'TRIP') return 'closedAfterTrip';
     // The DETECTOR's own answer about whether it has a baseline, not this
-    // panel's arithmetic. `baseline.windows` is counted over the 48 windows
-    // the route returns while the detector reads back over 168, so deriving
-    // this split from the count would report an agent the detector is actively
-    // judging as "not judging anything yet".
+    // panel's arithmetic. The count now covers the detector's whole look-back,
+    // but judgement is LAZY — it happens on the agent's next active window, not
+    // on a schedule — so an agent can have accumulated a sufficient history
+    // hours before anything re-reads it. Deriving the split from the count
+    // would announce a verdict the detector has not reached.
     if (breaker.lastVerdict === null || breaker.lastVerdict === 'NO_BASELINE') {
         return 'learning';
     }
@@ -227,12 +244,14 @@ export function CircuitBreakerTab({
     const breaker = data?.breaker ?? null;
     const baseline = data?.baseline;
     /**
-     * Whether the windows THIS PANEL COUNTS clear both thresholds — which is a
-     * floor on the detector's own population, not a copy of it (see
-     * `baselineExplainCounted`). It drives the Observability card's summary
-     * sentence and nothing else; `posture()` deliberately no longer reads it.
+     * Whether the baseline clears both thresholds. These are now the detector's
+     * own figures — its look-back, its exclusions — so this is what it will
+     * find when it next judges, not a floor under it. It still drives only the
+     * Observability card's summary sentence: `posture()` reads the stored
+     * verdict instead, because judgement is lazy and this arithmetic runs on
+     * every render.
      */
-    const countedClearsThresholds =
+    const baselineClearsThresholds =
         baseline !== undefined &&
         baseline.windows >= baseline.requiredWindows &&
         baseline.observations >= baseline.requiredObservations;
@@ -546,16 +565,19 @@ export function CircuitBreakerTab({
 
             <Card density="compact" className="space-y-default">
                 <Heading level={2}>{t('agentDetail.breaker.baselineHeading')}</Heading>
-                {/* The count is scoped OUT LOUD, because it is not the
-                    detector's population and the previous copy said it was.
-                    `accepted` is filtered from the same 48-row page the route
-                    returns, while the detector reads back over
-                    `BASELINE_WINDOW_LIMIT` (168) — so for any agent past 48
-                    windows these figures are a floor, and the honest sentence
-                    is the one that says which windows were counted. */}
+                {/* The look-back, not the page. The figures are counted over
+                    the same windows the detector reads — `BASELINE_WINDOW_LIMIT`
+                    since the epoch, with the anomalous ones, the hour still
+                    filling and the window awaiting its verdict excluded, in
+                    that order — so the copy no longer hedges them as a floor.
+                    That hedge was there because the count came off the 48-row
+                    page below and saturated there. `lookbackWindows` is the
+                    server's constant, never `data.windows.length`: the ledger
+                    page is how many rows this table shows and says nothing
+                    about how far back the detector looked. */}
                 <p className="text-sm text-content-muted">
                     {t('agentDetail.breaker.baselineExplainCounted', {
-                        count: data.windows.length,
+                        count: baseline.lookbackWindows,
                     })}
                 </p>
                 <dl className="flex flex-wrap gap-default">
@@ -588,18 +610,18 @@ export function CircuitBreakerTab({
                         })}
                     />
                 </dl>
-                {/* Scoped to the counted windows for the same reason. The old
-                    copy read "none is judged", which this panel cannot know:
-                    the count is capped at the returned page, so a short count
-                    here is consistent with a detector that has a baseline and
-                    is judging. The breaker's own last verdict, above, is the
-                    authority on that — this sentence only reports arithmetic. */}
+                {/* States the detector's position now, because the figures are
+                    its own — the population `evaluateWindow` would read this
+                    instant, judged row excluded. Still the arithmetic and not
+                    the verdict: judgement is LAZY, so both sentences say what
+                    the history supports and point at the posture card above for
+                    what the detector last actually decided. Without that
+                    pointer a sufficient count sits beside a "not judging
+                    anything yet" badge with nothing explaining the pair. */}
                 <p className="text-sm text-content-default">
-                    {countedClearsThresholds
+                    {baselineClearsThresholds
                         ? t('agentDetail.breaker.baselineCountedEnough')
-                        : t('agentDetail.breaker.baselineCountedShort', {
-                              count: data.windows.length,
-                          })}
+                        : t('agentDetail.breaker.baselineCountedShort')}
                 </p>
             </Card>
 
@@ -663,7 +685,15 @@ export function CircuitBreakerTab({
                                         after-the-fact consequence of
                                         ACCEPTED_NEW_BASELINE. */}
                                     <span className="ml-auto whitespace-nowrap text-content-muted">
-                                        {t(countedKey(w, baselineEpoch))}
+                                        {countedLabel(
+                                            countedStanding(w, baselineEpoch, {
+                                                currentWindowStart:
+                                                    data.currentWindowStart,
+                                                pendingVerdictWindowStart:
+                                                    data.pendingVerdictWindowStart,
+                                            }),
+                                            t,
+                                        )}
                                     </span>
                                     <span className="basis-full text-content-muted">
                                         {t('agentDetail.breaker.windowCalls', {
@@ -828,22 +858,74 @@ function verdictTone(code: string | null): StatusBadgeVariant {
     return 'neutral';
 }
 
-/** Which i18n key states this window's standing in the baseline. */
-function countedKey(row: WindowRow, baselineEpoch: string | null): string {
-    if (row.anomalous) return 'agentDetail.breaker.countedAnomalous';
+/** Where one ledger row stands in the baseline the figures above report. */
+type CountedStanding = 'filling' | 'anomalous' | 'preEpoch' | 'awaitingVerdict' | 'counted';
+
+/**
+ * Which of those five a row is, as a discriminant rather than an i18n key.
+ *
+ * Split from the rendering deliberately. `tests/guards/i18n-keys-resolve.test.ts`
+ * scans LITERAL `t('…')` calls, and its own header names non-literal lookups as
+ * the hole a rendered test has to cover instead; a `t(countedKey(row))` that
+ * returned the key put all five operator-facing labels in that hole, where a
+ * key that never merged renders its own dotted path in the ledger with every
+ * i18n check green. `countedLabel` spells the five out, so the guard sees them.
+ */
+function countedStanding(
+    row: WindowRow,
+    baselineEpoch: string | null,
+    boundaries: { currentWindowStart: string; pendingVerdictWindowStart: string | null },
+): CountedStanding {
+    // Checked FIRST, and it is the reason this argument exists: the hour still
+    // filling is in the ledger but not in the figures above, and labelling it
+    // "Counted" would leave an operator adding up one more counted row than the
+    // panel reports. A partial hour is never anomalous — nothing has judged it
+    // — so the order below could not surface this state on its own. The
+    // compare is lexicographic for the reason given below: both sides are
+    // ISO-8601 out of the same JSON encoder.
+    if (row.windowStart >= boundaries.currentWindowStart) return 'filling';
+    if (row.anomalous) return 'anomalous';
     // Two ISO-8601 strings produced by the same JSON encoder, so the
     // lexicographic compare IS the chronological one. Parsing both to `Date`
     // would buy nothing and add a timezone to reason about.
     if (baselineEpoch !== null && row.windowStart < baselineEpoch) {
-        return 'agentDetail.breaker.countedPreEpoch';
+        return 'preEpoch';
     }
-    return 'agentDetail.breaker.countedYes';
+    // Last, because the three above are STANDING exclusions and this one is
+    // transient. The newest complete window is the subject of the next verdict,
+    // and no window is part of the baseline it is judged against
+    // (`rows.slice(1)` in `evaluateWindow`) — it joins the baseline the moment
+    // that verdict lands, which is when the server stops naming it. Unreachable
+    // for a pre-epoch row by construction: the server's look-back is bounded
+    // below by the epoch, so the row it names is never one of those.
+    if (row.windowStart === boundaries.pendingVerdictWindowStart) return 'awaitingVerdict';
+    return 'counted';
+}
+
+/**
+ * The five labels, as five literal keys. See `countedStanding` — the literals
+ * are the point, and the exhaustive switch is what makes adding a sixth
+ * standing without a label a type error rather than a blank cell.
+ */
+function countedLabel(standing: CountedStanding, t: Translate): string {
+    switch (standing) {
+        case 'filling':
+            return t('agentDetail.breaker.countedPending');
+        case 'anomalous':
+            return t('agentDetail.breaker.countedAnomalous');
+        case 'preEpoch':
+            return t('agentDetail.breaker.countedPreEpoch');
+        case 'awaitingVerdict':
+            return t('agentDetail.breaker.countedAwaitingVerdict');
+        case 'counted':
+            return t('agentDetail.breaker.countedYes');
+    }
 }
 
 /**
  * A count against its threshold — and deliberately NOT as a progress pair once
- * the threshold is met. `have` saturates at the page the route returns (48)
- * while `required` is 12, so "48 of 12" went on presenting itself as a progress
+ * the threshold is met. `have` now runs to the whole look-back (168 windows)
+ * while `required` is 12, so "168 of 12" would present itself as a progress
  * reading long after it had stopped being one.
  */
 function progressValue(have: number, required: number, t: Translate): string {

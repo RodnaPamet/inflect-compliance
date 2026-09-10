@@ -4457,7 +4457,6 @@
       "unscored": "Unscored",
       "unscoredHint": "No tier has been assessed. Read it as deny, not as low.",
       "autonomyOf": "{level} of {max}",
-      "noOwner": "Unassigned",
       "legacyPlaceholder": "Placeholder for pre-register activity",
       "emptyTitle": "No agents registered",
       "emptyDesc": "Register the autonomous agents that act inside this tenant. Nothing is enforced until an agent is ACTIVE and a credential is bound to it.",
@@ -4585,16 +4584,16 @@
         "createdLabel": "Registered",
         "scoredLabel": "Risk tier last scored",
         "scoredNever": "Never assessed",
-        "credentialsLabel": "Bound credentials",
-        "credentialsValue": "{count, plural, one {# API key (revoked and expired included)} other {# API keys (revoked and expired included)}}",
+        "credentialsLabel": "Live credentials",
+        "credentialsValue": "{count, plural, one {# live API key} other {# live API keys}}",
         "descriptionLabel": "Description",
         "descriptionEmpty": "Not recorded",
         "availabilityHeading": "Availability",
         "stateBody": {
-          "DRAFT": "This agent has never been put into service. If this workspace requires registered agents, its credentials are refused at registration until someone activates it.",
-          "ACTIVE": "This agent's credentials are accepted at registration. If this workspace requires registered agents, suspending it refuses them from the next request onward.",
-          "SUSPENDED": "This agent is suspended in the register. If this workspace requires registered agents, its credentials are refused at registration; if that requirement is off, the register records the suspension but does not stop them. It stays in the register and can be activated again.",
-          "RETIRED": "This agent is retired. The register keeps its record and the authority it held; activating it would put it back into service."
+          "DRAFT": "This agent has never been put into service. Its credentials are refused at registration until someone activates it.",
+          "ACTIVE": "This agent's credentials are accepted at registration. Suspending it refuses them from the next request onward.",
+          "SUSPENDED": "This agent is suspended in the register, so its credentials are refused at registration. It stays in the register and can be activated again.",
+          "RETIRED": "This agent is retired, so its credentials are refused at registration. The register keeps its record and the authority it held; activating it would put it back into service."
         },
         "activateAction": "Activate agent",
         "activatedToast": "Agent activated.",
@@ -4602,8 +4601,8 @@
         "suspendAction": "Suspend agent",
         "suspendTitle": "Suspend this agent",
         "suspendPrompt": "Suspension is reversible, and the register keeps the record of it.",
-        "suspendScope": "The agent's tool calls are refused at the boundary from its next call onward, and its autonomy ceiling, its policy card and its stop controls apply again. If this workspace requires registered agents, its credentials are also refused at registration. Reading the framework catalogue is not refused, and neither is anything the key's own scope allows outside the agent surface. A run already under way is not affected.",
-        "suspendCredentials": "{count, plural, one {# API key is bound to this agent. The count includes any already revoked or expired, so it is not a count of what is still live.} other {# API keys are bound to this agent. The count includes any already revoked or expired, so it is not a count of what is still live.}}",
+        "suspendScope": "The agent's credentials are refused at the next registration request. A run already under way is not affected.",
+        "suspendCredentials": "{count, plural, one {# API key bound to this agent is live — neither revoked nor expired.} other {# API keys bound to this agent are live — neither revoked nor expired.}}",
         "suspendConfirm": "Suspend agent",
         "suspendedToast": "Agent suspended.",
         "suspendError": "The agent could not be suspended.",
@@ -4618,12 +4617,19 @@
         "forbiddenTitle": "Agent register access required",
         "forbiddenBody": "You do not have permission to read this agent's register entry. Contact your workspace administrator to request access.",
         "retry": "Try again",
-        "credentialsNone": "None bound",
-        "suspendCredentialsNone": "No API keys are bound to this agent, so suspending it changes nothing that runs today",
+        "credentialsNone": "None live",
+        "suspendCredentialsNone": "No API key bound to this agent is still live, so suspending it changes nothing that runs today",
         "notFoundTitle": "This agent is no longer in the register",
         "notFoundBody": "The register answered, and it holds no entry with this id. It was most likely removed after this page opened. Reload to see the register as it stands.",
         "staleTitle": "Showing the last successful read",
-        "staleBody": "The register could not be re-read just now, so these figures may be out of date. They refresh on the next successful read."
+        "staleBody": "The register could not be re-read just now, so these figures may be out of date. They refresh on the next successful read.",
+        "suspendScopeUnenforced": "This workspace does not require registered agents, so the agent's credentials are still accepted at registration — but a suspended agent is refused every tool call at the boundary, and its granted tools, its autonomy ceiling, its policy card and its stop controls apply again. Reading the framework catalogue is not refused, and neither is anything the key's own scope allows outside the agent surface. A run already under way is not affected.",
+        "stateBodyUnenforced": {
+          "DRAFT": "This agent has never been put into service. This workspace does not require registered agents, so a credential bound to it is accepted anyway — and because the agent is not active it never resolves at the tool boundary, so its granted tools, its autonomy ceiling and its policy card do not apply to that credential.",
+          "ACTIVE": "This agent's credentials are accepted at registration. This workspace does not require registered agents, so they would be accepted whatever the register said about this agent — but while it is active, its granted tools, its autonomy ceiling and its policy card do apply to them at the tool boundary.",
+          "SUSPENDED": "This agent is suspended in the register. This workspace does not require registered agents, so its credentials are still accepted at registration — but while it is suspended every tool call is refused at the boundary, and its granted tools, its autonomy ceiling, its policy card and its stop controls apply again. It can still read the framework catalogue. It stays in the register and can be activated again.",
+          "RETIRED": "This agent is retired. This workspace does not require registered agents, so retirement does not refuse a credential bound to it — and it stops applying this agent's granted tools, autonomy ceiling and policy card to that credential. The register keeps its record and the authority it held."
+        }
       },
       "risk": {
         "standingHeading": "Standing assessment",
@@ -4796,8 +4802,17 @@
           "DATA_SCOPE_ABOVE_CARD": "It becomes exercisable at {requires}, which the agent's registered data scope has to allow first."
         },
         "unexercisableIntro": "This card permits tools its own ceilings refuse on every call, so saving is refused until each one is settled.",
-        "ceilingsElsewhereHint": "Two ceilings that bound this card are set elsewhere and cannot be shown here: the assessed tier's autonomy cap, and the agent's registered data scope. Saving is refused if the card would sit above the tier's autonomy cap, or if this edit raises the data scope above what the agent is registered for. Either refusal names the numbers.",
-        "historyWindowEdge": "The versions before this one are not listed, so this row shows what it declares rather than what it moved."
+        "historyWindowEdge": "The versions before this one are not listed, so this row shows what it declares rather than what it moved.",
+        "withheldNowTitle": "{count, plural, one {1 granted tool is withheld} other {# granted tools are withheld}}",
+        "withheldNowIntro": "The grant stands and nothing is revoked, but every call to these tools is refused meanwhile. A withheld tool is a disagreement between the grant and the agent's own declarations, and what would settle it depends on the ceiling it ran into.",
+        "versionActorLabel": "Written by",
+        "autonomyCapHint": "This agent's assessed risk tier ({tier}) caps autonomy at L{cap}, so no rung above it is offered: the tool boundary clamps every call to that cap, whatever the card says.",
+        "dataScopeCapHint": "This agent is registered as reaching {scope}. The card narrows that declaration and cannot widen past it, so no rung above it is offered — raise the agent's data-access scope first, which re-scores it on the spot.",
+        "aboveTierCapTitle": "This card reaches above the tier's autonomy cap",
+        "aboveTierCapBody": "The card declares L{card} and this agent's assessed risk tier ({tier}) caps autonomy at L{cap} — a re-assessment lowered the cap, and a stored version is never rewritten. Every call is already clamped to the cap, so narrowing the card here makes it say what is actually enforced. Every other change stays open meanwhile.",
+        "aboveTierCapUnscoredBody": "The card declares L{card} and this agent has not been risk-assessed, so its tier permits no autonomy at all and every call is already refused. Complete the risk assessment, or narrow the card to say what is actually enforced.",
+        "aboveDeclaredScopeTitle": "This card reaches past the data scope this agent is registered for",
+        "aboveDeclaredScopeBody": "The card reaches {card} and this agent is registered as reaching {scope} — the register was narrowed after this version was written, and a stored version is never rewritten. Nothing clamps this one: the tool boundary reads the card's rung and never the register's, so the wider reach is live on every call. Narrow the card to {scope}, or raise the agent's registered data-access scope if the wider reach is intended. Every other change stays open meanwhile."
       },
       "tools": {
         "heading": "Granted tools",
@@ -5069,13 +5084,15 @@
         "closeErrorNotOpen": "This breaker is not open — someone else closed it, or it never tripped. Nothing was recorded against your name and the panel has been refreshed.",
         "closeErrorForbidden": "Closing a breaker needs workspace-administrator rights, not only agent-register access.",
         "closeErrorGeneric": "The circuit breaker could not be closed.",
-        "baselineExplainCounted": "Counted over the {count} most recent windows listed below — anomalous windows and anything recorded before the epoch are excluded, the same exclusions the detector applies. This is not the detector's whole look-back, so read these figures as a floor rather than its exact population.",
-        "baselineCountedEnough": "The windows counted here already clear both thresholds, so the detector has at least this much history to judge against.",
-        "baselineCountedShort": "The windows counted here do not clear both thresholds. This panel counts only the {count} most recent windows, so a short count here is a floor rather than proof the detector is short — its own last verdict is the authority on that.",
+        "baselineExplainCounted": "Counted over the detector's own look-back — the {count} windows it reads back over since the epoch, with the anomalous ones, the hour still filling and the window awaiting its verdict excluded, exactly as the detector excludes them. These are its figures, not a sample of them.",
+        "baselineCountedEnough": "These figures clear both thresholds, so the detector has enough accepted history to judge against. Whether it has judged with it is a separate question — the posture above is the last verdict it actually reached, and nothing re-reads these figures on a schedule.",
+        "baselineCountedShort": "These figures do not clear both thresholds, and the detector will not judge until they do. A no-baseline verdict is that refusal, not an all-clear.",
         "baselineMet": "{have} — threshold of {required} met",
         "windowCalls": "{read} read · {propose} propose · {orchestrate} orchestrate",
         "windowTools": "Tools: {tools}",
-        "windowNoTools": "No tool names recorded"
+        "windowNoTools": "No tool names recorded",
+        "countedPending": "Not counted yet — still filling",
+        "countedAwaitingVerdict": "Not counted — awaiting its verdict"
       }
     },
     "mcp": {

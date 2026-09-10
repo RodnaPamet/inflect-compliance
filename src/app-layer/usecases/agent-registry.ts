@@ -38,6 +38,7 @@ import { logEvent } from '../events/audit';
 import { RegisteredAgentRepository } from '../repositories/RegisteredAgentRepository';
 import { reassessAgentAfterChangeInTx } from './agent-risk-assessment';
 import { ceilingForRiskTier, DENY_CEILING } from '@/lib/agentic/autonomy-ceiling';
+import { isAgentRegistrationEnforced } from '@/lib/agentic/agent-registration-gate';
 import { authorAiSystemEntry } from './ai-system';
 import { assertOwnerInTenant } from './vendor-link-targets';
 import {
@@ -123,13 +124,39 @@ export async function listRegisteredAgents(
     return runInTenantContext(ctx, (db) => RegisteredAgentRepository.list(db, ctx, options));
 }
 
+/**
+ * One agent, plus the tenant-wide fact that decides what its status MEANS.
+ *
+ * `registrationEnforced` is not a property of the agent and is returned with it
+ * anyway, because every sentence a surface can write about a suspended agent is
+ * conditional on it: `evaluateAgentRegistration` refuses a non-ACTIVE agent only
+ * when `requireRegisteredAgent` is on, so in a tenant that has switched the
+ * register off, suspending records the state and stops nothing. Without this the
+ * detail page could only hedge — "if this workspace requires registered agents,
+ * …" on every claim — and a hedge is what an operator reads during an incident.
+ *
+ * It cannot be fetched by the client instead: `GET /admin/security-settings` is
+ * gated on `admin.manage`, while this page only guarantees
+ * `admin.agent_registry`, so the fetch would 403 for exactly the operators who
+ * live on this tab.
+ *
+ * Read through the module-level `prisma` rather than the tenant-bound `db`, and
+ * OUTSIDE the tenant transaction — the same way `agent-coverage` reads it for
+ * the ASI02 applicability gate. It is one tenant-wide boolean keyed by
+ * `ctx.tenantId`, not a row this agent's read is entitled to and another's is
+ * not, so joining the same fan-out is what it costs.
+ */
 export async function getRegisteredAgent(ctx: RequestContext, id: string) {
     assertCanRead(ctx);
-    const agent = await runInTenantContext(ctx, (db) =>
-        RegisteredAgentRepository.getById(db, ctx, id),
-    );
+    const [agent, registrationEnforced] = await Promise.all([
+        runInTenantContext(ctx, (db) => RegisteredAgentRepository.getById(db, ctx, id)),
+        isAgentRegistrationEnforced(ctx.tenantId),
+    ]);
+    // AFTER the pair resolves, not before the flag read is started: a 404 pays
+    // for one extra settings lookup, and the alternative — awaiting the agent
+    // first — makes every successful read a second round trip.
     if (!agent) throw notFound('Registered agent not found');
-    return agent;
+    return { ...agent, registrationEnforced };
 }
 
 export async function createRegisteredAgent(ctx: RequestContext, input: unknown) {

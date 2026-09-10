@@ -18,16 +18,30 @@
  * every absence has a positive companion from the same render so that a
  * component rendering nothing at all cannot pass.
  *
- * ## The withheld preview is a ONE-SHOT disclosure
+ * ## The withheld disclosure is made for as long as it is TRUE
  *
- * `wouldWithhold` is only ever on the no-card payload. Once the card exists the
- * grant is still standing and still unexercisable, and nothing on this surface
- * says so again — so the seed preview is the single moment the operator is told
- * which grants the card will not carry and why. The remedy is asserted PER
- * REASON because the reasons do not share one: `NOT_IN_CATALOGUE` is a stale
- * grant left behind by a deploy and no ceiling raise ever permits it, so copy
- * that sends the operator up the ladder for it would widen a live agent's reach
- * over a tool that does not exist.
+ * It used to be one-shot: `wouldWithhold` is only on the no-card payload, so
+ * once the card existed the grant went on standing and going on being refused
+ * on every call with nothing on this surface saying so again. The card branch
+ * now carries `withheld` — the same shape, evaluated by the server against the
+ * version in force — and the two are asserted as a PAIR below: present when
+ * there are withheld grants, absent when there are none, because a panel
+ * announcing "0 tools are withheld" on every healthy agent is noise and an
+ * empty list on the unreadable-head branch would be a false claim.
+ *
+ * The remedy is asserted PER REASON because the reasons do not share one:
+ * `NOT_IN_CATALOGUE` is a stale grant left behind by a deploy and no ceiling
+ * raise ever permits it, so copy that sends the operator up the ladder for it
+ * would widen a live agent's reach over a tool that does not exist.
+ *
+ * ## The two ceilings set ELSEWHERE are pre-empted on the controls
+ *
+ * `riskTier` and `dataAccessScope` are on both payload branches, so the editor
+ * caps its autonomy and data ladders at what the PUT would accept instead of
+ * offering a rung whose refusal is an English sentence rendered verbatim into a
+ * Bulgarian UI. The cap never removes a rung the card already holds: a card
+ * above the tier cap is reached by a re-assessment, and hiding those rungs
+ * would hide the operator's own declaration and the narrowing that repairs it.
  *
  * ## `assessmentRequired` is a REFUSAL, not a warning
  *
@@ -105,7 +119,12 @@ jest.mock('@/lib/tenant-context-provider', () => ({
     useTenantHref: () => (path: string) => `/t/acme${path}`,
 }));
 
-import { POLICY_CARD_RULES, type PolicyDataScope } from '@/lib/agentic/policy-card';
+import { ceilingForRiskTier } from '@/lib/agentic/autonomy-ceiling';
+import {
+    POLICY_CARD_RULES,
+    dataScopeWithinCard,
+    type PolicyDataScope,
+} from '@/lib/agentic/policy-card';
 import {
     seedPolicyCardValue,
     withholdingReasonForTool,
@@ -188,6 +207,7 @@ interface VersionRow {
     seeded: boolean;
     seededFromTier: string | null;
     createdByUserId: string | null;
+    createdByName: string | null;
     createdAt: string;
 }
 
@@ -209,7 +229,11 @@ const V1: VersionRow = {
     approvalRung: 'SECOND_APPROVER',
     seeded: true,
     seededFromTier: 'MODERATE',
+    // The seeding version nobody signed — `createdByUserId` is null on it, so
+    // there is no actor to name and the row must say nothing rather than
+    // inventing one. Its pair is V2 below.
     createdByUserId: null,
+    createdByName: null,
     createdAt: '2026-09-01T10:00:00.000Z',
 };
 
@@ -221,6 +245,9 @@ const V2: VersionRow = {
     seeded: false,
     seededFromTier: null,
     createdByUserId: 'user-1',
+    // Resolved server-side. The cuid above is deliberately still on the row and
+    // deliberately never rendered — a raw id on a compliance surface is noise.
+    createdByName: 'Ada Lovelace',
     createdAt: '2026-09-02T11:30:00.000Z',
 };
 
@@ -232,7 +259,24 @@ const V3: VersionRow = {
     createdAt: '2026-09-03T12:45:00.000Z',
 };
 
-function cardPayload(overrides: { versions?: VersionRow[]; head?: Partial<Record<string, unknown>> } = {}) {
+/**
+ * The card branch.
+ *
+ * The default tier and declared scope are the ones that leave v3 exactly one
+ * rung of room on both capped ladders (MODERATE caps autonomy at 3, v3 sits at
+ * 2; the register declares WRITE_TENANT_DATA, v3 sits at READ_TENANT_DATA), so
+ * the one-rung block below measures the ladder rule and not a ceiling. The
+ * blocks that measure the ceilings override them.
+ */
+function cardPayload(
+    overrides: {
+        versions?: VersionRow[];
+        head?: Partial<Record<string, unknown>>;
+        riskTier?: string | null;
+        dataAccessScope?: PolicyDataScope;
+        withheld?: WithheldTool[] | null;
+    } = {},
+) {
     const versions = overrides.versions ?? [V3, V2, V1];
     return {
         agentId: 'agent-1',
@@ -247,7 +291,10 @@ function cardPayload(overrides: { versions?: VersionRow[]; head?: Partial<Record
             inForce: versions.find((v) => v.version === 3) ?? null,
             ...overrides.head,
         },
+        riskTier: overrides.riskTier === undefined ? 'MODERATE' : overrides.riskTier,
+        dataAccessScope: overrides.dataAccessScope ?? ('WRITE_TENANT_DATA' as PolicyDataScope),
         versions,
+        withheld: overrides.withheld === undefined ? [] : overrides.withheld,
         assessmentRequired: false as const,
     };
 }
@@ -275,10 +322,26 @@ const UNSCORED_SEED = seedPolicyCardValue({
     grantedTools: ['list_risks', 'propose_risks'],
 });
 
+/**
+ * Granted tools the card IN FORCE refuses, built by the real predicate against
+ * v3 rather than typed by hand — the server evaluates the same function, so a
+ * hand-written fixture could describe a disclosure the product cannot produce.
+ * Two different reasons, because the remedy is per reason.
+ */
+const STANDING_WITHHELD: WithheldTool[] = ['propose_risks', 'export_audit_pack']
+    .map((tool) => withholdingReasonForTool(tool, V3))
+    .filter((withheld): withheld is WithheldTool => withheld !== null);
+
 function noCardPayload(seed = SCORED_SEED, assessmentRequired = false) {
     return {
         agentId: 'agent-1',
         card: null,
+        // The same two declarations the seed above was built from, so the
+        // fixture cannot describe one agent's preview beside another's tier.
+        riskTier: assessmentRequired ? null : 'CRITICAL',
+        dataAccessScope: (assessmentRequired
+            ? 'READ_TENANT_DATA'
+            : 'READ_METADATA') as PolicyDataScope,
         wouldSeed: seed.value,
         wouldWithhold: seed.withheld,
         assessmentRequired,
@@ -337,6 +400,33 @@ function pickRung(groupId: string, value: string): void {
     const rung = document.querySelector<HTMLButtonElement>(`#${groupId} [value="${value}"]`);
     if (!rung) throw new Error(`${groupId} does not offer rung ${value}`);
     fireEvent.click(rung);
+}
+
+/**
+ * One of the editor's two drift notices, by the axis it is about.
+ *
+ * Addressed by ID and not by its copy, deliberately. The keys these notices
+ * render are not in `messages/en.json` yet, and next-intl renders a missing key
+ * AS ITS OWN DOTTED PATH — so an assertion written against that path would be
+ * satisfied by the very absence it is meant to be insensitive to, and would go
+ * red the moment the catalogue landed. `s()` throwing on an unresolved key is
+ * what keeps that mistake out of this file; an id is the handle that survives
+ * the merge unchanged.
+ */
+function driftNotice(axis: 'tier-cap' | 'declared-scope'): HTMLElement | null {
+    const el = document.getElementById(`agent-policy-card-above-${axis}`);
+    return el instanceof HTMLElement ? el : null;
+}
+
+/**
+ * The `<FormField>` description under one ladder — the "no rung above it is
+ * offered" hint. `FormField` derives that id from the control's own id and
+ * wires it into the control's `aria-describedby`, so this is the element a
+ * screen reader reads out WITH the control rather than a class-name guess.
+ */
+function ladderHint(groupId: string): HTMLElement | null {
+    const el = document.getElementById(`${groupId}-description`);
+    return el instanceof HTMLElement ? el : null;
 }
 
 function box(id: string): HTMLButtonElement {
@@ -514,19 +604,75 @@ describe('the withheld preview — the one chance the operator gets', () => {
         expect(withheldRow('propose_risks').textContent ?? '').toMatch(/becomes exercisable/i);
     });
 
-    it('says nothing about withheld grants once the card exists — the disclosure is one-shot', () => {
+    it('goes on naming the withheld grants once the card exists', () => {
+        // The fact does not expire with the preview: the grant still stands and
+        // the tool is still refused on every call. Before `withheld` was on the
+        // card branch it survived only in the creation audit row.
+        expect(STANDING_WITHHELD.map((w) => w.reason)).toEqual([
+            'DATA_SCOPE_ABOVE_CARD',
+            'NOT_IN_CATALOGUE',
+        ]);
+
+        renderTab(cardPayload({ withheld: STANDING_WITHHELD }));
+
+        for (const tool of STANDING_WITHHELD) {
+            const row = withheldRow(tool.toolName);
+            expect(row).toHaveTextContent(
+                interp(nested('withheldReason', tool.reason), {
+                    requires: tool.requires,
+                    permits: tool.permits,
+                }),
+            );
+            expect(row).toHaveTextContent(
+                interp(nested('withheldRemedy', tool.reason), { requires: tool.requires }),
+            );
+        }
+    });
+
+    it('says nothing when the card withholds nothing, and nothing when it cannot be judged', () => {
+        // The pair for the test above, and the reason it is a pair: a notice
+        // reading "0 tools are withheld" on every healthy agent is noise, and
+        // the same silence must hold for `null` — the version in force could
+        // not be read, so there is no card to evaluate grants against and an
+        // empty list would be a claim rather than an absence.
+        for (const withheld of [[], null]) {
+            const { unmount } = renderTab(cardPayload({ withheld }));
+
+            // Positive companion: the card branch demonstrably rendered.
+            expect(screen.getByText(s('heading'))).toBeInTheDocument();
+            expect(screen.getByText(s('historyHeading'))).toBeInTheDocument();
+
+            for (const reason of Object.keys(EN.withheldReason as Record<string, string>)) {
+                expect(
+                    screen.queryByText(stem(nested('withheldReason', reason)), { exact: false }),
+                ).not.toBeInTheDocument();
+            }
+            unmount();
+        }
+    });
+});
+
+describe('the version trail names who wrote each version', () => {
+    it('renders the resolved display name, and never the raw id', () => {
         renderTab(cardPayload());
 
-        // Positive companion first: the card branch demonstrably rendered.
-        expect(screen.getByText(s('heading'))).toBeInTheDocument();
-        expect(screen.getByText(s('historyHeading'))).toBeInTheDocument();
+        // The NAME, not the label beside it. The name is data the server
+        // resolved and the label is copy; asserting the copy here would be
+        // asserting the catalogue, which the withheld and badge blocks above
+        // already do where the copy IS the thing under test.
+        expect(versionRow('v2')).toHaveTextContent('Ada Lovelace');
+        // The cuid is ON the row and must not reach the operator — a raw id
+        // beside a timestamp reads as a defect rather than as evidence.
+        expect(V2.createdByUserId).toBe('user-1');
+        expect(versionRow('v2')).not.toHaveTextContent('user-1');
 
-        expect(screen.queryByText(s('withheldIntro'))).not.toBeInTheDocument();
-        for (const reason of Object.keys(EN.withheldReason as Record<string, string>)) {
-            expect(
-                screen.queryByText(stem(nested('withheldReason', reason)), { exact: false }),
-            ).not.toBeInTheDocument();
-        }
+        // The pair: v1 is the seeded version with no actor at all, so its row
+        // says nothing about one while still rendering everything else.
+        expect(V1.createdByName).toBeNull();
+        expect(versionRow('v1')).not.toHaveTextContent('Ada Lovelace');
+        expect(versionRow('v1')).toHaveTextContent(
+            interp(s('seededFromBadge'), { tier: 'MODERATE' }),
+        );
     });
 });
 
@@ -683,11 +829,22 @@ describe('the one-rung rule is enforced on the controls, not only at the save', 
             expect(rungs(group).filter((r) => r.disabled)).toEqual([]);
         }
 
-        // The form also says out loud what it CANNOT pre-empt — the tier's
-        // autonomy cap and the agent's registered data scope are not on this
-        // payload, so those refusals arrive as 400s. A control that refuses
-        // without warning is read as a bug; one that warned is read as a rule.
-        expect(screen.getByText(s('ceilingsElsewhereHint'))).toBeInTheDocument();
+        // The form no longer SAYS it cannot see the two ceilings set elsewhere,
+        // because it can: `riskTier` and `dataAccessScope` are on the payload
+        // and the ladders above are already clipped to them (the ceiling block
+        // below measures that). The retired copy claimed the opposite, in a
+        // sentence an operator would have read as the rule.
+        //
+        // It is NOT asserted absent by its own text. `ceilingsElsewhereHint` is
+        // an orphan the integrator deletes with the catalogue merge, and `s()`
+        // THROWS on a key that is not there — so an assertion naming it would
+        // pass today and take this file red the moment the key it is about goes
+        // away. The retirement is measured by what stands in its place instead:
+        // the clipped ladders above, and the two drift notices whose gating the
+        // ceiling block below pins.
+        expect(V3.maxAutonomyLevel).toBeLessThanOrEqual(ceilingForRiskTier('MODERATE'));
+        expect(driftNotice('tier-cap')).toBeNull();
+        expect(driftNotice('declared-scope')).toBeNull();
 
         // An edit that moves nothing cannot be saved, and says so.
         expect(screen.getByText(s('unchangedHint'))).toBeInTheDocument();
@@ -768,6 +925,213 @@ describe('the one-rung rule is enforced on the controls, not only at the save', 
         expect(withholdingReasonForTool('list_controls', V3)).toBeNull();
         expect(box('agent-policy-card-tool-list_controls')).toBeEnabled();
         expect(box('agent-policy-card-tool-list_risks')).toBeChecked();
+    });
+});
+
+describe('the ceilings set elsewhere are pre-empted on the controls', () => {
+    it("offers no autonomy rung above the assessed tier's cap", () => {
+        // HIGH caps autonomy at 2 and v3 sits at 2, so the rung the one-rung
+        // rule would offer is exactly the one the PUT refuses. It is not
+        // rendered disabled — it is not rendered.
+        expect(ceilingForRiskTier('HIGH')).toBe(2);
+        renderTab(cardPayload({ riskTier: 'HIGH' }));
+        openEditor();
+
+        expect(offered('agent-policy-card-autonomy')).toEqual(['0', '1', '2']);
+        // The companion, from the same render: the dimension with room to spare
+        // still offers its one rung above, so the clipping is per ceiling and
+        // not a form that stopped offering widenings.
+        expect(offered('agent-policy-card-data-scope')).toEqual([
+            'NONE',
+            'READ_METADATA',
+            'READ_TENANT_DATA',
+            'WRITE_TENANT_DATA',
+        ]);
+        // And the budgets, which no ceiling bounds, are untouched.
+        expect(offered('agent-policy-card-per-day')).toEqual([
+            '0',
+            '1',
+            '5',
+            '10',
+            '25',
+            '50',
+        ]);
+    });
+
+    it("offers no data rung above the agent's registered scope", () => {
+        // The register declares READ_TENANT_DATA and v3 stops there, so
+        // WRITE_TENANT_DATA is a raise past the declaration — refused by the
+        // PUT, and now never offered.
+        renderTab(cardPayload({ dataAccessScope: 'READ_TENANT_DATA' }));
+        openEditor();
+
+        expect(offered('agent-policy-card-data-scope')).toEqual([
+            'NONE',
+            'READ_METADATA',
+            'READ_TENANT_DATA',
+        ]);
+        expect(offered('agent-policy-card-autonomy')).toEqual(['0', '1', '2', '3']);
+    });
+
+    it('an UNSCORED agent can only narrow autonomy, and the other ladders still work', () => {
+        // `ceilingForRiskTier(null)` is DENY_CEILING, which is not a rung of
+        // the ladder at all — so nothing above the base is offered, which is
+        // the fail direction the whole subsystem takes for an unassessed agent.
+        renderTab(cardPayload({ riskTier: null }));
+        openEditor();
+
+        expect(offered('agent-policy-card-autonomy')).toEqual(['0', '1', '2']);
+        expect(offered('agent-policy-card-approval')).toEqual([
+            'SECOND_APPROVER',
+            'SINGLE_APPROVER',
+        ]);
+    });
+
+    /**
+     * ── THE HINT AND THE NOTICE ARE MUTUALLY EXCLUSIVE ──────────────
+     *
+     * `autonomyCapHint` and `dataScopeCapHint` both end in "so no rung above
+     * it is offered". On a card sitting ABOVE its bound that sentence is
+     * FALSE: the ladder deliberately keeps every rung the card holds, so the
+     * operator can see and narrow their own declaration, and rungs above the
+     * bound are on offer. A sentence under a control that states the opposite
+     * of the control is worse on a compliance surface than no sentence — it is
+     * the one claim there an operator reads as the rule. So each hint renders
+     * only while its claim is true of the ladder beside it, and the drift
+     * notice takes its place on the renders where it is not.
+     *
+     * The three cases below are exhaustive over the gate: both bounds above
+     * the card, the autonomy bound under it, the data bound under it. The
+     * unscored case is a fourth, because `DENY_CEILING` is under every card.
+     *
+     * All of it asserted STRUCTURALLY — element ids, and `FormField`'s own aria
+     * wiring — never by copy. The keys are unmerged, and next-intl renders a
+     * missing key as its own dotted path, so a text assertion here would be
+     * measuring the catalogue's absence rather than the gate, and would invert
+     * the day the catalogue landed.
+     */
+    it('states the cap under the control only while the ladder obeys it', () => {
+        // MODERATE caps autonomy at 3 and v3 sits at 2; the register declares
+        // WRITE_TENANT_DATA and v3 sits at READ_TENANT_DATA. Both bounds are
+        // above the card, so both hints' claims hold.
+        expect(V3.maxAutonomyLevel).toBeLessThan(ceilingForRiskTier('MODERATE'));
+        expect(dataScopeWithinCard(V3.maxDataScope, 'WRITE_TENANT_DATA')).toBe(true);
+        renderTab(cardPayload());
+        openEditor();
+
+        expect(ladderHint('agent-policy-card-autonomy')).not.toBeNull();
+        expect(ladderHint('agent-policy-card-data-scope')).not.toBeNull();
+        // Announced WITH the control rather than merely near it.
+        expect(
+            document
+                .getElementById('agent-policy-card-autonomy')
+                ?.getAttribute('aria-describedby'),
+        ).toContain('agent-policy-card-autonomy-description');
+
+        // And what each hint claims is true of this render: the top rung on
+        // offer IS the bound, so nothing above it is offered.
+        expect(offered('agent-policy-card-autonomy').at(-1)).toBe(
+            String(ceilingForRiskTier('MODERATE')),
+        );
+        expect(offered('agent-policy-card-data-scope').at(-1)).toBe('WRITE_TENANT_DATA');
+        expect(driftNotice('tier-cap')).toBeNull();
+        expect(driftNotice('declared-scope')).toBeNull();
+
+        // The companion, from the same render: the dimensions no ceiling bounds
+        // carry no hint at all, so the two above are a per-ceiling statement
+        // and not a description hung on every field.
+        expect(ladderHint('agent-policy-card-per-day')).toBeNull();
+        expect(ladderHint('agent-policy-card-approval')).toBeNull();
+    });
+
+    it('drops the autonomy hint and warns instead once the card is above the cap', () => {
+        // CRITICAL caps autonomy at 1 while v3 declares 2, and rung 2 IS still
+        // offered — so "no rung above the cap is offered" would be false here.
+        expect(ceilingForRiskTier('CRITICAL')).toBe(1);
+        renderTab(cardPayload({ riskTier: 'CRITICAL' }));
+        openEditor();
+
+        expect(offered('agent-policy-card-autonomy')).toEqual(['0', '1', '2']);
+        expect(Number(offered('agent-policy-card-autonomy').at(-1))).toBeGreaterThan(
+            ceilingForRiskTier('CRITICAL'),
+        );
+        expect(ladderHint('agent-policy-card-autonomy')).toBeNull();
+        expect(driftNotice('tier-cap')).not.toBeNull();
+
+        // Per AXIS, not per form: the data ladder is still inside its
+        // declaration on this fixture, so its hint stands and its notice does
+        // not. A gate that keyed off "any drift" would fail here.
+        expect(ladderHint('agent-policy-card-data-scope')).not.toBeNull();
+        expect(driftNotice('declared-scope')).toBeNull();
+    });
+
+    it('warns about the reach past the declaration — the drift nothing else clamps', () => {
+        // The register was narrowed to READ_METADATA after v3 was written.
+        // Unlike the tier cap, NOTHING at the tool boundary clamps this one —
+        // `dataAccessScope` is read when a card is seeded and never again — so
+        // the wider reach is live until somebody settles it here.
+        expect(dataScopeWithinCard(V3.maxDataScope, 'READ_METADATA')).toBe(false);
+        renderTab(cardPayload({ dataAccessScope: 'READ_METADATA' }));
+        openEditor();
+
+        expect(driftNotice('declared-scope')).not.toBeNull();
+        expect(ladderHint('agent-policy-card-data-scope')).toBeNull();
+        // Every rung the card holds is still offered, which is what makes the
+        // repair reachable from the notice rather than only describable.
+        expect(offered('agent-policy-card-data-scope')).toEqual([
+            'NONE',
+            'READ_METADATA',
+            'READ_TENANT_DATA',
+        ]);
+        // Both moves are narrowings, so neither spends the one widening: drop
+        // the tool the lower rung would strand, then land on the declaration.
+        fireEvent.click(box('agent-policy-card-tool-list_risks'));
+        pickRung('agent-policy-card-data-scope', 'READ_METADATA');
+        expect(box('agent-policy-card-save-btn')).toBeEnabled();
+
+        // And the other axis is untouched: MODERATE's cap is still above the
+        // card, so autonomy keeps its hint and grows no notice.
+        expect(driftNotice('tier-cap')).toBeNull();
+        expect(ladderHint('agent-policy-card-autonomy')).not.toBeNull();
+    });
+
+    it('an UNSCORED agent gets the notice, and no hint that has to name a cap', () => {
+        // `DENY_CEILING` is -1: not a rung, and not a number to put in front of
+        // an operator. There is no cap to state, so the hint is absent rather
+        // than rendering one — and the notice speaks instead.
+        expect(ceilingForRiskTier(null)).toBe(-1);
+        renderTab(cardPayload({ riskTier: null }));
+        openEditor();
+
+        expect(ladderHint('agent-policy-card-autonomy')).toBeNull();
+        expect(driftNotice('tier-cap')).not.toBeNull();
+        // Narrow-only, and the data axis still carries its own hint — the
+        // positive companion that stops a dead form from passing.
+        expect(offered('agent-policy-card-autonomy')).toEqual(['0', '1', '2']);
+        expect(ladderHint('agent-policy-card-data-scope')).not.toBeNull();
+    });
+
+    it('a card ABOVE the cap keeps every rung it declares, and can be narrowed', () => {
+        // CRITICAL caps autonomy at 1 while v3 declares 2 — reachable by a
+        // re-assessment, since lowering the tier never rewrites a stored
+        // version. Clipping the ladder to the cap here would leave the radio
+        // group with no selected value: the operator could not see their own
+        // card, let alone bring it under the cap.
+        expect(ceilingForRiskTier('CRITICAL')).toBe(1);
+        expect(V3.maxAutonomyLevel).toBe(2);
+        renderTab(cardPayload({ riskTier: 'CRITICAL' }));
+        openEditor();
+
+        expect(offered('agent-policy-card-autonomy')).toEqual(['0', '1', '2']);
+
+        // And the repair is offered rather than fought: the save judges the
+        // MOVE, so narrowing onto the cap is a saveable edit.
+        expect(box('agent-policy-card-save-btn')).toBeDisabled(); // nothing moved yet
+        pickRung('agent-policy-card-autonomy', '1');
+        expect(box('agent-policy-card-save-btn')).toBeEnabled();
+        expect(
+            screen.queryByText(nested('ladderRefusal', 'MULTI_RUNG_WIDEN')),
+        ).not.toBeInTheDocument();
     });
 });
 

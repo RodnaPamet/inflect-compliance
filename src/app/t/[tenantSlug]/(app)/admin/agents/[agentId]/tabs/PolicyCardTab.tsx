@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
+// A TYPE import, which is erased — the same allowance `policy-card.ts` makes
+// for the enum it keeps its own ladder in step with. No Prisma VALUE crosses
+// into this bundle.
+import type { AgentRiskTier } from '@prisma/client';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -23,6 +27,7 @@ import { apiErrorMessage } from '@/lib/api-error';
 import { formatDate, formatDateTime } from '@/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import { ceilingForRiskTier } from '@/lib/agentic/autonomy-ceiling';
 import {
     ACTION_CAP_LADDER,
     APPROVAL_LADDER,
@@ -31,6 +36,7 @@ import {
     POLICY_CARD_RULES,
     checkLadderStep,
     comparePolicyCards,
+    dataScopeWithinCard,
     isActionCap,
     narrowApprovalRung,
     narrowEscalationTriggers,
@@ -82,21 +88,38 @@ import type { PolicyCardTabProps } from './types';
  * control that always 400s is worse than no control: the operator reads the
  * refusal as a bug in the product rather than as the rule it is.
  *
- * What the client CANNOT pre-empt is the tier's own autonomy cap and the
- * agent's registered data-access scope — neither is on this payload, and the
- * only honest source for both is the refusal. Those two arrive as 400s carrying
- * a sentence that names the numbers, and are rendered verbatim.
+ * The two ceilings set ELSEWHERE are pre-empted here too, and they are the
+ * reason the payload carries `riskTier` and `dataAccessScope` at all. The PUT
+ * refuses autonomy above `ceilingForRiskTier(riskTier)` and a data rung raised
+ * above the agent's registered scope; without those two fields this form
+ * offered both rungs and the operator met the rule as a 400 whose English
+ * sentence was rendered verbatim into a Bulgarian UI. `ceilingForRiskTier` is
+ * the SAME function the usecase refuses with — imported, not re-derived — and
+ * it carries no server imports for the same reason `policy-card.ts` does not.
  *
- * Because they cannot be pre-empted, the editor SAYS SO before the operator
- * spends an edit on them (`ceilingsElsewhereHint`). A control that always
- * refuses is worse than no control, and a control that refuses without warning
- * is read as a bug in the product; a control the surface has already admitted
- * it cannot see the ceiling for is read as the rule it is. The autonomy one is
- * the sharper of the two: the boundary judges the resulting VALUE rather than
- * the step, so a card left above a cap that was lowered by a re-assessment
- * refuses every edit — including ones that raise nothing — until autonomy comes
- * back under it. Both would become pre-emptable if the GET carried `riskTier`
- * and `dataAccessScope`; the tab cannot add them from here.
+ * A ceiling BELOW the version in force never removes a rung the card already
+ * holds. A card above the tier cap is an ordinary state (a re-assessment lowers
+ * the cap and no stored version is ever rewritten), narrowing is never refused,
+ * and a form that would not show the operator their own declaration is worse
+ * than one that shows a rung it cannot offer. So the ladder stops at the
+ * ceiling or at the base, whichever is higher.
+ *
+ * That leaves the drift itself to be said out loud, and it is said TWICE
+ * because the two axes are not the same fact: `aboveTierCapTitle` for a card
+ * over the tier's autonomy cap, `aboveDeclaredScopeTitle` for one reaching past
+ * the register's data declaration. The first reports a rung the boundary is
+ * already clamping; the second reports a reach the boundary HONOURS, which is
+ * the one that is live. Both replace the per-control hint on those renders
+ * rather than joining it — see the drift flags in `PolicyCardEditor`.
+ *
+ * ## Withheld grants are disclosed for as long as they are true
+ *
+ * `withheld` on the card branch is the grants the card IN FORCE does not
+ * permit, evaluated by the server against the version in force. It used to be
+ * answered once, on the seed preview, and the fact does not expire with the
+ * preview: the grant still stands and the tool is still refused on every call.
+ * The tab cannot compute it — grants live behind `admin.agent_tool_exposure`,
+ * a key this tab is not given — which is why it arrives on the payload.
  */
 
 /** `Date` fields arrive as ISO strings over JSON. */
@@ -125,11 +148,31 @@ interface PolicyCardVersionRow {
     seeded: boolean;
     seededFromTier: string | null;
     createdByUserId: string | null;
+    /**
+     * Whoever wrote this version, resolved server-side. NULL for a version
+     * nobody signed AND for an actor who has since left — the id is not a name
+     * in either case, and a raw cuid on a compliance surface is noise.
+     */
+    createdByName: string | null;
     createdAt: string;
 }
 
+/**
+ * The agent's own two declarations, on BOTH payload branches.
+ *
+ * They belong to the agent and not to the card, which is why they sit outside
+ * `card` and survive the `card === null` discrimination: what the tier permits
+ * and what the register declares is the same fact whether a card exists or not.
+ */
+interface AgentCeilings {
+    /** NULL is UNSCORED, and `ceilingForRiskTier` reads it as a deny. */
+    riskTier: AgentRiskTier | null;
+    /** The register's own data axis — the bound the card may narrow, never widen. */
+    dataAccessScope: PolicyDataScope;
+}
+
 /** No card yet: what creating one would write, and what it would withhold. */
-interface NoCardPayload {
+interface NoCardPayload extends AgentCeilings {
     agentId: string;
     card: null;
     wouldSeed: AgentPolicyCardValue;
@@ -142,10 +185,17 @@ interface NoCardPayload {
  * carries a version NUMBER rather than an FK, so a head naming a row that is
  * not there is representable, and the usecase refuses an edit in that state.
  */
-interface CardPayload {
+interface CardPayload extends AgentCeilings {
     agentId: string;
     card: PolicyCardHead & { inForce: PolicyCardVersionRow | null };
     versions: PolicyCardVersionRow[];
+    /**
+     * Granted tools the card in force does not permit. NULL — not `[]` — when
+     * the version in force could not be read: with no card to evaluate against,
+     * an empty list would say "nothing is withheld" about a card nobody can
+     * read. That state has its own error panel.
+     */
+    withheld: WithheldTool[] | null;
     assessmentRequired: false;
 }
 
@@ -448,6 +498,8 @@ export function PolicyCardTab({
                 <PolicyCardEditor
                     liveVersion={data.card.currentVersion}
                     liveCard={toCardValue(data.card.inForce)}
+                    riskTier={data.riskTier}
+                    declaredScope={data.dataAccessScope}
                     onSave={save}
                     onClose={() => setEditing(false)}
                 />
@@ -606,6 +658,31 @@ function InForcePanel({ payload, onEdit }: { payload: CardPayload; onEdit: () =>
                 </InlineNotice>
             ) : (
                 <CardDeclarations value={toCardValue(card.inForce)} />
+            )}
+
+            {/* Present tense, and a different sentence from the seed
+                preview's: `wouldWithhold` describes a card nobody has written
+                yet, and this describes grants that are being refused right now.
+                One key reading both ways would be wrong on one of the two
+                branches every time it rendered.
+
+                `null` is the unreadable-head state and says nothing here — the
+                panel above is already reporting it, and an empty list would
+                claim nothing is withheld. An empty ARRAY is the ordinary
+                healthy answer and also renders nothing: a notice saying "0
+                tools are withheld" is noise on every well-configured agent. */}
+            {payload.withheld !== null && payload.withheld.length > 0 && (
+                <InlineNotice
+                    variant="warning"
+                    title={t('agentDetail.policyCard.withheldNowTitle', {
+                        count: payload.withheld.length,
+                    })}
+                >
+                    <span className="block">
+                        {t('agentDetail.policyCard.withheldNowIntro')}
+                    </span>
+                    <WithheldToolList withheld={payload.withheld} />
+                </InlineNotice>
             )}
 
             <dl className="flex flex-wrap gap-default border-t border-border-subtle pt-3">
@@ -870,6 +947,25 @@ function VersionRow({
                 <span className="text-xs text-content-subtle">
                     {formatDateTime(version.createdAt)}
                 </span>
+                {/* Only when there is a NAME. `createdByUserId` resolves to
+                    nothing renderable on its own, and a raw cuid beside a
+                    timestamp on a compliance surface reads as a defect rather
+                    than as evidence; a version nobody signed and an actor who
+                    has left both arrive here as `null` and get silence.
+
+                    The name is rendered BESIDE the label rather than
+                    interpolated into it, because a person's name is DATA and
+                    the label is copy. Interpolating would make the one fact
+                    this row exists to carry depend on the catalogue — a missing
+                    or reworded entry would swallow the actor along with the
+                    word "by" — and it hands the name to a translator's message
+                    to reorder or decline. */}
+                {version.createdByName !== null && (
+                    <span className="text-xs text-content-subtle">
+                        {t('agentDetail.policyCard.versionActorLabel')}{' '}
+                        <span className="text-content-muted">{version.createdByName}</span>
+                    </span>
+                )}
             </div>
 
             {previous === undefined ? (
@@ -977,6 +1073,8 @@ function DeltaLine({
 function PolicyCardEditor({
     liveCard,
     liveVersion,
+    riskTier,
+    declaredScope,
     onSave,
     onClose,
 }: {
@@ -984,10 +1082,29 @@ function PolicyCardEditor({
     liveCard: AgentPolicyCardValue;
     /** The head AS THE PAYLOAD HAS IT NOW. Compared against the pin, never used as it. */
     liveVersion: number;
+    /**
+     * The AGENT's two bounds. Deliberately NOT pinned like the card below: they
+     * are not what this edit is composed against, and a re-assessment landing
+     * mid-edit should close a rung the save would now refuse rather than go on
+     * offering it from a stale copy.
+     */
+    riskTier: AgentRiskTier | null;
+    declaredScope: PolicyDataScope;
     onSave: (expectedVersion: number, card: AgentPolicyCardValue) => Promise<SaveOutcome>;
     onClose: () => void;
 }) {
     const t = useTranslations('admin');
+
+    /**
+     * The tier's autonomy cap, from the function the usecase refuses with —
+     * never a second copy of the per-tier numbers. An unscored agent resolves
+     * to `DENY_CEILING` (-1), which is not a rung of `AUTONOMY_LADDER` at all,
+     * so `LadderField` finds no ceiling rung and offers nothing above the base:
+     * the axis becomes narrow-only, which is the right answer for an agent
+     * nobody has assessed and falls out of the ladder arithmetic rather than
+     * needing a branch.
+     */
+    const tierCap = ceilingForRiskTier(riskTier);
 
     /**
      * The base this draft is composed against, PINNED when the form opened.
@@ -1014,6 +1131,49 @@ function PolicyCardEditor({
     const [pinned] = useState(() => ({ card: liveCard, version: liveVersion }));
     const base = pinned.card;
     const baseVersion = pinned.version;
+
+    /**
+     * ── THE TWO DRIFTS, AND WHY THE HINTS ARE GATED ON THEM ─────────
+     *
+     * A card can sit ABOVE either bound with nobody having edited it: a
+     * re-assessment lowers the tier cap, a narrowed register lowers the
+     * declaration, and no stored version is ever rewritten. `LadderField`
+     * deliberately keeps every rung such a card holds (see its docstring), so
+     * on THOSE renders rungs above the bound ARE offered — and the per-control
+     * hint, whose whole content is "no rung above it is offered", would be
+     * stating the opposite of the control directly underneath it. The hint
+     * describes what the ladder does, so it renders exactly when the ladder
+     * does it, and the drift gets a notice of its own instead. The two are
+     * mutually exclusive and between them exhaustive.
+     *
+     * The predicates are the ones the DRIFT REPORTER uses, not lookalikes:
+     * `agent-control-tests.ts` raises `AUTONOMY_ABOVE_TIER` on
+     * `head.maxAutonomyLevel > ceilingForRiskTier(tier)` and
+     * `DATA_SCOPE_ABOVE_DECLARATION` on
+     * `!dataScopeWithinCard(head.maxDataScope, declared)`. Spelling them the
+     * same way here is what keeps the editor from warning about a drift the
+     * control test does not see, or staying silent about one it does.
+     *
+     * An UNSCORED agent is ALWAYS the autonomy case, and is written into the
+     * condition rather than left to arithmetic: `ceilingForRiskTier(null)` is
+     * `DENY_CEILING` (-1), which no rung of the ladder is at or below, so there
+     * is no cap to name in a hint — only an assessment to complete.
+     *
+     * ## Two notices and not one key with a placeholder
+     *
+     * The axes are bounded by different terms and repaired differently.
+     * AUTONOMY is `min(key, agent.autonomyLevel, tierCap)` on every call
+     * (`resolveAutonomyCeiling`, applied in `authorize.ts` before the card is
+     * even read), so the boundary has ALREADY clamped the agent and the stale
+     * rung grants nothing — narrowing the card only makes it say what is
+     * enforced. DATA SCOPE has no term at the boundary at all: the register's
+     * `dataAccessScope` appears nowhere under `src/lib/mcp/`, and
+     * `evaluateCardReach` compares the CARD's rung — so the wider reach is
+     * LIVE, and this notice is the only place anybody is told. One sentence
+     * covering both would have to be false about one of them.
+     */
+    const autonomyAboveCap = riskTier === null || base.maxAutonomyLevel > tierCap;
+    const scopeAboveDeclaration = !dataScopeWithinCard(base.maxDataScope, declaredScope);
 
     const [draft, setDraft] = useState<AgentPolicyCardValue>(base);
     const [saving, setSaving] = useState(false);
@@ -1130,23 +1290,57 @@ function PolicyCardEditor({
                         <p className="text-xs text-content-subtle">
                             {t('agentDetail.policyCard.basedOn', { version: baseVersion })}
                         </p>
-                        {/* Said out loud because the controls cannot enforce it.
-                            Two ceilings that bound this card are not on this
-                            payload — the assessed tier's autonomy cap and the
-                            agent's registered data scope — so `LadderField`
-                            offers a rung the save then refuses, and for autonomy
-                            it can refuse an edit that raises nothing (that check
-                            judges the resulting VALUE, not the step, so a card
-                            left above a lowered cap is stuck until it comes back
-                            under). An operator who was not told reads that as a
-                            broken control; one who was reads it as the rule it
-                            is. Pre-empting it needs `riskTier` and
-                            `dataAccessScope` on this payload — see the tab
-                            docstring. */}
-                        <p className="text-xs text-content-subtle">
-                            {t('agentDetail.policyCard.ceilingsElsewhereHint')}
-                        </p>
                     </div>
+
+                    {/* The card declares more autonomy than the tier now
+                        permits. Not a refusal — the save judges the MOVE, so
+                        every narrowing on every axis still goes through — and
+                        not silence either: the boundary already clamps each
+                        call to the cap, so the rung on the card is a promise
+                        nothing keeps, and the operator is the only one who can
+                        bring the two back into agreement. The same drift is
+                        reported as AUTONOMY_ABOVE_TIER by the agentic control
+                        tests; this is where it can actually be fixed. */}
+                    {autonomyAboveCap && (
+                        <InlineNotice
+                            id="agent-policy-card-above-tier-cap"
+                            variant="warning"
+                            title={t('agentDetail.policyCard.aboveTierCapTitle')}
+                        >
+                            {riskTier === null
+                                ? t('agentDetail.policyCard.aboveTierCapUnscoredBody', {
+                                      card: base.maxAutonomyLevel,
+                                  })
+                                : t('agentDetail.policyCard.aboveTierCapBody', {
+                                      card: base.maxAutonomyLevel,
+                                      cap: tierCap,
+                                      tier: riskTier,
+                                  })}
+                        </InlineNotice>
+                    )}
+
+                    {/* The DANGEROUS drift, and the one nothing else stops.
+                        The autonomy notice above reports a rung the tool
+                        boundary is already clamping; this one reports a reach
+                        the boundary HONOURS, because `dataAccessScope` is read
+                        when a card is seeded and never again. So this is not a
+                        tidiness warning: until somebody narrows the card or
+                        raises the register, the agent is reaching further than
+                        the register says it does. `DATA_SCOPE_ABOVE_DECLARATION`
+                        in the agentic control tests finds the same state; this
+                        is where it can be settled. */}
+                    {scopeAboveDeclaration && (
+                        <InlineNotice
+                            id="agent-policy-card-above-declared-scope"
+                            variant="warning"
+                            title={t('agentDetail.policyCard.aboveDeclaredScopeTitle')}
+                        >
+                            {t('agentDetail.policyCard.aboveDeclaredScopeBody', {
+                                card: base.maxDataScope,
+                                scope: declaredScope,
+                            })}
+                        </InlineNotice>
+                    )}
 
                     {widenedDimension !== null && (
                         <InlineNotice variant="info">
@@ -1184,6 +1378,21 @@ function PolicyCardEditor({
                         ladder={DATA_SCOPE_LADDER}
                         base={base.maxDataScope}
                         value={draft.maxDataScope}
+                        // The register's own declaration. The save refuses a
+                        // RAISE past it and never the value, so a card already
+                        // above it keeps every rung it holds — see LadderField.
+                        ceiling={declaredScope}
+                        // Only while it is TRUE: the hint says no rung above
+                        // the declaration is offered, and on a card already
+                        // above it several are. That render gets the drift
+                        // notice above instead.
+                        description={
+                            scopeAboveDeclaration
+                                ? undefined
+                                : t('agentDetail.policyCard.dataScopeCapHint', {
+                                      scope: declaredScope,
+                                  })
+                        }
                         widenLocked={widenLockedFor('maxDataScope')}
                         onSelect={(raw) => {
                             const scope = DATA_SCOPE_LADDER.find((rung) => rung === raw);
@@ -1197,6 +1406,24 @@ function PolicyCardEditor({
                         ladder={AUTONOMY_LADDER}
                         base={base.maxAutonomyLevel}
                         value={draft.maxAutonomyLevel}
+                        ceiling={tierCap}
+                        // Same gate, same reason, and it also removes the need
+                        // for an unscored variant: `autonomyAboveCap` is true
+                        // for every unscored agent, so the notice above is the
+                        // only thing that speaks there and it has no cap to
+                        // name. A hint here would have had to invent one.
+                        // `riskTier === null` is spelled again rather than
+                        // relied on through `autonomyAboveCap`: it is what
+                        // NARROWS the prop for `{tier}`, so a hint can never
+                        // be handed a null tier to render.
+                        description={
+                            autonomyAboveCap || riskTier === null
+                                ? undefined
+                                : t('agentDetail.policyCard.autonomyCapHint', {
+                                      tier: riskTier,
+                                      cap: tierCap,
+                                  })
+                        }
                         widenLocked={widenLockedFor('maxAutonomyLevel')}
                         onSelect={(raw) => {
                             const level = AUTONOMY_LADDER.find((rung) => String(rung) === raw);
@@ -1382,6 +1609,22 @@ function toActionCap(raw: string): ActionCap | null {
  * Every rung at or below the version in force is offered — narrowing is never
  * refused — plus exactly ONE above it, which is disabled while another
  * dimension is already the widening this edit spends.
+ *
+ * ## A ceiling removes the rung above, and never one the card holds
+ *
+ * `ceiling` is a bound the SAVE enforces from state that is not the card: the
+ * assessed tier's autonomy cap, the register's declared data scope. Offering a
+ * rung past it renders a control that can only ever 400, and that 400 is an
+ * English sentence this UI would show verbatim in another language.
+ *
+ * It is applied to the ONE rung above the base and to nothing else, which is
+ * why the arithmetic takes a `max` with `baseRung`. A card sitting ABOVE its
+ * ceiling is an ordinary state — a re-assessment lowers the cap, a narrowed
+ * declaration lowers the scope, and no stored version is ever rewritten — and
+ * clipping the list to the ceiling there would take away rungs the card
+ * currently declares, leaving the radio group with no selected value and the
+ * operator unable to see their own card, let alone narrow it. Narrowing is the
+ * repair, and a control that hides the repair is worse than the drift.
  */
 function LadderField<T extends string | number>({
     id,
@@ -1389,6 +1632,8 @@ function LadderField<T extends string | number>({
     ladder,
     base,
     value,
+    ceiling,
+    description,
     widenLocked,
     onSelect,
 }: {
@@ -1397,17 +1642,28 @@ function LadderField<T extends string | number>({
     ladder: readonly T[];
     base: T;
     value: T;
+    /** A bound set outside the card. Omitted for the dimensions that have none. */
+    ceiling?: T | number;
+    /** Why the ladder stops where it does. Rendered under the control. */
+    description?: string;
     widenLocked: boolean;
     onSelect: (raw: string) => void;
 }) {
     // -1 is a stored value this build cannot rank, and `rungOf` reads it as the
     // lowest rung. So does this: nothing above the bottom is offered, which
     // leaves narrowing as the only move — the direction never refused.
-    const baseRung = (ladder as readonly (string | number)[]).indexOf(base);
-    const offered = ladder.slice(0, baseRung + 2);
+    const rungs = ladder as readonly (string | number)[];
+    const baseRung = rungs.indexOf(base);
+    // An absent ceiling is the top of the ladder — the identity of the clamp,
+    // not a clamp. An UNRANKABLE one (`DENY_CEILING` for an unscored tier, a
+    // declared scope from a newer build) sorts to -1 and so offers nothing
+    // above the base: the same direction `isWithinRung` takes for a ceiling it
+    // cannot rank, which is to refuse the widening rather than guess at it.
+    const ceilingRung = ceiling === undefined ? rungs.length - 1 : rungs.indexOf(ceiling);
+    const offered = ladder.slice(0, Math.max(baseRung, Math.min(baseRung + 1, ceilingRung)) + 1);
 
     return (
-        <FormField label={label}>
+        <FormField label={label} description={description}>
             <RadioGroup
                 id={id}
                 className="flex flex-wrap gap-default"
