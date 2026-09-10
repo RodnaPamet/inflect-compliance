@@ -159,20 +159,41 @@ export async function runCloudPostureCollection(input: CloudPostureCollectInput)
         // account, so clearing on it retracts a revoked-credential banner on no
         // evidence at all, and a still-revoked connection is declared healthy.
         //
-        // Note this is still the ONLY half of the story that is fixed.
-        // `markAuthFailure` remains unreachable for the posture collectors, and
-        // #2284 did not change that: the providers RETURN `{status:'ERROR'}`
-        // rather than throwing, so the catch above — the sole caller that
-        // raises the banner — is never entered.
+        // RAISING the banner is still the missing half — `markAuthFailure` is
+        // unreachable for the posture collectors, because the providers RETURN
+        // `{status:'ERROR'}` rather than throwing and the catch above is the
+        // sole caller. What has changed (#2252) is the reason it stays that
+        // way. The discriminator the issue said did not exist now DOES:
+        // `noControlObserved` in `cloud-posture/powerpipe-exit.ts` is true only
+        // when the run completed, parsed controls, and not one of them produced
+        // an observation, and both collectors now record it on the run — as
+        // `noControlObserved: true` in resultJson, beside a COUNTS-ONLY
+        // errorMessage. It reads no provider text, and a single `ok` or `alarm`
+        // anywhere proves the credential authenticated, so the "every candidate
+        // also fires on a healthy credential" objection does not apply to it.
         //
-        // What #2284 DID change is which runs reach ERROR at all. Exit 1
-        // ("one or more alarms") and exit 2 ("one or more control errors") are
-        // documented COMPLETED runs and are now parsed and scored, so the ERROR
-        // arm no longer swallows every real benchmark; it now means the
-        // collector did not complete the run. That makes the missing banner
-        // more visible, not less — it supplies no trigger. Designing one is
-        // #2252, still open: every candidate reviewed so far also fires on a
-        // healthy credential.
+        // The trigger is withheld for two reasons that are NOT that one:
+        //
+        //   1. `authFailedAt` / `authFailureReason` have NO READER anywhere in
+        //      the product — no component, job, policy or leaver gate reads
+        //      them; they are selected into the `GET /admin/integrations`
+        //      payload and rendered by nothing. So a trigger would raise
+        //      nothing an operator can see — while the only error class
+        //      `markAuthFailure` acts on, `IntegrationAuthError`, is also one
+        //      `shouldBypassQueueRetry` answers `true` for in the catch above.
+        //      The one visible effect would be the nightly collection silently
+        //      ceasing to retry.
+        //   2. A connection is scoped to exactly one subscription
+        //      (`AZURE_SUBSCRIPTION_ID`) or one project
+        //      (`CLOUDSDK_CORE_PROJECT`), with no fan-out, so a HEALTHY
+        //      credential that has simply lost read access to that one scope
+        //      also fails every control and is indistinguishable from a
+        //      rejection by breadth alone.
+        //
+        // Both are prerequisites, not objections to the shape. The fact is
+        // recorded on every run from here on, so whoever builds the reader —
+        // or a wider collection scope — inherits the evidence rather than
+        // having to reconstruct it.
         //
         // Deliberately NOT `status === 'PASSED'`: that clamp would strand the
         // banner on a healthy connection whose benchmark keeps reporting gaps.
