@@ -87,6 +87,25 @@ import {
 } from '@/app/t/[tenantSlug]/(app)/agent-proposals/AgentProposalsClient';
 import { computeProposalDiff } from '@/lib/agentic/proposal-diff';
 
+/**
+ * The agentic output guard's columns, held constant across this file's rows.
+ *
+ * Spread rather than repeated: every proposal below is here to exercise a DIFF
+ * status, and the guard verdict is not the variable under test — a scanned,
+ * clean proposal is the ordinary case. The guard's own renderings (flagged,
+ * clean, never-scanned) are pinned in
+ * `tests/rendered/agent-proposal-guard-verdict.test.tsx`.
+ *
+ * `guardInputDigest` is non-null on purpose: a null would make these rows read
+ * as pre-guard, which is a different claim and would put an extra notice on
+ * every card here.
+ */
+const SCANNED_CLEAN = {
+    guardVerdict: 'CLEAN',
+    guardRuleIds: [],
+    guardInputDigest: 'sha256:0123456789abcdef0123456789abcdef',
+} satisfies Pick<ProposalRow, 'guardVerdict' | 'guardRuleIds' | 'guardInputDigest'>;
+
 /** A CREATE proposal: no prior state, so the full content IS the diff. */
 const CREATE_ROW: ProposalRow = {
     id: 'p-create',
@@ -97,6 +116,7 @@ const CREATE_ROW: ProposalRow = {
     rationale: 'Observed three failed backups in the last quarter.',
     proposedViaKeyId: 'key-abcdef12',
     createdAt: '2026-09-01T10:00:00.000Z',
+    ...SCANNED_CLEAN,
     diff: computeProposalDiff({
         operation: 'CREATE',
         payloadJson: JSON.stringify({ title: 'Backup failure risk', impact: 8 }),
@@ -113,6 +133,7 @@ const UPDATE_ROW: ProposalRow = {
     rationale: 'Two new incidents raise the likelihood.',
     proposedViaKeyId: 'key-abcdef12',
     createdAt: '2026-09-01T11:00:00.000Z',
+    ...SCANNED_CLEAN,
     diff: computeProposalDiff({
         operation: 'UPDATE',
         payloadJson: JSON.stringify({ title: 'Backup failure risk', likelihood: 9 }),
@@ -130,6 +151,7 @@ const NO_CHANGES_ROW: ProposalRow = {
     rationale: null,
     proposedViaKeyId: null,
     createdAt: '2026-09-01T12:00:00.000Z',
+    ...SCANNED_CLEAN,
     diff: computeProposalDiff({
         operation: 'UPDATE',
         payloadJson: JSON.stringify({ name: 'Quarterly access review' }),
@@ -147,6 +169,7 @@ const TARGET_MISSING_ROW: ProposalRow = {
     rationale: null,
     proposedViaKeyId: null,
     createdAt: '2026-09-01T13:00:00.000Z',
+    ...SCANNED_CLEAN,
     diff: computeProposalDiff({
         operation: 'UPDATE',
         payloadJson: JSON.stringify({ severity: 'HIGH' }),
@@ -164,6 +187,7 @@ const UNREADABLE_ROW: ProposalRow = {
     rationale: null,
     proposedViaKeyId: null,
     createdAt: '2026-09-01T14:00:00.000Z',
+    ...SCANNED_CLEAN,
     diff: computeProposalDiff({ operation: 'CREATE', payloadJson: 'not json at all' }),
 };
 

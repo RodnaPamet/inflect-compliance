@@ -259,7 +259,7 @@ function QuarantineInner({ tenantSlug }: QuarantineClientProps) {
                             // explain. Saying so is more useful than an empty
                             // cell that reads as "nothing to see".
                             <span className="text-content-subtle">
-                                {t('quarantine.noRules')}
+                                {t('guard.noRules')}
                             </span>
                         ),
                 },
@@ -421,7 +421,7 @@ function QuarantineInner({ tenantSlug }: QuarantineClientProps) {
                                     <Field label={t('quarantine.sheetRules')}>
                                         {selected.guardRuleIds.length > 0
                                             ? selected.guardRuleIds.join(', ')
-                                            : t('quarantine.noRules')}
+                                            : t('guard.noRules')}
                                     </Field>
                                     <Field label={t('quarantine.sheetDigest')}>
                                         {selected.guardInputDigest ? (
