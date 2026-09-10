@@ -11,6 +11,19 @@
  * test that actually slept 30s would get deleted the first time someone ran the
  * suite in a hurry.
  */
+// Every level, not the one asserted below — a mock that lists a subset of an
+// interface decides which half of the code under test runs.
+jest.mock('@/lib/observability/logger', () => ({
+    logger: {
+        trace: jest.fn(),
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+        fatal: jest.fn(),
+    },
+}));
+import { logger } from '@/lib/observability/logger';
 import {
     createBoundedFetch,
     boundedFetch,
@@ -68,6 +81,44 @@ describe('createBoundedFetch', () => {
         expect(err.message).toContain('api.example.com');
         expect(err.message).not.toContain('SECRET123');
         expect(err.retryable).toBe(true);
+    });
+
+    it('scrubs a directory object id out of the LOGGED url, and keeps it on the thrown error', async () => {
+        // `safeUrl` drops the query string and KEEPS the pathname, which on the
+        // identity write path is `/v1.0/users/<objectGUID>` — a terminated
+        // worker's directory identifier, on a line pino also stamps with the
+        // tenant, in an aggregator with no RLS and no retention policy. pino's
+        // redaction matches a bare key at the root and cannot reach inside a
+        // string, so the scrub has to happen at this call site.
+        (logger.warn as jest.Mock).mockClear();
+        globalThis.fetch = jest.fn(
+            (_i: RequestInfo | URL, init?: RequestInit) =>
+                new Promise((_res, rej) => {
+                    init?.signal?.addEventListener('abort', () => rej(init.signal?.reason));
+                }),
+        ) as unknown as typeof fetch;
+
+        const guid = '11111111-2222-3333-4444-555555555555';
+        jest.useFakeTimers();
+        const pending = createBoundedFetch(500)(`https://graph.microsoft.com/v1.0/users/${guid}`);
+        const caught = pending.catch((e) => e);
+        await jest.advanceTimersByTimeAsync(500);
+        const err = await caught;
+
+        const call = (logger.warn as jest.Mock).mock.calls.find(
+            (c) => c[0] === 'integration request timed out',
+        );
+        // Positive control: the line WAS emitted, so the assertions below are
+        // about a scrub rather than about an absent log.
+        expect(call).toBeDefined();
+        const fields = call?.[1] as { url?: string };
+        expect(fields.url).not.toContain(guid);
+        expect(fields.url).toBe('https://graph.microsoft.com/v1.0/users/{account}');
+
+        // The THROWN error keeps it: its consumers scrub at their own boundary,
+        // and some of them render it on a tenant-scoped, access-controlled
+        // surface where naming the account is the whole point.
+        expect((err as IntegrationTimeoutError).url).toContain(guid);
     });
 
     it('passes a fast response straight through', async () => {
