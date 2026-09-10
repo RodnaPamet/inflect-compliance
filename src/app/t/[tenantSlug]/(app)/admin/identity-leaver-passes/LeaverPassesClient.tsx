@@ -10,8 +10,11 @@
  * the comparison was reachable only by an authorised HTTP call or a hand-written
  * SQL query, which is not something anyone can be asked to do daily for a week.
  *
- * THREE STATUSES, THREE MEANINGS, AND THE THIRD IS THE POINT. `writeExecutionRow`
- * is the only creator of these rows and it writes exactly three:
+ * FOUR STATUSES, FOUR MEANINGS, AND THE LAST TWO ARE THE POINT. Two writers
+ * create these rows and between them they write exactly four:
+ * `writeExecutionRow` (the pass that RAN — three of them) and
+ * `writeErrorExecutionRow` (the pass that THREW — the fourth, and the only
+ * place ERROR is persisted).
  *
  *   PASSED         — the pass ran and its report is complete.
  *   PARTIAL        — the pass ran; the DECISION LIST was cut at
@@ -19,12 +22,19 @@
  *                    the artefact is short. (`decisionsTruncated: true`.)
  *   NOT_APPLICABLE — the pass RAN AND REFUSED, and `resultJson.refusal` names
  *                    which refusal.
+ *   ERROR          — the pass THREW and reached no decision.
+ *                    `resultJson.detail` carries the scrubbed message and
+ *                    `mode` is `unknown`, because the throw may have come from
+ *                    the policy read itself.
  *
  * So NOT_APPLICABLE is deliberately NOT labelled "not applicable" here. The whole
  * reason a refusal is recorded at all is that "the pass ran and found nobody to
  * offboard" and "no pass ran" are the two readings an operator must be able to
  * tell apart during the observation window — rendering it as an absence would put
- * back exactly the silence the record was built to break.
+ * back exactly the silence the record was built to break. ERROR (#2297) is the
+ * same argument at the bottom of the ladder: before it, a crashed pass wrote no
+ * row at all, so it was indistinguishable on THIS page from a pass that never
+ * fired.
  *
  * THE BASIS COLUMN IS NOT DECORATION. Every DRY_RUN decision carries the same
  * fixed reason sentence ("the disable was decided but not performed"), so before
@@ -109,11 +119,19 @@ export interface LeaverPassRow {
  * that reads as "nothing happened" — see the module docstring. `info` rather
  * than `neutral` for the same reason: a refusal is a result, and a greyed-out
  * badge would read as a gap in the record.
+ *
+ * ERROR is the row a pass that THREW now leaves behind. It has to be listed
+ * here for the same reason NOT_APPLICABLE does, only more so: an unmapped
+ * status falls through the `meta?.variant ?? 'neutral'` default below and
+ * renders as a grey badge reading the raw string `ERROR` — the quietest
+ * possible presentation of the loudest possible outcome, on the one page an
+ * operator watches during a proving run.
  */
 const STATUS_META: Record<string, { variant: StatusBadgeVariant; key: string }> = {
     PASSED: { variant: 'success', key: 'statusPassed' },
     PARTIAL: { variant: 'warning', key: 'statusPartial' },
     NOT_APPLICABLE: { variant: 'info', key: 'statusRefused' },
+    ERROR: { variant: 'error', key: 'statusError' },
 };
 
 /**

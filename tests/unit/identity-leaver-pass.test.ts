@@ -593,6 +593,78 @@ describe('it never throws', () => {
         expect(r).toMatchObject({ status: 'ERROR', errorMessage: 'settings read failed' });
         expect(passMetric).toHaveBeenCalledWith({ provider: 'entra-id', outcome: 'error' });
     });
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // A pass that THREW still ran (#2297)
+    //
+    // The catch logged, emitted its metric and returned. The metric is
+    // aggregate and the log line lands outside the tenant boundary, so
+    // /admin/identity-leaver-passes showed precisely what a tenant with a dead
+    // worker shows: nothing at all. A crashed pass and a pass that never fired
+    // were the same artefact — the ambiguity `recordRefusedPass` exists to
+    // close, left open one rung further down, and the one thing the first
+    // AUTOMATIC proving run is built to rule out.
+    // ─────────────────────────────────────────────────────────────────────────
+    it('records the crash as an ERROR row, so it cannot read as a pass that never ran', async () => {
+        getPolicy.mockRejectedValue(new Error('settings read failed'));
+
+        // Resolves rather than rejecting — the contract the fan-out relies on,
+        // asserted directly because the new write sits on that path.
+        await expect(run()).resolves.toMatchObject({ status: 'ERROR' });
+
+        expect(mockDb.integrationExecution.create).toHaveBeenCalledTimes(1);
+        const data = mockDb.integrationExecution.create.mock.calls[0][0].data;
+        expect(data.status).toBe('ERROR');
+        // Same automationKey as every other pass row, or the passes page — which
+        // reads by suffix — would not find it, and the row would exist while the
+        // page still showed the absence.
+        expect(data.automationKey).toBe('entra-id.leaver_pass');
+        expect(data.resultJson.detail).toBe('settings read failed');
+        // No rung was established: the throw came out of the policy read itself.
+        expect(data.resultJson.mode).toBe('unknown');
+        // A crash is not a refusal, and the Refusal column must not imply the
+        // pass decided anything.
+        expect(data.resultJson.refusal).toBeNull();
+    });
+
+    it('SCRUBS the thrown message — resultJson is not encrypted at rest', async () => {
+        // The redaction is the load-bearing half of this fix. A provider error
+        // routinely embeds the account it was about, and IntegrationExecution
+        // rows outlive the pass in a column the Epic B manifest cannot cover —
+        // which is why the decision reasons beside them are scrubbed and keyed
+        // by link id. Persisting a raw Graph message here would put back exactly
+        // what that keying takes out.
+        getPolicy.mockRejectedValue(
+            new Error('Graph: user bob.jones@acme.com (id 8f14e45f-ceea-467a-9f8b-9c1f2d3e4a5b) could not be read'),
+        );
+
+        await run();
+
+        const detail = mockDb.integrationExecution.create.mock.calls[0][0].data.resultJson
+            .detail as string;
+        expect(detail).not.toMatch(/bob\.jones@acme\.com/);
+        expect(detail).not.toMatch(/8f14e45f/i);
+        // Paired positive: it was scrubbed, not emptied — an operator still has
+        // a diagnosable sentence.
+        expect(detail).toContain('{account}');
+        expect(detail).toMatch(/Graph:/);
+    });
+
+    it('a row that cannot be written does not turn the catch into a throw', async () => {
+        // Same posture as `safeRecordRefusal`: a pass that has already failed
+        // must not fail differently because its record could not be stored. The
+        // fan-out is over tenants, and this one runs inside a catch.
+        getPolicy.mockRejectedValue(new Error('settings read failed'));
+        mockDb.integrationExecution.create.mockRejectedValue(new Error('pool exhausted'));
+
+        const r = await run();
+
+        expect(r).toMatchObject({ status: 'ERROR', errorMessage: 'settings read failed' });
+        expect(logger.error).toHaveBeenCalledWith(
+            'leaver pass threw and its record could not be written either',
+            expect.objectContaining({ error: 'pool exhausted' }),
+        );
+    });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

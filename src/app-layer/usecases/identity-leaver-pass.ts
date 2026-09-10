@@ -330,7 +330,12 @@ async function safeRecordRefusal(
     }
 }
 
-/** The one place a leaver pass row is created, so both callers agree on its shape. */
+/**
+ * The one place a leaver pass that RAN creates its row, so both callers agree on
+ * its shape. The pass that THREW has its own seam below —
+ * `writeErrorExecutionRow` — because the status it writes is the one this
+ * function's parameter type deliberately cannot express.
+ */
 async function writeExecutionRow(
     ctx: RequestContext,
     provider: string,
@@ -355,6 +360,85 @@ async function writeExecutionRow(
             },
         }),
     );
+}
+
+/**
+ * The catch path's own seam — the ONLY place `ERROR` is persisted.
+ *
+ * A SIBLING of `writeExecutionRow` rather than a widening of it, and the
+ * duplication is deliberate. That function takes `LeaverPassRanStatus` — the
+ * full union minus `ERROR` — precisely so the compiler, and not a comment,
+ * keeps the normal path from persisting a status that inflates
+ * `errorCount24h`. Widening its parameter to serve the catch path would delete
+ * that guarantee to save four lines. Here `status: 'ERROR'` is a literal, and
+ * this function is unreachable from a pass that reached a decision.
+ */
+async function writeErrorExecutionRow(
+    ctx: RequestContext,
+    provider: string,
+    resultJson: Prisma.InputJsonValue,
+): Promise<void> {
+    await runInTenantContext(ctx, (db) =>
+        db.integrationExecution.create({
+            data: {
+                tenantId: ctx.tenantId,
+                provider,
+                automationKey: `${provider}${LEAVER_PASS_AUTOMATION_SUFFIX}`,
+                status: 'ERROR',
+                triggeredBy: 'scheduled',
+                completedAt: new Date(),
+                resultJson,
+            },
+        }),
+    );
+}
+
+/**
+ * A pass that THREW still ran, and must not read as a pass that never fired.
+ *
+ * The same argument `recordRefusedPass` makes, one rung further down. Until
+ * this existed the outer catch logged, emitted its metric and returned — so
+ * `/admin/identity-leaver-passes` showed nothing at all, which is precisely
+ * what a tenant with a dead worker also shows. A crashed pass and a pass that
+ * never ran were the same artefact: none. That is the ambiguity this subsystem
+ * closes everywhere else, and it is the one thing a proving run exists to rule
+ * out.
+ *
+ * REDACTION IS LOAD-BEARING. A thrown provider error routinely embeds the
+ * account it was about — a UPN, a DN, an objectGUID — and
+ * `IntegrationExecution.resultJson` is NOT encrypted at rest, which is the same
+ * reason `recordPassExecution` keys by link id and scrubs every reason on the
+ * way in. No candidate is in scope on this path, so there is no
+ * `externalUserId` to pass and the shape-based rules are the whole of the
+ * defence; that is a reason to scrub, not a reason to skip it.
+ *
+ * `mode: 'unknown'` because the throw may have come from the policy read
+ * itself, so no rung was ever established — the same value, spelled the same
+ * way, that the returned `LeaverPassResult` carries.
+ *
+ * Never lets its own failure become the pass's, exactly as `safeRecordRefusal`
+ * does: it runs inside a catch whose entire contract is that the function
+ * returns.
+ */
+async function safeRecordErroredPass(
+    ctx: RequestContext,
+    provider: string,
+    detail: string,
+): Promise<void> {
+    try {
+        await writeErrorExecutionRow(ctx, provider, {
+            mode: 'unknown',
+            refusal: null,
+            detail: redactDirectoryIdentifiers(detail, undefined),
+        });
+    } catch (err) {
+        logger.error('leaver pass threw and its record could not be written either', {
+            component: 'identity-leaver-pass',
+            tenantId: ctx.tenantId,
+            provider,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
 }
 
 /** Bound on how many passes one read returns. A daily job over a short window. */
@@ -768,6 +852,12 @@ export async function runIdentityLeaverPass(input: {
             error: detail,
         });
         recordLeaverPassOutcome({ provider: input.provider, outcome: 'error' });
+        // AND LEAVE A ROW. The metric above is aggregate and the log line above
+        // it lands outside the tenant boundary, so before this call the only
+        // tenant-visible trace of a crashed pass was the absence of one — the
+        // same artefact a pass that never fired leaves. `ctx` is built before
+        // the try, so it is in scope here without restructuring.
+        await safeRecordErroredPass(ctx, input.provider, detail);
         return {
             status: 'ERROR',
             mode: 'unknown',

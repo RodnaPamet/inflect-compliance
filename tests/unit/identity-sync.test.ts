@@ -124,6 +124,39 @@ describe('runIdentitySync', () => {
         expect(call.update.connectionId).toBe('conn-1');
     });
 
+    it('never writes an operator protection field — the omission is the feature', async () => {
+        // THE SINGLE MOST IMPORTANT LINE IN THIS FEATURE, per the schema's own
+        // comment beside `isProtected`, and until now nothing tested it: this
+        // file had zero occurrences of the word. `isProtected`, `protectedAt`,
+        // `protectedByUserId` and `protectionReason` are OPERATOR state — the
+        // directory has no opinion about them — so a nightly sync that
+        // expressed one would clear a break-glass flag every night and the
+        // failure would stay invisible until the one pass that should have
+        // refused a disable doesn't.
+        //
+        // Asserted as an ABSENCE on the update arm because that is exactly how
+        // the guarantee is spelled in the source: Prisma's field lists are
+        // explicit, not a spread, so the protection columns are opted OUT by
+        // not being named. Nothing about that survives a well-meaning edit
+        // except a test that reads the object and finds them missing. All four,
+        // not just the flag — the three companions are what a later reader uses
+        // to tell a break-glass credential from somebody's mistake.
+        const provider = stubProvider([acct('a')]);
+        await runIdentitySync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
+
+        const call = mockDb.connectedIdentityAccount.upsert.mock.calls[0][0];
+        expect(call.update).not.toHaveProperty('isProtected');
+        expect(call.update).not.toHaveProperty('protectedAt');
+        expect(call.update).not.toHaveProperty('protectedByUserId');
+        expect(call.update).not.toHaveProperty('protectionReason');
+        // The create arm carries none of them either — a new row takes the
+        // column default (false) rather than being told what it is by a sync.
+        expect(call.create).not.toHaveProperty('isProtected');
+        // Positive control: this IS the upsert those assertions are about, so
+        // an empty or renamed object cannot satisfy the four negatives above.
+        expect(call.update.connectionId).toBe('conn-1');
+    });
+
     it('writes the observation stamp as a PAIR with the value, on BOTH arms', async () => {
         // `onPremStateObservedAt` is the only thing separating "the directory
         // answered null" from "nobody asked", and the write-target rail acts on
