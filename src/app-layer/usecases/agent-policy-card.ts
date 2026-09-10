@@ -32,12 +32,17 @@
  *     for why the shape is the identity write ladder's and why narrowing is
  *     never restricted.
  *
- *   • A CARD REACHING PAST THE DECLARATION IT NARROWS. See
- *     `assertDataScopeRaiseWithinDeclaration` below. The card's autonomy ceiling
- *     was already bounded by the assessed tier; its DATA ceiling was bounded by
- *     nothing, and the register's data axis — unlike its autonomy — is not a
- *     live term at the boundary, so the widening would have been honoured rather
- *     than broken.
+ *   • A WIDENING PAST A BOUND SET ELSEWHERE — the assessed tier's autonomy cap
+ *     (`assertAutonomyRaiseWithinTier`) and the register's own data-access
+ *     declaration (`assertDataScopeRaiseWithinDeclaration`). The two bounds are
+ *     not symmetric at the boundary: autonomy is clamped there on every call,
+ *     while the register's data axis is read at SEED time and nowhere else, so
+ *     a card widened past it is a widening the boundary HONOURS. Both refusals
+ *     judge the MOVE rather than the resulting value, because a card already
+ *     above either bound is reached by a re-assessment or a narrowed
+ *     declaration rather than by an edit, and a gate judging the value there
+ *     refuses the narrowings that would have repaired it. Each function says
+ *     the rest.
  *
  * ## Why there is no update-in-place
  *
@@ -50,7 +55,7 @@
  */
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, conflict, notFound } from '@/lib/errors/types';
-import { ceilingForRiskTier } from '@/lib/agentic/autonomy-ceiling';
+import { DENY_CEILING, ceilingForRiskTier } from '@/lib/agentic/autonomy-ceiling';
 import {
     checkLadderStep,
     dataScopeWithinCard,
@@ -94,12 +99,31 @@ async function assertAgentCardable(db: PrismaTx, ctx: RequestContext, agentId: s
     return agent;
 }
 
-/** The card, the version in force, and the whole version history. */
+/**
+ * The card, the version in force, and the whole version history.
+ *
+ * ## Both branches carry the two ceilings the EDITOR is bounded by
+ *
+ * `riskTier` and `dataAccessScope` are the agent's, not the card's, and they
+ * are what `assertAutonomyRaiseWithinTier` and
+ * `assertDataScopeRaiseWithinDeclaration` refuse against. Withholding them made
+ * the tab offer rungs the PUT then refused — and the refusal is an English
+ * sentence rendered verbatim into a Bulgarian UI, at the one moment the
+ * operator is asking for the thing. `agent` is already resolved by
+ * `assertAgentCardable`, so this is two fields and no extra query.
+ *
+ * On the no-card branch they say the same about the SEED: the preview is
+ * already derived from both, and returning them lets the surface name the
+ * ceilings rather than only their consequences.
+ */
 export async function getAgentPolicyCard(ctx: RequestContext, agentId: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
         const agent = await assertAgentCardable(db, ctx, agentId);
         const card = await AgentPolicyCardRepository.findForAgent(db, ctx, agentId);
+        // Both branches disclose what the grants and the card disagree about,
+        // so the read is hoisted rather than duplicated inside each.
+        const granted = await RegisteredAgentToolRepository.listForAgent(db, ctx, agentId);
         if (!card) {
             /**
              * What creating one would produce, so the surface offering the
@@ -110,13 +134,13 @@ export async function getAgentPolicyCard(ctx: RequestContext, agentId: string) {
             const seeded = seedPolicyCardValue({
                 riskTier: agent.riskTier,
                 dataAccessScope: agent.dataAccessScope,
-                grantedTools: (
-                    await RegisteredAgentToolRepository.listForAgent(db, ctx, agentId)
-                ).map((t) => t.toolName),
+                grantedTools: granted.map((t) => t.toolName),
             });
             return {
                 agentId,
                 card: null,
+                riskTier: agent.riskTier,
+                dataAccessScope: agent.dataAccessScope,
                 wouldSeed: seeded.value,
                 /**
                  * Granted tools the seeded card would NOT permit, and the
@@ -139,10 +163,104 @@ export async function getAgentPolicyCard(ctx: RequestContext, agentId: string) {
         return {
             agentId,
             card: { ...card, inForce },
-            versions: await AgentPolicyCardRepository.listVersions(db, ctx, card.id),
+            riskTier: agent.riskTier,
+            dataAccessScope: agent.dataAccessScope,
+            versions: await withActorNames(
+                db,
+                await AgentPolicyCardRepository.listVersions(db, ctx, card.id),
+            ),
+            /**
+             * Granted tools the card IN FORCE cannot EXERCISE — the same
+             * disclosure `wouldWithhold` makes on the other branch, evaluated
+             * against the card that actually exists. Not "does not permit":
+             * `withholdingReasonForTool` never reads `permittedTools`, and its
+             * three reasons are all ceilings (`AUTONOMY_ABOVE_CARD`,
+             * `DATA_SCOPE_ABOVE_CARD`, `NOT_IN_CATALOGUE`). The copy on the
+             * panel says the same thing for the same reason.
+             *
+             * It used to be answered exactly once, before the card existed, and
+             * the fact does not expire with the preview: the grant still stands
+             * and the tool is still refused on every call. Afterwards the only
+             * record was the `AGENT_POLICY_CARD_CREATED` audit row, which
+             * answers "why is this agent not calling the tool we granted it"
+             * for whoever thinks to look there — and says nothing to the person
+             * reading the card. Recomputed rather than read back from that row
+             * because grants and the card BOTH move afterwards; the row is what
+             * was true at v1.
+             *
+             * NULL, not `[]`, when the version in force cannot be read: the
+             * evaluation needs a card to evaluate against, and an empty list
+             * would say "nothing is withheld" about a card nobody can read.
+             * The head-names-a-missing-version state is already rendered as its
+             * own error.
+             */
+            withheld: inForce ? withheldAgainst(inForce, granted) : null,
             assessmentRequired: false,
         };
     });
+}
+
+/**
+ * Granted tools this card cannot exercise, by the predicate the boundary uses.
+ *
+ * `withholdingReasonForTool` is the same function `assertDeclarationsExercisable`
+ * throws on and `seedPolicyCardValue` filters with, so the disclosure cannot
+ * come to disagree with either about what "withheld" means. It is evaluated
+ * over the GRANTS, not over `permittedTools`: a card is refused at the write if
+ * it permits a tool its own ceilings forbid, so the permitted list yields
+ * nothing — the interesting set is the grants the card left behind.
+ */
+function withheldAgainst(
+    inForce: Parameters<typeof fromRow>[0],
+    granted: readonly { toolName: string }[],
+) {
+    const ceilings = fromRow(inForce);
+    return granted
+        .map((tool) => withholdingReasonForTool(tool.toolName, ceilings))
+        .filter((withheld): withheld is NonNullable<typeof withheld> => withheld !== null);
+}
+
+/**
+ * Attach the display name of whoever wrote each version.
+ *
+ * One batched lookup for the page, the shape `listScoreEvents` and
+ * `attachOwnerUsers` already use — never a query per row. There is no
+ * `@relation` on `createdByUserId` to include, and adding one would put an FK
+ * on the append-only version table for the sake of a label.
+ *
+ * `User` is a GLOBAL table with no row security, so this query is bounded by
+ * WHERE the ids came from rather than by RLS: they are read off version rows
+ * the tenant context already filtered, so only actors who wrote in this tenant
+ * can be named here.
+ *
+ * `name ?? email` is resolved SERVER-side into one string. The client renders a
+ * name beside a timestamp and has no second thing to do with an address, and
+ * shipping both would put an extra piece of PII on the wire for every version
+ * row. A missing user resolves to `null` — an actor who has left is not the
+ * same as a version nobody signed (`createdByUserId: null`), and the raw cuid
+ * is not a name, so neither becomes one.
+ */
+async function withActorNames<T extends { createdByUserId: string | null }>(
+    db: PrismaTx,
+    versions: T[],
+): Promise<(T & { createdByName: string | null })[]> {
+    const ids = [
+        ...new Set(versions.map((v) => v.createdByUserId).filter((id): id is string => id !== null)),
+    ];
+    const users = ids.length
+        ? await db.user.findMany({
+              where: { id: { in: ids } },
+              select: { id: true, name: true, email: true },
+          })
+        : [];
+    const nameById = new Map(users.map((u) => [u.id, u.name ?? u.email]));
+    return versions.map((version) => ({
+        ...version,
+        createdByName:
+            version.createdByUserId === null
+                ? null
+                : (nameById.get(version.createdByUserId) ?? null),
+    }));
 }
 
 /**
@@ -169,6 +287,12 @@ export async function getAgentPolicyCard(ctx: RequestContext, agentId: string) {
  * a valid card is; running the assertion anyway means a future seeder bug
  * surfaces as a refused create with a named tool rather than as a silently dark
  * agent. Anything it catches is OUR bug, not the operator's.
+ *
+ * The tier cap beside it is the one place the two paths legitimately differ:
+ * `assertAutonomyRaiseWithinTier` judges a MOVE, and a create has nothing to
+ * have moved from, so it is passed `current: null` and judges the value. Same
+ * tripwire reasoning — the seed's autonomy IS the cap
+ * (`defaultPolicyCardForRiskTier`), so only a seeder bug can trip it.
  */
 export async function createAgentPolicyCard(ctx: RequestContext, agentId: string) {
     assertCanWrite(ctx);
@@ -195,7 +319,11 @@ export async function createAgentPolicyCard(ctx: RequestContext, agentId: string
             dataAccessScope: agent.dataAccessScope,
             grantedTools: granted.map((t) => t.toolName),
         });
-        assertDeclarationsExercisable(value, agent.riskTier);
+        // `current: null` — a create has no predecessor, so the tier cap is
+        // judged on the VALUE here. See the function's docstring for why the
+        // edit path judges the raise instead.
+        assertAutonomyRaiseWithinTier(null, value, agent.riskTier);
+        assertDeclarationsExercisable(value);
 
         const card = await AgentPolicyCardRepository.createWithFirstVersion(
             db,
@@ -300,9 +428,11 @@ export async function updateAgentPolicyCard(
             );
         }
 
-        assertDeclarationsExercisable(next, agent.riskTier);
-
+        // The three refusals below are all measured from the version in force,
+        // so it is narrowed once, here, and passed to each.
         const current = fromRow(inForce);
+        assertAutonomyRaiseWithinTier(current, next, agent.riskTier);
+        assertDeclarationsExercisable(next);
         assertDataScopeRaiseWithinDeclaration(current, next, agent);
 
         const step = checkLadderStep(current, next);
@@ -364,6 +494,93 @@ export async function updateAgentPolicyCard(
 // ─── Declarations the boundary would refuse on every call ───────────
 
 /**
+ * ── AND THE ASSESSED TIER BOUNDS THE CARD, IN THE RAISING DIRECTION ─
+ *
+ * A card cannot widen past the tier's autonomy cap: a card naming autonomy 4 on
+ * a CRITICAL agent is a promise the tool boundary breaks on the first call, and
+ * the operator should be told by the thing they are editing rather than by an
+ * audit row.
+ *
+ * ## Why a RAISE on the edit path, and the VALUE on the create path
+ *
+ * This check used to judge the resulting VALUE on both paths, and that put it
+ * at odds with its two siblings — `assertRaiseWithinTier` in the register and
+ * `assertDataScopeRaiseWithinDeclaration` below — which deliberately judge only
+ * a widening, and say why: a card ALREADY above the bound is an ordinary,
+ * reachable state, so judging the value turns the gate on the person repairing
+ * the thing. Three refusals over the same question, and only two agreed.
+ *
+ * A card above the cap is reached the same way its sibling's state is: a
+ * re-assessment lowers `riskTier`, nothing rewrites a stored version (the
+ * version table refuses UPDATE at two levels, deliberately), and the card is
+ * left above the new cap. On the VALUE reading every later edit was then
+ * refused until autonomy came back under — including edits that raise nothing
+ * at all: dropping a permitted tool, cutting a budget, adding an escalation
+ * trigger. Every one of those makes the agent NARROWER, and every one of them
+ * met a refusal about a dimension it did not touch.
+ *
+ * Nothing is loosened by refusing only the raise, and this axis is the one
+ * where that is provable rather than argued:
+ *
+ *   • autonomy is `min(key max, agent.autonomyLevel, tier cap)` at EVERY call
+ *     (`resolveAutonomyCeiling`, applied in `authorize.ts` independently of the
+ *     card), so a card left above the cap grants nothing — the boundary already
+ *     refuses what the stale rung claims. That is the exact opposite of the
+ *     data axis, where the card is the only term and a widening past the
+ *     declaration is a widening the boundary HONOURS — which is why THAT one
+ *     needs its bound at the seam and gets it in the same one-directional
+ *     shape.
+ *   • the drift is already REPORTED where drift belongs: `AUTONOMY_ABOVE_TIER`
+ *     in `agent-control-tests.ts` scans every card head against its agent's
+ *     tier, alongside `DATA_SCOPE_ABOVE_DECLARATION` and `TOOL_UNEXERCISABLE`.
+ *     A control test that finds the state is the product agreeing the state is
+ *     reachable; the editor refusing every edit while it stands does not
+ *     detect it, it only blocks the repair.
+ *
+ * The CREATE path has no predecessor for a raise to be relative to, so it
+ * passes `current: null` and the value is judged. That is not a loophole: the
+ * seed takes its autonomy from `defaultPolicyCardForRiskTier`, which is the
+ * cap, so the check is a no-op on a correct seed and a tripwire for a seeder
+ * bug — exactly what `createAgentPolicyCard`'s docstring says the assertion
+ * beside it is for.
+ */
+function assertAutonomyRaiseWithinTier(
+    current: AgentPolicyCardValue | null,
+    next: AgentPolicyCardValue,
+    riskTier: Parameters<typeof ceilingForRiskTier>[0],
+): void {
+    // Lowering, or no move. Never `<` — an edit that leaves autonomy exactly
+    // where it is must pass on a card already above the cap, or the one gate
+    // stands in front of every OTHER narrowing on the card.
+    if (current !== null && next.maxAutonomyLevel <= current.maxAutonomyLevel) return;
+
+    const tierCap = ceilingForRiskTier(riskTier);
+    if (next.maxAutonomyLevel <= tierCap) return;
+
+    // An UNSCORED agent (and a tier this build has no cap for) resolves to
+    // `DENY_CEILING`, which is -1 — not a rung, and not a number to put in
+    // front of an operator. "caps it at -1" reads as a bug in the product and
+    // names nothing anybody can act on, so the sentinel gets the sentence its
+    // sibling `assertRaiseWithinTier` already gives it in the register: the
+    // fix is the assessment, not a lower number.
+    if (tierCap === DENY_CEILING) {
+        throw badRequest(
+            `This agent has not been risk-assessed, so its tier permits no autonomy ` +
+                `at all and this card cannot declare ${next.maxAutonomyLevel}. Complete ` +
+                `its agent risk assessment first — the assessed tier is what decides how ` +
+                `far a card may reach.`,
+        );
+    }
+
+    throw badRequest(
+        `This card caps autonomy at ${next.maxAutonomyLevel}, and this agent's ` +
+            `assessed risk tier (${riskTier}) caps it at ${tierCap}. The ` +
+            'card can only narrow what the assessment already decided — re-assess the ' +
+            'agent if it needs to reach further.',
+    );
+}
+
+/**
  * Refuse a card that permits a tool it also forbids.
  *
  * Two ways to write one, and both look deliberate in the register:
@@ -380,25 +597,14 @@ export async function updateAgentPolicyCard(
  * skipped this check was a create that wrote states an edit called impossible.
  * This function only turns the predicate's answer into a sentence.
  *
- * The tier's own cap is checked too, because a card cannot widen past it: a
- * card naming autonomy 4 on a CRITICAL agent is a promise the tool boundary
- * breaks on the first call, and the operator should be told by the thing they
- * are editing rather than by an audit row.
+ * This one IS judged on the resulting value, and the asymmetry with the tier
+ * check above is not an oversight. A contradiction between a card's own two
+ * ceilings and its own tool list is composed here, in this payload, by the
+ * person editing — it is not a bound moved under a card by somebody else — and
+ * the repair is always available inside the same edit, because dropping the
+ * tool is a narrowing and narrowing is never rationed.
  */
-function assertDeclarationsExercisable(
-    card: AgentPolicyCardValue,
-    riskTier: Parameters<typeof ceilingForRiskTier>[0],
-): void {
-    const tierCap = ceilingForRiskTier(riskTier);
-    if (card.maxAutonomyLevel > tierCap) {
-        throw badRequest(
-            `This card caps autonomy at ${card.maxAutonomyLevel}, and this agent's ` +
-                `assessed risk tier (${riskTier ?? 'UNSCORED'}) caps it at ${tierCap}. The ` +
-                'card can only narrow what the assessment already decided — re-assess the ' +
-                'agent if it needs to reach further.',
-        );
-    }
-
+function assertDeclarationsExercisable(card: AgentPolicyCardValue): void {
     for (const tool of card.permittedTools) {
         const withheld = withholdingReasonForTool(tool, card);
         if (!withheld) continue;
@@ -433,7 +639,7 @@ function assertDeclarationsExercisable(
 /**
  * ── AND THE DECLARED AXIS BOUNDS THE CARD, IN THE RAISING DIRECTION ─
  *
- * `assertDeclarationsExercisable` above already stops the card's AUTONOMY
+ * `assertAutonomyRaiseWithinTier` above already stops the card's AUTONOMY
  * ceiling from rising above what the assessed tier permits. The DATA ceiling had
  * no such bound, and the two axes are not symmetric at the boundary in a way
  * that makes the omission harmless:
@@ -455,13 +661,16 @@ function assertDeclarationsExercisable(
  * ## Why a RAISE and not the resulting VALUE
  *
  * The same shape, and for the same reason, as `assertRaiseWithinTier` in the
- * register usecase. A card ALREADY above the declaration is an ordinary,
- * reachable state: narrowing `dataAccessScope` on the register is never refused
- * (taking authority away is not the move to refuse) and does not reach back to
- * rewrite a card that was seeded before it. Judging the resulting VALUE would
- * then refuse every edit to such a card — including the narrowing edit that
- * would have fixed it — which is the failure mode of a gate that fights the
- * person repairing the thing. Only a widening is checked.
+ * register usecase — and, since the tier cap was brought into line, as
+ * `assertAutonomyRaiseWithinTier` above: all three questions about this card
+ * are now asked in one direction. A card ALREADY above the declaration is an
+ * ordinary, reachable state: narrowing `dataAccessScope` on the register is
+ * never refused (taking authority away is not the move to refuse) and does not
+ * reach back to rewrite a card that was seeded before it. Judging the resulting
+ * VALUE would then refuse every OTHER edit to such a card — every narrowing on
+ * every other axis, none of which touches the axis being complained about —
+ * which is the failure mode of a gate that fights the person repairing the
+ * thing. Only a widening is checked.
  */
 function assertDataScopeRaiseWithinDeclaration(
     current: AgentPolicyCardValue,

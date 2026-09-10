@@ -4796,8 +4796,17 @@
           "DATA_SCOPE_ABOVE_CARD": "It becomes exercisable at {requires}, which the agent's registered data scope has to allow first."
         },
         "unexercisableIntro": "This card permits tools its own ceilings refuse on every call, so saving is refused until each one is settled.",
-        "ceilingsElsewhereHint": "Two ceilings that bound this card are set elsewhere and cannot be shown here: the assessed tier's autonomy cap, and the agent's registered data scope. Saving is refused if the card would sit above the tier's autonomy cap, or if this edit raises the data scope above what the agent is registered for. Either refusal names the numbers.",
-        "historyWindowEdge": "The versions before this one are not listed, so this row shows what it declares rather than what it moved."
+        "historyWindowEdge": "The versions before this one are not listed, so this row shows what it declares rather than what it moved.",
+        "withheldNowTitle": "{count, plural, one {1 granted tool is withheld} other {# granted tools are withheld}}",
+        "withheldNowIntro": "The grant stands and nothing is revoked, but every call to these tools is refused meanwhile. A withheld tool is a disagreement between the grant and the agent's own declarations, and what would settle it depends on the ceiling it ran into.",
+        "versionActorLabel": "Written by",
+        "autonomyCapHint": "This agent's assessed risk tier ({tier}) caps autonomy at L{cap}, so no rung above it is offered: the tool boundary clamps every call to that cap, whatever the card says.",
+        "dataScopeCapHint": "This agent is registered as reaching {scope}. The card narrows that declaration and cannot widen past it, so no rung above it is offered — raise the agent's data-access scope first, which re-scores it on the spot.",
+        "aboveTierCapTitle": "This card reaches above the tier's autonomy cap",
+        "aboveTierCapBody": "The card declares L{card} and this agent's assessed risk tier ({tier}) caps autonomy at L{cap} — a re-assessment lowered the cap, and a stored version is never rewritten. Every call is already clamped to the cap, so narrowing the card here makes it say what is actually enforced. Every other change stays open meanwhile.",
+        "aboveTierCapUnscoredBody": "The card declares L{card} and this agent has not been risk-assessed, so its tier permits no autonomy at all and every call is already refused. Complete the risk assessment, or narrow the card to say what is actually enforced.",
+        "aboveDeclaredScopeTitle": "This card reaches past the data scope this agent is registered for",
+        "aboveDeclaredScopeBody": "The card reaches {card} and this agent is registered as reaching {scope} — the register was narrowed after this version was written, and a stored version is never rewritten. Nothing clamps this one: the tool boundary reads the card's rung and never the register's, so the wider reach is live on every call. Narrow the card to {scope}, or raise the agent's registered data-access scope if the wider reach is intended. Every other change stays open meanwhile."
       },
       "tools": {
         "heading": "Granted tools",
