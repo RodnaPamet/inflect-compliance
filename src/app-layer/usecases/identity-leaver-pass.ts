@@ -436,7 +436,14 @@ async function safeRecordErroredPass(
             component: 'identity-leaver-pass',
             tenantId: ctx.tenantId,
             provider,
-            error: err instanceof Error ? err.message : String(err),
+            // Scrubbed: this fires when the pass ITSELF threw, so the message can
+            // carry a directory identifier out of the write path. Same treatment
+            // as `detail` two lines above, and pinned by
+            // tests/guards/identity-log-identifier-scrub.test.ts.
+            error: redactDirectoryIdentifiers(
+                err instanceof Error ? err.message : String(err),
+                undefined,
+            ),
         });
     }
 }
