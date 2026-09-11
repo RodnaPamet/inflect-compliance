@@ -121,23 +121,60 @@ const residueStatements = (): string[] =>
  * ControlException referential action is settled; when it does, delete
  * its entry here in the same commit that deletes the lines.
  */
-const SIGNED_OFF: Array<{ name: string; count: number; re: RegExp }> = [
+/**
+ * The signed-off residue, enumerated MEMBER BY MEMBER.
+ *
+ * This used to be `{ name, count, re }` — an exact count plus a regex. That is
+ * one property short, and the gap is not theoretical: group 3's ADD arm ended
+ * `FOREIGN KEY .+;`, so the REFERENTIAL ACTION ITSELF WAS UNPINNED. Changing
+ * `ON DELETE RESTRICT` to `ON DELETE CASCADE` in the residue file kept the
+ * count at 4 and kept the unclassified set empty, and the gate went green on a
+ * statement asserting the opposite behaviour. Exact count, wrong membership,
+ * passing for the wrong reason.
+ *
+ * Members are now verbatim strings and the assertion is SET EQUALITY. The count
+ * falls out of the enumeration instead of being asserted beside it, so the two
+ * can no longer disagree. That buys two distinct failures where there was one:
+ *
+ *   a statement the diff produces that nobody signed off  -> unclassified
+ *   a signed-off statement edited in place                -> missing member
+ *
+ * ADDING A MEMBER HERE IS THE ONLY WAY TO WIDEN THE RESIDUE, and that is the
+ * point. Signing off is an edit to TEST CODE; pasting drift is an edit to a
+ * DATA FILE. The data-file edit alone always fails. To hide real drift you must
+ * come here, name the group and paste the statement verbatim — which is an
+ * argument a reviewer can see, not a paste they might skim.
+ */
+const SIGNED_OFF: Array<{ name: string; members: readonly string[] }> = [
     {
         name: 'group 1 — GAP-21 hash columns, NOT NULL in DB / optional in schema',
-        count: 3,
-        re: /^ALTER TABLE "(?:User|AuditorAccount|UserIdentityLink)" ALTER COLUMN "(?:emailHash|emailAtLinkTimeHash)" DROP NOT NULL;$/,
+        members: [
+            'ALTER TABLE "AuditorAccount" ALTER COLUMN "emailHash" DROP NOT NULL;',
+            'ALTER TABLE "User" ALTER COLUMN "emailHash" DROP NOT NULL;',
+            'ALTER TABLE "UserIdentityLink" ALTER COLUMN "emailAtLinkTimeHash" DROP NOT NULL;',
+        ],
     },
     {
         name: 'group 2 — pg_trgm GIN indexes Prisma cannot declare',
-        count: 3,
-        re: /^DROP INDEX "Control_(?:code|name|objective)_trgm_idx";$/,
+        members: [
+            'DROP INDEX "Control_code_trgm_idx";',
+            'DROP INDEX "Control_name_trgm_idx";',
+            'DROP INDEX "Control_objective_trgm_idx";',
+        ],
     },
     {
         name: 'group 3 — ControlException composite SET NULL FKs (OPEN)',
-        count: 4,
-        re: /^ALTER TABLE "ControlException" (?:DROP CONSTRAINT "ControlException_(?:compensatingControlId|renewedFromId)_tenantId_fkey";|ADD CONSTRAINT "ControlException_(?:compensatingControlId|renewedFromId)_tenantId_fkey" FOREIGN KEY .+;)$/,
+        members: [
+            'ALTER TABLE "ControlException" DROP CONSTRAINT "ControlException_compensatingControlId_tenantId_fkey";',
+            'ALTER TABLE "ControlException" DROP CONSTRAINT "ControlException_renewedFromId_tenantId_fkey";',
+            'ALTER TABLE "ControlException" ADD CONSTRAINT "ControlException_compensatingControlId_tenantId_fkey" FOREIGN KEY ("compensatingControlId", "tenantId") REFERENCES "Control"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "ControlException" ADD CONSTRAINT "ControlException_renewedFromId_tenantId_fkey" FOREIGN KEY ("renewedFromId", "tenantId") REFERENCES "ControlException"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+        ],
     },
 ];
+
+/** Every signed-off statement, flattened. */
+const signedOffMembers = (): string[] => SIGNED_OFF.flatMap((g) => g.members);
 
 describe('fresh-DB schema-drift gate — actually runs in CI', () => {
     it('runs at exactly the expected site (an empty selection is not a pass)', () => {
@@ -169,46 +206,47 @@ describe('fresh-DB schema-drift gate — actually runs in CI', () => {
         );
     });
 
-    it('the residue file is a real residue, not an empty rubber stamp', () => {
-        // FLOOR. An emptied residue file would make the gate demand ZERO
-        // drift and pass only on a tree that has none — plausible, and
-        // exactly wrong: the 6 permanent statements (3 GAP-21
-        // DROP NOT NULL + 3 pg_trgm GIN) can never be expressed in
-        // Prisma, so an empty file means someone deleted the
-        // documentation of why they are permanent.
+    it('every signed-off statement is still present, exactly as signed off', () => {
+        // FLOOR, and now also FIDELITY. An emptied residue file would make the
+        // gate demand ZERO drift and pass only on a tree that has none —
+        // plausible, and exactly wrong: the 6 permanent statements (3 GAP-21
+        // DROP NOT NULL + 3 pg_trgm GIN) can never be expressed in Prisma, so
+        // an empty file means someone deleted the documentation of why.
         //
-        // Asserted per shape with an exact count, so losing ONE statement
-        // from a group fails even though the group still has members.
-        const statements = residueStatements();
-        const counted = Object.fromEntries(
-            SIGNED_OFF.map(({ name, re }) => [
-                name,
-                statements.filter((l) => re.test(l)).length,
-            ]),
-        );
-        expect(counted).toEqual(
-            Object.fromEntries(SIGNED_OFF.map(({ name, count }) => [name, count])),
-        );
+        // Asserted as SET MEMBERSHIP over verbatim strings rather than a count
+        // per shape. A count answers "how many", which a mutated statement
+        // still satisfies; membership answers "which", which it does not. This
+        // is what catches ON DELETE RESTRICT being edited to ON DELETE CASCADE
+        // in place — same count, different meaning, and the old assertion
+        // passed it.
+        const statements = new Set(residueStatements());
+        const missing = signedOffMembers().filter((m) => !statements.has(m));
+        expect(missing).toEqual([]);
     });
 
-    it('the residue holds NOTHING but the signed-off shapes', () => {
-        // CEILING, and the direction the first version of this file left
-        // open. `check-fresh-db-schema-drift.mjs` fails on any difference
-        // between the diff and this file — so the cheapest way to make
-        // real new drift go green is to paste the offending statement
-        // INTO the residue. The script's own error message warns against
-        // exactly that; nothing enforced it, and the old floor assertion
-        // (`toBeGreaterThanOrEqual(6)`) structurally could not: a file
-        // only ever grows past a floor.
+    it('the residue holds NOTHING but the signed-off statements', () => {
+        // CEILING, and the direction the first version of this file left open.
+        // `check-fresh-db-schema-drift.mjs` fails on any difference between the
+        // diff and this file — so the cheapest way to make real new drift go
+        // green is to paste the offending statement INTO the residue. The
+        // script's own error message warns against exactly that; nothing
+        // enforced it, and the original floor assertion
+        // (`toBeGreaterThanOrEqual(6)`) structurally could not: a file only
+        // ever grows past a floor.
         //
-        // A fourth shape is not a residue, it is undiagnosed drift
-        // wearing the residue's clothes. The fix is to reconcile it —
-        // correct `prisma/schema`, or write the migration — not to widen
-        // this allowlist. Widening is still possible, but it has to edit
-        // THIS file and argue for the new group in the header prose.
-        const unclassified = residueStatements().filter(
-            (l) => !SIGNED_OFF.some(({ re }) => re.test(l)),
-        );
+        // Together with the membership test above this is set EQUALITY, which
+        // gives two distinct failures where a count gave one:
+        //   a statement nobody signed off        -> unclassified, here
+        //   a signed-off statement edited        -> missing member, above
+        //
+        // An unsigned statement is not a residue, it is undiagnosed drift
+        // wearing the residue's clothes. The fix is to reconcile it — correct
+        // `prisma/schema`, or write the migration — not to widen the
+        // allowlist. Widening is still possible, but it must add a verbatim
+        // member to SIGNED_OFF in THIS file and argue for it in the header
+        // prose, which is an argument a reviewer sees rather than a paste.
+        const signed = new Set(signedOffMembers());
+        const unclassified = residueStatements().filter((l) => !signed.has(l));
         expect(unclassified).toEqual([]);
     });
 });
