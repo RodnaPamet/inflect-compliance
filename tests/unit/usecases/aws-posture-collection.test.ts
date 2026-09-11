@@ -39,6 +39,7 @@ import { runAwsPostureCollection } from '@/app-layer/usecases/aws-posture';
 import { AwsPostureProvider } from '@/app-layer/integrations/aws-posture-provider';
 import { logger } from '@/lib/observability/logger';
 import type { CheckResult } from '@/app-layer/integrations/types';
+import { AWS_POSTURE_ARMS } from '../../helpers/posture-collector-arms';
 
 /** The real `Date.now`, captured before any test spy can replace it. */
 const realNow = Date.now.bind(Date);
@@ -172,71 +173,13 @@ const clearAuth = clearAuthFailure as unknown as jest.Mock;
  * stay honest, and the connection-resolution test above pins that `where`
  * exactly — so a change that made the two genuinely diverge fails there.
  */
-const ARMS = [
-    {
-        benchmark: 'soc2', key: 'soc2',
-        tenant: 'tenant-aws-1', conn: 'conn-1', exec: 'exec-1', elapsed: 250,
-        wallSkew: 4_250,
-        now: new Date('2026-03-01T12:00:00.000Z'),
-        /** EVIDENCE_FRESHNESS_DAYS = 30 after this arm's `now`. */
-        thirtyDays: new Date('2026-03-31T12:00:00.000Z'),
-        day: '2026-03-01',
-        mapped: 'iam_root_user_mfa_enabled',
-        second: 'guardduty_enabled',
-        trailingId: 'inspector_enabled',
-        trailingCodes: ['CC3.1', 'CC7.1'],
-        ctl: 'ctl', ev: 'ev',
-        blob: 'cipher-aws-4f21',
-        /**
-         * EVERY field the collector puts into `secretVals`, each a DISTINCT
-         * value-only secret: none of the AKIA / ASIA / 40-char / session-token /
-         * ARN patterns in `scrubAwsCredentials` matches any of them (lowercase
-         * prefixes, and hyphens breaking every `\b…\b` run below 40 chars), so
-         * the connection's own value list is the ONLY thing that can redact them.
-         * That is what makes a field DROPPED from `secretVals` visible.
-         */
-        secrets: {
-            accessKeyId: 'akid-a1-4f21-zyxwvutsr', // pragma: allowlist secret — fabricated, never issued
-            secretAccessKey: 'skey-a1-4f21-zyxwvutsr', // pragma: allowlist secret
-            sessionToken: 'stok-a1-4f21-zyxwvutsr', // pragma: allowlist secret
-            externalId: 'extid-a1-4f21-zyxwvuts',
-        },
-        throwText: 'sts endpoint unreachable for account a1',
-        nonErrorText: 'socket hang up on account a1',
-        /**
-         * The completion path's lead has to vary per arm too, and the reason is
-         * subtle: the SCRUBBED message is what the assertions compare, and every
-         * secret in it is `[REDACTED]` by then. Varying only the secrets leaves
-         * the scrubbed text byte-identical across arms, so the whole
-         * `scrubAwsCredentials(...).slice(0, 500)` expression stayed pinnable to
-         * that one string. The lead is the part that survives scrubbing.
-         */
-        erroredText: 'collector error for account a1',
-    },
-    {
-        benchmark: 'CIS', key: 'cis',
-        tenant: 'tenant-aws-2', conn: 'conn-6', exec: 'exec-4', elapsed: 410,
-        wallSkew: 21_750,
-        now: new Date('2026-05-09T06:45:00.000Z'),
-        thirtyDays: new Date('2026-06-08T06:45:00.000Z'),
-        day: '2026-05-09',
-        mapped: 'iam_user_mfa_enabled',
-        second: 'securityhub_enabled',
-        trailingId: 'config_enabled_all_regions',
-        trailingCodes: ['CC8.1', 'CC7.1'],
-        ctl: 'ctr', ev: 'row',
-        blob: 'cipher-aws-8b07',
-        secrets: {
-            accessKeyId: 'akid-b2-8b07-qponmlkji', // pragma: allowlist secret — fabricated, never issued
-            secretAccessKey: 'skey-b2-8b07-qponmlkji', // pragma: allowlist secret
-            sessionToken: 'stok-b2-8b07-qponmlkji', // pragma: allowlist secret
-            externalId: 'extid-b2-8b07-qponmlkji',
-        },
-        throwText: 'sts endpoint unreachable for account b2',
-        nonErrorText: 'socket hang up on account b2',
-        erroredText: 'collector error for account b2',
-    },
-] as const;
+// The table itself lives in `tests/helpers/posture-collector-arms.ts` so a
+// guard can read it — see `tests/guards/posture-fixture-arm-distinctness.test.ts`,
+// which asserts over EVERY axis (including axes added after this file) that no
+// two arms agree and that no arm value is byte-identical to a literal in
+// `aws-posture.ts`. The one hand-written axis check that used to stand here
+// (`wallSkew`) covered one axis of twenty-one.
+const ARMS = AWS_POSTURE_ARMS;
 
 interface Conn {
     id: string;
@@ -489,6 +432,18 @@ afterEach(() => {
  * `durationMs: Date.now() - now.getTime() - 7_000` SURVIVED its suite, 37/37
  * green. With the arms on different skews the same mutation fails. A shared
  * skew is just another file-wide constant for a literal to name.
+ *
+ * THE GENERAL FORM OF THIS CHECK NOW LIVES ELSEWHERE, and that is the point of
+ * #2246's Class-B lane: this assertion covers ONE axis of twenty-one, and an
+ * axis added after it was written inherits nothing.
+ * `tests/guards/posture-fixture-arm-distinctness.test.ts` reads the table out of
+ * `tests/helpers/posture-collector-arms.ts` and asserts the property over every
+ * axis at once — pairwise distinctness (P1), no arm scalar byte-identical to a
+ * literal in the collector source (P2), and cross-arm scalar disjointness (P4),
+ * each with a non-emptiness floor (P3) so none of them can pass vacuously.
+ * This one stays because it is a second, independent detector for the axis it
+ * names, and because deleting a live detector to replace it is how a class
+ * survives a round.
  */
 it('skews every arm\'s wall clock off its injected `now`, by an amount unique to that arm', () => {
     expect(ARMS.map((a) => a.wallSkew)).not.toContain(0);

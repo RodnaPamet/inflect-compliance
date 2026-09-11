@@ -34,6 +34,7 @@ import { runCloudPostureCollection } from '@/app-layer/usecases/cloud-posture';
 import { logger } from '@/lib/observability/logger';
 import type { CloudPostureControlMapEntry } from '@/app-layer/integrations/cloud-posture/powerpipe-core';
 import type { CheckResult } from '@/app-layer/integrations/types';
+import { CLOUD_POSTURE_ARMS } from '../../helpers/posture-collector-arms';
 
 /** The real `Date.now`, captured before any test spy can replace it. */
 const realNow = Date.now.bind(Date);
@@ -169,47 +170,13 @@ const clearAuth = clearAuthFailure as unknown as jest.Mock;
  * stay honest, and the connection-resolution test above pins that `where`
  * exactly — so a change that made the two genuinely diverge fails there.
  */
-const ARMS = [
-    {
-        cloud: 'gcp-posture', benchmark: 'soc2', key: 'soc2',
-        tenant: 'tenant-cloud-1', conn: 'conn-gcp-4', exec: 'exec-9', elapsed: 250,
-        wallSkew: 7_000,
-        now: new Date('2026-03-01T12:00:00.000Z'),
-        /** EVIDENCE_FRESHNESS_DAYS = 30 after this arm's `now`. */
-        thirtyDays: new Date('2026-03-31T12:00:00.000Z'),
-        day: '2026-03-01',
-        dual: 'storage_account_encryption_enabled',
-        soc2Only: 'keyvault_logging_enabled',
-        ctl: 'ctl', ev: 'ev',
-        // The connection's stored ciphertext, and what it decrypts to. Single
-        // fixture values here made `conn.secretEncrypted` — the argument to
-        // `decryptField` — byte-identical to the literal `'cipher-blob'`.
-        blob: 'cipher-gcp-4f21',
-        clientId: 'cid-gcp-11', clientSecret: 'csecret-gcp-11',
-        // The provider's own failure text, on the throw path and on the
-        // completion path. Both were file-wide constants, so every expression
-        // that carries a provider message was pinnable to the one string.
-        throwText: 'quota exhausted for project gcp-77',
-        nonErrorText: 'weird failure in the gcp collector',
-        erroredText: 'collector error for project gcp-77; stderr: ',
-    },
-    {
-        cloud: 'azure-posture', benchmark: 'CIS', key: 'cis',
-        tenant: 'tenant-cloud-2', conn: 'conn-az-1', exec: 'exec-3', elapsed: 410,
-        wallSkew: 13_500,
-        now: new Date('2026-05-09T06:45:00.000Z'),
-        thirtyDays: new Date('2026-06-08T06:45:00.000Z'),
-        day: '2026-05-09',
-        dual: 'compute_disk_encryption_enabled',
-        soc2Only: 'audit_log_retention_enabled',
-        ctl: 'ctr', ev: 'row',
-        blob: 'cipher-az-8b07',
-        clientId: 'cid-az-22', clientSecret: 'csecret-az-22',
-        throwText: 'subscription throttled in tenant az-31',
-        nonErrorText: 'weird failure in the azure collector',
-        erroredText: 'collector error in tenant az-31; stderr: ',
-    },
-] as const;
+// The table itself lives in `tests/helpers/posture-collector-arms.ts` so a
+// guard can read it — see `tests/guards/posture-fixture-arm-distinctness.test.ts`,
+// which asserts over EVERY axis (including axes added after this file) that no
+// two arms agree and that no arm value is byte-identical to a literal in
+// `cloud-posture.ts`. The one hand-written axis check that used to stand here
+// (`wallSkew`) covered one axis of twenty-one.
+const ARMS = CLOUD_POSTURE_ARMS;
 
 /**
  * Crosswalk injected by the caller — the collector itself is map-agnostic.
@@ -465,6 +432,18 @@ afterEach(() => {
  * `durationMs: Date.now() - now.getTime() - 7_000` SURVIVED its suite, 37/37
  * green. With the arms on different skews the same mutation fails. A shared
  * skew is just another file-wide constant for a literal to name.
+ *
+ * THE GENERAL FORM OF THIS CHECK NOW LIVES ELSEWHERE, and that is the point of
+ * #2246's Class-B lane: this assertion covers ONE axis of twenty-one, and an
+ * axis added after it was written inherits nothing.
+ * `tests/guards/posture-fixture-arm-distinctness.test.ts` reads the table out of
+ * `tests/helpers/posture-collector-arms.ts` and asserts the property over every
+ * axis at once — pairwise distinctness (P1), no arm scalar byte-identical to a
+ * literal in the collector source (P2), and cross-arm scalar disjointness (P4),
+ * each with a non-emptiness floor (P3) so none of them can pass vacuously.
+ * This one stays because it is a second, independent detector for the axis it
+ * names, and because deleting a live detector to replace it is how a class
+ * survives a round.
  */
 it('skews every arm\'s wall clock off its injected `now`, by an amount unique to that arm', () => {
     expect(ARMS.map((a) => a.wallSkew)).not.toContain(0);
