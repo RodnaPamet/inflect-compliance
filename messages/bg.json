@@ -4500,7 +4500,17 @@
         "reasonLabel": "Причина",
         "liftReasonLabel": "Причина за възобновяването",
         "charCount": "{count}/2000",
-        "cancel": "Отказ"
+        "cancel": "Отказ",
+        "historyHeading": "История на спиранията",
+        "historyEmpty": "Този агент никога не е бил спиран. Нощните учебни спирания са изключени.",
+        "scopeTenant": "Цялото работно пространство",
+        "scopeAgent": "Този агент",
+        "lifted": "Отменено",
+        "inForce": "В сила",
+        "engagedLine": "Спрян от {actor} на {at}",
+        "liftedLine": "Отменено от {actor} на {at}",
+        "reasonLine": "Причина: {reason}",
+        "liftReasonLine": "Причина за отмяната: {reason}"
       },
       "overview": {
         "profileHeading": "Управленски профил",

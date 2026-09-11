@@ -20,6 +20,7 @@ import { ApiClientError } from '@/lib/api-client';
 import { apiErrorMessage } from '@/lib/api-error';
 import { formatDateTime } from '@/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
+import { KillSwitchTimeline } from './KillSwitchTimeline';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 
 import type { CircuitBreakerTabProps } from './types';
@@ -818,6 +819,15 @@ export function CircuitBreakerTab({
                     </Modal.Footer>
                 </Modal>
             )}
+
+            {/* The kill-switch history (#2450). It lives HERE because
+                `AgentKillSwitchAction`'s own docstring says so — that control
+                answers "is anything stopping this agent right now", and the
+                incident timeline belongs beside the breaker's, where somebody
+                reconstructing an incident is already looking. */}
+            <Card>
+                <KillSwitchTimeline agentId={agentId} canRead={canCloseBreaker} />
+            </Card>
         </div>
     );
 }

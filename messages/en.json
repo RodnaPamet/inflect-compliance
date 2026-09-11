@@ -4500,7 +4500,17 @@
         "reasonLabel": "Reason",
         "liftReasonLabel": "Reason for resuming",
         "charCount": "{count}/2000",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "historyHeading": "Stop history",
+        "historyEmpty": "This agent has never been stopped. Nightly drill kills are excluded.",
+        "scopeTenant": "Whole workspace",
+        "scopeAgent": "This agent",
+        "lifted": "Lifted",
+        "inForce": "In force",
+        "engagedLine": "Stopped by {actor} on {at}",
+        "liftedLine": "Lifted by {actor} on {at}",
+        "reasonLine": "Reason: {reason}",
+        "liftReasonLine": "Lift reason: {reason}"
       },
       "overview": {
         "profileHeading": "Governing profile",
