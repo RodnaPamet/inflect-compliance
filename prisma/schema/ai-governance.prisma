@@ -143,7 +143,7 @@ model AiSystemRequirementLink {
 
   aiSystem    AiSystem             @relation(fields: [aiSystemId, tenantId], references: [id, tenantId], onDelete: Cascade)
   requirement FrameworkRequirement @relation(fields: [requirementId], references: [id])
-  tenant      Tenant               @relation(fields: [tenantId], references: [id])
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([aiSystemId, requirementId])
   @@index([tenantId, requirementId])

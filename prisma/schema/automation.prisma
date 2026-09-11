@@ -477,7 +477,7 @@ model AgentActionReceipt {
 
   createdAt       DateTime @default(now())
 
-  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   auditLog AuditLog? @relation(fields: [auditLogId], references: [id])
 
   @@index([tenantId, occurredAt])

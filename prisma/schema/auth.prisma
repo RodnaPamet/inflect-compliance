@@ -147,6 +147,7 @@ model Tenant {
   billingAccount                    BillingAccount?
   billingEvents                     BillingEvent[]
   clauseProgress                    ClauseProgress[]
+  compliancePostureSummary          CompliancePostureSummary?
   controls                          Control[]
   controlAssets                     ControlAsset[]
   controlContributors               ControlContributor[]
@@ -673,7 +674,7 @@ model TenantDeviceToken {
   createdById String
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   createdBy   User      @relation("DeviceTokenCreator", fields: [createdById], references: [id])
 
   @@unique([tokenHash])
@@ -708,7 +709,7 @@ model AccessReviewConnectedDecision {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant       Tenant                    @relation(fields: [tenantId], references: [id])
+  tenant       Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   accessReview AccessReview              @relation(fields: [accessReviewId, tenantId], references: [id, tenantId], onDelete: Cascade)
   account      ConnectedIdentityAccount? @relation(fields: [connectedAccountId], references: [id], onDelete: SetNull)
   decidedBy    User?                     @relation("ConnectedDecisionDecider", fields: [decidedByUserId], references: [id])

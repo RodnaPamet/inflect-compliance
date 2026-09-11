@@ -61,7 +61,7 @@ model TrustCenterDocument {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  tenant      Tenant                     @relation(fields: [tenantId], references: [id])
+  tenant      Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   trustCenter TrustCenter                @relation(fields: [trustCenterId], references: [id], onDelete: Cascade)
   requests    TrustCenterAccessRequest[]
 
@@ -90,7 +90,7 @@ model TrustCenterAccessRequest {
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
 
-  tenant   Tenant              @relation(fields: [tenantId], references: [id])
+  tenant   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   document TrustCenterDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
