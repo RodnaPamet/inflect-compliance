@@ -89,6 +89,12 @@ model Task {
   // prefix of `[tenantId, dueAt, status]` below, so the planner
   // never needs both.
   @@index([tenantId, dueAt, status])
+  /// Composite parent key for tenant-carrying child foreign keys.
+  /// Postgres runs FK checks as the table owner, which bypasses RLS, so a
+  /// single-column child `xId -> Task(id)` leaves a cross-tenant reference
+  /// REPRESENTABLE however carefully the application filters. Referencing
+  /// [taskId, tenantId] -> [id, tenantId] makes it unrepresentable. Issue #2356.
+  @@unique([id, tenantId])
 }
 
 /// Per-tenant monotonic counter for minting `TSK-N` work-item keys.
@@ -115,7 +121,7 @@ model TaskLink {
   entityId   String
   relation   TaskLinkRelation   @default(RELATES_TO)
   createdAt  DateTime           @default(now())
-  task       Task               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task       Task               @relation(fields: [taskId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant     Tenant             @relation(fields: [tenantId], references: [id])
 
   @@unique([tenantId, taskId, entityType, entityId])
@@ -132,7 +138,7 @@ model TaskComment {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   createdBy       User     @relation("TaskCommentCreator", fields: [createdByUserId], references: [id])
-  task            Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task            Task     @relation(fields: [taskId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant          Tenant   @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId, taskId])
@@ -143,7 +149,7 @@ model TaskWatcher {
   tenantId String
   taskId   String
   userId   String
-  task     Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task     Task   @relation(fields: [taskId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant   Tenant @relation(fields: [tenantId], references: [id])
   user     User   @relation(fields: [userId], references: [id])
 

@@ -737,6 +737,12 @@ model RiskSuggestionSession {
   @@index([tenantId])
   @@index([tenantId, createdAt])
   @@index([tenantId, status])
+  /// Composite parent key for tenant-carrying child foreign keys.
+  /// Postgres runs FK checks as the table owner, which bypasses RLS, so a
+  /// single-column child `xId -> RiskSuggestionSession(id)` leaves a cross-tenant reference
+  /// REPRESENTABLE however carefully the application filters. Referencing
+  /// [sessionId, tenantId] -> [id, tenantId] makes it unrepresentable. Issue #2356.
+  @@unique([id, tenantId])
 }
 
 model RiskSuggestionItem {
@@ -759,7 +765,7 @@ model RiskSuggestionItem {
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
   asset                 Asset?                @relation(fields: [assetId], references: [id])
-  suggestionSession     RiskSuggestionSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  suggestionSession     RiskSuggestionSession @relation(fields: [sessionId, tenantId], references: [id, tenantId], onDelete: Cascade)
   session               Tenant                @relation(fields: [tenantId], references: [id])
 
   @@index([sessionId])

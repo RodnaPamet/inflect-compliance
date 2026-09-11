@@ -169,7 +169,7 @@ model ControlAsset {
   rationale       String?
   createdByUserId String?
   createdAt       DateTime     @default(now())
-  asset           Asset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  asset           Asset        @relation(fields: [assetId, tenantId], references: [id, tenantId], onDelete: Cascade)
   control         Control      @relation(fields: [controlId, tenantId], references: [id, tenantId], onDelete: Cascade)
   createdBy       User?        @relation("ControlAssetCreator", fields: [createdByUserId], references: [id])
   tenant          Tenant       @relation(fields: [tenantId], references: [id])
