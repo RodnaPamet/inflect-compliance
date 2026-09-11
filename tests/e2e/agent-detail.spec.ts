@@ -1,5 +1,5 @@
 /**
- * E2E — the agent detail page (`/t/:slug/admin/agents/:agentId`).
+ * E2E — the agent detail page (`/t/:slug/agents/:agentId`).
  *
  * Everything that governs an autonomous agent — its policy card, its tool
  * grants, its ASI coverage, its circuit breaker and, above all, its KILL
@@ -135,7 +135,7 @@ test.describe('Agent detail page', () => {
         const main = page.getByRole('main');
 
         await test.step('the register renders the agent, unscored', async () => {
-            await safeGoto(page, `/t/${tenantSlug}/admin/agents`, {
+            await safeGoto(page, `/t/${tenantSlug}/agents`, {
                 waitUntil: 'domcontentloaded',
             });
             await page.waitForLoadState('networkidle').catch(() => {});
@@ -166,25 +166,26 @@ test.describe('Agent detail page', () => {
         });
 
         await test.step('the detail page opens and names the agent', async () => {
-            // DOUBLE click, not single, and not a `goto`.
+            // SINGLE click since AGENTIC UI 1/4 (#2434), and still not a
+            // `goto`.
             //
-            // `dblclick` because the DataTable primitive gives single click to
-            // SELECTION whenever selection is enabled — which is the default,
-            // and the register does not turn it off — and fires `onRowClick`
-            // on double click as "the unambiguous open-detail gesture"
-            // (tests/guards/datatable-row-double-click.test.ts locks all three
-            // row paths to that rule). A single click here selects the row and
-            // navigates nowhere, which is exactly how this spec failed first
-            // time out. `tests/e2e/entity-detail-layout.spec.ts:62` is the
-            // house precedent.
+            // It used to be `dblclick`, because the DataTable primitive gives
+            // single click to SELECTION whenever selection is enabled — the
+            // default, which the register did not turn off — and fires
+            // `onRowClick` on double click as the unambiguous open gesture.
+            // The register now passes `selectionEnabled: false`: there are no
+            // batch actions, so the checkbox was a control that did nothing
+            // AND it took the single click away from the row's real action.
+            // With selection off, one click opens, which is what the row's
+            // trailing chevron has been advertising all along.
             //
             // And a click at all rather than `page.goto`, because a goto would
             // pass even if the register offered no route to this page — which
-            // is the state that actually shipped until this branch.
+            // is the state that actually shipped before the row action landed.
             const targetRow = main.getByRole('row').filter({ hasText: agentName });
             await expect(targetRow).toBeVisible({ timeout: 20_000 });
-            await targetRow.dblclick();
-            await page.waitForURL(`**/t/${tenantSlug}/admin/agents/${agentId}`, {
+            await targetRow.click();
+            await page.waitForURL(`**/t/${tenantSlug}/agents/${agentId}`, {
                 timeout: 20_000,
             });
             await page.waitForLoadState('networkidle').catch(() => {});
@@ -280,18 +281,15 @@ test.describe('Agent detail page', () => {
             const back = main.locator('[data-testid="page-header-back"]');
             await expect(back).toBeVisible();
             // The href, not the label: the label is "Agents" on this cold open
-            // (the canonical parent) and "Admin" when an in-tab referrer sends
+            // (the canonical parent) and varies when an in-tab referrer sends
             // the operator here, and the destination is the register either way
             // — which is the promise being pinned.
-            await expect(back).toHaveAttribute(
-                'href',
-                `/t/${tenantSlug}/admin/agents`,
-            );
+            await expect(back).toHaveAttribute('href', `/t/${tenantSlug}/agents`);
 
             await back.click();
             await expect
                 .poll(() => new URL(page.url()).pathname, { timeout: 30_000 })
-                .toBe(`/t/${tenantSlug}/admin/agents`);
+                .toBe(`/t/${tenantSlug}/agents`);
             await expect(
                 main.locator(`[data-testid="agent-row-${agentId}"]`),
             ).toBeVisible({ timeout: 30_000 });

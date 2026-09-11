@@ -73,8 +73,20 @@ describe('No duplicate admin guards on pages', () => {
             'OWNER-only (admin.tenant_lifecycle) — the page decides whether this product may disable accounts in the customer’s own directory, which is authority of the same class as tenant deletion; the layout’s admin.view would let a non-OWNER admin reach it and read the API 403 as a broken backend',
         'integrations/page.tsx':
             'gates ONE link (admin.tenant_lifecycle) to the OWNER-only leaver-pass report; the page itself stays admin.view, so an ADMIN is never offered a door that closes on them',
-        'agents/[agentId]/page.tsx':
-            'gated on admin.agent_registry, checked SERVER-side before the agent is read — the header alone carries the autonomy rung, data scope, reversibility and both risk tiers, so a holder of admin.view without the register key would otherwise read the whole governing profile off a rendered MetaStrip while every tab underneath 403s',
+        // The agent detail page's entry is GONE because the page is: AGENTIC
+        // UI 1/4 moved it to `/agents/[agentId]`, outside this registry's
+        // population (`/admin/**`) and outside the `/admin` layout whose
+        // duplicate-guard question this file asks. Its own gate did not go
+        // with the entry — it moved with the page, and the page now needs it
+        // MORE, because there is no ancestor `admin.view` layout above it any
+        // more. `tests/integration/agents-subpage-authz.test.ts` is what
+        // asserts it, from the other side: each moved page refuses at the PAGE
+        // rather than leaning on an ancestor.
+        //
+        // What remains at `admin/agents/[agentId]/page.tsx` is a
+        // `redirect()` one-liner. It reads nothing and renders nothing, so
+        // there is no gate for it to carry and nothing for a stricter one to
+        // protect.
     };
 
     function findPageFiles(dir: string): string[] {

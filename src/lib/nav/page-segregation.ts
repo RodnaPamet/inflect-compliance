@@ -56,6 +56,13 @@ export const REFERRER_ONLY_BACK_MAIN_PAGES: readonly string[] = [
 ] as const;
 
 export const BACK_AFFORDANCE_EXEMPT_SUBPAGES: readonly string[] = [
+    '/admin/agents',                  // redirect shim → /agents
+    '/admin/agents/[agentId]',        // redirect shim → /agents/[agentId]
+    '/admin/agents/review-quality',   // redirect shim → /agents/review-quality
+    '/admin/mcp/agent-receipts',      // redirect shim → /agents/receipts
+    '/admin/mcp/quarantine',          // redirect shim → /agents/quarantine
+    '/agent-proposals',               // redirect shim → /agents/proposals
+    '/agent-runs',                    // redirect shim → /agents/runs
     '/assets/new',            // redirect shim → /assets?create=1
     '/audits/new',            // redirect shim → /audits?create=1
     '/audits/readiness',      // redirect shim → /audits/cycles (unified list)
@@ -111,6 +118,11 @@ export const BACK_AFFORDANCE_COHORT_TODO: readonly string[] = [
 export const MAIN_PAGES: readonly string[] = [
     '/access-reviews',
     '/admin',
+    // AGENTIC UI 1/4 (#2421) — the agent register is a sidebar destination
+    // now, so it is MAIN and must NOT render a back affordance. It used to be
+    // `/admin/agents`, a SUBPAGE, and carried `back={{ smart: true }}`; both
+    // moved in the same diff.
+    '/agents',
     '/assets',
     '/audits',
     '/calendar',
@@ -146,10 +158,11 @@ export const SUBPAGES: readonly string[] = [
     '/access-reviews/[reviewId]',
 
     // Admin subpages
+    // `/admin/agents*` are REDIRECT SHIMS now (#2427/#2428) — the real pages
+    // live under `/agents`. Classified so the RQ4-1 ratchet can see them; back
+    // affordance exempted below, as for every other redirect shim.
     '/admin/agents',
     '/admin/agents/[agentId]',
-    // Review quality — reached from the agent register, not the sidebar. The
-    // read surface for whether approvals on the proposal queue mean anything.
     '/admin/agents/review-quality',
     '/admin/api-keys',
     '/admin/audit-log',
@@ -164,6 +177,8 @@ export const SUBPAGES: readonly string[] = [
     '/admin/integrations/[connectionId]',
     '/admin/integrations/identity-accounts',
     '/admin/mcp',
+    // Redirect shims — the pages moved to /agents/receipts and
+    // /agents/quarantine (#2437).
     '/admin/mcp/agent-receipts',
     '/admin/mcp/quarantine',
     '/admin/members',
@@ -184,9 +199,17 @@ export const SUBPAGES: readonly string[] = [
     '/admin/vendor-templates',
     '/admin/vendor-templates/[templateId]',
 
-    // Agent (MCP) — reached from the /admin/mcp hub, not the sidebar.
+    // Agent — every one of the five hangs off the /agents register and is
+    // reached from its ViewsMenu (#2436). The two flat legacy paths are
+    // redirect shims (#2437).
     '/agent-proposals',
     '/agent-runs',
+    '/agents/[agentId]',
+    '/agents/proposals',
+    '/agents/quarantine',
+    '/agents/receipts',
+    '/agents/review-quality',
+    '/agents/runs',
 
     // Assets
     '/assets/[id]',

@@ -64,6 +64,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { EntityListPage } from '@/components/layout/EntityListPage';
+import { AgentsViewsMenu } from '../AgentsViewsMenu';
 import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/filter';
 import { createColumns } from '@/components/ui/table';
 import { Heading } from '@/components/ui/typography';
@@ -297,8 +298,7 @@ function QuarantineInner({ tenantSlug }: QuarantineClientProps) {
                     back: { smart: true },
                     breadcrumbs: [
                         { label: t('crumbDashboard'), href: `/t/${tenantSlug}/dashboard` },
-                        { label: t('crumbAdmin'), href: `/t/${tenantSlug}/admin` },
-                        { label: t('crumbMcp'), href: `/t/${tenantSlug}/admin/mcp` },
+                        { label: t('register.breadcrumb'), href: `/t/${tenantSlug}/agents` },
                         { label: t('quarantine.crumb') },
                     ],
                     title: (
@@ -317,6 +317,19 @@ function QuarantineInner({ tenantSlug }: QuarantineClientProps) {
                     defs: [],
                     searchId: 'quarantine-search',
                     searchPlaceholder: t('quarantine.searchPlaceholder'),
+                    // The same menu the register carries, with `current` set —
+                    // so the five agentic surfaces are one click from each
+                    // other and the menu says which one you are on. Both gates
+                    // are true here by construction: the PAGE already refused
+                    // anyone without `admin.agent_registry`.
+                    toolbarActions: (
+                        <AgentsViewsMenu
+                            current="quarantine"
+                            tenantSlug={tenantSlug}
+                            canReviewProposals
+                            canInvestigate
+                        />
+                    ),
                 }}
                 banner={
                     <div className="space-y-default">

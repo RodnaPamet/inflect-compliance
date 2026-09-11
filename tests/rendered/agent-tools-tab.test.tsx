@@ -86,7 +86,7 @@ jest.mock('next-intl', () => {
 jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
     useRouter: () => ({ push: jest.fn(), replace: jest.fn(), refresh: jest.fn() }),
-    usePathname: () => '/t/acme/admin/agents/agent-1',
+    usePathname: () => '/t/acme/agents/agent-1',
     useSearchParams: () => new URLSearchParams(),
 }));
 
@@ -116,11 +116,11 @@ jest.mock('@/components/ui/hooks', () => ({
 }));
 
 import { ApiClientError } from '@/lib/api-client';
-import { ToolsTab } from '@/app/t/[tenantSlug]/(app)/admin/agents/[agentId]/tabs/ToolsTab';
+import { ToolsTab } from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/ToolsTab';
 import {
     TOOL_MANIFEST_PATH,
     type ToolManifestState,
-} from '@/app/t/[tenantSlug]/(app)/admin/agents/[agentId]/tabs/ToolManifestPins';
+} from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/ToolManifestPins';
 
 /** The real en.json strings the tab renders. */
 const EN = (

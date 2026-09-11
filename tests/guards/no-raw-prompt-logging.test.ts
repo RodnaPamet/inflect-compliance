@@ -322,7 +322,13 @@ const SINK_FLOOR = 30;
 // describing a codebase that does not exist, which is the failure this ratchet is
 // for. Re-derived by zeroing both and reading the failure message.
 const MEASURED_HOLES = 140;
-const MEASURED_SINKS = 76;
+// 76 → 78: AGENTIC UI 1/4 (#2441) added two `logger.warn` catch-sites, one at
+// each agentic notification bell. UNCHANGED holes — both were written with
+// `err.message` and a literal rather than `String(err)`, which is a
+// TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
+// denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
+// pair is supposed to move.
+const MEASURED_SINKS = 78;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

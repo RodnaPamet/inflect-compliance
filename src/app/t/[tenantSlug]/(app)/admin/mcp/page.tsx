@@ -1,8 +1,9 @@
-import { SquareCheck, Workflow, BadgeCheck, Robot, ShieldSlash } from '@/components/ui/icons/nucleo';
+import { Robot } from '@/components/ui/icons/nucleo';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { Heading } from '@/components/ui/typography';
 import { getTenantCtx } from '@/app-layer/context';
 import { listAgentCredentials } from '@/app-layer/usecases/api-keys';
@@ -10,22 +11,34 @@ import { listAgentCredentials } from '@/app-layer/usecases/api-keys';
 export const dynamic = 'force-dynamic';
 
 /**
- * MCP admin hub — the discovery surface for the agent (Model Context Protocol)
- * human-in-the-loop tools. Both destinations already existed as standalone
- * pages but had no nav affordance; this admin page wires them in one place:
- *   - Agent proposals — the propose-not-commit approval queue (an external
- *     agent's MCP `propose_*` writes land here as PENDING for a human to
- *     approve or reject).
- *   - Agent runs — orchestrator observability: start / watch / resume / abort
- *     the tenant's agentic workflow runs.
- * Admin-gated by the parent /admin layout.
+ * MCP CREDENTIAL BINDING — what can act right now, and what we have switched off.
  *
- * It also carries the CREDENTIAL panel, and that placement is the point. Every
- * other agent surface here answers "what did an agent do"; this answers "what
- * can act right now, and what have we switched off". Revocation is the
- * operator's move during an incident, and a revocation you cannot see is one
- * nobody can confirm took effect — so the panel deliberately lists revoked and
- * expired credentials rather than filtering them out.
+ * ── WHAT THIS PAGE IS, AFTER AGENTIC UI 1/4 (#2442) ─────────────────────────
+ *
+ * It used to be the agentic HUB: a five-card grid pointing at the register, the
+ * proposal queue, the runs view, the receipt log and quarantine, plus this
+ * credential panel at the bottom. All five destinations moved under `/agents`,
+ * which is a sidebar destination with its own ViewsMenu — so the grid would
+ * have become a second, worse navigation for surfaces that now have a real one,
+ * and every card a click that leaves a page to arrive somewhere you were
+ * already one click from.
+ *
+ * The grid is therefore GONE rather than repointed, and the page is restated as
+ * the one thing it uniquely carried: the credential panel. That is a genuinely
+ * different question from every `/agents` surface. Those answer "what did an
+ * agent do"; this answers "what can act right now, and what have we switched
+ * off". Revocation is the operator's move during an incident, and a revocation
+ * you cannot see is one nobody can confirm took effect — so the panel
+ * deliberately lists revoked and expired credentials rather than filtering them
+ * out.
+ *
+ * PROMPT 2/4 MERGES THIS PANEL INTO `/admin/api-keys`, where keys are issued.
+ * When it does, this page retires with a redirect. It is NOT retired here: the
+ * panel has nowhere to go yet, and a redirect to a page that does not carry the
+ * content is worse than a page that does.
+ *
+ * The single link out is to the register, because the register is what the word
+ * "bound" in this panel refers to. One link is navigation; five were a hub.
  *
  * The panel shows the EFFECTIVE autonomy ceiling — `min(key max, agent level)`,
  * computed by the same function the tool funnel uses — rather than the key's own
@@ -55,52 +68,6 @@ export default async function McpAdminPage({
         expired: t('mcp.credentialExpired'),
     } as const;
 
-    const cards = [
-        {
-            // First card on purpose: the register is what decides whether an
-            // agent may act at all, so it sits ahead of the surfaces that
-            // review what agents have already proposed.
-            href: tenantHref('/admin/agents'),
-            id: 'mcp-agent-register-card',
-            icon: Robot,
-            title: t('agentRegistry.title'),
-            description: t('agentRegistry.intro'),
-        },
-        {
-            href: tenantHref('/agent-proposals'),
-            id: 'mcp-agent-proposals-card',
-            icon: SquareCheck,
-            title: t('mcp.proposalsTitle'),
-            description: t('mcp.proposalsDesc'),
-        },
-        {
-            href: tenantHref('/agent-runs'),
-            id: 'mcp-agent-runs-card',
-            icon: Workflow,
-            title: t('mcp.runsTitle'),
-            description: t('mcp.runsDesc'),
-        },
-        {
-            href: tenantHref('/admin/mcp/agent-receipts'),
-            id: 'mcp-agent-receipts-card',
-            icon: BadgeCheck,
-            title: t('mcp.receiptsTitle'),
-            description: t('mcp.receiptsDesc'),
-        },
-        {
-            // Last on purpose: every card above is a surface you visit in the
-            // ordinary course of running agents. This one is the surface you
-            // visit when something tried to write through them, and the rows
-            // behind it never reach any of the others — the review queue
-            // excludes a quarantined proposal unconditionally.
-            href: tenantHref('/admin/mcp/quarantine'),
-            id: 'mcp-quarantine-card',
-            icon: ShieldSlash,
-            title: t('mcp.quarantineTitle'),
-            description: t('mcp.quarantineDesc'),
-        },
-    ];
-
     return (
         <div className="space-y-section animate-fadeIn">
             <PageHeader
@@ -114,27 +81,20 @@ export default async function McpAdminPage({
                 description={t('mcp.description')}
             />
 
-            <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
-                {cards.map((card) => {
-                    const Icon = card.icon;
-                    return (
-                        <Link
-                            key={card.id}
-                            id={card.id}
-                            href={card.href}
-                            className="group flex flex-col gap-tight rounded-lg border border-border-subtle bg-bg-default p-4 transition-colors hover:border-border-emphasis"
-                        >
-                            <span className="flex items-center gap-compact">
-                                <span className="flex h-8 w-8 items-center justify-center rounded-md border border-border-subtle bg-bg-subtle text-content-muted group-hover:text-content-emphasis">
-                                    <Icon className="h-4 w-4" />
-                                </span>
-                                <span className="font-medium text-content-emphasis">{card.title}</span>
-                            </span>
-                            <span className="text-sm text-content-muted">{card.description}</span>
-                        </Link>
-                    );
-                })}
-            </div>
+            {/* The one link out, and it names where the moved surfaces went.
+                A reader who bookmarked this page as "the agentic hub" is told
+                once, here, rather than left to rediscover the sidebar. */}
+            <InlineNotice variant="info">
+                {t('mcp.surfacesMoved')}{' '}
+                <Link
+                    id="mcp-agent-register-link"
+                    href={tenantHref('/agents')}
+                    className="inline-flex items-center gap-tight font-medium text-content-info hover:underline"
+                >
+                    <Robot className="h-4 w-4" />
+                    {t('agentRegisterLink')}
+                </Link>
+            </InlineNotice>
 
             <section id="mcp-agent-credentials" className="space-y-default">
                 <div className="space-y-tight">

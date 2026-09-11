@@ -32,12 +32,25 @@
  */
 
 import Link from 'next/link';
-import type { CSSProperties } from 'react';
+import type { ComponentType, CSSProperties, SVGProps } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Tooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/cn';
 import { useSidebarCollapsed } from './sidebar-collapse-context';
+
+/**
+ * A sidebar glyph: either family.
+ *
+ * The union is spelled out rather than collapsed to
+ * `ComponentType<SVGProps<SVGSVGElement>>` on purpose. Lucide icons are
+ * `ForwardRefExoticComponent<LucideProps & RefAttributes<…>>`, and LucideProps
+ * OMITS `ref` before the forwardRef adds it back — so whether the single
+ * general form accepts them turns on assignability details of that `Omit`.
+ * Naming both arms makes the answer "yes, by construction" instead of "yes, if
+ * TypeScript agrees today".
+ */
+export type NavGlyph = LucideIcon | ComponentType<SVGProps<SVGSVGElement>>;
 
 // ─── Geometry tokens (R12-PR2) ─────────────────────────────────────
 //
@@ -119,8 +132,19 @@ export const NAV_ITEM_ICON_CLASS = `${NAV_ITEM_ICON_SIZE} flex-shrink-0`;
 export interface NavItemProps {
     /** Tenant-prefixed href. */
     href: string;
-    /** Lucide icon component (rendered at 18×18). */
-    icon: LucideIcon;
+    /**
+     * Glyph component, rendered at 18×18.
+     *
+     * `NavGlyph`, not `LucideIcon`, since AGENTIC UI 1/4: the sidebar's Agent
+     * entry uses Nucleo `Robot`, which is a plain
+     * `(props: SVGProps<SVGSVGElement>) => Element` function and is NOT
+     * assignable to lucide's `ForwardRefExoticComponent`. Nucleo is the
+     * canonical icon family in this codebase — the sidebar's lucide imports
+     * are on `LEGACY_LUCIDE_USERS` in `no-lucide.test.ts` as a migration TODO
+     * — so the prop type had to stop forbidding the family everything is
+     * migrating TO. Every existing lucide caller still satisfies it.
+     */
+    icon: NavGlyph;
     /** Visible label. Truncates on overflow. */
     label: string;
     /** Whether this item is the current page. Drives the active state. */

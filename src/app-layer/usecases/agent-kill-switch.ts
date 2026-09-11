@@ -47,8 +47,13 @@ import { badRequest, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { KILL_SWITCH_DRILL_AGENT_ID, type KillScope } from '@/lib/agentic/kill-switch';
 
+import { logger } from '@/lib/observability/logger';
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { logEvent } from '../events/audit';
+import {
+    createAgenticNotification,
+    resolveAgenticRecipients,
+} from '../notifications/agentic';
 import type { RequestContext } from '../types';
 
 /** How a kill row is reported to an operator surface. */
@@ -208,6 +213,54 @@ export async function engageKillSwitch(
                 },
             },
         });
+
+        // ─── The bell (#2441) ───────────────────────────────────────────
+        //
+        // AFTER the audit row, and best-effort. The audit entry is the
+        // durable record and must not be jeopardised by a notification write;
+        // the notification is a courtesy to the person whose integration has
+        // just stopped. A kill switch that could not be engaged because the
+        // bell was down is the wrong failure mode for a stop control, so the
+        // catch is unconditional.
+        //
+        // INSIDE the tenant transaction, unlike `createAssignmentNotification`
+        // at its call sites: `Notification` is a tenant-scoped table under
+        // RLS, so the write needs the bound client. The isolation the
+        // assignment sites buy with a separate transaction is bought here by
+        // the try/catch — `createMany({ skipDuplicates: true })` is the one
+        // write shape that cannot throw P2002 and poison the transaction,
+        // which is exactly why the emitter uses it.
+        try {
+            const { recipientUserIds, agentName } = await resolveAgenticRecipients(
+                db,
+                ctx.tenantId,
+                agentId,
+            );
+            await createAgenticNotification(db, 'AGENT_KILL_SWITCH_ENGAGED', {
+                tenantId: ctx.tenantId,
+                tenantSlug: ctx.tenantSlug ?? null,
+                entityId: row.id,
+                // Names what was stopped, at the scope it was stopped at. A
+                // tenant-scope kill reports the whole workspace rather than
+                // borrowing an agent's name, because lifting one agent would
+                // not restart anything while the tenant arm stands.
+                subject:
+                    agentId === null
+                        ? 'Every agent in this workspace'
+                        : (agentName ?? `Agent ${agentId}`),
+                recipientUserIds,
+                actorUserId: ctx.userId,
+            });
+        } catch (err) {
+            logger.warn('notification: failed to record agent kill-switch bell', {
+                requestId: ctx.requestId,
+                tenantId: ctx.tenantId,
+                killSwitchId: row.id,
+                // See the note at the quarantine bell in `agent-proposals.ts`
+                // for why this is not `String(err)`.
+                error: err instanceof Error ? err.message : 'non-Error thrown',
+            });
+        }
 
         return toRecord(row);
     });

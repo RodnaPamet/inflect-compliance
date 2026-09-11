@@ -73,7 +73,17 @@ export default async function AdminPage({
                 { href: '/admin/security', id: 'security-pill-btn', icon: <ShieldCheck className={iconCls} />, label: t('nav.security') },
                 { href: '/admin/trust-center', id: 'trust-center-pill-btn', icon: <Globe className={iconCls} />, label: t('nav.trustCenter') },
                 { href: '/admin/audit-log', id: 'audit-log-pill-btn', icon: <ScrollText className={iconCls} />, label: t('auditLog') },
-                { href: '/admin/mcp', id: 'mcp-pill-btn', icon: <Robot className={iconCls} />, label: 'MCP' },
+                // AGENTIC UI 1/4 (#2442): the agent register, the proposal
+                // queue, activity, receipts and quarantine all moved out from
+                // behind this pill to `/agents`, a sidebar destination. What
+                // remains behind it is the MCP credential-binding panel, so
+                // the pill now names that rather than the protocol.
+                //
+                // The label was a BARE LITERAL "MCP" — the only pill on this
+                // page that was not a `t()` key, so the one pill whose label
+                // could not be translated was also the one whose label was an
+                // acronym. Both halves fixed here.
+                { href: '/admin/mcp', id: 'mcp-pill-btn', icon: <Robot className={iconCls} />, label: t('nav.mcp') },
             ],
         },
         {

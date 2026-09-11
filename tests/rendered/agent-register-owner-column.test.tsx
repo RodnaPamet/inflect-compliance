@@ -79,21 +79,29 @@ jest.mock('next/navigation', () => ({
         refresh: jest.fn(),
         prefetch: jest.fn(),
     }),
-    usePathname: () => '/t/acme/admin/agents',
+    usePathname: () => '/t/acme/agents',
     useSearchParams: () => new URLSearchParams(),
 }));
 
-import { AgentsClient, type AgentRow } from '@/app/t/[tenantSlug]/(app)/admin/agents/AgentsClient';
+import { AgentsClient, type AgentRow } from '@/app/t/[tenantSlug]/(app)/agents/AgentsClient';
 
-/** The real catalogue values the column resolves against. */
-const REGISTRY = (
-    require('../../messages/en.json') as {
-        admin: {
-            agentRegistry: Record<string, string>;
-            agentDetail: { overview: Record<string, string> };
-        };
-    }
-).admin;
+/**
+ * The real catalogue values the column resolves against.
+ *
+ * TWO namespaces, and that split is the point this file's last assertion makes.
+ * The register's own copy moved to `agents.register.*` when the page left
+ * `/admin` (#2426); `admin.agentDetail.*` did not move with it. The Agent
+ * column reaches ACROSS to the detail page's `ownerEmpty` key on purpose — one
+ * key for one question, so the two surfaces cannot answer it differently again
+ * (#2380) — and that cross-namespace reach is now visible here rather than
+ * hidden inside one bag.
+ */
+const MESSAGES = require('../../messages/en.json') as {
+    admin: { agentDetail: { overview: Record<string, string> } };
+    agents: { register: Record<string, string> };
+};
+const DETAIL = MESSAGES.admin.agentDetail;
+const REGISTER = MESSAGES.agents.register;
 
 function makeRow(overrides: Partial<AgentRow> = {}): AgentRow {
     return {
@@ -120,7 +128,17 @@ function renderRegister(rows: AgentRow[]) {
             tenantSlug="acme"
             owners={[{ id: 'user-1', label: 'Dana Iveagh' }]}
             vendors={[]}
+            // The register's four numbers now come from the SERVER (#2432), so
+            // the props are required rather than derived. Zeroes here: this
+            // file is about ONE cell — the owner sub-line — and a KPI value
+            // that agreed with `rows.length` would invite a reader to think
+            // the cards are computed from the rows, which is the defect the
+            // server counts exist to remove.
+            kpiCounts={{ total: 0, active: 0, unscored: 0, egress: 0 }}
+            governance={{ enforcing: true, unboundCredentials: 0 }}
+            proposalsAwaitingReview={null}
             canWrite
+            canReviewProposals
         />,
     );
 }
@@ -163,10 +181,10 @@ describe('the register names whoever is accountable, and never says nobody is', 
         // Read from the DETAIL page's catalogue entry, which is the very key
         // the column now calls: the two surfaces answer one question about one
         // agent, and #2380 was them answering it differently.
-        expect(ownerLine('bare')).toBe(REGISTRY.agentDetail.overview.ownerEmpty);
+        expect(ownerLine('bare')).toBe(DETAIL.overview.ownerEmpty);
         expect(ownerLine('bare')).not.toBe('Unassigned');
         // And the phrase denies a label, never the accountability itself.
-        expect(REGISTRY.agentDetail.overview.ownerEmpty).toBe('Name not recorded');
+        expect(DETAIL.overview.ownerEmpty).toBe('Name not recorded');
     });
 
     it('a legacy placeholder still says what it is, rather than naming an owner', () => {
@@ -183,6 +201,6 @@ describe('the register names whoever is accountable, and never says nobody is', 
             }),
         ]);
 
-        expect(ownerLine('placeholder')).toBe(REGISTRY.agentRegistry.legacyPlaceholder);
+        expect(ownerLine('placeholder')).toBe(REGISTER.legacyPlaceholder);
     });
 });

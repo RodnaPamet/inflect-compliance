@@ -592,6 +592,29 @@ enum NotificationType {
   // the named reviewer can move the task on, and nothing said so.
   // Deduped per (task, reviewer, day) like the other assignment bells.
   TASK_REVIEW_REQUESTED
+  // AGENTIC UI 1/4 (#2441) — the first two agentic members. None of the
+  // twenty above is agentic, so the whole subsystem was silent: every fact it
+  // produced lived on a page somebody had to already be on.
+  //
+  // ENGAGED, and no lifted counterpart. A kill switch being engaged is the
+  // event somebody has to be told about — an agent, or every agent in the
+  // workspace, has stopped acting at the tool boundary, and the register still
+  // reads ACTIVE because engaging does not change `RegisteredAgent.status`.
+  // Lifting is the ordinary end of an incident the recipient is already inside.
+  // Routed to the agent's accountable owner, or to the workspace's ACTIVE
+  // OWNERs for a tenant-scope kill; deduped per (switch row, recipient, day).
+  AGENT_KILL_SWITCH_ENGAGED
+  // The agentic output guard REFUSED a write. Quarantine is terminal — the row
+  // never reaches the review queue and no override exists — so nobody
+  // encounters it in the course of ordinary work. Deduped per (agent, day)
+  // rather than per proposal: an agent under an injection attempt produces a
+  // burst, and one bell per refusal would bury the first.
+  //
+  // There is deliberately NO `AGENT_PROPOSAL_CREATED`. That is the ordinary
+  // case the propose-not-commit queue exists to accumulate, and a bell per
+  // proposal would train the recipient to ignore the bell, taking these two
+  // with it. The waiting count is surfaced on the register instead.
+  AGENT_PROPOSAL_QUARANTINED
   GENERAL
 }
 

@@ -27,11 +27,21 @@ import {
     Calendar as CalendarIcon,
     Workflow,
     Menu,
-    type LucideIcon,
 } from 'lucide-react';
+import { Robot } from '@/components/ui/icons/nucleo';
 import { cn } from '@/lib/cn';
 import { useCalendarBadge } from './use-calendar-badge';
 import { NavItem } from './nav-item';
+// A SEPARATE type-only import on purpose. `nav-item-import-discipline` pins the
+// value import's exact spelling, and folding the type into the same braces does
+// not match its pattern.
+//
+// The reason this note does not quote that pattern is its own lesson: the first
+// version did, and the quoted form was a SECOND textual occurrence in a file the
+// guard reads whole — which pushed `assertion-needle-uniqueness-ratchet` over
+// its Class D ceiling by exactly one. A comment quoting a needle is a survivor
+// that can satisfy the assertion after the real import is deleted.
+import type { NavGlyph } from './nav-item';
 import { NavSection } from './nav-section';
 import { useSidebarCollapsed } from './sidebar-collapse-context';
 
@@ -40,7 +50,8 @@ import { useSidebarCollapsed } from './sidebar-collapse-context';
 interface NavItemDef {
     href: string;
     label: string;
-    icon: LucideIcon;
+    /** Lucide OR Nucleo — see the `NavGlyph` note on `NavItemProps.icon`. */
+    icon: NavGlyph;
     badge?: string | number;
     /** Accessible description of what `badge` counts (see NavItem). */
     badgeLabel?: string;
@@ -133,6 +144,28 @@ export function useNavSections(): NavSectionDef[] {
                 // R13-PR16 — Audit moved up to Comply (see above).
                 { href: tenantHref('/policies'), label: t('policies'), icon: FileText },
                 { href: tenantHref('/vendors'), label: t('vendors'), icon: Truck },
+                // AGENTIC UI 1/4 (#2423) — the agent register. Same
+                // governance-tool tier as Policy and Vendor: a register of
+                // what may act inside the tenant, with an owner per row.
+                //
+                // Placed BETWEEN vendors and processes, and gated on the same
+                // key the page itself asserts. Note the filter below is
+                // FAIL-CLOSED — `visible` must be strictly `true` or omitted,
+                // and an item whose gate resolves to `undefined` (a permission
+                // bag missing the key) silently disappears with no error, so
+                // the expression is coerced rather than passed through.
+                //
+                // Nucleo `Robot`, not lucide `Bot`: it is already the glyph on
+                // both existing agent surfaces (the admin pill and the
+                // register's own header), and Nucleo is the canonical family
+                // — this file's lucide imports are the migration TODO, not the
+                // target. See `NavGlyph`.
+                {
+                    href: tenantHref('/agents'),
+                    label: t('agents'),
+                    icon: Robot,
+                    visible: perms.admin.agent_registry === true,
+                },
                 // R25-PR-A — Processes canvas. Visual mapping of
                 // business + IT processes with controls placed on
                 // the connections between steps. Sits under Manage

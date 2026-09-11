@@ -81,14 +81,17 @@ interface Props {
 }
 
 export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated }: Props) {
-    const t = useTranslations('admin');
+    // The `agents` namespace, not `admin`: the register's copy moved to
+    // `agents.register.*` when the page left `/admin` (#2426). This modal is
+    // part of the register, so its ~30 keys moved with it.
+    const t = useTranslations('agents');
     // `common.cancel` rather than an agent-specific key — the word is the same
     // one every modal in the product uses, and a second copy of it is a second
     // thing to translate.
     const tCommon = useTranslations('common');
     const [apiError, setApiError] = useState<string | null>(null);
 
-    const noneOption = { value: '', label: t('agentRegistry.new.noneApplicable') };
+    const noneOption = { value: '', label: t('register.new.noneApplicable') };
     const toClauseOptions = (opts: readonly { id: string; clause: string; label: string }[]) => [
         noneOption,
         ...opts.map((o) => ({ value: o.id, label: `${o.clause} — ${o.label}` })),
@@ -98,15 +101,15 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
     const vendorOptions = [noneOption, ...vendors.map((v) => ({ value: v.id, label: v.name }))];
     const scopeOptions = ACCESS_SCOPES.map((s) => ({
         value: s,
-        label: t(`agentRegistry.filterEnums.accessScope.${s}`),
+        label: t(`register.filterEnums.accessScope.${s}`),
     }));
     const reversibilityOptions = REVERSIBILITIES.map((r) => ({
         value: r,
-        label: t(`agentRegistry.reversibility.${r}`),
+        label: t(`register.reversibility.${r}`),
     }));
     const provenanceOptions = [
-        { value: 'FIRST_PARTY', label: t('agentRegistry.new.provenanceFirstParty') },
-        { value: 'THIRD_PARTY', label: t('agentRegistry.new.provenanceThirdParty') },
+        { value: 'FIRST_PARTY', label: t('register.new.provenanceFirstParty') },
+        { value: 'THIRD_PARTY', label: t('register.new.provenanceThirdParty') },
     ];
 
     const {
@@ -162,12 +165,12 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
             });
             if (!res.ok) {
                 const body = (await res.json().catch(() => null)) as { error?: string } | null;
-                throw new Error(body?.error ?? t('agentRegistry.new.errorFallback'));
+                throw new Error(body?.error ?? t('register.new.errorFallback'));
             }
             const created = (await res.json()) as { id: string };
             await onCreated(created.id);
         } catch (e) {
-            setApiError(e instanceof Error ? e.message : t('agentRegistry.new.errorFallback'));
+            setApiError(e instanceof Error ? e.message : t('register.new.errorFallback'));
         }
     };
 
@@ -185,7 +188,7 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
                     options={options}
                     selected={options.find((o) => o.value === (field.value ?? '')) ?? options[0]}
                     setSelected={(o) => field.onChange(o?.value ?? '')}
-                    placeholder={t('agentRegistry.new.noneApplicable')}
+                    placeholder={t('register.new.noneApplicable')}
                     matchTriggerWidth
                     forceDropdown
                     buttonProps={{ className: 'w-full' }}
@@ -229,13 +232,13 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
                 if (!v && !isSubmitting) onClose();
             }}
             size="lg"
-            title={t('agentRegistry.new.title')}
-            description={t('agentRegistry.new.descShort')}
+            title={t('register.new.title')}
+            description={t('register.new.descShort')}
             preventDefaultClose={isSubmitting}
         >
             <Modal.Header
-                title={t('agentRegistry.new.title')}
-                description={t('agentRegistry.new.descLong')}
+                title={t('register.new.title')}
+                description={t('register.new.descLong')}
             />
             <Modal.Form onSubmit={handleSubmit(onSubmit)}>
                 <Modal.Body>
@@ -249,48 +252,48 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
                     )}
                     <div className="space-y-default">
                         <FormField
-                            label={t('agentRegistry.new.nameLabel')}
+                            label={t('register.new.nameLabel')}
                             required
                             error={errors.name?.message}
                         >
                             <Input
                                 id="agent-name-input"
                                 type="text"
-                                placeholder={t('agentRegistry.new.namePlaceholder')}
+                                placeholder={t('register.new.namePlaceholder')}
                                 autoComplete="off"
                                 {...register('name')}
                             />
                         </FormField>
 
                         <FormField
-                            label={t('agentRegistry.new.descriptionLabel')}
-                            hint={t('agentRegistry.new.encryptedHint')}
+                            label={t('register.new.descriptionLabel')}
+                            hint={t('register.new.encryptedHint')}
                             error={errors.description?.message}
                         >
                             <Textarea
                                 id="agent-description-input"
                                 rows={2}
-                                placeholder={t('agentRegistry.new.descriptionPlaceholder')}
+                                placeholder={t('register.new.descriptionPlaceholder')}
                                 {...register('description')}
                             />
                         </FormField>
 
                         <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
                             <FormField
-                                label={t('agentRegistry.new.ownerLabel')}
+                                label={t('register.new.ownerLabel')}
                                 required
                                 error={errors.ownerUserId?.message}
                             >
                                 {enumSelect(
                                     'ownerUserId',
                                     ownerOptions,
-                                    t('agentRegistry.new.ownerPlaceholder'),
+                                    t('register.new.ownerPlaceholder'),
                                     false,
                                 )}
                             </FormField>
                             <FormField
-                                label={t('agentRegistry.new.autonomyLabel')}
-                                hint={t('agentRegistry.new.autonomyHint')}
+                                label={t('register.new.autonomyLabel')}
+                                hint={t('register.new.autonomyHint')}
                                 required
                                 error={errors.autonomyLevel?.message}
                             >
@@ -304,7 +307,7 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
                                             onChange={field.onChange}
                                             min={AGENT_AUTONOMY_MIN}
                                             max={AGENT_AUTONOMY_MAX}
-                                            ariaLabel={t('agentRegistry.new.autonomyLabel')}
+                                            ariaLabel={t('register.new.autonomyLabel')}
                                         />
                                     )}
                                 />
@@ -313,14 +316,14 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
 
                         <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
                             <FormField
-                                label={t('agentRegistry.new.accessLabel')}
+                                label={t('register.new.accessLabel')}
                                 required
                                 error={errors.dataAccessScope?.message}
                             >
                                 {enumSelect('dataAccessScope', scopeOptions, scopeOptions[0].label)}
                             </FormField>
                             <FormField
-                                label={t('agentRegistry.new.reversibilityLabel')}
+                                label={t('register.new.reversibilityLabel')}
                                 required
                                 error={errors.reversibility?.message}
                             >
@@ -334,7 +337,7 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
 
                         <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
                             <FormField
-                                label={t('agentRegistry.new.provenanceLabel')}
+                                label={t('register.new.provenanceLabel')}
                                 required
                                 error={errors.provenance?.message}
                             >
@@ -349,15 +352,15 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
                                 and it requires it absolutely. */}
                             {provenance === 'THIRD_PARTY' && (
                                 <FormField
-                                    label={t('agentRegistry.new.vendorLabel')}
-                                    hint={t('agentRegistry.new.vendorHint')}
+                                    label={t('register.new.vendorLabel')}
+                                    hint={t('register.new.vendorHint')}
                                     required
                                     error={errors.vendorId?.message}
                                 >
                                     {enumSelect(
                                         'vendorId',
                                         vendorOptions,
-                                        t('agentRegistry.new.vendorPlaceholder'),
+                                        t('register.new.vendorPlaceholder'),
                                         false,
                                     )}
                                 </FormField>
@@ -366,18 +369,18 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
 
                         <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 space-y-default">
                             <p className="text-sm font-medium text-content-emphasis">
-                                {t('agentRegistry.new.classificationHeading')}
+                                {t('register.new.classificationHeading')}
                             </p>
                             <p className="text-xs text-content-subtle">
-                                {t('agentRegistry.new.classificationHelp')}
+                                {t('register.new.classificationHelp')}
                             </p>
-                            <FormField label={t('agentRegistry.new.art5Label')}>
+                            <FormField label={t('register.new.art5Label')}>
                                 {clauseSelect(
                                     'prohibitedPractice',
                                     toClauseOptions(ART5_PROHIBITED_PRACTICES),
                                 )}
                             </FormField>
-                            <FormField label={t('agentRegistry.new.annexIIILabel')}>
+                            <FormField label={t('register.new.annexIIILabel')}>
                                 {clauseSelect('annexIIIArea', toClauseOptions(ANNEX_III_AREAS))}
                             </FormField>
                             <label className="flex items-center gap-tight text-sm text-content-default">
@@ -386,9 +389,9 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
                                     type="checkbox"
                                     {...register('isAnnexIProductSafetyComponent')}
                                 />
-                                {t('agentRegistry.new.art6Checkbox')}
+                                {t('register.new.art6Checkbox')}
                             </label>
-                            <FormField label={t('agentRegistry.new.art50Label')}>
+                            <FormField label={t('register.new.art50Label')}>
                                 {clauseSelect(
                                     'transparencyCase',
                                     toClauseOptions(ART50_TRANSPARENCY_CASES),
@@ -403,8 +406,8 @@ export function NewAgentModal({ tenantSlug, owners, vendors, onClose, onCreated 
                     </Button>
                     <Button type="submit" variant="primary" disabled={isSubmitting}>
                         {isSubmitting
-                            ? t('agentRegistry.new.submitting')
-                            : t('agentRegistry.new.submit')}
+                            ? t('register.new.submitting')
+                            : t('register.new.submit')}
                     </Button>
                 </Modal.Footer>
             </Modal.Form>

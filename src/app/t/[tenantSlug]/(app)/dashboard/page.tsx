@@ -15,6 +15,7 @@ import {
 import { cachedSsrPayload } from '@/lib/cache/ssr-cache';
 import DashboardClient from './DashboardClient';
 import RecentActivityCard from './RecentActivityCard';
+import AgenticGovernanceCard from './AgenticGovernanceCard';
 import { Card } from '@/components/ui/card';
 import { getTranslations } from 'next-intl/server';
 
@@ -96,6 +97,18 @@ export default async function DashboardPage({
             initialExec={exec}
             initialTrends={trends}
             initialPostureSummary={postureSummary}
+            agentic={
+                /* Suspense-wrapped and OUTSIDE the `cachedSsrPayload` batch
+                   above: its content is kill-switch state, and a 60-second
+                   cache on "is everything stopped right now" is the wrong
+                   trade. The card renders null for readers without the
+                   register key, so the fallback is nothing rather than a
+                   skeleton — a skeleton that resolves to nothing is a visible
+                   flicker of a card that was never going to appear. */
+                <Suspense fallback={null}>
+                    <AgenticGovernanceCard tenantSlug={tenantSlug} />
+                </Suspense>
+            }
         >
             <Suspense
                 fallback={

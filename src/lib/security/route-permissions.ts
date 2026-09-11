@@ -185,17 +185,44 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     },
 
     // ── Agent register (Epic Agentic) ───────────────────────────────
+    //
+    // THE UI MOVED AND THESE RULES DID NOT (AGENTIC UI 1/4, #2429). The agent
+    // register's PAGE is at `/t/:slug/agents` since that prompt; every API
+    // route it drives is still at `/api/t/:slug/admin/agents/*`, which is what
+    // these patterns match. This map is the API surface only — `T` is
+    // `\/api\/t\/[^/]+`, and `resolveRoutePermission` is called from the
+    // middleware against `req.nextUrl.pathname` for API requests — so a UI
+    // route needs no rule here and adding one would match nothing. Page-level
+    // gating is each page's own `ctx.appPermissions` check, asserted by
+    // `tests/integration/agents-{page,subpage}-authz.test.ts`.
+    //
+    // MOVING THE API WITH THE PAGE WOULD HAVE BEEN THE BREAKING CHANGE: these
+    // three narrow rules and the catch-all would stop matching, every route
+    // docstring citing its own path would be wrong, and the
+    // `PRIVILEGED_ROOTS` population `api-permission-coverage.test.ts` curates
+    // would shift under it. The UI path and the API path are allowed to differ.
+    //
     // ORDER MATTERS: matching is first-wins, so every narrower rule here has to
-    // precede the register's own catch-all below. Reversed, every grant and
-    // every card edit would resolve to `admin.agent_registry`: the two specific
-    // keys would be present in the type and enforced nowhere, and whoever holds
-    // the register key would silently gain both surfaces — which is the exact
-    // consolidation the split exists to prevent. It fails SILENTLY, because a
-    // route gated by the wrong-but-still-privileged key still returns 403 to
-    // everyone it should. So the two specific rules are kept together above the
-    // catch-all rather than sorted in with it, and
+    // precede the register's own catch-all below. Reversed, every grant, every
+    // card edit and every kill would resolve to `admin.agent_registry`: the
+    // narrow keys would be present in the type and enforced nowhere, and
+    // whoever holds the register key would silently gain all of those surfaces
+    // — which is the exact consolidation the split exists to prevent. It fails
+    // SILENTLY, because a route gated by the wrong-but-still-privileged key
+    // still returns 403 to everyone it should. So the narrow rules are kept
+    // together above the catch-all rather than sorted in with it, and
     // `tests/integration/policy-card-authz.test.ts` asserts both paths resolve
     // to their own key rather than only asserting the narrow one.
+    //
+    // THERE ARE FOUR OF THEM, AND THIS PARAGRAPH USED TO SAY TWO. It counted
+    // a pair while the block below held policy-card, tools, kill-switch and
+    // mcp/quarantine — prose that was correct when written and has been wrong
+    // since the third rule landed. Fixed by removing the count rather than
+    // updating it: the claim is now about "the narrow rules", which stays true
+    // as the set grows, and a number in a comment has nothing keeping it
+    // honest. The old wording is deliberately not quoted here — a comment
+    // that repeats a phrase a guard might match is a survivor that can satisfy
+    // an assertion after the real code is deleted.
     {
         path: new RegExp(`^${T}\\/admin\\/agents\\/[^/]+\\/policy-card$`),
         permission: 'admin.agent_policy_card',

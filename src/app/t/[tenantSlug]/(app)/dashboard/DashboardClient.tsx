@@ -192,6 +192,22 @@ interface DashboardClientProps {
      * server boundary.
      */
     children?: React.ReactNode;
+    /**
+     * AGENTIC UI 1/4 (#2440) — `<AgenticGovernanceCard>`, also a Server
+     * Component, also rendered by the parent page.
+     *
+     * A SECOND slot rather than a second child of `children`, because the two
+     * land in different places: `children` sits in the bottom two-column row
+     * beside the next-best-action card, and this has to sit near the TOP. A
+     * kill switch in force stops every agent in the workspace at the tool
+     * boundary, including runs already in flight — reporting that below the
+     * fold, under the trend charts, would be a worse answer than not
+     * reporting it. It renders `null` for a caller without
+     * `admin.agent_registry`, so the slot is frequently empty and the layout
+     * has to survive that: no wrapper, no heading, nothing that would leave a
+     * gap.
+     */
+    agentic?: React.ReactNode;
 }
 
 export default function DashboardClient({
@@ -199,6 +215,7 @@ export default function DashboardClient({
     initialTrends,
     initialPostureSummary,
     children,
+    agentic,
 }: DashboardClientProps) {
     const t = useTranslations('dashboard');
     const href = useTenantHref();
@@ -497,6 +514,13 @@ export default function DashboardClient({
                     ]}
                 />
             </div>
+
+            {/* ─── Agentic governance (#2440) ───
+                ABOVE the trends, and deliberately: a kill switch in force is
+                an incident, and the charts below it are a month of history.
+                Renders nothing at all when the reader cannot read the agent
+                register. */}
+            {agentic}
 
             {/* ─── Trend Section ─── */}
             {trends &&
