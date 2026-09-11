@@ -45,6 +45,18 @@
  * two call for opposite responses (investigate vs wait), and the basis is the
  * only thing on the row that separates them.
  *
+ * THE SYNC COLUMN IS THE SAME ARGUMENT ONE LEVEL DOWN. A refusal usually means
+ * the rails worked — the directory answered, and the answer was "not this
+ * account". Two of them do not: `OBSERVATION_STALE` and `NEVER_OBSERVED` mean
+ * nothing recent ANSWERED, which is a fact about the 03:00 identity sync and
+ * not about the leaver. The account was not disabled, nothing refused the
+ * batch, and `leaverPassStatus` therefore writes PASSED — so the row an
+ * operator scans reads "Ran — complete" in green on the morning their sync is
+ * down. `NO_FRESH_LINKS` is the same failure one step earlier, refusing the
+ * whole pass on the same freshness bound and rendering in the same `info` tone
+ * as "nobody left". See `SYNC_SIGNAL_BY_BASIS` for why the render, not the
+ * data, was the gap.
+ *
  * `resultJson` is a Json column read back verbatim, so every field is narrowed
  * defensively rather than trusted: a row written by an older build, or by a
  * future one, must degrade to a thinner render, never to a thrown page.
@@ -61,7 +73,7 @@ import { Card } from '@/components/ui/card';
 import { Heading } from '@/components/ui/typography';
 import { PageBreadcrumbs } from '@/components/layout/PageBreadcrumbs';
 import { BackAffordance } from '@/components/nav/BackAffordance';
-import { InlineNotice } from '@/components/ui/inline-notice';
+import { InlineNotice, type InlineNoticeVariant } from '@/components/ui/inline-notice';
 import { EmptyState } from '@/components/ui/empty-state';
 // The ORDERING, from the module that owns it — never a copy, and never `!==`.
 // `write-ladder` carries no server imports, so a client component can hold it.
@@ -177,6 +189,106 @@ const BASIS_LABEL: Record<string, string> = {
 };
 
 /**
+ * THE REFUSALS THAT ARE NOT RESULTS — the sync, not the rails.
+ *
+ * Almost every refusal on this page means the platform looked and declined, and
+ * declining is the rails working: an account mastered on-premises, a directory
+ * with no on-premises concept to report, a provider we do not write to. Nothing
+ * is wrong; the refusal IS the answer.
+ *
+ * These two are the exception, and they are the same "an absence is ambiguous"
+ * shape #2297 fixed for a pass that threw. The rail refused because the
+ * OBSERVATION behind the account is missing or too old — a statement about the
+ * 03:00 identity sync, not about the leaver. The account was not disabled, the
+ * pass will report that as a clean run (`leaverPassStatus` writes PASSED when
+ * nothing refused the BATCH), and the row renders green.
+ *
+ * That is the whole defect. During the #2285 proving run the discriminator had
+ * to be carried as a manual reading rule — "live plus DISABLED:1 is success,
+ * live plus REFUSED_TARGET:1 means the sync failed" — and a rule an operator
+ * must remember is a rule that gets forgotten at 05:00 on the morning it
+ * matters. The two bases have been distinct `WriteTargetBasis` values all
+ * along; only the RENDER collapsed them into every other refusal.
+ *
+ * The two are kept apart from each other for the reason the rail keeps them
+ * apart: the remedy differs. `NEVER_OBSERVED` clears itself at the next
+ * successful sync — and #2144 deliberately declined to backfill, so a
+ * population of those is EXPECTED for one cycle, which is why it must not shout
+ * the same alarm. `OBSERVATION_STALE` will not clear by waiting.
+ */
+type SyncSignal = 'STALE' | 'NEVER_OBSERVED';
+
+/** Decision bases that say the observation is missing, not that a directory answered. */
+const SYNC_SIGNAL_BY_BASIS: Record<string, SyncSignal> = {
+    OBSERVATION_STALE: 'STALE',
+    NEVER_OBSERVED: 'NEVER_OBSERVED',
+};
+
+/**
+ * PASS-level refusals that are themselves a staleness statement.
+ *
+ * `NO_FRESH_LINKS` is the batch-level twin of `OBSERVATION_STALE`: the
+ * candidate query filtered on the same freshness bound (`LINK_FRESHNESS_MS`
+ * aliases `OBSERVATION_FRESHNESS_MS`) and found nothing, so the pass refused
+ * before any decision existed to carry a basis. Rendered as an ordinary
+ * refusal it sits in the same `info` tone as `NO_TERMINATED_WORKERS`, which is
+ * the healthiest outcome this page has — nobody left — and the two are one
+ * glance apart on a list an operator scans for seven days.
+ *
+ * A MAP rather than a comparison, so a second staleness refusal is one line
+ * here rather than a condition somebody has to find.
+ */
+const SYNC_SIGNAL_BY_REFUSAL: Record<string, SyncSignal> = {
+    NO_FRESH_LINKS: 'STALE',
+};
+
+/**
+ * Tone + copy per signal — deliberately the same shape as `STATUS_META`.
+ *
+ * `tone="solid"` on the loud arm, which is the one place on this page that asks
+ * for it. The status badge beside it is the primitive's default `subtle`, and
+ * the whole point of this column is that it must beat a green "Ran — complete"
+ * sitting one cell to its left. A subtle pill would lose that fight, which is
+ * the fight the column exists to win.
+ */
+const SYNC_SIGNAL_META: Record<
+    SyncSignal,
+    {
+        variant: StatusBadgeVariant;
+        key: string;
+        notice: InlineNoticeVariant;
+        noticeTitleKey: string;
+        noticeBodyKey: string;
+    }
+> = {
+    STALE: {
+        variant: 'error',
+        key: 'syncStale',
+        notice: 'warning',
+        noticeTitleKey: 'syncStaleHeading',
+        noticeBodyKey: 'syncStaleBody',
+    },
+    NEVER_OBSERVED: {
+        variant: 'warning',
+        key: 'syncNeverObserved',
+        notice: 'info',
+        noticeTitleKey: 'syncNeverObservedHeading',
+        noticeBodyKey: 'syncNeverObservedBody',
+    },
+};
+
+/** The signal a pass carries, with how many of its decisions rest on it. */
+interface SyncSignalReading {
+    readonly signal: SyncSignal;
+    /**
+     * Reported decisions resting on this basis. ZERO when the whole pass
+     * refused — `NO_FRESH_LINKS` stops before a decision exists — which is why
+     * the detail notice keys off this count rather than off the signal alone.
+     */
+    readonly decisions: number;
+}
+
+/**
  * Narrow the Json column without trusting it — and derive the one refusal code
  * the server did not always record.
  *
@@ -214,6 +326,32 @@ function readDecisions(result: PassResult): PassDecision[] {
                   typeof (d as PassDecision).linkId === 'string',
           )
         : [];
+}
+
+/**
+ * Read the loudest staleness signal in a pass, or null when there is none.
+ *
+ * STALE wins over NEVER_OBSERVED when both are present: one clears itself
+ * overnight and the other does not, so the badge must name the one whose
+ * remedy is not "wait". Null means the sync is not what stopped anything here
+ * — rendered as the same em-dash the other optional cells use, never as a
+ * reassuring word, because "no staleness detected" is a claim about the rows
+ * this pass REPORTED and a truncated report has more.
+ */
+function readSyncSignal(result: PassResult): SyncSignalReading | null {
+    let stale = 0;
+    let never = 0;
+    for (const d of readDecisions(result)) {
+        const rule = readBasis(d.basis)?.rule;
+        const signal = rule ? SYNC_SIGNAL_BY_BASIS[rule] : undefined;
+        if (signal === 'STALE') stale += 1;
+        else if (signal === 'NEVER_OBSERVED') never += 1;
+    }
+    const fromRefusal = result.refusal ? SYNC_SIGNAL_BY_REFUSAL[result.refusal] : undefined;
+    if (stale > 0 || fromRefusal === 'STALE') return { signal: 'STALE', decisions: stale };
+    if (never > 0 || fromRefusal === 'NEVER_OBSERVED')
+        return { signal: 'NEVER_OBSERVED', decisions: never };
+    return null;
 }
 
 /**
@@ -301,6 +439,15 @@ export function LeaverPassesClient() {
     const selectedResult = selected ? readResult(selected.resultJson) : {};
     const selectedDecisions = readDecisions(selectedResult);
     const selectedTruncated = selectedResult.decisionsTruncated === true;
+    const selectedSync = readSyncSignal(selectedResult);
+    // Read from the REFUSAL alone, not from `selectedSync`. The two answer
+    // different questions and only this one may re-tone the refusal notice: a
+    // pass whose DECISIONS went stale usually carries no refusal at all, and
+    // colouring an unrelated refusal by a fact about a different row is the
+    // same conflation this whole change exists to undo.
+    const selectedRefusalSignal = selectedResult.refusal
+        ? SYNC_SIGNAL_BY_REFUSAL[selectedResult.refusal]
+        : undefined;
 
     const passCols = createColumns<LeaverPassRow>([
         {
@@ -317,6 +464,32 @@ export function LeaverPassesClient() {
                 return (
                     <StatusBadge variant={meta?.variant ?? 'neutral'}>
                         {meta ? t(`leaverPasses.${meta.key}`) : row.original.status}
+                    </StatusBadge>
+                );
+            },
+        },
+        {
+            id: 'sync',
+            header: t('leaverPasses.colSync'),
+            // ITS OWN COLUMN, not a second pill inside an existing cell.
+            //
+            // The truncation marker rides the decisions cell because it
+            // qualifies that cell's number. This qualifies the STATUS — "Ran —
+            // complete" is true and not the whole truth — so it has to sit
+            // beside it and be scannable DOWN, which is the question the issue
+            // actually asks: is my 03:00 sync failing, not is this one pass odd.
+            // Seven days of em-dashes with one red pill in them answers that
+            // without opening anything.
+            cell: ({ row }) => {
+                const signal = readSyncSignal(readResult(row.original.resultJson));
+                // The em-dash the other optional cells use. A word here —
+                // "healthy", "fresh" — would be a claim about accounts this
+                // pass may never have looked at.
+                if (!signal) return <span className="text-content-subtle">—</span>;
+                const meta = SYNC_SIGNAL_META[signal.signal];
+                return (
+                    <StatusBadge variant={meta.variant} tone="solid">
+                        {t(`leaverPasses.${meta.key}`)}
                     </StatusBadge>
                 );
             },
@@ -402,8 +575,18 @@ export function LeaverPassesClient() {
                 // on screen from a determination the pass actually made.
                 if (!basis?.rule) return <span className="text-content-subtle">—</span>;
                 const key = BASIS_LABEL[basis.rule];
+                // STILL TEXT, and still not a badge — the paragraph above holds.
+                // Only the TONE moves, and only for the two bases that mean the
+                // sync failed rather than the directory answered. Without it a
+                // reader counting which of forty REFUSED_TARGET rows are
+                // operational has to read forty labels; with it they count
+                // colour. The quiet register is the right home for a qualifier
+                // on a verdict; it is the wrong home for a fault.
+                const tone = SYNC_SIGNAL_BY_BASIS[basis.rule]
+                    ? 'text-content-warning'
+                    : 'text-content-muted';
                 return (
-                    <span className="inline-flex flex-wrap items-center gap-tight text-content-muted">
+                    <span className={`inline-flex flex-wrap items-center gap-tight ${tone}`}>
                         {/* Its own element, not concatenated with the date: the
                             rule is the fact a reader scans for, and a label
                             fused to a timestamp is neither scannable nor
@@ -598,12 +781,52 @@ export function LeaverPassesClient() {
                         ))}
                     </dl>
 
+                    {selectedSync && selectedSync.decisions > 0 && (
+                        // NAMED IN WORDS, above the decisions table, because the
+                        // badge on the list row is an alarm and an alarm is not
+                        // an instruction. The count is the fact an operator acts
+                        // on: it says how much of this pass did nothing, and
+                        // separates "one odd account" from "the sync is down".
+                        //
+                        // Gated on the COUNT, not on the signal. A pass that
+                        // refused as a whole reports zero decisions and already
+                        // renders its own refusal notice below, carrying the
+                        // sentence the pass itself authored — a second banner
+                        // there would say the same thing twice in our words
+                        // instead of once in its own.
+                        <InlineNotice
+                            variant={SYNC_SIGNAL_META[selectedSync.signal].notice}
+                            title={t(
+                                `leaverPasses.${SYNC_SIGNAL_META[selectedSync.signal].noticeTitleKey}`,
+                            )}
+                        >
+                            {t(
+                                `leaverPasses.${SYNC_SIGNAL_META[selectedSync.signal].noticeBodyKey}`,
+                                { count: selectedSync.decisions },
+                            )}
+                        </InlineNotice>
+                    )}
+
                     {selectedResult.refusal && (
                         // The `detail` sentence is authored by the pass itself and
                         // is the human meaning of the code beside it — rendered
                         // verbatim rather than re-worded here, so the page cannot
                         // drift from what the refusal actually says.
-                        <InlineNotice variant="info" title={t('leaverPasses.refusalHeading')}>
+                        //
+                        // The TONE is the page's own, and it is the point: every
+                        // refusal used to render `info`, so NO_FRESH_LINKS — the
+                        // batch-level "the sync did not refresh anything" — sat
+                        // in the same colour as NO_TERMINATED_WORKERS, which is
+                        // the healthiest outcome this page has. The words never
+                        // change; only the colour stops lying.
+                        <InlineNotice
+                            variant={
+                                selectedRefusalSignal
+                                    ? SYNC_SIGNAL_META[selectedRefusalSignal].notice
+                                    : 'info'
+                            }
+                            title={t('leaverPasses.refusalHeading')}
+                        >
                             <span className="font-mono text-xs">{selectedResult.refusal}</span>
                             {selectedResult.detail ? ` — ${selectedResult.detail}` : ''}
                         </InlineNotice>
