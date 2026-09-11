@@ -764,7 +764,7 @@ model RiskSuggestionItem {
   createdRiskId         String?
   createdAt             DateTime              @default(now())
   updatedAt             DateTime              @updatedAt
-  asset                 Asset?                @relation(fields: [assetId], references: [id])
+  asset                 Asset?                @relation(fields: [assetId, tenantId], references: [id, tenantId])
   suggestionSession     RiskSuggestionSession @relation(fields: [sessionId, tenantId], references: [id, tenantId], onDelete: Cascade)
   session               Tenant                @relation(fields: [tenantId], references: [id])
 

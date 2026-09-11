@@ -114,12 +114,15 @@ const residueStatements = (): string[] =>
 
 /**
  * The three statement shapes that have been argued for in the residue
- * file's header prose, with the exact number of each.
+ * file's header prose.
  *
- * Groups 1 and 2 are PERMANENT — neither can be expressed in Prisma at
- * any cost. Group 3 is OPEN and is expected to shrink to zero when the
- * ControlException referential action is settled; when it does, delete
- * its entry here in the same commit that deletes the lines.
+ * ALL THREE ARE NOW PERMANENT — none can be expressed in Prisma at any
+ * cost. Group 3 was OPEN while the ControlException referential action was
+ * undecided; #2411 settled it by installing the Postgres 15+ column-scoped
+ * `ON DELETE SET NULL (<column>)`, and the #2356 carve-out extended the same
+ * decision to eight more sites. A column list is syntax Prisma's DSL does not
+ * have, which is what makes the divergence permanent rather than pending —
+ * the same reason as group 2, reached by a different route.
  */
 /**
  * The signed-off residue, enumerated MEMBER BY MEMBER.
@@ -163,12 +166,28 @@ const SIGNED_OFF: Array<{ name: string; members: readonly string[] }> = [
         ],
     },
     {
-        name: 'group 3 — ControlException composite SET NULL FKs (OPEN)',
+        name: 'group 3 — column-scoped SET NULL FKs Prisma cannot express',
         members: [
+            'ALTER TABLE "AccessReview" DROP CONSTRAINT "AccessReview_evidenceFileRecordId_tenantId_fkey";',
+            'ALTER TABLE "AssetVulnerability" DROP CONSTRAINT "AssetVulnerability_remediationTaskId_tenantId_fkey";',
             'ALTER TABLE "ControlException" DROP CONSTRAINT "ControlException_compensatingControlId_tenantId_fkey";',
             'ALTER TABLE "ControlException" DROP CONSTRAINT "ControlException_renewedFromId_tenantId_fkey";',
+            'ALTER TABLE "Evidence" DROP CONSTRAINT "Evidence_assetId_tenantId_fkey";',
+            'ALTER TABLE "Evidence" DROP CONSTRAINT "Evidence_fileRecordId_tenantId_fkey";',
+            'ALTER TABLE "Evidence" DROP CONSTRAINT "Evidence_taskId_tenantId_fkey";',
+            'ALTER TABLE "FileRecord" DROP CONSTRAINT "FileRecord_previousFileRecordId_tenantId_fkey";',
+            'ALTER TABLE "RiskSuggestionItem" DROP CONSTRAINT "RiskSuggestionItem_assetId_tenantId_fkey";',
+            'ALTER TABLE "ScannerFinding" DROP CONSTRAINT "ScannerFinding_assetId_tenantId_fkey";',
+            'ALTER TABLE "AssetVulnerability" ADD CONSTRAINT "AssetVulnerability_remediationTaskId_tenantId_fkey" FOREIGN KEY ("remediationTaskId", "tenantId") REFERENCES "Task"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "ScannerFinding" ADD CONSTRAINT "ScannerFinding_assetId_tenantId_fkey" FOREIGN KEY ("assetId", "tenantId") REFERENCES "Asset"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "AccessReview" ADD CONSTRAINT "AccessReview_evidenceFileRecordId_tenantId_fkey" FOREIGN KEY ("evidenceFileRecordId", "tenantId") REFERENCES "FileRecord"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
             'ALTER TABLE "ControlException" ADD CONSTRAINT "ControlException_compensatingControlId_tenantId_fkey" FOREIGN KEY ("compensatingControlId", "tenantId") REFERENCES "Control"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
             'ALTER TABLE "ControlException" ADD CONSTRAINT "ControlException_renewedFromId_tenantId_fkey" FOREIGN KEY ("renewedFromId", "tenantId") REFERENCES "ControlException"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "Evidence" ADD CONSTRAINT "Evidence_taskId_tenantId_fkey" FOREIGN KEY ("taskId", "tenantId") REFERENCES "Task"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "Evidence" ADD CONSTRAINT "Evidence_assetId_tenantId_fkey" FOREIGN KEY ("assetId", "tenantId") REFERENCES "Asset"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "Evidence" ADD CONSTRAINT "Evidence_fileRecordId_tenantId_fkey" FOREIGN KEY ("fileRecordId", "tenantId") REFERENCES "FileRecord"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "FileRecord" ADD CONSTRAINT "FileRecord_previousFileRecordId_tenantId_fkey" FOREIGN KEY ("previousFileRecordId", "tenantId") REFERENCES "FileRecord"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "RiskSuggestionItem" ADD CONSTRAINT "RiskSuggestionItem_assetId_tenantId_fkey" FOREIGN KEY ("assetId", "tenantId") REFERENCES "Asset"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
         ],
     },
 ];

@@ -164,7 +164,7 @@ model AssetVulnerability {
   asset           Asset  @relation(fields: [assetId, tenantId], references: [id, tenantId], onDelete: Cascade)
   cve             Cve    @relation(fields: [cveId], references: [id], onDelete: Cascade)
   ownerUser       User?  @relation("AssetVulnerabilityOwner", fields: [ownerUserId], references: [id])
-  remediationTask Task?  @relation("VulnerabilityRemediation", fields: [remediationTaskId], references: [id], onDelete: SetNull)
+  remediationTask Task?  @relation("VulnerabilityRemediation", fields: [remediationTaskId, tenantId], references: [id, tenantId])
 
   /// One link per (asset, cve) within a tenant — re-matching is idempotent.
   @@unique([tenantId, assetId, cveId])
@@ -254,7 +254,7 @@ model ScannerFinding {
 
   tenant     Tenant     @relation(fields: [tenantId], references: [id])
   scannerRun ScannerRun @relation(fields: [scannerRunId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  asset      Asset?     @relation("AssetScannerFindings", fields: [assetId], references: [id], onDelete: SetNull)
+  asset      Asset?     @relation("AssetScannerFindings", fields: [assetId, tenantId], references: [id, tenantId])
 
   /// Idempotent ingest: re-scanning the same issue updates this one row.
   @@unique([tenantId, fingerprint])

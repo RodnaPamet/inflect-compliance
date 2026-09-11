@@ -847,7 +847,7 @@ model AccessReview {
   createdBy          User                            @relation("AccessReviewCreator", fields: [createdByUserId], references: [id])
   closedBy           User?                           @relation("AccessReviewCloser", fields: [closedByUserId], references: [id])
   deletedBy          User?                           @relation("AccessReviewDeleter", fields: [deletedByUserId], references: [id])
-  evidenceFile       FileRecord?                     @relation("AccessReviewEvidence", fields: [evidenceFileRecordId], references: [id], onDelete: SetNull)
+  evidenceFile       FileRecord?                     @relation("AccessReviewEvidence", fields: [evidenceFileRecordId, tenantId], references: [id, tenantId])
   decisions          AccessReviewDecision[]
   connectedDecisions AccessReviewConnectedDecision[]
 

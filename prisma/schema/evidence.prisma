@@ -60,10 +60,10 @@ model Evidence {
   evidenceRiskLinks    EvidenceRiskLink[]
   evidenceAssetLinks   EvidenceAssetLink[]
   tags                 EvidenceTag[]
-  task                 Task?                     @relation(fields: [taskId], references: [id])
+  task                 Task?                     @relation(fields: [taskId, tenantId], references: [id, tenantId])
   risk                 Risk?                     @relation(fields: [riskId], references: [id])
-  asset                Asset?                    @relation(fields: [assetId], references: [id])
-  fileRecord           FileRecord?               @relation(fields: [fileRecordId], references: [id])
+  asset                Asset?                    @relation(fields: [assetId, tenantId], references: [id, tenantId])
+  fileRecord           FileRecord?               @relation(fields: [fileRecordId, tenantId], references: [id, tenantId])
   ownerUser            User?                     @relation("EvidenceOwner", fields: [ownerUserId], references: [id])
   tenant               Tenant                    @relation(fields: [tenantId], references: [id])
   reviews              EvidenceReview[]
@@ -138,7 +138,7 @@ model FileRecord {
   // the new FileRecord points back at the one it superseded, so a doc's
   // history is a walkable chain rather than an orphaned unrelated row.
   previousFileRecordId String?
-  previousFileRecord   FileRecord?      @relation("FileRecordVersion", fields: [previousFileRecordId], references: [id])
+  previousFileRecord   FileRecord?      @relation("FileRecordVersion", fields: [previousFileRecordId, tenantId], references: [id, tenantId])
   supersededBy         FileRecord[]     @relation("FileRecordVersion")
   evidence             Evidence[]
   tenant               Tenant           @relation(fields: [tenantId], references: [id])
