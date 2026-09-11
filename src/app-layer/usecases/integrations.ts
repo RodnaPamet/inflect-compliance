@@ -717,6 +717,26 @@ export async function listConnectedAccounts(
                 protectionReason: true,
                 lastActiveAt: true,
                 syncedAt: true,
+                // WHICH DIRECTORY OBSERVED THIS ACCOUNT. Two connections for
+                // one provider is a supported configuration —
+                // IntegrationConnection is unique on (tenantId, provider,
+                // NAME) and the account key is
+                // (tenantId, connectionId, externalUserId) — so ONE human can
+                // legitimately hold two rows here, carrying the same provider,
+                // the same email and the same display name.
+                //
+                // `isProtected` is per ROW, and IdentityAccountLink is
+                // deliberately not unique on employeeId, so each of those rows
+                // links and is decided on separately. Without this field the
+                // roster renders them as two identical lines and an operator
+                // protecting "the account" cannot tell which one they just
+                // protected, or that there is a second.
+                //
+                // Scalar, and the name FLATTENED below, for the same reason
+                // `identityLink` is: fields are safe to add here, a nested
+                // object on every row is a shape change.
+                connectionId: true,
+                connection: { select: { name: true } },
                 // Presence only. `connectedAccountId` carries a field-level
                 // @unique on the link side, so this is one row or none — a
                 // relation select, not an N+1.
@@ -731,13 +751,17 @@ export async function listConnectedAccounts(
             take: options.limit ?? IDENTITY_ROSTER_PAGE_SIZE,
         }).then(async (rows) => {
             const reasons = await latestUnresolvedReasons(db, ctx.tenantId);
-            // FLATTENED to two scalar fields. The relation object is stripped
+            // FLATTENED to scalar fields. Both relation objects are stripped
             // because this response is consumed by the access-review page
             // through an `Array.isArray` check that fails open — the docblock
             // above says adding FIELDS is safe and changing the SHAPE is not,
             // and a nested object on every row is closer to the second.
-            return rows.map(({ identityLink, ...account }) => ({
+            return rows.map(({ identityLink, connection, ...account }) => ({
                 ...account,
+                // The operator-legible half of `connectionId`, which is a cuid.
+                // Flattened rather than passed through as `connection: { name }`
+                // — see the select above and the docblock on this usecase.
+                connectionName: connection.name,
                 linked: identityLink !== null,
                 // Only meaningful when unlinked. A linked account carries no
                 // reason, rather than a stale one from before it linked.
