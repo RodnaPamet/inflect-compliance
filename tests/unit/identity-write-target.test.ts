@@ -12,6 +12,7 @@
  */
 import {
     resolveWriteTarget,
+    CONNECTION_DISABLED_REFUSAL,
     OBSERVATION_FRESHNESS_MS,
 } from '@/app-layer/usecases/identity-write-target';
 
@@ -404,5 +405,124 @@ describe('an UNOBSERVABLE account is not a NOT-YET-OBSERVED one', () => {
             okta.allowed === false ? okta.reason : '',
         );
         expect(entra.basis).not.toBe(okta.basis);
+    });
+});
+
+describe('a row whose OBSERVING connection is no longer enabled is refused at any age', () => {
+    // ═══ THE WINDOW THIS CLOSES (#2419) ═══
+    //
+    // `resolveDirectoryWriter` refuses AMBIGUOUS_CONNECTION on more than one
+    // ENABLED connection for a provider. `removeIntegrationConnection` is a
+    // SOFT disable, so taking one of two out drops the count back to one and
+    // that refusal stops applying — while the rows the disabled connection
+    // observed stay present, stay linked, and stay inside their observation
+    // window. Until now the only thing that caught them was OBSERVATION_STALE,
+    // two days later. That is a window, not a guard.
+    const DAY = 24 * 60 * 60 * 1000;
+    const NOW = new Date('2026-08-28T12:00:00Z');
+    const at = (ms: number) => new Date(NOW.getTime() - ms);
+
+    it('refuses CONNECTION_DISABLED even on a FRESH observation', () => {
+        // The whole point: freshness is not the question. The observation may
+        // be an hour old and still describe a directory no writer here is bound
+        // to any more.
+        const r = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: false,
+            onPremStateObservedAt: at(1 * DAY),
+            connectionEnabled: false,
+            now: NOW,
+        });
+        expect(r.allowed).toBe(false);
+        expect(r.basis).toBe('CONNECTION_DISABLED');
+    });
+
+    it('the same row on an ENABLED connection still proceeds', () => {
+        // The other direction, so the refusal above cannot be satisfied by a
+        // rail that simply stopped allowing anything. Identical inputs but for
+        // the flag.
+        const r = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: false,
+            onPremStateObservedAt: at(1 * DAY),
+            connectionEnabled: true,
+            now: NOW,
+        });
+        expect(r.allowed).toBe(true);
+        expect(r.basis).toBe('NOT_ON_PREM_SYNCED');
+    });
+
+    it('outranks the on-prem-directory allow, which consults nothing else', () => {
+        // `ON_PREM_DIRECTORY` returns allowed unconditionally — it is the one
+        // branch that looks at no other field — so ordering this check after it
+        // would leave every Active Directory row of a soft-disabled forest
+        // waved straight through. Ordering is the fix, and this is what pins it.
+        const stranded = resolveWriteTarget({
+            provider: 'active-directory',
+            onPremisesSyncEnabled: null,
+            connectionEnabled: false,
+            now: NOW,
+        });
+        expect(stranded.allowed).toBe(false);
+        expect(stranded.basis).toBe('CONNECTION_DISABLED');
+
+        // Control: the same provider on a live connection is still the one
+        // place a disable lands at the source of authority.
+        const live = resolveWriteTarget({
+            provider: 'active-directory',
+            onPremisesSyncEnabled: null,
+            connectionEnabled: true,
+            now: NOW,
+        });
+        expect(live).toEqual({ allowed: true, basis: 'ON_PREM_DIRECTORY' });
+    });
+
+    it('an ABSENT flag changes nothing for a producer that cannot answer it', () => {
+        // `undefined` is "the caller did not ask", not "disabled". Reading it as
+        // disabled would make every existing producer refuse every account, and
+        // a rail that refuses everything is indistinguishable from a subsystem
+        // somebody switched off — which is the silent-nothing failure this path
+        // is built around. Asserted against the verbatim pre-existing verdicts.
+        const absent = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: false,
+            onPremStateObservedAt: at(1 * DAY),
+            now: NOW,
+        });
+        expect(absent).toEqual({ allowed: true, basis: 'NOT_ON_PREM_SYNCED' });
+        expect(resolveWriteTarget({ provider: 'active-directory', onPremisesSyncEnabled: null })).toEqual(
+            { allowed: true, basis: 'ON_PREM_DIRECTORY' },
+        );
+    });
+
+    it('says what happened and what to do, and does not send the operator to wait for a sync', () => {
+        // OBSERVATION_STALE's advice — wait, or re-enable — is only half right
+        // here: no amount of waiting refreshes a row whose connection is off,
+        // and the reason has to say that the write would otherwise be addressed
+        // at a DIFFERENT directory.
+        const r = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: false,
+            connectionEnabled: false,
+            now: NOW,
+        });
+        expect(r.allowed === false && r.reason).toMatch(/no longer enabled/i);
+        expect(r.allowed === false && r.reason).toMatch(/re-enable the connection/i);
+        expect(r.allowed === false && r.reason).toMatch(/different directory/i);
+    });
+
+    it('the exported refusal IS what the rail returns — one sentence, not two', () => {
+        // The pass refuses these candidates before the batch, where the
+        // connection is known, and reads the sentence from this object. A
+        // second copy written there is how one rule becomes two accounts of
+        // itself.
+        const r = resolveWriteTarget({
+            provider: 'entra-id',
+            onPremisesSyncEnabled: false,
+            connectionEnabled: false,
+            now: NOW,
+        });
+        expect(r).toBe(CONNECTION_DISABLED_REFUSAL);
+        expect(CONNECTION_DISABLED_REFUSAL.basis).toBe('CONNECTION_DISABLED');
     });
 });

@@ -64,6 +64,23 @@ export interface WriteTargetInput {
      * disagreeing about whether an account may be disabled.
      */
     readonly onPremStateObservedAt?: Date | string | null;
+    /**
+     * Is the connection whose sync OBSERVED this account still enabled?
+     *
+     * `false` is the answer that matters, and it refuses outright — see the
+     * branch at the head of `resolveWriteTarget`.
+     *
+     * `undefined` means the caller did not ask, and is deliberately NOT read as
+     * "disabled". Every producer that predates this field would otherwise
+     * refuse every account it has, and a rail that refuses everything is
+     * indistinguishable from a subsystem somebody switched off — which is the
+     * silent-nothing failure this whole path exists to avoid. The direction of
+     * travel is the opposite one: each producer that CAN answer starts passing
+     * it. `identity-leaver-pass` is the first, and it reads the connection per
+     * candidate rather than deriving it, so an unanswerable row refuses rather
+     * than defaulting.
+     */
+    readonly connectionEnabled?: boolean;
     /** Injectable clock, for tests. Defaults to now at the call. */
     readonly now?: Date;
 }
@@ -103,7 +120,12 @@ export type WriteTargetBasis =
     /** The provider has no on-premises concept to report. Waiting will not help. */
     | 'PROVIDER_CANNOT_OBSERVE'
     /** Not a directory this platform disables accounts in. */
-    | 'UNSUPPORTED_DIRECTORY';
+    | 'UNSUPPORTED_DIRECTORY'
+    /**
+     * The connection that observed this account is no longer enabled, so
+     * nothing stored about it is authoritative. Refused at any age.
+     */
+    | 'CONNECTION_DISABLED';
 
 export type WriteTarget =
     /** The write may go to this provider's API. */
@@ -115,6 +137,46 @@ export type WriteTarget =
           readonly reason: string;
           readonly retargetTo?: string;
       };
+
+/**
+ * The refusal for a row whose OBSERVING connection is no longer enabled.
+ *
+ * ═══ WHY THIS IS NOT COVERED BY THE AGE BOUND BELOW ═══
+ *
+ * `resolveDirectoryWriter` refuses `AMBIGUOUS_CONNECTION` when a provider has
+ * more than one ENABLED connection, because a writer is resolved per
+ * (tenant, provider) and choosing one would address a disable at a directory
+ * the account may not live in. `removeIntegrationConnection` is a SOFT disable
+ * (`isEnabled: false`, `usecases/integrations.ts`), so soft-disabling one of two
+ * takes the count back to one and that refusal stops applying — while the rows
+ * the disabled connection observed are still present, still linked, and still
+ * carrying the on-premises state they last held.
+ *
+ * Nothing sweeps those rows: the deprovision reconcile is connection-scoped,
+ * and the LINK reconcile is provider-scoped, so a surviving connection's nightly
+ * pass keeps re-stamping `lastVerifiedAt` on them. Their `onPremStateObservedAt`
+ * is the one thing that does freeze — which is why `OBSERVATION_STALE` below
+ * eventually catches them, but only after `OBSERVATION_FRESHNESS_MS`. Two days
+ * during which a pass evaluates a row against a writer bound to a DIFFERENT
+ * connection is a window, not a guard (#2419).
+ *
+ * A REFUSAL OBJECT rather than a branch that builds one, because the rail is not
+ * its only reader. The pass refuses these candidates where the connection is
+ * known — before the batch, since the candidate shape carries no connection —
+ * and a second sentence written there would be a second rule to keep in step.
+ */
+export const CONNECTION_DISABLED_REFUSAL: Extract<WriteTarget, { allowed: false }> = {
+    allowed: false,
+    basis: 'CONNECTION_DISABLED',
+    reason:
+        'Refusing to disable an account whose directory connection is no longer enabled. Disabling a ' +
+        'connection leaves the accounts it observed in place — still linked, still carrying the ' +
+        'on-premises state they last held — but no sync refreshes them and no writer is bound to the ' +
+        'directory they came from, so the write would be addressed at whichever connection is still ' +
+        'enabled. That is a different directory from the one this account was seen in. Re-enable the ' +
+        'connection that observed it if these accounts should still be offboarded from here, or remove ' +
+        'the accounts it left behind.',
+};
 
 /**
  * Cloud directories whose accounts we may write to directly, PROVIDED the
@@ -200,6 +262,19 @@ const ON_PREM_DIRECTORY = 'active-directory';
  * offboarding succeeded.
  */
 export function resolveWriteTarget(account: WriteTargetInput): WriteTarget {
+    // ── FIRST, AND ABOVE THE ON-PREM ALLOW. ──
+    //
+    // Not folded in with the age bound further down, and not ordered after the
+    // `ON_PREM_DIRECTORY` arm, because that arm returns `allowed` without
+    // consulting anything else: an Active Directory row left behind by a
+    // soft-disabled forest would be waved through by the one branch that looks
+    // at nothing. See CONNECTION_DISABLED_REFUSAL for why a disabled connection
+    // is not merely a stale one.
+    //
+    // `=== false`, never falsy: `undefined` is "the caller did not ask", which
+    // is every producer that predates the field. See the input's docblock.
+    if (account.connectionEnabled === false) return CONNECTION_DISABLED_REFUSAL;
+
     // The on-prem directory masters its own accounts. This is the one provider
     // where a write is unambiguously landing at the source of authority.
     if (account.provider === ON_PREM_DIRECTORY)
@@ -248,6 +323,13 @@ export function resolveWriteTarget(account: WriteTargetInput): WriteTarget {
         // connection-scoped, so those rows freeze while a SURVIVING connection's
         // provider-scoped link reconcile keeps their links looking fresh. No
         // amount of waiting refreshes them.
+        //
+        // A CALLER THAT KNOWS THE CONNECTION NEVER GETS HERE FOR THAT CAUSE:
+        // `connectionEnabled: false` refuses at the head of this function, by
+        // name, without waiting out the age bound. This arm still owns the
+        // cause for every caller that cannot answer that question, and it is
+        // still the right refusal for a row whose connection is enabled and
+        // whose sync has simply stopped answering.
         return {
             allowed: false,
             basis: 'OBSERVATION_STALE',
