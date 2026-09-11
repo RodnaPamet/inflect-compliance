@@ -174,10 +174,16 @@ export const MAX_REPORTED_DECISIONS = 200;
  * follows the file's own precedent rather than the enum's empty-population
  * wording.
  *
- * The refusal check comes FIRST and that order is safe: `refused` is set at
- * exactly one place, and that return carries `results: []`, so a refusal and a
- * truncated decision list are mutually exclusive by construction — a real
- * PARTIAL cannot be masked by the branch above it.
+ * The refusal check comes FIRST and that order is safe. `refused` is set at two
+ * places in `disableAccountsForLeaver` — the blast-radius breaker, and the
+ * batch-level preflight that refuses a credential PROVEN unable to write — and
+ * the property this branch depends on is the one both share rather than their
+ * number: each returns before the per-candidate loop, so each carries
+ * `results: []`. A refusal and a truncated decision list are therefore mutually
+ * exclusive by construction, and a real PARTIAL cannot be masked by the branch
+ * above it. A third refusal added after the loop, returning results it had
+ * already collected, WOULD break that — which is the thing to check, not the
+ * count.
  */
 export function leaverPassStatus(
     refused: string | undefined,
@@ -523,9 +529,16 @@ export type LeaverPassRefusal =
     | 'MODE_ABOVE_CLAMP'
     | 'NO_TERMINATED_WORKERS'
     | 'NO_FRESH_LINKS'
-    // The breaker refused the WHOLE batch. Distinct from every refusal above:
-    // those stop before any decision is made, this one stops after the pass has
-    // looked at a real population and judged the blast radius wrong.
+    // The batch was refused WHOLE, before any candidate was decided. Distinct
+    // from every refusal above: those stop before the pass has looked at
+    // anything, this one stops after it has assembled a real population.
+    //
+    // Covers the two rails that can reach that conclusion — the blast-radius
+    // breaker judging the batch the wrong size, and the preflight finding the
+    // credential PROVEN unable to disable anyone. ONE code for both on purpose:
+    // the distinction an operator acts on is carried by the accompanying detail
+    // text, which names the cause in a sentence, and widening this union splits
+    // every consumer of it for a difference already legible where they look.
     | 'BATCH_REFUSED'
     | `WRITER_${WriterRefusal}`;
 

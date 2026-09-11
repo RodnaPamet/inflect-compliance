@@ -1532,3 +1532,152 @@ describe('a directory write is recorded in the hash-chained trail', () => {
         );
     });
 });
+
+/**
+ * The batch-level preflight, and — mostly — the things it must NOT do.
+ *
+ * `preflight` is an efficiency seam, not a rail: `disable` re-checks the same
+ * property per account and refuses there regardless. So the tests that matter
+ * are the ones pinning how a FAILURE of it is read, because this is the leaver
+ * write path and the failure direction is the whole design. Only a refusal the
+ * provider PROVED may stop a batch; anything else must leave the run exactly as
+ * a writer declaring no preflight at all would.
+ */
+describe('the batch-level preflight', () => {
+    /** Three is under both breaker rules at a population of 500. */
+    const batch = () => [
+        input({ linkId: 'l1', externalUserId: 'e1' }),
+        input({ linkId: 'l2', externalUserId: 'e2' }),
+        input({ linkId: 'l3', externalUserId: 'e3' }),
+    ];
+
+    it('runs ONCE for the batch, not once per candidate', async () => {
+        // The entire point. A per-account check is what `disable` already does;
+        // if this ran per candidate it would buy nothing and cost a token
+        // exchange each time, against a rate-limited customer directory.
+        const preflight = jest.fn(async () => {});
+        const w = fakeWriter({ preflight });
+
+        const r = await disableAccountsForLeaver(ctx, w, { candidates: batch(), population: 500 });
+
+        expect(preflight).toHaveBeenCalledTimes(1);
+        expect(w.disabled).toEqual(['e1', 'e2', 'e3']);
+        expect(r.refused).toBeUndefined();
+    });
+
+    it('a PROVEN refusal stops the whole batch before any account is touched', async () => {
+        // `definitivelyNotApplied` asked about the CREDENTIAL is a fact about
+        // every candidate at once: each would meet the identical check inside
+        // `disable` and be refused in turn. So refusing here writes strictly
+        // fewer accounts than proceeding, never more.
+        const w = fakeWriter({
+            preflight: async () => {
+                throw new DirectoryWriteError('consent for the write permission was never granted', {
+                    definitivelyNotApplied: true,
+                });
+            },
+        });
+
+        const r = await disableAccountsForLeaver(ctx, w, { candidates: batch(), population: 500 });
+
+        expect(r.refused).toContain('consent for the write permission was never granted');
+        // A refusal returns no decisions — the property `leaverPassStatus`
+        // depends on to tell a refused pass from a truncated one.
+        expect(r.results).toEqual([]);
+        expect(w.disabled).toEqual([]);
+        // Not the breaker's counter. Folding a missing admin consent into the
+        // series that alerts on a broken roster feed would make the two
+        // indistinguishable on the one instrument watching them.
+        expect(recordBatchRefused).not.toHaveBeenCalled();
+    });
+
+    it('an UNPROVEN failure does not stop anything — the batch runs in full', async () => {
+        // ═══ THE REGRESSION THIS FILE EXISTS TO PREVENT ═══
+        //
+        // The Entra implementation reaches its check through a token exchange,
+        // which fails on an STS 5xx or a dropped socket — neither of which says
+        // anything whatsoever about consent. Reading those as a refusal would
+        // turn one momentary blip into a night on which nobody was offboarded,
+        // and the per-account path handles the same failure one candidate at a
+        // time with better information.
+        const w = fakeWriter({
+            preflight: async () => {
+                throw new Error('Entra token exchange failed (HTTP 503)');
+            },
+        });
+
+        const r = await disableAccountsForLeaver(ctx, w, { candidates: batch(), population: 500 });
+
+        expect(r.refused).toBeUndefined();
+        expect(w.disabled).toEqual(['e1', 'e2', 'e3']);
+        expect(r.results.map((x) => x.outcome)).toEqual(['DISABLED', 'DISABLED', 'DISABLED']);
+    });
+
+    it('a plain DirectoryWriteError is NOT proof, and does not refuse either', async () => {
+        // The flag is the claim, not the class. `definitivelyNotApplied`
+        // defaults to false precisely so a writer has to opt IN to asserting
+        // the directory is untouched, and that default must survive here.
+        const w = fakeWriter({
+            preflight: async () => {
+                throw new DirectoryWriteError('could not tell');
+            },
+        });
+
+        const r = await disableAccountsForLeaver(ctx, w, { candidates: batch(), population: 500 });
+
+        expect(r.refused).toBeUndefined();
+        expect(w.disabled).toEqual(['e1', 'e2', 'e3']);
+    });
+
+    it('is skipped entirely by a writer that declares none', async () => {
+        // Optional on the interface, and the snapshot reader every tenant runs
+        // for seven days declares no preflight — so this is the DRY_RUN path.
+        const w = fakeWriter();
+
+        const r = await disableAccountsForLeaver(ctx, w, { candidates: batch(), population: 500 });
+
+        expect(r.refused).toBeUndefined();
+        expect(w.disabled).toEqual(['e1', 'e2', 'e3']);
+    });
+
+    it('is not reached when the pass would write nothing anyway', async () => {
+        // Every candidate is already refused by a rail evaluated from data in
+        // hand, so the credential's consent cannot change this pass's outcome.
+        // Running it would spend a round trip on a customer's directory to
+        // learn nothing — and worse, a refusal returns `results: []`, which
+        // would throw away exactly the per-account decisions an operator
+        // compares during the observation window.
+        const preflight = jest.fn(async () => {});
+        const w = fakeWriter({ preflight });
+        const candidates = batch().map((c) => ({ ...c, isProtected: true }));
+
+        const r = await disableAccountsForLeaver(ctx, w, { candidates, population: 500 });
+
+        expect(preflight).not.toHaveBeenCalled();
+        expect(r.results.map((x) => x.outcome)).toEqual([
+            'REFUSED_PROTECTED',
+            'REFUSED_PROTECTED',
+            'REFUSED_PROTECTED',
+        ]);
+    });
+
+    it('the blast-radius breaker is answered FIRST, with no directory contact', async () => {
+        // Ordering, asserted rather than assumed. The breaker is the cheaper
+        // question and the graver one; a batch it refuses must not first spend
+        // a token exchange against the customer's directory to discover
+        // something it was never going to act on.
+        const preflight = jest.fn(async () => {});
+        const candidates = Array.from({ length: 400 }, (_, i) =>
+            input({ linkId: `l${i}`, externalUserId: `e${i}` }),
+        );
+
+        const r = await disableAccountsForLeaver(ctx, fakeWriter({ preflight }), {
+            candidates,
+            population: 500,
+        });
+
+        expect(recordBatchRefused).toHaveBeenCalledTimes(1);
+        expect(preflight).not.toHaveBeenCalled();
+        expect(r.results).toEqual([]);
+    });
+});
