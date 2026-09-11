@@ -67,6 +67,12 @@ const mockDb = {
     // a pass, which means a mock missing this key would leave every assertion
     // green while the reader threw on every call.
     identityWriteJournal: { findMany: jest.fn() },
+    // Which candidates sit on a connection that is still ENABLED (#2419). This
+    // read is NOT wrapped: a failure reaches the pass's own catch and the pass
+    // records an ERROR, which is the fail-closed direction — a mock missing
+    // this key would turn every test in the file red rather than green, which
+    // is the right way round for a read that gates a write.
+    identityAccountLink: { findMany: jest.fn() },
 };
 
 const NOW = new Date('2026-08-20T09:00:00.000Z');
@@ -87,6 +93,17 @@ beforeEach(() => {
     mockDb.integrationExecution.create.mockResolvedValue({ id: 'exec-1' });
     // Default: nothing stranded. Tests that care override it.
     mockDb.identityWriteJournal.findMany.mockResolvedValue([]);
+    // Default: every candidate's connection is still enabled. Derived from the
+    // ids the pass actually asks for rather than pinned to a fixture list, so a
+    // test that invents its own candidates does not silently get an empty
+    // answer — which the rail reads as "could not confirm", i.e. stranded.
+    mockDb.identityAccountLink.findMany.mockImplementation(
+        async (args: { where?: { id?: { in?: string[] } } }) =>
+            (args.where?.id?.in ?? []).map((id) => ({
+                id,
+                connectedAccount: { connection: { isEnabled: true } },
+            })),
+    );
 });
 
 describe('the durable record a dry run leaves behind', () => {
@@ -772,5 +789,187 @@ describe('the backlog of writes nobody confirmed', () => {
         expect(r.status).not.toBe('ERROR');
         const row = mockDb.integrationExecution.create.mock.calls[0][0].data;
         expect(row.resultJson.unsettledOnEntry).toBeNull();
+    });
+});
+
+describe('a candidate whose connection was soft-disabled (#2419)', () => {
+    // ═══ THE WINDOW ═══
+    //
+    // `resolveDirectoryWriter` refuses AMBIGUOUS_CONNECTION only while TWO
+    // connections for a provider are ENABLED. `removeIntegrationConnection`
+    // soft-disables, so taking one out drops the count to one and the refusal
+    // stops applying — while the rows that connection observed stay present,
+    // stay linked (the link reconcile is provider-scoped, so a surviving
+    // connection keeps re-stamping them) and stay inside their observation
+    // window. Only their `onPremStateObservedAt` freezes, so the age bound
+    // catches them two days later. Until then a pass evaluated them against a
+    // writer bound to a DIFFERENT connection.
+
+    /** Say which of the pass's candidates sit on a still-enabled connection. */
+    function connectionsEnabled(byLinkId: Record<string, boolean>): void {
+        mockDb.identityAccountLink.findMany.mockImplementation(
+            async (args: { where?: { id?: { in?: string[] } } }) =>
+                (args.where?.id?.in ?? [])
+                    .filter((id) => id in byLinkId)
+                    .map((id) => ({
+                        id,
+                        connectedAccount: { connection: { isEnabled: byLinkId[id] } },
+                    })),
+        );
+    }
+
+    const live = { linkId: 'l1', externalUserId: 'x1', onPremisesSyncEnabled: false };
+    const stranded = { linkId: 'l2', externalUserId: 'x2', onPremisesSyncEnabled: false };
+
+    it('keeps the stranded candidate OUT of the batch and leaves the live one in', async () => {
+        findCandidates.mockResolvedValue([live, stranded]);
+        connectionsEnabled({ l1: true, l2: false });
+        disableBatch.mockResolvedValue({ results: [{ outcome: 'DRY_RUN', linkId: 'l1' }] });
+
+        await run();
+
+        // toEqual, not a length check: the candidate that survives must be the
+        // LIVE one. A filter that kept the wrong row would pass a count.
+        expect(disableBatch.mock.calls[0][2].candidates).toEqual([live]);
+    });
+
+    it('refuses it by NAME, with the connection basis on the record', async () => {
+        // Not a silent skip. A dropped candidate would leave the operator with
+        // a pass that offboarded fewer people than it had candidates and
+        // nothing on the row saying why — the silent-nothing failure again.
+        findCandidates.mockResolvedValue([live, stranded]);
+        connectionsEnabled({ l1: true, l2: false });
+        disableBatch.mockResolvedValue({ results: [{ outcome: 'DRY_RUN', linkId: 'l1' }] });
+
+        const r = await run();
+
+        expect(r.status).toBe('PASSED');
+        expect(r.counts).toEqual({ REFUSED_TARGET: 1, DRY_RUN: 1 });
+        // Still counted as a candidate: it WAS one, and the report must not
+        // show fewer people than the pass looked at.
+        expect(r.candidates).toBe(2);
+
+        const decisions = mockDb.integrationExecution.create.mock.calls[0][0].data.resultJson
+            .decisions as Array<Record<string, unknown>>;
+        const refusal = decisions.find((d) => d.linkId === 'l2');
+        expect(refusal).toMatchObject({
+            outcome: 'REFUSED_TARGET',
+            basis: { rule: 'CONNECTION_DISABLED', onPremisesSyncEnabled: false },
+        });
+        expect(String(refusal?.reason)).toMatch(/no longer enabled/i);
+        // Paired positive: the live candidate's own decision is still there, so
+        // the refusal above is about one row and not about a dead pass.
+        expect(decisions.find((d) => d.linkId === 'l1')).toMatchObject({ outcome: 'DRY_RUN' });
+    });
+
+    it('a candidate on an ENABLED connection is untouched — the other direction', async () => {
+        // Without this the refusal above is satisfied by a pass that refuses
+        // everything, which is the failure this rail must not become.
+        findCandidates.mockResolvedValue([live, stranded]);
+        connectionsEnabled({ l1: true, l2: true });
+        disableBatch.mockResolvedValue({
+            results: [
+                { outcome: 'DRY_RUN', linkId: 'l1' },
+                { outcome: 'DRY_RUN', linkId: 'l2' },
+            ],
+        });
+
+        const r = await run();
+
+        expect(disableBatch.mock.calls[0][2].candidates).toEqual([live, stranded]);
+        expect(r.counts).toEqual({ DRY_RUN: 2 });
+    });
+
+    it('refuses regardless of how FRESH the observation is', async () => {
+        // The age bound is not the question. `OBSERVATION_STALE` would catch
+        // this row eventually; the point of the new basis is that "eventually"
+        // is up to OBSERVATION_FRESHNESS_MS away, and the connection is off NOW.
+        const freshlyObserved = {
+            ...stranded,
+            onPremStateObservedAt: new Date(NOW.getTime() - 60 * 60 * 1000),
+        };
+        findCandidates.mockResolvedValue([freshlyObserved]);
+        connectionsEnabled({ l2: false });
+        disableBatch.mockResolvedValue({ results: [] });
+
+        const r = await run();
+
+        expect(r.counts).toEqual({ REFUSED_TARGET: 1 });
+        const decisions = mockDb.integrationExecution.create.mock.calls[0][0].data.resultJson
+            .decisions as Array<Record<string, unknown>>;
+        expect(decisions[0]).toMatchObject({
+            basis: {
+                rule: 'CONNECTION_DISABLED',
+                observedAt: freshlyObserved.onPremStateObservedAt.toISOString(),
+            },
+        });
+        // And the batch was handed nothing at all, rather than the row.
+        expect(disableBatch.mock.calls[0][2].candidates).toEqual([]);
+    });
+
+    it('a link the lookup does not return at all is stranded, not actionable', async () => {
+        // FAILS CLOSED. "We could not confirm the connection" and "the
+        // connection is fine" are the two answers this subsystem must never
+        // collapse — a row deleted between the two reads, or hidden by
+        // row-level security, must not read as permission to write.
+        findCandidates.mockResolvedValue([live]);
+        connectionsEnabled({});
+        // The batch is handed nothing, so it decides nothing. Stated rather
+        // than inherited from the default mock, which answers for `l1`
+        // regardless of what it was given.
+        disableBatch.mockResolvedValue({ results: [] });
+
+        const r = await run();
+
+        expect(r.counts).toEqual({ REFUSED_TARGET: 1 });
+        expect(disableBatch.mock.calls[0][2].candidates).toEqual([]);
+    });
+
+    it('a lookup that THROWS stops the pass rather than writing, and still closes the writer', async () => {
+        // The read gates a write, so its failure must not degrade to "carry on".
+        // The pass's own catch records an ERROR row, which is visible, and
+        // nothing reaches the directory.
+        //
+        // The close is the other half, and it is why this read sits INSIDE the
+        // try rather than above it: the AD arm holds an LDAP bind, and a leaked
+        // bind outlives the process that made it.
+        findCandidates.mockResolvedValue([live]);
+        mockDb.identityAccountLink.findMany.mockRejectedValue(new Error('pool exhausted'));
+
+        const r = await run();
+
+        expect(r.status).toBe('ERROR');
+        expect(disableBatch).not.toHaveBeenCalled();
+        expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it('is not consulted at all when no writer could be resolved', async () => {
+        // Placement, pinned. Every refusal this rail builds is counted on the
+        // write-outcome metric and reported in the row, so it must not run on a
+        // path that returns before recording any decision — WRITER_NO_CONNECTION
+        // being the reachable one, and exactly the shape a tenant whose ONLY
+        // connection was soft-disabled produces.
+        findCandidates.mockResolvedValue([live, stranded]);
+        connectionsEnabled({ l1: true, l2: false });
+        resolveWriter.mockResolvedValue({
+            kind: 'none',
+            refusal: 'NO_CONNECTION',
+            detail: 'No enabled entra-id connection for this tenant.',
+        });
+
+        const r = await run();
+
+        expect(r.refusal).toBe('WRITER_NO_CONNECTION');
+        expect(mockDb.identityAccountLink.findMany).not.toHaveBeenCalled();
+    });
+
+    it('asks about exactly the candidates it holds, tenant-scoped and bounded', async () => {
+        findCandidates.mockResolvedValue([live, stranded]);
+
+        await run();
+
+        const args = mockDb.identityAccountLink.findMany.mock.calls[0][0];
+        expect(args.where).toMatchObject({ tenantId: 't1', id: { in: ['l1', 'l2'] } });
+        expect(args.take).toBe(2);
     });
 });

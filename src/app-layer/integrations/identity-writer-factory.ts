@@ -95,8 +95,15 @@ export type WriterRefusal =
      * `onPremisesSyncEnabled` / `onPremStateObservedAt` they last held —
      * nothing sweeps them, because the deprovision reconcile is
      * connection-scoped. So this refusal is NOT a guard against acting on
-     * another connection's frozen rows; the age bound in
-     * `identity-write-target` is.
+     * another connection's frozen rows.
+     *
+     * What guards those rows is `CONNECTION_DISABLED` in
+     * `identity-write-target`, produced per candidate by the leaver pass
+     * (#2419). It used to be the AGE bound in the same file, which is a
+     * different and weaker thing: an age bound only catches a frozen row once
+     * it has been frozen for `OBSERVATION_FRESHNESS_MS`, so soft-disabling one
+     * of two connections reopened a two-day window in which this refusal no
+     * longer applied and nothing else refused yet.
      */
     | 'AMBIGUOUS_CONNECTION'
     /** The connection's secrets did not decrypt. */

@@ -60,9 +60,17 @@
  * A soft-disabled connection does NOT reduce that count, and its account rows
  * are never swept — the deprovision reconcile is connection-scoped, so they
  * freeze holding whatever they last observed. What refuses to act on a frozen
- * row is not this unit choice but the age bound on the observation, which lives
- * in `resolveWriteTarget` (`identity-write-target.ts`) and is applied to the raw
- * timestamp the candidate carries whole (`identity-disable-account.ts`).
+ * row is not this unit choice but two rules in `resolveWriteTarget`
+ * (`identity-write-target.ts`): `CONNECTION_DISABLED`, decided per candidate in
+ * step 5b below from the connection's own `isEnabled`, and — for a row that is
+ * merely stale rather than orphaned — the age bound on the observation, applied
+ * to the raw timestamp the candidate carries whole
+ * (`identity-disable-account.ts`).
+ *
+ * The first of those exists because the second alone left a window. The age
+ * bound only fires once a row has been frozen for `OBSERVATION_FRESHNESS_MS`,
+ * so soft-disabling one of two connections lifted the factory's ambiguity
+ * refusal immediately while nothing else refused for two more days (#2419).
  *
  * @module usecases/identity-leaver-pass
  */
@@ -72,9 +80,12 @@ import { buildSystemContext } from '@/app-layer/context-system';
 import type { Prisma } from '@prisma/client';
 import type { RequestContext } from '../types';
 import { resolveDirectoryWriter, type WriterRefusal } from '../integrations/identity-writer-factory';
-import { getIdentityWritePolicy } from './identity-write-policy';
+import { getIdentityWritePolicy, type IdentityWriteMode } from './identity-write-policy';
 import { listUnsettledWrites } from './identity-write-journal';
-import { OBSERVATION_FRESHNESS_MS } from './identity-write-target';
+import {
+    CONNECTION_DISABLED_REFUSAL,
+    OBSERVATION_FRESHNESS_MS,
+} from './identity-write-target';
 import { isAboveClamp } from '@/lib/identity/write-ladder';
 import {
     disableAccountsForLeaver,
@@ -85,7 +96,10 @@ import {
     type LeaverDisableResult,
 } from './identity-disable-account';
 import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
-import { recordLeaverPassOutcome } from '@/lib/observability/integration-metrics';
+import {
+    recordIdentityWriteOutcome,
+    recordLeaverPassOutcome,
+} from '@/lib/observability/integration-metrics';
 
 /**
  * The highest rung this pass will act at.
@@ -174,16 +188,30 @@ export const MAX_REPORTED_DECISIONS = 200;
  * follows the file's own precedent rather than the enum's empty-population
  * wording.
  *
- * The refusal check comes FIRST and that order is safe. `refused` is set at two
- * places in `disableAccountsForLeaver` — the blast-radius breaker, and the
- * batch-level preflight that refuses a credential PROVEN unable to write — and
- * the property this branch depends on is the one both share rather than their
- * number: each returns before the per-candidate loop, so each carries
- * `results: []`. A refusal and a truncated decision list are therefore mutually
- * exclusive by construction, and a real PARTIAL cannot be masked by the branch
- * above it. A third refusal added after the loop, returning results it had
- * already collected, WOULD break that — which is the thing to check, not the
- * count.
+ * The refusal check comes FIRST, and after #2473 and #2419 the reason is no
+ * longer the one either change wrote on its own.
+ *
+ * `refused` is set at two places in `disableAccountsForLeaver` — the
+ * blast-radius breaker, and the batch-level preflight that refuses a credential
+ * PROVEN unable to write. Both return before the per-candidate loop, so both
+ * carry `results: []` FROM THE BATCH.
+ *
+ * What is no longer true is that a refusal implies an empty decision list. The
+ * pass now prepends the rail refusals it decided BEFORE the batch — candidates
+ * whose connection is no longer enabled (#2419) — so a refused batch can reach
+ * here with decisions already in it. #2473's comment said the two were mutually
+ * exclusive by construction; that held when it was written and this branch ends
+ * it.
+ *
+ * Refusal still wins, and that is right: NOT_APPLICABLE describes the batch the
+ * breaker or preflight stopped, while the decisions in the row describe what the
+ * pass had already refused by name. Neither claim is weakened by the other.
+ *
+ * The property to check on any future refusal is therefore NOT the count of
+ * refusal sites, and no longer "does a refusal carry results". It is whether the
+ * refusal returns results IT HAD ALREADY COLLECTED — a third refusal added
+ * AFTER the per-candidate loop would mask a real PARTIAL, which is the failure
+ * both of the comments this replaces were reaching for.
  */
 export function leaverPassStatus(
     refused: string | undefined,
@@ -555,6 +583,109 @@ export interface LeaverPassResult {
     readonly errorMessage?: string;
 }
 
+/**
+ * Candidates whose OBSERVING connection is not currently enabled.
+ *
+ * ═══ THE HOLE THIS FILLS ═══
+ *
+ * `resolveDirectoryWriter` refuses AMBIGUOUS_CONNECTION on more than one
+ * ENABLED connection for a provider. `removeIntegrationConnection` is a SOFT
+ * disable, so soft-disabling one of two takes that count back to one and the
+ * refusal stops applying — while the rows the disabled connection observed are
+ * still present, still linked, and still inside their observation window. The
+ * age bound in `resolveWriteTarget` catches them, but only once
+ * `OBSERVATION_FRESHNESS_MS` has elapsed: a window of up to two days in which a
+ * pass evaluates a row against a writer bound to a different connection. (#2419)
+ *
+ * ═══ WHY THE READ IS HERE AND NOT ON THE CANDIDATE ═══
+ *
+ * `DisableAccountInput` carries no connection, and the fields it does carry are
+ * read where the population is assembled — which is the right shape and is one
+ * file over. Until the candidate can carry it, this is the nearest seam that
+ * still sees every candidate BEFORE the batch, and one indexed read for the
+ * whole list is the same cost the population count above already pays.
+ *
+ * ═══ FAILS CLOSED, TWICE ═══
+ *
+ * A link is treated as actionable ONLY on a positive `isEnabled === true`. A
+ * link the read did not return at all — deleted between the two queries, hidden
+ * by row-level security, or simply absent — is STRANDED, not actionable: "we
+ * could not confirm the connection" and "the connection is fine" are the two
+ * answers this subsystem must never collapse. And a read that throws propagates
+ * to the pass's own catch, which records an errored pass and writes nothing.
+ */
+async function findStrandedLinkIds(
+    ctx: RequestContext,
+    candidates: readonly DisableAccountInput[],
+): Promise<Set<string>> {
+    const linkIds = candidates.map((c) => c.linkId);
+    if (linkIds.length === 0) return new Set();
+
+    const rows = await runInTenantContext(ctx, (db) =>
+        db.identityAccountLink.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: linkIds } },
+            select: {
+                id: true,
+                // Two hops, no extra round trip: the account names the
+                // connection that observed it (`connectionId` is NOT NULL as of
+                // the phase-2 migration), and the connection carries the flag
+                // `removeIntegrationConnection` clears.
+                connectedAccount: { select: { connection: { select: { isEnabled: true } } } },
+            },
+            // Bounded by the candidate list, which `findLeaverCandidates` has
+            // already capped. Never unbounded, even reading by primary key.
+            take: linkIds.length,
+        }),
+    );
+
+    // Optional-chained even though both relations are REQUIRED in the schema.
+    // Prisma types them non-null, but the value that decides a directory write
+    // should not depend on that being true at runtime under every RLS
+    // configuration: a missing hop lands on `undefined !== true`, which refuses,
+    // rather than on a TypeError that ends the pass.
+    const actionable = new Set(
+        rows.filter((r) => r.connectedAccount?.connection?.isEnabled === true).map((r) => r.id),
+    );
+    return new Set(linkIds.filter((id) => !actionable.has(id)));
+}
+
+/**
+ * The decision a stranded candidate gets: a NAMED refusal, never a quiet drop.
+ *
+ * `REFUSED_TARGET` with `basis.rule = CONNECTION_DISABLED`, so it reads on the
+ * report exactly like the other write-target refusals and says which rule
+ * produced it. Filtering these candidates out silently would shrink the batch
+ * and leave the operator with a pass that offboarded fewer people than it had
+ * candidates, with nothing on the row saying why.
+ *
+ * The sentence and the basis both come from the rail, so this and
+ * `resolveWriteTarget` cannot drift into two different accounts of one rule.
+ *
+ * The counter is recorded HERE because `disableAccount` — the one choke point
+ * that counts every other outcome — is never reached for these candidates.
+ * A refusal that is invisible to the metric would make the rail look inert.
+ */
+function refuseStrandedCandidate(
+    provider: string,
+    mode: IdentityWriteMode,
+    candidate: DisableAccountInput,
+): LeaverDisableResult {
+    recordIdentityWriteOutcome({ provider, action: 'disable', outcome: 'REFUSED_TARGET' });
+    return {
+        linkId: candidate.linkId,
+        outcome: 'REFUSED_TARGET',
+        reason: CONNECTION_DISABLED_REFUSAL.reason,
+        mode,
+        basis: {
+            rule: CONNECTION_DISABLED_REFUSAL.basis,
+            onPremisesSyncEnabled: candidate.onPremisesSyncEnabled,
+            ...(candidate.onPremStateObservedAt
+                ? { observedAt: candidate.onPremStateObservedAt.toISOString() }
+                : {}),
+        },
+    };
+}
+
 function tally(results: readonly DisableResult[]): Partial<Record<DisableOutcome, number>> {
     const counts: Partial<Record<DisableOutcome, number>> = {};
     for (const r of results) counts[r.outcome] = (counts[r.outcome] ?? 0) + 1;
@@ -779,11 +910,68 @@ export async function runIdentityLeaverPass(input: {
         }
 
         try {
+            // ── 5b. Which candidates sit on a connection that is no longer
+            //        ENABLED.
+            //
+            // Refused by name rather than left to the age bound two days later
+            // — see `findStrandedLinkIds`. They stay in `candidates` for the
+            // reported count, because they WERE candidates and the report must
+            // not quietly show fewer people than the pass looked at; what they
+            // are kept out of is the batch.
+            //
+            // BELOW the writer refusal, and INSIDE this try, and both
+            // placements are load-bearing:
+            //
+            //   · below, because every refusal built here is counted on the
+            //     write-outcome metric and reported in the row, and the two
+            //     must describe the same set. Above that line the pass can
+            //     still return without recording a decision at all —
+            //     NO_CONNECTION is the reachable case, a tenant whose ONLY
+            //     connection was soft-disabled — leaving counters for
+            //     decisions no artefact holds.
+            //   · inside, because the writer is already resolved. The AD arm
+            //     holds an LDAP bind, and a read that throws out here would
+            //     leak it; the finally below is what closes it, and it is
+            //     unconditional.
+            const strandedLinkIds = await findStrandedLinkIds(ctx, candidates);
+            const actionable =
+                strandedLinkIds.size === 0
+                    ? candidates
+                    : candidates.filter((c) => !strandedLinkIds.has(c.linkId));
+            const strandedResults: LeaverDisableResult[] =
+                strandedLinkIds.size === 0
+                    ? []
+                    : candidates
+                          .filter((c) => strandedLinkIds.has(c.linkId))
+                          .map((c) => refuseStrandedCandidate(input.provider, mode, c));
+            if (strandedResults.length > 0) {
+                logger.warn('leaver candidates refused: their connection is no longer enabled', {
+                    component: 'identity-leaver-pass',
+                    tenantId: ctx.tenantId,
+                    provider: input.provider,
+                    // COUNTS ONLY. This line is neither encrypted nor
+                    // tenant-scoped, so it carries no link id and no directory
+                    // identifier — the per-decision record does, on a surface
+                    // that is both.
+                    stranded: strandedResults.length,
+                    candidates: candidates.length,
+                });
+            }
+
             const outcome = await disableAccountsForLeaver(ctx, resolution.writer, {
-                candidates,
+                candidates: actionable,
                 population,
             });
-            const counts = tally(outcome.results);
+            // The stranded refusals FIRST, then what the batch decided. One
+            // list from here down, so the counts, the row and the returned
+            // status are all derived from the same decisions — a refusal the
+            // report counted but the row omitted is the drift this file has
+            // already had to fix twice.
+            const results: readonly LeaverDisableResult[] =
+                strandedResults.length === 0
+                    ? outcome.results
+                    : [...strandedResults, ...outcome.results];
+            const counts = tally(results);
 
             logger.info('leaver pass complete', {
                 component: 'identity-leaver-pass',
@@ -809,7 +997,7 @@ export async function runIdentityLeaverPass(input: {
                     ctx,
                     input.provider,
                     candidates,
-                    outcome.results,
+                    results,
                     {
                         mode,
                         evidence: resolution.kind,
@@ -848,7 +1036,7 @@ export async function runIdentityLeaverPass(input: {
                 // sync RETURNED PARTIAL while PERSISTING PASSED) reproduced here
                 // in mirror image — same two sites disagreeing, opposite way
                 // round, which is why fixing that one did not find this one.
-                status: leaverPassStatus(outcome.refused, outcome.results.length),
+                status: leaverPassStatus(outcome.refused, results.length),
                 ...(outcome.refused ? { refusal: 'BATCH_REFUSED' as const } : {}),
                 mode,
                 counts,
