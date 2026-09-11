@@ -44,6 +44,27 @@ interface ApiKeyRecord {
     createdById: string;
     createdAt: string;
     createdBy: { id: string; name: string | null; email: string };
+    /**
+     * THE BINDING (#2445, #2446). Present on the API since the agent register
+     * shipped; this screen simply threw it away, which is why an operator had to
+     * hold the MCP hub open beside this page to answer "which agent is this key?"
+     * during an incident.
+     *
+     * `agentId === null` is the `no_binding` state — and under
+     * `requireRegisteredAgent` it means the key is refused at the tool boundary,
+     * not merely unlabelled.
+     */
+    agentId: string | null;
+    maxAutonomyLevel: number | null;
+    agent: { id: string; name: string; status: string; autonomyLevel: number } | null;
+}
+
+/** An agent this credential could be bound to, for the create form's selector. */
+interface AgentOption {
+    id: string;
+    name: string;
+    status: string;
+    autonomyLevel: number;
 }
 
 interface CreatedKeyResponse extends ApiKeyRecord {
@@ -92,6 +113,58 @@ const EXPIRY_OPTIONS = [
     { label: '1 year', value: '365' },
 ];
 const EXPIRY_CB_OPTIONS: ComboboxOption[] = EXPIRY_OPTIONS.filter(o => o.value).map(o => ({ value: o.value, label: o.label }));
+
+/** The bindable agents, as Combobox options. */
+const AGENT_CB_OPTIONS = (agents: AgentOption[]): ComboboxOption[] =>
+    agents.map(a => ({ value: a.id, label: a.name }));
+
+/**
+ * The autonomy ceilings this credential may carry — CAPPED AT THE AGENT'S OWN
+ * LEVEL, because a key can only ever NARROW what its agent may do.
+ *
+ * The usecase refuses a higher value, so offering one would be a form that
+ * submits to a known refusal. Building the list from the agent instead means the
+ * impossible choice is not on screen.
+ */
+const AUTONOMY_CB_OPTIONS = (agentLevel: number, noneLabel: string): ComboboxOption[] => [
+    { value: '', label: noneLabel },
+    ...Array.from({ length: agentLevel + 1 }, (_, level) => ({
+        value: String(level),
+        label: `L${level}`,
+    })),
+];
+
+/**
+ * What this credential acts as — the whole point of #2446.
+ *
+ * ONE component for both tables. The active and inactive lists are separate
+ * column arrays, and a binding rendered twice is a binding that can come to mean
+ * two different things; the incident-time question ("which agent is this key?")
+ * must not have two answers depending on which table you are looking at.
+ *
+ * `no_binding` is stated as a CONSEQUENCE, not as an empty cell. Under
+ * `requireRegisteredAgent` an unbound key is refused at the tool boundary, so
+ * blankness here would read as "nothing to say" about the one property that
+ * decides whether the credential works at all.
+ */
+function BindingCell({ record, muted }: { record: ApiKeyRecord; muted?: boolean }) {
+    const t = useTranslations('admin');
+    if (!record.agentId) {
+        return <StatusBadge variant="warning" size="sm">{t('apiKeys.noBinding')}</StatusBadge>;
+    }
+    return (
+        <div className="flex flex-wrap items-center gap-1">
+            <span className={muted ? 'text-content-subtle' : 'text-content-default'}>
+                {record.agent?.name ?? record.agentId}
+            </span>
+            {record.maxAutonomyLevel !== null && (
+                <StatusBadge variant="neutral" size="sm">
+                    {t('apiKeys.autonomyCap', { level: record.maxAutonomyLevel })}
+                </StatusBadge>
+            )}
+        </div>
+    );
+}
 
 function isExpired(expiresAt: string | null): boolean {
     if (!expiresAt) return false;
@@ -263,7 +336,22 @@ export default function ApiKeysPage() {
     const [createName, setCreateName] = useState('');
     const [createScopes, setCreateScopes] = useState<string[]>([]);
     const [createExpiry, setCreateExpiry] = useState('');
+    const [createAgentId, setCreateAgentId] = useState('');
+    const [createMaxAutonomy, setCreateMaxAutonomy] = useState('');
     const [creating, setCreating] = useState(false);
+    /**
+     * The bindable agents, and whether we were allowed to ask.
+     *
+     * This page is gated on `admin.manage`; the agent register is gated on
+     * `admin.agent_registry`. They are not the same key and one does not imply
+     * the other, so a legitimate admin can reach this form and be refused the
+     * list. That is not an error to shout about — it is a narrower permission
+     * doing its job — so the selector is REPLACED by a sentence explaining why
+     * binding is unavailable, rather than rendering an empty dropdown that looks
+     * like "this tenant has no agents".
+     */
+    const [agents, setAgents] = useState<AgentOption[]>([]);
+    const [agentsRefused, setAgentsRefused] = useState(false);
     const [createdKey, setCreatedKey] = useState<CreatedKeyResponse | null>(null);
     // Pending revocation — drives the ConfirmDialog. Replaces the
     // previous window.confirm() call.
@@ -281,8 +369,26 @@ export default function ApiKeysPage() {
         }
     }, [apiUrl, t]);
 
+    const fetchAgents = useCallback(async () => {
+        try {
+            const res = await fetch(apiUrl('/admin/agents?status=ACTIVE'));
+            if (res.status === 403) { setAgentsRefused(true); return; }
+            if (!res.ok) return;
+            const body = await res.json();
+            const rows: AgentOption[] = Array.isArray(body) ? body : (body.agents ?? []);
+            setAgents(rows);
+        } catch {
+            // A failed probe means UNKNOWN, not "no agents". Leaving the list
+            // empty without `agentsRefused` renders the selector with nothing in
+            // it, which reads as a definite answer we do not have.
+            setAgentsRefused(true);
+        }
+    }, [apiUrl]);
+
     // eslint-disable-next-line react-hooks/set-state-in-effect
     useEffect(() => { fetchKeys(); }, [fetchKeys]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    useEffect(() => { fetchAgents(); }, [fetchAgents]);
 
     // ─── Create ───
     async function handleCreate() {
@@ -305,6 +411,15 @@ export default function ApiKeysPage() {
                     name: createName.trim(),
                     scopes: createScopes,
                     expiresAt,
+                    // Both accepted by the API since the register shipped, and
+                    // both omitted here until now — so every credential this
+                    // product minted stood at `no_binding` and was refused the
+                    // moment a tenant enforced registration.
+                    agentId: createAgentId || null,
+                    maxAutonomyLevel:
+                        createAgentId && createMaxAutonomy !== ''
+                            ? Number(createMaxAutonomy)
+                            : null,
                 }),
             });
 
@@ -320,6 +435,8 @@ export default function ApiKeysPage() {
             setCreateName('');
             setCreateScopes([]);
             setCreateExpiry('');
+            setCreateAgentId('');
+            setCreateMaxAutonomy('');
             setShowCreate(false);
             await fetchKeys();
         } catch (err) {
@@ -375,6 +492,11 @@ export default function ApiKeysPage() {
                     cell: ({ row }) => (
                         <code className="text-content-muted font-mono">{row.original.keyPrefix}...</code>
                     ),
+                },
+                {
+                    accessorKey: 'agentId',
+                    header: t('apiKeys.colBinding'),
+                    cell: ({ row }) => <BindingCell record={row.original} />,
                 },
                 {
                     accessorKey: 'scopes',
@@ -469,6 +591,11 @@ export default function ApiKeysPage() {
                     cell: ({ row }) => (
                         <code className="text-content-subtle font-mono">{row.original.keyPrefix}...</code>
                     ),
+                },
+                {
+                    accessorKey: 'agentId',
+                    header: t('apiKeys.colBinding'),
+                    cell: ({ row }) => <BindingCell record={row.original} muted />,
                 },
                 {
                     id: 'status',
@@ -603,6 +730,71 @@ export default function ApiKeysPage() {
                             matchTriggerWidth
                             buttonProps={{ className: 'w-full sm:w-48' }}
                         />
+                    </div>
+
+                    <div>
+                        <div className="mb-1 flex items-center gap-1.5">
+                            <label className="text-xs text-content-muted uppercase tracking-wider">{t('apiKeys.bindingLabel')}</label>
+                            <InfoTooltip
+                                aria-label={t('apiKeys.bindingAria')}
+                                iconClassName="h-3.5 w-3.5"
+                                content={t('apiKeys.bindingTooltip')}
+                            />
+                        </div>
+                        {agentsRefused ? (
+                            <p className="text-xs text-content-muted" id="key-binding-unavailable">
+                                {t('apiKeys.bindingUnavailable')}
+                            </p>
+                        ) : (
+                            <>
+                                <Combobox
+                                    id="key-agent-select"
+                                    selected={AGENT_CB_OPTIONS(agents).find(o => o.value === createAgentId) ?? null}
+                                    setSelected={(opt) => {
+                                        setCreateAgentId(opt?.value ?? '');
+                                        // A ceiling with no agent to min against is
+                                        // refused by a CHECK constraint, so clearing
+                                        // the agent must clear the ceiling too rather
+                                        // than submit a state the database forbids.
+                                        if (!opt?.value) setCreateMaxAutonomy('');
+                                    }}
+                                    options={AGENT_CB_OPTIONS(agents)}
+                                    placeholder={t('apiKeys.agentPlaceholder')}
+                                    matchTriggerWidth
+                                    buttonProps={{ className: 'w-full sm:w-72' }}
+                                />
+                                {createAgentId && (
+                                    <div className="mt-2">
+                                        <div className="mb-1 flex items-center gap-1.5">
+                                            <label className="text-xs text-content-muted uppercase tracking-wider">{t('apiKeys.autonomyLabel')}</label>
+                                            <InfoTooltip
+                                                aria-label={t('apiKeys.autonomyAria')}
+                                                iconClassName="h-3.5 w-3.5"
+                                                content={t('apiKeys.autonomyTooltip')}
+                                            />
+                                        </div>
+                                        <Combobox
+                                            hideSearch
+                                            id="key-autonomy-select"
+                                            selected={
+                                                AUTONOMY_CB_OPTIONS(
+                                                    agents.find(a => a.id === createAgentId)?.autonomyLevel ?? 0,
+                                                    t('apiKeys.autonomyNone'),
+                                                ).find(o => o.value === createMaxAutonomy) ?? null
+                                            }
+                                            setSelected={(opt) => setCreateMaxAutonomy(opt?.value ?? '')}
+                                            options={AUTONOMY_CB_OPTIONS(
+                                                agents.find(a => a.id === createAgentId)?.autonomyLevel ?? 0,
+                                                t('apiKeys.autonomyNone'),
+                                            )}
+                                            placeholder={t('apiKeys.autonomyNone')}
+                                            matchTriggerWidth
+                                            buttonProps={{ className: 'w-full sm:w-72' }}
+                                        />
+                                    </div>
+                                )}
+                            </>
+                        )}
                     </div>
 
                     <div>

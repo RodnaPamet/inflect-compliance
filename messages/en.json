@@ -5281,7 +5281,19 @@
       "revokedResourceSingular": "revoked key",
       "revokeConfirmTitle": "Revoke API key \"{name}\"?",
       "revokeConfirmTitleGeneric": "Revoke API key?",
-      "revokeConfirmDesc": "Key prefix {prefix}… will stop working immediately. Any integration using it will lose access. This cannot be undone."
+      "revokeConfirmDesc": "Key prefix {prefix}… will stop working immediately. Any integration using it will lose access. This cannot be undone.",
+      "bindingLabel": "Agent binding",
+      "bindingAria": "About agent binding",
+      "bindingTooltip": "The registered agent this credential acts as. When this workspace enforces agent registration, a credential with no binding is refused at the tool boundary — it can still be created, but it will not work.",
+      "bindingUnavailable": "You do not have permission to read the agent register, so this credential cannot be bound to an agent here. Someone with agent register access can bind it after creation.",
+      "agentPlaceholder": "No agent — unbound credential",
+      "autonomyLabel": "Autonomy ceiling",
+      "autonomyAria": "About the autonomy ceiling",
+      "autonomyTooltip": "The highest rung this credential may drive its agent to. The effective limit is the lower of this and the agent's own level, so a ceiling can only ever narrow what the agent may do — never widen it.",
+      "autonomyNone": "No key-level limit",
+      "autonomyCap": "max L{level}",
+      "colBinding": "Acts as",
+      "noBinding": "No binding"
     },
     "notifications": {
       "runJobConfirm": "Are you sure you want to run the {jobType} job now?",

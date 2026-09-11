@@ -41,6 +41,13 @@ export async function listApiKeys(ctx: RequestContext) {
                 agentId: true,
                 maxAutonomyLevel: true,
                 createdBy: { select: { id: true, name: true, email: true } },
+                // The BINDING, named rather than referenced (#2446). The screen
+                // has to say "acts as Deploy Bot", not print a cuid — and an
+                // operator deciding whether to revoke during an incident is
+                // choosing between agents, not between ids. `agentId` alone
+                // forced the MCP hub to be open alongside this page to resolve
+                // it, which is the two-screen problem this closes.
+                agent: { select: { id: true, name: true, status: true, autonomyLevel: true } },
             },
             orderBy: { createdAt: 'desc' },
         })
