@@ -313,6 +313,21 @@ export class RegisteredAgentRepository {
                                 OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
                             },
                         },
+                        // The RETIREMENT PRECONDITION (#2448), counted on the
+                        // detail read so the screen can state it BEFORE the
+                        // operator commits rather than after the server refuses.
+                        //
+                        // `retireRegisteredAgent` refuses while any proposal is
+                        // PENDING and its message names the number — good, but a
+                        // precondition an operator only meets by being rejected
+                        // is one they discover by failing. The same predicate,
+                        // read ahead of the click, turns it into something the
+                        // page can say and link to.
+                        //
+                        // PENDING mirrors the usecase exactly. If that status set
+                        // ever widens, this must widen with it, or the dialog
+                        // will promise a retirement the server declines.
+                        proposals: { where: { status: 'PENDING' } },
                     },
                 },
             },

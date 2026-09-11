@@ -4591,7 +4591,15 @@
           "ACTIVE": "This agent's credentials are accepted at registration. This workspace does not require registered agents, so they would be accepted whatever the register said about this agent — but while it is active, its granted tools, its autonomy ceiling and its policy card do apply to them at the tool boundary.",
           "SUSPENDED": "This agent is suspended in the register. This workspace does not require registered agents, so its credentials are still accepted at registration — but while it is suspended every tool call is refused at the boundary, and its granted tools, its autonomy ceiling, its policy card and its stop controls apply again. It can still read the framework catalogue. It stays in the register and can be activated again.",
           "RETIRED": "This agent is retired. This workspace does not require registered agents, so retirement does not refuse a credential bound to it — and it stops applying this agent's granted tools, autonomy ceiling and policy card to that credential. The register keeps its record and the authority it held."
-        }
+        },
+        "retireAction": "Retire",
+        "retireTitle": "Retire this agent",
+        "retirePrompt": "Retirement is permanent. It cannot be undone, and the agent cannot be brought back into service.",
+        "retireBlocked": "This agent has {count} proposal(s) still awaiting review. Retirement is refused until they are resolved — approve or reject them, or suspend the agent instead, which stops it immediately and is reversible.",
+        "retireBlockedLink": "Open the proposal queue",
+        "retireIrreversible": "Suspension stops this agent just as completely and can be lifted. Retirement cannot.",
+        "retireTypeToConfirm": "Type {name} to confirm",
+        "retireError": "Could not retire this agent."
       },
       "risk": {
         "standingHeading": "Standing assessment",
