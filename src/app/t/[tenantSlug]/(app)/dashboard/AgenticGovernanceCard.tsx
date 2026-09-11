@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 
@@ -47,7 +48,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
  * empty panel cannot be told apart from a panel that failed to load, and
  * "nothing is stopped" is the single most reassuring sentence here.
  */
-export default async function AgenticGovernanceCard({
+async function AgenticGovernanceCardBody({
     tenantSlug,
 }: {
     tenantSlug: string;
@@ -123,5 +124,30 @@ export default async function AgenticGovernanceCard({
                 )}
             </div>
         </Card>
+    );
+}
+
+/**
+ * The Suspense boundary lives HERE, not at the call site.
+ *
+ * `tests/unit/executive-dashboard-page.test.ts` pins the dashboard `page.tsx`
+ * under 120 lines so the shell cannot accumulate the composition it was split
+ * apart to avoid — and a twelve-line boundary-plus-rationale in the shell is
+ * exactly that accumulation. The reasoning belongs next to the component it
+ * describes anyway.
+ *
+ * `fallback={null}`, not a skeleton: the body renders nothing at all for a
+ * reader without `admin.agent_registry`, so a skeleton would be a visible
+ * flicker of a card that was never going to appear.
+ *
+ * Deliberately OUTSIDE the page's `cachedSsrPayload` batch. This card's
+ * content is kill-switch state, and a 60-second cache on "is everything
+ * stopped right now" is the wrong trade.
+ */
+export default function AgenticGovernanceCard(props: { tenantSlug: string }) {
+    return (
+        <Suspense fallback={null}>
+            <AgenticGovernanceCardBody {...props} />
+        </Suspense>
     );
 }
