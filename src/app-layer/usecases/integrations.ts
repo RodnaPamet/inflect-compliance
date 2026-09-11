@@ -31,7 +31,7 @@ import { LEAVER_PASS_AUTOMATION_SUFFIX } from './identity-leaver-pass';
 import { logger } from '@/lib/observability/logger';
 import { CONNECTION_STALE_AFTER_SECONDS } from '@/lib/observability/connection-freshness';
 import { runIdentitySync } from './identity-sync';
-import { IDENTITY_ROSTER_PAGE_SIZE } from '@/lib/identity-roster';
+import { IDENTITY_ROSTER_PAGE_SIZE, IDENTITY_ROSTER_SEARCH_MAX_LENGTH } from '@/lib/identity-roster';
 
 /** Providers whose connection-level sync runs a directory/account sync. */
 const IDENTITY_SYNC_PROVIDERS = new Set(['okta', 'google-workspace', 'entra-id', 'active-directory']);
@@ -688,16 +688,56 @@ export async function listExecutionsForConnection(
  * Gives ConnectedIdentityAccount a roster surface (like Personnel/Devices) so
  * a directory sync produces something visible + the CONNECTED_APP access
  * review can be pre-checked instead of throwing on empty.
+ *
+ * SEARCH IS WHAT MAKES THE `take` BELOW A PAGE SIZE RATHER THAN A REACHABILITY
+ * LIMIT (#2418). The roster is not bounded per tenant — a sync stores up to
+ * 5000 accounts per connection — so before `q` existed, an account sorting
+ * past row 500 could not be reached from the admin page at all, and that page
+ * is where an operator marks an account never-offboard. Filtering in SQL, not
+ * over the already-cut page, is the whole point: a client-side filter of a
+ * truncated list can only hide rows, never reveal the ones that were cut.
+ *
+ * BOTH FILTERS ARE OPT-IN, AND THAT IS LOAD-BEARING. Called with no options
+ * this returns exactly what it always returned, because the access-reviews
+ * directory gate reads this route unfiltered and infers "nothing synced" from
+ * a short page. Under a filter a short page means "the matches fit" — it says
+ * nothing about the directory — so a caller that passes `q` or `provider` must
+ * never feed the result to that comparison. See src/lib/identity-roster.ts.
  */
 export async function listConnectedAccounts(
     ctx: RequestContext,
-    options: { provider?: string; limit?: number } = {}
+    options: { provider?: string; q?: string; limit?: number } = {}
 ) {
+    // Clamped, not rejected — see IDENTITY_ROSTER_SEARCH_MAX_LENGTH. An
+    // all-whitespace term is no term at all, and must not collapse the roster
+    // to the rows whose email happens to contain a space.
+    const q = options.q?.trim().slice(0, IDENTITY_ROSTER_SEARCH_MAX_LENGTH) ?? '';
     return runInTenantContext(ctx, (db) =>
         db.connectedIdentityAccount.findMany({
             where: {
                 tenantId: ctx.tenantId,
                 ...(options.provider ? { provider: options.provider } : {}),
+                // NESTED INSIDE THE SAME OBJECT AS `tenantId`, so Prisma ANDs
+                // the whole disjunction with the tenant scope rather than
+                // beside it. A top-level sibling `OR:` here would still be
+                // ANDed, but the row-level policy is what actually holds the
+                // boundary (`runInTenantContext`); this keeps the query itself
+                // readable as "this tenant, matching any of these fields".
+                //
+                // `externalUserId` is searched but never rendered: it is the
+                // id an operator copies out of the provider's own console
+                // (an Entra object id, an Okta user id), and pasting it is the
+                // most precise way to reach ONE row when two connections carry
+                // the same human under the same email.
+                ...(q
+                    ? {
+                          OR: [
+                              { email: { contains: q, mode: 'insensitive' as const } },
+                              { displayName: { contains: q, mode: 'insensitive' as const } },
+                              { externalUserId: { contains: q, mode: 'insensitive' as const } },
+                          ],
+                      }
+                    : {}),
             },
             select: {
                 id: true,
@@ -748,6 +788,10 @@ export async function listConnectedAccounts(
             // shared with the access-reviews directory gate, which compares
             // the row count against it before it dares call a provider
             // unsynced. See src/lib/identity-roster.ts.
+            //
+            // Unchanged by `q` / `provider` ON PURPOSE: the cap applies to the
+            // MATCHES, which is what makes a full page under a search mean
+            // "narrow further" rather than "this is everything".
             take: options.limit ?? IDENTITY_ROSTER_PAGE_SIZE,
         }).then(async (rows) => {
             const reasons = await latestUnresolvedReasons(db, ctx.tenantId);

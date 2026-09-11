@@ -5658,7 +5658,20 @@
       "loadError": "Couldn't load identity accounts.",
       "colProtected": "Never offboard",
       "truncatedTitle": "Showing the first {cap} accounts",
-      "truncated": "This roster is capped and has no search, so an account you cannot see here may still exist in the directory — absence from this page is not evidence that an account is absent. An account past the cap also cannot be protected from here.",
+      "truncated": "This roster is capped, so absence from this page is not evidence that an account is absent, and an account you cannot see cannot be protected from here. Search by email, name or directory ID — or filter by provider — to bring a specific account into view; the search runs over every synced account, not just the ones listed here.",
+      "searchPlaceholder": "Search accounts…",
+      "noMatches": "No accounts match this search",
+      "noMatchesDescription": "The search runs on the server over every synced account, not just the ones this page had already listed, so this is the whole answer. Clear the search or the provider filter to see the roster again.",
+      "filters": {
+        "provider": "Provider",
+        "providerDesc": "The directory an account was synced from."
+      },
+      "providerLabels": {
+        "okta": "Okta",
+        "google-workspace": "Google Workspace",
+        "entra-id": "Microsoft Entra ID",
+        "active-directory": "Active Directory"
+      },
       "protected": "Protected",
       "protect": "Protect",
       "release": "Release",

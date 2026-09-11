@@ -119,8 +119,13 @@ const EXEMPTIONS: Record<string, string> = {
         "Integrations admin — small fixed catalogue with inline toggle controls.",
     "src/app/t/[tenantSlug]/(app)/admin/integrations/[connectionId]/page.tsx":
         "Integrations admin sub-page — one connection's check-run history with an inline Sync-now control; not a faceted surface.",
-    "src/app/t/[tenantSlug]/(app)/admin/integrations/identity-accounts/page.tsx":
-        "Integrations admin sub-page — synced-identity roster (bounded per-tenant); no faceting needed.",
+    // The synced-identity roster was exempt here on the grounds that it is
+    // "bounded per-tenant". It is not: a directory sync stores up to 5000
+    // accounts per connection and the roster route caps its response at 500,
+    // which is why that page has rendered a truncation warning since #2412.
+    // The two claims could not both be true, and the cap was the one backed by
+    // code. #2418 gave the route server-side search + a provider facet and the
+    // page a real <FilterToolbar>, so the entry is gone rather than reworded.
     "src/app/t/[tenantSlug]/(app)/admin/members/page.tsx":
         "Members admin — single tenant's roster with inline role + invite controls; faceting belongs to the org-level view.",
     "src/app/t/[tenantSlug]/(app)/admin/notifications/page.tsx":

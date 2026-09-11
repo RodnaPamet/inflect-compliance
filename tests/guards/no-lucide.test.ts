@@ -91,6 +91,11 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     // Agent register (Epic Agentic) — filter defs. Same LucideIcon-typed
     // precedent as every other *filter-defs.ts entry here.
     'src/app/t/[tenantSlug]/(app)/admin/agents/filter-defs.ts',
+    // Synced-identity roster (#2418) — filter defs for the provider facet
+    // that came with server-side roster search. `FilterDefInput.icon` is
+    // typed `LucideIcon`, so a new filter-defs file has no Nucleo option —
+    // same precedent as every other *filter-defs.ts entry here.
+    'src/app/t/[tenantSlug]/(app)/admin/integrations/identity-accounts/filter-defs.ts',
     'src/app/t/[tenantSlug]/(app)/admin/personnel/filter-defs.ts',
     'src/app/t/[tenantSlug]/(app)/admin/devices/filter-defs.ts',
     'src/app/t/[tenantSlug]/(app)/admin/training/filter-defs.ts',
