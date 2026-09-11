@@ -20,14 +20,32 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { braceBlockAfter } from '../helpers/source-blocks';
+import { braceBlockAfter, codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
-const schema = readPrismaSchema();
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A.
+ *
+ * `braceBlockAfter` above already returns comment-free text; the 19
+ * whole-file assertions in this file did not, so any of them could be
+ * satisfied by a comment naming what it asks for. The #2246 prober measured
+ * five `it` blocks here that go red when the matched code is deleted and
+ * green again when the same bytes return inside a comment.
+ *
+ * `readRaw` survives for the two reads whose language is not TypeScript:
+ * the migration SQL (`--` comments; a bare apostrophe in one would open a
+ * literal running to EOF) and `messages/en.json` (parsed, not matched —
+ * masking JSON is a no-op today and a silent hazard if it ever is not).
+ */
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(readRaw(rel));
+
+const schema = codeOf(readPrismaSchema());
 const enums = read('prisma/schema/enums.prisma');
-const migration = read('prisma/migrations/20260612040000_rq3_6_loss_event_register/migration.sql');
+const migration = readRaw(
+    'prisma/migrations/20260612040000_rq3_6_loss_event_register/migration.sql',
+);
 const usecase = read('src/app-layer/usecases/loss-event.ts');
 const listRoute = read('src/app/api/t/[tenantSlug]/loss-events/route.ts');
 const aggregateRoute = read('src/app/api/t/[tenantSlug]/loss-events/aggregate/route.ts');
@@ -36,7 +54,7 @@ const page = read('src/app/t/[tenantSlug]/(app)/risks/loss-events/page.tsx');
 const risksClient = read('src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx');
 // The page's user-facing copy moved to next-intl; resolve moved literals
 // against the en catalog so the intent still holds.
-const enMessages = JSON.parse(read('messages/en.json')) as {
+const enMessages = JSON.parse(readRaw('messages/en.json')) as {
     risks: { lossEvents: Record<string, string> };
 };
 const encryptionManifest = read('src/lib/security/encrypted-fields.ts');

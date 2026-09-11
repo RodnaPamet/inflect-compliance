@@ -27,16 +27,34 @@ import { readPrismaSchema } from '../helpers/prisma-schema';
 import {
     braceBlockAfter,
     callExpressionOf,
+    codeOf,
     functionBodyOf,
 } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A.
+ *
+ * The three extractors above already return comment-free text; the 26
+ * whole-file `expect(src).toMatch(...)` sites in this file did not, so
+ * "delete `curveStepAfter`, leave a comment naming it" passed. Measured by
+ * the mechanical prober in that PR: twelve `it` blocks here go red when the
+ * matched code is deleted and green again when the same bytes come back
+ * inside a comment.
+ *
+ * `readRaw` stays for the migration SQL only: `codeOf` lexes TypeScript, and
+ * SQL's `--` comments plus a bare apostrophe inside one would make it answer
+ * about the wrong language.
+ */
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
 
 describe('B10 — advanced analytics', () => {
     describe('Schema + migration', () => {
-        const compliance = readPrismaSchema();
-        const migration = read(
+        const compliance = codeOf(readPrismaSchema());
+        // Raw: SQL, not TypeScript — see the read-seam note above.
+        const migration = readRaw(
             'prisma/migrations/20260524180000_b10_risk_quantitative/migration.sql',
         );
 

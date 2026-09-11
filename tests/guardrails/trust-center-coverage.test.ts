@@ -23,10 +23,28 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { braceBlockAfter } from '../helpers/source-blocks';
+import { braceBlockAfter, codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A.
+ *
+ * Two things this buys beyond the obvious. The import-isolation lock below
+ * walks `from '…'` statements out of every reachable file, so an import
+ * sitting in a comment used to be followed as if it were live, and the
+ * negated form at "no app-layer import" had to be written to dodge the
+ * explanatory security-contract comment that names those very paths. Masking
+ * removes both hazards at once.
+ *
+ * `readRaw` is kept for the ONE assertion in this file that is deliberately
+ * about prose — the `/trust/` allowlist entry's explanatory comment — which
+ * the #2246 prober flagged as satisfiable only by a comment. It is, and
+ * that is the test's stated intent, so it reads the unmasked text and says
+ * so at the call site.
+ */
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 const PUBLIC_ROUTE = 'src/app/trust/[slug]/page.tsx';
@@ -86,7 +104,7 @@ function transitiveGraph(entry: string): Set<string> {
 }
 
 describe('Trust Center — model + publish defaults', () => {
-    const schema = readPrismaSchema();
+    const schema = codeOf(readPrismaSchema());
     it('defines TrustCenter with enabled defaulting to false (off by default)', () => {
         // Bound to the model. `slug String @unique` is declared by 3 models
         // (Tenant, Organization, TrustCenter), so the off-by-default claim
@@ -99,8 +117,72 @@ describe('Trust Center — model + publish defaults', () => {
     });
 });
 
+/**
+ * NON-VACUITY PIN — #2246 scope E, and it is not hypothetical.
+ *
+ * Every leak-lock assertion below is `expect(FORBIDDEN).toEqual([])` over a
+ * set FILTERED out of `transitiveGraph(...)`, and **an empty selection is a
+ * pass**. Nothing in this file pinned the graph non-empty, so a graph that
+ * collapsed to its entry file would report "no tenant-data usecase is
+ * reachable" while inspecting nothing — the strongest claim this guard makes,
+ * satisfied by having looked at one file.
+ *
+ * That mattered the moment `importsOf` started reading MASKED source: a file
+ * `codeOf` mis-lexed would contribute no `from '…'` specs, the walk would stop
+ * there, and the lock would go green having shrunk. Measured before and after
+ * the conversion, by walking both views: **27 / 27, 35 / 35 and 47 / 47** —
+ * masking moved no graph, in either direction, so no commented-out import was
+ * being followed and no live one was lost. That is the measurement; this is
+ * the assertion that keeps it true.
+ *
+ * Anchors rather than the whole 27/35/47-file list, deliberately: an exact
+ * total set would go red every time an allowed `src/lib` import is added,
+ * which teaches people to widen it. Each anchor list instead names the members
+ * that make the graph the REAL deep graph — the entry, the curated
+ * trust-center module the route is allowed to reach, `prisma.ts` (the walk got
+ * all the way to the DB layer), and at least one `src/app-layer/` file, which
+ * is the only prefix the leak filter can ever fire on. Asserted with an exact
+ * `toEqual` against a hard-coded non-empty list, so this pin cannot itself go
+ * vacuous.
+ */
+const GRAPH_ANCHORS: Record<string, readonly string[]> = {
+    [PUBLIC_ROUTE]: [
+        PUBLIC_ROUTE,
+        PUBLIC_READ,
+        'src/lib/prisma.ts',
+        'src/app-layer/types.ts',
+    ],
+    'src/app/api/trust/[slug]/access-request/route.ts': [
+        'src/app/api/trust/[slug]/access-request/route.ts',
+        CURATED_GATED,
+        'src/lib/prisma.ts',
+        'src/app-layer/types.ts',
+    ],
+    'src/app/api/trust/download/[token]/route.ts': [
+        'src/app/api/trust/download/[token]/route.ts',
+        CURATED_GATED,
+        'src/lib/prisma.ts',
+        'src/app-layer/services/file-distribution.ts',
+    ],
+};
+
 describe('Trust Center — public route IMPORT ISOLATION (the leak lock)', () => {
     const graph = transitiveGraph(PUBLIC_ROUTE);
+
+    it.each(Object.keys(GRAPH_ANCHORS))(
+        'the import graph walked from %s is the real deep graph, not an empty selection',
+        (entry) => {
+            const walked = transitiveGraph(entry);
+            const anchors = GRAPH_ANCHORS[entry];
+            expect([...walked].filter((f) => anchors.includes(f)).sort()).toEqual(
+                [...anchors].sort(),
+            );
+            // The leak filter's whole population is `src/app-layer/**`; a graph
+            // with none of it filters an empty set and passes for free.
+            expect([...walked].filter((f) => f.startsWith('src/app-layer/')).length)
+                .toBeGreaterThan(0);
+        },
+    );
 
     it('the public route exists and reads only the curated module', () => {
         expect(exists(PUBLIC_ROUTE)).toBe(true);
@@ -160,10 +242,13 @@ describe('Trust Center — public read is an explicit allowlist', () => {
 
 describe('Trust Center — middleware: public allowlist + edge rate-limit', () => {
     it('/trust/ is in the public-path allowlist with a comment', () => {
-        const guard = read('src/lib/auth/guard.ts');
-        expect(guard).toMatch(/'\/trust\/'/);
-        // a "Trust Center" explanatory comment accompanies the allowlist entry
-        expect(guard).toMatch(/Trust Center/);
+        expect(read('src/lib/auth/guard.ts')).toMatch(/'\/trust\/'/);
+        // The allowlist ENTRY is code and is asserted against masked text
+        // above. This second assertion is about the explanatory COMMENT that
+        // accompanies it, so it reads raw ON PURPOSE — the #2246 prober
+        // confirmed `/Trust Center/` has no code occurrence in this file, and
+        // for this one assertion that is the correct answer, not a defect.
+        expect(readRaw('src/lib/auth/guard.ts')).toMatch(/Trust Center/);
     });
     it('the /trust/ path is edge-rate-limited before the public allow', () => {
         const mw = read('src/middleware.ts');

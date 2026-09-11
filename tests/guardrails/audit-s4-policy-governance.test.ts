@@ -5,10 +5,20 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { braceBlockAfter } from '../helpers/source-blocks';
+import { braceBlockAfter, codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A.
+ *
+ * `braceBlockAfter` above is already comment-free; the 17 whole-file
+ * `expect(src).toMatch(...)` sites were not, so "drop the call, keep the
+ * comment naming it" satisfied them. The #2246 prober measured eight `it`
+ * blocks here that go red when the matched code is deleted and green again
+ * when the identical bytes come back inside a comment.
+ */
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 describe('Audit S4 — Policy Governance & Versioning', () => {
     describe('policy attestation usecase', () => {
@@ -73,7 +83,7 @@ describe('Audit S4 — Policy Governance & Versioning', () => {
     });
 
     describe('PolicyAcknowledgement schema (load-bearing for attestation)', () => {
-        const src = readPrismaSchema();
+        const src = codeOf(readPrismaSchema());
 
         it('model exists with the (policyVersionId, userId) unique', () => {
             /*
