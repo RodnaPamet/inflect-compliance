@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { AgentsViewsMenu } from '../AgentsViewsMenu';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/format-date';
@@ -44,6 +45,7 @@ const STATUS_VARIANT: Record<string, 'info' | 'success' | 'warning' | 'error' | 
  * proposals in the agent-proposals queue), or abort an in-flight run.
  */
 export function AgentRunsClient({
+    tenantSlug,
     initialRuns,
     workflows,
 }: {
@@ -105,12 +107,19 @@ export function AgentRunsClient({
                 back={{ smart: true }}
                 breadcrumbs={[
                     { label: t('crumbDashboard'), href: tenantHref('/dashboard') },
-                    { label: t('crumbAdmin'), href: tenantHref('/admin') },
-                    { label: t('crumbMcp'), href: tenantHref('/admin/mcp') },
+                    { label: t('register.breadcrumb'), href: tenantHref('/agents') },
                     { label: t('runs.crumb') },
                 ]}
                 title={t('runs.title')}
                 description={t('runs.description')}
+                actions={
+                    <AgentsViewsMenu
+                        current="runs"
+                        tenantSlug={tenantSlug}
+                        canReviewProposals
+                        canInvestigate
+                    />
+                }
             />
 
             {workflows.length > 0 && (
@@ -174,7 +183,7 @@ export function AgentRunsClient({
                             {r.status === 'AWAITING_APPROVAL' && (
                                 <p className="text-xs text-content-muted">
                                     {t('runs.awaitingApprovalPre')}
-                                    <a className="underline" href={tenantHref('/agent-proposals')}>{t('runs.proposalsLink')}</a>
+                                    <a className="underline" href={tenantHref('/agents/proposals')}>{t('runs.proposalsLink')}</a>
                                     {t('runs.awaitingApprovalPost')}
                                 </p>
                             )}

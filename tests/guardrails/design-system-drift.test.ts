@@ -30,7 +30,8 @@ const MIGRATED_PAGES = [
     // Design-system-native from birth: semantic tokens only, PageHeader /
     // StatusBadge / InlineNotice / Heading primitives, no raw colour utilities
     // and no legacy btn/badge classes.
-    'admin/agents/review-quality/page.tsx',
+    // Moved from admin/agents/review-quality by AGENTIC UI 1/4 (#2428).
+    'agents/review-quality/page.tsx',
     // Asset CSV import wizard; design-system-native from birth
     // (semantic tokens + Card/Button/DataTable/StatusBadge only).
     'assets/import/page.tsx',
@@ -95,7 +96,8 @@ const MIGRATED_PAGES = [
     // Agent-action receipts view — token-clean from the start (semantic
     // tokens + PageHeader/StatusBadge/Nucleo icons only; no raw color
     // utilities, no legacy btn/badge CSS). Promoted on landing.
-    'admin/mcp/agent-receipts/page.tsx',
+    // Moved from admin/mcp/agent-receipts by AGENTIC UI 1/4 (#2437).
+    'agents/receipts/page.tsx',
     // Second migration pass — Epic 51 finishing guide. A page is only
     // added here once it is clean on ALL three checks: raw color
     // utilities, legacy `.btn btn-*`, and legacy `.badge badge-*`.
@@ -126,17 +128,55 @@ const MIGRATED_PAGES = [
     // InlineNotice + Sheet + CopyText + Heading primitives, Nucleo icons, no
     // legacy btn/badge/glass-card). Promoted on landing rather than parked in
     // the unmigrated tally.
-    'admin/mcp/quarantine/page.tsx',
-    'admin/mcp/quarantine/QuarantineClient.tsx',
+    // Moved from admin/mcp/quarantine by AGENTIC UI 1/4 (#2437).
+    'agents/quarantine/page.tsx',
+    'agents/quarantine/QuarantineClient.tsx',
     // Agent detail — the first UI for the policy card, tool pins, ASI coverage
     // and the circuit breaker. Token-clean from the start (semantic
     // content-*/bg-*/border-* only; EntityDetailLayout + MetaStrip +
     // StatusBadge + skeleton primitives, no raw color utilities, no legacy
     // btn/badge/glass-card). Promoted on landing rather than parked in the
     // unmigrated tally.
+    // Moved from admin/agents/[agentId] by AGENTIC UI 1/4 (#2422).
+    'agents/[agentId]/page.tsx',
+    'agents/[agentId]/AgentDetailClient.tsx',
+    'agents/[agentId]/loading.tsx',
+    // AGENTIC UI 1/4 — the register itself, moved out of /admin and reshaped
+    // into a standard list page (#2421). Token-clean: semantic
+    // content-*/bg-*/border-* only; EntityListPage + DataTable + KpiFilterCard
+    // + InlineNotice + StatusBadge + EmptyState + ViewsMenu primitives, Nucleo
+    // icons, no legacy btn/badge/glass-card.
+    //
+    // It was in the UNMIGRATED tally at `admin/agents/*` (the +2 at 137) and is
+    // promoted here rather than re-listed there, which is the direction of
+    // travel the ceiling comment asks for. The two files therefore LEAVE the
+    // tally, and the seven redirect shims below take their place — so the
+    // ceiling does not move in either direction.
+    'agents/page.tsx',
+    'agents/AgentsClient.tsx',
+    // The five surfaces' shared ViewsMenu. Not a page.tsx / *Client.tsx, so it
+    // was never in the tally; listed so the anti-drift checks read it.
+    'agents/AgentsViewsMenu.tsx',
+    // Proposals + runs, moved from the two flat /agent-* routes (#2437). Both
+    // were already in the tally at their old paths; the move is lateral.
+    'agents/proposals/page.tsx',
+    'agents/proposals/AgentProposalsClient.tsx',
+    'agents/runs/page.tsx',
+    'agents/runs/AgentRunsClient.tsx',
+    // ── The seven redirect shims (#2427/#2428/#2437) ───────────────────────
+    //
+    // Listed as MIGRATED rather than counted as unmigrated, and that is not a
+    // dodge: each is a `redirect()` one-liner with no JSX, no className and no
+    // UI at all, so it satisfies all three anti-drift checks by construction
+    // rather than by judgement. Counting them would mean raising the
+    // unmigrated ceiling by seven to accommodate files that cannot drift.
+    'admin/agents/page.tsx',
     'admin/agents/[agentId]/page.tsx',
-    'admin/agents/[agentId]/AgentDetailClient.tsx',
-    'admin/agents/[agentId]/loading.tsx',
+    'admin/agents/review-quality/page.tsx',
+    'admin/mcp/agent-receipts/page.tsx',
+    'admin/mcp/quarantine/page.tsx',
+    'agent-proposals/page.tsx',
+    'agent-runs/page.tsx',
 ];
 
 const RAW_COLOR_RE = /\b(?:text|bg|border)-(?:slate|gray|neutral|zinc)-\d{2,3}\b/g;

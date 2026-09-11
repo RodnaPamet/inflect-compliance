@@ -29,16 +29,26 @@
  *    refusals are the ones that put the fix in front of an operator at the
  *    moment they are asking for the thing.
  */
+import { AgentDataAccessScope, AgentStatus, SuggestionItemStatus } from '@prisma/client';
+
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import type { PrismaTx } from '@/lib/db-context';
-import { badRequest, conflict, notFound } from '@/lib/errors/types';
+import { badRequest, conflict, forbidden, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
-import { RegisteredAgentRepository } from '../repositories/RegisteredAgentRepository';
+import {
+    AGENT_TIER_FILTER_VALUES,
+    RegisteredAgentRepository,
+    type AgentKpiCounts,
+    type AgentListFilters,
+    type AgentTierFilterValue,
+} from '../repositories/RegisteredAgentRepository';
 import { reassessAgentAfterChangeInTx } from './agent-risk-assessment';
 import { ceilingForRiskTier, DENY_CEILING } from '@/lib/agentic/autonomy-ceiling';
 import { isAgentRegistrationEnforced } from '@/lib/agentic/agent-registration-gate';
+import { KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
+import { listKillSwitches } from './agent-kill-switch';
 import { authorAiSystemEntry } from './ai-system';
 import { assertOwnerInTenant } from './vendor-link-targets';
 import {
@@ -116,12 +126,269 @@ async function assertVendorInTenant(db: PrismaTx, ctx: RequestContext, vendorId:
     if (!vendor) throw badRequest('The selected vendor does not exist in this tenant');
 }
 
+/**
+ * The register's READ GATE — `admin.agent_registry`, not `assertCanRead`.
+ *
+ * ## Why the read is gated on the register key
+ *
+ * Until #2433 this read asserted only `assertCanRead`, which every role in the
+ * tenant holds, and `admin.agent_registry` gated the ADD button alone. So the
+ * key whose docstring says it decides "which autonomous agents may act inside
+ * the tenant at all" governed a button, while the record of what is running —
+ * every agent's name, its owner, how far into the data it reaches, how hard its
+ * actions are to undo, its AI-Act classification and how many live credentials
+ * are bound to it — was readable by anybody who could read anything.
+ *
+ * That was survivable while the page was a `/admin` leaf behind an ancestor
+ * `admin.view` layout guard: the layout refused everyone the gate here let
+ * through, so the weak assertion never decided anything. Moving the register
+ * out to `/agents` removes that layout, which is exactly when the real gate has
+ * to be the usecase's own. A move that silently widens a read is the worst kind
+ * of routing change.
+ *
+ * ## Why it is not `assertCanAdmin`
+ *
+ * `admin.agent_registry` is delegable through a custom role and `admin.view` is
+ * not. A tenant that has handed the agent register to an AI-governance owner
+ * who is not a workspace admin must keep it; requiring the broader key would
+ * take the register away from the person accountable for it.
+ *
+ * `assertCanRead` stays as the FIRST assertion, not as the only one. It is the
+ * context-level "may this principal read anything here at all" check every
+ * other list usecase makes, and dropping it would let a context with no read
+ * permission but a stray permission bag through.
+ */
+function assertCanReadAgentRegister(ctx: RequestContext) {
+    assertCanRead(ctx);
+    if (!ctx.appPermissions?.admin?.agent_registry) {
+        throw forbidden(
+            'You do not have permission to view the agent register. It records which ' +
+                'autonomous agents may act in this workspace.',
+        );
+    }
+}
+
+/**
+ * Parse the register's filter query string into the repository's filter shape.
+ *
+ * Lives HERE rather than in the page so the page and the (unchanged) HTTP route
+ * cannot disagree about what `?status=ACTIVE,SUSPENDED` means, and so an
+ * unknown member is refused with a 400 by `parseEnumListFilter`'s own message
+ * instead of reaching Prisma. Values are comma-joined, matching what
+ * `FilterProvider`'s URL sync writes.
+ */
+export function parseAgentListFilters(
+    raw: Record<string, string | string[] | undefined>,
+): AgentListFilters {
+    const members = (key: string): string[] => {
+        const v = raw[key];
+        const flat = Array.isArray(v) ? v.join(',') : v;
+        if (!flat) return [];
+        return flat
+            .split(',')
+            .map((m) => m.trim())
+            .filter((m) => m !== '');
+    };
+
+    const pick = <T extends string>(key: string, allowed: readonly string[], label: string): T[] => {
+        const got = members(key);
+        for (const m of got) {
+            if (!allowed.includes(m)) {
+                throw badRequest(
+                    `Invalid ${label} "${m}". Must be one of: ${allowed.join(', ')}.`,
+                );
+            }
+        }
+        return got as T[];
+    };
+
+    const filters: AgentListFilters = {};
+    const status = pick<AgentStatus>('status', Object.values(AgentStatus), 'agent status');
+    if (status.length > 0) filters.status = status;
+    const scope = pick<AgentDataAccessScope>(
+        'dataAccessScope',
+        Object.values(AgentDataAccessScope),
+        'agent data access scope',
+    );
+    if (scope.length > 0) filters.dataAccessScope = scope;
+    const tier = pick<AgentTierFilterValue>(
+        'riskTier',
+        AGENT_TIER_FILTER_VALUES,
+        'agent authority tier',
+    );
+    if (tier.length > 0) filters.riskTier = tier;
+    return filters;
+}
+
 export async function listRegisteredAgents(
     ctx: RequestContext,
-    options: { take?: number; status?: string } = {},
+    options: { take?: number; status?: string; filters?: AgentListFilters } = {},
 ) {
-    assertCanRead(ctx);
+    assertCanReadAgentRegister(ctx);
     return runInTenantContext(ctx, (db) => RegisteredAgentRepository.list(db, ctx, options));
+}
+
+/**
+ * The four register KPI numbers, from the database.
+ *
+ * Same gate as the list, and that is load-bearing rather than tidy: these four
+ * counts are tenant-wide aggregates over the register, so a caller who may not
+ * read the register may not count it either. "47 agents, 12 unscored" is the
+ * shape of the answer somebody was refused.
+ */
+export async function listAgentKpiCounts(
+    ctx: RequestContext,
+    filters: AgentListFilters = {},
+): Promise<AgentKpiCounts> {
+    assertCanReadAgentRegister(ctx);
+    return runInTenantContext(ctx, (db) =>
+        RegisteredAgentRepository.kpiCounts(db, ctx, filters),
+    );
+}
+
+/**
+ * Is the register load-bearing in this tenant, and if so, is anything about to
+ * be refused by it?
+ *
+ * THREE STATES, and the middle one is the reason this exists (#2431):
+ *
+ *   • NOT ENFORCING — `requireRegisteredAgent` is off. Every row in the
+ *     register is a record and nothing else: a SUSPENDED agent is suspended in
+ *     the register and still reaches `/api/mcp`. A page that showed the rows
+ *     without saying this is a page whose central claim ("an agent must be
+ *     ACTIVE here before a credential bound to it may act") is false.
+ *
+ *   • ENFORCING WITH N UNBOUND CREDENTIALS — the gate is on AND there are live
+ *     MCP credentials that name no agent. Each one is refused at
+ *     `/api/mcp` with `no_agent_binding`. This is the state an operator needs
+ *     warned about, because it presents as an integration that has stopped
+ *     working for no visible reason, and the fix is on this page.
+ *
+ *   • ENFORCING — on, with nothing unbound.
+ *
+ * The count is of LIVE credentials only (not revoked, not expired), because a
+ * revoked key being refused is the system working. `checkCredentialLiveness`
+ * is the definition the boundary re-asks once per tool call; this restates its
+ * two clauses, and the same warning that sits on `RegisteredAgentRepository`'s
+ * live-key count applies — a column added there must be added here.
+ *
+ * "MCP credential" is the capability scope the endpoint gate reads
+ * (`mcp:read` / `mcp:propose` / `mcp:*` / `*`), not every API key in the
+ * tenant: an ordinary integration key that cannot talk to `/api/mcp` at all is
+ * not something the agent register is about to refuse, and counting it would
+ * put a warning in front of an operator with no action behind it.
+ */
+export async function getAgentGovernanceStatus(ctx: RequestContext): Promise<{
+    enforcing: boolean;
+    unboundCredentials: number;
+}> {
+    assertCanReadAgentRegister(ctx);
+    const now = new Date();
+    const [enforcing, unboundCredentials] = await Promise.all([
+        isAgentRegistrationEnforced(ctx.tenantId),
+        runInTenantContext(ctx, async (db) => {
+            const rows = await db.tenantApiKey.findMany({
+                where: {
+                    tenantId: ctx.tenantId,
+                    agentId: null,
+                    revokedAt: null,
+                    // NULL expiry is "no expiry", not "expired at the epoch" —
+                    // Prisma drops the row from a bare `gt`.
+                    OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+                },
+                // The scope test cannot be expressed as a Prisma filter: the
+                // column is a Json array. Bounded read, scopes only.
+                select: { scopes: true },
+                take: 500,
+            });
+            return rows.filter((r) => hasMcpCapability(r.scopes)).length;
+        }),
+    ]);
+    return { enforcing, unboundCredentials };
+}
+
+/**
+ * THE DASHBOARD'S AGENTIC SUMMARY (#2440).
+ *
+ * Four facts, chosen because each is an incident-shaped answer that was
+ * previously visible on exactly one page nobody was looking at:
+ *
+ *   • `tenantKillInForce` / `agentsKilled` — A KILL SWITCH IN FORCE. This was
+ *     the real gap. A kill switch is the loudest state the agentic subsystem
+ *     has: it stops runs already in flight at the tool boundary, and engaging
+ *     it does NOT change `RegisteredAgent.status`, so the register still reads
+ *     ACTIVE. Until this existed, the only surface that said so was the header
+ *     of THAT agent's detail page — you had to already know which agent, and
+ *     then go and look. A tenant-wide kill was invisible from anywhere except
+ *     an arbitrary agent's page.
+ *   • `activeUnscored` — an ACTIVE agent with no scored tier. Its credential
+ *     resolves to `DENY_CEILING`, so it reaches nothing while the register
+ *     advertises it as running.
+ *   • `enforcing` — whether any of the above decides anything.
+ *   • `proposalsAwaitingReview` — a queue with a human at the end of it.
+ *
+ * The DRILL CANARY is filtered out, for the reason the detail page's own
+ * filter records: the nightly drill engages and lifts a kill against an id
+ * that resolves to no registered agent, so an unfiltered count reports one per
+ * tenant per day and a dashboard card would permanently read "1 agent
+ * stopped". The constant is imported from the kill-switch module rather than
+ * re-spelled — a second copy of that id is a second thing to keep in step.
+ */
+export async function getAgenticDashboardSummary(ctx: RequestContext): Promise<{
+    enforcing: boolean;
+    tenantKillInForce: boolean;
+    agentsKilled: number;
+    activeUnscored: number;
+    proposalsAwaitingReview: number;
+}> {
+    assertCanReadAgentRegister(ctx);
+    const [enforcing, kills, counts] = await Promise.all([
+        isAgentRegistrationEnforced(ctx.tenantId),
+        listKillSwitches(ctx, { inForceOnly: true, take: 200 }),
+        runInTenantContext(ctx, async (db) => {
+            const [activeUnscored, proposalsAwaitingReview] = await Promise.all([
+                db.registeredAgent.count({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        deletedAt: null,
+                        status: AgentStatus.ACTIVE,
+                        riskTier: null,
+                    },
+                }),
+                db.agentProposal.count({
+                    where: { tenantId: ctx.tenantId, status: SuggestionItemStatus.PENDING },
+                }),
+            ]);
+            return { activeUnscored, proposalsAwaitingReview };
+        }),
+    ]);
+
+    const real = kills.inForce.filter((k) => k.agentId !== KILL_SWITCH_DRILL_AGENT_ID);
+    return {
+        enforcing,
+        // `agentId === null` IS the tenant arm — `killScopeOf` says so. Widest
+        // scope wins at the boundary, so a tenant-wide kill is reported as
+        // such rather than folded into a count of agents: telling an operator
+        // "3 agents stopped" when the answer is "every agent is stopped" would
+        // send them to lift three rows and leave the one that matters.
+        tenantKillInForce: real.some((k) => k.agentId === null),
+        agentsKilled: new Set(real.filter((k) => k.agentId !== null).map((k) => k.agentId))
+            .size,
+        ...counts,
+    };
+}
+
+/**
+ * The endpoint gate's own capability test, restated over a stored `scopes`
+ * column. Mirrors `src/lib/mcp/auth.ts`: `*`, `mcp:*`, `mcp:read` or
+ * `mcp:propose`. Kept beside its only caller rather than imported, because the
+ * MCP auth module reaches request-scoped machinery this read has no business in.
+ */
+function hasMcpCapability(scopes: unknown): boolean {
+    if (!Array.isArray(scopes)) return false;
+    return scopes.some(
+        (s) => s === '*' || s === 'mcp:*' || s === 'mcp:read' || s === 'mcp:propose',
+    );
 }
 
 /**

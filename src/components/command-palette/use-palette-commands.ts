@@ -46,17 +46,27 @@ import {
     type LucideIcon,
 } from 'lucide-react';
 import { signOut } from 'next-auth/react';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, type ComponentType, type SVGProps } from 'react';
 
+import { Robot } from '@/components/ui/icons/nucleo';
 import { useTheme } from '@/components/theme/ThemeProvider';
 
 export type PaletteCommandGroup = 'Navigation' | 'Actions';
+
+/**
+ * Either icon family. Nucleo components are plain
+ * `(props: SVGProps<SVGSVGElement>) => Element` functions and are NOT
+ * assignable to lucide's `ForwardRefExoticComponent`; the agentic entries use
+ * Nucleo `Robot`, which is the canonical family and already the glyph on every
+ * agent surface. See the identical widening on `NavItemProps.icon`.
+ */
+export type PaletteGlyph = LucideIcon | ComponentType<SVGProps<SVGSVGElement>>;
 
 export interface PaletteCommand {
     id: string;
     group: PaletteCommandGroup;
     label: string;
-    icon: LucideIcon;
+    icon: PaletteGlyph;
     /** Populated for `Navigation` commands. */
     href?: string;
     /** Populated for `Actions`. Closes the palette automatically after invocation. */
@@ -147,6 +157,48 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 label: 'Go to Reports',
                 icon: Activity,
                 href: href('/reports'),
+            },
+            // ─── Agentic (#2440) ──────────────────────────────────────
+            //
+            // The palette had ZERO agentic entries, on a product whose
+            // agentic surfaces were reachable only through one pill
+            // labelled "MCP". Three, not five: the register is the
+            // sidebar-tier destination, and the other two are the
+            // surfaces an operator types their way to under time
+            // pressure — a queue somebody is waiting on, and the record
+            // of what was refused.
+            //
+            // Labelled by DESTINATION rather than by acronym. "Go to
+            // MCP" was untypeable for anyone who did not already know
+            // the protocol's name, which is the whole navigation defect
+            // this prompt is about. Every label here carries the word
+            // "agent" so one query finds all three.
+            //
+            // Not permission-filtered, matching every other entry in
+            // this list and the sidebar's documented defence-in-depth
+            // posture: each destination carries its own server-side
+            // gate, and a client-side filter is a suggestion, never a
+            // boundary. See the module header.
+            {
+                id: 'nav:agents',
+                group: 'Navigation',
+                label: 'Go to Agent register',
+                icon: Robot,
+                href: href('/agents'),
+            },
+            {
+                id: 'nav:agent-proposals',
+                group: 'Navigation',
+                label: 'Go to Agent proposals',
+                icon: Robot,
+                href: href('/agents/proposals'),
+            },
+            {
+                id: 'nav:agent-quarantine',
+                group: 'Navigation',
+                label: 'Go to Agent quarantine',
+                icon: Robot,
+                href: href('/agents/quarantine'),
             },
             {
                 id: 'nav:admin',

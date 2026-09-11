@@ -362,6 +362,7 @@ const SHARED_SEED_ALLOWLIST: ReadonlyArray<{ file: string; reason: string }> = [
     { file: 'assets-create-modal.spec.ts', reason: 'read-only: navigates to /assets/new and asserts the create modal opens; never submits the form' },
     { file: 'admin-members.spec.ts', reason: 'read-only: opens the invite form + asserts its fields; never clicks #send-invite-btn' },
     { file: 'admin-regression.spec.ts', reason: 'read-only admin-page regression assertions' },
+    { file: 'agents-views-navigation.spec.ts', reason: 'read-only: opens the agents ViewsMenu, follows each of its five entries, walks the six redirect shims and clicks the one link out of /admin/mcp. Every step is a navigation + an assertion; nothing is created, edited or deleted. Needs a tenant that EXISTS rather than an empty one — the destinations must render, and the mutating half of this feature (registering an agent) lives in agents-page.spec.ts on the isolated-tenant fixture' },
     { file: 'admin-sso.spec.ts', reason: 'read-only: asserts SSO config UI; no save' },
     { file: 'auth.spec.ts', reason: 'auth/login flows on dedicated users; no shared-seed DATA mutation (rate-limit disabled in E2E)' },
     { file: 'calendar.spec.ts', reason: 'read-only: view/month/category state lives in the query string, so toggling a filter writes to the URL and never to the DB. Needs the shared seed — an empty isolated tenant has no deadlines, so the grid, the count and the filter round-trip would have nothing to assert on' },

@@ -64,6 +64,11 @@ export function AgentDetailClient({
     perms: AgentDetailPermissions;
 }) {
     const t = useTranslations('admin');
+    // The register's copy lives in the top-level `agents` namespace now that
+    // the subtree is no longer under `/admin` (#2426); `admin.agentDetail.*`
+    // — this page's own ~90 keys — deliberately stayed put, so the page reads
+    // both. See the note on the breadcrumb trail below.
+    const tAgents = useTranslations('agents');
     const [tab, setTab] = useState<TabKey>('overview');
     const [refreshToken, setRefreshToken] = useState(0);
 
@@ -96,12 +101,15 @@ export function AgentDetailClient({
             // referrer, so arriving from the proposals queue goes BACK there
             // instead of to the register nobody came from. A cold load or deep
             // link falls back to the canonical parent, which is registered as
-            // `/admin/agents` — the static link this replaced.
+            // `/agents` — the static link this replaced.
             back={{ smart: true }}
+            // AGENTIC UI 1/4 (#2422): the register is a top-level sidebar
+            // destination now, so the ADMIN rung is gone from this trail. It
+            // was never a structural parent of an agent — it was where the
+            // page happened to live.
             breadcrumbs={[
                 { label: t('crumb.dashboard'), href: `/t/${tenantSlug}/dashboard` },
-                { label: t('crumb.admin'), href: `/t/${tenantSlug}/admin` },
-                { label: t('crumb.agents'), href: `/t/${tenantSlug}/admin/agents` },
+                { label: tAgents('register.breadcrumb'), href: `/t/${tenantSlug}/agents` },
                 { label: agent.name },
             ]}
             title={

@@ -34,20 +34,38 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // Access reviews
     '/access-reviews/[reviewId]': { href: '/access-reviews', label: 'Access reviews' },
 
-    // Agent (MCP) — both hang off the /admin/mcp hub.
-    '/agent-proposals': { href: '/admin/mcp', label: 'MCP' },
-    '/agent-runs': { href: '/admin/mcp', label: 'MCP' },
-    '/admin/mcp/agent-receipts': { href: '/admin/mcp', label: 'MCP' },
-    '/admin/mcp/quarantine': { href: '/admin/mcp', label: 'MCP' },
+    // Agent — all five hang off the /agents register (AGENTIC UI 1/4).
+    //
+    // They used to hang off the /admin/mcp hub, which was the only way in;
+    // "MCP" was also the label a user saw on the back link, an acronym naming
+    // a wire protocol rather than the thing they came from. The register is
+    // the structural parent of every one of them: it is the surface that
+    // decides which agents may act, and each of these is a view OF those
+    // agents' behaviour.
+    '/agents/proposals': { href: '/agents', label: 'Agents' },
+    '/agents/runs': { href: '/agents', label: 'Agents' },
+    '/agents/receipts': { href: '/agents', label: 'Agents' },
+    '/agents/quarantine': { href: '/agents', label: 'Agents' },
+    // The ASI09 review-quality report: a view of those agents' review queue,
+    // so back goes to them.
+    '/agents/review-quality': { href: '/agents', label: 'Agents' },
+    // An operator who opened one agent is one step from the list of all of
+    // them.
+    '/agents/[agentId]': { href: '/agents', label: 'Agents' },
+
+    // The seven redirect shims keep entries so `resolveCanonicalParent` can
+    // answer for a path a stale in-tab referrer still names. They point at the
+    // NEW locations — a shim's parent is the surface its target belongs to,
+    // not the surface it used to sit under.
+    '/agent-proposals': { href: '/agents', label: 'Agents' },
+    '/agent-runs': { href: '/agents', label: 'Agents' },
+    '/admin/mcp/agent-receipts': { href: '/agents', label: 'Agents' },
+    '/admin/mcp/quarantine': { href: '/agents', label: 'Agents' },
+    '/admin/agents': { href: '/agents', label: 'Agents' },
+    '/admin/agents/[agentId]': { href: '/agents', label: 'Agents' },
+    '/admin/agents/review-quality': { href: '/agents', label: 'Agents' },
 
     // Admin subpages
-    '/admin/agents': { href: '/admin', label: 'Admin' },
-    // The detail page's structural parent is the register, not Admin — an
-    // operator who opened one agent is one step from the list of all of them.
-    '/admin/agents/[agentId]': { href: '/admin/agents', label: 'Agents' },
-    // The ASI09 review-quality report hangs off the agent register: it is a
-    // view OF those agents' review queue, so back goes to them, not to Admin.
-    '/admin/agents/review-quality': { href: '/admin/agents', label: 'Agents' },
     '/admin/api-keys': { href: '/admin', label: 'Admin' },
     '/admin/audit-log': { href: '/admin', label: 'Admin' },
     '/admin/billing': { href: '/admin', label: 'Admin' },

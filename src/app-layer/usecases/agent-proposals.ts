@@ -27,6 +27,10 @@ import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { badRequest, forbidden, notFound, staleData } from '@/lib/errors/types';
 import { appendAuditEntry } from '@/lib/audit';
 import { logger } from '@/lib/observability/logger';
+import {
+    createAgenticNotification,
+    resolveAgenticRecipients,
+} from '../notifications/agentic';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { guardUntrustedInput, guardEgress, assertGuardAllowed } from '@/app-layer/ai/guard';
 import {
@@ -679,6 +683,66 @@ export async function createAgentProposal(
         },
     }).catch(() => undefined);
 
+    // ─── The bell, ON QUARANTINE ONLY (#2441) ───────────────────────────────
+    //
+    // Quarantine is TERMINAL: the row never reaches the review queue, no
+    // override exists, and nobody encounters it in the course of ordinary
+    // work. Without this, an agent producing injected content goes on
+    // producing it while the evidence accumulates on a triage page with no
+    // inbound traffic.
+    //
+    // A CLEAN or FLAGGED proposal fires nothing, deliberately — see the note
+    // beside `AGENT_PROPOSAL_QUARANTINED` in enums.prisma for why there is no
+    // `AGENT_PROPOSAL_CREATED` companion.
+    //
+    // `actorUserId` is `ctx.userId`, which on this path is the credential's
+    // creator rather than a person who clicked anything — so the emitter's
+    // "never notify the actor" rule can suppress a bell here. That is the
+    // right trade: the alternative is a distinguished sentinel actor, and a
+    // sentinel that matches nobody would also match a real owner's id if the
+    // two ever collided.
+    //
+    // Nothing of the refused CONTENT reaches the notification: the message
+    // names the agent and points at the triage page, which is the only surface
+    // that renders attacker-supplied text, and renders it inert.
+    if (guard.quarantined) {
+        try {
+            await runInTenantContext(ctx, async (db) => {
+                const { recipientUserIds, agentName } = await resolveAgenticRecipients(
+                    db,
+                    ctx.tenantId,
+                    ctx.agentId ?? null,
+                );
+                await createAgenticNotification(db, 'AGENT_PROPOSAL_QUARANTINED', {
+                    tenantId: ctx.tenantId,
+                    tenantSlug: ctx.tenantSlug ?? null,
+                    // The AGENT, not the proposal, is the dedupe subject: an
+                    // injection attempt is a burst, and one bell per refused
+                    // proposal would bury the first one.
+                    entityId: ctx.agentId ?? 'unattributed-credential',
+                    subject: agentName ?? 'an unattributed credential',
+                    recipientUserIds,
+                    actorUserId: ctx.userId,
+                });
+            });
+        } catch (err) {
+            logger.warn('notification: failed to record quarantined-proposal bell', {
+                requestId: ctx.requestId,
+                tenantId: ctx.tenantId,
+                proposalId: proposal.id,
+                // `err.message`, and a LITERAL on the other arm — NOT
+                // `String(err)`. `String` is a TRANSPARENT_CALL to
+                // `local/no-raw-prompt-logging`, so the rule walks into it,
+                // finds a bare local, and records a HOLE in its own
+                // denominator: a position on the agentic path where it cannot
+                // say whether content reached a log. A member read is
+                // analysable; the bare identifier is not. Same shape at the
+                // kill-switch bell.
+                error: err instanceof Error ? err.message : 'non-Error thrown',
+            });
+        }
+    }
+
     return {
         id: proposal.id,
         kind: proposal.kind as AgentProposalKind,
@@ -750,6 +814,31 @@ export async function listAgentProposals(
             where: { tenantId: ctx.tenantId, status },
             orderBy: { createdAt: 'desc' },
             take: opts.take ?? 100,
+        }),
+    );
+}
+
+/**
+ * How many proposals are WAITING FOR A HUMAN right now.
+ *
+ * A count, not a listing, and that is the whole point: the agents register's
+ * ViewsMenu puts this number on its "Proposals" entry so an operator sees there
+ * is a queue without opening it (#2439). Fetching the rows to take `.length`
+ * would pull every payload, every rationale and every guard verdict into an SSR
+ * render that displays one integer — and would be capped at `take`, so a real
+ * backlog would report the cap.
+ *
+ * PENDING only, which is narrower than `REVIEWABLE_STATUSES`. The badge claims
+ * "awaiting review", and the queue page it links to lists `status: 'PENDING'`;
+ * counting the whole reviewable vocabulary would put a number on a menu entry
+ * that the destination does not produce — the same class of lie as a KPI card
+ * that does not predict its own click.
+ */
+export async function countAgentProposalsAwaitingReview(ctx: RequestContext): Promise<number> {
+    assertCanRead(ctx);
+    return runInTenantContext(ctx, (db) =>
+        db.agentProposal.count({
+            where: { tenantId: ctx.tenantId, status: SuggestionItemStatus.PENDING },
         }),
     );
 }

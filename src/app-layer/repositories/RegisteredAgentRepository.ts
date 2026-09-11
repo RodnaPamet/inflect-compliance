@@ -9,16 +9,67 @@
  * separate axis: SUSPENDED is the kill switch (reversible), RETIRED is the end
  * of an agent's life, and neither is a delete.
  */
-import { Prisma, AgentStatus } from '@prisma/client';
-import type {
-    AgentDataAccessScope,
-    AgentProvenance,
-    AgentReversibility,
-    AgentRiskTier,
-} from '@prisma/client';
+import { Prisma, AgentStatus, AgentDataAccessScope, AgentRiskTier } from '@prisma/client';
+import type { AgentProvenance, AgentReversibility } from '@prisma/client';
 import { PrismaTx } from '@/lib/db-context';
 import { RequestContext } from '../types';
 import { parseEnumListFilter } from '../domain/list-filter';
+
+/**
+ * The register's LIST FILTERS, as the page's own filter keys.
+ *
+ * Parsed from the query string by `parseAgentListFilters` below and applied in
+ * SQL — NOT over the loaded rows. The register used to SSR every agent and
+ * re-filter in the browser, which is survivable while the table is the only
+ * consumer and is not survivable the moment a KPI card quotes a number: the
+ * card's filter resolves against the whole tenant while the array it would be
+ * counted from is capped, so the card reads 3 and the click produces 47. That
+ * is #1905, and it is the reason both halves moved to the database together.
+ */
+export interface AgentListFilters {
+    status?: readonly AgentStatus[];
+    dataAccessScope?: readonly AgentDataAccessScope[];
+    /**
+     * The AUTHORITY TIER filter, with `UNSCORED` as a first-class member
+     * rather than an absence.
+     *
+     * `riskTier` is NULL for an agent nobody has assessed, and every consumer
+     * reads NULL as DENY — so "not yet scored" is the single most important
+     * thing this register can be filtered to, and a filter that could only
+     * name the four real tiers could not express it. `UNSCORED` maps to
+     * `riskTier: null`, never to a tier, and never to "no filter".
+     */
+    riskTier?: readonly AgentTierFilterValue[];
+}
+
+/** `UNSCORED` is not an `AgentRiskTier` — see `AgentListFilters.riskTier`. */
+export const AGENT_TIER_UNSCORED = 'UNSCORED';
+
+export type AgentTierFilterValue = AgentRiskTier | typeof AGENT_TIER_UNSCORED;
+
+export const AGENT_TIER_FILTER_VALUES: readonly AgentTierFilterValue[] = [
+    AGENT_TIER_UNSCORED,
+    ...Object.values(AgentRiskTier),
+] as const;
+
+/**
+ * The four numbers above the register's table.
+ *
+ * Each one answers exactly one question: "how many rows will I see if I click
+ * this card". That is the only contract a FILTER card can honour — a number
+ * that does not predict its own click is worse than no number, because the
+ * reader takes it as a promise.
+ */
+export interface AgentKpiCounts {
+    /** Tenant-wide, ignoring every active filter — the card calls `clearAll()`. */
+    total: number;
+    /** Current filters with `status` REPLACED by ACTIVE. */
+    active: number;
+    /** Current filters with `riskTier` REPLACED by UNSCORED (`riskTier IS NULL`). */
+    unscored: number;
+    /** Current filters with `dataAccessScope` REPLACED by EXTERNAL_EGRESS. */
+    egress: number;
+}
 
 const listSelect = {
     id: true,
@@ -93,28 +144,117 @@ export interface RegisteredAgentWriteFields {
 }
 
 export class RegisteredAgentRepository {
+    /**
+     * The register's WHERE clause, built once and shared by the list and every
+     * KPI count.
+     *
+     * ONE builder, deliberately. The four cards each promise the row count
+     * their own click produces, and the only way a card and its destination
+     * cannot disagree is for both to be the same SQL predicate with one term
+     * swapped. Two hand-written predicates that "should match" is exactly the
+     * arrangement that let a card read 3 and filter to 47.
+     */
+    static _buildWhere(
+        ctx: RequestContext,
+        filters: AgentListFilters = {},
+    ): Prisma.RegisteredAgentWhereInput {
+        const where: Prisma.RegisteredAgentWhereInput = {
+            tenantId: ctx.tenantId,
+            deletedAt: null,
+        };
+        if (filters.status && filters.status.length > 0) {
+            where.status = { in: [...filters.status] };
+        }
+        if (filters.dataAccessScope && filters.dataAccessScope.length > 0) {
+            where.dataAccessScope = { in: [...filters.dataAccessScope] };
+        }
+        if (filters.riskTier && filters.riskTier.length > 0) {
+            // UNSCORED is `riskTier IS NULL`, and it composes with real tiers:
+            // selecting UNSCORED and HIGH together must yield both, so the two
+            // halves go into an OR rather than one overwriting the other.
+            const wantsUnscored = filters.riskTier.includes(AGENT_TIER_UNSCORED);
+            const tiers = filters.riskTier.filter(
+                (t): t is AgentRiskTier => t !== AGENT_TIER_UNSCORED,
+            );
+            const arms: Prisma.RegisteredAgentWhereInput[] = [];
+            if (wantsUnscored) arms.push({ riskTier: null });
+            if (tiers.length > 0) arms.push({ riskTier: { in: tiers } });
+            // `arms` is never empty here — the enclosing `if` guarantees at
+            // least one member, and every member is either UNSCORED or a tier.
+            where.OR = arms;
+        }
+        return where;
+    }
+
     static async list(
         db: PrismaTx,
         ctx: RequestContext,
-        options: { take?: number; status?: string } = {},
+        options: { take?: number; status?: string; filters?: AgentListFilters } = {},
     ) {
+        // `options.status` is the RAW `?status=` query-string form the HTTP
+        // route has always passed, kept for that caller; `options.filters` is
+        // the parsed shape the register page passes. When both are absent the
+        // predicate is the tenant's whole live register, as before.
+        const rawStatus = parseEnumListFilter<AgentStatus>(
+            options.status,
+            Object.values(AgentStatus),
+            'agent status',
+        );
+        const where = RegisteredAgentRepository._buildWhere(ctx, options.filters);
         return db.registeredAgent.findMany({
-            where: {
-                tenantId: ctx.tenantId,
-                deletedAt: null,
-                // A raw `?status=` query-string value. `parseEnumListFilter`
-                // rejects an unknown or comma-joined value here rather than
-                // letting Prisma turn it into a 500 one layer down.
-                status: parseEnumListFilter<AgentStatus>(
-                    options.status,
-                    Object.values(AgentStatus),
-                    'agent status',
-                ),
-            },
+            where: rawStatus === undefined ? where : { ...where, status: rawStatus },
             select: listSelect,
             orderBy: [{ createdAt: 'desc' }],
             take: options.take ?? 200,
         });
+    }
+
+    /**
+     * The four register KPI numbers, by aggregate.
+     *
+     * Follows `PolicyRepository.kpiCounts` and is wired the same way at the
+     * usecase seam. The mapping below is SPELLED OUT rather than inferred,
+     * because each line is a promise about one click and the page's card
+     * handlers have to make the same move:
+     *
+     *   total     clearAll()                            -> tenant, NO filters
+     *   active    set('status', 'ACTIVE')               -> current filters, status replaced
+     *   unscored  set('riskTier', 'UNSCORED')           -> current filters, tier replaced
+     *   egress    set('dataAccessScope', 'EXTERNAL_EGRESS')
+     *                                                  -> current filters, scope replaced
+     *
+     * REPLACED, not intersected: `set` on the filter context overwrites the
+     * key. So each count drops the term its own card owns and keeps the rest,
+     * which is what makes the number survive having another filter already on.
+     */
+    static async kpiCounts(
+        db: PrismaTx,
+        ctx: RequestContext,
+        filters: AgentListFilters = {},
+    ): Promise<AgentKpiCounts> {
+        const replacing = <K extends keyof AgentListFilters>(
+            key: K,
+            value: AgentListFilters[K],
+        ): Prisma.RegisteredAgentWhereInput =>
+            RegisteredAgentRepository._buildWhere(ctx, { ...filters, [key]: value });
+
+        const [total, active, unscored, egress] = await Promise.all([
+            // `total` is the ONLY unfiltered count, and that is not an
+            // oversight: its card calls `clearAll()`, so the tenant-wide
+            // number is precisely what the click produces. Intersecting it
+            // with the active filters would make the card disagree with
+            // itself the moment any filter was set.
+            db.registeredAgent.count({
+                where: RegisteredAgentRepository._buildWhere(ctx, {}),
+            }),
+            db.registeredAgent.count({ where: replacing('status', [AgentStatus.ACTIVE]) }),
+            db.registeredAgent.count({ where: replacing('riskTier', [AGENT_TIER_UNSCORED]) }),
+            db.registeredAgent.count({
+                where: replacing('dataAccessScope', [AgentDataAccessScope.EXTERNAL_EGRESS]),
+            }),
+        ]);
+
+        return { total, active, unscored, egress };
     }
 
     static async getById(db: PrismaTx, ctx: RequestContext, id: string) {

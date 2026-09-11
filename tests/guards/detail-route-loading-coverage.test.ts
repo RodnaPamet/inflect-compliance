@@ -19,7 +19,16 @@ const APP_DIR = path.join(ROOT, 'src/app/t/[tenantSlug]/(app)');
  * Detail routes intentionally without their own `loading.tsx`. Add an entry
  * only with a written reason (e.g. a pure redirect with no data fetch).
  */
-const EXEMPTIONS: ReadonlyArray<{ route: string; reason: string }> = [];
+const EXEMPTIONS: ReadonlyArray<{ route: string; reason: string }> = [
+    {
+        route: 'admin/agents/[agentId]',
+        reason:
+            'Pure redirect shim (AGENTIC UI 1/4, #2427) — the agent detail page moved to ' +
+            '/agents/[agentId], which HAS a loading.tsx and moved with it. This file is a ' +
+            'one-line `redirect()` that fetches nothing, so there is no data wait for a ' +
+            'skeleton to cover; rendering one would flash a fake agent page on the way past.',
+    },
+];
 const EXEMPT = new Set(EXEMPTIONS.map((e) => e.route));
 
 /** Walk the (app) tree, collecting `[param]` dirs that contain a page.tsx. */

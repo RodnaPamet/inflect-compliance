@@ -57,6 +57,21 @@ export interface ViewsMenuItem {
     onSelect?: () => void;
     /** Current mode / active toggle — renders the row in its selected tone. */
     selected?: boolean;
+    /**
+     * A COUNT the destination is waiting on — e.g. proposals awaiting review.
+     *
+     * Render it ONLY when there is something to report. A badge reading "0" is
+     * a notification about the absence of anything to notify, and the trigger
+     * is closed most of the time, so the number's only job is to be worth
+     * opening the menu for. Callers therefore pass `undefined`, not `0`.
+     */
+    badge?: string | number;
+    /**
+     * What `badge` counts, for a screen reader. Required in practice whenever
+     * `badge` is set: a bare number read aloud after a label says nothing —
+     * the sidebar's own badge learned this (`NavItem.badgeLabel`).
+     */
+    badgeLabel?: string;
     'data-testid'?: string;
 }
 
@@ -93,6 +108,29 @@ const ROW_CLASS =
     'text-content-default transition-colors duration-100 ease-out motion-reduce:transition-none ' +
     'hover:bg-bg-muted hover:text-content-emphasis ' +
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+
+/**
+ * The trailing count chip. Shared by both item shapes so a link row and an
+ * action row cannot drift apart visually.
+ *
+ * `aria-hidden` on the number plus an `sr-only` sentence, rather than an
+ * `aria-label` on the chip: the label has to be READ AFTER the row's own label
+ * to make sense ("Proposals — 3 awaiting review"), and an aria-label on the
+ * chip would replace the number without ordering it.
+ */
+function BadgeChip({ badge, badgeLabel }: { badge: string | number; badgeLabel?: string }) {
+    return (
+        <span className="ml-auto inline-flex shrink-0 items-center">
+            <span
+                aria-hidden="true"
+                className="rounded-full bg-bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-content-emphasis"
+            >
+                {badge}
+            </span>
+            {badgeLabel && <span className="sr-only">{`${badge} ${badgeLabel}`}</span>}
+        </span>
+    );
+}
 
 export function ViewsMenu({ groups, label, ariaLabel, id, className }: ViewsMenuProps) {
     const t = useTranslations('common.ui');
@@ -144,6 +182,12 @@ export function ViewsMenu({ groups, label, ariaLabel, id, className }: ViewsMenu
                                             </span>
                                         )}
                                         <span className="flex-1 break-words">{item.label}</span>
+                                        {item.badge !== undefined && (
+                                            <BadgeChip
+                                                badge={item.badge}
+                                                badgeLabel={item.badgeLabel}
+                                            />
+                                        )}
                                     </Link>
                                 ) : (
                                     <Popover.Item
@@ -151,6 +195,14 @@ export function ViewsMenu({ groups, label, ariaLabel, id, className }: ViewsMenu
                                         id={item.id}
                                         icon={item.icon}
                                         selected={item.selected}
+                                        right={
+                                            item.badge === undefined ? undefined : (
+                                                <BadgeChip
+                                                    badge={item.badge}
+                                                    badgeLabel={item.badgeLabel}
+                                                />
+                                            )
+                                        }
                                         aria-pressed={item.onSelect ? item.selected : undefined}
                                         data-testid={item['data-testid']}
                                         onClick={() => {

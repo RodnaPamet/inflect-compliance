@@ -59,7 +59,7 @@ const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
   // <EntityDetailLayout> (same pattern as access-reviews and BIA). This page is
   // the first UI for the policy card, tool pins, ASI coverage and the circuit
   // breaker; before it they were reachable only by API.
-  { page: "src/app/t/[tenantSlug]/(app)/admin/agents/[agentId]/AgentDetailClient.tsx", entity: "Registered agent" },
+  { page: "src/app/t/[tenantSlug]/(app)/agents/[agentId]/AgentDetailClient.tsx", entity: "Registered agent" },
   // Business Continuity (BIA) — server page delegates to BiaDetailClient
   // which mounts <EntityDetailLayout> (same pattern as access-reviews).
   { page: "src/app/t/[tenantSlug]/(app)/audits/business-continuity/[id]/BiaDetailClient.tsx", entity: "Business impact analysis" },
@@ -182,6 +182,11 @@ describe("EntityDetailLayout adoption — PR-4", () => {
       // an entity-detail surface; carries its own PageHeader + BackAffordance.
       "src/app/t/[tenantSlug]/(app)/audits/nis2-gap/respond/[assignmentId]/page.tsx",
       "src/app/t/[tenantSlug]/(app)/issues/[issueId]/page.tsx", // legacy redirect → /tasks/[id]
+      // AGENTIC UI 1/4 (#2427) redirect shim → /agents/[agentId], which IS
+      // adopted (see the registry above). Same class as the /issues shim: a
+      // one-line `redirect()` that renders no detail surface at all, so there
+      // is nothing for `EntityDetailLayout` to be the layout OF.
+      "src/app/t/[tenantSlug]/(app)/admin/agents/[agentId]/page.tsx",
       "src/app/t/[tenantSlug]/(app)/admin/vendor-templates/[templateId]/page.tsx",
       "src/app/t/[tenantSlug]/(app)/admin/vendor-assessment-reviews/[assessmentId]/page.tsx",
     ]);

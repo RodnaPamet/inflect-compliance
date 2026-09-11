@@ -4,7 +4,7 @@
  * `computeReviewQuality` declares `DIFF_EXPANSION` unobservable: nothing in the
  * product knows whether a reviewer looked at a proposal's content before
  * approving it. That declaration is rendered to admins on
- * `/admin/agents/review-quality`, so it has to stay true. A stale "we cannot
+ * `/agents/review-quality`, so it has to stay true. A stale "we cannot
  * tell you this" is worse than silence — it tells an operator not to look for
  * evidence that has since started existing.
  *
@@ -100,7 +100,7 @@ describe('the declaration that diff expansion is unobservable rests on live fact
                 readFileSync(
                     path.join(
                         REPO_ROOT,
-                        'src/app/t/[tenantSlug]/(app)/agent-proposals/AgentProposalsClient.tsx',
+                        'src/app/t/[tenantSlug]/(app)/agents/proposals/AgentProposalsClient.tsx',
                     ),
                     'utf8',
                 ),

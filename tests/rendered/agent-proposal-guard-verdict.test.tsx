@@ -107,7 +107,7 @@ jest.mock('next/navigation', () => ({
         forward: jest.fn(),
         prefetch: jest.fn(),
     }),
-    usePathname: () => '/t/acme/agent-proposals',
+    usePathname: () => '/t/acme/agents/proposals',
     useSearchParams: () => new URLSearchParams(),
 }));
 
@@ -138,7 +138,7 @@ import {
     AgentProposalsClient,
     resolveProposalGuardState,
     type ProposalRow,
-} from '@/app/t/[tenantSlug]/(app)/agent-proposals/AgentProposalsClient';
+} from '@/app/t/[tenantSlug]/(app)/agents/proposals/AgentProposalsClient';
 import { computeProposalDiff } from '@/lib/agentic/proposal-diff';
 
 /** The two rule ids a real injection scan puts on a flagged proposal. */

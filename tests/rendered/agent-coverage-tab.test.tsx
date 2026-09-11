@@ -76,7 +76,7 @@ jest.mock('next-intl', () => {
 jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
     useRouter: () => ({ push: jest.fn(), replace: jest.fn(), refresh: jest.fn() }),
-    usePathname: () => '/t/acme/admin/agents/agent-1',
+    usePathname: () => '/t/acme/agents/agent-1',
     useSearchParams: () => new URLSearchParams(),
 }));
 
@@ -85,7 +85,7 @@ jest.mock('@/lib/hooks/use-tenant-swr', () => ({
     useTenantSWR: (...args: unknown[]) => mockSWR(...args),
 }));
 
-import { CoverageTab } from '@/app/t/[tenantSlug]/(app)/admin/agents/[agentId]/tabs/CoverageTab';
+import { CoverageTab } from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/CoverageTab';
 
 // ─── The real catalogue ──────────────────────────────────────────────
 //

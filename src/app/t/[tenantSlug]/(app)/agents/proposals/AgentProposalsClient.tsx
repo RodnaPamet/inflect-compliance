@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { AgentsViewsMenu } from '../AgentsViewsMenu';
 import { cardVariants } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/format-date';
@@ -160,6 +161,7 @@ function guardRuleText(
  * than a checkbox.
  */
 export function AgentProposalsClient({
+    tenantSlug,
     initialProposals,
 }: {
     tenantSlug: string;
@@ -267,12 +269,25 @@ export function AgentProposalsClient({
                 back={{ smart: true }}
                 breadcrumbs={[
                     { label: t('crumbDashboard'), href: tenantHref('/dashboard') },
-                    { label: t('crumbAdmin'), href: tenantHref('/admin') },
-                    { label: t('crumbMcp'), href: tenantHref('/admin/mcp') },
+                    { label: t('register.breadcrumb'), href: tenantHref('/agents') },
                     { label: t('proposals.crumb') },
                 ]}
                 title={t('proposals.title')}
                 description={t('proposals.description')}
+                // One click to any of the other four agentic surfaces, and the
+                // menu marks this one. Both gates are true by construction:
+                // the PAGE refused anyone without `admin.view`, and every
+                // holder of the register key is an admin holder — a custom
+                // role that grants agent_registry alone reaches this page not
+                // at all, so it can never see this menu.
+                actions={
+                    <AgentsViewsMenu
+                        current="proposals"
+                        tenantSlug={tenantSlug}
+                        canReviewProposals
+                        canInvestigate
+                    />
+                }
             />
 
             {notice && (

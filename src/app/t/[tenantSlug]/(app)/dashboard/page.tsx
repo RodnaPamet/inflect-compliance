@@ -15,6 +15,7 @@ import {
 import { cachedSsrPayload } from '@/lib/cache/ssr-cache';
 import DashboardClient from './DashboardClient';
 import RecentActivityCard from './RecentActivityCard';
+import AgenticGovernanceCard from './AgenticGovernanceCard';
 import { Card } from '@/components/ui/card';
 import { getTranslations } from 'next-intl/server';
 
@@ -96,6 +97,7 @@ export default async function DashboardPage({
             initialExec={exec}
             initialTrends={trends}
             initialPostureSummary={postureSummary}
+            agentic={<AgenticGovernanceCard tenantSlug={tenantSlug} />}
         >
             <Suspense
                 fallback={

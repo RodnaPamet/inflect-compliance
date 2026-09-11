@@ -105,7 +105,7 @@ jest.mock('next-intl', () => {
 jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
     useRouter: () => ({ push: jest.fn(), replace: jest.fn(), refresh: jest.fn() }),
-    usePathname: () => '/t/acme/admin/agents/agent-1',
+    usePathname: () => '/t/acme/agents/agent-1',
     useSearchParams: () => new URLSearchParams(),
 }));
 
@@ -132,7 +132,7 @@ import {
     type WithheldTool,
 } from '@/lib/agentic/policy-card-evaluation';
 
-import { PolicyCardTab } from '@/app/t/[tenantSlug]/(app)/admin/agents/[agentId]/tabs/PolicyCardTab';
+import { PolicyCardTab } from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/PolicyCardTab';
 
 // ─── The copy under test, read from the catalogue the mock resolves ──
 

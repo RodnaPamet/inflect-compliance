@@ -85,7 +85,7 @@ jest.mock('next-intl', () => {
 jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
     useRouter: () => ({ push: jest.fn(), replace: jest.fn(), refresh: jest.fn() }),
-    usePathname: () => '/t/acme/admin/agents/agent-1',
+    usePathname: () => '/t/acme/agents/agent-1',
     useSearchParams: () => new URLSearchParams(),
 }));
 
@@ -115,7 +115,7 @@ jest.mock('sonner', () => ({
     },
 }));
 
-import { RiskAssessmentTab } from '@/app/t/[tenantSlug]/(app)/admin/agents/[agentId]/tabs/RiskAssessmentTab';
+import { RiskAssessmentTab } from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/RiskAssessmentTab';
 
 // ─── The real strings the operator reads ────────────────────────────────
 

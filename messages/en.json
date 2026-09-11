@@ -245,6 +245,7 @@
     "notifications": "Notify",
     "admin": "Admin",
     "vendors": "Vendor",
+    "agents": "Agent",
     "processes": "Process",
     "govern": "Govern",
     "security": "Security",
@@ -4440,90 +4441,6 @@
       "failedRevokeUser": "Failed to revoke user sessions",
       "userRevocationFailed": "User revocation failed"
     },
-    "agentRegistry": {
-      "linkLabel": "Agent register",
-      "breadcrumb": "Agents",
-      "title": "Agent register",
-      "intro": "Every autonomous agent this tenant runs, with the four properties that decide how much authority it may hold: how autonomous it is, how far into your data it reaches, how hard its actions are to undo, and whose code it is. An agent must be ACTIVE here before a credential bound to it may use the agent surface.",
-      "count": "{total} registered, {active} active, {unscored} not yet scored",
-      "colAgent": "Agent",
-      "colStatus": "Status",
-      "colAutonomy": "Autonomy",
-      "colAccess": "Data access",
-      "colReversibility": "Reversibility",
-      "colTier": "Authority tier",
-      "colAiAct": "AI Act",
-      "colKeys": "Keys",
-      "unscored": "Unscored",
-      "unscoredHint": "No tier has been assessed. Read it as deny, not as low.",
-      "autonomyOf": "{level} of {max}",
-      "legacyPlaceholder": "Placeholder for pre-register activity",
-      "emptyTitle": "No agents registered",
-      "emptyDesc": "Register the autonomous agents that act inside this tenant. Nothing is enforced until an agent is ACTIVE and a credential is bound to it.",
-      "emptyMatchingTitle": "No agents match these filters",
-      "emptyMatchingDesc": "Clear a filter to see the rest of the register.",
-      "resourceSingular": "agent",
-      "resourcePlural": "agents",
-      "addAgent": "Agent",
-      "filters": {
-        "status": "Status",
-        "statusDesc": "Where the agent sits in its lifecycle. Only ACTIVE agents may use the agent surface.",
-        "accessScope": "Data access",
-        "accessScopeDesc": "How far into tenant data the agent can reach, least exposing first."
-      },
-      "filterEnums": {
-        "status": {
-          "DRAFT": "Draft",
-          "ACTIVE": "Active",
-          "SUSPENDED": "Suspended",
-          "RETIRED": "Retired"
-        },
-        "accessScope": {
-          "NONE": "No tenant data",
-          "READ_METADATA": "Metadata only",
-          "READ_TENANT_DATA": "Reads tenant data",
-          "WRITE_TENANT_DATA": "Writes tenant data",
-          "EXTERNAL_EGRESS": "Sends data outside"
-        }
-      },
-      "reversibility": {
-        "REVERSIBLE": "Reversible",
-        "COMPENSABLE": "Compensable",
-        "TERMINAL": "Terminal"
-      },
-      "new": {
-        "title": "Register an agent",
-        "descShort": "Add an autonomous agent to the register.",
-        "descLong": "The four properties below decide how much authority this agent may hold. The EU AI Act tier is computed from the classification answers — it is never taken from this form.",
-        "nameLabel": "Name",
-        "namePlaceholder": "Control reconciler",
-        "descriptionLabel": "What it does",
-        "descriptionPlaceholder": "Reconciles control status against evidence every night.",
-        "encryptedHint": "Stored encrypted. Sanitised before it is saved.",
-        "ownerLabel": "Accountable owner",
-        "ownerPlaceholder": "Choose an active member",
-        "autonomyLabel": "Autonomy level (0-6)",
-        "autonomyHint": "0 suggests only; 6 acts unattended across systems.",
-        "accessLabel": "Data access",
-        "reversibilityLabel": "Reversibility",
-        "provenanceLabel": "Provenance",
-        "provenanceFirstParty": "First party — we wrote it",
-        "provenanceThirdParty": "Third party — a supplier wrote it",
-        "vendorLabel": "Supplier",
-        "vendorPlaceholder": "Choose the vendor",
-        "vendorHint": "Required for a third-party agent: third-party risk you cannot attribute to a named supplier is not third-party risk.",
-        "classificationHeading": "EU AI Act classification",
-        "classificationHelp": "Leaving every question blank yields MINIMAL risk (Art 95). The tier and the clause that drove it are computed on the server.",
-        "art5Label": "Article 5 — prohibited practice",
-        "annexIIILabel": "Annex III — high-risk area",
-        "art6Checkbox": "Safety component of an Annex I product (Art 6(1))",
-        "art50Label": "Article 50 — transparency case",
-        "noneApplicable": "None / not applicable",
-        "submit": "Register agent",
-        "submitting": "Registering…",
-        "errorFallback": "Could not register the agent."
-      }
-    },
     "agentDetail": {
       "tabOverview": "Overview",
       "tabRisk": "Risk assessment",
@@ -5096,8 +5013,8 @@
       }
     },
     "mcp": {
-      "title": "MCP",
-      "description": "Agent (Model Context Protocol) human-in-the-loop tools — the approval queue and the orchestrator.",
+      "title": "MCP credentials",
+      "description": "Every API key bound to a registered agent, and how far up the autonomy ladder it can actually drive that agent.",
       "proposalsTitle": "Agent Proposals",
       "proposalsDesc": "Review the propose-not-commit queue. Approve or reject the writes external agents submit via the MCP propose tools — nothing is created until a human approves.",
       "runsTitle": "Agent Runs",
@@ -5123,7 +5040,8 @@
       "credentialRevoked": "Revoked",
       "credentialExpired": "Expired",
       "quarantineTitle": "Quarantine",
-      "quarantineDesc": "What the agentic output guard refused, and the content it was asked to write. A quarantined proposal never reaches the review queue and can never be approved — this is the only surface that shows what was attempted."
+      "quarantineDesc": "What the agentic output guard refused, and the content it was asked to write. A quarantined proposal never reaches the review queue and can never be approved — this is the only surface that shows what was attempted.",
+      "surfacesMoved": "The agent register, the proposal queue, activity, receipts and quarantine now live under Agent in the sidebar."
     },
     "sharepoint": {
       "title": "Microsoft SharePoint",
@@ -5616,7 +5534,8 @@
       "notifications": "Notifications",
       "theme": "Theme",
       "privacy": "Privacy & data protection",
-      "dsarRequests": "Data subject requests"
+      "dsarRequests": "Data subject requests",
+      "mcp": "MCP credentials"
     },
     "resourceLabels": {
       "controls": "Controls",
@@ -5910,7 +5829,8 @@
       "unobservable": {
         "DIFF_EXPANSION": "Whether a reviewer actually looked at the proposed content before approving it. The queue renders every payload in full with nothing to expand, and nothing records that a proposal was read — only that it was decided. No number here is a stand-in for that: a fast decision is reported as a fast decision, not as an unread one."
       }
-    }
+    },
+    "agentRegisterLink": "Agent register"
   },
   "riskManager": {
     "title": "Risks",
@@ -7839,6 +7759,138 @@
     "crumbAdmin": "Admin",
     "crumbMcp": "MCP",
     "mcpAccessRequired": "MCP Access Required",
+    "register": {
+      "linkLabel": "Agent register",
+      "breadcrumb": "Agents",
+      "title": "Agent register",
+      "intro": "Every autonomous agent this tenant runs, with the four properties that decide how much authority it may hold: how autonomous it is, how far into your data it reaches, how hard its actions are to undo, and whose code it is. An agent must be ACTIVE here before a credential bound to it may use the agent surface.",
+      "count": "{total} registered, {active} active, {unscored} not yet scored",
+      "colAgent": "Agent",
+      "colStatus": "Status",
+      "colAutonomy": "Autonomy",
+      "colAccess": "Data access",
+      "colReversibility": "Reversibility",
+      "colTier": "Authority tier",
+      "colAiAct": "AI Act",
+      "colKeys": "Keys",
+      "unscored": "Unscored",
+      "unscoredHint": "No tier has been assessed. Read it as deny, not as low.",
+      "autonomyOf": "{level} of {max}",
+      "legacyPlaceholder": "Placeholder for pre-register activity",
+      "emptyTitle": "No agents registered",
+      "emptyDesc": "Register the autonomous agents that act inside this tenant. Nothing is enforced until an agent is ACTIVE and a credential is bound to it.",
+      "emptyMatchingTitle": "No agents match these filters",
+      "emptyMatchingDesc": "Clear a filter to see the rest of the register.",
+      "resourceSingular": "agent",
+      "resourcePlural": "agents",
+      "addAgent": "Agent",
+      "filters": {
+        "status": "Status",
+        "statusDesc": "Where the agent sits in its lifecycle. Only ACTIVE agents may use the agent surface.",
+        "accessScope": "Data access",
+        "accessScopeDesc": "How far into tenant data the agent can reach, least exposing first.",
+        "riskTier": "Authority tier",
+        "riskTierDesc": "The scored operational authority that caps how autonomous the agent may be. \"Not yet scored\" means nobody has assessed it — read it as deny."
+      },
+      "filterEnums": {
+        "status": {
+          "DRAFT": "Draft",
+          "ACTIVE": "Active",
+          "SUSPENDED": "Suspended",
+          "RETIRED": "Retired"
+        },
+        "accessScope": {
+          "NONE": "No tenant data",
+          "READ_METADATA": "Metadata only",
+          "READ_TENANT_DATA": "Reads tenant data",
+          "WRITE_TENANT_DATA": "Writes tenant data",
+          "EXTERNAL_EGRESS": "Sends data outside"
+        },
+        "riskTier": {
+          "UNSCORED": "Not yet scored",
+          "LOW": "Low",
+          "MODERATE": "Moderate",
+          "HIGH": "High",
+          "CRITICAL": "Critical"
+        }
+      },
+      "reversibility": {
+        "REVERSIBLE": "Reversible",
+        "COMPENSABLE": "Compensable",
+        "TERMINAL": "Terminal"
+      },
+      "new": {
+        "title": "Register an agent",
+        "descShort": "Add an autonomous agent to the register.",
+        "descLong": "The four properties below decide how much authority this agent may hold. The EU AI Act tier is computed from the classification answers — it is never taken from this form.",
+        "nameLabel": "Name",
+        "namePlaceholder": "Control reconciler",
+        "descriptionLabel": "What it does",
+        "descriptionPlaceholder": "Reconciles control status against evidence every night.",
+        "encryptedHint": "Stored encrypted. Sanitised before it is saved.",
+        "ownerLabel": "Accountable owner",
+        "ownerPlaceholder": "Choose an active member",
+        "autonomyLabel": "Autonomy level (0-6)",
+        "autonomyHint": "0 suggests only; 6 acts unattended across systems.",
+        "accessLabel": "Data access",
+        "reversibilityLabel": "Reversibility",
+        "provenanceLabel": "Provenance",
+        "provenanceFirstParty": "First party — we wrote it",
+        "provenanceThirdParty": "Third party — a supplier wrote it",
+        "vendorLabel": "Supplier",
+        "vendorPlaceholder": "Choose the vendor",
+        "vendorHint": "Required for a third-party agent: third-party risk you cannot attribute to a named supplier is not third-party risk.",
+        "classificationHeading": "EU AI Act classification",
+        "classificationHelp": "Leaving every question blank yields MINIMAL risk (Art 95). The tier and the clause that drove it are computed on the server.",
+        "art5Label": "Article 5 — prohibited practice",
+        "annexIIILabel": "Annex III — high-risk area",
+        "art6Checkbox": "Safety component of an Annex I product (Art 6(1))",
+        "art50Label": "Article 50 — transparency case",
+        "noneApplicable": "None / not applicable",
+        "submit": "Register agent",
+        "submitting": "Registering…",
+        "errorFallback": "Could not register the agent."
+      },
+      "accessTitle": "Agent register access required",
+      "accessMessage": "You do not have permission to view the agent register. It records which autonomous agents may act in this workspace. Contact your workspace administrator to request access.",
+      "listDescription": "Every autonomous agent this workspace runs, and how much authority each one holds.",
+      "searchPlaceholder": "Search agents…",
+      "kpi": {
+        "total": "Registered",
+        "active": "Active",
+        "unscored": "Not yet scored",
+        "egress": "Sends data outside"
+      },
+      "governance": {
+        "notEnforcing": "This workspace does not require agents to be registered. Every row below is a record and nothing more — suspending an agent here does not stop it, and a credential bound to no agent still reaches the agent surface. Turn on \"Require registered agent\" in Security settings to make this register binding.",
+        "enforcingUnbound": "Registration is enforced, and {count, plural, one {# live MCP credential is bound to no agent} other {# live MCP credentials are bound to no agent}} — each is refused at the agent surface until you bind it to a registered agent.",
+        "enforcing": "Registration is enforced: a credential must name an ACTIVE agent below before it reaches the agent surface."
+      }
+    },
+    "views": {
+      "groupOperate": "Operate",
+      "groupAssurance": "Assurance",
+      "proposals": "Proposals",
+      "proposalsBadgeLabel": "proposals awaiting review",
+      "runs": "Activity",
+      "receipts": "Receipts",
+      "quarantine": "Quarantine",
+      "reviewQuality": "Review quality"
+    },
+    "reviewQuality": {
+      "accessTitle": "Agent register access required",
+      "accessMessage": "You do not have permission to read agent review-quality metrics. Contact your workspace administrator to request access."
+    },
+    "dashboardWidget": {
+      "title": "Agentic governance",
+      "viewRegister": "Agent register",
+      "killInForceTenant": "A TENANT-WIDE kill switch is in force. Every agent in this workspace is stopped at the tool boundary, including runs already in flight.",
+      "killInForceAgents": "{count, plural, one {# agent is stopped} other {# agents are stopped}} by a kill switch at the tool boundary, including runs already in flight.",
+      "unscoredActive": "{count, plural, one {# ACTIVE agent has no assessed authority tier} other {# ACTIVE agents have no assessed authority tier}}. An unscored agent reaches nothing — its credential resolves to a deny ceiling.",
+      "notEnforcing": "This workspace does not require agents to be registered, so the register records what runs without deciding it.",
+      "clear": "No kill switch in force, every active agent is scored, and registration is enforced.",
+      "proposalsWaiting": "{count, plural, one {# agent proposal is waiting} other {# agent proposals are waiting}} for a human decision."
+    },
     "proposals": {
       "accessMessage": "You do not have permission to review agent proposals. Contact your workspace administrator to request access.",
       "crumb": "Agent proposals",
@@ -7940,10 +7992,16 @@
       "sheetDigest": "Content digest",
       "sheetRationale": "Agent rationale",
       "sheetPayload": "Attempted content",
-      "sheetPayloadWarning": "Attacker-supplied text, shown inert. Do not paste it into anything that will act on it."
+      "sheetPayloadWarning": "Attacker-supplied text, shown inert. Do not paste it into anything that will act on it.",
+      "accessTitle": "Agent register access required",
+      "accessMessage": "You do not have permission to read quarantined agent proposals. Contact your workspace administrator to request access."
     },
     "guard": {
       "noRules": "No rule ids recorded"
+    },
+    "receipts": {
+      "accessTitle": "Agent register access required",
+      "accessMessage": "You do not have permission to read agent-action receipts. Contact your workspace administrator to request access."
     }
   },
   "securityTesting": {
