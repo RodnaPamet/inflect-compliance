@@ -156,6 +156,20 @@ model FileRecord {
   @@index([tenantId, scanStatus, nextScanAttemptAt])
   @@index([tenantId, deletedAt])
   @@index([tenantId, previousFileRecordId])
+  /// Composite parent key for tenant-carrying child foreign keys.
+  /// Postgres runs FK checks as the table owner, which bypasses RLS, so a
+  /// single-column child `fileRecordId -> FileRecord(id)` leaves a
+  /// cross-tenant reference REPRESENTABLE however carefully the application
+  /// filters. Issue #2356.
+  ///
+  /// NO FK REFERENCES THIS YET, deliberately. All three children
+  /// (Evidence.fileRecord, FileRecord.previousFileRecord,
+  /// AccessReview.evidenceFile) are effectively `SetNull` today, and
+  /// converting them means choosing `Restrict` — which the data-lifecycle
+  /// sweep would then abort on. That is the same product decision GROUP 3
+  /// of prisma/fresh-db-schema-drift.expected.sql files rather than guesses.
+  /// The key lands here so the follow-up carries no index work.
+  @@unique([id, tenantId])
 }
 
 model EvidenceReview {
@@ -242,7 +256,7 @@ model EvidenceAssetLink {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   evidence        Evidence @relation(fields: [evidenceId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  asset           Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  asset           Asset    @relation(fields: [assetId, tenantId], references: [id, tenantId], onDelete: Cascade)
   createdBy       User?    @relation("EvidenceAssetLinkCreator", fields: [createdByUserId], references: [id])
   tenant          Tenant   @relation(fields: [tenantId], references: [id])
 

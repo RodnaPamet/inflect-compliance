@@ -86,6 +86,12 @@ model Asset {
   @@index([tenantId, criticality])
   @@index([tenantId, status])
   @@index([tenantId, deletedAt])
+  /// Composite parent key for tenant-carrying child foreign keys.
+  /// Postgres runs FK checks as the table owner, which bypasses RLS, so a
+  /// single-column child `xId -> Asset(id)` leaves a cross-tenant reference
+  /// REPRESENTABLE however carefully the application filters. Referencing
+  /// [assetId, tenantId] -> [id, tenantId] makes it unrepresentable. Issue #2356.
+  @@unique([id, tenantId])
 }
 
 /// Per-tenant monotonic counter for minting `AST-N` asset keys.
@@ -155,7 +161,7 @@ model AssetVulnerability {
   remediationTaskId String?
 
   tenant          Tenant @relation(fields: [tenantId], references: [id])
-  asset           Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  asset           Asset  @relation(fields: [assetId, tenantId], references: [id, tenantId], onDelete: Cascade)
   cve             Cve    @relation(fields: [cveId], references: [id], onDelete: Cascade)
   ownerUser       User?  @relation("AssetVulnerabilityOwner", fields: [ownerUserId], references: [id])
   remediationTask Task?  @relation("VulnerabilityRemediation", fields: [remediationTaskId], references: [id], onDelete: SetNull)
@@ -205,6 +211,12 @@ model ScannerRun {
   @@index([tenantId, source, ranAt])
   @@index([tenantId, scanType, ranAt])
   @@index([tenantId])
+  /// Composite parent key for tenant-carrying child foreign keys.
+  /// Postgres runs FK checks as the table owner, which bypasses RLS, so a
+  /// single-column child `xId -> ScannerRun(id)` leaves a cross-tenant reference
+  /// REPRESENTABLE however carefully the application filters. Referencing
+  /// [scannerRunId, tenantId] -> [id, tenantId] makes it unrepresentable. Issue #2356.
+  @@unique([id, tenantId])
 }
 
 /// Tenant-scoped normalised finding from a ScannerRun. Deduped across
@@ -241,7 +253,7 @@ model ScannerFinding {
   updatedAt    DateTime @updatedAt
 
   tenant     Tenant     @relation(fields: [tenantId], references: [id])
-  scannerRun ScannerRun @relation(fields: [scannerRunId], references: [id], onDelete: Cascade)
+  scannerRun ScannerRun @relation(fields: [scannerRunId, tenantId], references: [id, tenantId], onDelete: Cascade)
   asset      Asset?     @relation("AssetScannerFindings", fields: [assetId], references: [id], onDelete: SetNull)
 
   /// Idempotent ingest: re-scanning the same issue updates this one row.
@@ -261,7 +273,7 @@ model AssetRiskLink {
   rationale       String?
   createdByUserId String?
   createdAt       DateTime      @default(now())
-  asset           Asset         @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  asset           Asset         @relation(fields: [assetId, tenantId], references: [id, tenantId], onDelete: Cascade)
   createdBy       User?         @relation("AssetRiskCreator", fields: [createdByUserId], references: [id])
   risk            Risk          @relation(fields: [riskId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant          Tenant        @relation(fields: [tenantId], references: [id])
@@ -284,7 +296,7 @@ model FindingAsset {
   createdByUserId String?
   createdAt       DateTime @default(now())
   finding         Finding  @relation(fields: [findingId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  asset           Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  asset           Asset    @relation(fields: [assetId, tenantId], references: [id, tenantId], onDelete: Cascade)
   createdBy       User?    @relation("FindingAssetCreator", fields: [createdByUserId], references: [id])
   tenant          Tenant   @relation(fields: [tenantId], references: [id])
 
