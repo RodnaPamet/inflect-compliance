@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
 import {
     getAgentGovernanceStatus,
+    getAgenticAssuranceSignals,
     listAgentKpiCounts,
     listRegisteredAgents,
     parseAgentListFilters,
@@ -75,11 +76,16 @@ export default async function AgentRegisterPage({
 
     const filters = parseAgentListFilters(await searchParams);
 
-    const [agents, kpiCounts, governance, proposalsAwaitingReview, members, vendors] =
+    const [agents, kpiCounts, governance, assurance, proposalsAwaitingReview, members, vendors] =
         await Promise.all([
             listRegisteredAgents(ctx, { filters }),
             listAgentKpiCounts(ctx, filters),
             getAgentGovernanceStatus(ctx),
+            // Best-effort, like the proposal badge beside it: a reader who may
+            // see the register but not the audit trail still gets the register,
+            // and an absent panel is the honest rendering of "this page cannot
+            // tell you" — a zeroed one would not be.
+            getAgenticAssuranceSignals(ctx).catch(() => null),
             // The ViewsMenu badge. Best-effort: a reader who may read the
             // register but not the proposal queue still gets the register
             // rather than an error, and an absent badge is the honest
@@ -111,6 +117,7 @@ export default async function AgentRegisterPage({
             vendors={vendorOptions}
             kpiCounts={kpiCounts}
             governance={governance}
+            assurance={assurance}
             proposalsAwaitingReview={proposalsAwaitingReview}
             canWrite={Boolean(ctx.appPermissions?.admin?.agent_registry)}
             // The proposal queue is gated `admin.view` at its own page, NOT on

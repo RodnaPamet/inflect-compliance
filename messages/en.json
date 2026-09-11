@@ -7933,6 +7933,15 @@
         "notEnforcing": "This workspace does not require agents to be registered. Every row below is a record and nothing more — suspending an agent here does not stop it, and a credential bound to no agent still reaches the agent surface. Turn on \"Require registered agent\" in Security settings to make this register binding.",
         "enforcingUnbound": "Registration is enforced, and {count, plural, one {# live MCP credential is bound to no agent} other {# live MCP credentials are bound to no agent}} — each is refused at the agent surface until you bind it to a registered agent.",
         "enforcing": "Registration is enforced: a credential must name an ACTIVE agent below before it reaches the agent surface."
+      },
+      "assurance": {
+        "heading": "Assurance",
+        "coverageEmpty": "No agents are registered, so there is nothing to assess.",
+        "coverageComplete": "All {total} registered agent(s) have an assessed risk tier.",
+        "coveragePartial": "{scored} of {total} registered agent(s) have an assessed risk tier. The {unscored} unscored agent(s) are refused at the tool boundary until they are assessed.",
+        "sampleNone": "No approved proposal has been sample-audited yet, so nothing is re-checking what reviewers approve.",
+        "sampleRate": "A second reviewer disagreed with {dissented} of {answered} sampled approvals ({percent}%) in the last 90 days.",
+        "checkNeverRun": "never run"
       }
     },
     "views": {

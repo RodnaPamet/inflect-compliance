@@ -86,6 +86,13 @@ interface Props {
     kpiCounts: AgentKpiCounts;
     /** The three-state governance banner's inputs. */
     governance: { enforcing: boolean; unboundCredentials: number };
+    /**
+     * The three assurance signals (#2451) — is any of this being CHECKED?
+     * `null` when the reader may see the register but not the audit trail; the
+     * panel is then absent rather than zeroed, because a zero would answer a
+     * question nobody was allowed to ask.
+     */
+    assurance: AgenticAssurance | null;
     /** Badge count for the Proposals menu entry; `null` when unreadable. */
     proposalsAwaitingReview: number | null;
     canWrite: boolean;
@@ -154,6 +161,7 @@ function AgentsInner({
     vendors,
     kpiCounts,
     governance,
+    assurance,
     proposalsAwaitingReview,
     canWrite,
     canReviewProposals,
@@ -429,7 +437,12 @@ function AgentsInner({
                     ),
                     description: t('register.listDescription'),
                 }}
-                banner={<GovernanceBanner governance={governance} />}
+                banner={
+                    <div className="space-y-compact">
+                        <GovernanceBanner governance={governance} />
+                        {assurance && <AssurancePanel assurance={assurance} />}
+                    </div>
+                }
                 kpis={
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-default">
                         {visibleKpiCards.map((card) => {
@@ -583,6 +596,77 @@ function AgentsInner({
  * All three RENDER. An "everything is fine" state that renders nothing leaves
  * the reader unable to tell "enforcing" from "this page does not say".
  */
+/** The three assurance signals, as the register renders them. */
+export interface AgenticAssurance {
+    riskCoverage: { scored: number; total: number };
+    sampleAudit: { answered: number; dissented: number; disagreementRate: number | null };
+    controlTests: Array<{ checkId: string; title: string; result: string | null; lastRunAt: string | Date | null }>;
+}
+
+/**
+ * IS ANY OF THIS BEING CHECKED?
+ *
+ * The banner above says whether the boundary is switched on. This says whether
+ * anybody is verifying that it works — the question an assessor asks and the one
+ * the register could not previously answer at all.
+ *
+ * A check that has NEVER RUN renders as "never run", never as absent. Omission
+ * reads as a pass, and "no result" and "passed" are the two things an assurance
+ * surface must never conflate.
+ */
+export function AssurancePanel({ assurance }: { assurance: AgenticAssurance }) {
+    const t = useTranslations('agents');
+    const { riskCoverage: rc, sampleAudit: sa, controlTests } = assurance;
+    const unscored = rc.total - rc.scored;
+
+    return (
+        <div className="space-y-tight text-sm" data-testid="agents-assurance">
+            <p className="text-xs uppercase tracking-wide text-content-subtle">
+                {t('register.assurance.heading')}
+            </p>
+
+            <p data-testid="agents-assurance-coverage">
+                {rc.total === 0
+                    ? t('register.assurance.coverageEmpty')
+                    : unscored === 0
+                      ? t('register.assurance.coverageComplete', { total: rc.total })
+                      : t('register.assurance.coveragePartial', { scored: rc.scored, total: rc.total, unscored })}
+            </p>
+
+            <p data-testid="agents-assurance-sample">
+                {sa.disagreementRate === null
+                    ? t('register.assurance.sampleNone')
+                    : t('register.assurance.sampleRate', {
+                          percent: Math.round(sa.disagreementRate * 100),
+                          dissented: sa.dissented,
+                          answered: sa.answered,
+                      })}
+            </p>
+
+            <ul className="space-y-tight" data-testid="agents-assurance-checks">
+                {controlTests.map((c) => (
+                    <li key={c.checkId}>
+                        <span className="text-content-default">{c.title}</span>{' '}
+                        {c.result === null ? (
+                            <span className="text-content-warning">
+                                {t('register.assurance.checkNeverRun')}
+                            </span>
+                        ) : (
+                            <span
+                                className={
+                                    c.result === 'PASS' ? 'text-content-success' : 'text-content-error'
+                                }
+                            >
+                                {c.result}
+                            </span>
+                        )}
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}
+
 export function GovernanceBanner({
     governance,
 }: {

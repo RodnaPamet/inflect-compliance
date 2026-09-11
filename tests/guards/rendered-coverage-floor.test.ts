@@ -159,7 +159,12 @@ const ROOT = path.resolve(__dirname, '../..');
 // left this alone and said so, because #2388 was open at the same time and two
 // branches raising one constant merge cleanly while leaving main short. Both
 // have landed; live measured on main after they did.
-const RENDERED_TEST_FLOOR = 271;
+// 2026-09-11 — AGENTIC UI 2/4: 271 -> 280. The nine are the rendered coverage
+// this prompt added, locked in as the new minimum rather than left as slack:
+// kill-switch history (6), kill-switch scope (5) and the assurance panel (6),
+// less the churn from props threaded through existing register fixtures.
+// An upward ratchet only works if the floor tracks the gains.
+const RENDERED_TEST_FLOOR = 280;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the
