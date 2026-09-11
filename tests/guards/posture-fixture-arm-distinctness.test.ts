@@ -71,6 +71,47 @@
  *          drops it, and the axis silently stops being compared at all. The
  *          axis-set agreement check is the only thing that sees it.
  *
+ * SECOND-PASS PROOFS (adversarial review of this file; axes and angles the
+ * first pass did NOT use). Each applied alone, this file re-run, restored:
+ *
+ *   P1+P4  cloud arm1 `day` set to arm0's `day`                -> P1, P4
+ *   P4     cloud arm1 `clientId` set to arm0's `blob` value    -> P4 red, P1 GREEN
+ *          (the cross-axis case again, on a pair the first pass never tried)
+ *   P4     aws arm1 `now` set to arm0's `thirtyDays` instant   -> P4 red, P1 GREEN;
+ *          a Date collision lands through the ISO string the flattener derives
+ *   P2     cloud arm1 `soc2Only` set to `'ok'`, a string literal in the
+ *          collector (`c.status !== 'ok'`)                     -> P2
+ *   P2     aws arm1 `elapsed` set to `500`, a NUMERIC literal
+ *          in the collector (`slice(0, 500)`)                  -> P2
+ *   P2     cloud arm1 `soc2Only` set to `'.unknown'`, a TEMPLATE FIXED PIECE
+ *          (`` `${input.cloud}.unknown` ``)                    -> P2
+ *   P1     cloud arm1 benchmark/key set to arm0's spelling in a different case
+ *          (`'SOC2TYPE2'` / `'soc2type2'`)                     -> P1, P4, P3.
+ *          Worth knowing WHY this is caught: P1/P4 are byte-exact, so the
+ *          `benchmark` axis alone would have passed — `'SOC2TYPE2'` is not
+ *          `'Soc2Type2'`. It is caught because the DERIVED value has its own
+ *          axis (`key`), and the collectors' `.toLowerCase()` collapses both
+ *          arms onto one `key`. An axis whose derived form is not also an axis
+ *          would not be covered; add both halves.
+ *   P3     the CLOUD table's `arms` forced to `[]`             -> 3 failed
+ *   P3     `armScalars` made to flatten nothing (every P2/P4 selection empty)
+ *                                                              -> 3 failed,
+ *          including the exemption-staleness test, so that one is not vacuous
+ *          either
+ *   P3     `literalConstantsOf` made to harvest nothing        -> 2 failed
+ *
+ * AND ONE THAT SURVIVED, which is why the literal census is now exact. With the
+ * old single union floor (`minSourceLiterals` 32 / 33) BOTH of these were
+ * 11/11 GREEN:
+ *
+ *   deleting the template-piece branch of `literalConstantsOf` (42 -> 32
+ *   literals, 41 -> 33) and deleting its numeric branch (42 -> 36, 41 -> 35).
+ *
+ * P2 then silently stopped checking two of its three literal kinds — each of
+ * which the proofs above show catches a real coincidence. The floor could not
+ * see it because the slack (10 and 8) was wider than the kind. `literalCensus`
+ * replaces it, asserted per kind and exactly; both deletions now fail P3.
+ *
  * The full round-1 measurements (an independent value-position AST walk of both
  * collectors, and a runtime observation of every derived site) are in
  * `docs/implementation-notes/2026-09-11-posture-derived-value-fixture-arms.md`.
@@ -82,28 +123,62 @@ import { CLOUD_POSTURE_ARMS, AWS_POSTURE_ARMS } from '../helpers/posture-collect
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
+/** Distinct literal values the harvester found, split by the KIND that found them. */
+interface LiteralCensus {
+    string: number;
+    numeric: number;
+    templatePiece: number;
+}
+
 /**
  * Every literal constant the file spells — the values a mutant could write in
  * place of a derivation. Harvested from the AST, so a mention in a comment or a
  * JSDoc block contributes nothing.
+ *
+ * THREE KINDS, AND THE CENSUS IS PART OF THE RESULT. P2 stands entirely on this
+ * harvest, so a kind that stops being harvested is a detector that stops
+ * existing — silently, because P2 then finds nothing to report. A single `>=`
+ * floor over the UNION cannot see that: measured on these two files, deleting
+ * the template-piece branch takes cloud-posture from 42 distinct literals to 32
+ * and aws-posture from 41 to 33, and those were exactly the union floors this
+ * file used to carry (32 / 33), so both deletions left the guard 11/11 GREEN.
+ * Deleting the numeric branch (42 -> 36, 41 -> 35) also survived.
+ *
+ * Both kinds catch real coincidences — an arm scalar on the numeric literal
+ * `500` (`slice(0, 500)`) and one on the fixed piece `.unknown`
+ * (`` `${input.cloud}.unknown` ``) each fail P2 today — so each needs a detector
+ * of its own rather than a shared floor with 10 of slack. P3 therefore asserts
+ * the census EXACTLY.
  */
-function literalConstantsOf(rel: string): Set<string> {
+function literalConstantsOf(rel: string): { all: Set<string>; census: LiteralCensus } {
     const abs = path.join(REPO_ROOT, rel);
     const src = ts.createSourceFile(abs, fs.readFileSync(abs, 'utf8'), ts.ScriptTarget.ES2022, true);
-    const out = new Set<string>();
+    const all = new Set<string>();
+    const byKind: Record<keyof LiteralCensus, Set<string>> = {
+        string: new Set(),
+        numeric: new Set(),
+        templatePiece: new Set(),
+    };
+    const add = (kind: keyof LiteralCensus, value: string): void => {
+        all.add(value);
+        byKind[kind].add(value);
+    };
     const visit = (n: ts.Node): void => {
-        if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) out.add(n.text);
-        else if (ts.isNumericLiteral(n)) out.add(n.text.replace(/_/g, ''));
+        if (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) add('string', n.text);
+        else if (ts.isNumericLiteral(n)) add('numeric', n.text.replace(/_/g, ''));
         else if (ts.isTemplateHead(n) || ts.isTemplateMiddle(n) || ts.isTemplateTail(n)) {
             // A template's fixed pieces are literals too: `${cloud}.unknown`
             // makes `.unknown` writable, and a fixture value equal to a fixed
             // piece is the same coincidence one interpolation deep.
-            if (n.text) out.add(n.text);
+            if (n.text) add('templatePiece', n.text);
         }
         n.forEachChild(visit);
     };
     src.forEachChild(visit);
-    return out;
+    return {
+        all,
+        census: { string: byKind.string.size, numeric: byKind.numeric.size, templatePiece: byKind.templatePiece.size },
+    };
 }
 
 /**
@@ -162,7 +237,14 @@ interface Table {
     /** Measured floors — see P3. Raise them when the table grows; never lower. */
     minAxes: number;
     minScalars: number;
-    minSourceLiterals: number;
+    /**
+     * Measured CENSUS of the collector's literals, per kind — asserted exactly,
+     * not as a floor, because a floor over the union cannot see one kind stop
+     * being harvested (see `literalConstantsOf`). Re-measure and update it in
+     * the same diff when the collector's own literals genuinely change; the
+     * failure message says so.
+     */
+    literalCensus: LiteralCensus;
 }
 
 const TABLES: Table[] = [
@@ -172,7 +254,7 @@ const TABLES: Table[] = [
         source: 'src/app-layer/usecases/cloud-posture.ts',
         minAxes: 21,
         minScalars: 48,
-        minSourceLiterals: 32,
+        literalCensus: { string: 26, numeric: 6, templatePiece: 10 },
     },
     {
         name: 'AWS_POSTURE_ARMS',
@@ -180,7 +262,7 @@ const TABLES: Table[] = [
         source: 'src/app-layer/usecases/aws-posture.ts',
         minAxes: 21,
         minScalars: 55,
-        minSourceLiterals: 33,
+        literalCensus: { string: 27, numeric: 6, templatePiece: 8 },
     },
 ];
 
@@ -200,8 +282,20 @@ describe('posture collector arm tables keep every derived value distinguishable 
     });
 
     it.each(TABLES)('P3: $name and $source both yield a non-empty population', (t) => {
-        const literals = literalConstantsOf(t.source);
-        expect(literals.size).toBeGreaterThanOrEqual(t.minSourceLiterals);
+        const { all: literals, census } = literalConstantsOf(t.source);
+        // EXACT, per kind. A union floor cannot see one kind stop being
+        // harvested, and each kind is a live P2 detector — see
+        // `literalConstantsOf`. If this fails because the collector's own
+        // literals changed, RE-MEASURE and update `literalCensus` in the same
+        // diff; if it fails because a harvest branch went away, restore it.
+        expect(census).toEqual(t.literalCensus);
+        // The union P2 actually consults. At least as large as the biggest kind
+        // and no larger than the three together — a value can legitimately be
+        // both a string literal and a template piece, so this is a range rather
+        // than the equality the current disjoint census would also satisfy.
+        const kinds = [census.string, census.numeric, census.templatePiece];
+        expect(literals.size).toBeGreaterThanOrEqual(Math.max(...kinds));
+        expect(literals.size).toBeLessThanOrEqual(kinds.reduce((a, b) => a + b, 0));
         for (const arm of t.arms) {
             expect(armScalars(arm).size).toBeGreaterThanOrEqual(Math.floor(t.minScalars / t.arms.length));
         }
@@ -224,7 +318,7 @@ describe('posture collector arm tables keep every derived value distinguishable 
 
     // ── P2 — no arm value is a constant the collector already spells ──
     it.each(TABLES)('P2: no scalar in $name is byte-identical to a literal in $source', (t) => {
-        const literals = literalConstantsOf(t.source);
+        const { all: literals } = literalConstantsOf(t.source);
         const offenders: string[] = [];
         t.arms.forEach((arm, i) => {
             for (const [value, at] of armScalars(arm)) {
