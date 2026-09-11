@@ -131,11 +131,31 @@ describe('fresh-DB schema-drift gate — actually runs in CI', () => {
         // DROP NOT NULL + 3 pg_trgm GIN) can never be expressed in
         // Prisma, so an empty file means someone deleted the
         // documentation of why they are permanent.
-        const body = read(RESIDUE)
+        //
+        // Asserted on the PARSED STATEMENT SET, never with a
+        // whole-file `toContain`. A `toContain('emailHash')` over this
+        // file would be satisfied by the header comment that explains
+        // emailHash — so deleting the statement while keeping the
+        // paragraph would pass. That is `assertion-needle-uniqueness`
+        // Class D, and it caught this test's first draft at +2 over
+        // the ceiling. Comments are filtered out before matching and
+        // each shape is pinned to a full statement and an exact count.
+        const statements = read(RESIDUE)
             .split('\n')
-            .filter((l) => l.trim() && !l.trim().startsWith('--'));
-        expect(body.length).toBeGreaterThanOrEqual(6);
-        expect(read(RESIDUE)).toContain('emailHash');
-        expect(read(RESIDUE)).toContain('trgm');
+            .map((l) => l.trim())
+            .filter((l) => l && !l.startsWith('--'));
+
+        const gap21 = statements.filter((l) =>
+            /^ALTER TABLE "(?:User|AuditorAccount|UserIdentityLink)" ALTER COLUMN "(?:emailHash|emailAtLinkTimeHash)" DROP NOT NULL;$/.test(
+                l,
+            ),
+        );
+        const trgm = statements.filter((l) =>
+            /^DROP INDEX "Control_(?:code|name|objective)_trgm_idx";$/.test(l),
+        );
+
+        expect(gap21).toHaveLength(3);
+        expect(trgm).toHaveLength(3);
+        expect(statements.length).toBeGreaterThanOrEqual(6);
     });
 });
