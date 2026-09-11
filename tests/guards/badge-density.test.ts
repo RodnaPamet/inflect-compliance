@@ -138,6 +138,18 @@ const STATUS_BADGE_BUDGET: Record<string, number> = {
     // — see usecases/privacy-posture.ts. +2 over the default for those two
     // badges, on top of the four existing posture badges.
     "src/app/t/[tenantSlug]/(app)/admin/privacy/page.tsx": 6,
+    // #2420 — the leaver-pass record: provider / pass status / decision outcome /
+    // truncation, each leading its own column or cell, plus the sync-staleness
+    // badge. 4 → 5 for that fifth one, and it is the rare case where a SECOND
+    // loud badge on the row is the right answer rather than the failure this
+    // ratchet guards against. It does not restate the status badge beside it —
+    // it contradicts it. A pass whose decisions were all refused because the
+    // 03:00 identity sync went stale is written PASSED and renders "Ran —
+    // complete" in green, so the operational alarm has to out-shout a healthy
+    // verdict one cell to its left; demoting it to subtle tone, or to inline
+    // text, would lose precisely the fight it exists to win. Its own column,
+    // never stacked into an existing cell, per this ratchet's own advice.
+    "src/app/t/[tenantSlug]/(app)/admin/identity-leaver-passes/LeaverPassesClient.tsx": 5,
     // Prompt 2 — the owner Assignments panel adds a per-assignment status badge
     // (PENDING/IN_PROGRESS/SUBMITTED). Delegation status is load-bearing here.
     // Files at exactly the default 4 are not listed (the test

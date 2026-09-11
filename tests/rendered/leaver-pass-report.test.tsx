@@ -221,6 +221,97 @@ const REFUSED_PASS = {
     },
 };
 
+/**
+ * THE PASS THIS DISTINCTION EXISTS FOR — #2420.
+ *
+ * One terminated worker, one candidate, one decision, and the decision was
+ * REFUSED because the 03:00 sync stopped refreshing the account. Nothing
+ * refused the BATCH, so `leaverPassStatus` writes PASSED and the row reads
+ * "Ran — complete" in green. `evidence: 'live'` is the shape the #2285 proving
+ * run met, where the discriminator had to be carried as a manual reading rule.
+ */
+const STALE_SYNC_PASS = {
+    id: 'pass-stale',
+    provider: 'entra_stale',
+    status: 'PASSED',
+    executedAt: '2026-08-16T05:00:00.000Z',
+    completedAt: '2026-08-16T05:00:02.000Z',
+    resultJson: {
+        mode: 'AUTOMATIC',
+        evidence: 'live',
+        terminatedWorkers: 1,
+        candidates: 1,
+        population: 120,
+        batchRefused: null,
+        counts: { REFUSED_TARGET: 1 },
+        decisions: [
+            {
+                linkId: 'lnk-stale',
+                outcome: 'REFUSED_TARGET',
+                reason: 'Refusing to disable an account whose on-premises sync state was last observed too long ago.',
+                basis: {
+                    rule: 'OBSERVATION_STALE',
+                    onPremisesSyncEnabled: false,
+                    observedAt: '2026-08-10T03:00:00.000Z',
+                },
+            },
+        ],
+        decisionsTruncated: false,
+    },
+};
+
+/**
+ * The HEALTHY TWIN, and the reason every assertion below is paired.
+ *
+ * Same status, same outcome code, same decision count, same green badge — the
+ * rails simply worked: this account is mastered on-premises, so refusing is the
+ * correct and permanent answer. Any marker that fires on both marks nothing.
+ */
+const HEALTHY_REFUSAL_PASS = {
+    id: 'pass-mastered',
+    provider: 'entra_mastered',
+    status: 'PASSED',
+    executedAt: '2026-08-15T05:00:00.000Z',
+    completedAt: '2026-08-15T05:00:02.000Z',
+    resultJson: {
+        mode: 'AUTOMATIC',
+        evidence: 'live',
+        terminatedWorkers: 1,
+        candidates: 1,
+        population: 120,
+        batchRefused: null,
+        counts: { REFUSED_TARGET: 1 },
+        decisions: [
+            {
+                linkId: 'lnk-mastered',
+                outcome: 'REFUSED_TARGET',
+                reason: 'Refusing to disable a directory-synced account through the cloud directory.',
+                basis: {
+                    rule: 'ON_PREM_MASTERED',
+                    onPremisesSyncEnabled: true,
+                    observedAt: '2026-08-15T03:00:00.000Z',
+                },
+            },
+        ],
+        decisionsTruncated: false,
+    },
+};
+
+/** Nobody left. The healthiest outcome this page has, and also a refusal. */
+const NOBODY_LEFT_PASS = {
+    id: 'pass-nobody',
+    provider: 'okta_quiet',
+    status: 'NOT_APPLICABLE',
+    executedAt: '2026-08-14T05:00:00.000Z',
+    completedAt: '2026-08-14T05:00:01.000Z',
+    resultJson: {
+        mode: 'DRY_RUN',
+        terminatedWorkers: 0,
+        refusal: 'NO_TERMINATED_WORKERS',
+        detail: 'No worker is marked TERMINATED in the HR feed.',
+    },
+};
+
 // BASIS_PASS is deliberately NOT in here. It is a second PASSED row, and the
 // three-statuses test below resolves each label with a singular query — two
 // rows sharing a status would fail it for a reason that has nothing to do with
@@ -697,3 +788,178 @@ describe('leaver pass report — a decision says which rule produced it', () => 
     });
 });
 
+describe('leaver pass report — a staleness refusal does not read as a healthy one (#2420)', () => {
+    /**
+     * THE SURVIVING INSTANCE of the shape #2297 fixed for a pass that threw.
+     *
+     * A REFUSED_TARGET resting on `OBSERVATION_STALE` means the 03:00 sync is
+     * broken — an operational problem needing action. Every other refusal means
+     * the rails worked. Both used to render as a green "Ran — complete" row
+     * with a count and nothing else, which is why the #2285 proving run had to
+     * carry the discriminator as a rule an operator must remember.
+     */
+    it('marks the stale pass on the list row and leaves the healthy twin unmarked', async () => {
+        arrange([STALE_SYNC_PASS, HEALTHY_REFUSAL_PASS]);
+        await renderReport();
+
+        const stale = await rowFor('entra_stale');
+        const healthy = await rowFor('entra_mastered');
+
+        // The two rows are otherwise IDENTICAL — same status label, same
+        // outcome code, same decision count. Asserted, not assumed: if the
+        // fixtures ever diverge, the discrimination below could come from
+        // something other than the basis.
+        expect(stale.textContent).toContain(M.statusPassed);
+        expect(healthy.textContent).toContain(M.statusPassed);
+
+        // Positive: the sync fault is named on the row, without opening it.
+        expect(stale.textContent).toContain(M.syncStale);
+        // Negative, paired: the healthy refusal claims nothing.
+        expect(healthy.textContent).not.toContain(M.syncStale);
+        expect(healthy.textContent).not.toContain(M.syncNeverObserved);
+    });
+
+    it('keeps "waiting will not clear it" apart from "wait one cycle"', async () => {
+        // #2144 declined to backfill, so a population of NEVER_OBSERVED rows is
+        // EXPECTED for one sync cycle and clears itself. Firing the same alarm
+        // on it would teach an operator to ignore the alarm.
+        arrange([STALE_SYNC_PASS, BASIS_PASS]);
+        await renderReport();
+
+        const stale = await rowFor('entra_stale');
+        const waiting = await rowFor('entra_id');
+
+        expect(stale.textContent).toContain(M.syncStale);
+        expect(waiting.textContent).toContain(M.syncNeverObserved);
+        expect(waiting.textContent).not.toContain(M.syncStale);
+        // Two DIFFERENT strings — collapsed to one label, both rows would still
+        // find "a" marker and this test would pass without the meaning.
+        expect(M.syncStale).not.toBe(M.syncNeverObserved);
+    });
+
+    it('names the louder signal when a pass carries both', async () => {
+        const MIXED = {
+            ...STALE_SYNC_PASS,
+            id: 'pass-mixed',
+            provider: 'entra_mixed',
+            resultJson: {
+                ...STALE_SYNC_PASS.resultJson,
+                decisions: [
+                    ...STALE_SYNC_PASS.resultJson.decisions,
+                    {
+                        linkId: 'lnk-never',
+                        outcome: 'REFUSED_TARGET',
+                        reason: 'Refusing to disable an account whose on-premises sync state was never observed.',
+                        basis: { rule: 'NEVER_OBSERVED', onPremisesSyncEnabled: null },
+                    },
+                ],
+            },
+        };
+        arrange([MIXED]);
+        await renderReport();
+
+        const row = await rowFor('entra_mixed');
+        // One clears itself overnight and the other does not. The row has space
+        // for one alarm, so it must be the one whose remedy is not "wait".
+        expect(row.textContent).toContain(M.syncStale);
+        expect(row.textContent).not.toContain(M.syncNeverObserved);
+    });
+
+    it('marks the BATCH-level staleness refusal and not the healthy refusal beside it', async () => {
+        // NO_FRESH_LINKS is the same failure one step earlier: the candidate
+        // query applied the same freshness bound and found nothing, so the pass
+        // refused before any decision existed to carry a basis. It rendered in
+        // the same tone as NO_TERMINATED_WORKERS — "nobody left" — which is the
+        // healthiest outcome this page has.
+        arrange([REFUSED_PASS, NOBODY_LEFT_PASS]);
+        await renderReport();
+
+        const stale = await rowFor('google_workspace');
+        const quiet = await rowFor('okta_quiet');
+
+        // Both are the same status, spelled the same way on screen.
+        expect(stale.textContent).toContain(M.statusRefused);
+        expect(quiet.textContent).toContain(M.statusRefused);
+
+        expect(stale.textContent).toContain(M.syncStale);
+        expect(quiet.textContent).not.toContain(M.syncStale);
+    });
+
+    it('re-tones the refusal banner for a staleness refusal, and only for one', async () => {
+        arrange([REFUSED_PASS, NOBODY_LEFT_PASS]);
+        await renderReport();
+
+        // Most recent first is the server's order; the fixture list is the
+        // render order, so the NO_FRESH_LINKS pass is the default selection.
+        const staleNotice = (await screen.findByText(M.refusalHeading)).closest('div[role]');
+        expect(staleNotice).not.toBeNull();
+        // The pass's OWN sentence is still what is rendered — only the colour
+        // changed. Both halves asserted: a re-tone that dropped the text would
+        // be a worse page, not a better one.
+        expect(staleNotice!.textContent).toContain('NO_FRESH_LINKS');
+        expect(staleNotice!.className).toContain('bg-bg-warning');
+        expect(staleNotice!.className).not.toContain('bg-bg-info');
+
+        await act(async () => {
+            fireEvent.click(await rowFor('okta_quiet'));
+        });
+
+        const quietNotice = (await screen.findByText(M.refusalHeading)).closest('div[role]');
+        expect(quietNotice!.textContent).toContain('NO_TERMINATED_WORKERS');
+        // Paired negative: "nobody left" stays the quiet colour it should be.
+        expect(quietNotice!.className).toContain('bg-bg-info');
+        expect(quietNotice!.className).not.toContain('bg-bg-warning');
+    });
+
+    it('spells out the count and the consequence in the detail panel', async () => {
+        arrange([STALE_SYNC_PASS]);
+        await renderReport();
+
+        expect(await screen.findByText(M.syncStaleHeading)).toBeInTheDocument();
+        // The badge is an alarm; an alarm is not an instruction. The count is
+        // what separates "one odd account" from "the sync is down".
+        expect(screen.getByText(M.syncStaleBody.replace('{count}', '1'))).toBeInTheDocument();
+        // Paired with the decision it is about, so the banner cannot be green
+        // against a panel that rendered nothing.
+        expect(screen.getByText('lnk-stale')).toBeInTheDocument();
+    });
+
+    it('leaves an ordinary pass unmarked, badge and banner alike', async () => {
+        arrange([PASSED_PASS]);
+        await renderReport();
+
+        // Positive first: the pass rendered, decisions and all.
+        expect(await screen.findByText('lnk-okta-1')).toBeInTheDocument();
+        expect(screen.getByText(M.basisCloudOnlyObserved)).toBeInTheDocument();
+        // Negatives: no alarm is raised on a page where nothing is wrong.
+        expect(screen.queryByText(M.syncStale)).toBeNull();
+        expect(screen.queryByText(M.syncNeverObserved)).toBeNull();
+        expect(screen.queryByText(M.syncStaleHeading)).toBeNull();
+    });
+
+    it('says nothing about a pass whose rows predate the basis', async () => {
+        // `resultJson` is read verbatim, so rows written before the basis
+        // existed are permanent. Guessing a sync fault from an outcome alone
+        // would put a red pill on a page with no evidence for one.
+        const LEGACY = {
+            id: 'p-prebasis',
+            provider: 'entra_prebasis',
+            status: 'PASSED',
+            executedAt: '2026-08-13T05:00:00.000Z',
+            completedAt: '2026-08-13T05:00:01.000Z',
+            resultJson: {
+                mode: 'DRY_RUN',
+                counts: { REFUSED_TARGET: 1 },
+                decisions: [{ linkId: 'lnk-prebasis', outcome: 'REFUSED_TARGET' }],
+                decisionsTruncated: false,
+            },
+        };
+        arrange([LEGACY]);
+        await renderReport();
+
+        const row = await rowFor('entra_prebasis');
+        expect(row.textContent).toContain(M.statusPassed);
+        expect(row.textContent).not.toContain(M.syncStale);
+        expect(row.textContent).not.toContain(M.syncNeverObserved);
+    });
+});
