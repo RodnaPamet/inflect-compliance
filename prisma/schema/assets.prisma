@@ -113,8 +113,10 @@ model Cve {
   cvssSeverity   String?
   summary        String
   /// Affected CPE 2.3 match strings extracted from the NVD configurations.
-  cpeMatches     String[]
-  references     String[]
+  /// DB default `ARRAY[]::TEXT[]` (20260628130000_vuln_nvd_cve_integration):
+  /// a CVE row with no CPE matches / no references is `[]`, never NULL.
+  cpeMatches     String[] @default([])
+  references     String[] @default([])
   fetchedAt      DateTime @default(now())
 
   vulnerabilities AssetVulnerability[]

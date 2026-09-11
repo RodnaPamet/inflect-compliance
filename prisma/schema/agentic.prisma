@@ -81,7 +81,7 @@ model AgentProposal {
   guardVerdict         AgentGuardVerdict    @default(CLEAN)
   /// The stable rule ids that fired. Ids ONLY — never the matched text, so this
   /// column can be read by an operator surface without leaking the payload.
-  guardRuleIds         String[]
+  guardRuleIds         String[]             @default([])
   /// `sha256:<hex>` over (kind, payload, rationale). The join key that proves
   /// "the same content was guarded" without persisting the content. Same
   /// construction as `AiDecisionLog.inputDigest`.
@@ -1355,7 +1355,7 @@ model AgentBehaviourWindow {
   /// A `String[]` and not a join table, and the write is `array_append` guarded
   /// by `= ANY(...)` inside the same UPDATE — never a read-modify-write, which
   /// on a per-call path is a lost update per concurrent call.
-  toolNames String[]
+  toolNames String[] @default([])
 
   /// TRUE when this window's own verdict fired a signal.
   ///
@@ -1422,7 +1422,7 @@ model AgentCircuitBreaker {
   /// unrelated oddities, and the claim worth stopping an agent for is that the
   /// same thing is still true.
   anomalousStreak Int      @default(0)
-  streakSignals   String[]
+  streakSignals   String[] @default([])
 
   /// The last verdict recorded, so an operator surface can distinguish "steady"
   /// from "refused to judge". `NO_BASELINE` is a verdict, not a silence.
@@ -1431,7 +1431,7 @@ model AgentCircuitBreaker {
 
   trippedAt      DateTime?
   trippedWindow  String?
-  trippedSignals String[]
+  trippedSignals String[] @default([])
 
   /// Samples from before this instant are DISCARDED.
   ///
@@ -1455,7 +1455,13 @@ model AgentCircuitBreaker {
 
   tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   agent  RegisteredAgent @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  closedBy User?         @relation("AgentCircuitBreakerClosedBy", fields: [closedByUserId], references: [id])
+  /// RESTRICT, not the Prisma default SetNull for an optional relation. The DB
+  /// is right and its migration says why (20260906120000_agent_circuit_breaker):
+  /// "RESTRICT, not CASCADE, and not SET NULL. The name against a close is the
+  /// evidence; deleting the user must not silently erase who un-trapped an
+  /// agent, and SET NULL would violate the accountability CHECK above rather
+  /// than fail loudly."
+  closedBy User?         @relation("AgentCircuitBreakerClosedBy", fields: [closedByUserId], references: [id], onDelete: Restrict)
 
   /// The pair `AgentPolicyCard` carries, and for the same two reasons: the
   /// tenant-leading unique is the tenant-scoped lookup index every tenant model

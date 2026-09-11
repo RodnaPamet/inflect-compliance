@@ -422,7 +422,10 @@ model AgentActionReceipt {
   activePolicy    String?
   /// BOUNDED, scrubbed summary of what pipelock scanned — size-capped, with any
   /// credential/PII patterns stripped on write. NEVER raw request/response bodies.
-  scannedSummary  Json
+  /// DB default `'{}'::jsonb` — an empty OBJECT, not an empty array: the column
+  /// carries a keyed summary, so `[]` would be the wrong shape as well as the
+  /// wrong default.
+  scannedSummary  Json     @default("{}")
   /// The mediator's Ed25519 signature over the canonical receipt (verbatim,
   /// e.g. `ed25519:<hex>`), retained so an external auditor can re-verify.
   signature       String

@@ -292,7 +292,11 @@ model ReadinessSnapshot {
   /// Caller — NULL for cron-driven sweeps (none today; reserved).
   computedByUserId String?
 
-  tenant     Tenant      @relation(fields: [tenantId], references: [id])
+  /// NoAction on delete: 20260524130000_audit_s5_readiness_snapshot_and_weights
+  /// wrote `ON DELETE NO ACTION ON UPDATE CASCADE` explicitly. With zero
+  /// deferrable FKs in this DB, NO ACTION and RESTRICT reject the same deletes
+  /// at the same instant, so this is reality declared, not a policy change.
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: NoAction)
   auditCycle AuditCycle? @relation(fields: [auditCycleId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])

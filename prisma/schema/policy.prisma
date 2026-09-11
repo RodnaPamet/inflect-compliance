@@ -59,6 +59,10 @@ model Policy {
   @@index([tenantId, category])
   @@index([nextReviewAt])
   @@index([tenantId, deletedAt])
+  /// Plain btree, created by 20260609140000_policy_sharepoint_link — backs the
+  /// SharePoint drive/item reverse lookup on webhook delta. Declared here so a
+  /// fresh DB built from the migrations matches this schema.
+  @@index([tenantId, spDriveId, spItemId])
 }
 
 model PolicyVersion {

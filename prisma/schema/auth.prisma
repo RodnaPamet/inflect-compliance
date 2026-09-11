@@ -859,6 +859,10 @@ model AccessReview {
   @@index([tenantId, dueAt])
   @@index([tenantId, deletedAt])
   @@index([tenantId, createdAt])
+  /// Plain btree, created by 20260507120000_epic_g4_access_review_evidence_fk
+  /// alongside the FK itself. Declared here so a fresh DB built from the
+  /// migrations matches this schema.
+  @@index([evidenceFileRecordId])
 }
 
 model AccessReviewDecision {
@@ -1554,7 +1558,13 @@ model UserCalendarEventMapping {
   tenant         Tenant                 @relation(fields: [tenantId], references: [id])
   user           User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, userId, provider, sourceKey, sourceEntityId])
+  /// `map:` pins the DB's own constraint name. The migration
+  /// (20260818140000_user_calendar_event_mapping) named this index
+  /// `UserCalendarEventMapping_identity_key`; Prisma's default name for the
+  /// same five columns is the truncated
+  /// `UserCalendarEventMapping_tenantId_userId_provider_sourceKey_key`, so
+  /// without the map a fresh DB drifts by one ALTER INDEX ... RENAME TO.
+  @@unique([tenantId, userId, provider, sourceKey, sourceEntityId], map: "UserCalendarEventMapping_identity_key")
   @@index([tenantId])
   @@index([userId])
   /// Backs the sweep: "everything this user still has pushed", and
