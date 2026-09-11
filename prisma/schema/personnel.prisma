@@ -102,7 +102,7 @@ model ConnectedIdentityAccount {
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
 
-  tenant          Tenant                          @relation(fields: [tenantId], references: [id])
+  tenant          Tenant                          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   // Cascade, not SetNull: the column is required now, so an orphan cannot be
   // represented. Deleting a connection deletes the roster it observed — which is
   // the truthful outcome, since those rows were only ever that connection's
@@ -139,7 +139,7 @@ model TrainingCourse {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  tenant      Tenant               @relation(fields: [tenantId], references: [id])
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   assignments TrainingAssignment[]
 
   @@unique([tenantId, name])
@@ -159,7 +159,7 @@ model TrainingAssignment {
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
-  tenant   Tenant         @relation(fields: [tenantId], references: [id])
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   employee Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   course   TrainingCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
@@ -185,7 +185,7 @@ model BackgroundCheck {
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
 
-  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, employeeId])
@@ -214,7 +214,7 @@ model Device {
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
 
-  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   employee Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, serialNumber])
@@ -246,7 +246,7 @@ model Employee {
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
-  tenant              Tenant                @relation(fields: [tenantId], references: [id])
+  tenant              Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   manager             Employee?             @relation("EmployeeManager", fields: [managerEmployeeId], references: [id], onDelete: SetNull)
   reports             Employee[]            @relation("EmployeeManager")
   devices             Device[]

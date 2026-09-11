@@ -134,5 +134,13 @@ model CompliancePostureSummary {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  /// The DB has carried `CompliancePostureSummary_tenantId_fkey`
+  /// ON DELETE CASCADE since 20260703000000_compliance_posture_summary,
+  /// but the model declared no relation at all, so `migrate diff`
+  /// proposed dropping the constraint with nothing to re-add it (#2367).
+  /// Cascade is what docs/data-retention.md specifies for this row
+  /// ("Cascade on tenant delete; overwritten daily").
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   @@index([tenantId])
 }
