@@ -10,16 +10,31 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { braceBlockAfter, functionBodyOf } from '../helpers/source-blocks';
+import { braceBlockAfter, codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) =>
-    fs.readFileSync(path.join(ROOT, rel), 'utf8');
+
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A.
+ *
+ * The two extractors above are already comment-free; the 23 whole-file
+ * `expect(src).toMatch(...)` sites were not. This file is the issue's own
+ * exhibit twice over: `assertion-span-reach-ratchet` cites its line 115 for
+ * Class C, and the mechanical prober in the Class A PR found six `it` blocks
+ * here that go red when the matched code is deleted and green again when the
+ * identical bytes return inside a comment — including
+ * `TREATMENT_PLAN_OWNERSHIP_TRANSFERRED`, whose whole point is that the audit
+ * action is EMITTED, not documented.
+ *
+ * The migration SQL a few lines down keeps its own direct `fs.readFileSync`:
+ * `codeOf` lexes TypeScript, and SQL's `--` comments are not its language.
+ */
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 describe('Audit S1 — Risk lifecycle & treatment plans', () => {
     describe('schema', () => {
         const enums = read('prisma/schema/enums.prisma');
-        const compliance = readPrismaSchema();
+        const compliance = codeOf(readPrismaSchema());
 
         it('RiskStatus enum carries MITIGATED', () => {
             // Match the enum block + the literal value inside.

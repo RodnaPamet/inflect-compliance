@@ -166,7 +166,16 @@ const HIGH_MULTIPLICITY = 5;
 // describes the result of putting them together. DRIFT_ALLOWANCE is 0 here, so
 // the higher of the two would have left a ratchet that cannot see the next
 // regression — which is the whole reason it is measured rather than merged.
-const AMBIGUOUS_NEEDLE_BASELINE = 1433;
+// • 1431 (2026-09-11, #2246 Class A batch 2): −2. Six guards that already
+//   imported the extractors and still matched whole-file RAW text now mask at
+//   the read seam (cve-integration-coverage, risk-quantitative-analytics,
+//   audit-s1-residual-and-mitigated, trust-center-coverage,
+//   rq3-6-loss-event-register, audit-s4-policy-governance — 130 assertion
+//   sites, measured). Two of their needles had their extra satisfying
+//   positions inside comments, so masking made them unique. RE-SEATED IN THE
+//   SAME DIFF, downward: the alternative reading — "the ratchet went red, widen
+//   it" — is the exact move #2246 exists to refuse.
+const AMBIGUOUS_NEEDLE_BASELINE = 1431;
 const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 240;
 
 /**
