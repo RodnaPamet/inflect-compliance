@@ -6,6 +6,8 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { Input } from '@/components/ui/input';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Modal } from '@/components/ui/modal';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/hooks';
@@ -104,10 +106,13 @@ export function AgentKillSwitchAction({
     agentId,
     canKill,
     refreshToken,
+    tenantSlug,
 }: {
     agentId: string;
     canKill: boolean;
     refreshToken?: number;
+    /** Typed back to confirm a TENANT-WIDE kill (#2449). */
+    tenantSlug: string;
 }) {
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
@@ -117,6 +122,15 @@ export function AgentKillSwitchAction({
     const [engaging, setEngaging] = useState(false);
     const [lifting, setLifting] = useState(false);
     const [reason, setReason] = useState('');
+    /**
+     * SCOPE (#2449). The API has always supported a tenant-wide kill — omit
+     * `agentId` — and every UI call sent one, so the widest containment gesture
+     * the product has was reachable one agent at a time. During the incident
+     * where it matters, that is the difference between stopping the workspace
+     * and stopping the agent you happened to have open.
+     */
+    const [scope, setScope] = useState<'AGENT' | 'TENANT'>('AGENT');
+    const [scopeTyped, setScopeTyped] = useState('');
     const [busy, setBusy] = useState(false);
     const [failure, setFailure] = useState<string | null>(null);
 
@@ -125,11 +139,17 @@ export function AgentKillSwitchAction({
         setEngaging(false);
         setLifting(false);
         setReason('');
+        setScope('AGENT');
+        setScopeTyped('');
         setFailure(null);
     }, [busy]);
 
     const openEngage = useCallback(() => {
         setReason('');
+        // Always reopens at AGENT scope. A modal that remembered the widest
+        // choice would make the second kill wider than the operator intended.
+        setScope('AGENT');
+        setScopeTyped('');
         setFailure(null);
         setEngaging(true);
     }, []);
@@ -141,7 +161,13 @@ export function AgentKillSwitchAction({
     }, []);
 
     const trimmed = reason.trim();
-    const canSubmit = !busy && trimmed.length > 0 && trimmed.length <= MAX_REASON;
+    // A tenant-wide kill carries its OWN confirmation on top of the reason. The
+    // reason is required for both because a stop with no stated reason is an
+    // outage nobody can review; the typed slug is what separates "stop this
+    // agent" from "stop everything", which are one click apart otherwise.
+    const scopeConfirmed = scope === 'AGENT' || scopeTyped === tenantSlug;
+    const canSubmit =
+        !busy && trimmed.length > 0 && trimmed.length <= MAX_REASON && scopeConfirmed;
 
     const engage = useCallback(async () => {
         setBusy(true);
@@ -150,7 +176,12 @@ export function AgentKillSwitchAction({
             const res = await fetch(apiUrl('/admin/agents/kill-switch'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ agentId, reason: trimmed }),
+                // `agentId: null` IS the tenant-wide kill — the API derives
+                // scope from its absence rather than from a scope field.
+                body: JSON.stringify({
+                    agentId: scope === 'TENANT' ? null : agentId,
+                    reason: trimmed,
+                }),
             });
             if (!res.ok) {
                 // `apiErrorMessage` rather than reading `error` off the body:
@@ -175,7 +206,7 @@ export function AgentKillSwitchAction({
         } finally {
             setBusy(false);
         }
-    }, [apiUrl, agentId, trimmed, mutate, toast, t]);
+    }, [apiUrl, agentId, scope, trimmed, mutate, toast, t]);
 
     const lift = useCallback(async () => {
         if (!inForce) return;
@@ -224,6 +255,7 @@ export function AgentKillSwitchAction({
                     size="sm"
                     className="text-content-error"
                     id="agent-kill-engage-btn"
+                    data-testid="agent-kill-engage-open"
                     onClick={openEngage}
                 >
                     {t('agentDetail.kill.engageAction')}
@@ -245,6 +277,70 @@ export function AgentKillSwitchAction({
                     />
                     <Modal.Body>
                         {failure && <InlineNotice variant="error">{failure}</InlineNotice>}
+
+                        {/* SCOPE (#2449). Native radios rather than a dropdown:
+                            both options are visible without interaction, which
+                            is what makes "every agent in this workspace"
+                            something the operator READS rather than something
+                            they could land on by scrolling a list. */}
+                        {/* SCOPE (#2449), on the shared RadioGroup primitive.
+                            A hand-rolled fieldset+legend was written first and
+                            `form-drift` refused it — rightly: the product has one
+                            radio control and a second implementation drifts from
+                            it the first time the token set moves.
+
+                            Both options are rendered, not folded into a dropdown,
+                            because "every agent in this workspace" is something
+                            the operator should READ rather than something they
+                            could land on by scrolling a list. */}
+                        <div className="space-y-tight" data-testid="agent-kill-scope">
+                            <p className="text-xs uppercase tracking-wide text-content-subtle">
+                                {t('agentDetail.kill.scopeLegend')}
+                            </p>
+                            <RadioGroup
+                                value={scope}
+                                onValueChange={(v) => {
+                                    setScope(v as 'AGENT' | 'TENANT');
+                                    if (v === 'AGENT') setScopeTyped('');
+                                }}
+                            >
+                                <label className="flex items-center gap-tight text-sm cursor-pointer">
+                                    <RadioGroupItem value="AGENT" id="agent-kill-scope-agent" />
+                                    {t('agentDetail.kill.scopeAgent')}
+                                </label>
+                                {/* Distinct in WORDS as well as colour — the
+                                    difference between the two is blast radius,
+                                    and colour alone does not survive a screen
+                                    reader or a monochrome display. */}
+                                <label className="flex items-center gap-tight text-sm cursor-pointer text-content-error">
+                                    <RadioGroupItem value="TENANT" id="agent-kill-scope-tenant" />
+                                    <span className="font-medium">
+                                        {t('agentDetail.kill.scopeTenant')}
+                                    </span>
+                                </label>
+                            </RadioGroup>
+                        </div>
+
+                        {scope === 'TENANT' && (
+                            <InlineNotice variant="error" data-testid="agent-kill-tenant-warning">
+                                <div className="space-y-tight">
+                                    <p>{t('agentDetail.kill.scopeTenantWarning')}</p>
+                                    <FormField
+                                        label={t('agentDetail.kill.scopeTypeToConfirm', { slug: tenantSlug })}
+                                        required
+                                    >
+                                        <Input
+                                            value={scopeTyped}
+                                            onChange={(e) => setScopeTyped(e.target.value)}
+                                            autoComplete="off"
+                                            placeholder={tenantSlug}
+                                            data-testid="agent-kill-tenant-confirm-input"
+                                        />
+                                    </FormField>
+                                </div>
+                            </InlineNotice>
+                        )}
+
                         <FormField label={t('agentDetail.kill.reasonLabel')} required>
                             <Textarea
                                 id="agent-kill-reason"
@@ -267,6 +363,7 @@ export function AgentKillSwitchAction({
                             size="sm"
                             onClick={closeAll}
                             disabled={busy}
+                            data-testid="agent-kill-cancel"
                         >
                             {t('agentDetail.kill.cancel')}
                         </Button>
@@ -277,6 +374,7 @@ export function AgentKillSwitchAction({
                             loading={busy}
                             disabled={!canSubmit}
                             id="agent-kill-engage-confirm"
+                            data-testid="agent-kill-engage-confirm"
                             onClick={() => void engage()}
                         >
                             {t('agentDetail.kill.engageConfirm')}

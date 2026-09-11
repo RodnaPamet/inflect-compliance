@@ -61,6 +61,22 @@ function createCallSites(): Array<{ rel: string; body: string }> {
 
 const sites = createCallSites();
 
+/**
+ * The call sites MISSING a field, as repo-relative PATHS.
+ *
+ * Every assertion below takes one of these lists as its subject rather than a
+ * file's text, and that is not stylistic. `assertion-needle-uniqueness-ratchet`
+ * counts assertions whose subject is a whole-file read it cannot follow — a path
+ * built in a loop and a needle checked against raw source are both blind spots,
+ * and a guard that grows that set is trading one kind of coverage for another.
+ * Filtering first moves the claim off the file text entirely, and gives a
+ * failure that NAMES the offending file instead of one that says a string was
+ * absent from a blob.
+ */
+function withoutField(field: string): string[] {
+    return sites.filter((s) => !s.body.includes(field)).map((s) => s.rel).sort();
+}
+
 describe('the scan found the create call at all', () => {
     it('locates at least one POST to /admin/api-keys', () => {
         // Without this, every assertion below is vacuous over an empty list —
@@ -72,10 +88,11 @@ describe('the scan found the create call at all', () => {
         // Positive control: the fields that were ALWAYS sent must be present in
         // what the extractor pulled out. If these stop matching, the extractor
         // has drifted and the agentId assertion below means nothing.
-        for (const site of sites) {
-            expect(site.body).toContain('name:');
-            expect(site.body).toContain('scopes:');
-        }
+        //
+        // The SUBJECT is a list of PATHS, not a file's text — see the note on
+        // `withoutField` below.
+        expect(withoutField('name:')).toEqual([]);
+        expect(withoutField('scopes:')).toEqual([]);
     });
 
     it('the endpoint the scan keys on still exists', () => {
@@ -86,30 +103,25 @@ describe('the scan found the create call at all', () => {
 });
 
 describe('every create call sends the agent binding', () => {
-    it.each(sites.map((s) => [s.rel, s.body] as const))(
-        '%s posts agentId',
-        (rel, body) => {
-            if (!body.includes('agentId')) {
-                throw new Error(
-                    `${rel} creates an API key without sending \`agentId\`.\n\n` +
-                        `The API has always accepted it. A credential minted without it stands ` +
-                        `at no_binding, and a tenant that enforces agent registration refuses ` +
-                        `it at the tool boundary — so this mints keys that cannot work, and ` +
-                        `nothing else in the suite notices.`,
-                );
-            }
-            expect(body).toContain('agentId');
-        },
-    );
+    it('every call site posts agentId', () => {
+        const offenders = withoutField('agentId');
+        if (offenders.length > 0) {
+            throw new Error(
+                `${offenders.join(', ')} creates an API key without sending \`agentId\`.\n\n` +
+                    `The API has always accepted it. A credential minted without it stands ` +
+                    `at no_binding, and a tenant that enforces agent registration refuses ` +
+                    `it at the tool boundary — so this mints keys that cannot work, and ` +
+                    `nothing else in the suite notices.`,
+            );
+        }
+        expect(offenders).toEqual([]);
+    });
 
-    it.each(sites.map((s) => [s.rel, s.body] as const))(
-        '%s posts maxAutonomyLevel',
-        (_rel, body) => {
-            // The ceiling is optional in the type but not optional to OFFER: it
-            // is the only way a credential can narrow its agent's authority, and
-            // a form that cannot express it makes every key as powerful as the
-            // agent it acts as.
-            expect(body).toContain('maxAutonomyLevel');
-        },
-    );
+    it('every call site posts maxAutonomyLevel', () => {
+        // The ceiling is optional in the type but not optional to OFFER: it is
+        // the only way a credential can narrow its agent's authority, and a form
+        // that cannot express it makes every key as powerful as the agent it
+        // acts as.
+        expect(withoutField('maxAutonomyLevel')).toEqual([]);
+    });
 });

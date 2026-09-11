@@ -167,6 +167,7 @@ export function AgentDetailClient({
                         agentId={agent.id}
                         canKill={perms.canKill}
                         refreshToken={refreshToken}
+                        tenantSlug={tenantSlug}
                     />
                 </>
             }

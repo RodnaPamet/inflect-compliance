@@ -558,7 +558,20 @@ const MIN_SECONDARY_TO_PRIMARY_RATIO = 0.9;
 // the direction of travel is unchanged and still one-way down. The next
 // genuinely-earned primary bumps this by hand with a written reason,
 // exactly like every entry above.
-const MAX_PRIMARY_COUNT = 173;
+// 2026-09-11 — AGENTIC UI 2/4 (#2447): 173 -> 174, ONE genuinely-earned primary.
+//
+// The amend dialog's save. Not a style preference and not a new page-defining
+// action: `modal-action-order` requires a Modal's LAST action to be primary or
+// destructive, so the hand learns one direction across every dialog — and
+// amending a registered agent is plainly not destructive. Primary is the only
+// value that satisfies the other ratchet, so this one yields by one slot.
+//
+// Everything else 2/4 added was demoted instead, and those demotions are the
+// reason this is +1 and not +3: the enforcement card's action button and its
+// modal confirm are both ternaries, and `primary-secondary-ratio` counts EVERY
+// branch a ternary can render — so two apparent controls were four countable
+// primaries before they were demoted to ghost/secondary/destructive.
+const MAX_PRIMARY_COUNT = 174;
 
 const SCANNED_FILES = walk(path.join(ROOT, SCAN_DIR));
 

@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
+import { formatDateTime } from '@/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 
 /**
@@ -120,10 +121,10 @@ export function KillSwitchTimeline({
                     {rows.map((row) => (
                         <li
                             key={row.id}
-                            className="border-l-2 border-border-default pl-3 py-1"
+                            className="border-l-2 border-border-subtle pl-3 py-1"
                             data-testid="kill-switch-timeline-row"
                         >
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-tight">
                                 <StatusBadge
                                     variant={row.scope === 'TENANT' ? 'error' : 'warning'}
                                     size="sm"
@@ -145,7 +146,7 @@ export function KillSwitchTimeline({
                             <p className="mt-1 text-sm text-content-default">
                                 {t('agentDetail.kill.engagedLine', {
                                     actor: actorLabel(row.engagedBy, row.engagedByUserId),
-                                    at: new Date(row.engagedAt).toLocaleString(),
+                                    at: formatDateTime(row.engagedAt),
                                 })}
                             </p>
                             <p className="text-sm text-content-muted">
@@ -157,7 +158,7 @@ export function KillSwitchTimeline({
                                     <p className="mt-1 text-sm text-content-default">
                                         {t('agentDetail.kill.liftedLine', {
                                             actor: actorLabel(row.liftedBy, row.liftedByUserId ?? ''),
-                                            at: new Date(row.liftedAt).toLocaleString(),
+                                            at: formatDateTime(row.liftedAt),
                                         })}
                                     </p>
                                     {row.liftReason && (

@@ -283,6 +283,12 @@ export function AgentAmendModal({
                 <Button type="button" variant="ghost" size="sm" onClick={onClose} text={t('agentDetail.kill.cancel')} />
                 <Button
                     type="button"
+                    // PRIMARY, and not by preference: `modal-action-order`
+                    // requires a Modal's last action to be primary or
+                    // destructive so the hand learns one direction across every
+                    // dialog, and amending an agent is not destructive. The
+                    // ceiling in `primary-secondary-ratio` is bumped by one for
+                    // exactly this, with the reason written there.
                     variant="primary"
                     size="sm"
                     // Nothing changed means nothing to send. A submit that

@@ -4510,7 +4510,10 @@
         "engagedLine": "Stopped by {actor} on {at}",
         "liftedLine": "Lifted by {actor} on {at}",
         "reasonLine": "Reason: {reason}",
-        "liftReasonLine": "Lift reason: {reason}"
+        "liftReasonLine": "Lift reason: {reason}",
+        "scopeLegend": "What should this stop?",
+        "scopeTenantWarning": "This stops every registered agent in the workspace at the tool boundary, not just this one. It takes effect on the next invocation and does not interrupt work already running. It is reversible, and lifting it is a separate deliberate act.",
+        "scopeTypeToConfirm": "Type {slug} to confirm a workspace-wide stop"
       },
       "amend": {
         "action": "Amend",

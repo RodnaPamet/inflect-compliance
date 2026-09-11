@@ -140,7 +140,7 @@ export function AgentEnforcementCard({ tenantSlug }: { tenantSlug: string }) {
                 enforced. Any credential can act, registered or not." beats
                 "requireRegisteredAgent = false" — the field name is not the
                 fact, and nobody outside this codebase can read it as one. */}
-            <div className="mb-3 flex items-center gap-2">
+            <div className="mb-3 flex items-center gap-tight">
                 {enforcing ? (
                     <StatusBadge variant="success" size="sm">{t('security.agentEnforcement.on')}</StatusBadge>
                 ) : (
@@ -175,7 +175,7 @@ export function AgentEnforcementCard({ tenantSlug }: { tenantSlug: string }) {
             )}
 
             <Button
-                variant={enforcing ? 'ghost' : 'primary'}
+                variant={enforcing ? 'ghost' : 'secondary'}
                 size="sm"
                 onClick={() => setPending(enforcing ? 'disable' : 'enable')}
                 data-testid="agent-enforcement-action"
@@ -239,7 +239,7 @@ export function AgentEnforcementCard({ tenantSlug }: { tenantSlug: string }) {
                     <Button type="button" variant="ghost" size="sm" onClick={close} text={tCommon('cancel')} />
                     <Button
                         type="button"
-                        variant={pending === 'disable' ? 'destructive' : 'primary'}
+                        variant={pending === 'disable' ? 'destructive' : 'secondary'}
                         size="sm"
                         disabled={confirmText !== tenantSlug || busy}
                         onClick={() => commit(pending === 'enable')}

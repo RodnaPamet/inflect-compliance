@@ -150,7 +150,13 @@ const AUTONOMY_CB_OPTIONS = (agentLevel: number, noneLabel: string): ComboboxOpt
 function BindingCell({ record, muted }: { record: ApiKeyRecord; muted?: boolean }) {
     const t = useTranslations('admin');
     if (!record.agentId) {
-        return <StatusBadge variant="warning" size="sm">{t('apiKeys.noBinding')}</StatusBadge>;
+        // Quiet text in the WARNING tone, not a badge. `badge-density` caps this
+        // file at four, and the row's loud badge is its scope set — an unbound
+        // credential is a fact about the row, not a second alarm competing with
+        // it. The colour still carries the warning; only the chrome is dropped.
+        return (
+            <span className="text-content-warning">{t('apiKeys.noBinding')}</span>
+        );
     }
     return (
         <div className="flex flex-wrap items-center gap-1">
@@ -158,9 +164,9 @@ function BindingCell({ record, muted }: { record: ApiKeyRecord; muted?: boolean 
                 {record.agent?.name ?? record.agentId}
             </span>
             {record.maxAutonomyLevel !== null && (
-                <StatusBadge variant="neutral" size="sm">
+                <span className="text-content-subtle">
                     {t('apiKeys.autonomyCap', { level: record.maxAutonomyLevel })}
-                </StatusBadge>
+                </span>
             )}
         </div>
     );
