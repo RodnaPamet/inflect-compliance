@@ -9,7 +9,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { Card, cardVariants } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
+import { useTenantApiUrl, useTenantHref, useTenantContext } from '@/lib/tenant-context-provider';
+import { AgentEnforcementCard } from './AgentEnforcementCard';
 import { ShieldCheck, Save, AlertTriangle, LogOut, Users, UserX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { InfoTooltip } from '@/components/ui/tooltip';
@@ -32,6 +33,7 @@ export default function AdminSecurityPage() {
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
+    const { tenantSlug } = useTenantContext();
     const [settings, setSettings] = useState<SecuritySettings>({ mfaPolicy: 'DISABLED', sessionMaxAgeMinutes: null });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -306,6 +308,9 @@ export default function AdminSecurityPage() {
                     {saving ? t('security.saving') : t('security.saveSettings')}
                 </Button>
             </div>
+
+            {/* ──── Agent-registration enforcement (#2443) ──── */}
+            <AgentEnforcementCard tenantSlug={tenantSlug} />
 
             {/* ──── Session Management ──── */}
             <div className={cn(cardVariants(), 'space-y-default')}>

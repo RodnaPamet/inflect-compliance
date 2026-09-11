@@ -4439,7 +4439,25 @@
       "revokeUserConfirm": "Revoke all sessions for user {id}?",
       "userSessionsRevoked": "Sessions revoked for user.",
       "failedRevokeUser": "Failed to revoke user sessions",
-      "userRevocationFailed": "User revocation failed"
+      "userRevocationFailed": "User revocation failed",
+      "agentEnforcement": {
+        "title": "Agent registration enforcement",
+        "on": "Enforcing",
+        "off": "Not enforcing",
+        "notEnforcing": "Agent registration is not being enforced. Any credential can act at the tool boundary, registered or not — the agent register is a catalogue, and the tool allowlist, autonomy limits, policy card, circuit breaker and kill switch refuse nothing.",
+        "enforcingClean": "Agent registration is enforced. Only credentials bound to a registered agent can act, and every credential is bound.",
+        "enforcingWithUnbound": "Agent registration is enforced, but {count} credential(s) are not bound to an agent. Those are being refused at the tool boundary right now.",
+        "wouldBreak": "{count} credential(s) would stop working the moment enforcement is switched on:",
+        "enableAction": "Enforce registration",
+        "disableAction": "Stop enforcing",
+        "enableTitle": "Enforce agent registration",
+        "disableTitle": "Stop enforcing agent registration",
+        "enableBody": "From the moment this is on, the tool boundary refuses any credential that is not bound to a registered agent. This applies to the whole workspace and takes effect immediately.",
+        "disableBody": "This removes the boundary for the whole workspace. Any credential will be able to act, registered or not, and nothing in the product will look different afterwards — which is why this asks you to type the workspace name.",
+        "typeToConfirm": "Type {slug} to confirm",
+        "unavailable": "You do not have permission to read the agent register, so this setting cannot be changed here. Enforcing agent registration requires the agent register permission as well as security settings access.",
+        "saveFailed": "Could not change agent-registration enforcement."
+      }
     },
     "agentDetail": {
       "tabOverview": "Overview",
