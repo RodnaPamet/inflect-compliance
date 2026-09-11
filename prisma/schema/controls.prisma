@@ -484,7 +484,29 @@ model ControlException {
 
   tenant              Tenant             @relation(fields: [tenantId], references: [id])
   control             Control            @relation("ControlExceptionAffected", fields: [controlId, tenantId], references: [id, tenantId])
+  /// DELIBERATE schema/DB divergence — do NOT "align" this by adding
+  /// `onDelete`. The database carries
+  ///   ON DELETE SET NULL ("compensatingControlId")
+  /// a COLUMN-SCOPED SET NULL that Prisma's DSL has no syntax for. It
+  /// nulls only this column and leaves NOT NULL `tenantId` intact.
+  /// Plain `SET NULL` over this composite FK nulls `tenantId` too and
+  /// aborts the parent delete with SQLSTATE 23502 — see
+  /// 20260911120000_controlexception_setnull_column_scoped, which
+  /// carries the reachability and the reasoning.
+  /// Because the FK includes the required `tenantId`, Prisma renders
+  /// this relation as `ON DELETE RESTRICT`; that is the divergence, and
+  /// it is unchanged from before that migration. `relationMode` is the
+  /// default `foreignKeys`, so the database — not the client — enforces,
+  /// and the divergence has no runtime effect beyond what the DB does.
+  /// The behavioural contract is held by
+  /// tests/integration/control-exception-purge-contract.test.ts.
   compensatingControl Control?           @relation("ControlExceptionCompensating", fields: [compensatingControlId, tenantId], references: [id, tenantId])
+  /// DELIBERATE schema/DB divergence — same shape as
+  /// `compensatingControl` above. The database carries
+  ///   ON DELETE SET NULL ("renewedFromId")
+  /// so deleting the prior row drops the lineage pointer and KEEPS the
+  /// renewal row, which is what the original migration said it wanted.
+  /// Do not add `onDelete` here either.
   renewedFrom         ControlException?  @relation("ControlExceptionRenewalChain", fields: [renewedFromId, tenantId], references: [id, tenantId])
   renewals            ControlException[] @relation("ControlExceptionRenewalChain")
   createdBy           User               @relation("ControlExceptionCreatedBy", fields: [createdByUserId], references: [id])
