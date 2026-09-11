@@ -29,7 +29,7 @@
  * operator being able to see what they are protecting.
  */
 import * as React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 jest.mock('sonner', () => ({
     toast: { custom: jest.fn(), dismiss: jest.fn(), success: jest.fn(), error: jest.fn(), info: jest.fn(), warning: jest.fn() },
@@ -188,5 +188,77 @@ describe('two rows for one human are told apart', () => {
         render(<IdentityAccountsPage />);
 
         expect(await screen.findByText('conn-eu')).toBeInTheDocument();
+    });
+});
+
+
+describe('the cap is a page size, not a reachability limit', () => {
+    /** Every roster URL this render has asked for, in order. */
+    const rosterCalls = (): string[] =>
+        (global.fetch as jest.Mock).mock.calls
+            .map((c) => String(c[0]))
+            .filter((u) => u.includes('/admin/integrations/identity-accounts'));
+
+    /** A fetch whose answer depends on the query string, like the real route. */
+    function mockSearchableFetch(byQuery: (url: string) => Row[]) {
+        global.fetch = jest.fn(async (url: string) => ({
+            ok: true,
+            json: async () => ({ accounts: byQuery(String(url)) }),
+        })) as unknown as typeof fetch;
+    }
+
+    /** Open the Filter popover and return its live content-search input. */
+    async function openSearch(): Promise<HTMLInputElement> {
+        const trigger = document.querySelector('[data-filter-trigger]') as HTMLElement;
+        expect(trigger).not.toBeNull();
+        fireEvent.click(trigger);
+        await waitFor(() => {
+            expect(document.querySelector('#identity-accounts-search input')).not.toBeNull();
+        });
+        return document.querySelector('#identity-accounts-search input') as HTMLInputElement;
+    }
+
+    it('asks for the WHOLE roster on first load, with no query string', async () => {
+        // Not decoration. The access-reviews directory gate reads this same
+        // route unfiltered and infers "nothing synced" from a short page; a
+        // default filter here would be a different list wearing the same name.
+        mockFetch(fill(2));
+        render(<IdentityAccountsPage />);
+
+        await screen.findByText('user0@acme.test');
+        expect(rosterCalls()[0]).toBe('/api/t/acme/admin/integrations/identity-accounts');
+    });
+
+    it('sends the typed term to the SERVER rather than filtering the page it already has', async () => {
+        // The whole point of #2418: a client-side filter over a truncated page
+        // can only hide rows, never reach the ones the cap cut off. So the
+        // evidence is the request, not the rendered subset.
+        mockSearchableFetch((url) =>
+            url.includes('q=zoe') ? [account({ id: 'z', email: 'zoe@acme.test' })] : fill(2),
+        );
+        render(<IdentityAccountsPage />);
+        await screen.findByText('user0@acme.test');
+
+        fireEvent.change(await openSearch(), { target: { value: 'zoe' } });
+
+        await waitFor(() => {
+            expect(rosterCalls().some((u) => u.includes('q=zoe'))).toBe(true);
+        });
+        // And the row that was never in the first page is now on screen.
+        expect(await screen.findByText('zoe@acme.test')).toBeInTheDocument();
+    });
+
+    it('says "no matches" for an empty SEARCH, not "no synced accounts yet"', async () => {
+        // Two different sentences because they mean different things. Telling
+        // an operator the directory is unsynced when their search simply
+        // matched nothing is the same false absence the cap used to produce.
+        mockSearchableFetch((url) => (url.includes('q=') ? [] : fill(2)));
+        render(<IdentityAccountsPage />);
+        await screen.findByText('user0@acme.test');
+
+        fireEvent.change(await openSearch(), { target: { value: 'nobody' } });
+
+        expect(await screen.findByText(/No accounts match this search/i)).toBeInTheDocument();
+        expect(screen.queryByText(/No synced accounts yet/i)).not.toBeInTheDocument();
     });
 });

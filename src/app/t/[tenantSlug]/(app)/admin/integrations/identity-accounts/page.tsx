@@ -5,8 +5,17 @@
  * (like Personnel / Devices) so an Okta / Google Workspace directory sync
  * produces something visible, and a CONNECTED_APP access review can be
  * pre-checked instead of throwing "zero subjects" on empty.
+ *
+ * THE SEARCH ON THIS PAGE IS SERVER-SIDE, and that is the point (#2418). The
+ * roster is capped at IDENTITY_ROSTER_PAGE_SIZE with no cursor, so a filter
+ * applied to the rows already delivered could only ever hide some of them —
+ * it could not reach the ones the cap cut off. The toolbar's search term and
+ * provider facet are therefore query parameters on the roster GET, and every
+ * change refetches. That is what makes any account reachable by naming it,
+ * which is what this page has to be able to promise: it is where an operator
+ * decides which accounts must never be offboarded automatically.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { formatDate } from '@/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
@@ -22,6 +31,9 @@ import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
 import { Textarea } from '@/components/ui/textarea';
 import { useToastWithUndo } from '@/components/ui/hooks';
+import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/filter';
+import { FilterToolbar } from '@/components/filters/FilterToolbar';
+import { buildIdentityAccountFilters, IDENTITY_ACCOUNT_FILTER_KEYS } from './filter-defs';
 import { IDENTITY_ROSTER_PAGE_SIZE } from '@/lib/identity-roster';
 
 interface AccountRow {
@@ -57,10 +69,23 @@ interface AccountRow {
 }
 
 export default function IdentityAccountsPage() {
+    // The toolbar's state IS this page's server query — see the docblock at the
+    // top of the file — so it has to live above the component that fetches.
+    const filterCtx = useFilterContext([], IDENTITY_ACCOUNT_FILTER_KEYS, {});
+    return (
+        <FilterProvider value={filterCtx}>
+            <IdentityAccountsContent />
+        </FilterProvider>
+    );
+}
+
+function IdentityAccountsContent() {
     const t = useTranslations('admin');
+    const tGroup = useTranslations('common.filterGroups');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const triggerUndoToast = useToastWithUndo();
+    const { state, search, hasActive } = useFilters();
     const [rows, setRows] = useState<AccountRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
@@ -79,7 +104,31 @@ export default function IdentityAccountsPage() {
     // when the PATCH fails would be a worse lie than no toast.
     const [releaseError, setReleaseError] = useState(false);
 
-    // THE ROSTER IS CAPPED, AND UNTIL NOW IT DID NOT SAY SO.
+    // The adapter idiom every filter-defs consumer uses: `useTranslations`
+    // returns a Translator whose key + values types are narrowed to the
+    // namespace, and `buildIdentityAccountFilters` takes the widened resolver
+    // shape that keeps filter-defs.ts free of next-intl types.
+    const filters = useMemo(
+        () =>
+            buildIdentityAccountFilters(
+                (k, v) => t(k as Parameters<typeof t>[0], v as Parameters<typeof t>[1]),
+                (k) => tGroup(k as Parameters<typeof tGroup>[0]),
+            ),
+        [t, tGroup],
+    );
+    // Single-valued: the route's `provider` parameter takes one provider, and
+    // the filter def is declared `multiple: false` to match.
+    const provider = state.provider?.[0];
+    const query = useMemo(() => {
+        const params = new URLSearchParams();
+        const q = search.trim();
+        if (q) params.set('q', q);
+        if (provider) params.set('provider', provider);
+        const qs = params.toString();
+        return qs ? `?${qs}` : '';
+    }, [search, provider]);
+
+    // THE ROSTER IS CAPPED, AND UNTIL #2412 IT DID NOT SAY SO.
     //
     // `listConnectedAccounts` takes IDENTITY_ROSTER_PAGE_SIZE rows — a hard
     // cap, not a cursor page: there is no next link and the response carries
@@ -95,6 +144,10 @@ export default function IdentityAccountsPage() {
     // operator decides which accounts must never be offboarded: an account
     // past the cap cannot be protected from here, and it is indistinguishable
     // from one that does not exist.
+    //
+    // The cap still fires under a search — it applies to the MATCHES — but it
+    // now means "narrow further", not "this account is out of reach". The
+    // notice says so.
     const truncated = rows.length >= IDENTITY_ROSTER_PAGE_SIZE;
 
     // Show the connection column ONLY when the provider badge cannot already
@@ -112,19 +165,34 @@ export default function IdentityAccountsPage() {
         return [...byProvider.values()].some((s) => s.size > 1);
     }, [rows]);
 
+    // Monotonic request id. The toolbar commits a new search on a 250ms
+    // debounce, so two roster fetches can be in flight at once and the DB is
+    // free to answer them out of order. Rendering a stale answer under the
+    // current search box would be the page telling the operator that THESE are
+    // the accounts matching what they typed — on a page whose whole job is
+    // "this account exists / does not", that is the one lie worth code.
+    const requestSeq = useRef(0);
+
     const load = useCallback(async () => {
+        const seq = ++requestSeq.current;
         setError(false);
         try {
-            const res = await fetch(apiUrl('/admin/integrations/identity-accounts'));
+            const res = await fetch(apiUrl(`/admin/integrations/identity-accounts${query}`));
+            if (seq !== requestSeq.current) return;
             if (!res.ok) { setError(true); return; }
-            setRows((await res.json()).accounts ?? []);
+            const body = await res.json();
+            if (seq !== requestSeq.current) return;
+            setRows(body.accounts ?? []);
         } catch {
+            if (seq !== requestSeq.current) return;
             setError(true);
         } finally {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setLoading(false);
+            if (seq === requestSeq.current) {
+                // eslint-disable-next-line react-hooks/set-state-in-effect
+                setLoading(false);
+            }
         }
-    }, [apiUrl]);
+    }, [apiUrl, query]);
     useEffect(() => { void load(); }, [load]);
 
     const setProtection = useCallback(async (account: AccountRow, isProtected: boolean, why: string | null) => {
@@ -303,6 +371,18 @@ export default function IdentityAccountsPage() {
             <Heading level={1}>{t('identityAccounts.title')}</Heading>
             <p className="text-sm text-content-muted">{t('identityAccounts.intro')}</p>
 
+            {/* ABOVE the card, and outside every loading / empty / error
+                branch below it. A filter that produced no rows must still be
+                clearable, and a roster that failed to load must still be
+                searchable — hiding the control that caused the state along
+                with the state is how an operator gets stuck on an empty page
+                with no way back. */}
+            <FilterToolbar
+                filters={filters}
+                searchId="identity-accounts-search"
+                searchPlaceholder={t('identityAccounts.searchPlaceholder')}
+            />
+
             <Card className="space-y-default p-6">
                 {/* Outside the {protecting && …} modal on purpose: this is the
                     release path's only visible failure, and the modal never
@@ -317,7 +397,20 @@ export default function IdentityAccountsPage() {
                 ) : loading ? (
                     <p className="text-sm text-content-subtle">{t('integrations.fetching')}</p>
                 ) : rows.length === 0 ? (
-                    <p className="text-sm text-content-muted">{t('identityAccounts.empty')}</p>
+                    // TWO DIFFERENT SENTENCES, because they mean different
+                    // things. "No synced accounts yet" tells an operator to go
+                    // connect a directory; saying that to someone whose search
+                    // simply matched nothing would be false, and on this page a
+                    // false "there is nothing here" is the exact failure the
+                    // search was added to prevent.
+                    hasActive ? (
+                        <div className="space-y-tight">
+                            <p className="text-sm text-content-default">{t('identityAccounts.noMatches')}</p>
+                            <p className="text-sm text-content-muted">{t('identityAccounts.noMatchesDescription')}</p>
+                        </div>
+                    ) : (
+                        <p className="text-sm text-content-muted">{t('identityAccounts.empty')}</p>
+                    )
                 ) : (
                     <>
                         {/* The cap, said out loud. Not dismissible: it is a

@@ -86,8 +86,14 @@ const EXEMPTIONS: Record<string, string> = {
         'multi-section admin page',
     'admin/integrations/[connectionId]/page.tsx':
         'admin sub-page — per-connection outcome view (header + sync action + one table), not a viewport-clamped list',
+    // NOT "bounded per-tenant" — that claim was wrong here for the same reason
+    // it was wrong in filter-toolbar-coverage (#2418): the route caps at 500
+    // and a sync stores up to 5000 per connection. The exemption stands on its
+    // real grounds, which are about LAYOUT: the page is a header + breadcrumbs
+    // + filter toolbar + standing truncation notice above one table, so
+    // clamping the table to the viewport would fight the notices above it.
     'admin/integrations/identity-accounts/page.tsx':
-        'admin sub-page — synced-identity roster (bounded per-tenant table), not a viewport-clamped list',
+        'admin sub-page — header + filter toolbar + standing cap notice above one table, not a viewport-clamped list',
     'admin/identity-leaver-passes/LeaverPassesClient.tsx':
         'master/detail report — passes table plus the selected pass’s decisions table; clamping either would scroll one while the other stayed still',
 
