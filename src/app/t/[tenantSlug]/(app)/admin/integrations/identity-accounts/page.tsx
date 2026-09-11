@@ -6,7 +6,7 @@
  * produces something visible, and a CONNECTED_APP access review can be
  * pre-checked instead of throwing "zero subjects" on empty.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { formatDate } from '@/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
@@ -22,10 +22,25 @@ import { Modal } from '@/components/ui/modal';
 import { FormField } from '@/components/ui/form-field';
 import { Textarea } from '@/components/ui/textarea';
 import { useToastWithUndo } from '@/components/ui/hooks';
+import { IDENTITY_ROSTER_PAGE_SIZE } from '@/lib/identity-roster';
 
 interface AccountRow {
     id: string;
     provider: string;
+    /**
+     * WHICH directory connection observed this account.
+     *
+     * Not decoration. Two connections for one provider is a supported
+     * configuration, and the account key is
+     * (tenantId, connectionId, externalUserId) — so one human can hold two
+     * rows here that agree on provider, email and display name and disagree
+     * on `isProtected`, because protection is per row. Without this the two
+     * render identically and "protect this account" is a click an operator
+     * cannot verify.
+     */
+    connectionId: string;
+    /** The operator-legible half of `connectionId`, which is a cuid. */
+    connectionName: string | null;
     email: string | null;
     displayName: string | null;
     status: string;
@@ -63,6 +78,39 @@ export default function IdentityAccountsPage() {
     // while the operator was told nothing. An undo toast that reports nothing
     // when the PATCH fails would be a worse lie than no toast.
     const [releaseError, setReleaseError] = useState(false);
+
+    // THE ROSTER IS CAPPED, AND UNTIL NOW IT DID NOT SAY SO.
+    //
+    // `listConnectedAccounts` takes IDENTITY_ROSTER_PAGE_SIZE rows — a hard
+    // cap, not a cursor page: there is no next link and the response carries
+    // no `truncated` flag (deliberately; the access-review page consumes this
+    // body through a reader that fails open on an unrecognised shape). So the
+    // only evidence available here is the one the access-reviews directory
+    // gate already uses against the same constant: a full page might have been
+    // cut. `>=` rather than the gate's `<` because this side is asserting the
+    // hazard rather than standing down from it — a response somehow longer
+    // than the cap is still a list this page cannot promise is whole.
+    //
+    // It matters on THIS page above all others, because this is where an
+    // operator decides which accounts must never be offboarded: an account
+    // past the cap cannot be protected from here, and it is indistinguishable
+    // from one that does not exist.
+    const truncated = rows.length >= IDENTITY_ROSTER_PAGE_SIZE;
+
+    // Show the connection column ONLY when the provider badge cannot already
+    // tell two rows apart — i.e. when some provider has more than one
+    // connection in this roster. One connection per provider is the normal
+    // configuration, and a column repeating one name down every row is the
+    // kind of noise this page's density rules exist to refuse.
+    const showConnection = useMemo(() => {
+        const byProvider = new Map<string, Set<string>>();
+        for (const r of rows) {
+            const seen = byProvider.get(r.provider) ?? new Set<string>();
+            seen.add(r.connectionId);
+            byProvider.set(r.provider, seen);
+        }
+        return [...byProvider.values()].some((s) => s.size > 1);
+    }, [rows]);
 
     const load = useCallback(async () => {
         setError(false);
@@ -154,6 +202,18 @@ export default function IdentityAccountsPage() {
 
     const cols = createColumns<AccountRow>([
         { accessorKey: 'provider', header: t('integrations.colProvider'), cell: ({ getValue }) => <StatusBadge variant="info">{getValue()}</StatusBadge> },
+        // Plain text, NOT a StatusBadge: this page is at its badge budget, and
+        // a connection name is an identifier rather than a state signal.
+        ...(showConnection
+            ? [{
+                id: 'connection',
+                accessorKey: 'connectionName',
+                header: t('identityAccounts.colConnection'),
+                cell: ({ row }: { row: { original: AccountRow } }) => (
+                    <span className="text-content-muted">{row.original.connectionName ?? row.original.connectionId}</span>
+                ),
+            }]
+            : []),
         { accessorKey: 'email', header: t('identityAccounts.colEmail'), cell: ({ row }) => <span className="font-medium">{row.original.email ?? row.original.displayName ?? '—'}</span> },
         { id: 'name', accessorKey: 'displayName', header: t('identityAccounts.colName'), cell: ({ getValue }) => <span className="text-content-muted">{String(getValue() ?? '—')}</span> },
         { id: 'status', accessorKey: 'status', header: t('integrations.colStatus'), cell: ({ row }) => <StatusBadge variant={row.original.status === 'ACTIVE' ? 'success' : 'neutral'}>{row.original.status}</StatusBadge> },
@@ -259,7 +319,20 @@ export default function IdentityAccountsPage() {
                 ) : rows.length === 0 ? (
                     <p className="text-sm text-content-muted">{t('identityAccounts.empty')}</p>
                 ) : (
-                    <DataTable data={rows} columns={cols} getRowId={(r) => r.id} emptyState={t('identityAccounts.empty')} />
+                    <>
+                        {/* The cap, said out loud. Not dismissible: it is a
+                            standing property of what is on screen, not an
+                            event that has been acknowledged. */}
+                        {truncated && (
+                            <InlineNotice
+                                variant="warning"
+                                title={t('identityAccounts.truncatedTitle', { cap: IDENTITY_ROSTER_PAGE_SIZE })}
+                            >
+                                {t('identityAccounts.truncated')}
+                            </InlineNotice>
+                        )}
+                        <DataTable data={rows} columns={cols} getRowId={(r) => r.id} emptyState={t('identityAccounts.empty')} />
+                    </>
                 )}
             {protecting && (
                 <Modal showModal setShowModal={(v) => { if (!v && !saving) setProtecting(null); }} size="md" preventDefaultClose={saving}>

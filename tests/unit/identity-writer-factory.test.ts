@@ -276,8 +276,13 @@ describe('refusals, cheapest first', () => {
     });
 
     it('refuses TWO enabled connections rather than picking one', async () => {
-        // A directory account carries no connectionId, so with two forests there
-        // is no way to say which one an account belongs to.
+        // NOT because the accounts are ambiguous — `connectionId` is NOT NULL
+        // since `20260821170000_connected_identity_account_connection_required`
+        // and each account names the directory that observed it. The WRITER is
+        // what stays ambiguous: it is resolved per (tenant, provider), so one
+        // of the two connections would have to be chosen for every account, and
+        // a disable addressed at a forest the account may not live in. See the
+        // AMBIGUOUS_CONNECTION docblock in identity-writer-factory.ts.
         mockDb.integrationConnection.findMany.mockResolvedValue([conn(), conn({ id: 'conn-2' })]);
         const r = await resolveDirectoryWriter({ ctx, provider: 'active-directory', mode: 'AUTOMATIC' });
         expect(r).toMatchObject({ kind: 'none', refusal: 'AMBIGUOUS_CONNECTION' });

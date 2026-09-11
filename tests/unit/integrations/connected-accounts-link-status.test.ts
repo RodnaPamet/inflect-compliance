@@ -28,7 +28,11 @@ import { makeRequestContext } from '../../helpers/make-context';
 
 const ctx = makeRequestContext('OWNER', { tenantId: 't1' });
 
-const account = (id: string, link: { id: string } | null) => ({
+const account = (
+    id: string,
+    link: { id: string } | null,
+    conn: { id: string; name: string } = { id: 'conn-1', name: 'Corp Entra' },
+) => ({
     id,
     provider: 'entra-id',
     email: `${id}@corp.example`,
@@ -40,6 +44,8 @@ const account = (id: string, link: { id: string } | null) => ({
     syncedAt: new Date(),
     isProtected: false,
     protectionReason: null,
+    connectionId: conn.id,
+    connection: { name: conn.name },
     identityLink: link,
 });
 
@@ -75,6 +81,10 @@ describe('link status is read LIVE, from the relation', () => {
 
         expect(rows[0]).not.toHaveProperty('identityLink');
         expect(rows[0]).toHaveProperty('linked', true);
+        // Same rule, same reason, for the connection relation: the NAME rides
+        // out as a scalar and the object it came in on does not.
+        expect(rows[0]).not.toHaveProperty('connection');
+        expect(rows[0]).toHaveProperty('connectionName', 'Corp Entra');
     });
 
     it('does not fan out a query per account', async () => {
@@ -157,5 +167,41 @@ describe('the reason comes from the last reconcile, and only when still unlinked
 
         expect(row.linked).toBe(false);
         expect(row.unlinkedReason).toBeNull();
+    });
+});
+
+describe('each row names the connection that observed it', () => {
+    it('carries connectionId and the connection NAME as flat scalars', async () => {
+        // Two connections for one provider is a supported configuration
+        // (IntegrationConnection is unique on tenantId+provider+NAME), and the
+        // account key is (tenantId, connectionId, externalUserId) — so one
+        // human legitimately holds two rows that agree on provider, email and
+        // display name. `isProtected` is per ROW, so protecting one leaves the
+        // other unprotected; without these fields the roster cannot say which
+        // row was protected, or that a second one exists.
+        findManyAccounts.mockResolvedValue([
+            account('a', null, { id: 'conn-eu', name: 'EU forest' }),
+            account('a2', null, { id: 'conn-us', name: 'US forest' }),
+        ]);
+
+        const rows = await listConnectedAccounts(ctx);
+
+        expect(rows.map((r) => [r.connectionId, r.connectionName])).toEqual([
+            ['conn-eu', 'EU forest'],
+            ['conn-us', 'US forest'],
+        ]);
+    });
+
+    it('reads the name through the relation, not a second query', async () => {
+        // One findMany with a nested select. A per-row connection lookup would
+        // be an N+1 over a list capped at the roster page size.
+        findManyAccounts.mockResolvedValue([account('a', null), account('b', null)]);
+
+        await listConnectedAccounts(ctx);
+
+        expect(findManyAccounts).toHaveBeenCalledTimes(1);
+        const [args] = findManyAccounts.mock.calls[0] as [{ select: Record<string, unknown> }];
+        expect(args.select.connectionId).toBe(true);
+        expect(args.select.connection).toEqual({ select: { name: true } });
     });
 });
