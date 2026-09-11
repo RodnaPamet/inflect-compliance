@@ -253,6 +253,46 @@ export interface DirectoryWriter {
     readState(externalUserId: string): Promise<DirectoryAccountState>;
     /** Perform the disable. Resolves on success, throws on refusal. */
     disable(externalUserId: string, prior: DirectoryAccountState): Promise<void>;
+    /**
+     * Settle, once for the batch, anything about the CREDENTIAL that would
+     * refuse every candidate identically. Optional: a writer that omits it is
+     * not less safe, only less efficient.
+     *
+     * NOT A RAIL, and nothing here may become one. Every property a writer can
+     * check from this seat is a property of the connection, not of an account,
+     * so `disable` has to re-check it per account anyway — it is reached
+     * directly by `disableAccount`, and a caller that skipped this method
+     * entirely would still be refused there. What this buys is the DIFFERENCE
+     * between one refusal and N of them: a directory missing the write consent
+     * otherwise spends a journal row, an audit row and an action-required email
+     * per candidate, all saying the same sentence about the same misconfigured
+     * connection. `EntraIdDirectoryWriter`'s constructor already makes this
+     * argument for the three things it can settle without a network call
+     * ("failing here fails the batch once, before any of it runs"); this is the
+     * same argument for the one thing it cannot.
+     *
+     * ═══ THE CONTRACT ON THROWING, WHICH IS THE WHOLE OF IT ═══
+     *
+     * THROW A `DirectoryWriteError` WITH `definitivelyNotApplied: true` — and
+     * only that — to refuse the batch. It is the same claim the class documents
+     * everywhere else in this file: the provider EVALUATED and rejected, and
+     * nothing was mutated. Made from here it is a claim about the credential, so
+     * it holds for every candidate in the list, which is exactly what makes
+     * refusing them all sound rather than presumptuous.
+     *
+     * THROW ANYTHING ELSE — or let a transport error escape — and the batch
+     * PROCEEDS, with the failure logged. That is not leniency, it is the
+     * honest reading: an implementation that reaches this check over the
+     * network can fail for reasons that say nothing whatsoever about consent (a
+     * 5xx from the token endpoint, a dropped socket), and a nightly pass must
+     * not be cancelled wholesale by a blip that the per-account path handles
+     * one candidate at a time. Proceeding leaves precisely the behaviour of a
+     * writer that declares no preflight at all.
+     *
+     * So the failure direction is: unsure → run the batch and let the rails
+     * refuse per account. Only a PROVEN refusal shortcuts them.
+     */
+    preflight?(): Promise<void>;
 }
 
 /**
@@ -1053,6 +1093,101 @@ export async function disableAccountsForLeaver(
             population: input.population,
         });
         return { refused: verdict.reason, results: [] };
+    }
+
+    // ── Consent, settled once for the batch rather than N times inside it. ──
+    //
+    // AFTER the breaker, deliberately. The breaker is the cheaper question and
+    // the graver one: it is answered from data already in hand, and a batch it
+    // refuses must not first spend a round trip against the customer's
+    // directory to discover something it was never going to act on.
+    //
+    // GATED ON `wouldWrite`, which is the numerator the breaker just measured —
+    // read here, not recomputed, and not altered. Zero means every candidate is
+    // already refused by a rail evaluated above (protected, already disabled,
+    // the connection's own bind, mastered on-premises, on-prem state unobserved),
+    // so this pass writes nothing and the credential's consent is irrelevant to
+    // it. Running anyway would be worse than wasteful: a refusal returns
+    // `results: []`, which would throw away the per-account decisions —
+    // REFUSED_PROTECTED, ALREADY_DISABLED — that are the entire artefact an
+    // operator compares during the observation window.
+    //
+    // DRY_RUN never reaches this, twice over. `resolveDirectoryWriter` hands
+    // every mode below AUTOMATIC the snapshot reader, and that writer declares
+    // no `preflight`, so the optional call is skipped rather than refused. The
+    // belt and the braces are both wanted: a dry run exists to report what the
+    // pass WOULD do, and a missing consent does not change that answer.
+    if (writer.preflight && wouldWrite > 0) {
+        try {
+            await writer.preflight();
+        } catch (err) {
+            // Sanitised here, redacted at each USE below rather than once into a
+            // pre-scrubbed variable. That is not ceremony: the guard that keeps
+            // a directory identifier out of this file's log lines
+            // (`tests/guards/identity-log-identifier-scrub.test.ts`) reads the
+            // value expression as written and accepts only a literal
+            // `redactDirectoryIdentifiers(` / `scrubbed(` — a bare `error: raw`
+            // would be indistinguishable from the unwrapped form that guard
+            // exists to catch, whatever the variable happened to hold. Wrapping
+            // at the site keeps these lines INSIDE the ratchet's population.
+            //
+            // No account argument: this is batch-level text, there is no one
+            // candidate it is about, so the generic address / UPN / GUID
+            // patterns are the only ones that could apply.
+            const raw = sanitizePlainText(err instanceof Error ? err.message : String(err)).trim();
+
+            // The ONLY arm that stops the batch — see the contract on
+            // `DirectoryWriter.preflight`. `provenNotApplied` is the same
+            // predicate `disableAccount` uses to tell FAILED from INDETERMINATE,
+            // and it means the provider evaluated and rejected without mutating
+            // anything. Asked about the CREDENTIAL, that answer holds for every
+            // candidate, so refusing here writes strictly FEWER accounts than
+            // proceeding would: each one would have met the identical check
+            // inside `disable` and been refused in turn. It cannot suppress a
+            // write that would otherwise have landed.
+            if (provenNotApplied(err)) {
+                // The breaker's counter is deliberately NOT reused. Its own
+                // docblock makes it the blast-radius breaker's, its metric
+                // description says so, and it is documented "ALERT ON — every
+                // occurrence"; folding a second, unrelated cause into it would
+                // make an alert that fires for a broken HR feed also fire for a
+                // missing admin consent, with nothing on the series to tell an
+                // operator which happened. The refusal is not thereby silent:
+                // it returns as `refused`, which the pass records as a
+                // BATCH_REFUSED execution row carrying this text.
+                //
+                // ERROR, not WARN. A tripped breaker is a rail working as
+                // designed on suspect input; this is a connection that cannot
+                // perform the job it is switched on for, and no amount of
+                // retrying fixes it — an administrator has to re-consent.
+                logger.error('leaver batch refused before any write: the credential cannot disable', {
+                    component: 'identity-disable-account',
+                    tenantId: ctx.tenantId,
+                    provider: writer.provider,
+                    proposed: wouldWrite,
+                    candidates: input.candidates.length,
+                    error: redactDirectoryIdentifiers(raw),
+                });
+                // Redacted on the way out too. This string is persisted by the
+                // pass onto an `IntegrationExecution` row, which is not
+                // encrypted at rest and outlives the run — the same reasoning
+                // that makes `recordPassExecution` scrub every per-decision
+                // reason it stores beside it.
+                return { refused: redactDirectoryIdentifiers(raw), results: [] };
+            }
+
+            // Everything else: unproven, so it decides nothing. Logged at WARN
+            // because the batch below is about to answer the same question per
+            // account with better information, and a token endpoint that was
+            // briefly unreachable is not an operator's problem if the pass then
+            // runs cleanly.
+            logger.warn('leaver batch preflight did not complete; continuing to the per-account rails', {
+                component: 'identity-disable-account',
+                tenantId: ctx.tenantId,
+                provider: writer.provider,
+                error: redactDirectoryIdentifiers(raw),
+            });
+        }
     }
 
     // Resolved ONCE, before the loop, for the whole batch: the compliance

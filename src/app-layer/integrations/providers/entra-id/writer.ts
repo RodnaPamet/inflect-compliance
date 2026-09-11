@@ -803,11 +803,35 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
      * Check consent ONCE, before a batch, so 1000 doomed writes become one
      * refusal.
      *
-     * Optional by design — `disable` enforces the same thing per account, where
-     * a throw is CONTAINED by the usecase's try/catch and settles as a clean
-     * FAILED row. Calling this first is strictly better (it costs one token
-     * exchange and refuses the whole run), but forgetting it is safe rather than
-     * silently permissive.
+     * Called by `disableAccountsForLeaver`, which reaches it through the
+     * optional `preflight?()` on `DirectoryWriter` — THAT is where the contract
+     * this implements is written down, and it should be read before this is
+     * touched. Optional by design, and still true after wiring: `disable`
+     * enforces the same thing per account (see the consent check before the
+     * PATCH below), where a throw is CONTAINED by the usecase's try/catch and
+     * settles as a clean FAILED row. Skipping this is less efficient, never less
+     * safe.
+     *
+     * ═══ `this.token()`, NOT `this.tokenForWrite()`. DO NOT "TIDY" THIS. ═══
+     *
+     * The two differ in exactly the way that matters here. `tokenForWrite`
+     * wraps an acquisition failure in a `DirectoryWriteError` carrying
+     * `definitivelyNotApplied: true` — correct there, because it is speaking
+     * about ONE account whose PATCH provably never left this process, and it
+     * settles that account as FAILED while the batch carries on.
+     *
+     * Read at the batch seam, that same flag means something far larger: it is
+     * the signal the caller refuses the WHOLE run on. So routing this call
+     * through `tokenForWrite` for symmetry would quietly promote every
+     * transient STS failure — a 5xx, a dropped socket, a momentary DNS
+     * failure — into a proven statement that the credential cannot disable
+     * anyone, and cancel a night of offboarding on the strength of it.
+     *
+     * A bare `token()` throws a plain `Error`, which is NOT `provenNotApplied`,
+     * so the batch proceeds and the per-account rails answer the question
+     * properly. The only refusal that should escape this method is the one
+     * below, which is about consent and is `definitivelyNotApplied` by
+     * construction.
      */
     async preflight(): Promise<void> {
         const { roles } = await this.token();
