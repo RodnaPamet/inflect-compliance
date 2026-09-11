@@ -4512,6 +4512,23 @@
         "reasonLine": "Reason: {reason}",
         "liftReasonLine": "Lift reason: {reason}"
       },
+      "amend": {
+        "action": "Amend",
+        "title": "Amend {name}",
+        "name": "Name",
+        "description": "Description",
+        "autonomy": "Autonomy level",
+        "loweringAlwaysAllowed": "Lowering autonomy is always permitted and needs no re-assessment. Raising it is capped by the agent's assessed risk tier.",
+        "dataAccess": "Data access scope",
+        "reversibility": "Reversibility",
+        "provenance": "Provenance",
+        "modelRef": "Model reference",
+        "owner": "Accountable owner",
+        "vendor": "Supplier",
+        "vendorNone": "No supplier — first party",
+        "save": "Save {count} change(s)",
+        "failed": "Could not amend this agent."
+      },
       "overview": {
         "profileHeading": "Governing profile",
         "ownerLabel": "Accountable owner",
