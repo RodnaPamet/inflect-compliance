@@ -78,6 +78,22 @@ So the action is retained; the identifying `userId` is removed. The Stage 3 PR
 adds the narrow trigger condition that permits this one UPDATE path while still
 refusing every other `AuditLog` UPDATE.
 
+**How this is enforced.** Behaviourally, in the `erasure pseudonymizes the audit
+trail` block of `tests/guardrails/dsar-workflow-coverage.test.ts`: it RUNS
+`eraseUser` against the in-memory probe in `tests/helpers/dsar-erasure-probe.ts`
+and grades the operations it issued and the rows it left behind. It does not read
+this document, and it does not read the source of `dsar-erasure.ts` — the
+assertion it replaced (#2287) was satisfied by a JSDoc paragraph saying the right
+words while the code did nothing of the kind. Today the run reports `REFUSED`
+(the Stage-1 stub), so the grading is *pinned, not exercised*; the oracle's
+ability to discriminate is proved separately against synthetic implementations.
+The day erasure starts doing work, `A1`/`A2` go red — that failure is the
+handshake for the Stage 3 author: replace those two, do not relax them, and the
+grading becomes live. The DB-level half of the invariant (the
+`IMMUTABLE_AUDIT_LOG` trigger refusing both UPDATE and DELETE on `AuditLog`,
+which Stage 3 must narrow rather than drop) is covered by
+`tests/integration/audit-immutability.test.ts`.
+
 ## Export bundle contents
 
 The Stage 2 bundle (`EXPORT_BUNDLE_FILES` in `dsar-export.ts`), produced under a
