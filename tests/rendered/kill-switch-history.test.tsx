@@ -7,14 +7,18 @@
  * which is the question an incident review asks, and the one 4/4's incident
  * report is built on.
  *
- * ── THE DRILL FILTER IS THE LOAD-BEARING ASSERTION ──────────────────
+ * ── WHAT THE SCOPE ASSERTIONS ACTUALLY PROVE, AND A CORRECTION ──────
  *
- * A scheduled drill engages and lifts a real kill against a sentinel agent id
- * every night. Unfiltered, the timeline is one lifted row per tenant per day and
- * real incidents fall out of a bounded window within months. A timeline that is
- * technically complete and practically unreadable fails at the only job it has,
- * so the drill row is planted in the fixture BELOW a real one — if the filter is
- * removed, the count assertion catches it.
+ * The first version of this file had a test titled "the nightly drill is
+ * filtered out". Mutation-proving it deleted the drill filter from the component
+ * and all six tests stayed GREEN — because the SCOPE clause already excluded the
+ * drill row, and no input could distinguish the two. The assertion certified
+ * nothing, and the code it certified was unreachable. Both are gone.
+ *
+ * What is left asserts the scope clause on inputs that genuinely separate its
+ * branches: this agent's kill is IN, a tenant-wide kill is IN (it stopped this
+ * agent too), another agent's kill is OUT — and the drill's sentinel id is
+ * excluded as a case of that last one, which is the real mechanism.
  */
 import { render, screen } from '@testing-library/react';
 
@@ -103,12 +107,17 @@ describe('an engage/lift pair renders with actor, reason and timestamp', () => {
     });
 });
 
-describe('the nightly drill is filtered out', () => {
-    it('shows the real kill and not the drill', () => {
+describe('only kills that stopped THIS agent appear', () => {
+    it('excludes another agent’s kill — and the drill, which is one', () => {
+        // Three rows, three branches of the scope clause. Deleting
+        // `r.agentId === agentId` makes the foreign row appear; deleting
+        // `r.agentId === null` loses the tenant-wide one. Either mutation is
+        // caught, which is what the deleted drill assertion could not manage.
         answer = {
             inForce: [],
             history: [
-                row({ id: 'real', reason: 'real incident' }),
+                row({ id: 'mine', reason: 'real incident' }),
+                row({ id: 'other', agentId: 'agent-2', reason: 'someone else’s incident' }),
                 row({ id: 'drill', agentId: DRILL, reason: 'scheduled drill' }),
             ],
         };
@@ -116,6 +125,7 @@ describe('the nightly drill is filtered out', () => {
 
         expect(screen.getAllByTestId('kill-switch-timeline-row')).toHaveLength(1);
         expect(screen.getByText(/real incident/)).toBeInTheDocument();
+        expect(screen.queryByText(/someone else/)).not.toBeInTheDocument();
         expect(screen.queryByText(/scheduled drill/)).not.toBeInTheDocument();
     });
 });

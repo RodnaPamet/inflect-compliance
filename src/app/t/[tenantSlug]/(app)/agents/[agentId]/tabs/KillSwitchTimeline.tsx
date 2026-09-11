@@ -18,15 +18,18 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
  * incident review asks, and 4/4's incident report is built on this field, which
  * is why it lands before that prompt rather than with it.
  *
- * ── THE DRILL CANARY MUST BE FILTERED, OR THIS IS NOISE ─────────────
+ * ── THE NIGHTLY DRILL FALLS OUT OF THE SCOPE FILTER ─────────────────
  *
  * A scheduled drill engages and lifts a real kill against a sentinel agent id
- * EVERY NIGHT. Unfiltered, that is one lifted row per tenant per day, which
- * pushes real incidents out of a bounded window within months — the timeline
- * would be technically complete and practically useless. `AgentKillSwitchAction`
- * filters the same id for the same reason; the constant is duplicated rather
- * than imported because the module that declares it reaches Prisma and does not
- * belong in a client bundle.
+ * every night, and unfiltered that would be one lifted row per tenant per day —
+ * pushing real incidents out of the window within months. It is excluded here by
+ * the SCOPE clause rather than by a filter of its own: the sentinel resolves to
+ * no registered agent, so it is neither this agent's id nor null.
+ *
+ * An explicit drill filter was written first and deleted. Mutation-proving it
+ * showed no input could distinguish it from the scope clause — the test went
+ * green with the filter removed — so it was unreachable code guarded by an
+ * assertion that certified nothing.
  *
  * ── A DELETED ACTOR DOES NOT BLANK THE ROW ──────────────────────────
  *
@@ -35,8 +38,6 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
  * failure an audit trail exists to prevent. So the row renders with the id as a
  * fallback and says the actor is gone, rather than rendering nothing.
  */
-
-const DRILL_CANARY_AGENT_ID = '__kill-switch-drill-canary__';
 
 interface Actor {
     id: string;
@@ -84,15 +85,21 @@ export function KillSwitchTimeline({
 
     const rows = useMemo(() => {
         const all = data?.history ?? [];
-        return all.filter(
-            (r) =>
-                r.agentId !== DRILL_CANARY_AGENT_ID
-                // A TENANT-scoped kill stopped THIS agent too — it stops every
-                // agent — so it belongs on this agent's timeline. Filtering to
-                // `agentId === agentId` would hide the widest stop the product
-                // has from the page of every agent it affected.
-                && (r.agentId === agentId || r.agentId === null),
-        );
+        // THIS agent's kills, plus every TENANT-scoped one — a whole-workspace
+        // stop stopped this agent too, so filtering to `r.agentId === agentId`
+        // alone would hide the widest stop the product has from the page of
+        // every agent it affected.
+        //
+        // THE NIGHTLY DRILL IS EXCLUDED BY THIS SAME CLAUSE, which is why there
+        // is no separate filter for it. The drill commits a real kill against a
+        // sentinel id that resolves to no registered agent — so it is neither
+        // this agent's id nor null, and it falls out here. An explicit
+        // `r.agentId !== DRILL_CANARY_AGENT_ID` was written first and then
+        // removed: no input can distinguish the two clauses, so it was
+        // unreachable, and the test that claimed to prove it passed with the
+        // filter deleted. `AgentKillSwitchAction` needs the explicit filter
+        // because it reads `inForce` unscoped; this component does not.
+        return all.filter((r) => r.agentId === agentId || r.agentId === null);
     }, [data, agentId]);
 
     if (!canRead) return null;
