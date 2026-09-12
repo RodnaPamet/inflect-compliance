@@ -643,6 +643,43 @@ describe('evidence a live read did not produce cannot settle the journal', () =>
         expect(r.outcome).toBe('ALREADY_DISABLED');
         expect(db.identityWriteJournal.findFirst).toHaveBeenCalled();
     });
+
+    it('does not reconcile from a DELETED account, which reads identically (#2481)', async () => {
+        // THE SHAPE HERE IS THE BUG, and it is deliberately the shape the Entra
+        // writer emitted BEFORE #2481 — `notFound` with no `staleEvidence`.
+        //
+        // Every test above this one hands the usecase a `priorState` it wrote
+        // itself, with `staleEvidence: true` already in it. That is exactly why
+        // the defect survived: the suite proved the guard fires when the key is
+        // present and never asked whether any real reader sets it. The producer
+        // did not, so a deleted account took the LIVE-read arm — settling a
+        // stranded row APPLIED and returning a journalId, which sends a
+        // RECONCILED mail — recording an administrator's deletion as proof that
+        // our write landed, in the journal this product offers as audit
+        // evidence.
+        //
+        // Keep this literal even though the writer now sets `staleEvidence`.
+        // Asserting the post-fix shape would only re-test the writer's own
+        // anchor; asserting the PRE-fix shape is what proves the usecase is
+        // safe against a producer that has not been taught the convention.
+        db.identityWriteJournal.findFirst.mockResolvedValue({ id: 'j-old', outcome: 'INDETERMINATE' });
+        const deleted = fakeWriter({
+            readState: async () => ({
+                enabled: false,
+                priorState: { captureSchema: 'entra-id/disable-account/v2', id: 'u-1', notFound: true },
+            }),
+        });
+
+        const r = await disableAccount(ctx, deleted, input());
+
+        expect(r.outcome).toBe('ALREADY_DISABLED');
+        // No settle, so no journalId — and therefore no RECONCILED mail.
+        expect(r.journalId).toBeUndefined();
+        // The settle's own read never happens, so no row can be moved even
+        // though one is sitting there INDETERMINATE and eligible.
+        expect(db.identityWriteJournal.findFirst).not.toHaveBeenCalled();
+        expect(db.identityWriteJournal.updateMany).not.toHaveBeenCalled();
+    });
 });
 
 describe('a failure to READ is contained, and the directory is untouched', () => {
