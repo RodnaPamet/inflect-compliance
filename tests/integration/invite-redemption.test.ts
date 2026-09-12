@@ -48,7 +48,6 @@ describeFn('invite-redemption usecases', () => {
             });
             const ids = tenants.map((t) => t.id);
             if (ids.length > 0) {
-                await prisma.auditLog.deleteMany({ where: { tenantId: { in: ids } } });
                 await prisma.tenantInvite.deleteMany({ where: { tenantId: { in: ids } } });
                 await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: ids } } });
                 await prisma.tenantOnboarding.deleteMany({ where: { tenantId: { in: ids } } });

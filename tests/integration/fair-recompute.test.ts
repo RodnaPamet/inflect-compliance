@@ -40,7 +40,6 @@ describeFn('RQ-1 — FAIR recompute (integration)', () => {
 
     afterAll(async () => {
         const t = { tenantId: TENANT_ID };
-        try { await globalPrisma.auditLog.deleteMany({ where: t }); } catch { /* best effort */ }
         try { await globalPrisma.risk.deleteMany({ where: t }); } catch { /* best effort */ }
         try { await globalPrisma.tenantMembership.deleteMany({ where: t }); } catch { /* best effort */ }
         try { await globalPrisma.user.deleteMany({ where: { id: adminId } }); } catch { /* best effort */ }

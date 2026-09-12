@@ -85,7 +85,6 @@ afterAll(async () => {
     // tenant/user that make a strict delete order fragile. Don't let a
     // teardown FK error fail an otherwise-green suite.
     const tenants = { tenantId: { in: [TENANT_ID, FOREIGN_TENANT_ID] } };
-    try { await globalPrisma.auditLog.deleteMany({ where: tenants }); } catch { /* best effort */ }
     try { await globalPrisma.evidence.deleteMany({ where: tenants }); } catch { /* best effort */ }
     try { await globalPrisma.task.deleteMany({ where: tenants }); } catch { /* best effort */ }
     try { await globalPrisma.tenantMembership.deleteMany({ where: tenants }); } catch { /* best effort */ }

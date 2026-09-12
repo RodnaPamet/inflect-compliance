@@ -104,7 +104,6 @@ afterAll(async () => {
     if (!DB_AVAILABLE) { await globalPrisma.$disconnect(); return; }
     const tenants = { tenantId: TENANT_ID };
     for (const fn of [
-        () => globalPrisma.auditLog.deleteMany({ where: tenants }),
         () => globalPrisma.notification.deleteMany({ where: tenants }),
         () => globalPrisma.controlEvidenceLink.deleteMany({ where: tenants }),
         () => globalPrisma.evidenceReview.deleteMany({ where: tenants }),

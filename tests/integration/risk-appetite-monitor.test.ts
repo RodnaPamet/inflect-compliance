@@ -43,7 +43,7 @@ describeFn('RQ-2 — appetite monitor (integration)', () => {
 
     afterAll(async () => {
         const t = { tenantId: TENANT_ID };
-        for (const m of ['taskLink', 'task', 'riskSimulationRun', 'riskAppetiteBreach', 'riskAppetiteConfig', 'auditLog', 'risk', 'tenantMembership'] as const) {
+        for (const m of ['taskLink', 'task', 'riskSimulationRun', 'riskAppetiteBreach', 'riskAppetiteConfig', 'risk', 'tenantMembership'] as const) {
             try { await (globalPrisma as any)[m].deleteMany({ where: t }); } catch { /* best effort */ }
         }
         try { await globalPrisma.user.deleteMany({ where: { id: adminId } }); } catch { /* best effort */ }

@@ -102,7 +102,6 @@ afterAll(async () => {
         return;
     }
     const tenants = { tenantId: { in: [TENANT_ID, FOREIGN_TENANT_ID] } };
-    try { await globalPrisma.auditLog.deleteMany({ where: tenants }); } catch { /* best effort */ }
     try { await globalPrisma.controlEvidenceLink.deleteMany({ where: tenants }); } catch { /* best effort */ }
     try { await globalPrisma.evidence.deleteMany({ where: tenants }); } catch { /* best effort */ }
     try { await globalPrisma.control.deleteMany({ where: tenants }); } catch { /* best effort */ }

@@ -98,7 +98,6 @@ async function cleanCatalog() {
 
 async function cleanTenant() {
     const where = { where: { tenantId: TENANT_ID } };
-    await globalPrisma.auditLog.deleteMany(where).catch(() => {});
     await globalPrisma.controlRequirementLink.deleteMany(where).catch(() => {});
     await globalPrisma.task.deleteMany(where).catch(() => {});
     await globalPrisma.control.deleteMany(where).catch(() => {});

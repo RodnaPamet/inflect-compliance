@@ -35,7 +35,6 @@ describeFn('platform-admin tenant creation', () => {
             if (ids.length > 0) {
                 await prisma.tenantOnboarding.deleteMany({ where: { tenantId: { in: ids } } });
                 await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: ids } } });
-                await prisma.auditLog.deleteMany({ where: { tenantId: { in: ids } } });
             }
         } catch { /* best effort */ }
         try {

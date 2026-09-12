@@ -75,7 +75,6 @@ afterAll(async () => {
     }
     const t = { tenantId: { in: [TENANT_ID, FOREIGN_TENANT_ID] } };
     for (const del of [
-        () => globalPrisma.auditLog.deleteMany({ where: t }),
         () => globalPrisma.findingRisk.deleteMany({ where: t }),
         () => globalPrisma.finding.deleteMany({ where: t }),
         () => globalPrisma.risk.deleteMany({ where: t }),

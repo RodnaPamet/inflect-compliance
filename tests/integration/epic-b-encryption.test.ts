@@ -121,9 +121,6 @@ describeFn('Epic B — encryption, tenant DEKs, and rotation end-to-end', () => 
 
     afterAll(async () => {
         try {
-            await testPrisma.auditLog.deleteMany({
-                where: { tenantId: { in: [tenantA, tenantB] } },
-            });
             await testPrisma.finding.deleteMany({
                 where: { tenantId: { in: [tenantA, tenantB] } },
             });
