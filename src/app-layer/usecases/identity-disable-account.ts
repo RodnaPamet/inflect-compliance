@@ -76,6 +76,18 @@ export type DisableOutcome =
     | 'REFUSED_PROTECTED'
     /** Already disabled in the directory — nothing to do. */
     | 'ALREADY_DISABLED'
+    /**
+     * The live directory contradicts the stored observation the blast-radius
+     * numerator subtracted this candidate on, so this write was never inside
+     * the number the breaker authorised.
+     *
+     * The account is left ENABLED and IT is told it is still live. That is the
+     * CLOSED direction — a person keeps access they should have lost — and it
+     * is the direction to fail in when the alternative is a write nothing
+     * measured. See the refusal in `decideWithTarget` for the whole argument
+     * (#2498).
+     */
+    | 'REFUSED_UNMEASURED'
     /** DRY_RUN: everything was decided, nothing was written. */
     | 'DRY_RUN'
     /** The provider rejected the write BEFORE changing anything. */
@@ -366,20 +378,37 @@ export interface DisableAccountInput {
      * Was this account ENABLED the last time a sync observed it? Absent = unknown.
      *
      * Read where the population is assembled, for the same reason the field
-     * above is — and consumed in exactly ONE place: the blast-radius numerator
-     * in `disableAccountsForLeaver`.
+     * above is, and consumed in exactly TWO places — which are two halves of
+     * one rule, and must be read together:
      *
-     * IT IS NOT A RAIL, and must never become one. A candidate this reports as
-     * already disabled still goes through `decideAndDisable`, because the
-     * `!state.enabled` branch there is what settles a stranded INDETERMINATE
-     * journal row from LIVE evidence and audits the reconciliation. Filtering
-     * such a candidate out of the batch would close that loop forever, from a
-     * stored observation that is exactly the evidence the branch refuses to
-     * settle on.
+     *   1. the blast-radius numerator in `disableAccountsForLeaver`, which
+     *      SUBTRACTS a candidate this reports disabled, because the pass is
+     *      not expected to write it; and
+     *   2. a refusal in `decideWithTarget`, which withholds the write from any
+     *      such candidate whose LIVE read then says ENABLED.
      *
-     * ABSENT MEANS COUNT IT. The numerator tests `!== false`, so a producer
-     * that forgets this field fails toward counting the candidate rather than
-     * silently shrinking the batch the breaker is measuring.
+     * The second exists because the first is a subtraction from a safety
+     * measurement. Without it a mirror that is wrong in the "disabled"
+     * direction shrank the number the breaker checked while the write loop
+     * still wrote the candidate — a numerator of zero, which the breaker
+     * allows outright, over a batch of any size (#2498). Together they say:
+     * the pass never writes an account the numerator did not count.
+     *
+     * IT IS STILL NOT A FILTER ON THE BATCH, and must never become one. A
+     * candidate this reports as already disabled still goes through
+     * `decideAndDisable`, because the `!state.enabled` branch there is what
+     * settles a stranded INDETERMINATE journal row from LIVE evidence and
+     * audits the reconciliation. Filtering such a candidate out of the batch
+     * would close that loop forever, from a stored observation that is exactly
+     * the evidence the branch refuses to settle on. The refusal in (2) does
+     * not touch that loop: it is reached only when the live read says ENABLED,
+     * and an account the directory reports ENABLED never enters the
+     * `!state.enabled` branch in the first place.
+     *
+     * ABSENT MEANS COUNT IT. Both halves test the same `false` — the numerator
+     * `!== false`, the refusal `=== false` — so a producer that forgets this
+     * field fails toward counting the candidate AND toward writing it, rather
+     * than silently shrinking the batch the breaker is measuring.
      */
     readonly lastObservedEnabled?: boolean;
     /**
@@ -862,6 +891,66 @@ async function decideWithTarget(
         return { outcome: 'REFUSED_TARGET', reason: target.reason };
     }
 
+    // ── 3c. THE BREAKER NEVER MEASURED THIS WRITE. ──
+    //
+    // `lastObservedEnabled === false` is the one term in the blast-radius
+    // numerator (`disableAccountsForLeaver`) that no per-candidate rail
+    // re-applies, and it is a MIRROR value — `ConnectedIdentityAccount.status
+    // === 'ACTIVE'`, written by the last enumeration. Reaching this line means
+    // the LIVE read a few lines up said the account is ENABLED, so the mirror
+    // is wrong: the numerator subtracted this candidate from the number the
+    // breaker checked while the write loop kept it in the batch the breaker
+    // authorised.
+    //
+    // WHAT THAT COSTS WHEN THE MIRROR IS WRONG EVERYWHERE. An enumeration that
+    // returns zero marks the whole connection deprovisioned (#2499), so every
+    // candidate arrives here with the field false, the numerator is 0, and
+    // `checkDisableBlastRadius` answers `{ allowed: true }` on `proposed <= 0`
+    // — MAX_DISABLES_PER_RUN and the share rule both unable to fire on a batch
+    // of any size. (#2498)
+    //
+    // REFUSING IS THE CLOSED DIRECTION, said plainly: the account stays
+    // ENABLED, a terminated person keeps access they should have lost, and IT
+    // gets a NEEDS_ACTION mail saying so. That is the side to be wrong on when
+    // the alternative is an unmeasured mass disable, and it is loud rather than
+    // silent — ERROR here, a named outcome in the pass record, and the mail.
+    //
+    // THE INVARIANT IT RESTORES, as the subset it literally is: every write
+    // this pass issues is a candidate the numerator counted. The numerator
+    // subtracts on `=== false` and this refuses on `=== false` — the same
+    // reading of the same field — so ABSENT still counts and is never refused
+    // here. A producer that does not set the field moves neither number.
+    //
+    // NOT A FILTER ON THE BATCH, which is the one thing the field's docblock
+    // forbids. The candidate still reaches this function and every rail above,
+    // and the reconciliation that docblock protects is untouched: a stranded
+    // INDETERMINATE row is settled in the `!state.enabled` branch above, which
+    // is by definition the branch an account the directory reports ENABLED
+    // never takes. Nothing that could have settled here is withheld.
+    //
+    // AHEAD OF DRY_RUN, for the reason the target refusal above is: a dry run
+    // must report the decision the pass would reach. In practice a dry run
+    // cannot get here — `resolveDirectoryWriter` hands it the snapshot reader,
+    // whose `enabled` is that same `status === 'ACTIVE'`, so the two halves of
+    // this comparison come from one row and cannot disagree.
+    if (input.lastObservedEnabled === false) {
+        logger.error('leaver disable refused: the directory contradicts the observation the breaker measured', {
+            component: 'identity-disable-account',
+            tenantId: ctx.tenantId,
+            provider: writer.provider,
+            // The opaque link id, never the directory identifier — the rule
+            // this module states at the self-account refusal above.
+            linkId: input.linkId,
+        });
+        return {
+            outcome: 'REFUSED_UNMEASURED',
+            reason:
+                'The last sync recorded this account as not active, so the blast-radius breaker did not ' +
+                'count it, but the directory reports it ENABLED. Refusing a write no breaker measured: ' +
+                're-run the identity sync, then the next pass will count and perform it.',
+        };
+    }
+
     if (mode === 'DRY_RUN') {
         // Everything above was decided for real. Nothing is written, and no
         // journal row is created: a DRY_RUN did not replace anything, so a
@@ -993,6 +1082,7 @@ const DISABLE_AUDIT_ACTION: Readonly<Record<DisableOutcome, string>> = {
     REFUSED_MODE: 'IDENTITY_ACCOUNT_DISABLE_NOT_ATTEMPTED',
     REFUSED_TARGET: 'IDENTITY_ACCOUNT_DISABLE_NOT_ATTEMPTED',
     REFUSED_PROTECTED: 'IDENTITY_ACCOUNT_DISABLE_NOT_ATTEMPTED',
+    REFUSED_UNMEASURED: 'IDENTITY_ACCOUNT_DISABLE_NOT_ATTEMPTED',
 };
 
 /** The batch catch-all. Not an outcome — `disableAccount` never returns it. */
@@ -1127,18 +1217,41 @@ export async function disableAccountsForLeaver(
     // of a safety rail: `resolveWriteTarget` is the same pure function
     // `decideAndDisable` consults, called with the same fields.
     //
-    // This can only ever LOWER the numerator, never raise it, which is why it
-    // is safe on the one rail in the product that disables real accounts: it
-    // can withdraw a refusal, and it can never authorise a write that the
-    // per-candidate rails below would not have authorised anyway.
+    // This can only ever LOWER the numerator, never raise it — so on the one
+    // rail in the product that disables real accounts it can withdraw a
+    // refusal and can never create one. That direction is only safe while
+    // every term is one the pass RE-APPLIES per candidate, and three of them
+    // are: `isProtected`, `matchesSelf` and `resolveWriteTarget` are each
+    // evaluated again inside `decideAndDisable`, from the same fields, so a
+    // candidate they subtract here is a candidate no write is issued for.
+    //
+    // `lastObservedEnabled` WAS NOT ONE OF THOSE, and an earlier version of
+    // this paragraph claimed it was — that claim is #2498. The field is a
+    // MIRROR of the last enumeration, and `decideAndDisable` decided from a
+    // LIVE read without ever consulting it. Where the two disagree the subtraction
+    // removed a write the loop below would still perform: a stale mirror
+    // shrinks the measured batch while leaving the real one whole, to a
+    // numerator of ZERO in the limit, which `checkDisableBlastRadius` allows
+    // outright — MAX_DISABLES_PER_RUN and the share rule both unable to fire.
+    //
+    // So the subset is held on the other side instead. `decideWithTarget`
+    // refuses any candidate whose live read says ENABLED while this field says
+    // `false`, on the SAME `=== false` this line reads, which makes every
+    // write the pass issues one the numerator counted. Read that refusal for
+    // why it takes nothing away from the reconciliation the field's own
+    // docblock protects.
     //
     // The mode is deliberately NOT a term. DRY_RUN writes nothing, but a dry
     // run exists to show what the pass WOULD do — measuring its blast radius as
     // zero would hide the very number an operator is watching for seven days.
     const wouldWrite = input.candidates.filter(
         (c) =>
-            // `!== false`: absent is unknown, and unknown must count. A producer
-            // that forgets the field cannot quietly shrink the batch.
+            // `!== false`: absent is unknown, and unknown must count. A
+            // producer that forgets the field cannot quietly shrink the batch
+            // — and, because the paired refusal in `decideWithTarget` reads
+            // the same `=== false`, cannot quietly have its writes refused
+            // either. The two readings must stay identical; widening one alone
+            // re-opens the gap between what is measured and what is written.
             c.lastObservedEnabled !== false &&
             !c.isProtected &&
             !matchesSelf(c, writer.selfAccountIds) &&
@@ -1528,8 +1641,14 @@ export async function findLeaverCandidates(
             // predicate in the WHERE above: an already-disabled candidate must
             // still reach `decideAndDisable`, whose `!state.enabled` branch is
             // the only thing that settles a stranded INDETERMINATE journal row
-            // and emits its reconciliation audit. What this field changes is the
-            // breaker's numerator, and nothing else.
+            // and emits its reconciliation audit.
+            //
+            // What this field changes is the breaker's numerator and, since
+            // #2498, the paired refusal that keeps the numerator honest: a
+            // candidate it subtracts from the count is refused rather than
+            // written if the live read contradicts it. Both live in
+            // `identity-disable-account`; neither removes a row from this
+            // query.
             lastObservedEnabled: r.connectedAccount.status === 'ACTIVE',
             onPremisesSyncEnabled: r.connectedAccount.onPremisesSyncEnabled,
             // A timestamp on the row IS the observation, and it is carried WHOLE

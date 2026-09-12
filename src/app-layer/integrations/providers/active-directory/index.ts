@@ -495,13 +495,52 @@ export class ActiveDirectoryProvider implements ScheduledCheckProvider, Identity
                 const acct = normalizeAdEntry(entry, adminGroups);
                 if (acct.externalUserId) out.push(acct);
             }
-            // If we filled the cap the directory may have more — a KNOWN-PARTIAL
-            // enumeration (H3) that must not drive deprovisioning.
-            const complete = searchEntries.length < MAX_USERS;
-            if (!complete) {
+            // ═══ `complete` IS A CLAIM ABOUT `out`, NOT ABOUT `searchEntries` ═══
+            //
+            // It used to be `searchEntries.length < MAX_USERS`, and the two are
+            // DIFFERENT COLLECTIONS. The loop above discards any entry whose
+            // externalUserId came back empty, so such an entry was counted as
+            // observed by the flag and then never handed to the caller. The
+            // caller upserts `out` and uses `complete` to authorise the
+            // deprovision reconcile — which flips everything it did not see —
+            // so a discarded account was, by construction, marked gone from a
+            // directory it is still in.
+            //
+            // Requiring the two to agree can only move `complete` from true to
+            // FALSE: `out.length <= searchEntries.length` always holds, because
+            // `out` is built by filtering `searchEntries`. So this cannot newly
+            // authorise a reconcile, only withhold one. Withholding leaves
+            // departed accounts still showing as present — a visible gap in the
+            // offboarded-access check, and the direction we want, because the
+            // one it forecloses is the silent whole-directory deprovision.
+            //
+            // Two failing conditions, kept separate because they mean different
+            // things to whoever reads the log: the directory is larger than we
+            // are willing to page through, versus the directory answered with
+            // rows we cannot key.
+            const dropped = searchEntries.length - out.length;
+            const hitCap = searchEntries.length >= MAX_USERS;
+            const complete = dropped === 0 && !hitCap;
+            if (hitCap) {
                 logger.warn('Active Directory enumeration hit MAX_USERS cap; sync marked partial (no deprovision reconcile)', {
                     component: 'integration-active-directory',
                     cap: MAX_USERS,
+                });
+            }
+            if (dropped > 0) {
+                // LOG AND REFUSE, rather than drop in silence. We still cannot
+                // upsert an account with no id to key it by — there is no row to
+                // write — so "refuse" is not a refusal to ingest it (that part is
+                // forced), it is a refusal to call the pass COMPLETE while it is
+                // missing. That is the only lever that keeps the reconcile from
+                // reading the absence as a departure.
+                //
+                // Counts only. The entry's DN would name a person, and this is a
+                // log line (see docs/observability.md).
+                logger.warn('Active Directory returned entries with no resolvable external id; sync marked partial (no deprovision reconcile)', {
+                    component: 'integration-active-directory',
+                    dropped,
+                    returned: searchEntries.length,
                 });
             }
             return { accounts: out, complete };

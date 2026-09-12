@@ -8,6 +8,7 @@
  * Schedule semantics (preserved from legacy cron docs/comments):
  *   - automation-runner:       every 15 min (control check scheduling)
  *   - daily-evidence-expiry:   daily at 06:00 UTC (sweep + outbox)
+ *   - notification-outbox-flush: every 10 min (drain the email outbox)
  *   - data-lifecycle:          daily at 03:00 UTC (purge + retention)
  *   - policy-review-reminder:  daily at 08:00 UTC (overdue review audit)
  *   - task-due-notification:   daily at 08:00 local (NOTIFICATIONS_TZ) (in-app task deadline reminders)
@@ -227,6 +228,40 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         name: 'daily-evidence-expiry',
         pattern: '0 6 * * *',     // daily at 06:00 UTC
         description: 'Sweep expiring evidence at 30/7/1 day thresholds + flush outbox',
+        defaultPayload: {},
+    },
+    {
+        name: 'notification-outbox-flush',
+        pattern: '*/10 * * * *',  // every 10 minutes
+        // THE OUTBOX'S OWN CADENCE, and the reason it needs one.
+        //
+        // `daily-evidence-expiry` above also flushes the outbox, and for a long
+        // time that was the ONLY scheduled drain. Every notification in the
+        // product — a digest, a task reminder, the mail that tells a manager a
+        // leaver's directory account was disabled — therefore left the building
+        // at 06:00 UTC or not that day at all. The leaver pass runs at 05:00,
+        // so its mail waited an hour on a good day; and because the flush sat
+        // behind three unguarded awaits, a throw in any evidence sweep pushed
+        // it to the NEXT 06:00 tick, ~25 hours later. The delivery latency of a
+        // directory write was a function of an unrelated job's health.
+        //
+        // Ten minutes rather than five or one: the drain is one indexed query
+        // per tick when the queue is empty, but each non-empty pass holds a
+        // worker slot for an SMTP round trip per row, and nothing in this
+        // product is urgent at one-minute granularity. Ten bounds the worst
+        // case an operator has to explain ("the mail is at most ten minutes
+        // behind the event") without turning the worker into a poller.
+        //
+        // Running BESIDE the 06:00 flush rather than replacing it, deliberately:
+        // draining twice in one minute is free (each row is claimed atomically
+        // before its send, so the loser of a race sends nothing), and leaving
+        // the expiry job's own tail in place means the three sweeps still hand
+        // their freshly-enqueued mail straight to a flush instead of waiting up
+        // to ten minutes for this one.
+        description: 'Drain PENDING notification emails to the configured provider. The outbox has no other short-cadence flush: without this, delivery waits for the 06:00 evidence-expiry job. Idempotent — each row is claimed before it is sent, so overlapping passes cannot double-send.',
+        // Empty: no tenantId means drain every tenant's queue, which is what a
+        // platform-level job must do. A tenant-scoped drain is the admin button
+        // on the notification-settings page, which passes its own tenantId.
         defaultPayload: {},
     },
     {

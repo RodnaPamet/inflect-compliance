@@ -149,7 +149,14 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     // connection (BambooHR, Workday).
     'hris-sync-dispatch',
     // Daily leaver pass fan-out, one per (tenant, writable directory
-    // provider). Clamped at DRY_RUN — it decides, it does not write.
+    // provider). This job enqueues and never touches a directory itself — the
+    // pass it dispatches is what writes, and THAT chain writes for real: #2187
+    // raised LEAVER_MAX_MODE from DRY_RUN to
+    // AUTOMATIC on 2026-08-30, and on 2026-09-12 at 05:00 UTC this chain
+    // disabled a live directory account for the first time. How far a given
+    // tenant may go is that tenant's identityLeaverMode, never a property of
+    // the job — see tests/guards/scheduled-job-description-claims.test.ts, which
+    // exists because the same dead claim sat in the job's own description.
     'identity-leaver-dispatch',
     // PR-2 — daily cross-tenant fan-out: an identity-sync per enabled
     // Okta / Google Workspace / Entra ID / Active Directory connection.
@@ -158,6 +165,11 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     // incident notification deadlines PENDING→DUE→OVERDUE.
     'incident-notification-deadlines',
     'notification-dispatch',
+    // #2485 — flushes the notification outbox on its own short cadence.
+    // Previously the only SCHEDULED flush lived inside daily-evidence-expiry
+    // at 06:00, behind three unguarded awaits, so a throw in an unrelated
+    // evidence sweep delayed the 05:00 leaver mail by ~25 hours.
+    'notification-outbox-flush',
     // Vuln integration — daily NVD CVE catalog ingestion +
     // cross-tenant asset-match pass.
     'nvd-cve-sync',

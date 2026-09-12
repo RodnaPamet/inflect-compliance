@@ -728,6 +728,45 @@ function tally(results: readonly DisableResult[]): Partial<Record<DisableOutcome
     return counts;
 }
 
+/**
+ * What an operator reads when the clamp refuses a tenant.
+ *
+ * SEPARATE FROM ITS CALLER ON PURPOSE, and the purpose is not tidiness. The
+ * branch that uses it cannot be entered while `LEAVER_MAX_MODE` is the top rung
+ * (see the note there), so the only way to check this sentence is still true is
+ * to call it with the clamp a future incident might lower it to. Left inline it
+ * was unreadable by anything, which is how it came to be still asserting that
+ * “no tenant has yet watched a single pass” on the morning after this path
+ * disabled a live directory account (2026-09-12, 05:00 UTC) — the pass an
+ * operator confirmed, account by account, in the customer’s own portal.
+ *
+ * WHAT IT MUST SAY, and why each part earns its line. The operator reading this
+ * is looking at an offboarding that did not happen.
+ *   • Both modes, named. “Clamped” without the two values leaves them unable to
+ *     tell whether to change their setting or escalate for a code change.
+ *   • That the clamp is a CONSTANT. It is the difference between a fix they can
+ *     make in the admin UI and one that needs a deploy, and guessing wrong costs
+ *     them the incident.
+ *   • That this refusal writes no `IntegrationExecution` row. It is one of the
+ *     only two that do not, so the pass leaves no trace on
+ *     `/admin/identity-leaver-passes` — and an operator who does not know that
+ *     goes looking for a dead worker instead of a ceiling.
+ *
+ * It states no count, no date and nothing about what other tenants have done.
+ * That is the class of claim that rotted here before: a sentence about the state
+ * of the world, baked into a string that ships once and is read years later.
+ */
+export function clampRefusalDetail(mode: string, clamp: string): string {
+    return (
+        `This tenant is configured at ${mode}, but the leaver pass is clamped at ${clamp}. ` +
+        'The clamp is a source constant, not a tenant setting — raising it is a reviewed code ' +
+        'change and a deploy, not something an administrator can switch on. No candidate was ' +
+        'assembled and nothing was sent to the directory. This refusal records no ' +
+        'IntegrationExecution row, so the pass leaves no trace on /admin/identity-leaver-passes ' +
+        'either; an empty page here means the ceiling, not a dead worker.'
+    );
+}
+
 function refused(
     mode: string,
     refusal: LeaverPassRefusal,
@@ -847,6 +886,45 @@ export async function runIdentityLeaverPass(input: {
             // deserves to find out why from a log rather than from an
             // offboarding that quietly never ran.
             //
+            // ═══ THIS BRANCH IS UNREACHABLE TODAY, AND STAYS ANYWAY (#2487) ═══
+            //
+            // `LEAVER_MAX_MODE` is `AUTOMATIC`, the TOP rung of `LADDER`, and
+            // `mode` has been through `coerceStoredMode` at the read boundary,
+            // so it is a rung. Nothing sorts above the top rung: `isAboveClamp`
+            // cannot return true here, and no test can make it, which is why
+            // the attempt to cover this with an invented `'SUPERUSER'` mode
+            // failed — `indexOf` returns -1 for an unknown value, which reads as
+            // BELOW the clamp, the permissive direction (see `isAboveClamp`).
+            //
+            // Deleting it was considered and rejected, because its
+            // unreachability is not structural — it is derived from two values
+            // that are one token apart from moving, in opposite directions:
+            //
+            //   • LOWERING the clamp. `LEAVER_MAX_MODE` is a source constant
+            //     precisely so that narrowing it is a reviewed diff somebody can
+            //     ship in a hurry — it is the brake you reach for at 05:05 after
+            //     a pass did something you did not expect. Delete this branch
+            //     and that edit compiles, ships, reads as a ceiling everywhere,
+            //     and clamps NOTHING: every `AUTOMATIC` tenant keeps writing to
+            //     its directory unattended. The brake would fail silently at the
+            //     one moment it is pulled.
+            //   • GROWING the ladder. A rung added above `AUTOMATIC` sorts above
+            //     the clamp on the day it lands, with no diff to this file.
+            //
+            // The reporting half already assumes this gate exists. The admin
+            // route publishes `honoured.leaver.maxMode` and the client renders
+            // an aboveClamp banner from it; `write-ladder.ts` writes down what
+            // happens when the gate and the report disagree (its joiner note:
+            // "the client shows the aboveClamp banner while nothing clamps
+            // anything"). Removing the enforcement while the route keeps
+            // advertising the ceiling reproduces that for the leaver.
+            //
+            // So it is kept, and `tests/unit/identity-leaver-pass.test.ts` pins
+            // both halves: a LADDER-derived tripwire that fails the day a rung
+            // rises above the clamp, and a direct test of the refusal text under
+            // a hypothetically lowered clamp — the text nobody can read today
+            // and somebody reads mid-incident on the day this wakes up.
+            //
             // ORDINAL, never `mode !== LEAVER_MAX_MODE`. That inequality was
             // correct only by coincidence: with the clamp at the second rung,
             // the sole mode that is neither DISABLED (handled above) nor equal
@@ -866,9 +944,7 @@ export async function runIdentityLeaverPass(input: {
             return refused(
                 mode,
                 'MODE_ABOVE_CLAMP',
-                `This tenant is configured at ${mode}, but the leaver pass is clamped at ${LEAVER_MAX_MODE} ` +
-                    'until it has been observed in the field. Wiring the pass and granting it unattended ' +
-                    'authority are separate decisions, and no tenant has yet watched a single pass.',
+                clampRefusalDetail(mode, LEAVER_MAX_MODE),
             );
         }
 

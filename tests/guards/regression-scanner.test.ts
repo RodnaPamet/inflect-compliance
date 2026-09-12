@@ -161,7 +161,14 @@ describe('Regression: Import hygiene', () => {
         // prisma in the file is the handle handed to `logEvent` for the
         // AV_RESCAN_INITIATED row. No `prisma.<model>` query appears in the
         // route — the job does every read and write, in the worker.
-        const ROUTE_ALLOWLIST = ['audit-log', 'scim', 'key-rotation', 'tenant-dek-rotation', 'sessions', 'av-rescan'];
+        // identity-leaver-passes/run (#2484) is that shape a fifth time: the
+        // handle goes to `logEvent` for IDENTITY_LEAVER_PASS_REQUESTED — the
+        // record that a human asked for an off-schedule directory write,
+        // written before the worker has touched anything — and the route runs
+        // no `prisma.<model>` query at all. Listed by its FULL segment rather
+        // than `identity-leaver-passes`, so the sibling report route above it
+        // keeps the gate this test applies to every other route.
+        const ROUTE_ALLOWLIST = ['audit-log', 'scim', 'key-rotation', 'tenant-dek-rotation', 'sessions', 'av-rescan', 'identity-leaver-passes/run'];
         const routes = walk(routeDir, ['.ts']).filter(f =>
             f.endsWith('route.ts') && !ROUTE_ALLOWLIST.some(a => f.includes(a))
         );

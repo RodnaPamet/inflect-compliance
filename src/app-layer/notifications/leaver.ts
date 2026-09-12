@@ -108,6 +108,18 @@
  *                     volume, so it goes out as a DISABLED mail flagged
  *                     RECONCILED.
  *
+ *   REFUSED_UNMEASURED The live directory says ENABLED while the stored
+ *                     observation said otherwise, so the blast-radius breaker
+ *                     measured a batch this candidate was not in. Refused
+ *                     rather than written, which is the CLOSED direction and
+ *                     costs something real: a terminated person keeps access
+ *                     until the sync is fixed. IT only — a manager can do
+ *                     nothing about a stale mirror — and NEEDS_ACTION rather
+ *                     than silent, because the refusal is the product declining
+ *                     to act on evidence it could not trust, which somebody has
+ *                     to resolve. Under the #2499 chain every candidate takes
+ *                     this arm and the pass writes nothing at all.
+ *
  * ═══ THE MANAGER IS BEST-EFFORT; IT IS NOT ═══
  *
  * `IdentityWriteJournal.linkId` is nullable, `Employee.managerEmployeeId` is
@@ -362,6 +374,30 @@ export function planLeaverNotifications(
             return { it: 'IDENTITY_LEAVER_UNCONFIRMED', manager: 'IDENTITY_LEAVER_UNCONFIRMED' };
         case 'REFUSED_TARGET':
         case 'FAILED':
+            return { it: 'IDENTITY_LEAVER_NEEDS_ACTION', manager: null };
+        // The blast-radius numerator did not count this write, because the
+        // last sync recorded the account as not active, and the live read then
+        // said it is ENABLED — so the write was withheld (#2498). IT is the
+        // audience for the same reason REFUSED_TARGET is: a terminated
+        // person's account is still live and somebody has to act. The action
+        // is not "disable this by hand" but "fix the directory sync", which is
+        // why the cause travels in `detail` rather than in the type.
+        //
+        // NOT silent, even though the refusal is deliberate. The silent arms
+        // above (OPERATOR_FLAG, REFUSED_MODE, DRY_RUN) are the ones where
+        // nothing was supposed to happen; here something was supposed to
+        // happen and did not, and the account is enabled either way.
+        //
+        // Manager: null, as for every other still-live outcome. A manager can
+        // do nothing about a stale identity mirror, and the nightly repeat
+        // until the sync is fixed would be a mail they cannot action.
+        // NEEDS_ACTION, and IT-only. The account is still live because we
+        // declined to write to it, so this is not an FYI — somebody has to look
+        // at why the mirror and the directory disagree. The manager is null for
+        // the same reason as every other refusal in this switch: they cannot
+        // act on a sync fault, and mail they cannot act on is mail they learn
+        // to filter, which costs the arms they CAN act on.
+        case 'REFUSED_UNMEASURED':
             return { it: 'IDENTITY_LEAVER_NEEDS_ACTION', manager: null };
         // Two rails share this outcome and they want opposite mail.
         //

@@ -61,6 +61,35 @@ jest.mock('@/lib/observability/integration-metrics', () => ({
     recordIdentityBatchRefused: (...a: unknown[]) => recordBatchRefused(...a),
 }));
 
+/**
+ * A PASS-THROUGH spy on the breaker, so a test can read the number the
+ * numerator handed it.
+ *
+ * The real function runs and its answer is returned unchanged — the point is
+ * not to control the verdict but to SEE the input, which nothing else exposes
+ * on a batch the breaker ALLOWS. `recordIdentityBatchRefused` and the refusal
+ * log line both fire only on a refusal, so every fixture where the numerator
+ * is wrong and the breaker waves the batch through had no observable numerator
+ * at all. That blind spot is where #2498 lived.
+ */
+const breakerSpy = jest.fn();
+jest.mock('@/app-layer/usecases/identity-write-breaker', () => {
+    const actual = jest.requireActual('@/app-layer/usecases/identity-write-breaker');
+    return {
+        ...actual,
+        checkDisableBlastRadius: (i: unknown) => {
+            breakerSpy(i);
+            return actual.checkDisableBlastRadius(i);
+        },
+    };
+});
+
+/** The `proposed` the breaker was measured with, from the spy above. */
+function measuredProposed(): number {
+    expect(breakerSpy).toHaveBeenCalledTimes(1);
+    return (breakerSpy.mock.calls[0][0] as { proposed: number }).proposed;
+}
+
 const appendAudit = jest.fn(async (_entry: Record<string, unknown>) => ({
     id: 'a1',
     entryHash: 'h',
@@ -85,6 +114,7 @@ import {
     findLeaverCandidates,
     type DirectoryWriter,
 } from '@/app-layer/usecases/identity-disable-account';
+import { MAX_DISABLES_PER_RUN } from '@/app-layer/usecases/identity-write-breaker';
 import { makeRequestContext } from '../helpers/make-context';
 
 const ctx = makeRequestContext('ADMIN', { tenantId: 't1', userId: 'admin-1' });
@@ -1084,6 +1114,151 @@ describe('the batch gate', () => {
 
         expect(r.refused).toMatch(/6 of 10/);
         expect(w.disabled).toEqual([]);
+    });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // THE NUMERATOR SUBTRACTED WRITES THE LOOP STILL PERFORMED (#2498)
+    //
+    // `lastObservedEnabled` is a MIRROR of the last enumeration
+    // (`ConnectedIdentityAccount.status === 'ACTIVE'`). The numerator
+    // subtracts on it; `decideAndDisable` decided from a LIVE read and never
+    // consulted it. Where the two disagreed, the candidate left the number the
+    // breaker measured and stayed in the batch the breaker authorised.
+    //
+    // NO EXISTING FIXTURE COULD SEE IT. Every case above keeps the fake
+    // `readState` consistent with the mirror it sets, so the divergence — the
+    // whole defect — never occurs; and on an ALLOWED batch nothing exposed the
+    // numerator at all, because the counter and the log line are both on the
+    // refusal path. Hence `breakerSpy`, and hence the assertions below pin
+    // MEASURED and WRITTEN as one pair: either number alone is green against
+    // the unfixed code.
+    //
+    // The fix is a refusal in `decideWithTarget` on the same `=== false`, not
+    // a change to the numerator. Dropping the term instead re-opens #2290 —
+    // measured directly: it turns `does NOT latch` above red, because
+    // already-disabled leavers accumulate on the candidate list forever.
+    // ─────────────────────────────────────────────────────────────────────
+    it('a mirror reporting nobody ACTIVE measures ZERO — and writes zero', async () => {
+        // The composed chain. A directory enumeration that returns nothing
+        // marks the whole connection deprovisioned (#2499), so every candidate
+        // arrives with the mirror saying disabled while the directory still
+        // reports them enabled.
+        const w = fakeWriter();
+        const candidates = Array.from({ length: 40 }, (_, i) =>
+            input({ linkId: `l-${i}`, externalUserId: `ext-${i}`, lastObservedEnabled: false }),
+        );
+
+        const r = await disableAccountsForLeaver(ctx, w, { candidates, population: 400 });
+
+        // The BREAKER is not what stops this, and that is the point: handed 0
+        // it allows the batch, exactly as `proposed <= 0` says it must.
+        expect(r.refused).toBeUndefined();
+        expect(recordBatchRefused).not.toHaveBeenCalled();
+
+        // Measured 0, wrote 0. On the unfixed code this is measured 0, wrote
+        // 40 — forty real accounts disabled with MAX_DISABLES_PER_RUN and the
+        // share rule both unable to fire.
+        expect({ measured: measuredProposed(), written: w.disabled.length }).toEqual({
+            measured: 0,
+            written: 0,
+        });
+        // Not silently dropped: every one is a named per-account decision an
+        // operator reads in the pass record.
+        expect(r.results).toHaveLength(40);
+        expect([...new Set(r.results.map((x) => x.outcome))]).toEqual(['REFUSED_UNMEASURED']);
+    });
+
+    it('a PARTLY stale mirror cannot write past the per-run cap', async () => {
+        // The version that does not need the whole directory to be wrong.
+        // Five candidates the mirror agrees about, fifty-five it does not:
+        // measured 5, which is under every cap, while the loop would write 60
+        // — past MAX_DISABLES_PER_RUN, which the breaker was never given the
+        // chance to apply.
+        const w = fakeWriter();
+        const counted = Array.from({ length: 5 }, (_, i) =>
+            input({ linkId: `l-ok-${i}`, externalUserId: `ok-${i}`, lastObservedEnabled: true }),
+        );
+        const diverged = Array.from({ length: 55 }, (_, i) =>
+            input({ linkId: `l-stale-${i}`, externalUserId: `stale-${i}`, lastObservedEnabled: false }),
+        );
+
+        const r = await disableAccountsForLeaver(ctx, w, {
+            candidates: [...counted, ...diverged],
+            population: 600,
+        });
+
+        expect(r.refused).toBeUndefined();
+        expect({ measured: measuredProposed(), written: w.disabled.length }).toEqual({
+            measured: 5,
+            written: 5,
+        });
+        // The invariant the pair above is an instance of, asserted as itself.
+        expect(w.disabled.length).toBeLessThanOrEqual(MAX_DISABLES_PER_RUN);
+        // WHICH five, not just how many: the ones the numerator counted.
+        expect(w.disabled).toEqual(counted.map((c) => c.externalUserId));
+    });
+
+    it('an ABSENT last-observed state is neither subtracted nor refused', async () => {
+        // The boundary between the two readings, which must stay identical.
+        // The numerator subtracts on `=== false` and the refusal fires on
+        // `=== false`, so a producer that never sets the field is counted AND
+        // written — it moves neither number, in either direction.
+        const w = fakeWriter();
+        const r = await disableAccountsForLeaver(ctx, w, {
+            candidates: [input({ linkId: 'l-0', externalUserId: 'ext-0' })],
+            population: 500,
+        });
+
+        expect({ measured: measuredProposed(), written: w.disabled }).toEqual({
+            measured: 1,
+            written: ['ext-0'],
+        });
+        expect(r.results[0].outcome).toBe('DISABLED');
+    });
+
+    it('leaves the reconciliation loop the field exists to protect untouched', async () => {
+        // The control for the fix. The refusal is reached ONLY when the live
+        // read says ENABLED; an account the mirror and the directory BOTH
+        // report disabled takes the `!state.enabled` branch instead — the one
+        // that settles a stranded INDETERMINATE journal row from live
+        // evidence, and the one `lastObservedEnabled`'s docblock forbids
+        // closing. Without this case, refusing every mirror-disabled candidate
+        // outright would also pass the two above.
+        db.identityWriteJournal.findFirst.mockResolvedValue({ id: 'j-old', outcome: 'INDETERMINATE' });
+        const w = fakeWriter({
+            readState: async () => ({ enabled: false, priorState: { accountEnabled: true } }),
+        });
+
+        const r = await disableAccountsForLeaver(ctx, w, {
+            candidates: [input({ externalUserId: 'a', lastObservedEnabled: false })],
+            population: 500,
+        });
+
+        expect(r.results[0].outcome).toBe('ALREADY_DISABLED');
+        expect(r.results[0].journalId).toBe('j-old');
+        expect(db.identityWriteJournal.updateMany.mock.calls[0][0].data.outcome).toBe('APPLIED');
+        expect(w.disabled).toEqual([]);
+    });
+
+    it('is LOUD about the account it left enabled — ERROR, and IT is told', async () => {
+        // Refusing is the CLOSED direction and it has a cost: a terminated
+        // person keeps access. That cost is only acceptable while somebody is
+        // told, so the log level and the mail are part of the fix rather than
+        // decoration.
+        const w = fakeWriter();
+        await disableAccountsForLeaver(ctx, w, {
+            candidates: [input({ externalUserId: 'a', lastObservedEnabled: false })],
+            population: 500,
+        });
+
+        expect((logger.error as jest.Mock).mock.calls.map((c) => c[0])).toContain(
+            'leaver disable refused: the directory contradicts the observation the breaker measured',
+        );
+        const types = db.notificationOutbox.create.mock.calls.map(
+            (c) => (c[0] as { data: { type: string } }).data.type,
+        );
+        expect(types).toContain('IDENTITY_LEAVER_NEEDS_ACTION');
+        expect(types).not.toContain('IDENTITY_LEAVER_DISABLED');
     });
 
     it('a plausible batch proceeds and returns one result per candidate', async () => {

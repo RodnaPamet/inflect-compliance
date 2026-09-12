@@ -650,6 +650,40 @@ executorRegistry.register('evidence-stale-review-sweep', async (payload) => {
     );
 });
 
+// ── notification-outbox-flush ────────────────────────────────────────
+//
+// The outbox's OWN drain, every ten minutes. It used to have none: the only
+// scheduled `processOutbox` call was the tail of `daily-evidence-expiry` at
+// 06:00, behind three unguarded awaits, so a notification enqueued at 05:00 by
+// the leaver pass waited an hour at best and ~25 hours if an unrelated evidence
+// sweep threw first. See the module header for why a ten-minute cadence cannot
+// double-send.
+//
+// `tenantId` and `limit` are NAMED rather than the payload spread: an absent
+// tenantId is the platform-wide drain and a present one is an operator
+// re-running a single tenant, and a payload forwarded opaquely is how a
+// tenant-scoped run silently becomes an all-tenant send.
+
+executorRegistry.register('notification-outbox-flush', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runNotificationOutboxFlush } = await import('./notification-outbox-flush');
+    const r = await runNotificationOutboxFlush({
+        tenantId: payload.tenantId,
+        limit: payload.limit,
+    });
+    // `scanned` is every row this pass took responsibility for, `actioned` the
+    // ones that left as mail. `skipped` covers both a tenant that has since
+    // switched notifications off and a row another pass had already claimed —
+    // neither is a failure, and counting either as one would make the ordinary
+    // overlap of two ticks look like an incident.
+    return makeResult(
+        'notification-outbox-flush', startedAt, startMs,
+        r.sent + r.failed + r.skipped, r.sent, r.skipped,
+        { sent: r.sent, failed: r.failed, skipped: r.skipped },
+    );
+});
+
 // ── notification-dispatch ────────────────────────────────────────────
 
 executorRegistry.register('notification-dispatch', async (payload) => {
@@ -1155,9 +1189,23 @@ executorRegistry.register('identity-leaver-pass', async (payload) => {
         startedAt,
         startMs,
         r.candidates,
-        // "Actioned" is deliberately the count of accounts a real run WOULD have
-        // disabled, which under the DRY_RUN clamp is always zero writes.
-        // Reporting candidates here would read as work performed.
+        // "Actioned" is the number of accounts this pass resolved to DISABLED.
+        // What that COST is depends on the tenant's own `identityLeaverMode`,
+        // which travels beside it as `details.mode`: at DRY_RUN the number is
+        // decisions recorded and nothing written to any directory, at AUTOMATIC
+        // it is that many live accounts actually disabled.
+        //
+        // This comment said "which under the DRY_RUN clamp is always zero
+        // writes" until now. That has been false since #2187 raised
+        // LEAVER_MAX_MODE to AUTOMATIC on 2026-08-30 — and on 2026-09-12 the
+        // clamp let through this product's first real directory disable, which
+        // this very expression counted. It also contradicted the registration
+        // comment fifteen lines above, which already says the mode is the
+        // tenant's and not a constant. A number an operator reads off a job
+        // result during an incident must never carry a stale promise that it
+        // cannot have touched anything.
+        //
+        // Reporting candidates here instead would read as work performed.
         r.counts.DISABLED ?? 0,
         r.candidates - (r.counts.DISABLED ?? 0),
         { mode: r.mode, refusal: r.refusal, counts: r.counts, population: r.population },

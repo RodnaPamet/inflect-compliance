@@ -160,6 +160,25 @@ const OUTCOME_VARIANT: Record<string, StatusBadgeVariant> = {
     REFUSED_MODE: 'warning',
     REFUSED_TARGET: 'warning',
     REFUSED_PROTECTED: 'warning',
+    // The live directory contradicts the stored observation the breaker
+    // measured. `warning`, beside the other two refusals, and NOT the default.
+    //
+    // THIS ENTRY IS THE WHOLE POINT AND IT WAS MISSING. The map is typed
+    // `Record<string, …>` and the render falls through `?? 'neutral'`, so a new
+    // outcome does not fail to compile — it draws the SAME GREY BADGE as
+    // ALREADY_DISABLED, the "nothing to do" outcome. Under the #2499 chain every
+    // candidate takes this refusal, so the page would have rendered a whole run
+    // of them in the colour that means nothing happened. The docblock above
+    // calls that "the quietest possible presentation of the loudest possible
+    // outcome, on the one page an operator watches during a proving run".
+    //
+    // The fall-through stays (a row from an older deployment must still render),
+    // so the lock is the coverage test in tests/rendered/leaver-pass-report —
+    // it derives the outcome list from DisableOutcome and fails on a map that
+    // has not kept up. A type would say the same thing, but importing the
+    // server usecase's union into a client component drags its module graph,
+    // which is the cost #2496 spent an extraction avoiding.
+    REFUSED_UNMEASURED: 'warning',
     FAILED: 'error',
     INDETERMINATE: 'error',
 };
