@@ -7,6 +7,7 @@
 import { formatDate } from '@/lib/format-date';
 import { coerceDeclaredBooleans } from '@/lib/integrations/config-form-values';
 import { useEffect, useState, useCallback } from 'react';
+import { apiErrorMessage } from '@/lib/api-error';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { Trash2, CheckCircle, XCircle, Loader2, Link2, Eye, EyeOff, RefreshCw, Activity, Pencil } from 'lucide-react';
 import Link from 'next/link';
@@ -205,7 +206,19 @@ export default function AdminIntegrationsPage() {
 
             if (!res.ok) {
                 const err = await res.json();
-                setMessage({ type: 'error', text: err.error || t('integrations.saveFailed') });
+                // `err.error` is an OBJECT — `{ code, message, requestId }` from
+                // toApiErrorResponse — and `message.text` is a string. Assigning it
+                // raw renders "[object Object]" at best, and React error #31 into
+                // the page error boundary at worst. apiErrorMessage exists for
+                // exactly this and its docblock says to always route through it;
+                // this site predated the convention.
+                //
+                // It matters here beyond tidiness: the refusal this PR adds names
+                // WHICH connection already holds the tenant's HRIS slot, and that
+                // sentence is the whole operator-facing value of a config-time
+                // refusal over a silent dispatcher collapse. Unrouted, the operator
+                // sees a shrug.
+                setMessage({ type: 'error', text: apiErrorMessage(err, t('integrations.saveFailed')) });
             } else {
                 const data = await res.json();
                 setMessage({
@@ -268,7 +281,7 @@ export default function AdminIntegrationsPage() {
                 type: data.valid ? 'success' : 'error',
                 text: data.valid
                     ? (isLive ? t('integrations.testVerified') : t('integrations.testShapeOnly'))
-                    : t('integrations.testFailed', { error: data.error || t('integrations.unknownError') }),
+                    : t('integrations.testFailed', { error: apiErrorMessage(data, t('integrations.unknownError')) }),
             });
             await fetchConnections();
         } catch {
