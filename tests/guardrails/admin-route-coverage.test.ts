@@ -138,6 +138,14 @@ const ADMIN_ONLY_ROUTES = [
     'admin/identity-write-policy/route.ts',
     'admin/identity-leaver-passes/route.ts',
     'admin/identity-account-protection/[accountId]/route.ts',
+    // The read half of the reversal story: what a directory write REPLACED.
+    // Two files because the index and the by-reference lookup return different
+    // things on purpose — the index never selects the captured prior state, so
+    // a page of a hundred rows cannot ship a hundred directory captures to
+    // answer "which row was it?". Both are OWNER-only, matched by one subtree
+    // rule in ROUTE_PERMISSIONS so they cannot drift apart.
+    'admin/identity-write-journal/route.ts',
+    'admin/identity-write-journal/[journalId]/route.ts',
     'admin/billing/plan/route.ts',
     'admin/rotate-dek/route.ts',
     'admin/sessions/route.ts',

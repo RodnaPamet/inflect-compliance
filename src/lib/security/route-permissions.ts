@@ -369,6 +369,28 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'weaker gate here than the handler enforces.',
     },
 
+    // ── JML write journal (what a disable replaced) ─────────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/identity-write-journal(\\/.*)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Reads what a directory write REPLACED — the prior state captured ' +
+            'before the account was disabled, plus the provider\'s own account ' +
+            'of how the write went. This is the surface the DISABLED ' +
+            'notification already sends operators to ("quote that reference to ' +
+            'your platform administrator, who can read the captured state"), ' +
+            'and until it existed that instruction named nothing. Same ' +
+            'OWNER-only key as the write policy the write ran under and as the ' +
+            'leaver-pass report that links here: the row says what was done to ' +
+            'a named person\'s account, and reading that is authority of the ' +
+            'same class as granting it. Subtree rule, so the by-reference ' +
+            'lookup at /<journalId> is gated identically to the index rather ' +
+            'than by a second rule that could drift. A SIBLING of ' +
+            'admin/identity-write-policy rather than nested under ' +
+            'admin/integrations, where first-match-wins would resolve it to ' +
+            'admin.manage and document a weaker gate than the handler enforces.',
+    },
+
     // ── Per-tenant DEK rotation (Epic F.2 follow-up) ────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/tenant-dek-rotation(\\/.*)?$`),

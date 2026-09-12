@@ -29,6 +29,8 @@ jest.mock('@/lib/observability/logger', () => ({
 import {
     beginWrite,
     findRestorableState,
+    getJournalWrite,
+    listJournalWrites,
     listUnsettledWrites,
 } from '@/app-layer/usecases/identity-write-journal';
 import { logger } from '@/lib/observability/logger';
@@ -182,5 +184,151 @@ describe('unsettled writes are findable', () => {
         expect(q.where.attemptedAt).toEqual({ lt: cutoff });
         expect(q.orderBy).toEqual({ attemptedAt: 'asc' });
         expect(typeof q.take).toBe('number');
+    });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────
+// THE READ HALF — what an operator holding a journal reference gets back.
+// ─────────────────────────────────────────────────────────────────────
+
+const ROW = {
+    id: 'j1',
+    linkId: 'link-1',
+    provider: 'entra-id',
+    action: 'DISABLE_ACCOUNT',
+    mode: 'AUTOMATIC',
+    outcome: 'APPLIED',
+    attemptedAt: new Date('2026-09-12T05:00:00.000Z'),
+    settledAt: new Date('2026-09-12T05:00:02.000Z'),
+    actorUserId: null,
+    priorStateJson: { accountEnabled: true, userAccountControl: 512 },
+    detail: 'Entra accepted the change.',
+};
+
+describe('reading one write back by its reference', () => {
+    it('returns the CAPTURED PRIOR STATE — the thing a restore reads', async () => {
+        // The mail tells IT to quote the reference to somebody who can "read
+        // the captured state and re-apply it". For an on-prem account the
+        // captured `userAccountControl` is frequently the ONLY surviving copy
+        // of what the account was — its other bits are destroyed the instant
+        // the disable lands. A read surface that withheld it would leave the
+        // journal write-only, which is the state that made the mail's
+        // instruction unfollowable in the first place.
+        db.identityWriteJournal.findFirst.mockResolvedValue(ROW);
+
+        const write = await getJournalWrite(ctx, 'j1');
+
+        expect(write?.priorState).toEqual({ accountEnabled: true, userAccountControl: 512 });
+        expect(write?.journalId).toBe('j1');
+        expect(write?.outcome).toBe('APPLIED');
+    });
+
+    it('SELECTS `detail`, the manifest-encrypted field, on this read alone', async () => {
+        // A deliberate decision, argued in full on the usecase. The manifest
+        // governs REST, not audience; on a FAILED or INDETERMINATE row `detail`
+        // IS the answer the operator came for, because the outcome alone says
+        // only "we do not know whether your directory changed".
+        //
+        // Asserted on the QUERY as well as the return value: the middleware
+        // decrypts whatever is selected, so leaving the column out of the
+        // `select` is exactly how this field would silently stop arriving.
+        db.identityWriteJournal.findFirst.mockResolvedValue(ROW);
+
+        const write = await getJournalWrite(ctx, 'j1');
+
+        expect(db.identityWriteJournal.findFirst.mock.calls[0][0].select.detail).toBe(true);
+        expect(write?.detail).toBe('Entra accepted the change.');
+    });
+
+    it('never returns the raw directory identifier', async () => {
+        // This subsystem does not hand `externalUserId` out of the module —
+        // every surface that has ever received one eventually persisted it
+        // somewhere unencrypted. `linkId` does the same job and resolves to a
+        // person only through an authorised read of the roster.
+        db.identityWriteJournal.findFirst.mockResolvedValue({ ...ROW, externalUserId: 'ext-1' });
+
+        const write = await getJournalWrite(ctx, 'j1');
+
+        expect(db.identityWriteJournal.findFirst.mock.calls[0][0].select.externalUserId)
+            .toBeUndefined();
+        expect(JSON.stringify(write)).not.toContain('ext-1');
+        // Paired positive: the safe handle IS there, so the absence above is
+        // about the identifier rather than about an empty result.
+        expect(write?.linkId).toBe('link-1');
+    });
+
+    it('scopes the lookup to the tenant as well as to the id', async () => {
+        // RLS is the enforcing layer. This predicate is the one that still
+        // holds if the same query is ever run from a context where it is not —
+        // and without it a reference pasted from another tenant's mail would be
+        // a cross-tenant read rather than a miss.
+        db.identityWriteJournal.findFirst.mockResolvedValue(ROW);
+
+        await getJournalWrite(ctx, 'j1');
+
+        expect(db.identityWriteJournal.findFirst.mock.calls[0][0].where).toEqual({
+            id: 'j1',
+            tenantId: 't1',
+        });
+    });
+
+    it('an unknown reference is null, not a throw', async () => {
+        db.identityWriteJournal.findFirst.mockResolvedValue(null);
+        expect(await getJournalWrite(ctx, 'no-such-ref')).toBeNull();
+    });
+
+    it('refuses an EMPTY reference without querying at all', async () => {
+        // `findFirst({ where: { id: '' } })` is a lookup that can only miss
+        // today, but it is one predicate away from returning the tenant's
+        // newest row. Refusing here makes the miss explicit rather than lucky.
+        expect(await getJournalWrite(ctx, '   ')).toBeNull();
+        expect(db.identityWriteJournal.findFirst).not.toHaveBeenCalled();
+    });
+});
+
+describe('the journal index', () => {
+    it('is BOUNDED and newest-first', async () => {
+        await listJournalWrites(ctx);
+        const q = db.identityWriteJournal.findMany.mock.calls[0][0];
+        expect(q.where.tenantId).toBe('t1');
+        expect(q.orderBy).toEqual({ attemptedAt: 'desc' });
+        expect(typeof q.take).toBe('number');
+        expect(q.take).toBeLessThanOrEqual(100);
+    });
+
+    it('CLAMPS a caller asking for more than the page ceiling', async () => {
+        // The ceiling belongs to the function, not to the request: a query
+        // string is not permission to read a tenant's entire write history in
+        // one response.
+        await listJournalWrites(ctx, { limit: 100000 });
+        expect(db.identityWriteJournal.findMany.mock.calls[0][0].take).toBe(100);
+    });
+
+    it('never selects the captured state or the encrypted detail', async () => {
+        // An index exists to find the row. Selecting `priorStateJson` here
+        // would ship a hundred directory captures to answer "which row was
+        // it?", and selecting `detail` would decrypt a hundred values nobody
+        // reads — the same shape `listUnsettledWrites` refuses one function up.
+        await listJournalWrites(ctx);
+        const select = db.identityWriteJournal.findMany.mock.calls[0][0].select;
+        expect(select.priorStateJson).toBeUndefined();
+        expect(select.detail).toBeUndefined();
+        expect(select.externalUserId).toBeUndefined();
+        // Paired positive: the index columns ARE selected, so the absences
+        // above are about those three fields and not about an empty select.
+        expect(select.id).toBe(true);
+        expect(select.outcome).toBe(true);
+    });
+
+    it('filters by provider only when asked', async () => {
+        // A tenant may write to more than one directory, and "what have we done
+        // to this person" spans all of them — so the filter is optional rather
+        // than a required argument that would quietly narrow every answer.
+        await listJournalWrites(ctx);
+        expect(db.identityWriteJournal.findMany.mock.calls[0][0].where.provider).toBeUndefined();
+
+        await listJournalWrites(ctx, { provider: 'entra-id' });
+        expect(db.identityWriteJournal.findMany.mock.calls[1][0].where.provider).toBe('entra-id');
     });
 });
