@@ -45,6 +45,14 @@ interface DashboardEntry {
 }
 
 const DASHBOARDS: DashboardEntry[] = [
+    {
+        file: 'src/app/t/[tenantSlug]/(app)/agents/reports/ReportsClient.tsx',
+        adopted: true,
+        note:
+            'AGENTIC UI 4/4 — the assessor pack. A multi-section composite of ' +
+            'five reports rather than a viewport-clamped list, so ListPageShell ' +
+            'is the wrong shell (admin/integrations is the exemption precedent).',
+    },
     // ── Adopted ──
     {
         file: "src/app/t/[tenantSlug]/(app)/dashboard/DashboardClient.tsx",

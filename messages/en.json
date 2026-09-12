@@ -7877,6 +7877,20 @@
   },
   "agents": {
     "reports": {
+      "crumb": "Reports",
+      "title": "Agent governance reports",
+      "description": "The answer to “show me your agent governance”, derived live from the register, assessments, approvals and the stop control. Nothing here is stored or cached.",
+      "stampTenant": "Workspace",
+      "stampGenerated": "Figures computed",
+      "stampPopulation": "Population",
+      "stampPopulationValue": "{count} registered agent(s)",
+      "notEnforcingTitle": "These figures describe a register that is not being enforced",
+      "notEnforcingBody": "Agent registration is switched off for this workspace, so the tool boundary refuses nothing on the strength of what is below. Every figure is still true about what is RECORDED; none of it is true about what is ENFORCED. Read the pack with that in mind, and turn enforcement on from Security settings before treating it as assurance.",
+      "inventoryHeading": "The register",
+      "emptyTitle": "No agents are registered",
+      "emptyDesc": "That is a complete answer, not a missing one: nothing autonomous is recorded as acting in this workspace. There is nothing to assess until an agent is registered.",
+      "truncated": "This report hit its row cap, so the figures above are over the most recent rows rather than over everything. Treat them as a floor.",
+      "legacyPlaceholder": "A pre-register placeholder agent is present. It is excluded from every figure above and named here rather than dropped, because it means some proposals have not been attributed to a registered agent.",
       "definitionAria": "How {label} is counted",
       "definitionMissing": "No definition was published for this figure, so it cannot be defended. Report it to whoever maintains the metric registry rather than quoting it.",
       "moment": "Measured",
@@ -8024,6 +8038,7 @@
       }
     },
     "views": {
+      "reports": "Reports",
       "groupOperate": "Operate",
       "groupAssurance": "Assurance",
       "proposals": "Proposals",

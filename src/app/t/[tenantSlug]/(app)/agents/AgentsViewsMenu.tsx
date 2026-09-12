@@ -60,7 +60,8 @@ export type AgentsViewRoute =
     | 'runs'
     | 'receipts'
     | 'quarantine'
-    | 'review-quality';
+    | 'review-quality'
+    | 'reports';
 
 export interface AgentsViewsMenuProps {
     current: AgentsViewRoute;
@@ -135,6 +136,13 @@ export function AgentsViewsMenu({
                             icon: <ShieldSlash className="size-4" />,
                             href: href('/agents/quarantine'),
                             selected: current === 'quarantine',
+                        },
+                        canInvestigate && {
+                            id: 'agents-view-reports',
+                            label: t('views.reports'),
+                            icon: <Gauge6 className="size-4" />,
+                            href: href('/agents/reports'),
+                            selected: current === 'reports',
                         },
                         canInvestigate && {
                             id: 'agents-view-review-quality',
