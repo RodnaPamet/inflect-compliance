@@ -1010,6 +1010,25 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'Linking a BIA to a control as continuity evidence — the edge that ' +
             'makes the control satisfy NIS2 Art.21(2)(c) in the coverage view.',
     },
+    // ── The employee manager field (#2492) ──────────────────────────
+    // `Employee.managerEmployeeId` had one writer, the HRIS sync, so a tenant
+    // with no BambooHR/Workday feed could not give anyone a manager — and the
+    // leaver mail therefore had no recipient on every disable. This is the
+    // route that fixes that, and it is gated on the same key that creates the
+    // employee row. Scoped to PUT and to the `/manager` leaf deliberately: the
+    // /personnel collection route one level up is NOT covered by this map, and
+    // widening this pattern to `personnel(\/.*)?` would claim coverage over
+    // its `personnel.view` GET without gating it.
+    {
+        path: new RegExp(`^${T}\\/personnel\\/[^/]+\\/manager$`),
+        methods: ['PUT'],
+        permission: 'personnel.manage',
+        note:
+            'Setting or clearing one employee\'s manager — the same key ' +
+            'createEmployee requires (OWNER + ADMIN), so the caller set is ' +
+            'exactly the one that can already add the person. `status` is ' +
+            'unreachable from this route by construction.',
+    },
     {
         path: new RegExp(`^${T}\\/processes\\/[^/]+\\/snapshots\\/[^/]+\\/restore$`),
         methods: ['POST'],

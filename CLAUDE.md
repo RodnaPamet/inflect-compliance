@@ -919,7 +919,7 @@ the wrong sequence.
 | --- | --- |
 | `ConnectedIdentityAccount` | `identity-sync.ts` (upsert + the deprovision `updateMany`) and `identity-account-protection.ts` (the never-offboard flag) — nothing else |
 | `IdentityAccountLink` | `identity-account-link.ts::reconcileIdentityAccountLinks`, whose ONLY caller is `reconcileLinksAfterSync` inside `runIdentitySyncJob` |
-| `Employee` | `personnel.ts::createEmployee` (MANUAL) and `hris-sync.ts` (HRIS). There is **no update path** for an employee's status outside HRIS sync |
+| `Employee` | `personnel.ts::createEmployee` (MANUAL), `personnel.ts::setEmployeeManager` (the `managerEmployeeId` COLUMN only, #2492) and `hris-sync.ts` (HRIS). There is still **no update path** for an employee's status outside HRIS sync — the manager path cannot reach that column, and `tests/guards/employee-status-single-write-seam.test.ts` fails if it ever does, or if a third file starts writing an `Employee` row at all |
 
 **The link reconcile lives in the JOB, not the usecase.** `runIdentitySync` (which
 the manual "Sync now" route calls) enumerates the directory; `runIdentitySyncJob`
