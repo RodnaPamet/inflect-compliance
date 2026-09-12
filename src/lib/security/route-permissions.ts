@@ -354,6 +354,28 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'admin.manage.',
     },
 
+    // ── JML leaver pass — the off-schedule RE-RUN trigger ──────────
+    //
+    // MUST PRECEDE the report rule below. First-match-wins, and the report's
+    // subtree regex already covers `/run`; an exact-anchored rule here keeps
+    // the only endpoint in this subtree that WRITES to a customer's directory
+    // from inheriting whatever key the read surface is later given.
+    {
+        path: new RegExp(`^${T}\\/admin\\/identity-leaver-passes\\/run$`),
+        methods: ['POST'],
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Fires a leaver pass NOW, off the 05:00 schedule — the direction ' +
+            'that DISABLES accounts in the customer\'s own directory. Same ' +
+            'OWNER-only key as the write policy that decides whether such a ' +
+            'write is permitted at all, because being able to fire the pass ' +
+            'and being able to authorise it are one authority. It has its own ' +
+            'rule rather than riding the identity-leaver-passes subtree rule ' +
+            'immediately below: that one gates a REPORT, and an edit softening ' +
+            'it to admin.manage on the grounds that reading is not writing ' +
+            'would otherwise hand every ADMIN an off-schedule directory write.',
+    },
+
     // ── JML leaver pass reports (the seven-day observation record) ──
     {
         path: new RegExp(`^${T}\\/admin\\/identity-leaver-passes(\\/.*)?$`),

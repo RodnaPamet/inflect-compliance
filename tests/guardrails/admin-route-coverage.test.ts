@@ -137,6 +137,12 @@ const ADMIN_ONLY_ROUTES = [
     'admin/av-rescan/route.ts',
     'admin/identity-write-policy/route.ts',
     'admin/identity-leaver-passes/route.ts',
+    // The off-schedule RE-RUN trigger. Its sibling above is a read; this is
+    // the only endpoint in that subtree that makes the product write to a
+    // customer's directory, so it carries its OWN rule in ROUTE_PERMISSIONS
+    // ordered ahead of the subtree one — a later softening of the report's
+    // gate must not reach the write trigger by inheritance.
+    'admin/identity-leaver-passes/run/route.ts',
     'admin/identity-account-protection/[accountId]/route.ts',
     // The read half of the reversal story: what a directory write REPLACED.
     // Two files because the index and the by-reference lookup return different
