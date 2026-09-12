@@ -81,8 +81,10 @@ the leaver's matching rule, which is the same key by way of `emailKey`
 `provider` (`:236`), `selfAccountIds?` (`:263`), `readState` (`:265`), `disable` (`:267`) and
 `preflight?` (`:307`). Its docblock calls it *"Deliberately tiny — every decision that can be made
 without touching the network is made above this line"* (`:232-234`). Nothing in the repo can create
-a user, mint a credential, or assign a group: `grep -rn "DirectoryProvisioner\|createAccount\|provisionAccount" src/`
-returns nothing.
+a user, mint a credential, or assign a group. `grep -rn DirectoryProvisioner src/` is empty;
+widening it to `createAccount\|provisionAccount` returns exactly one hit, and it is a COMMENT
+saying so — *"The joiner has no implementation at all — no createAccount on either"*
+(`.../admin/identity-write-policy/route.ts:87`).
 
 The vocabulary, at least, was anticipated. `IdentityWriteAction` already lists `CREATE_ACCOUNT` and
 `ASSIGN_GROUP` beside the three disable-side verbs (`identity-write-journal.ts:37-42`). The missing
@@ -98,8 +100,8 @@ data:
 - `hris/index.ts:225-228` — BambooHR's custom-report endpoint, which is a **read expressed as a
   POST**: the body is a `fields` list and the response is the roster.
 
-There is no `PUT`, `PATCH` or `DELETE` in `providers/workday/**` or `providers/hris/**`
-(`grep -rn "method: *'\(POST\|PUT\|PATCH\|DELETE\)'" src/app-layer/integrations/providers/`). **The
+There is no `PUT`, `PATCH` or `DELETE` in either — `grep -rnE "method: *'(POST|PUT|PATCH|DELETE)'"`
+over `providers/workday/` and `providers/hris/` returns those two lines and nothing else. **The
 product has never written a byte of HR data to an HRIS.** That is a new integration *direction* — write
 scopes, a different error taxonomy, idempotency against a system we do not control, and credentials
 whose blast radius is somebody's HR record — not a new endpoint on an existing one.
@@ -199,7 +201,7 @@ missing capabilities above priced into the first of those, not the second.
 ### Evidence this document previously got wrong
 
 Kept as a list rather than silently corrected, because each of these was cited *as support* and a
-reader who remembers the old text needs to know which way it moved. **In all four cases the
+reader who remembers the old text needs to know which way it moved. **In all five cases the
 argument survived and only the evidence was false** — which is exactly the failure mode that makes a
 design doc dangerous rather than merely stale.
 
@@ -209,6 +211,7 @@ design doc dangerous rather than merely stale.
 | `EntraIdDirectoryWriter.preflight()` "has no caller and is unreachable through the seam anyway" | Both false. `preflight?()` is a declared member of `DirectoryWriter` (`identity-disable-account.ts:307`) and is called at `:1337-1339`; the Entra implementation is at `entra-id/writer.ts:836`, and its docblock at `:802-812` names `disableAccountsForLeaver` as the caller and the interface as where the contract lives. | **Partly.** It is now a precedent, not merely "a shape to adopt". What does NOT transfer is the failure direction: `preflight` proceeds on an unsure result and only a PROVEN refusal shortcuts the batch (`identity-disable-account.ts:295-305`). A joiner batch probe must decide its own direction rather than inherit that one. |
 | `ALREADY_DISABLED` "precedes the write-target rail", cited to justify the joiner *inverting* the leaver's ordering | Inverted. The gates today run 0 self-lockout (`:579`), 1 ladder (`:639`), 2 write-target (`:656`, `resolveWriteTarget` at `:686`), 3 `readState` (`:772`, `:795`) → `ALREADY_DISABLED` (`:871-878`). The already-done check is now LAST of the four. | **Yes, but it is no longer an inversion.** The joiner checking `ALREADY_PROVISIONED` last now AGREES with the leaver. Keep the rule; drop the contrast. |
 | "05:00 holds three dispatchers and 06:00 holds three too, so occupancy distinguishes nothing" | The counts moved. 05:00 holds three jobs (`schedules.ts:128`, `:211`, `:366`) of which one is a dispatcher; 06:00 holds **four** (`:144`, `:193`, `:217`, `:229`). | **Yes.** Occupancy still distinguishes nothing — and the count is exactly the kind of claim that rots, so the [slot argument](#trigger-schedule-and-the-day-one-constraint) rests on ordering instead. |
+| "there is no tenant timezone anywhere in the schema (verified: zero `timezone` columns)" | False as written. `ControlTestPlan.scheduleTimezone` (`prisma/schema/controls.prisma:349`) is a `timezone` column. What IS true is the narrower claim the argument actually needs: neither `Tenant` nor `TenantSecuritySettings` carries one. | **Yes, once narrowed.** A control-test schedule's zone is unreachable from the joiner path, so decision 4 still has no tenant zone to fire in. See [the timezone question](#the-timezone-question-decision-4-cannot-be-honoured-without). |
 
 ---
 
@@ -952,9 +955,12 @@ link freshness because freshness *is* its completeness gate; the joiner asserts 
 #### The timezone question decision 4 cannot be honoured without
 
 `Employee.startDate` is a bare `DateTime` (`personnel.prisma:241`) written from the vendor's
-`hireDate` (`workday/roster.ts:105`), and **there is no tenant timezone anywhere in the schema**
-(re-verified: `grep -n timezone prisma/schema/*.prisma` returns nothing). The only zone in the system
-is the deployment-wide `NOTIFICATIONS_TZ`.
+`hireDate` (`workday/roster.ts:105`), and **no tenant-level timezone exists**: neither `Tenant` nor
+`TenantSecuritySettings` carries one. State that precisely rather than as "no timezone anywhere in
+the schema", which is what the previous revision said and is false — `ControlTestPlan.scheduleTimezone`
+(`prisma/schema/controls.prisma:349`) is a timezone column, belonging to control test scheduling and
+reachable from nothing on this path. Beyond it the only zone in the system is the deployment-wide
+`NOTIFICATIONS_TZ`.
 
 So one UTC firing hour means a US starter is provisioned the evening before, locally, while an APAC
 starter is provisioned mid-afternoon on day one. **Decision 4 said fire early in the day; the design
