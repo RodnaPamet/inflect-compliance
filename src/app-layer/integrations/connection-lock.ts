@@ -61,10 +61,36 @@ import { recordSyncLock } from '@/lib/observability/integration-metrics';
 /**
  * How long a held lock stays valid before another run may steal it.
  *
- * 30 minutes: comfortably longer than any observed sync (the longest is a
- * 5000-account directory enumeration at a 120 s per-page budget), and far
- * shorter than the tightest schedule interval (4 h), so a lock left behind by a
- * killed worker is gone before the next scheduled run.
+ * ═══ THE LOWER BOUND IS NOW DERIVED, AND USED TO BE A GHOST ═══
+ *
+ * This comment justified the 30 minutes against "a 5000-account directory
+ * enumeration at a 120 s per-page budget" for a year. No constant in the tree
+ * carries 120 s. It was `ENUMERATION_TIMEOUT_MS` in `bounded-fetch.ts`: added
+ * by #1950, cited here by #1958, and DELETED by #1970 for never having had a
+ * consumer. The justification outlived the constant, so the lease was sized
+ * against a per-page budget nothing enforced — which is how a read whose real
+ * worst case is longer than the lease went unnoticed until #2508.
+ *
+ * What it is sized against instead: `ROSTER_READ_PHASE_BUDGET_MS +
+ * SYNC_WRITE_PHASE_BUDGET_MS` from `integrations/sync-transaction.ts`, which
+ * `tests/guards/sync-transaction-budget-composes.test.ts` asserts fits inside
+ * this value. Neither number is restated here, deliberately: a restated number
+ * drifts silently, which is the defect described above.
+ *
+ * SCOPE, because the composition is not universal. It covers the HRIS roster
+ * read, which is the one that takes a read deadline. identity-sync's
+ * enumeration is not bounded by it — its per-user enrichment fan-out is a
+ * different derivation — so for identity connections this TTL remains a
+ * plausible-run estimate rather than a composed bound.
+ *
+ * ═══ THE UPPER BOUND IS UNCHANGED AND INDEPENDENT ═══
+ *
+ * Far shorter than the tightest schedule interval (4 h for SharePoint, 24 h
+ * for the daily syncs), so a lock left behind by a killed worker is gone
+ * before the next scheduled run. That is also why raising the TTL is the worst
+ * of the available fixes: this value IS the reaper's threshold, so widening it
+ * to cover a slow read lengthens exactly the window in which a wedged
+ * connection blocks its own retry.
  */
 export const SYNC_LOCK_TTL_MS = 30 * 60_000;
 

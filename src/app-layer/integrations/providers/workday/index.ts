@@ -178,7 +178,15 @@ export class WorkdayProvider implements ScheduledCheckProvider, HrisSyncProvider
         });
 
         const read = this.deps.readRoster ?? readWorkdayRoster;
-        return read(roster, accessToken, resumeFrom, { fetchImpl: this.deps.fetchImpl });
+        // The deadline is forwarded, not recomputed here. It measures the
+        // RUN's read phase, which started before the token exchange above —
+        // starting a fresh ten minutes at this line would let a slow token
+        // exchange push the read past the lock lease it is meant to fit
+        // inside (#2508).
+        return read(roster, accessToken, resumeFrom, {
+            fetchImpl: this.deps.fetchImpl,
+            readDeadlineAt: deps.readDeadlineAt,
+        });
     }
 
     /**

@@ -35,6 +35,7 @@ import { logger } from '@/lib/observability/logger';
 import { recordSyncTruncated } from '@/lib/observability/integration-metrics';
 import {
     chunk,
+    ROSTER_READ_DEADLINE_MS,
     SYNC_BOOKKEEPING_TX_OPTIONS,
     SYNC_UPSERT_CHUNK_SIZE,
     SYNC_WRITE_TX_OPTIONS,
@@ -141,14 +142,23 @@ export async function runHrisSync(input: {
     // what makes a multi-run pass reconcile correctly.
     const passStartedAt = conn.syncPassStartedAt ?? now;
 
-    // ── 2. The provider read — outside every transaction ─────────────────
+    // ── 2. The provider read — outside every transaction, and on a clock ──
     // For Workday this is up to ten sequential HTTPS fetches, each budgeted at
     // 30 s and each able to absorb a 60 s Retry-After sleep in-process. Held
     // inside an interactive transaction it pinned a Postgres backend — and,
     // through PgBouncer, a pooled server connection — for all of that, and blew
-    // the 5 s default long before the read returned.
+    // the 5 s default long before the read returned (#2501).
+    //
+    // #2508 added the clock. Taking the read out of the transaction removed
+    // the budget it was blowing and left it bounded by nothing at all, which
+    // is a problem one layer up: the run holds this connection's lock lease,
+    // and a read that outlasts the lease lets a second run start alongside it.
+    // `readDeadlineAt` is measured from `start` — BEFORE the provider's own
+    // token exchange, so everything the read phase spends is inside it.
+    const readDeadlineAt = start + ROSTER_READ_DEADLINE_MS;
     try {
         const res = await resolved.listEmployees({ ...config, ...secrets }, conn.syncCursor, {
+            readDeadlineAt,
             // Persist a rotated credential the MOMENT it rotates, not when
             // the read returns. An OAuth2 provider invalidates the old
             // refresh token on rotation, so if the roster read throws

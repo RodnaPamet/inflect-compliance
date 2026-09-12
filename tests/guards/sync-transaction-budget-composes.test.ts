@@ -18,10 +18,27 @@
  * is where the arithmetic lives instead, so raising the chunk size, the
  * per-run row ceiling or a timeout fails CI rather than quietly eating the
  * lease.
+ *
+ * ═══ #2508 CLOSED THE OTHER HALF ═══
+ *
+ * #2501 composed the WRITE phase and said plainly that the READ phase was
+ * still bounded by nothing. It is now: the roster read carries a wall-clock
+ * deadline, and the second describe block below asserts read + write fits
+ * inside the lease.
+ *
+ * The lock comment's "120 s per-page budget" has also gone, and its provenance
+ * is worth recording because it is the exact failure this file exists to
+ * prevent: that number was `ENUMERATION_TIMEOUT_MS`, added to bounded-fetch.ts
+ * by #1950, cited by the lock in #1958, and DELETED by #1970 for having no
+ * consumer. A prose justification outlived the constant it rested on, and
+ * nothing failed.
  */
 import {
+    MAX_HTTP_REQUEST_MS,
     MAX_SYNC_ROWS_PER_RUN,
     MAX_SYNC_WRITE_CHUNKS,
+    ROSTER_READ_DEADLINE_MS,
+    ROSTER_READ_PHASE_BUDGET_MS,
     SYNC_BOOKKEEPING_TX_TIMEOUT_MS,
     SYNC_UPSERT_CHUNK_SIZE,
     SYNC_WRITE_PHASE_BUDGET_MS,
@@ -32,6 +49,16 @@ import {
     chunk,
 } from '@/app-layer/integrations/sync-transaction';
 import { SYNC_LOCK_TTL_MS } from '@/app-layer/integrations/connection-lock';
+import { DEFAULT_TIMEOUT_MS } from '@/app-layer/integrations/bounded-fetch';
+import {
+    MAX_ABSORBED_RETRY_AFTER_MS,
+    MAX_HTTP_ATTEMPTS,
+} from '@/app-layer/integrations/http-resilience';
+import {
+    WORKDAY_MAX_PAGES_PER_RUN,
+    WORKDAY_MAX_PER_RUN,
+    WORKDAY_PAGE_SIZE,
+} from '@/app-layer/integrations/providers/workday/roster';
 
 /**
  * Prisma 7.10.0's interactive-transaction default, restated here as the number
@@ -42,15 +69,10 @@ const PRISMA_DEFAULT_TX_TIMEOUT_MS = 5_000;
 
 describe('the write phase fits inside the lease it runs under', () => {
     it('leaves at least half the lock lease for the provider read', () => {
-        // NECESSARY, NOT SUFFICIENT, and the difference is stated rather than
-        // implied. This bounds the WRITE phase only. The roster read's own
-        // worst case — MAX_HTTP_ATTEMPTS × (request timeout + absorbed
-        // Retry-After), across up to ten sequential pages — is larger than the
-        // whole lease on its own, and #2501 deliberately did not change it;
-        // #2508 carries that half, including the lock comment that cites a
-        // 120 s per-page budget no constant in the tree actually has.
-        // What this asserts is that the half of the run this change DOES
-        // govern cannot be the half that overruns the lease.
+        // NECESSARY, NOT SUFFICIENT, and the difference is still worth
+        // stating: this bounds the WRITE phase alone. The read phase is
+        // bounded by the block below, and neither assertion implies the other
+        // — this one would stay green if the read deadline were deleted.
         expect(SYNC_WRITE_PHASE_BUDGET_MS).toBeLessThanOrEqual(SYNC_LOCK_TTL_MS / 2);
     });
 
@@ -70,6 +92,79 @@ describe('the write phase fits inside the lease it runs under', () => {
         // either would make the arithmetic above describe a run that cannot
         // happen.
         expect(MAX_SYNC_ROWS_PER_RUN).toBeGreaterThanOrEqual(10_000);
+    });
+});
+
+describe('the READ phase fits inside the lease too (#2508)', () => {
+    /**
+     * What the read would cost with no deadline: every page burning a full
+     * retry ladder. Computed here rather than exported from source, because it
+     * is the DIAGNOSIS — the number the deadline exists to replace — and a
+     * constant nothing consumes is the shape #1970 deleted.
+     */
+    const UNBOUNDED_ROSTER_READ_MS = WORKDAY_MAX_PAGES_PER_RUN * MAX_HTTP_REQUEST_MS;
+
+    it('composes read + write against the lease, which is the whole ask', () => {
+        // The assertion #2508 was opened for. Whichever of the four numbers
+        // has to move to keep this true is then somebody's decision.
+        expect(ROSTER_READ_PHASE_BUDGET_MS + SYNC_WRITE_PHASE_BUDGET_MS)
+            .toBeLessThanOrEqual(SYNC_LOCK_TTL_MS);
+    });
+
+    it('derives one request from the three layers that bound it', () => {
+        expect(MAX_HTTP_REQUEST_MS).toBe(
+            MAX_HTTP_ATTEMPTS * DEFAULT_TIMEOUT_MS
+                + (MAX_HTTP_ATTEMPTS - 1) * MAX_ABSORBED_RETRY_AFTER_MS,
+        );
+    });
+
+    it('counts one FEWER sleep than attempt, because the last attempt throws', () => {
+        // #2508's own description composed this as attempts × (timeout +
+        // Retry-After) and came out 60 s per request high. `createResilientFetch`
+        // throws on the final attempt instead of sleeping after it, so the
+        // naive product is a strict over-estimate — asserted as a strict
+        // inequality so re-deriving it the naive way fails here rather than
+        // quietly inflating the read budget.
+        expect(MAX_HTTP_REQUEST_MS).toBeLessThan(
+            MAX_HTTP_ATTEMPTS * (DEFAULT_TIMEOUT_MS + MAX_ABSORBED_RETRY_AFTER_MS),
+        );
+    });
+
+    it('allows exactly one in-flight request to finish after the deadline', () => {
+        // The deadline is checked BETWEEN pages, never mid-request, so the
+        // enforced ceiling is the deadline plus one full request. Omitting
+        // that overshoot would make the composition above a claim the reader
+        // does not honour.
+        expect(ROSTER_READ_PHASE_BUDGET_MS).toBe(ROSTER_READ_DEADLINE_MS + MAX_HTTP_REQUEST_MS);
+    });
+
+    it('leaves room INSIDE the deadline for the pre-paging token exchange', () => {
+        // Adding MAX_HTTP_REQUEST_MS once, rather than twice, holds only
+        // because Workday's OAuth token exchange — issued before the paging
+        // loop starts — always completes before the deadline. Break this and
+        // a run could spend a request reaching the loop and another leaving
+        // it, putting the real worst case outside the budget above. It is
+        // also what guarantees every run attempts at least one page.
+        expect(MAX_HTTP_REQUEST_MS).toBeLessThanOrEqual(ROSTER_READ_DEADLINE_MS);
+    });
+
+    it('the deadline is not vacuous — the unbounded read really did overrun', () => {
+        // Without this, a deadline set above the unbounded worst case would
+        // satisfy every assertion here while bounding nothing at all. Both
+        // halves are asserted: the read WAS longer than the lease, and the
+        // deadline IS shorter than the read.
+        expect(UNBOUNDED_ROSTER_READ_MS).toBeGreaterThan(SYNC_LOCK_TTL_MS);
+        expect(ROSTER_READ_DEADLINE_MS).toBeLessThan(UNBOUNDED_ROSTER_READ_MS);
+    });
+
+    it('derives the page count from the row cap rather than restating it', () => {
+        expect(WORKDAY_MAX_PAGES_PER_RUN).toBe(Math.ceil(WORKDAY_MAX_PER_RUN / WORKDAY_PAGE_SIZE));
+        // Positive control on the population: a zero page count would make
+        // UNBOUNDED_ROSTER_READ_MS zero and the non-vacuity test above would
+        // fail loudly rather than silently — but assert it anyway, because a
+        // ONE-page cap would keep that test passing while describing a
+        // provider that never pages.
+        expect(WORKDAY_MAX_PAGES_PER_RUN).toBeGreaterThan(1);
     });
 });
 
