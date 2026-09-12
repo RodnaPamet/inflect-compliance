@@ -2,11 +2,18 @@
  * The leaver pass — every gate in front of the batch, and the clamp.
  *
  * The two assertions that carry the weight:
- *   - a tenant configured at AUTOMATIC gets NOTHING, because it reached that
- *     rung by elapsed days and no pass has ever run;
+ *   - every rung the ladder can reach RUNS, including AUTOMATIC. The clamp is a
+ *     ceiling at the top rung, not a permission, and what keeps a tenant off
+ *     AUTOMATIC is the ladder itself (DISABLED by default, one rung per widen,
+ *     DRY_RUN_MIN_DAYS of dwell);
  *   - an empty candidate set with terminated workers present is reported as its
  *     own refusal, not as a quiet success — a leaver pass that disables nobody
  *     and says "done" is the failure this whole subsystem is most prone to.
+ *
+ * This header used to say "a tenant configured at AUTOMATIC gets NOTHING …
+ * no pass has ever run". #2187 falsified the first half on 2026-08-30 and the
+ * 05:00 pass on 2026-09-12 falsified the second, by disabling a live directory
+ * account. Corrected in #2487 along with the rest of that sweep.
  */
 jest.mock('@/lib/observability/logger', () => ({
     logger: { trace: jest.fn(), debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), fatal: jest.fn() },
@@ -46,6 +53,7 @@ jest.mock('@/lib/observability/integration-metrics', () => ({
 
 import {
     runIdentityLeaverPass,
+    clampRefusalDetail,
     LEAVER_MAX_MODE,
     LINK_FRESHNESS_MS,
     MAX_REPORTED_DECISIONS,
@@ -507,6 +515,136 @@ describe('the ladder gate', () => {
         // this subsystem may write to a customer's directory at all. A change
         // here should be deliberate enough to update a test in the same diff.
         expect(LEAVER_MAX_MODE).toBe('AUTOMATIC');
+    });
+
+    it('no rung is above the clamp — the tripwire for the day one is', () => {
+        // WHAT THIS IS FOR. `MODE_ABOVE_CLAMP` in the pass is unreachable while
+        // the clamp sits on the TOP rung, and #2487 kept that branch anyway
+        // rather than deleting a safety refusal for being temporarily inert.
+        // Keeping dead code is only defensible if something announces the
+        // moment it stops being dead. This is that something.
+        //
+        // DERIVED FROM LADDER, never a literal list, and that is the whole
+        // design. The adjacent test in identity-write-ladder.test.ts asserts
+        // `permitted` equals the three rungs by name — which a rung added ABOVE
+        // AUTOMATIC satisfies unchanged, because the new rung is simply not in
+        // the permitted set. It passes while the thing it is watching happens.
+        // Filtering for what IS above the clamp has no such blind spot: the
+        // moment LADDER grows past LEAVER_MAX_MODE, or LEAVER_MAX_MODE is
+        // narrowed beneath LADDER's top, this list is non-empty and goes red.
+        //
+        // When it does go red, that is not a broken test. It means the clamp
+        // branch in `runIdentityLeaverPass` is live again — go read the note on
+        // it, and check the refusal text below is still the sentence you want
+        // an operator to find mid-incident.
+        // POSITIVE CONTROL FIRST. The assertion below passes when the selection
+        // is empty, and an empty LADDER would satisfy it vacuously — the exact
+        // shape this file applies a counterweight to one screen down
+        // (`detail.length` guarding a stack of negatives). Applying it there and
+        // not here was an oversight, not a distinction.
+        expect(LADDER.length).toBeGreaterThan(0);
+        expect(LADDER.filter((m) => isAboveClamp(m, LEAVER_MAX_MODE))).toEqual([]);
+    });
+
+    describe('the refusal text nobody can reach today', () => {
+        // `clampRefusalDetail` is lifted out of the branch precisely so it can
+        // be called here. The branch cannot be entered — an invented
+        // out-of-ladder mode does not work either, because `isAboveClamp` sorts
+        // an unknown value to -1 and reads it as BELOW the clamp — so the
+        // string had no reader at all, and went on telling operators that "no
+        // tenant has yet watched a single pass" after one had watched one.
+        //
+        // Called with the clamp LOWERED to DRY_RUN: the incident rollback that
+        // wakes this branch up. That is not a hypothetical shape invented for a
+        // test. LEAVER_MAX_MODE is a source constant specifically so it can be
+        // narrowed in a reviewed diff when a pass misbehaves, and the operator
+        // reading this sentence is doing so in the minutes after that ships.
+        const LOWERED = 'DRY_RUN';
+        const detail = clampRefusalDetail('AUTOMATIC', LOWERED);
+
+        it('names both the configured mode and the clamp, and no other rung', () => {
+            // Neither value alone is actionable. "You are clamped" without both
+            // rungs leaves the operator unable to tell whether to change a
+            // setting or escalate for a deploy, which is the only decision this
+            // message exists to inform.
+            expect(detail).toContain('AUTOMATIC');
+            expect(detail).toContain(LOWERED);
+
+            // A rung it was not handed must not appear — that is the signature
+            // of a hardcoded value surviving inside a function whose whole
+            // contract is to report what it was given. Derived from LADDER so a
+            // retired or added rung updates the check rather than dating it.
+            for (const rung of LADDER.filter((m) => m !== 'AUTOMATIC' && m !== LOWERED)) {
+                expect(detail).not.toContain(rung);
+            }
+        });
+
+        it('says the clamp is a constant, and that this refusal records no row', () => {
+            // The two facts that change what the operator does next.
+            //
+            // "Source constant" is the difference between a fix in the admin UI
+            // and a fix that needs review and a deploy; guessing wrong costs
+            // them the incident.
+            expect(detail).toMatch(/source constant/i);
+            expect(detail).toMatch(/not a tenant setting/i);
+
+            // And this is one of only two refusals that write no
+            // IntegrationExecution row, so the passes page stays empty. An
+            // operator who does not know that goes hunting for a dead worker.
+            // The asymmetry is documented in CLAUDE.md and it is the single
+            // most misreadable property of this subsystem.
+            expect(detail).toMatch(/IntegrationExecution/);
+            expect(detail).toContain('/admin/identity-leaver-passes');
+        });
+
+        it('asserts nothing about the state of the world', () => {
+            // THE ROT THIS SWEEP EXISTS TO PREVENT, checked as a claim SHAPE
+            // rather than as a truth — a test cannot know whether a sentence is
+            // true, and one that greps for today's wording just dates itself
+            // alongside the wording (the lesson in CLAUDE.md's "never gate CI
+            // on prose", and the same reasoning as
+            // tests/guards/scheduled-job-description-claims.test.ts).
+            //
+            // What IS decidable: a string baked into a build at compile time
+            // cannot know how many tenants have run a pass, or whether one ever
+            // has. Any such clause is wrong on a long enough timeline and this
+            // one proved it — it claimed "no tenant has yet watched a single
+            // pass" while an account sat disabled in a customer's directory.
+            // The detail may describe THIS refusal, and nothing beyond it.
+            // WHAT THIS IS, STATED HONESTLY: a blocklist of the wording the old
+            // sentence used. An earlier version of this comment called it a
+            // "claim SHAPE rather than a truth" and compared it to
+            // scheduled-job-description-claims.test.ts. That comparison does not
+            // hold and the claim was false: THAT guard derives its rung alphabet
+            // from LADDER and matches clamp-wording adjacent to a rung, which is
+            // structural. This is a literal grep for yesterday's sentence.
+            //
+            // Adversarial review proved the gap by appending a NEW false clause
+            // ("Only three tenants have ever reached this rung, and the subsystem
+            // remains unproven against a live directory.") — 58/58 stayed green.
+            // A fresh instance of the exact rot this PR exists to remove, waved
+            // through by the guard named after removing it.
+            //
+            // It is kept because a blocklist of the KNOWN-bad phrasing still
+            // stops the specific regression — reinstating the deleted sentence —
+            // and that is worth something. What it must not do is claim to be
+            // more. The general problem (a build-time string asserting facts
+            // about the world) is not decidable by a regex, and the durable
+            // defence is the structural one below: the detail may describe THIS
+            // refusal and must name the two modes it compares, so a sentence
+            // that wanders into world-claims has nowhere to attach.
+            expect(detail).not.toMatch(/no tenant|nobody|never been|has yet|not yet|first (real |live )?(pass|disable|time)|in the field/i);
+            // The structural half already exists and is the durable defence:
+            // 'names both the configured mode and the clamp, and no other rung'
+            // above asserts the detail contains exactly the two rungs it was
+            // handed, with the negative derived from LADDER. That is what keeps
+            // the sentence a description of THIS refusal; this blocklist only
+            // stops the one deleted sentence coming back.
+
+            // Positive counterweight — an empty string satisfies every negative
+            // above, and a message that says nothing is its own failure here.
+            expect(detail.length).toBeGreaterThan(120);
+        });
     });
 
     it('DISABLED is still refused, and still records nothing', () => {
