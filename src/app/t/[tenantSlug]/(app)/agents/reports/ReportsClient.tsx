@@ -157,7 +157,7 @@ export function ReportsClient({
                 title: t('reports.title'),
                 description: t('reports.description'),
                 actions: (
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-compact">
                         {canExport && <ExportPackButton />}
                         <AgentsViewsMenu
                             tenantSlug={tenantSlug}

@@ -65,7 +65,7 @@ export function ExportPackButton() {
     }, [apiUrl, t, toast]);
 
     return (
-        <div className="flex flex-col gap-2" data-testid="reports-export">
+        <div className="flex flex-col gap-tight" data-testid="reports-export">
             <Button
                 variant="secondary"
                 onClick={onExport}

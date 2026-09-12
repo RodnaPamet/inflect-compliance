@@ -184,6 +184,14 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     'src/app-layer/usecases/agent-proposal-sample-audit.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-proposals.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-registry.ts — identifier bound elsewhere',
+    // AGENTIC UI 4/4 (#2467). The pack export's audit row NAMES every field at
+    // the sink — `summary`, `documentBytes`, `retentionDays` — and the rule's
+    // hole is about their VALUES being local bindings, not about a field bag.
+    // The one HELPER-kind hole this file first produced was removed rather than
+    // registered, by hoisting the byte count to a const: that kind means "names
+    // that never reach the source", which was not true here, and registering a
+    // misdescribed hole is worse than having none.
+    'src/app-layer/usecases/agent-governance-pack-export.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-risk-assessment.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-tool-exposure.ts — identifier bound elsewhere',
     'src/app-layer/usecases/workflow-runs.ts — identifier bound elsewhere',
@@ -321,7 +329,13 @@ const SINK_FLOOR = 30;
 // and all wrong here. Taking any one of them would have produced a green ratchet
 // describing a codebase that does not exist, which is the failure this ratchet is
 // for. Re-derived by zeroing both and reading the failure message.
-const MEASURED_HOLES = 140;
+const MEASURED_HOLES = 143;
+// 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
+// export's audit row — all `identifier bound elsewhere`, all values that are
+// local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
+// names that ARE in the source. Nothing in that row carries pack CONTENT: the
+// document itself goes to `Evidence.content`, and what the audit row keeps is
+// its size, its title and the enforcement flag that qualifies it.
 // 76 → 78: AGENTIC UI 1/4 (#2441) added two `logger.warn` catch-sites, one at
 // each agentic notification bell. UNCHANGED holes — both were written with
 // `err.message` and a literal rather than `String(err)`, which is a

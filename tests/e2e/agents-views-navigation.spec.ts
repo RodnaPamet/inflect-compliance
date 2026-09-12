@@ -1,5 +1,5 @@
 /**
- * E2E — THE VIEWS MENU REACHES ALL FIVE, AND EVERY OLD PATH REDIRECTS.
+ * E2E — THE VIEWS MENU REACHES EVERY DESTINATION, AND EVERY OLD PATH REDIRECTS.
  *
  * READ-ONLY: it navigates and asserts, and creates nothing. So it uses the
  * SHARED seeded tenant via `loginAndGetTenant` / `DEFAULT_USER` — read-only
@@ -8,7 +8,7 @@
  *
  * Two claims:
  *
- *   1. ALL FIVE DESTINATIONS ARE REACHABLE FROM THE MENU. Through the menu,
+ *   1. EVERY DESTINATION IS REACHABLE FROM THE MENU. Through the menu,
  *      not by `goto`: a goto proves the ROUTE exists and says nothing about
  *      whether anybody can find it, and "the route exists, nothing links to
  *      it" is the exact state the review-quality report shipped in.
@@ -25,13 +25,18 @@ import { test, expect } from '@playwright/test';
 
 import { loginAndGetTenant, safeGoto, waitForHydration } from './e2e-utils';
 
-/** The five menu entries, by their stable DOM ids, and where each must land. */
+/** The menu entries, by their stable DOM ids, and where each must land. */
 const ENTRIES = [
     { id: 'agents-view-proposals', path: '/agents/proposals' },
     { id: 'agents-view-runs', path: '/agents/runs' },
     { id: 'agents-view-receipts', path: '/agents/receipts' },
     { id: 'agents-view-quarantine', path: '/agents/quarantine' },
     { id: 'agents-view-review-quality', path: '/agents/review-quality' },
+    // AGENTIC UI 4/4. Added with the menu entry rather than after it: "the
+    // route exists, nothing links to it" is the exact state this file was
+    // written to catch, and the reports page shipping unlisted here would have
+    // reproduced it one prompt later.
+    { id: 'agents-view-reports', path: '/agents/reports' },
 ] as const;
 
 /**
@@ -51,7 +56,7 @@ const REDIRECTS = [
 ] as const;
 
 test.describe('the agents Views menu, and the old paths', () => {
-    test('reaches all five destinations through the menu', async ({ page }) => {
+    test('reaches every destination through the menu', async ({ page }) => {
         const tenantSlug = await loginAndGetTenant(page);
         // Scoped to `main`: these pages have a `loading.tsx`, so Next streams
         // them through a Suspense boundary and under CI load the staging DOM
@@ -94,7 +99,7 @@ test.describe('the agents Views menu, and the old paths', () => {
 
         // On the quarantine page, its own entry is the selected one — the menu
         // says where you are as well as where you can go. Quarantine is the
-        // pick because it is the only one of the five that mounts the menu
+        // pick because it is the only destination that mounts the menu
         // inside a list-page TOOLBAR rather than a page header, so it also
         // proves the menu survives both host shapes.
         await safeGoto(page, `/t/${tenantSlug}/agents/quarantine`, {

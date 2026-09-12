@@ -131,6 +131,14 @@ export async function exportAgentGovernancePack(
         workspaceName,
     });
     const title = packExportTitle(pack.generatedAt);
+    // Hoisted rather than computed at both use sites. It was being measured
+    // twice — once for the audit row and once for the return — which is one
+    // place for the two numbers to disagree if either call ever changes. It
+    // also keeps `no-raw-prompt-logging` from seeing a HELPER-kind hole at the
+    // audit sink: that kind means "a field bag whose names never reach the
+    // source", which is not what this is (the field IS named at the sink), and
+    // registering a misdescribed hole is worse than not having one.
+    const documentBytes = Buffer.byteLength(document, 'utf8');
 
     const { evidenceId, retentionUntil } = await runInTenantContext(ctx, async (db) => {
         const created = await db.evidence.create({
@@ -187,7 +195,7 @@ export async function exportAgentGovernancePack(
                 enforcing: status.enforcing,
                 unboundCredentials: status.unboundCredentials,
                 windowDays: pack.approvals.window?.days ?? null,
-                documentBytes: Buffer.byteLength(document, 'utf8'),
+                documentBytes,
                 retentionDays: PACK_RETENTION_DAYS,
             },
         });
@@ -203,6 +211,6 @@ export async function exportAgentGovernancePack(
         generatedAt: pack.generatedAt,
         enforcing: status.enforcing,
         retentionUntil,
-        documentBytes: Buffer.byteLength(document, 'utf8'),
+        documentBytes,
     };
 }
