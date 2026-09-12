@@ -22,6 +22,7 @@ import { formatDate, formatDateTime } from '@/lib/format-date';
 import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 
+import { AutonomyScale } from '../AutonomyScale';
 import type { RegistryWritableTabProps } from './types';
 
 /**
@@ -47,6 +48,8 @@ import type { RegistryWritableTabProps } from './types';
 interface AgentDetail {
     /** Typed back by the operator to confirm retirement (#2448). */
     name: string;
+    /** The registered rung, rendered as a labelled scale rather than an integer (#2457). */
+    autonomyLevel: number;
     description: string | null;
     modelRef: string | null;
     provenance: 'FIRST_PARTY' | 'THIRD_PARTY';
@@ -352,6 +355,15 @@ export function OverviewTab({
                                     {t('agentDetail.overview.ownerEmpty')}
                                 </span>
                             )}
+                    </Fact>
+
+                    {/* THE AUTHORITY DIAL, IN WORDS (#2457). It rendered as a
+                        bare `L4` in the header strip, and nobody could tell what
+                        4 permitted without reading the source. `wide` because a
+                        seven-rung ladder in a half-width column wraps into
+                        unreadability. */}
+                    <Fact label={t('agentDetail.overview.autonomyLabel')} wide>
+                        <AutonomyScale level={agent.autonomyLevel} />
                     </Fact>
 
                     <Fact label={t('agentDetail.overview.modelRefLabel')}>

@@ -401,6 +401,42 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
                         />
                     </FormField>
                     {/*
+                        WHAT THIS GRANT WIDENS, before the click (#2455).
+
+                        The capability class was visible only INSIDE the dropdown,
+                        beside each option — so it was gone by the time the
+                        operator had chosen and was looking at the Grant button.
+                        The moment that matters is the one before the press, and
+                        at that moment the screen said nothing.
+
+                        The two classes differ in the thing an operator most
+                        needs to know and is most likely to assume wrongly: a
+                        PROPOSE tool cannot commit. It queues, and a human
+                        approves. Someone who reads "propose" as "write" refuses
+                        grants that were safe; someone who reads it as "read"
+                        grants more than they meant.
+                    */}
+                    {selected && (
+                        <InlineNotice
+                            variant="info"
+                            icon={null}
+                            data-testid="agent-tool-grant-widens"
+                        >
+                            {mcpToolCapabilityClass(selected.value) === 'read'
+                                ? t('agentDetail.tools.widensRead', { tool: selected.value })
+                                : t('agentDetail.tools.widensPropose', { tool: selected.value })}
+                            {blockedTools.has(selected.value) && (
+                                // The manifest gate refuses this tool outright
+                                // right now, so the grant would be inert. Said
+                                // here rather than discovered later by an agent
+                                // that silently cannot reach it.
+                                <span className="block mt-1 text-content-warning">
+                                    {t('agentDetail.tools.widensBlocked')}
+                                </span>
+                            )}
+                        </InlineNotice>
+                    )}
+                    {/*
                         SECONDARY, not primary. Widening what an agent may reach
                         is an everyday administrative edit, not the page's
                         centre of gravity — the register's emphasis belongs to

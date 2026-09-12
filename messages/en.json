@@ -4061,6 +4061,15 @@
     "description": "Recent activity across your compliance program"
   },
   "admin": {
+    "autonomy": {
+      "rung0": "Suggests to a human in session and reaches nothing itself. No tool sits at this rung, so an agent registered here can call nothing.",
+      "rung_read": "Reads workspace data on its own initiative.",
+      "rung_propose": "Drafts changes into the approval queue. Still human-gated: it puts words in front of an approver, it does not commit.",
+      "rung_orchestrate": "Chains steps unattended between checkpoints.",
+      "rungAboveTop": "No capability requires this rung today, so it grants nothing beyond orchestrate. Registering an agent here does not widen what it can reach.",
+      "registeredHere": "(registered here)",
+      "effectiveNote": "What an agent may actually do is the LOWEST of this rung, its credential's ceiling, and the cap its assessed risk tier allows. An unassessed agent is refused everything, whatever this says."
+    },
     "title": "Administration",
     "auditLog": "Audit Log",
     "policyTemplates": "Policy Templates",
@@ -4533,6 +4542,7 @@
         "failed": "Could not amend this agent."
       },
       "overview": {
+        "autonomyLabel": "Autonomy",
         "profileHeading": "Governing profile",
         "ownerLabel": "Accountable owner",
         "ownerEmpty": "Name not recorded",
@@ -4788,6 +4798,9 @@
         "aboveDeclaredScopeBody": "The card reaches {card} and this agent is registered as reaching {scope} — the register was narrowed after this version was written, and a stored version is never rewritten. Nothing clamps this one: the tool boundary reads the card's rung and never the register's, so the wider reach is live on every call. Narrow the card to {scope}, or raise the agent's registered data-access scope if the wider reach is intended. Every other change stays open meanwhile."
       },
       "tools": {
+        "widensRead": "{tool} can READ this workspace's data. It cannot propose or change anything.",
+        "widensPropose": "{tool} can PROPOSE changes. Proposals land in the approval queue for a human — granting this does not let the agent commit anything on its own.",
+        "widensBlocked": "The tool boundary is refusing this tool right now because its definition changed and no one has accepted the new one. Granting it will have no effect until that pin is approved.",
         "revokeScheduled": "Tool access revoked for {toolName}",
         "revokeUndo": "Undo",
         "heading": "Granted tools",
