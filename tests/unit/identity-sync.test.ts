@@ -225,6 +225,13 @@ describe('runIdentitySync', () => {
         expect(mockDb.connectedIdentityAccount.updateMany).not.toHaveBeenCalled();
         // But the accounts we DID see were still upserted (additive, safe).
         expect(mockDb.connectedIdentityAccount.upsert).toHaveBeenCalledTimes(1);
+        // And the message names what this layer KNOWS — the count it ingested —
+        // rather than asserting the cap as the cause. Active Directory now also
+        // reports incomplete for entries it could not key, and there the old
+        // sentence rendered as "hit the 0-account cap": a wrong diagnosis in the
+        // one field an operator opens to find out what happened.
+        expect(r.errorMessage).toContain('ingested 1 account(s)');
+        expect(r.errorMessage).not.toContain('cap with more pages');
     });
 
     it('reconciles vanished accounts to DEPROVISIONED (by pass timestamp)', async () => {

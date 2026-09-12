@@ -372,7 +372,14 @@ export async function runIdentitySync(input: {
             // server-side cookie tied to the live connection, so it cannot
             // survive a process boundary). Unchanged behaviour — loud, and not
             // retryable, because re-running truncates at the same place.
-            const msg = `Partial directory enumeration: hit the ${accounts.length}-account cap with more pages remaining, and this provider cannot resume. Deprovision reconcile skipped to avoid wrongful mass-deprovisioning.`;
+            // NAMES THE FACT, NOT A CAUSE THIS LAYER CANNOT SEE. It used to
+            // say "hit the N-account cap", which was true while the cap was the
+            // only thing that could clear `complete`. Active Directory now also
+            // reports incomplete when the search returned entries it could not
+            // key, and in that case the old sentence read "hit the 0-account
+            // cap" — a wrong diagnosis in the one field an operator opens to
+            // find out what happened. The provider logs which condition fired.
+            const msg = `Incomplete directory enumeration: the provider ingested ${accounts.length} account(s) and reported the traversal unfinished, with no cursor to resume from. Deprovision reconcile skipped to avoid wrongful mass-deprovisioning; the provider's own log names the condition (the enumeration cap, or entries that could not be keyed).`;
             await db.integrationExecution.update({
                 where: { id: execution.id },
                 data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, deprovisioned: 0, total: accounts.length, truncated: true }, durationMs: Date.now() - start, completedAt: new Date() },
