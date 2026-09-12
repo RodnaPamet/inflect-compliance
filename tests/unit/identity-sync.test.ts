@@ -9,16 +9,40 @@ jest.mock('@/lib/security/encryption', () => ({ decryptField: jest.fn(() => '{}'
 jest.mock('@/lib/observability/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 jest.mock('@/app-layer/integrations/bootstrap', () => ({}));
 jest.mock('@/app-layer/integrations/registry', () => ({ registry: { getProvider: jest.fn() } }));
+// Spread the real module rather than replacing it: `markAuthFailure` reaches
+// for `recordConnectionAuthState` from here too, and a bare factory silently
+// removes every counter this file does not think about.
+jest.mock('@/lib/observability/integration-metrics', () => ({
+    ...jest.requireActual('@/lib/observability/integration-metrics'),
+    recordDeprovisionRefused: jest.fn(),
+}));
 
 import { runIdentitySync } from '@/app-layer/usecases/identity-sync';
 import type { NormalizedIdentityAccount } from '@/app-layer/integrations/providers/identity/types';
 import { IntegrationAuthError } from '@/app-layer/integrations/http-resilience';
+import { recordDeprovisionRefused } from '@/lib/observability/integration-metrics';
 
 const mockDb = {
     integrationConnection: { findFirst: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
     integrationExecution: { create: jest.fn(), update: jest.fn() },
-    connectedIdentityAccount: { upsert: jest.fn(), updateMany: jest.fn() },
+    connectedIdentityAccount: { upsert: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
 };
+
+/**
+ * The two COUNT queries the reconcile's blast-radius rails issue, told apart by
+ * the predicate rather than by call order.
+ *
+ * `syncedAt` in the where-clause means "rows this pass did not touch" — the
+ * numerator, what the reconcile would flip. Its absence means "rows this
+ * connection still calls live" — the denominator. Dispatching on the predicate
+ * rather than on the call index is the point: an assertion keyed to call order
+ * would keep passing if the two queries were swapped, which is precisely the
+ * numerator/denominator confusion these rails exist to catch.
+ */
+function countsBy(stale: number, population: number) {
+    return async (args: { where?: { syncedAt?: unknown } }) =>
+        args?.where?.syncedAt !== undefined ? stale : population;
+}
 
 const NOW = new Date('2026-06-01T00:00:00.000Z');
 
@@ -42,6 +66,8 @@ beforeEach(() => {
     // connectionId. Tests that care about the two-connection case override it.
     mockDb.integrationConnection.count.mockResolvedValue(1);
     mockDb.connectedIdentityAccount.updateMany.mockResolvedValue({ count: 3 });
+    // 3 of 100 = 3%, under the share cap, so the default fixture reconciles.
+    mockDb.connectedIdentityAccount.count.mockImplementation(countsBy(3, 100));
 });
 
 describe('runIdentitySync', () => {
@@ -199,6 +225,13 @@ describe('runIdentitySync', () => {
         expect(mockDb.connectedIdentityAccount.updateMany).not.toHaveBeenCalled();
         // But the accounts we DID see were still upserted (additive, safe).
         expect(mockDb.connectedIdentityAccount.upsert).toHaveBeenCalledTimes(1);
+        // And the message names what this layer KNOWS — the count it ingested —
+        // rather than asserting the cap as the cause. Active Directory now also
+        // reports incomplete for entries it could not key, and there the old
+        // sentence rendered as "hit the 0-account cap": a wrong diagnosis in the
+        // one field an operator opens to find out what happened.
+        expect(r.errorMessage).toContain('ingested 1 account(s)');
+        expect(r.errorMessage).not.toContain('cap with more pages');
     });
 
     it('reconciles vanished accounts to DEPROVISIONED (by pass timestamp)', async () => {
@@ -441,5 +474,189 @@ describe('runIdentitySync — resumable enumeration', () => {
         expect(r.status).toBe('ERROR');
         expect(r.noRetry).toBe(true);
         expect(mockDb.connectedIdentityAccount.updateMany).not.toHaveBeenCalled();
+    });
+});
+
+// ── The deprovision reconcile has a FLOOR and a CEILING ──────────────────
+//
+// `complete` says the provider finished its traversal. It says nothing about
+// what the traversal SAW, and the reconcile is a sweep over everything the pass
+// did not touch. For Active Directory `complete` was `searchEntries.length <
+// 5000`, so a baseDN typo / an OU ACL change / a bind account scoped down
+// returned zero entries, `0 < 5000` evaluated to complete, and the whole forest
+// was marked DEPROVISIONED with the run recorded PASSED.
+//
+// Two rails, deliberately covering different cases, and each has its own test
+// below WITH THE OTHER RULED OUT BY CONSTRUCTION — a fixture that trips both
+// would pass with either one deleted and so could not tell you which is
+// load-bearing:
+//
+//   • the FLOOR      — nothing was ingested. Tested at a proposed count BELOW
+//                      `DEPROVISION_SHARE_FLOOR`, where the share rule is
+//                      silent by definition.
+//   • the SHARE CAP  — too large a slice of the connection. Tested with a
+//                      non-empty ingest, where the floor cannot fire.
+
+describe('runIdentitySync — deprovision floor', () => {
+    it('a complete-but-EMPTY enumeration does not deprovision, and does not report PASSED', async () => {
+        // THE DEFECT, end to end. Four accounts on record, an enumeration that
+        // returns nothing, `complete: true`. Four is BELOW the share-rule floor
+        // of 5, so the share cap is silent here and this test can only be
+        // satisfied by the zero-enumeration guard.
+        mockDb.connectedIdentityAccount.count.mockImplementation(countsBy(4, 4));
+        const r = await runIdentitySync({
+            tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: stubProvider([]),
+        });
+
+        // Not one row flipped.
+        expect(mockDb.connectedIdentityAccount.updateMany).not.toHaveBeenCalled();
+        expect(r.deprovisioned).toBe(0);
+
+        // And the run does not claim to be clean — in the RETURN and on the ROW.
+        // Asserting only the return would check the half a caller sees; the row
+        // is the operator's only durable record, and a green badge over a
+        // withheld reconcile is the failure this half exists to prevent.
+        expect(r.status).toBe('PARTIAL');
+        const persisted = mockDb.integrationExecution.update.mock.calls.at(-1)?.[0].data;
+        expect(persisted.status).toBe('PARTIAL');
+        expect(persisted.errorMessage).toContain('ingested none');
+        expect(persisted.resultJson).toMatchObject({ deprovisionRefused: 'zero_enumeration', deprovisionProposed: 4 });
+    });
+
+    it('measures what was INGESTED, not what the provider handed back', async () => {
+        // The provider answered with three entries and not one of them could be
+        // keyed, so the upsert loop wrote nothing. `accounts.length` is 3 and
+        // the number that matters is 0 — the same two-collections confusion the
+        // AD provider's `complete` flag had, arriving through the other door.
+        mockDb.connectedIdentityAccount.count.mockImplementation(countsBy(4, 4));
+        const r = await runIdentitySync({
+            tenantId: 't1', connectionId: 'conn-1', now: NOW,
+            provider: stubProvider([acct(''), acct(''), acct('')]),
+        });
+
+        expect(mockDb.connectedIdentityAccount.upsert).not.toHaveBeenCalled();
+        expect(mockDb.connectedIdentityAccount.updateMany).not.toHaveBeenCalled();
+        expect(r.status).toBe('PARTIAL');
+    });
+
+    it('still reconciles when an EARLIER run of the same pass saw accounts', async () => {
+        // The counter-case, and the reason the guard is not simply "refuse on
+        // empty". Under resume the last run of a pass reads an empty final page
+        // whenever the directory size is an exact multiple of the page cap: the
+        // provider is answering, the pass already ingested rows, and refusing
+        // here would mean a tenant of that exact size never reconciles again.
+        // `hris-sync` learned this one the hard way; this follows its shape.
+        mockDb.integrationConnection.findFirst.mockResolvedValue({
+            id: 'conn-1', provider: 'okta', configJson: {}, secretEncrypted: null, isEnabled: true,
+            syncCursor: 'LAST_PAGE', syncPassStartedAt: new Date('2026-05-30T00:00:00Z'),
+        });
+        mockDb.connectedIdentityAccount.count.mockImplementation(countsBy(4, 4));
+        const r = await runIdentitySync({
+            tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: stubProvider([]),
+        });
+
+        expect(mockDb.connectedIdentityAccount.updateMany).toHaveBeenCalledTimes(1);
+        expect(r.status).toBe('PASSED');
+    });
+
+    it('clears the pass marker on a refusal, so the NEXT empty run is refused too', async () => {
+        // Load-bearing, and the opposite of what "hold the pass open" intuition
+        // suggests. `passSawAccounts` ORs in `syncPassStartedAt`, so a marker
+        // left behind by a refused pass would read on the next run as "an
+        // earlier run of this pass saw rows" — and the second zero-entry
+        // enumeration in a row would sweep the connection the first refusal
+        // saved. The enumeration finished; there is no page to resume.
+        mockDb.connectedIdentityAccount.count.mockImplementation(countsBy(4, 4));
+        await runIdentitySync({
+            tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: stubProvider([]),
+        });
+
+        const cleared = mockDb.integrationConnection.updateMany.mock.calls
+            .map((c) => c[0].data)
+            .find((d) => d.syncCursor === null);
+        expect(cleared).toEqual({ syncCursor: null, syncPassStartedAt: null });
+    });
+
+    it('counts a REFUSAL, which the deprovisioned counter structurally cannot', async () => {
+        // `recordIdentityDeprovisioned` early-returns on `count <= 0`, so the
+        // held sweep — zero by definition — emitted nothing while an executed
+        // sweep emitted a number. The event with the larger blast radius was
+        // the silent one.
+        mockDb.connectedIdentityAccount.count.mockImplementation(countsBy(4, 4));
+        await runIdentitySync({
+            tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: stubProvider([]),
+        });
+
+        expect(recordDeprovisionRefused).toHaveBeenCalledWith({ provider: 'okta', reason: 'zero_enumeration' });
+    });
+});
+
+describe('runIdentitySync — deprovision share cap', () => {
+    it('refuses a sweep over a tenth of what the connection calls live', async () => {
+        // 30 of 100. The enumeration was non-empty, so the floor is satisfied
+        // and cannot be what refuses this — only the share cap can. This is the
+        // partial-scoping failure the floor cannot see: the bind still reaches
+        // most of the forest, so accounts keep arriving while a whole OU does
+        // not.
+        mockDb.connectedIdentityAccount.count.mockImplementation(countsBy(30, 100));
+        const r = await runIdentitySync({
+            tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: stubProvider([acct('a')]),
+        });
+
+        expect(mockDb.connectedIdentityAccount.updateMany).not.toHaveBeenCalled();
+        expect(r.status).toBe('PARTIAL');
+        expect(r.deprovisioned).toBe(0);
+        const persisted = mockDb.integrationExecution.update.mock.calls.at(-1)?.[0].data;
+        expect(persisted.status).toBe('PARTIAL');
+        expect(persisted.errorMessage).toContain('30.0%');
+        expect(persisted.resultJson).toMatchObject({ deprovisionRefused: 'share_cap', deprovisionProposed: 30 });
+        expect(recordDeprovisionRefused).toHaveBeenCalledWith({ provider: 'okta', reason: 'share_cap' });
+    });
+
+    it('lets ordinary churn through — 6 of 100 is not an anomaly', async () => {
+        // The positive control the refusal tests need. 6 is above the floor, so
+        // the share rule is live and evaluating; 6% is under the cap. A rail
+        // that refused this would be a rail operators switch off.
+        mockDb.connectedIdentityAccount.count.mockImplementation(countsBy(6, 100));
+        const r = await runIdentitySync({
+            tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: stubProvider([acct('a')]),
+        });
+
+        expect(mockDb.connectedIdentityAccount.updateMany).toHaveBeenCalledTimes(1);
+        expect(r.status).toBe('PASSED');
+        expect(mockDb.integrationExecution.update.mock.calls.at(-1)?.[0].data.errorMessage).toBeNull();
+    });
+
+    it('does not refuse a small connection where two departures are half the roster', async () => {
+        // 2 of 4 is 50% and would trip a bare percentage rule every time
+        // somebody leaves. `DEPROVISION_SHARE_FLOOR` is what keeps the share
+        // rule silent at the bottom end — and the zero-enumeration floor is
+        // what still covers this connection when the enumeration comes back
+        // empty, which is the case that actually endangers it.
+        mockDb.connectedIdentityAccount.count.mockImplementation(countsBy(2, 4));
+        const r = await runIdentitySync({
+            tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: stubProvider([acct('a'), acct('b')]),
+        });
+
+        expect(mockDb.connectedIdentityAccount.updateMany).toHaveBeenCalledTimes(1);
+        expect(r.status).toBe('PASSED');
+    });
+
+    it('judges the reconcile with the reconcile’s own predicate', async () => {
+        // The numerator and the write must describe the same set. Measuring one
+        // and writing the other is how a rail ends up authorising a batch it
+        // never looked at (#2498, in the leaver path). Asserted as object
+        // identity of the where-clause rather than field-by-field, because a
+        // field-by-field copy is exactly what drifts.
+        mockDb.connectedIdentityAccount.count.mockImplementation(countsBy(3, 100));
+        await runIdentitySync({
+            tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: stubProvider([acct('a')]),
+        });
+
+        const counted = mockDb.connectedIdentityAccount.count.mock.calls[0][0].where;
+        const written = mockDb.connectedIdentityAccount.updateMany.mock.calls[0][0].where;
+        expect(written).toBe(counted);
+        // Positive control — `toBe` on two undefineds would also pass.
+        expect(written.syncedAt).toEqual({ lt: NOW });
     });
 });

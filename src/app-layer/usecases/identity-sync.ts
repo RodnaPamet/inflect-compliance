@@ -16,12 +16,77 @@ import { markAuthFailure, clearAuthFailure } from '../integrations/connection-he
 import { shouldBypassQueueRetry } from '../integrations/http-resilience';
 import { decryptField } from '@/lib/security/encryption';
 import { logger } from '@/lib/observability/logger';
-import { recordSyncTruncated, recordIdentityDeprovisioned } from '@/lib/observability/integration-metrics';
+import { recordSyncTruncated, recordIdentityDeprovisioned, recordDeprovisionRefused } from '@/lib/observability/integration-metrics';
 import '../integrations/bootstrap'; // populate the provider registry in THIS module graph (see usecases/integrations)
 import { registry } from '../integrations/registry';
 import { isIdentitySyncProvider, type IdentitySyncProvider, type NormalizedIdentityAccount } from '../integrations/providers/identity/types';
 
 const IDENTITY_PROVIDERS = new Set(['okta', 'google-workspace', 'entra-id', 'active-directory']);
+
+/**
+ * Refuse the deprovision reconcile when it would flip more than this share of
+ * the accounts this connection currently believes are live.
+ *
+ * ═══ THE NUMBER IS THE WRITE BREAKER'S, THE CONSTANT IS NOT ═══
+ *
+ * `MAX_DISABLE_SHARE` in `identity-write-breaker.ts` is 0.1 as well, and that
+ * is deliberate: both rails answer the same question — "is this batch too
+ * large a slice of the directory to be a real event?" — and inventing a second
+ * threshold would mean two numbers an operator has to hold in their head with
+ * nothing to tell them apart.
+ *
+ * They are separate CONSTANTS because the cost of firing differs, so the two
+ * numbers must be free to move apart. A refusal by the write breaker delays a
+ * real offboarding by a run; a refusal here LATCHES (see below). Retuning one
+ * for sensitivity must not silently retune the other.
+ *
+ * ═══ WHY A SHARE CAP AND NOT ALSO AN ABSOLUTE ONE ═══
+ *
+ * The breaker pairs its share rule with `MAX_DISABLES_PER_RUN = 50`. Copying
+ * that here would be wrong, and the reason is the shape of this count rather
+ * than its size.
+ *
+ * `proposed` over there is a count of an ACT and can go DOWN: an account
+ * disabled today is not a candidate tomorrow. The number here is a count of a
+ * STANDING BACKLOG — every row for this connection untouched since the pass
+ * began. Refusing does not clear it: those rows keep their stale `syncedAt`,
+ * so the next pass proposes the same set plus whatever else has left since.
+ * The count only grows. An absolute cap over a monotonically growing count
+ * fires once and then refuses forever while looking deliberate, which is #2290
+ * exactly — and 50 is calibrated for one day's departures, not for a backlog.
+ *
+ * The share rule latches in the same way once it fires; the difference is that
+ * it only fires on an anomaly (a tenth of a directory vanishing between two
+ * passes), and it is scale-free, so ordinary churn at any tenant size never
+ * reaches it. A rail that holds after refusing is acceptable; a rail that
+ * refuses ordinary operation and then holds is not.
+ *
+ * ═══ WHICH WAY IT FAILS ═══
+ *
+ * It fails CLOSED: on refusal the accounts stay in their current status,
+ * meaning the mirror keeps reporting as present people who may really be gone.
+ * That is a visible gap in the offboarded-access check, and it is the cheaper
+ * error — an over-large DEPROVISIONED sweep is what strands the leaver path's
+ * blast-radius numerator at zero (#2498), and a mirror that over-reports
+ * ACTIVE can only make that numerator larger, never smaller.
+ *
+ * Recoverable, too, and only in this direction: the upsert writes `status`
+ * from the directory on every pass, so an account wrongly left ACTIVE — or
+ * wrongly marked DEPROVISIONED — is corrected by the next pass that sees it.
+ */
+export const MAX_DEPROVISION_SHARE = 0.1;
+
+/**
+ * Below this many proposed deprovisions the share rule does not apply.
+ *
+ * Same reasoning as `SHARE_RULE_FLOOR` in the write breaker, same value: in a
+ * six-account connection one departure is 17% and always will be, so a share
+ * rule without a floor refuses every genuine departure at the bottom end. The
+ * zero-enumeration floor below is what covers the small-tenant case this leaves
+ * open — a connection of four whose enumeration returns nothing is refused
+ * there, on evidence the share rule cannot see.
+ */
+export const DEPROVISION_SHARE_FLOOR = 5;
 
 function makeSystemCtx(tenantId: string): RequestContext {
     return buildSystemContext({ tenantId, job: 'identity-sync' });
@@ -307,7 +372,14 @@ export async function runIdentitySync(input: {
             // server-side cookie tied to the live connection, so it cannot
             // survive a process boundary). Unchanged behaviour — loud, and not
             // retryable, because re-running truncates at the same place.
-            const msg = `Partial directory enumeration: hit the ${accounts.length}-account cap with more pages remaining, and this provider cannot resume. Deprovision reconcile skipped to avoid wrongful mass-deprovisioning.`;
+            // NAMES THE FACT, NOT A CAUSE THIS LAYER CANNOT SEE. It used to
+            // say "hit the N-account cap", which was true while the cap was the
+            // only thing that could clear `complete`. Active Directory now also
+            // reports incomplete when the search returned entries it could not
+            // key, and in that case the old sentence read "hit the 0-account
+            // cap" — a wrong diagnosis in the one field an operator opens to
+            // find out what happened. The provider logs which condition fired.
+            const msg = `Incomplete directory enumeration: the provider ingested ${accounts.length} account(s) and reported the traversal unfinished, with no cursor to resume from. Deprovision reconcile skipped to avoid wrongful mass-deprovisioning; the provider's own log names the condition (the enumeration cap, or entries that could not be keyed).`;
             await db.integrationExecution.update({
                 where: { id: execution.id },
                 data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, deprovisioned: 0, total: accounts.length, truncated: true }, durationMs: Date.now() - start, completedAt: new Date() },
@@ -364,28 +436,156 @@ export async function runIdentitySync(input: {
         // implies it. It is not redundant defensively — it keeps the statement
         // readable and correct on a connection that legitimately bypasses RLS,
         // and it is the column the index leads with.
-        const reconcile = await db.connectedIdentityAccount.updateMany({
-            where: {
-                tenantId: ctx.tenantId,
-                provider: conn.provider,
-                connectionId: conn.id,
-                status: { not: 'DEPROVISIONED' },
-                syncedAt: { lt: passStartedAt },
-            },
-            data: { status: 'DEPROVISIONED', syncedAt: now },
-        });
+        const reconcileWhere = {
+            tenantId: ctx.tenantId,
+            provider: conn.provider,
+            connectionId: conn.id,
+            status: { not: 'DEPROVISIONED' as const },
+            syncedAt: { lt: passStartedAt },
+        };
+
+        // ═══ `complete` IS NOT ENOUGH TO AUTHORISE THIS SWEEP ═══
+        //
+        // Everything above establishes that the provider finished its
+        // traversal. It establishes nothing about WHAT the traversal saw, and
+        // the sweep below is unbounded in the wrong direction: it flips every
+        // account this connection has not touched since the pass began.
+        //
+        // For Active Directory `complete` was `searchEntries.length < 5000`
+        // (fixed in the same change to compare against the INGESTED set), so a
+        // baseDN typo, an OU ACL change or a bind user scoped down produced
+        // zero entries, `0 < 5000` = complete, the whole forest DEPROVISIONED,
+        // and the run recorded PASSED with an INFO log. Every rail downstream
+        // then reads a mirror in which nobody is ACTIVE.
+        //
+        // So the reconcile is measured before it is applied: how many rows it
+        // would flip, against how many this connection still calls live. Two
+        // refusals, and they cover different cases — the floor catches a
+        // connection too small for the share rule to speak about, the share cap
+        // catches a partial scoping failure the floor cannot see.
+        //
+        // MEASURED WITH THE RECONCILE'S OWN PREDICATE, not a re-derivation of
+        // it. `reconcileWhere` is the same object the `updateMany` below is
+        // given, so the number the rails judge and the number the write
+        // produces cannot describe different sets — which is the defect this
+        // same change fixes in the AD provider, where the completeness flag was
+        // computed over one collection and the upsert consumed another.
+        const wouldDeprovision = await db.connectedIdentityAccount.count({ where: reconcileWhere });
+
+        let refusal: string | null = null;
+        let refusalReason: 'zero_enumeration' | 'share_cap' | null = null;
+
+        // Nothing proposed is always allowed, matching `checkDisableBlastRadius`
+        // on `proposed <= 0`: a no-op surfacing as a refusal would teach
+        // operators that refusals are noise.
+        if (wouldDeprovision > 0) {
+            // FOLLOWS `hris-sync.ts`'s `passSawRows` — the sibling subsystem
+            // already had this guard and this one did not. Same shape, and the
+            // second clause is load-bearing for the same reason there: under
+            // resume the final run of a pass legitimately reads an empty page
+            // (a directory whose size is an exact multiple of the page cap ends
+            // that way), and an earlier run of THIS pass already proved the
+            // provider is answering. A FIRST-run empty enumeration still
+            // refuses, which is the zero-entry case that matters.
+            //
+            // `Boolean(...)`, not `!== null`: the marker is absent as either
+            // null or undefined depending on the caller, and `!== null` reads
+            // undefined as "resumed", which would make the guard unconditional.
+            //
+            // Counts `upserted`, NOT `accounts.length`. They differ exactly when
+            // the provider returned entries with no `externalUserId`, which the
+            // loop above skips — and it is the rows we WROTE that the reconcile
+            // predicate complements, so anything else would be measuring one
+            // collection to authorise a statement about another.
+            const passSawAccounts = upserted > 0 || Boolean(conn.syncPassStartedAt);
+            if (!passSawAccounts) {
+                refusalReason = 'zero_enumeration';
+                refusal =
+                    `Refusing to deprovision ${wouldDeprovision} account(s): this pass ingested none. ` +
+                    `A complete-but-empty enumeration is far more likely a scoping failure — a baseDN ` +
+                    `typo, an OU ACL change, a bind account scoped down — than a directory that emptied, ` +
+                    `and the accounts stay in their current status until a human has looked.`;
+            } else {
+                // The denominator is what this connection currently calls live,
+                // AFTER this pass's upserts: rows it just confirmed, plus the
+                // stale rows the numerator is proposing to remove. Same table,
+                // same connection, one predicate narrower — so the two halves of
+                // the fraction count the same kind of thing over the same set.
+                const knownPopulation = await db.connectedIdentityAccount.count({
+                    where: {
+                        tenantId: ctx.tenantId,
+                        provider: conn.provider,
+                        connectionId: conn.id,
+                        status: { not: 'DEPROVISIONED' },
+                    },
+                });
+                // Unreachable by construction — the numerator's predicate is the
+                // denominator's plus `syncedAt`, so the population is never
+                // below it. Pinned anyway, and pinned to 1 rather than 0: an
+                // absent denominator must read as "the whole directory" and
+                // refuse, never as "a small share" and allow.
+                const share = knownPopulation > 0 ? wouldDeprovision / knownPopulation : 1;
+                if (wouldDeprovision > DEPROVISION_SHARE_FLOOR && share > MAX_DEPROVISION_SHARE) {
+                    refusalReason = 'share_cap';
+                    refusal =
+                        `Refusing to deprovision ${wouldDeprovision} of ${knownPopulation} account(s) ` +
+                        `(${(share * 100).toFixed(1)}%): the per-pass share cap is ` +
+                        `${(MAX_DEPROVISION_SHARE * 100).toFixed(0)}%. A slice of the directory this large ` +
+                        `disappearing between two passes is more likely a scoping failure than a real ` +
+                        `departure wave, so the accounts stay in their current status until a human has looked.`;
+                }
+            }
+        }
+
+        let deprovisioned = 0;
+        if (!refusal) {
+            const reconcile = await db.connectedIdentityAccount.updateMany({
+                where: reconcileWhere,
+                data: { status: 'DEPROVISIONED', syncedAt: now },
+            });
+            deprovisioned = reconcile.count;
+        }
 
         // The pass is done: clear the cursor so the next run starts a fresh one.
+        //
+        // CLEARED ON A REFUSAL TOO, and that is not tidiness. The enumeration
+        // finished; it is the reconcile that was held, so there is no page left
+        // to resume. Leaving `syncPassStartedAt` set would also disarm the floor
+        // on the very next run: `passSawAccounts` ORs in that marker, so a
+        // second zero-entry enumeration would read as "an earlier run of this
+        // pass saw rows" and sweep the connection the refusal just saved.
         await db.integrationConnection.updateMany({
             where: { id: conn.id },
             data: { syncCursor: null, syncPassStartedAt: null },
         });
 
+        // PARTIAL, NOT PASSED, when a rail refused. The traversal succeeded and
+        // the upserts landed, so this is not an ERROR — but a pass whose
+        // reconcile was withheld has left the mirror knowingly incomplete, and
+        // PASSED is the one thing it must not say. The enum's own doc comment
+        // names this failure one subsystem over: an incomplete pack recorded as
+        // clean, where the operator's only durable record said nothing happened.
+        //
+        // It also stops the follow-on link reconcile, which `jobs/identity-sync`
+        // gates on `status === 'PASSED'`. That is the right direction rather
+        // than a side effect: `IdentityAccountLink.lastVerifiedAt` would
+        // otherwise be freshened from a pass we have just declared untrustworthy,
+        // and `findLeaverCandidates` requires that freshness — so a suspect pass
+        // yields fewer leaver candidates, not more.
+        const status: 'PASSED' | 'PARTIAL' = refusal ? 'PARTIAL' : 'PASSED';
         await db.integrationExecution.update({
             where: { id: execution.id },
             data: {
-                status: 'PASSED',
-                resultJson: { upserted, deprovisioned: reconcile.count, total: accounts.length },
+                status,
+                // Carried on the row, because the row is the only durable record
+                // an operator reads. `null` on the clean path.
+                errorMessage: refusal,
+                resultJson: {
+                    upserted,
+                    deprovisioned,
+                    total: accounts.length,
+                    ...(refusal ? { deprovisionRefused: refusalReason, deprovisionProposed: wouldDeprovision } : {}),
+                },
                 durationMs: Date.now() - start,
                 completedAt: new Date(),
             },
@@ -396,10 +596,40 @@ export async function runIdentitySync(input: {
         // people to ignore the one signal that means someone must act. Cleared
         // unconditionally on every success, not only the success after a
         // failure.
+        //
+        // Cleared on a refusal as well, deliberately: the bind and the search
+        // both succeeded, so the credential is demonstrably working and a banner
+        // saying otherwise would be false. The refusal is not a credential
+        // signal and does not travel on that channel — it travels as PARTIAL,
+        // `errorMessage`, the warn log and `integration.identity.deprovision.refused`.
         await clearAuthFailure(db, conn.id, conn.provider);
 
-        recordIdentityDeprovisioned({ provider: conn.provider, count: reconcile.count }); // H6 — spike = wrongful mass-deprovision
-        logger.info('identity-sync complete', { component: 'identity-sync', tenantId: ctx.tenantId, provider: conn.provider, executionId: execution.id, upserted, deprovisioned: reconcile.count });
-        return { executionId: execution.id, status: 'PASSED', upserted, deprovisioned: reconcile.count, provider: conn.provider };
+        recordIdentityDeprovisioned({ provider: conn.provider, count: deprovisioned }); // H6 — spike = wrongful mass-deprovision
+        if (refusal) {
+            // The counter above cannot carry this: it early-returns on `count <=
+            // 0`, so a refusal — whose count is zero by definition — emitted
+            // nothing at all. A held mass-deprovision was the one event in this
+            // function with no metric, which is the opposite of the intent.
+            recordDeprovisionRefused({ provider: conn.provider, reason: refusalReason ?? 'share_cap' });
+            logger.warn('identity-sync deprovision reconcile REFUSED — accounts left as-is, run marked PARTIAL', {
+                component: 'identity-sync',
+                tenantId: ctx.tenantId,
+                provider: conn.provider,
+                executionId: execution.id,
+                upserted,
+                proposed: wouldDeprovision,
+                reason: refusalReason,
+            });
+        } else {
+            logger.info('identity-sync complete', { component: 'identity-sync', tenantId: ctx.tenantId, provider: conn.provider, executionId: execution.id, upserted, deprovisioned });
+        }
+        return {
+            executionId: execution.id,
+            status,
+            upserted,
+            deprovisioned,
+            errorMessage: refusal ?? undefined,
+            provider: conn.provider,
+        };
     });
 }

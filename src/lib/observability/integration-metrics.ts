@@ -29,6 +29,7 @@ let _outboundWrite: ReturnType<ReturnType<typeof getMeter>['createCounter']> | u
 let _calendarPush: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _calendarRevoked: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _identityDeprovisioned: Counter | null = null;
+let _deprovisionRefused: Counter | null = null;
 let _identityLinkReconcile: Counter | null = null;
 let _leaverPassOutcome: Counter | null = null;
 let _leaverNotification: Counter | null = null;
@@ -422,6 +423,33 @@ export function recordIdentityDeprovisioned(attrs: { provider: string; count: nu
     if (attrs.count <= 0) return;
     if (!_identityDeprovisioned) _identityDeprovisioned = getMeter().createCounter('integration.identity.deprovisioned', { description: 'Accounts deprovisioned by an identity-sync reconcile', unit: '1' });
     _identityDeprovisioned.add(attrs.count, { provider: attrs.provider });
+}
+
+/**
+ * A deprovision reconcile was REFUSED by one of its blast-radius rails.
+ *
+ * A SEPARATE SERIES, not a zero on the one above, because the counter above
+ * early-returns on `count <= 0` — so the event with the largest blast radius in
+ * that whole function, the one where a sweep was held back, emitted nothing at
+ * all while an executed sweep emitted a number. The two are also different
+ * questions: `deprovisioned` measures how much moved, this measures how often a
+ * rail had to stop it.
+ *
+ * A non-zero rate is the directory-scoping signature — a baseDN typo, an OU ACL
+ * change, a bind account scoped down. Worth alerting on at any rate above zero:
+ * a refusal LATCHES (the rows keep their stale `syncedAt` and are re-proposed
+ * every pass), so it does not clear itself and the mirror stays knowingly
+ * behind the directory until someone looks.
+ *
+ * `reason` is one of two fixed literals, so cardinality is providers x 2.
+ */
+export function recordDeprovisionRefused(attrs: { provider: string; reason: 'zero_enumeration' | 'share_cap' }): void {
+    if (!_deprovisionRefused)
+        _deprovisionRefused = getMeter().createCounter('integration.identity.deprovision.refused', {
+            description: 'Identity-sync deprovision reconciles refused by a blast-radius rail',
+            unit: '1',
+        });
+    _deprovisionRefused.add(1, { provider: attrs.provider, reason: attrs.reason });
 }
 
 /**
