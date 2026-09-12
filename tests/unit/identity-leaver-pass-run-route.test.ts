@@ -233,10 +233,30 @@ describe('POST …/admin/identity-leaver-passes/run — the job id', () => {
         expect(manual).not.toBe(scheduled);
     });
 
+    it('mints its id under a namespace SEPARATE from the scheduled job', () => {
+        // THE ONE LITERAL, and the only assertion here that notices a rename.
+        //
+        // Every other case in this file mints its expectation from
+        // MANUAL_LEAVER_PASS_JOB_KEY, which makes them tautological in the
+        // namespace dimension — adversarial review collapsed the constant onto
+        // the scheduled job's own name and all 21 stayed green. The separation
+        // the route argues for was therefore asserted nowhere.
+        //
+        // Pinned in ONE place on purpose: restating the string in twenty
+        // assertions would make a deliberate rename twenty edits, and people
+        // route around that. Here it is a single deliberate edit that forces a
+        // reviewer to look at the dedupe story.
+        expect(MANUAL_LEAVER_PASS_JOB_KEY).toBe('identity-leaver-pass-manual');
+        // And it must not BE the scheduled job's key — the property the literal
+        // exists to protect, stated so a future rename to the same value fails
+        // even if someone updates the literal above to match.
+        expect(MANUAL_LEAVER_PASS_JOB_KEY).not.toBe('identity-leaver-pass');
+    });
+
     it('uses the minute bucket under its own dedupe namespace', async () => {
-        // Asserted against the constants rather than a hard-coded string: a
-        // literal would keep passing after MINUTE_MS or the namespace changed,
-        // which is precisely when it should fail.
+        // Asserted against the constants, which keeps this case about the
+        // BUCKET. The namespace itself is pinned literally above; without that
+        // pin this assertion is tautological in the namespace dimension.
         const manual = await runAt(T0);
 
         expect(manual).toBe(

@@ -107,7 +107,8 @@
  * second polling endpoint would be a third place to read the same run.
  *
  * A second run on a correct day is cheap rather than dangerous: `ALREADY_DISABLED`
- * returns before any write, and the blast-radius breaker sees the same batch it
+ * returns before any DIRECTORY write (it does settle a stranded journal row
+ * on that branch), and the blast-radius breaker sees the same batch it
  * saw at 05:00. That is what makes this safe to expose at all — but it is a
  * property of the pass, not a licence to fire it casually, hence the rate limit.
  */
@@ -131,9 +132,18 @@ type LeaverPassRunParams = { tenantSlug: string };
 /**
  * The dedupe namespace for manually-triggered passes.
  *
- * Exported so a test can assert the id this route mints WITHOUT restating the
- * string — a test that hard-codes the prefix keeps passing after a rename and
- * stops proving the two paths are separated.
+ * Exported for reuse, and the ORIGINAL VERSION OF THIS COMMENT HAD THE REASONING
+ * BACKWARDS. It claimed a hard-coded prefix "keeps passing after a rename". The
+ * opposite is true: a literal is exactly what FAILS on a rename, and an imported
+ * constant is what keeps passing, because both sides of the comparison move
+ * together. Adversarial review demonstrated it — collapsing this value onto the
+ * scheduled job's own name (the separation the section below argues for) left
+ * the suite at 21/21 green, because every assertion minted its expectation from
+ * this same symbol.
+ *
+ * So the suite now pins the string LITERALLY in one place, and imports it
+ * everywhere else. The literal is the thing that notices a rename; the import
+ * keeps the other twenty assertions from restating it.
  */
 export const MANUAL_LEAVER_PASS_JOB_KEY = 'identity-leaver-pass-manual';
 

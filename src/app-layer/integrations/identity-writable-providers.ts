@@ -13,9 +13,20 @@
  *
  * That is a real cost rather than a tidiness one. A Next route that validates a
  * provider name against this set is in the request path; dragging the writers
- * into its module graph means every deploy of that route ships them, and in a
- * Jest environment the undici import fails outright (`ReferenceError: File is
- * not defined`), which is how the split was discovered. The alternative — a
+ * into its module graph means every deploy of that route ships them.
+ *
+ * THE SPLIT WAS DISCOVERED BY A FALSE SIGNAL, and the correction is worth
+ * keeping. A first test run died with `ReferenceError: File is not defined` from
+ * the undici import, which read as "this import cannot work under Jest". It is
+ * not true on the Node this repo requires: `engines` pins >=24 <25, `.nvmrc`
+ * says 24, and under Node 22+ the same unmocked import loads cleanly. The error
+ * was an artefact of a stale default `node` (v18) on one machine. The extraction
+ * is still right — for the module-graph reason above, and because the
+ * alternative is duplication — but it is NOT justified by an import that fails.
+ * Anyone who reproduces that error is on the wrong Node, not looking at a
+ * constraint.
+ *
+ * The alternative — a
  * second hard-coded copy of the list at the route — is the drift this repo
  * spends most of its guards preventing: the set that VALIDATES and the set that
  * RESOLVES A WRITER would be free to disagree, and the failure mode is a 202

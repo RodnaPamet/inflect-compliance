@@ -134,7 +134,8 @@ must not.
 
 - **`API_KEY_CREATE_LIMIT` (5/hr), not the default mutation tier.** Same preset
   as the other OWNER-gated enqueue-a-job routes. A second run on a correct day
-  is cheap — `ALREADY_DISABLED` returns before any write and the blast-radius
+  is cheap — `ALREADY_DISABLED` returns before any DIRECTORY write — it does settle a
+  stranded journal row on that branch — and the blast-radius
   breaker sees the same batch — but that is a property of the pass, not a
   licence to fire it in a loop.
 
