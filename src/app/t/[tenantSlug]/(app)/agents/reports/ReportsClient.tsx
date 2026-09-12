@@ -12,6 +12,7 @@ import { formatDateTime } from '@/lib/format-date';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
+import { ExportPackButton } from './ExportPackButton';
 import { Metric, type DefinitionView, type MeasureView } from './Metric';
 
 /** One report's envelope, as it crosses the server/client boundary. */
@@ -118,6 +119,7 @@ export function ReportsClient({
     enforcing,
     canReviewProposals,
     canInvestigate,
+    canExport,
 }: {
     tenantSlug: string;
     pack: PackView;
@@ -126,6 +128,14 @@ export function ReportsClient({
     canReviewProposals: boolean;
     /** `admin.agent_registry` — this page's gate, so it is true by construction here. */
     canInvestigate: boolean;
+    /**
+     * `evidence.edit`. NOT true by construction: the register key and the
+     * evidence key are separate grants, so an assessor-facing reader can hold
+     * this page and still be unable to file what it renders. The button is
+     * hidden rather than shown-and-refused — an action that always 403s is a
+     * defect report waiting to be filed against a working permission model.
+     */
+    canExport: boolean;
 }) {
     const t = useTranslations('agents');
     const tenantHref = useTenantHref();
@@ -147,12 +157,15 @@ export function ReportsClient({
                 title: t('reports.title'),
                 description: t('reports.description'),
                 actions: (
-                    <AgentsViewsMenu
-                        tenantSlug={tenantSlug}
-                        current="reports"
-                        canReviewProposals={canReviewProposals}
-                        canInvestigate={canInvestigate}
-                    />
+                    <div className="flex items-center gap-3">
+                        {canExport && <ExportPackButton />}
+                        <AgentsViewsMenu
+                            tenantSlug={tenantSlug}
+                            current="reports"
+                            canReviewProposals={canReviewProposals}
+                            canInvestigate={canInvestigate}
+                        />
+                    </div>
                 ),
             }}
         >

@@ -78,6 +78,12 @@ export default async function AgentReportsPage({
             // it offers a link that renders a ForbiddenPage.
             canReviewProposals={Boolean(ctx.appPermissions?.admin?.view)}
             canInvestigate={Boolean(ctx.appPermissions?.admin?.agent_registry)}
+            // The SAME question the export usecase asks. Filing the pack writes
+            // into the evidence library, which is the library's grant to give
+            // and not the register's — so holding this page is not holding this
+            // button, and the two keys are read separately here rather than one
+            // being inferred from the other.
+            canExport={Boolean(ctx.appPermissions?.evidence?.edit)}
         />
     );
 }
