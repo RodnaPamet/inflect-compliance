@@ -339,26 +339,32 @@ function IdentityAccountsContent() {
             // column. The defect was that this cell asserted ACTIVE for an
             // account we had disabled hours earlier; a discreet marker elsewhere
             // would leave the false claim standing and add a footnote.
+            //
+            // ONE badge, with its content and variant computed — not a second
+            // badge beside the first. `tests/guards/badge-density.test.ts` caps
+            // this file at 6 and says why: "ONE loud badge, not a secondary
+            // competing with another". A warning pill sitting next to a green
+            // ACTIVE pill would also leave the false claim standing and add a
+            // footnote to it, which is the opposite of the fix.
             cell: ({ row }) => {
                 const signal = writeSignal(row.original);
-                if (!signal) {
-                    return (
-                        <StatusBadge variant={row.original.status === 'ACTIVE' ? 'success' : 'neutral'}>
-                            {row.original.status}
-                        </StatusBadge>
-                    );
-                }
                 return (
                     <StatusBadge
-                        variant="warning"
-                        tone="solid"
-                        tooltip={t(`identityAccounts.${signal.tip}`, {
-                            status: row.original.status,
-                            observedAt: row.original.syncedAt ? formatDateTime(row.original.syncedAt) : '—',
-                            appliedAt: row.original.lastWriteAt ? formatDateTime(row.original.lastWriteAt) : '—',
-                        })}
+                        variant={signal ? 'warning' : row.original.status === 'ACTIVE' ? 'success' : 'neutral'}
+                        tone={signal ? 'solid' : undefined}
+                        tooltip={
+                            signal
+                                ? t(`identityAccounts.${signal.tip}`, {
+                                      status: row.original.status,
+                                      observedAt: row.original.syncedAt ? formatDateTime(row.original.syncedAt) : '—',
+                                      appliedAt: row.original.lastWriteAt
+                                          ? formatDateTime(row.original.lastWriteAt)
+                                          : '—',
+                                  })
+                                : undefined
+                        }
                     >
-                        {t(`identityAccounts.${signal.label}`)}
+                        {signal ? t(`identityAccounts.${signal.label}`) : row.original.status}
                     </StatusBadge>
                 );
             },
