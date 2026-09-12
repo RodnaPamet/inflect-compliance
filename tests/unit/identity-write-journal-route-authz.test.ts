@@ -178,6 +178,44 @@ describe('GET …/admin/identity-write-journal (the index)', () => {
             provider: undefined,
         });
     });
+
+    it('treats an EMPTY limit as no opinion, not as a one-row page', async () => {
+        // `?limit=` is what a form submits for an untouched field, and it is the
+        // case the obvious parse gets wrong: Number('') is 0, not NaN, so a bare
+        // Number.isFinite check admits it and a Math.max(1, …) floor turns it
+        // into a single row. That answer is silently, baffingly wrong — the
+        // operator asked for the page and got one entry, with a 200 and no clue.
+        // The `>= 1` half of the guard is the only thing standing between those,
+        // and until this test nothing failed when it was removed.
+        getTenantCtxMock.mockResolvedValueOnce(ctxFor('OWNER'));
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const res = await GET_INDEX(indexReq('?limit='), indexArgs as any);
+
+        expect(res.status).toBe(200);
+        expect(listJournalWritesMock.mock.calls[0][1]).toEqual({
+            limit: undefined,
+            provider: undefined,
+        });
+    });
+
+    it('treats a zero or negative limit the same way', async () => {
+        // Same guard, the two other values that reach it. Asserted separately
+        // because `?limit=` only proves Number('') — 0 and -5 arrive as honest
+        // finite numbers and would survive a fix that special-cased the empty
+        // string instead of flooring the value.
+        for (const q of ['?limit=0', '?limit=-5']) {
+            listJournalWritesMock.mockClear();
+            getTenantCtxMock.mockResolvedValueOnce(ctxFor('OWNER'));
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const res = await GET_INDEX(indexReq(q), indexArgs as any);
+            expect(res.status).toBe(200);
+            expect(listJournalWritesMock.mock.calls[0][1]).toEqual({
+                limit: undefined,
+                provider: undefined,
+            });
+        }
+    });
 });
 
 describe('GET …/admin/identity-write-journal/<reference> (the captured state)', () => {
@@ -225,6 +263,33 @@ describe('GET …/admin/identity-write-journal/<reference> (the captured state)'
         const res = await GET_ONE(oneReq('nope'), oneArgs('nope') as any);
 
         expect(res.status).toBe(404);
+    });
+
+    it('clips the quoted reference, so the 404 is not a log-volume lever', async () => {
+        // The message names the reference back so an operator holding a mistyped
+        // id from an email can see WHICH one missed. Nothing stops a client
+        // sending kilobytes instead, and `withApiErrorHandling` writes the
+        // message to the STRUCTURED LOG as well as the body — so an unbounded
+        // echo hands anyone who can reach this route a way to inflate log
+        // storage, from a 404 that looks like a typo.
+        //
+        // 64 is generous: a cuid is ~25 characters, so a real reference is never
+        // clipped and this can only fire on something that was never going to
+        // match anyway.
+        getTenantCtxMock.mockResolvedValueOnce(ctxFor('OWNER'));
+        getJournalWriteMock.mockResolvedValueOnce(null);
+        const huge = 'z'.repeat(5000);
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const res = await GET_ONE(oneReq(huge), oneArgs(huge) as any);
+        const body = await res.json();
+
+        expect(res.status).toBe(404);
+        // The whole body, not just the reference: the cap is worthless if the
+        // id is clipped in one field and echoed whole in another.
+        const serialised = JSON.stringify(body);
+        expect(serialised).toContain('z'.repeat(64));
+        expect(serialised).not.toContain('z'.repeat(65));
     });
 });
 

@@ -51,13 +51,19 @@ type JournalEntryParams = { tenantSlug: string; journalId: string };
  * that now carries this id on each decision. ADMIN explicitly does not hold it.
  */
 export const GET = withApiErrorHandling(
-    // Destructured as `{ params }`, then awaited: under the Next 15+ runtime the
-    // route export receives `params` as a Promise, and the wrapper forwards
-    // routeArgs rather than the resolved object.
+    // `params` is already RESOLVED here. An earlier draft awaited it and
+    // explained that the wrapper forwards the unresolved routeArgs; that was
+    // wrong — `requirePermission` does `const resolvedParams = await
+    // routeArgs.params` and then forwards `{ ...routeArgs, params:
+    // resolvedParams }`, with its own comment saying it resolves once and
+    // hands the resolved object on. The extra await was harmless (awaiting a
+    // non-thenable yields itself, which is why nothing failed) but it stated
+    // something untrue about the middleware and diverged from every sibling
+    // dynamic-segment admin route, all of which read `params.<id>` directly.
     requirePermission<JournalEntryParams>(
         'admin.tenant_lifecycle',
         async (_req, { params }, ctx) => {
-            const { journalId } = await params;
+            const { journalId } = params;
 
             const write = await getJournalWrite(ctx, journalId);
             if (!write) {
