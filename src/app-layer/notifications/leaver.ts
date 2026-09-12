@@ -108,6 +108,18 @@
  *                     volume, so it goes out as a DISABLED mail flagged
  *                     RECONCILED.
  *
+ *   REFUSED_UNMEASURED The live directory says ENABLED while the stored
+ *                     observation said otherwise, so the blast-radius breaker
+ *                     measured a batch this candidate was not in. Refused
+ *                     rather than written, which is the CLOSED direction and
+ *                     costs something real: a terminated person keeps access
+ *                     until the sync is fixed. IT only — a manager can do
+ *                     nothing about a stale mirror — and NEEDS_ACTION rather
+ *                     than silent, because the refusal is the product declining
+ *                     to act on evidence it could not trust, which somebody has
+ *                     to resolve. Under the #2499 chain every candidate takes
+ *                     this arm and the pass writes nothing at all.
+ *
  * ═══ THE MANAGER IS BEST-EFFORT; IT IS NOT ═══
  *
  * `IdentityWriteJournal.linkId` is nullable, `Employee.managerEmployeeId` is
@@ -379,6 +391,12 @@ export function planLeaverNotifications(
         // Manager: null, as for every other still-live outcome. A manager can
         // do nothing about a stale identity mirror, and the nightly repeat
         // until the sync is fixed would be a mail they cannot action.
+        // NEEDS_ACTION, and IT-only. The account is still live because we
+        // declined to write to it, so this is not an FYI — somebody has to look
+        // at why the mirror and the directory disagree. The manager is null for
+        // the same reason as every other refusal in this switch: they cannot
+        // act on a sync fault, and mail they cannot act on is mail they learn
+        // to filter, which costs the arms they CAN act on.
         case 'REFUSED_UNMEASURED':
             return { it: 'IDENTITY_LEAVER_NEEDS_ACTION', manager: null };
         // Two rails share this outcome and they want opposite mail.

@@ -227,8 +227,20 @@ export function recordCalendarConsentRevoked(attrs: { provider: string }): void 
  * that way until its next sync stamps it. Paging on the count alone during that
  * window sends someone to configure a connector they do not need.
  *
- * ALERT ON — even one INDETERMINATE, and REFUSED_PROTECTED above single
- * figures.
+ * REFUSED_UNMEASURED — THE MIRROR AND THE DIRECTORY DISAGREE, and the write was
+ * withheld. The stored observation said the account was not ACTIVE; the live
+ * read says it is. The blast-radius breaker measured a batch this candidate was
+ * not in, so writing it would put the cap's numerator and the actual writes out
+ * of step — the shape of #2498. Refusing is the closed direction and it has a
+ * cost: a terminated person keeps access until somebody acts.
+ *
+ * On ANY volume this points upstream, not at the leaver path. A whole batch
+ * refusing this way is the signature of a sync that marked live accounts
+ * deprovisioned (#2499); a single one is usually an account changed in the
+ * directory between the 03:00 sync and the 05:00 pass, which clears itself.
+ *
+ * ALERT ON — even one INDETERMINATE, REFUSED_PROTECTED above single figures,
+ * and REFUSED_UNMEASURED on more than a couple in one pass.
  */
 export function recordIdentityWriteOutcome(attrs: {
     provider: string;
