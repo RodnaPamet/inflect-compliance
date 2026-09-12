@@ -117,6 +117,15 @@
  * org chart. The manager lookup is bulk-resolved once per batch rather than
  * per-account, so a 50-candidate run costs three queries, not 150.
  *
+ * Best-effort is about DELIVERY, not about how quietly the miss is recorded.
+ * When the manager cannot be reached, the severity of saying so follows the
+ * OUTCOME rather than the lookup: silence about a refusal costs nothing, while
+ * silence about a DISABLED account means a write landed in a customer's
+ * directory and the one human outside IT who needed telling was not told.
+ * `unreachedManagerLogLevel` is that split, and it is the only place the two
+ * facts meet — the `no_recipient` counter carries no outcome label, so it
+ * cannot tell them apart on its own.
+ *
  * @module notifications/leaver
  */
 import type { EmailNotificationType } from '@prisma/client';
@@ -392,6 +401,80 @@ export function planLeaverNotifications(
 }
 
 /**
+ * How loudly to say "the manager was never told".
+ *
+ * ═══ THE LEVEL FOLLOWS THE OUTCOME, NOT THE RECIPIENT LOOKUP ═══
+ *
+ * A missing manager is not one event. It is either a shrug — nothing happened,
+ * so nobody needed telling — or it is the only surviving trace of a write into
+ * a customer's directory. The log line carried both at INFO, and an INFO line
+ * is a line nobody greps.
+ *
+ * What that cost, concretely. The first real disable this product ever
+ * performed (2026-09-12, 05:00 UTC) had no manager in the feed. A live account
+ * was disabled, `IdentityWriteJournal` took its first APPLIED row ever, and the
+ * person whose report had just lost their access was not told — and the only
+ * record of THAT second fact was an INFO line. Nobody was paged, because
+ * nothing here asked to be.
+ *
+ * The counter cannot stand in for this. `recordLeaverNotification` fires
+ * `no_recipient` for both situations and deliberately carries no outcome label
+ * (its own docblock: "cardinality is four results x two audiences"), so the
+ * metric cannot separate a refusal that had nobody to tell from a write nobody
+ * was told about. This log line is the only place the outcome and the empty
+ * audience sit together, which makes it the only place the severity CAN be
+ * decided.
+ *
+ * ═══ WHY THE OLD DEFENCE WAS TRUE AND STILL WRONG ═══
+ *
+ * The comment this replaces argued INFO on the grounds that "a worker with no
+ * manager in the feed is ordinary". That is true of the POPULATION and
+ * irrelevant AT THIS SITE, because the ordinary case never reaches it:
+ * `planLeaverNotifications` returns `manager: null` for every silent and
+ * IT-only outcome, so the caller's `plan.manager &&` guard has already
+ * discarded them. `Employee.managerEmployeeId` is null for most rows and will
+ * stay that way — one writer in the repo (`hris-sync.ts`), needing an enabled
+ * BambooHR/Workday feed carrying `managerEmail` AND that manager present in the
+ * same roster, with no `updateEmployee` to fix it after the fact — but that
+ * commonness is spent BEFORE the log line, not at it.
+ *
+ * ═══ WHY THIS KEYS ON THE PLANNED MAIL, NOT ON A LIST OF OUTCOMES ═══
+ *
+ * Re-listing the write-bearing outcomes here would be a second copy of
+ * `planLeaverNotifications`'s table, and the two would drift the first time
+ * somebody routes a new outcome to managers: the table would change, this list
+ * would not, and a real write would silently go back to INFO. So the input is
+ * the mail that was PLANNED for the manager, which is already derived from the
+ * outcome and cannot fall out of step with it.
+ *
+ * `IDENTITY_LEAVER_NEEDS_ACTION` is this subsystem's name for "the account is
+ * still live and nothing was written" — the same distinction `wantsRef` draws
+ * further down when deciding whether a missing journal id deserves a warning.
+ * Every other manager mail asserts a change to a real account: DISABLED says
+ * "access removed", UNCONFIRMED says it may have been, and the reconcile arm of
+ * ALREADY_DISABLED is the one and only mail a human will ever get about a write
+ * an earlier pass could not confirm. Dropping any of those in silence is what
+ * is worth a WARN.
+ *
+ * WARN rather than ERROR, matching the two siblings in this file: ERROR is used
+ * where an insert or a payload build actually THREW, WARN where the subsystem
+ * is intact but somebody who should have heard did not — which is already how
+ * `buildLeaverAudienceBook` logs the same gap for the IT audience. ERROR here
+ * would also page somebody nightly over a null org chart no operator can fix
+ * from inside this product.
+ *
+ * NEEDS_ACTION cannot reach this function today: no outcome routes it to a
+ * manager, so `notifyLeaverOutcome` can only ever call this with a
+ * write-bearing type. The arm is kept — and tested directly rather than through
+ * the enqueue — because it states the RULE. A future routing arm that tells a
+ * manager about an account still live degrades to INFO by itself, instead of
+ * inheriting a warning somebody has to remember to re-derive.
+ */
+export function unreachedManagerLogLevel(planned: EmailNotificationType): 'warn' | 'info' {
+    return planned === 'IDENTITY_LEAVER_NEEDS_ACTION' ? 'info' : 'warn';
+}
+
+/**
  * Directory identifiers, removed from provider text before it reaches an inbox.
  *
  * `detail` is the provider's own error string. Graph answers a stale link with
@@ -644,15 +727,29 @@ export async function notifyLeaverOutcome(
         }
 
         if (plan.manager && !subject?.manager) {
-            // Deliberately info, not warn. A worker with no manager in the feed
-            // is ordinary; the line exists so "the manager was never told" is
-            // answerable after the fact, not so somebody is paged.
-            logger.info('leaver notification had no manager recipient', {
+            // The level is decided by the OUTCOME, not by the recipient lookup —
+            // the full argument, and what the old unconditional INFO cost on the
+            // first real disable, is in `unreachedManagerLogLevel`. In short: a
+            // refusal with nobody to tell is a shrug, a DISABLE with nobody to
+            // tell is a directory write whose only trace is this line.
+            //
+            // Indexed rather than branched so the two arms cannot drift apart in
+            // the fields they carry: the outcome is what changes, and it is
+            // already in the payload, so a reader who finds one of these can
+            // grep the other by message and compare like with like.
+            const level = unreachedManagerLogLevel(plan.manager);
+            logger[level]('leaver notification had no manager recipient', {
                 component: 'notifications-leaver',
                 tenantId: ctx.tenantId,
                 provider: input.provider,
                 outcome: input.outcome,
                 linkResolved: subject !== undefined,
+                // The journal row this mail would have quoted. Present on every
+                // write-bearing outcome bar the beginWrite-threw case, and it is
+                // what makes the WARN actionable rather than merely alarming:
+                // it names the write nobody was told about, so an operator can
+                // read the captured prior state and reverse it by hand.
+                journalId: journalRef,
             });
         }
 
