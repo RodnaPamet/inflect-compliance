@@ -165,7 +165,20 @@ export async function exportAgentGovernancePack(
             action: 'AGENT_GOVERNANCE_PACK_EXPORTED',
             entityType: 'Evidence',
             entityId: created.id,
-            details: JSON.stringify({
+            // `detailsJson`, not `details`: the latter is a free-text field
+            // that `logEvent` appends a `Context: {...}` line to, so a JSON
+            // string written there is no longer parseable JSON by the time it
+            // is stored. The structured column is the machine-readable source
+            // of truth, and this row exists to be read by a machine.
+            detailsJson: {
+                // The required discriminator. This row records the CREATION of
+                // an Evidence entity, which is literally what happened — the
+                // export is not a read event dressed up, it leaves a permanent
+                // record behind.
+                category: 'entity_lifecycle',
+                entityName: 'Evidence',
+                operation: 'create',
+                summary: title,
                 generatedAt: pack.generatedAt.toISOString(),
                 // Recorded because it qualifies every figure in the filed
                 // document, and the flag can be flipped afterwards. An audit
@@ -176,7 +189,7 @@ export async function exportAgentGovernancePack(
                 windowDays: pack.approvals.window?.days ?? null,
                 documentBytes: Buffer.byteLength(document, 'utf8'),
                 retentionDays: PACK_RETENTION_DAYS,
-            }),
+            },
         });
 
         return { evidenceId: created.id, retentionUntil: created.retentionUntil };

@@ -150,6 +150,7 @@ const renderPack = (over: Partial<PackView> = {}, enforcing = true) =>
             enforcing={enforcing}
             canReviewProposals
             canInvestigate
+            canExport
         />,
     );
 
