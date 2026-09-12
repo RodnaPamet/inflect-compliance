@@ -163,6 +163,13 @@ let worker: Worker | undefined;
 // point of failure. Failure-soft: a registration error is logged but
 // must NOT stop the worker from coming up to drain already-enqueued
 // jobs (the standalone scheduler step is still the explicit path).
+//
+// Since #2497 this also SWEEPS schedulers this app defines but no longer
+// schedules, so every worker boot is a reconciliation and not only an
+// upsert. The sweep never touches an id this codebase does not define, and
+// it fails open — it logs and leaves orphans in place rather than making
+// the registration below look like it failed. See
+// `src/app-layer/jobs/register-schedules.ts`.
 (async () => {
     const schedulerQueue = new Queue(QUEUE_NAME, { connection: createWorkerConnection() });
     try {

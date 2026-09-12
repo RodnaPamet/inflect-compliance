@@ -4,12 +4,16 @@
  *
  * Reads the schedule definitions from `src/app-layer/jobs/schedules.ts`
  * and registers them as BullMQ repeatable jobs. Idempotent: BullMQ
- * deduplicates repeatables by job name + cron pattern.
+ * deduplicates schedulers by ID, so re-running upserts rather than
+ * duplicating. Since #2497 the default run also REMOVES schedulers this
+ * app defines but no longer schedules — see
+ * `src/app-layer/jobs/register-schedules.ts` for the bound on what it is
+ * willing to delete.
  *
  * Usage:
- *   npx tsx scripts/scheduler.ts                # register all schedules
+ *   npx tsx scripts/scheduler.ts                # register all schedules (+ sweep orphans)
  *   npx tsx scripts/scheduler.ts --list         # list current repeatables
- *   npx tsx scripts/scheduler.ts --clean        # remove all repeatables
+ *   npx tsx scripts/scheduler.ts --clean        # remove ALL repeatables — see removeAll()
  *
  * This script runs once and exits — it is NOT a long-running process.
  * The worker (`scripts/worker.ts`) is the long-running process that
@@ -107,8 +111,8 @@ async function main() {
 
 async function registerAll(queue: Queue): Promise<void> {
     log.info({ count: SCHEDULED_JOBS.length }, 'registering repeatable jobs');
-    // Single source of truth for the upsert shape — shared with the
-    // worker's boot-time self-registration (item 28).
+    // Single source of truth for the upsert shape AND for the orphan sweep —
+    // shared with the worker's boot-time self-registration (item 28).
     await registerSchedules(queue, log);
     log.info('all schedules registered ✓');
 }
@@ -130,13 +134,25 @@ async function listRepeatables(queue: Queue): Promise<void> {
     }
 }
 
+/**
+ * `--clean`. Removes EVERY scheduler on this queue, including ones this app
+ * does not define — it is the deliberate blunt instrument, and it is NOT the
+ * reconciliation `registerAll` performs. On a Redis shared with another
+ * deployment using this queue name, this takes that deployment's schedulers
+ * down with ours. Recovery is a normal register run from each deployment.
+ */
 async function removeAll(queue: Queue): Promise<void> {
     const schedulers = await queue.getJobSchedulers();
     log.info({ count: schedulers.length }, 'removing all repeatable jobs');
 
     for (const s of schedulers) {
-        await queue.removeJobScheduler(s.name ?? '');
-        log.info({ name: s.name }, 'removed');
+        // `key`, not `name`. `removeJobScheduler` takes the scheduler ID — the
+        // first argument given to `upsertJobScheduler` — while `name` is the
+        // job-template name. This app happens to set both to the same string,
+        // so `s.name` worked by coincidence; anything registered with a
+        // distinct ID was enumerated here and then not removed.
+        await queue.removeJobScheduler(s.key);
+        log.info({ schedulerId: s.key, jobName: s.name }, 'removed');
     }
 
     log.info('all repeatables removed ✓');
