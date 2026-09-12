@@ -9,3 +9,5 @@ Privacy Framework, NIST SSDF, NIS2, DORA, and the EU AI Act.
   day-one developer onboarding guide.
 - **Architecture deep dive:** see [CLAUDE.md](CLAUDE.md) — the exhaustive
   system/domain specification.
+
+<!-- bisect control probe, not for merge -->
