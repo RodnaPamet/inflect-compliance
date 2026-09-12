@@ -7876,6 +7876,32 @@
     }
   },
   "agents": {
+    "reports": {
+      "definitionAria": "How {label} is counted",
+      "definitionMissing": "No definition was published for this figure, so it cannot be defended. Report it to whoever maintains the metric registry rather than quoting it.",
+      "moment": "Measured",
+      "includes": "Counts in",
+      "excludes": "Counts out",
+      "momentValue": {
+        "AS_OF_GENERATION": "as of the moment this pack was generated",
+        "OVER_WINDOW": "over the reporting window"
+      },
+      "basis": {
+        "NO_AGENTS_REGISTERED": "No agents are registered, so there is nothing to count.",
+        "NO_AGENTS_IN_SCOPE": "No agent of the kind this figure counts exists here.",
+        "ASI_FRAMEWORK_NOT_INSTALLED": "The OWASP agentic framework is not installed, so coverage cannot be assessed.",
+        "ASI_FRAMEWORK_EMPTY": "The installed agentic framework contains no risks to assess against.",
+        "NO_DECIDED_PROPOSALS": "No proposal has been approved or rejected in this window.",
+        "BELOW_REPORTABLE_SAMPLE": "Too few decisions to report without misleading.",
+        "NO_ANSWERED_SAMPLE_AUDITS": "No sampled approval has been re-checked yet.",
+        "NO_DRILLS_RUN": "The stop control has never been drilled, so nothing has been proven about it.",
+        "ALL_DRILLS_ERRORED": "Every drill errored, so none of them proved anything.",
+        "NO_KILLS_ENGAGED": "No kill switch has been engaged in this window.",
+        "NO_SUPPLYING_VENDORS": "No supplier provides an agent here.",
+        "OUTSIDE_PLATFORM_BOUNDARY": "This cannot be observed from inside the platform.",
+        "UNKNOWN": "This figure is unavailable and the reason was not recorded."
+      }
+    },
     "crumbDashboard": "Dashboard",
     "crumbAdmin": "Admin",
     "crumbMcp": "MCP",
