@@ -85,27 +85,27 @@ test.describe('an operator finds, registers, grants, and stops an agent', () => 
         await test.step('a single click opens the agent', async () => {
             await safeGoto(page, `/t/${tenantSlug}/agents`, { waitUntil: 'domcontentloaded' });
             await waitForHydration(page).catch(() => {});
-            const row = main.locator('#agents-table').getByText(agentName).first();
+            // BY THE ROW'S OWN HANDLE, not `getByText(name).first()`. The name
+            // appears in the breadcrumb and the detail heading too, so a text
+            // match has more than one candidate and `.first()` picks by
+            // document order rather than by meaning. This testid is on the name
+            // cell of exactly this agent's row.
+            const row = main.getByTestId(`agent-row-${agentId}`);
             await expect(row).toBeVisible({ timeout: 30_000 });
-            // SINGLE, not double — the register opts out of row selection
-            // (#2434), so the row's action no longer competes with a gesture.
-            // CLICK AND ASSERT TOGETHER, retried.
+
+            // ONE CLICK, THEN WAIT FOR THE NAVIGATION. Not `toPass` around
+            // both, which is what the previous attempt did and what the trace
+            // then disproved: attempt 1's click SUCCEEDED in 0.3s, the URL
+            // assertion ran 0.0s later — before the soft navigation had
+            // committed — and failed; attempt 2's click then hung for 46s
+            // because the row it wanted no longer existed. Retrying a
+            // non-idempotent action cannot work: once it succeeds, the second
+            // attempt has nothing left to click.
             //
-            // The first CI run failed here with the URL still on `/agents`, and
-            // the cause is not the route: `onRowClick` is a React handler, so
-            // until the table hydrates the row is inert markup and the click is
-            // a silent no-op. Clicking once and then polling the URL for 30s
-            // polls a page nothing is going to change — it waits for the
-            // consequence of an event that never fired.
-            //
-            // `waitForHydration` is deliberately `.catch(() => {})` here and
-            // cannot be leant on. So the retry wraps BOTH halves: each attempt
-            // clicks again and re-reads the URL, which is what makes the wait
-            // actually about hydration finishing.
-            await expect(async () => {
-                await row.click();
-                expect(new URL(page.url()).pathname).toBe(`/t/${tenantSlug}/agents/${agentId}`);
-            }).toPass({ timeout: 45_000 });
+            // `waitForURL` is the right wait because it listens for the
+            // navigation rather than re-reading a value on a timer.
+            await row.click();
+            await page.waitForURL(`**/agents/${agentId}`, { timeout: 30_000 });
         });
 
         // ─── 4. GRANT A TOOL ────────────────────────────────────────────
