@@ -289,6 +289,31 @@ export interface NotificationDispatchPayload {
     windows?: number[];
 }
 
+/**
+ * Notification outbox flush — drain PENDING rows to the email provider.
+ *
+ * This job exists because the outbox's only SCHEDULED drain used to be the
+ * tail of `daily-evidence-expiry` at 06:00, behind three unguarded awaits.
+ * Anything enqueued outside that window — a 05:00 leaver disable telling a
+ * manager their report's account is gone — waited for the next 06:00 tick,
+ * and waited another 24h if one of the evidence sweeps threw first.
+ *
+ * `tenantId` is OPTIONAL and the two shapes mean different things. Absent is
+ * the scheduled drain, which legitimately spans every tenant. Present narrows
+ * it to one tenant, which is what an operator re-running a stuck queue wants —
+ * and what the tenant-scoped admin route already does for the same reason:
+ * `processOutbox` without a tenant sends EVERY tenant's mail, so a caller who
+ * has one tenant in mind must say so.
+ *
+ * `limit` caps rows per pass. Optional so the schedule does not restate the
+ * job's own default; present so an operator draining a backlog can widen one
+ * run without editing the schedule.
+ */
+export interface NotificationOutboxFlushPayload {
+    tenantId?: string;
+    limit?: number;
+}
+
 /** Daily compliance snapshot — KPI trend storage */
 export interface ComplianceSnapshotPayload {
     tenantId?: string;
@@ -676,6 +701,7 @@ export interface JobPayloadMap {
     'evidence-expiry-monitor': EvidenceExpiryMonitorPayload;
     'evidence-stale-review-sweep': EvidenceStaleReviewSweepPayload;
     'notification-dispatch': NotificationDispatchPayload;
+    'notification-outbox-flush': NotificationOutboxFlushPayload;
     'sync-pull': SyncPullPayload;
     'compliance-snapshot': ComplianceSnapshotPayload;
     'sla-monitor': SlaMonitorPayload;
@@ -1208,6 +1234,26 @@ export const JOB_DEFAULTS: Record<JobName, {
         backoff: { type: 'exponential', delay: 10000 },
         removeOnComplete: 200,
         removeOnFail: 500,
+    },
+    'notification-outbox-flush': {
+        // ONE attempt, and the cadence is why. This runs every ten minutes, so
+        // "retry" already has a name: the next tick. A BullMQ retry five
+        // seconds after a failure re-enters the same dead SMTP host or the same
+        // unreachable database, and three of those per tick turns an outage
+        // into a retry storm against a third party's mail server.
+        //
+        // Nothing is lost by declining the retry. A row is claimed atomically
+        // before its send and its `attempts` column is the optimistic-
+        // concurrency token, so a pass that dies mid-batch leaves every
+        // unclaimed row PENDING for the next pass and every claimed one
+        // accounted for. Per-MESSAGE retry is a different mechanism that still
+        // applies: `processOutbox` gives each row three attempts before it goes
+        // permanently FAILED, and those are spread across ticks rather than
+        // burned inside one.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 50,
+        removeOnFail: 200,
     },
     'sync-pull': {
         attempts: 3,

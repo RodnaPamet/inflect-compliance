@@ -25,25 +25,107 @@ export interface DailyExpiryResult {
     outbox: ProcessOutboxResult;
 }
 
+/** One urgency threshold's sweep, and the error it threw. */
+export interface SweepFailure {
+    /** The threshold in days — 30, 7 or 1. */
+    days: number;
+    /** The thrown error's message, as it will reach the operator. */
+    error: string;
+}
+
+/**
+ * Thrown when at least one evidence sweep failed.
+ *
+ * The job still FAILS when a sweep throws — that has not changed and must not.
+ * What changed is WHEN it fails: the outbox flush now happens first, so the
+ * error carries a flush that already ran rather than replacing it. The message
+ * says so explicitly, because the question an operator brings to a failed
+ * `daily-evidence-expiry` at 06:05 is "did the 05:00 leaver mail go out?", and
+ * before this the answer was silently no.
+ */
+export class EvidenceSweepFailedError extends Error {
+    constructor(
+        readonly failures: readonly SweepFailure[],
+        readonly outbox: ProcessOutboxResult,
+        readonly outboxFlushed: boolean,
+    ) {
+        const detail = failures.map((f) => `${f.days}d: ${f.error}`).join('; ');
+        const flush = outboxFlushed
+            ? `outbox still flushed (${outbox.sent} sent, ${outbox.failed} failed, ${outbox.skipped} skipped)`
+            : 'outbox flush was skipped by the caller';
+        super(`${failures.length} of 3 evidence sweeps failed — ${detail}. The ${flush}.`);
+        this.name = 'EvidenceSweepFailedError';
+    }
+}
+
+/** The shape a sweep that threw contributes to the aggregate — zeros, not a guess. */
+const NO_SWEEP: RetentionNotificationResult = { scanned: 0, tasksCreated: 0, skippedDuplicate: 0 };
+
 export async function runDailyEvidenceExpiryNotifications(
     options: { tenantId?: string; skipOutbox?: boolean } = {},
 ): Promise<DailyExpiryResult> {
     return runJob('daily-evidence-expiry', async () => {
+        const failures: SweepFailure[] = [];
+
+        /**
+         * Run ONE sweep, and absorb its throw.
+         *
+         * The three sweeps used to be three bare `await`s with the outbox
+         * flush below them, which made this job's real shape "flush the
+         * outbox, unless any evidence query throws first". The outbox is the
+         * delivery path for EVERY notification in the product, so a failure in
+         * the 7-day evidence scan silently withheld the 05:00 leaver mail, the
+         * task reminders and the access-review nudges for another 24 hours.
+         * Nothing linked the two subsystems except the order of these lines.
+         *
+         * Catching per sweep is what breaks that link. It is NOT a decision to
+         * tolerate a failing sweep: every failure is recorded here, logged at
+         * error, and re-thrown once the flush is done — see
+         * `EvidenceSweepFailedError`. Isolating them individually (rather than
+         * wrapping all three in one try) also means the 30-day sweep throwing
+         * no longer costs us the 7-day and 1-day sweeps, which are independent
+         * queries over different rows.
+         */
+        const sweep = async (days: number): Promise<RetentionNotificationResult> => {
+            try {
+                const result = await runEvidenceRetentionNotifications({ days, tenantId: options.tenantId });
+                logger.info('expiry sweep completed', { component: 'job', threshold: days, tasksCreated: result.tasksCreated, skipped: result.skippedDuplicate });
+                return result;
+            } catch (error: unknown) {
+                const message = error instanceof Error ? error.message : String(error);
+                failures.push({ days, error: message });
+                // Logged HERE as well as re-thrown below, because the throw
+                // carries one aggregate message while this line carries the
+                // per-threshold detail a responder greps for.
+                logger.error('expiry sweep failed', { component: 'job', threshold: days, error: message });
+                return NO_SWEEP;
+            }
+        };
+
         // Sweep at three urgency thresholds
-        const days30 = await runEvidenceRetentionNotifications({ days: 30, tenantId: options.tenantId });
-        logger.info('expiry sweep completed', { component: 'job', threshold: 30, tasksCreated: days30.tasksCreated, skipped: days30.skippedDuplicate });
+        const days30 = await sweep(30);
+        const days7 = await sweep(7);
+        const days1 = await sweep(1);
 
-        const days7 = await runEvidenceRetentionNotifications({ days: 7, tenantId: options.tenantId });
-        logger.info('expiry sweep completed', { component: 'job', threshold: 7, tasksCreated: days7.tasksCreated, skipped: days7.skippedDuplicate });
-
-        const days1 = await runEvidenceRetentionNotifications({ days: 1, tenantId: options.tenantId });
-        logger.info('expiry sweep completed', { component: 'job', threshold: 1, tasksCreated: days1.tasksCreated, skipped: days1.skippedDuplicate });
-
-        // Flush outbox
+        // Flush outbox.
+        //
+        // Reached whether or not the sweeps above succeeded — that is the whole
+        // point of the guards. It is NOT itself guarded: a flush that throws is
+        // this job's own failure with nothing downstream of it to protect, and
+        // swallowing it would hide the one error this job is now responsible
+        // for reporting.
         let outbox: ProcessOutboxResult = { sent: 0, failed: 0, skipped: 0 };
         if (!options.skipOutbox) {
             outbox = await processOutbox({ limit: 200 });
             logger.info('outbox flushed', { component: 'job', sent: outbox.sent, failed: outbox.failed, skipped: outbox.skipped });
+        }
+
+        // Fail AFTER the flush, not instead of it. `runJob` records the failure
+        // metric and reports to Sentry, the executor registry turns the throw
+        // into `success: false`, and BullMQ retries — exactly as before. The
+        // only difference is that the mail left first.
+        if (failures.length > 0) {
+            throw new EvidenceSweepFailedError(failures, outbox, !options.skipOutbox);
         }
 
         return { sweeps: { days30, days7, days1 }, outbox };
