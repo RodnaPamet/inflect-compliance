@@ -1,6 +1,6 @@
 # 2026-09-12 — the roster read is composed with the lock lease (#2508)
 
-**Commit:** `<sha> fix(integrations): bound the HRIS roster read so it cannot outlive its lock lease (#2508)`
+**Commit:** `e53afd614 fix(integrations): bound the HRIS roster read so it cannot outlive its lock lease (#2508)`
 
 ## Design
 
@@ -45,7 +45,7 @@ report made entirely of droppable rows.
 
 ### The option chosen, and the direction it fails in
 
-Four were on the table. **(a) bound the read** was taken.
+Five were on the table. **(a) bound the read** was taken.
 
 - **(b) renew the lease while the read progresses** buys a *weaker* invariant
   here. Renewal keyed on "a page came back" cannot tell a run making real
@@ -56,6 +56,17 @@ Four were on the table. **(a) bound the read** was taken.
   work, and threads the lock (held in the job) into the provider (reached
   through the usecase), which is the separation `tests/stress/README.md` and
   the job's own comment make explicit.
+- **(e) absorb a smaller Retry-After** — shrinking `MAX_ABSORBED_RETRY_AFTER_MS`
+  — is the option issue #2508 itself listed, and it is the one worth spelling
+  out because it looks like it should work. It shrinks the per-REQUEST bound
+  (`MAX_HTTP_REQUEST_MS` is `MAX_HTTP_ATTEMPTS * DEFAULT_TIMEOUT_MS` plus the
+  absorbed sleeps) and does nothing to the REQUEST COUNT. The count is the
+  unbounded term: a page whose rows are all droppable advances the cursor
+  without growing `seen`, so the row cap never trips and the walk continues —
+  the failure the droppable-row fixture above reproduces. A smaller constant
+  multiplied by an unbounded page count is still unbounded, so (e) lowers the
+  number without changing its boundedness. That is why the deadline is on the
+  READ AS A WHOLE rather than on any request inside it.
 - **(c) raise the TTL** is the weakest, as the issue says. `SYNC_LOCK_TTL_MS`
   is also the reaper's threshold, so raising it lengthens exactly the window in
   which a connection killed mid-sync stays wedged — the wrong direction on the
@@ -152,13 +163,27 @@ and restates neither number — a restated number is what drifts.
   Mutating the deadline away was first measured against an untripwired version:
   the loop ran until the jest worker died of heap exhaustion after 150 seconds,
   reported as "Test suite failed to run" naming no test. A regression that reads
-  as an OOM is a regression nobody attributes to this change (see
-  `agri-saas`'s exit-134 lesson, same shape). The fetch double now throws a
+  as an OOM is a regression nobody attributes to this change — a jest worker
+  dying of heap exhaustion names no test, so the failure points at the runner
+  rather than at the diff. The fetch double now throws a
   named error on the first page past the budget, so the same mutation fails in
   seconds with the sentence "roster read did not stop on its deadline".
 - **`UNBOUNDED_ROSTER_READ_MS` lives in the guard, not in source.** It is the
   diagnosis the deadline replaces, and a constant nothing consumes is precisely
   the shape #1970 deleted — and the shape whose ghost this PR is cleaning up.
+
+  **That principle has to be read against `WORKDAY_MAX_PAGES_PER_RUN`, which
+  this same PR adds to `roster.ts` with no `src/` consumer** — only the guard
+  and the unit test import it. The two are not in tension once "consumer" is
+  read precisely. `#1970` deleted a constant that stated a budget NOTHING
+  checked, so nothing could notice when it stopped being true.
+  `WORKDAY_MAX_PAGES_PER_RUN` is a DERIVATION —
+  `Math.ceil(WORKDAY_MAX_PER_RUN / WORKDAY_PAGE_SIZE)` — whose two inputs are
+  live source constants, so it cannot drift from them, and the guard asserts
+  exactly that. Exporting the derivation rather than restating `10` in two
+  test files is what keeps the arithmetic honest. A constant is dead when
+  nothing would notice it going stale; this one goes red the moment either
+  input moves.
 - **identity-sync is NOT covered, and both docblocks say so.** Okta and Google
   Workspace fan out a per-user enrichment request after the page walk
   (`enrichAccounts`, `enrichSso`), so their worst case is a different
