@@ -980,11 +980,47 @@ jobs:
           # is how this got here. The sampler added above is what will settle
           # it. e2e-bundle remains the control.
           #
-          # 7168 x 2 = 14 GB worst case on a 16 GB runner. Deliberately no
-          # higher: the 8192-era peak was measured at 15783 MB / 16 GB, and
-          # returning to that band trades a loud, debuggable V8 abort for the
-          # silent kernel kill this ceiling was introduced to stop.
-          NODE_OPTIONS: "--max-old-space-size=7168"
+          # 2026-09-12 — THE SAMPLER FINALLY REPORTED, AND 7168 IS NOW IN THE
+          # BAND IT WAS CHOSEN TO AVOID. Streamed from inside the build step
+          # (a post-hoc step never runs — the runner is gone), on main at
+          # 75496ea46 / PR head 46cbff72f:
+          #
+          #     23:32:14   14024 used_MB   1965 avail_MB
+          #     23:32:19   15706 used_MB    283 avail_MB   <- peak
+          #     23:32:34   15694 used_MB    294 avail_MB
+          #     23:32:39   15661 used_MB    328 avail_MB
+          #     23:32:42   The runner has received a shutdown signal
+          #
+          # ~15.7 GB of 16 GB, held for ~25 s, then the kernel took the runner.
+          # That is the 8192-era curve (15783 MB / 206 MB) reproduced at 7168:
+          # the app grew into the headroom. `free -m` column 3 excludes
+          # buff/cache, so this is real resident memory, consistent with two
+          # heaps sitting near their ceiling.
+          #
+          # So this comes DOWN, and the arithmetic is the reason rather than a
+          # preference: 6144 x 2 caps worst-case heap at 12.3 GB, which against
+          # the ~1.4 GB of measured non-heap overhead lands near 13.7 GB and
+          # leaves ~2.3 GB. Six consecutive kills at 7168 (main x5, this branch
+          # x1) against one pass, so the previous value is not a coin flip any
+          # more.
+          #
+          # If a single heap now needs more than 6144 the failure is LOUD and
+          # deterministic (V8 "Reached heap limit" + a stack, SIGABRT) rather
+          # than a silent cancellation, which this file already argues is the
+          # better failure to have. The next step then is ONE heap rather than a
+          # bigger pair: `webpackBuildWorker` off with a ~10240 ceiling is ~11.6
+          # GB total, more room per heap AND less total than 7168 x 2. It is not
+          # taken here because it lives in next.config.js and would change the
+          # Docker and e2e-bundle builds too.
+          #
+          # e2e-bundle remains GREEN at 7168 on the same shas, building the same
+          # app — that difference is still unexplained, and it is why this edit
+          # is scoped to THIS job.
+          #
+          # (Historical, for the band: the 8192-era peak was 15783 MB / 16 GB,
+          # and returning to that band trades a loud, debuggable V8 abort for the
+          # silent kernel kill this ceiling was introduced to stop.)
+          NODE_OPTIONS: "--max-old-space-size=6144"
           NODE_ENV: production
 
       # The worker/scheduler bundle. Until 2026-08-25 this ran in exactly ONE
