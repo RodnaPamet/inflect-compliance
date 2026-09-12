@@ -38,7 +38,14 @@ describe('identity providers — registration + wiring', () => {
 
     it('the sync usecase is tenant-scoped (runInTenantContext, not global prisma)', () => {
         const uc = read('src/app-layer/usecases/identity-sync.ts');
-        expect(uc).toMatch(/runInTenantContext/);
+        // BOUND TO THE IMPORT, not to the bare identifier. A whole-file
+        // `/runInTenantContext/` was satisfied by any mention anywhere — and
+        // #2501, which split the run into several transactions and wrote a
+        // docblock explaining why, took it from four satisfying positions to
+        // five without touching this test. The import is the thing that makes
+        // the file tenant-scoped and it occurs exactly once, so deleting it is
+        // what this now fails on.
+        expect(uc).toMatch(/import \{[^}]*\brunInTenantContext\b[^}]*\} from '@\/lib\/db-context';/);
         expect(uc).not.toMatch(/from '@\/lib\/prisma'/);
     });
 

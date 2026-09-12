@@ -5,18 +5,43 @@
  * externalUserId)`; accounts that vanish from the directory are reconciled
  * to DEPROVISIONED so PR-4's offboarded-access check stays accurate.
  *
- * Mirrors `aws-posture.ts`: runs entirely inside `runInTenantContext`
- * (tenant-scoped, RLS-bound, no global prisma). Directory metadata only —
- * email + status flags, not content — so nothing is encrypted here.
+ * Tenant-scoped and RLS-bound throughout (`runInTenantContext`, no global
+ * prisma). Directory metadata only — email + status flags, not content — so
+ * nothing is encrypted here.
+ *
+ * ═══ THE RUN IS SEVERAL TRANSACTIONS, NOT ONE (#2501) ═══
+ *
+ * It used to be one. The whole function body was a single
+ * `runInTenantContext` callback — a Prisma interactive transaction on the
+ * 5,000 ms runtime default — with the directory enumeration's HTTPS round
+ * trips inside it. `integrations/sync-transaction.ts` carries the full
+ * account; the order below is what matters when reading this file:
+ *
+ *   1. a short transaction opens the run and commits the `RUNNING` row;
+ *   2. the directory enumeration happens with NO transaction open;
+ *   3. bounded write transactions carry the upserts and the reconcile;
+ *   4. a short transaction finalises the execution row.
+ *
+ * So every failure arm from step 2 onwards records its `ERROR` row on a client
+ * the failure has not closed. When the old budget blew it rolled back the
+ * `RUNNING` row AND the `ERROR` row the catch was writing, and the only
+ * observable left was an absence — indistinguishable from a dispatcher that
+ * never fired.
  */
 import type { RequestContext } from '../types';
 import { buildSystemContext } from '../context-system';
-import { runInTenantContext } from '@/lib/db-context';
+import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { markAuthFailure, clearAuthFailure } from '../integrations/connection-health';
 import { shouldBypassQueueRetry } from '../integrations/http-resilience';
 import { decryptField } from '@/lib/security/encryption';
 import { logger } from '@/lib/observability/logger';
 import { recordSyncTruncated, recordIdentityDeprovisioned, recordDeprovisionRefused } from '@/lib/observability/integration-metrics';
+import {
+    chunk,
+    SYNC_BOOKKEEPING_TX_OPTIONS,
+    SYNC_UPSERT_CHUNK_SIZE,
+    SYNC_WRITE_TX_OPTIONS,
+} from '../integrations/sync-transaction';
 import '../integrations/bootstrap'; // populate the provider registry in THIS module graph (see usecases/integrations)
 import { registry } from '../integrations/registry';
 import { isIdentitySyncProvider, type IdentitySyncProvider, type NormalizedIdentityAccount } from '../integrations/providers/identity/types';
@@ -140,7 +165,21 @@ export async function runIdentitySync(input: {
     const ctx = makeSystemCtx(input.tenantId);
     const now = input.now ?? new Date();
 
-    return runInTenantContext(ctx, async (db) => {
+    /**
+     * A handful of statements, no directory round trip. Everything whose job
+     * is to be DURABLE rather than fast goes through here: the RUNNING row,
+     * every ERROR row, the final status.
+     */
+    const shortTx = <T>(fn: (db: PrismaTx) => Promise<T>): Promise<T> =>
+        runInTenantContext(ctx, fn, SYNC_BOOKKEEPING_TX_OPTIONS);
+    /** One bounded batch of row writes — at most SYNC_UPSERT_CHUNK_SIZE of them. */
+    const writeTx = <T>(fn: (db: PrismaTx) => Promise<T>): Promise<T> =>
+        runInTenantContext(ctx, fn, SYNC_WRITE_TX_OPTIONS);
+
+    // ── 1. Open the run ──────────────────────────────────────────────────
+    // Committed BEFORE the enumeration, which is the entire point: from here
+    // on there is a row on disk saying this run started.
+    const opened = await shortTx(async (db) => {
         const conn = await db.integrationConnection.findFirst({
             where: { id: input.connectionId, tenantId: ctx.tenantId },
             select: { id: true, provider: true, configJson: true, secretEncrypted: true, isEnabled: true, syncCursor: true, syncPassStartedAt: true },
@@ -157,51 +196,66 @@ export async function runIdentitySync(input: {
                     completedAt: now,
                 },
             });
-            return { executionId: execution.id, status: 'ERROR', upserted: 0, deprovisioned: 0, errorMessage: 'Identity connection not found', provider: conn?.provider };
+            return { ok: false as const, executionId: execution.id, provider: conn?.provider };
         }
-
-        const automationKey = `${conn.provider}.sync`;
-        const config = (conn.configJson ?? {}) as Record<string, unknown>;
-        const secrets: Record<string, unknown> = conn.secretEncrypted
-            ? (JSON.parse(decryptField(conn.secretEncrypted)) as Record<string, unknown>)
-            : {};
-
         const execution = await db.integrationExecution.create({
-            data: { tenantId: ctx.tenantId, connectionId: conn.id, provider: conn.provider, automationKey, status: 'RUNNING', triggeredBy: 'scheduled', executedAt: now },
+            data: { tenantId: ctx.tenantId, connectionId: conn.id, provider: conn.provider, automationKey: `${conn.provider}.sync`, status: 'RUNNING', triggeredBy: 'scheduled', executedAt: now },
         });
+        return { ok: true as const, conn, executionId: execution.id };
+    });
+    if (!opened.ok) {
+        return { executionId: opened.executionId, status: 'ERROR', upserted: 0, deprovisioned: 0, errorMessage: 'Identity connection not found', provider: opened.provider };
+    }
+    const { conn, executionId } = opened;
 
-        // Resolve the provider (registry instance in prod; injected in tests).
-        const resolved = input.provider ?? registry.getProvider(conn.provider);
-        if (!resolved || !isIdentitySyncProvider(resolved)) {
-            await db.integrationExecution.update({
-                where: { id: execution.id },
+    const config = (conn.configJson ?? {}) as Record<string, unknown>;
+    const secrets: Record<string, unknown> = conn.secretEncrypted
+        ? (JSON.parse(decryptField(conn.secretEncrypted)) as Record<string, unknown>)
+        : {};
+
+    // Resolve the provider (registry instance in prod; injected in tests).
+    const resolved = input.provider ?? registry.getProvider(conn.provider);
+    if (!resolved || !isIdentitySyncProvider(resolved)) {
+        await shortTx((db) =>
+            db.integrationExecution.update({
+                where: { id: executionId },
                 data: { status: 'ERROR', errorMessage: `Provider ${conn.provider} does not support identity sync`, completedAt: new Date() },
-            });
-            return { executionId: execution.id, status: 'ERROR', upserted: 0, deprovisioned: 0, errorMessage: 'Provider does not support identity sync', provider: conn.provider };
-        }
+            }),
+        );
+        return { executionId, status: 'ERROR', upserted: 0, deprovisioned: 0, errorMessage: 'Provider does not support identity sync', provider: conn.provider };
+    }
 
-        const start = Date.now();
 
-        // A PASS is one full traversal of the directory, which for a directory
-        // over MAX_USERS spans several scheduled runs. `syncPassStartedAt`
-        // marks when it began; the deprovision reconcile compares each
-        // account's `syncedAt` against it, so "seen" accumulates across the
-        // whole pass instead of resetting every run — which is what makes
-        // reconciling after a resumed enumeration safe at all.
-        const passStartedAt = conn.syncPassStartedAt ?? now;
+    const start = Date.now();
 
-        let accounts: NormalizedIdentityAccount[];
-        let complete: boolean;
-        let resumeToken: string | null = null;
-        try {
-            const res = await resolved.listAccounts({ ...config, ...secrets }, conn.syncCursor);
-            accounts = res.accounts;
-            complete = res.complete;
-            resumeToken = res.resumeToken ?? null;
-        } catch (e) {
-            const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
+    // A PASS is one full traversal of the directory, which for a directory
+    // over MAX_USERS spans several scheduled runs. `syncPassStartedAt`
+    // marks when it began; the deprovision reconcile compares each
+    // account's `syncedAt` against it, so "seen" accumulates across the
+    // whole pass instead of resetting every run — which is what makes
+    // reconciling after a resumed enumeration safe at all.
+    const passStartedAt = conn.syncPassStartedAt ?? now;
+
+    let accounts: NormalizedIdentityAccount[];
+    let complete: boolean;
+    let resumeToken: string | null = null;
+    // ── 2. The enumeration — outside every transaction ───────────────────
+    // Okta, Google Workspace and Entra ID all page: sequential HTTPS round
+    // trips, each budgeted at 30 s by `bounded-fetch.ts` and each able to
+    // absorb a 60 s Retry-After sleep in-process. Held inside an interactive
+    // transaction that pinned a Postgres backend — and, through PgBouncer, a
+    // pooled server connection — for the whole enumeration, and blew the 5 s
+    // default long before the directory was read.
+    try {
+        const res = await resolved.listAccounts({ ...config, ...secrets }, conn.syncCursor);
+        accounts = res.accounts;
+        complete = res.complete;
+        resumeToken = res.resumeToken ?? null;
+    } catch (e) {
+        const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
+        await shortTx(async (db) => {
             await db.integrationExecution.update({
-                where: { id: execution.id },
+                where: { id: executionId },
                 data: { status: 'ERROR', errorMessage: msg, durationMs: Date.now() - start, completedAt: new Date() },
             });
             // Surface a REVOKED CREDENTIAL on the connection itself. Recording
@@ -209,106 +263,141 @@ export async function runIdentitySync(input: {
             // healthy until someone opened the history of a job nobody watches.
             // No-op unless this is an IntegrationAuthError (401/403).
             await markAuthFailure(db, conn.id, e, now, conn.provider);
-            return {
-                executionId: execution.id,
-                status: 'ERROR',
-                upserted: 0,
-                deprovisioned: 0,
-                errorMessage: msg,
-                provider: conn.provider,
-                // Preserve the retry classification across the usecase boundary.
-                // This function CATCHES the provider error, so without this the
-                // queue-level bypass could never see it and a revoked credential
-                // would go back to being retried three times in ~35s.
-                noRetry: shouldBypassQueueRetry(e),
-            };
-        }
+        });
+        return {
+            executionId,
+            status: 'ERROR',
+            upserted: 0,
+            deprovisioned: 0,
+            errorMessage: msg,
+            provider: conn.provider,
+            // Preserve the retry classification across the usecase boundary.
+            // This function CATCHES the provider error, so without this the
+            // queue-level bypass could never see it and a revoked credential
+            // would go back to being retried three times in ~35s.
+            noRetry: shouldBypassQueueRetry(e),
+        };
+    }
 
-        // Upsert each account idempotently by (tenantId, provider, externalUserId).
-        let upserted = 0;
+    // Declared outside the try so the write-failure arm can report what
+    // actually landed before it broke. Reporting 0 there would describe a
+    // half-written pass as a run that did nothing.
+    let upserted = 0;
+
+    // ── 3. The write phase ───────────────────────────────────────────────
+    // Wrapped in a catch, because the RUNNING row is now COMMITTED. Before
+    // this change a throw took that row down with it and the run left no trace
+    // at all; now the row outlives the failure, so something has to finish it
+    // or the connection shows a run that started and never ended.
+    try {
+        // Upsert each account idempotently by (tenantId, connectionId,
+        // externalUserId), one bounded transaction per chunk.
+        //
+        // NOT ONE TRANSACTION ANY MORE, and the reconcile further down depends
+        // on why that is still safe. What the reconcile needs is not that the
+        // upserts commit WITH it but that every upsert of this pass has
+        // ALREADY committed by the time it runs — which the sequencing gives:
+        // a chunk that fails throws out of this block, and the reconcile is
+        // never reached.
+        //
+        // What is genuinely given up is rolling committed upserts back when a
+        // LATER step fails, and that direction is the safe one. Accounts
+        // refreshed with no reconcile keep the status the directory reported,
+        // so the mirror over-reports people as present — which is the cheaper
+        // error for exactly the reason MAX_DEPROVISION_SHARE is: an over-large
+        // DEPROVISIONED sweep is what strands the leaver path's blast-radius
+        // numerator at zero (#2498), and over-reporting ACTIVE can only make
+        // that numerator larger.
+        //
         // No `seen` list is accumulated. It existed to feed
         // `externalUserId: { notIn: seen }`, which the resume work replaced with
         // the `syncedAt < passStartedAt` predicate below; the array outlived its
         // only reader and was still being built every pass. Left as a comment
         // rather than deleted silently, because its ABSENCE is what the
         // reconcile's correctness now rests on.
-        for (const a of accounts) { // guardrail-allow: n+1 — per-account upsert, bounded by MAX_USERS
-            if (!a.externalUserId) continue;
-            await db.connectedIdentityAccount.upsert({
-                // Keyed on the CONNECTION as of phase 2. The old
-                // tenantId_provider_externalUserId key made two forests under one
-                // tenant collide on a single row, which is what forced the
-                // deprovision reconcile to be provider-scoped in the first place.
-                where: {
-                    tenantId_connectionId_externalUserId: {
-                        tenantId: ctx.tenantId,
-                        connectionId: conn.id,
-                        externalUserId: a.externalUserId,
-                    },
-                },
-                create: {
-                    tenantId: ctx.tenantId,
-                    provider: conn.provider,
-                    connectionId: conn.id,
-                    externalUserId: a.externalUserId,
-                    email: a.email,
-                    displayName: a.displayName ?? null,
-                    status: a.status,
-                    isAdmin: a.isAdmin ?? false,
-                    mfaEnrolled: a.mfaEnrolled ?? false,
-                    // No `?? false` — nullable in the column too, because
-                    // "unknown" must not read as "safe to disable here".
-                    onPremisesSyncEnabled: a.onPremisesSyncEnabled,
-                    // Written as a PAIR with the line above, always from the
-                    // same pass. `null` when the provider did not answer, so
-                    // the value and the claim to have observed it can never
-                    // describe different syncs — a stale stamp beside a fresh
-                    // unknown would be a lie the rail would act on.
-                    onPremStateObservedAt: a.onPremStateObserved ? now : null,
-                    groupsJson: a.groups,
-                    lastActiveAt: a.lastActiveAt ?? null,
-                    syncedAt: now,
-                },
-                update: {
-                    // NOTHING ABOUT PROTECTION APPEARS IN THIS BLOCK, AND THAT IS
-                    // THE POINT. `isProtected`, `protectedAt`, `protectedByUserId`
-                    // and `protectionReason` are operator state, not directory
-                    // state — the directory has no opinion about them and this
-                    // sync must never express one. Adding any of them here would
-                    // clear a break-glass flag nightly, and the failure is silent
-                    // until the one run that would have refused doesn't.
-                    //
-                    // Prisma's explicit field lists are what make the omission
-                    // sufficient: this is not a spread, so a new column is opted
-                    // IN rather than swept along.
-                    //
-                    // Claimed on EVERY pass, not only on create. A row that
-                    // predates the column, or whose connection was deleted, is
-                    // adopted by whichever connection can still see the account
-                    // — which is the only evidence available about where it
-                    // lives. Ownership therefore converges on the truth instead
-                    // of being frozen at whatever ran first.
-                    connectionId: conn.id,
-                    email: a.email,
-                    displayName: a.displayName ?? null,
-                    status: a.status,
-                    isAdmin: a.isAdmin ?? false,
-                    mfaEnrolled: a.mfaEnrolled ?? false,
-                    // No `?? false` — nullable in the column too, because
-                    // "unknown" must not read as "safe to disable here".
-                    onPremisesSyncEnabled: a.onPremisesSyncEnabled,
-                    // Written as a PAIR with the line above, always from the
-                    // same pass. `null` when the provider did not answer, so
-                    // the value and the claim to have observed it can never
-                    // describe different syncs — a stale stamp beside a fresh
-                    // unknown would be a lie the rail would act on.
-                    onPremStateObservedAt: a.onPremStateObserved ? now : null,
-                    groupsJson: a.groups,
-                    lastActiveAt: a.lastActiveAt ?? null,
-                    syncedAt: now,
-                },
+        for (const group of chunk(accounts, SYNC_UPSERT_CHUNK_SIZE)) {
+            upserted += await writeTx(async (db) => {
+                let n = 0;
+                for (const a of group) { // guardrail-allow: n+1 — per-account upsert, bounded by SYNC_UPSERT_CHUNK_SIZE
+                    if (!a.externalUserId) continue;
+                    await db.connectedIdentityAccount.upsert({
+                        // Keyed on the CONNECTION as of phase 2. The old
+                        // tenantId_provider_externalUserId key made two forests under one
+                        // tenant collide on a single row, which is what forced the
+                        // deprovision reconcile to be provider-scoped in the first place.
+                        where: {
+                            tenantId_connectionId_externalUserId: {
+                                tenantId: ctx.tenantId,
+                                connectionId: conn.id,
+                                externalUserId: a.externalUserId,
+                            },
+                        },
+                        create: {
+                            tenantId: ctx.tenantId,
+                            provider: conn.provider,
+                            connectionId: conn.id,
+                            externalUserId: a.externalUserId,
+                            email: a.email,
+                            displayName: a.displayName ?? null,
+                            status: a.status,
+                            isAdmin: a.isAdmin ?? false,
+                            mfaEnrolled: a.mfaEnrolled ?? false,
+                            // No `?? false` — nullable in the column too, because
+                            // "unknown" must not read as "safe to disable here".
+                            onPremisesSyncEnabled: a.onPremisesSyncEnabled,
+                            // Written as a PAIR with the line above, always from the
+                            // same pass. `null` when the provider did not answer, so
+                            // the value and the claim to have observed it can never
+                            // describe different syncs — a stale stamp beside a fresh
+                            // unknown would be a lie the rail would act on.
+                            onPremStateObservedAt: a.onPremStateObserved ? now : null,
+                            groupsJson: a.groups,
+                            lastActiveAt: a.lastActiveAt ?? null,
+                            syncedAt: now,
+                        },
+                        update: {
+                            // NOTHING ABOUT PROTECTION APPEARS IN THIS BLOCK, AND THAT IS
+                            // THE POINT. `isProtected`, `protectedAt`, `protectedByUserId`
+                            // and `protectionReason` are operator state, not directory
+                            // state — the directory has no opinion about them and this
+                            // sync must never express one. Adding any of them here would
+                            // clear a break-glass flag nightly, and the failure is silent
+                            // until the one run that would have refused doesn't.
+                            //
+                            // Prisma's explicit field lists are what make the omission
+                            // sufficient: this is not a spread, so a new column is opted
+                            // IN rather than swept along.
+                            //
+                            // Claimed on EVERY pass, not only on create. A row that
+                            // predates the column, or whose connection was deleted, is
+                            // adopted by whichever connection can still see the account
+                            // — which is the only evidence available about where it
+                            // lives. Ownership therefore converges on the truth instead
+                            // of being frozen at whatever ran first.
+                            connectionId: conn.id,
+                            email: a.email,
+                            displayName: a.displayName ?? null,
+                            status: a.status,
+                            isAdmin: a.isAdmin ?? false,
+                            mfaEnrolled: a.mfaEnrolled ?? false,
+                            // No `?? false` — nullable in the column too, because
+                            // "unknown" must not read as "safe to disable here".
+                            onPremisesSyncEnabled: a.onPremisesSyncEnabled,
+                            // Written as a PAIR with the line above, always from the
+                            // same pass. `null` when the provider did not answer, so
+                            // the value and the claim to have observed it can never
+                            // describe different syncs — a stale stamp beside a fresh
+                            // unknown would be a lie the rail would act on.
+                            onPremStateObservedAt: a.onPremStateObserved ? now : null,
+                            groupsJson: a.groups,
+                            lastActiveAt: a.lastActiveAt ?? null,
+                            syncedAt: now,
+                        },
+                    });
+                    n += 1;
+                }
+                return n;
             });
-            upserted += 1;
         }
 
         // A KNOWN-PARTIAL enumeration must NEVER drive the deprovision
@@ -325,47 +414,55 @@ export async function runIdentitySync(input: {
                 // continues from here until the pass completes and reconciles.
                 // Reporting ERROR would page someone every night for a large
                 // directory that is working exactly as designed.
-                await db.integrationConnection.updateMany({
-                    where: { id: conn.id },
-                    data: { syncCursor: resumeToken, syncPassStartedAt: passStartedAt },
-                });
+                //
+                // The cursor is stored AFTER the upserts commit. The other
+                // order advances the pass past rows that then roll back, and
+                // the next run resumes beyond accounts nothing ever wrote.
+                await shortTx((db) =>
+                    db.integrationConnection.updateMany({
+                        where: { id: conn.id },
+                        data: { syncCursor: resumeToken, syncPassStartedAt: passStartedAt },
+                    }),
+                );
                 const msg = `Partial enumeration (${accounts.length} accounts this run); pass continues from the stored cursor on the next run.`;
-                await db.integrationExecution.update({
-                    where: { id: execution.id },
-                    data: {
-                        // PARTIAL, not PASSED. This arm RETURNS 'PARTIAL' — the
-                        // job reads that and correctly skips the link reconcile
-                        // — while the row an operator reads said the sync
-                        // passed. Green badge, zero links, nothing on the page
-                        // distinguishing it from a complete sync.
-                        //
-                        // The enum value already existed for exactly this, and
-                        // its own doc comment names the same defect one
-                        // subsystem over: the SharePoint audit-pack export
-                        // "used to record those runs as PASSED, so the
-                        // operator's only durable record of an incomplete pack
-                        // said it was clean".
-                        //
-                        // `errorMessage` stays null deliberately: a resumable
-                        // partial is not an error, it is an incomplete success
-                        // that continues next pass. PARTIAL is what carries that.
-                        status: 'PARTIAL',
-                        errorMessage: null,
-                        resultJson: { upserted, deprovisioned: 0, total: accounts.length, partial: true, resuming: true },
-                        durationMs: Date.now() - start,
-                        completedAt: new Date(),
-                    },
+                await shortTx(async (db) => {
+                    await db.integrationExecution.update({
+                        where: { id: executionId },
+                        data: {
+                            // PARTIAL, not PASSED. This arm RETURNS 'PARTIAL' — the
+                            // job reads that and correctly skips the link reconcile
+                            // — while the row an operator reads said the sync
+                            // passed. Green badge, zero links, nothing on the page
+                            // distinguishing it from a complete sync.
+                            //
+                            // The enum value already existed for exactly this, and
+                            // its own doc comment names the same defect one
+                            // subsystem over: the SharePoint audit-pack export
+                            // "used to record those runs as PASSED, so the
+                            // operator's only durable record of an incomplete pack
+                            // said it was clean".
+                            //
+                            // `errorMessage` stays null deliberately: a resumable
+                            // partial is not an error, it is an incomplete success
+                            // that continues next pass. PARTIAL is what carries that.
+                            status: 'PARTIAL',
+                            errorMessage: null,
+                            resultJson: { upserted, deprovisioned: 0, total: accounts.length, partial: true, resuming: true },
+                            durationMs: Date.now() - start,
+                            completedAt: new Date(),
+                        },
+                    });
+                    await clearAuthFailure(db, conn.id, conn.provider);
                 });
                 logger.info('identity-sync partial — cursor stored, pass continues', {
                     component: 'identity-sync',
                     tenantId: ctx.tenantId,
                     provider: conn.provider,
-                    executionId: execution.id,
+                    executionId,
                     upserted,
                     passStartedAt,
                 });
-                await clearAuthFailure(db, conn.id, conn.provider);
-                return { executionId: execution.id, status: 'PARTIAL', upserted, deprovisioned: 0, errorMessage: msg, provider: conn.provider };
+                return { executionId, status: 'PARTIAL', upserted, deprovisioned: 0, errorMessage: msg, provider: conn.provider };
             }
 
             // NOT resumable (Active Directory: ldapjs paged search uses a
@@ -380,13 +477,15 @@ export async function runIdentitySync(input: {
             // cap" — a wrong diagnosis in the one field an operator opens to
             // find out what happened. The provider logs which condition fired.
             const msg = `Incomplete directory enumeration: the provider ingested ${accounts.length} account(s) and reported the traversal unfinished, with no cursor to resume from. Deprovision reconcile skipped to avoid wrongful mass-deprovisioning; the provider's own log names the condition (the enumeration cap, or entries that could not be keyed).`;
-            await db.integrationExecution.update({
-                where: { id: execution.id },
-                data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, deprovisioned: 0, total: accounts.length, truncated: true }, durationMs: Date.now() - start, completedAt: new Date() },
-            });
-            logger.warn('identity-sync partial enumeration — deprovision skipped', { component: 'identity-sync', tenantId: ctx.tenantId, provider: conn.provider, executionId: execution.id, upserted });
+            await shortTx((db) =>
+                db.integrationExecution.update({
+                    where: { id: executionId },
+                    data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, deprovisioned: 0, total: accounts.length, truncated: true }, durationMs: Date.now() - start, completedAt: new Date() },
+                }),
+            );
+            logger.warn('identity-sync partial enumeration — deprovision skipped', { component: 'identity-sync', tenantId: ctx.tenantId, provider: conn.provider, executionId, upserted });
             return {
-                executionId: execution.id,
+                executionId,
                 status: 'ERROR',
                 upserted,
                 deprovisioned: 0,
@@ -401,8 +500,7 @@ export async function runIdentitySync(input: {
 
         // Reconcile still-ACTIVE accounts no longer in the (fully-enumerated)
         // directory — they are now deprovisioned. Runs ONLY on a confirmed-
-        // complete enumeration. The whole callback is one RLS transaction
-        // (runInTenantContext), so upsert + reconcile commit atomically.
+        // complete enumeration.
         // Anything not touched since the PASS began was not in the directory
         // during any run of this pass, so it is genuinely gone.
         //
@@ -444,120 +542,141 @@ export async function runIdentitySync(input: {
             syncedAt: { lt: passStartedAt },
         };
 
-        // ═══ `complete` IS NOT ENOUGH TO AUTHORISE THIS SWEEP ═══
+        // ═══ THE MEASURE, THE DECISION AND THE SWEEP ARE ONE TRANSACTION ═══
         //
-        // Everything above establishes that the provider finished its
-        // traversal. It establishes nothing about WHAT the traversal saw, and
-        // the sweep below is unbounded in the wrong direction: it flips every
-        // account this connection has not touched since the pass began.
-        //
-        // For Active Directory `complete` was `searchEntries.length < 5000`
-        // (fixed in the same change to compare against the INGESTED set), so a
-        // baseDN typo, an OU ACL change or a bind user scoped down produced
-        // zero entries, `0 < 5000` = complete, the whole forest DEPROVISIONED,
-        // and the run recorded PASSED with an INFO log. Every rail downstream
-        // then reads a mirror in which nobody is ACTIVE.
-        //
-        // So the reconcile is measured before it is applied: how many rows it
-        // would flip, against how many this connection still calls live. Two
-        // refusals, and they cover different cases — the floor catches a
-        // connection too small for the share rule to speak about, the share cap
-        // catches a partial scoping failure the floor cannot see.
-        //
-        // MEASURED WITH THE RECONCILE'S OWN PREDICATE, not a re-derivation of
-        // it. `reconcileWhere` is the same object the `updateMany` below is
-        // given, so the number the rails judge and the number the write
-        // produces cannot describe different sets — which is the defect this
-        // same change fixes in the AD provider, where the completeness flag was
-        // computed over one collection and the upsert consumed another.
-        const wouldDeprovision = await db.connectedIdentityAccount.count({ where: reconcileWhere });
-
-        let refusal: string | null = null;
-        let refusalReason: 'zero_enumeration' | 'share_cap' | null = null;
-
-        // Nothing proposed is always allowed, matching `checkDisableBlastRadius`
-        // on `proposed <= 0`: a no-op surfacing as a refusal would teach
-        // operators that refusals are noise.
-        if (wouldDeprovision > 0) {
-            // FOLLOWS `hris-sync.ts`'s `passSawRows` — the sibling subsystem
-            // already had this guard and this one did not. Same shape, and the
-            // second clause is load-bearing for the same reason there: under
-            // resume the final run of a pass legitimately reads an empty page
-            // (a directory whose size is an exact multiple of the page cap ends
-            // that way), and an earlier run of THIS pass already proved the
-            // provider is answering. A FIRST-run empty enumeration still
-            // refuses, which is the zero-entry case that matters.
+        // Not a leftover of the old single-transaction shape — the one grouping
+        // that has to survive it. The rails below judge a COUNT and then act on
+        // it, so if the count and the `updateMany` ran in separate transactions
+        // a row could change status between them and the number an operator was
+        // shown would describe a different set from the one that was swept.
+        // That is the same defect this subsystem fixed in the AD provider,
+        // where the completeness flag was computed over one collection and the
+        // upsert consumed another. The cursor clear joins them for the reason
+        // given at the bottom of the block.
+        const outcome = await writeTx(async (db) => {
+            // ═══ `complete` IS NOT ENOUGH TO AUTHORISE THIS SWEEP ═══
             //
-            // `Boolean(...)`, not `!== null`: the marker is absent as either
-            // null or undefined depending on the caller, and `!== null` reads
-            // undefined as "resumed", which would make the guard unconditional.
+            // Everything above establishes that the provider finished its
+            // traversal. It establishes nothing about WHAT the traversal saw, and
+            // the sweep below is unbounded in the wrong direction: it flips every
+            // account this connection has not touched since the pass began.
             //
-            // Counts `upserted`, NOT `accounts.length`. They differ exactly when
-            // the provider returned entries with no `externalUserId`, which the
-            // loop above skips — and it is the rows we WROTE that the reconcile
-            // predicate complements, so anything else would be measuring one
-            // collection to authorise a statement about another.
-            const passSawAccounts = upserted > 0 || Boolean(conn.syncPassStartedAt);
-            if (!passSawAccounts) {
-                refusalReason = 'zero_enumeration';
-                refusal =
-                    `Refusing to deprovision ${wouldDeprovision} account(s): this pass ingested none. ` +
-                    `A complete-but-empty enumeration is far more likely a scoping failure — a baseDN ` +
-                    `typo, an OU ACL change, a bind account scoped down — than a directory that emptied, ` +
-                    `and the accounts stay in their current status until a human has looked.`;
-            } else {
-                // The denominator is what this connection currently calls live,
-                // AFTER this pass's upserts: rows it just confirmed, plus the
-                // stale rows the numerator is proposing to remove. Same table,
-                // same connection, one predicate narrower — so the two halves of
-                // the fraction count the same kind of thing over the same set.
-                const knownPopulation = await db.connectedIdentityAccount.count({
-                    where: {
-                        tenantId: ctx.tenantId,
-                        provider: conn.provider,
-                        connectionId: conn.id,
-                        status: { not: 'DEPROVISIONED' },
-                    },
-                });
-                // Unreachable by construction — the numerator's predicate is the
-                // denominator's plus `syncedAt`, so the population is never
-                // below it. Pinned anyway, and pinned to 1 rather than 0: an
-                // absent denominator must read as "the whole directory" and
-                // refuse, never as "a small share" and allow.
-                const share = knownPopulation > 0 ? wouldDeprovision / knownPopulation : 1;
-                if (wouldDeprovision > DEPROVISION_SHARE_FLOOR && share > MAX_DEPROVISION_SHARE) {
-                    refusalReason = 'share_cap';
+            // For Active Directory `complete` was `searchEntries.length < 5000`
+            // (fixed in the same change to compare against the INGESTED set), so a
+            // baseDN typo, an OU ACL change or a bind user scoped down produced
+            // zero entries, `0 < 5000` = complete, the whole forest DEPROVISIONED,
+            // and the run recorded PASSED with an INFO log. Every rail downstream
+            // then reads a mirror in which nobody is ACTIVE.
+            //
+            // So the reconcile is measured before it is applied: how many rows it
+            // would flip, against how many this connection still calls live. Two
+            // refusals, and they cover different cases — the floor catches a
+            // connection too small for the share rule to speak about, the share cap
+            // catches a partial scoping failure the floor cannot see.
+            //
+            // MEASURED WITH THE RECONCILE'S OWN PREDICATE, not a re-derivation of
+            // it. `reconcileWhere` is the same object the `updateMany` below is
+            // given, so the number the rails judge and the number the write
+            // produces cannot describe different sets.
+            const wouldDeprovision = await db.connectedIdentityAccount.count({ where: reconcileWhere });
+
+            let refusal: string | null = null;
+            let refusalReason: 'zero_enumeration' | 'share_cap' | null = null;
+
+            // Nothing proposed is always allowed, matching `checkDisableBlastRadius`
+            // on `proposed <= 0`: a no-op surfacing as a refusal would teach
+            // operators that refusals are noise.
+            if (wouldDeprovision > 0) {
+                // FOLLOWS `hris-sync.ts`'s `passSawRows` — the sibling subsystem
+                // already had this guard and this one did not. Same shape, and the
+                // second clause is load-bearing for the same reason there: under
+                // resume the final run of a pass legitimately reads an empty page
+                // (a directory whose size is an exact multiple of the page cap ends
+                // that way), and an earlier run of THIS pass already proved the
+                // provider is answering. A FIRST-run empty enumeration still
+                // refuses, which is the zero-entry case that matters.
+                //
+                // `Boolean(...)`, not `!== null`: the marker is absent as either
+                // null or undefined depending on the caller, and `!== null` reads
+                // undefined as "resumed", which would make the guard unconditional.
+                //
+                // Counts `upserted`, NOT `accounts.length`. They differ exactly when
+                // the provider returned entries with no `externalUserId`, which the
+                // loop above skips — and it is the rows we WROTE that the reconcile
+                // predicate complements, so anything else would be measuring one
+                // collection to authorise a statement about another.
+                const passSawAccounts = upserted > 0 || Boolean(conn.syncPassStartedAt);
+                if (!passSawAccounts) {
+                    refusalReason = 'zero_enumeration';
                     refusal =
-                        `Refusing to deprovision ${wouldDeprovision} of ${knownPopulation} account(s) ` +
-                        `(${(share * 100).toFixed(1)}%): the per-pass share cap is ` +
-                        `${(MAX_DEPROVISION_SHARE * 100).toFixed(0)}%. A slice of the directory this large ` +
-                        `disappearing between two passes is more likely a scoping failure than a real ` +
-                        `departure wave, so the accounts stay in their current status until a human has looked.`;
+                        `Refusing to deprovision ${wouldDeprovision} account(s): this pass ingested none. ` +
+                        `A complete-but-empty enumeration is far more likely a scoping failure — a baseDN ` +
+                        `typo, an OU ACL change, a bind account scoped down — than a directory that emptied, ` +
+                        `and the accounts stay in their current status until a human has looked.`;
+                } else {
+                    // The denominator is what this connection currently calls live,
+                    // AFTER this pass's upserts: rows it just confirmed, plus the
+                    // stale rows the numerator is proposing to remove. Same table,
+                    // same connection, one predicate narrower — so the two halves of
+                    // the fraction count the same kind of thing over the same set.
+                    const knownPopulation = await db.connectedIdentityAccount.count({
+                        where: {
+                            tenantId: ctx.tenantId,
+                            provider: conn.provider,
+                            connectionId: conn.id,
+                            status: { not: 'DEPROVISIONED' },
+                        },
+                    });
+                    // Unreachable by construction — the numerator's predicate is the
+                    // denominator's plus `syncedAt`, so the population is never
+                    // below it. Pinned anyway, and pinned to 1 rather than 0: an
+                    // absent denominator must read as "the whole directory" and
+                    // refuse, never as "a small share" and allow.
+                    const share = knownPopulation > 0 ? wouldDeprovision / knownPopulation : 1;
+                    if (wouldDeprovision > DEPROVISION_SHARE_FLOOR && share > MAX_DEPROVISION_SHARE) {
+                        refusalReason = 'share_cap';
+                        refusal =
+                            `Refusing to deprovision ${wouldDeprovision} of ${knownPopulation} account(s) ` +
+                            `(${(share * 100).toFixed(1)}%): the per-pass share cap is ` +
+                            `${(MAX_DEPROVISION_SHARE * 100).toFixed(0)}%. A slice of the directory this large ` +
+                            `disappearing between two passes is more likely a scoping failure than a real ` +
+                            `departure wave, so the accounts stay in their current status until a human has looked.`;
+                    }
                 }
             }
-        }
 
-        let deprovisioned = 0;
-        if (!refusal) {
-            const reconcile = await db.connectedIdentityAccount.updateMany({
-                where: reconcileWhere,
-                data: { status: 'DEPROVISIONED', syncedAt: now },
+            let deprovisioned = 0;
+            if (!refusal) {
+                const reconcile = await db.connectedIdentityAccount.updateMany({
+                    where: reconcileWhere,
+                    data: { status: 'DEPROVISIONED', syncedAt: now },
+                });
+                deprovisioned = reconcile.count;
+            }
+
+            // The pass is done: clear the cursor so the next run starts a fresh one.
+            //
+            // CLEARED ON A REFUSAL TOO, and that is not tidiness. The enumeration
+            // finished; it is the reconcile that was held, so there is no page left
+            // to resume. Leaving `syncPassStartedAt` set would also disarm the floor
+            // on the very next run: `passSawAccounts` ORs in that marker, so a
+            // second zero-entry enumeration would read as "an earlier run of this
+            // pass saw rows" and sweep the connection the refusal just saved.
+            //
+            // IN THIS TRANSACTION, with the sweep. A sweep that commits while the
+            // cursor survives leaves the next run resuming a pass that already
+            // deprovisioned its departures; a cursor cleared while the sweep is
+            // lost closes the pass with the departures never marked. Both are
+            // silent, so they stay atomic.
+            await db.integrationConnection.updateMany({
+                where: { id: conn.id },
+                data: { syncCursor: null, syncPassStartedAt: null },
             });
-            deprovisioned = reconcile.count;
-        }
 
-        // The pass is done: clear the cursor so the next run starts a fresh one.
-        //
-        // CLEARED ON A REFUSAL TOO, and that is not tidiness. The enumeration
-        // finished; it is the reconcile that was held, so there is no page left
-        // to resume. Leaving `syncPassStartedAt` set would also disarm the floor
-        // on the very next run: `passSawAccounts` ORs in that marker, so a
-        // second zero-entry enumeration would read as "an earlier run of this
-        // pass saw rows" and sweep the connection the refusal just saved.
-        await db.integrationConnection.updateMany({
-            where: { id: conn.id },
-            data: { syncCursor: null, syncPassStartedAt: null },
+            return { wouldDeprovision, refusal, refusalReason, deprovisioned };
         });
+
+        const { refusal, refusalReason, wouldDeprovision, deprovisioned } = outcome;
 
         // PARTIAL, NOT PASSED, when a rail refused. The traversal succeeded and
         // the upserts landed, so this is not an ERROR — but a pass whose
@@ -573,36 +692,38 @@ export async function runIdentitySync(input: {
         // and `findLeaverCandidates` requires that freshness — so a suspect pass
         // yields fewer leaver candidates, not more.
         const status: 'PASSED' | 'PARTIAL' = refusal ? 'PARTIAL' : 'PASSED';
-        await db.integrationExecution.update({
-            where: { id: execution.id },
-            data: {
-                status,
-                // Carried on the row, because the row is the only durable record
-                // an operator reads. `null` on the clean path.
-                errorMessage: refusal,
-                resultJson: {
-                    upserted,
-                    deprovisioned,
-                    total: accounts.length,
-                    ...(refusal ? { deprovisionRefused: refusalReason, deprovisionProposed: wouldDeprovision } : {}),
+        await shortTx(async (db) => {
+            await db.integrationExecution.update({
+                where: { id: executionId },
+                data: {
+                    status,
+                    // Carried on the row, because the row is the only durable record
+                    // an operator reads. `null` on the clean path.
+                    errorMessage: refusal,
+                    resultJson: {
+                        upserted,
+                        deprovisioned,
+                        total: accounts.length,
+                        ...(refusal ? { deprovisionRefused: refusalReason, deprovisionProposed: wouldDeprovision } : {}),
+                    },
+                    durationMs: Date.now() - start,
+                    completedAt: new Date(),
                 },
-                durationMs: Date.now() - start,
-                completedAt: new Date(),
-            },
-        });
+            });
 
-        // The load-bearing half. A "credential revoked" banner that survives
-        // the admin fixing the credential is worse than no banner — it teaches
-        // people to ignore the one signal that means someone must act. Cleared
-        // unconditionally on every success, not only the success after a
-        // failure.
-        //
-        // Cleared on a refusal as well, deliberately: the bind and the search
-        // both succeeded, so the credential is demonstrably working and a banner
-        // saying otherwise would be false. The refusal is not a credential
-        // signal and does not travel on that channel — it travels as PARTIAL,
-        // `errorMessage`, the warn log and `integration.identity.deprovision.refused`.
-        await clearAuthFailure(db, conn.id, conn.provider);
+            // The load-bearing half. A "credential revoked" banner that survives
+            // the admin fixing the credential is worse than no banner — it teaches
+            // people to ignore the one signal that means someone must act. Cleared
+            // unconditionally on every success, not only the success after a
+            // failure.
+            //
+            // Cleared on a refusal as well, deliberately: the bind and the search
+            // both succeeded, so the credential is demonstrably working and a banner
+            // saying otherwise would be false. The refusal is not a credential
+            // signal and does not travel on that channel — it travels as PARTIAL,
+            // `errorMessage`, the warn log and `integration.identity.deprovision.refused`.
+            await clearAuthFailure(db, conn.id, conn.provider);
+        });
 
         recordIdentityDeprovisioned({ provider: conn.provider, count: deprovisioned }); // H6 — spike = wrongful mass-deprovision
         if (refusal) {
@@ -615,21 +736,39 @@ export async function runIdentitySync(input: {
                 component: 'identity-sync',
                 tenantId: ctx.tenantId,
                 provider: conn.provider,
-                executionId: execution.id,
+                executionId,
                 upserted,
                 proposed: wouldDeprovision,
                 reason: refusalReason,
             });
         } else {
-            logger.info('identity-sync complete', { component: 'identity-sync', tenantId: ctx.tenantId, provider: conn.provider, executionId: execution.id, upserted, deprovisioned });
+            logger.info('identity-sync complete', { component: 'identity-sync', tenantId: ctx.tenantId, provider: conn.provider, executionId, upserted, deprovisioned });
         }
         return {
-            executionId: execution.id,
+            executionId,
             status,
             upserted,
             deprovisioned,
             errorMessage: refusal ?? undefined,
             provider: conn.provider,
         };
-    });
+    } catch (e) {
+        // A WRITE failed: a chunk that ran out of budget, a pool that would not
+        // yield, a constraint. The execution row is already on disk saying
+        // RUNNING, so finish it here — in a transaction the failure has not
+        // closed. This is the arm the old shape could not have had: there the
+        // RUNNING row lived inside the transaction that had just died.
+        const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
+        await shortTx((db) =>
+            db.integrationExecution.update({
+                where: { id: executionId },
+                data: { status: 'ERROR', errorMessage: msg, resultJson: { upserted, deprovisioned: 0, writePhaseFailed: true }, durationMs: Date.now() - start, completedAt: new Date() },
+            }),
+        );
+        logger.error('identity-sync write phase failed — execution recorded as ERROR', { component: 'identity-sync', tenantId: ctx.tenantId, provider: conn.provider, executionId, upserted, error: msg });
+        // NO `noRetry` here. Unlike the deterministic truncation arms above, a
+        // write that ran out of budget or lost the pool is exactly the shape a
+        // retry fixes, so the queue must stay free to try again.
+        return { executionId, status: 'ERROR', upserted, deprovisioned: 0, errorMessage: msg, provider: conn.provider };
+    }
 }
