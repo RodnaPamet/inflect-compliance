@@ -52,19 +52,42 @@ describe('Action-button canonical entity label', () => {
         // (`createX` for modal submit buttons, dashboard "Quick
         // Actions", form titles) keep their verbed forms — they
         // belong to confirmation surfaces, not action triggers.
+        /**
+         * Resolve a possibly DOTTED key inside a namespace.
+         *
+         * The original lookup was a flat `block[key]`, which is all the five
+         * original entries needed. The agents register keeps its copy nested
+         * under `agents.register.*` (1/4 moved the whole subtree there), so a
+         * flat read returns `undefined` and the assertion fails on a label that
+         * is in fact correct — a guard reporting a defect that is not there.
+         */
+        const resolveKey = (block: Record<string, unknown>, key: string): unknown =>
+            key
+                .split('.')
+                .reduce<unknown>(
+                    (o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),
+                    block,
+                );
+
         const HEADER_ACTION_KEYS: Array<[string, string, string]> = [
             ['assets', 'addAsset', 'Asset'],
             ['risks', 'addRisk', 'Risk'],
             ['evidence', 'addEvidence', 'Evidence'],
             ['audits', 'newAudit', 'Audit'],
             ['findings', 'newFinding', 'Finding'],
+            // AGENTIC UI 3/4 (#2460). The register became a top-level list page
+            // beside policies and vendors in 1/4, so its header action is
+            // governed by the same vocabulary as theirs — it was simply never
+            // enrolled, which meant the guard was silent about the newest page
+            // rather than satisfied by it.
+            ['agents', 'register.addAgent', 'Agent'],
         ];
 
         it.each(HEADER_ACTION_KEYS)(
             '%s.%s = "%s" (just the noun — no verb prefix)',
             (ns, key, expected) => {
                 const block = (en()[ns] ?? {}) as Record<string, unknown>;
-                expect(block[key]).toBe(expected);
+                expect(resolveKey(block, key)).toBe(expected);
             },
         );
 
@@ -75,7 +98,7 @@ describe('Action-button canonical entity label', () => {
             const FORBIDDEN = /^(Create|Add|New|Edit) /;
             for (const [ns, key] of HEADER_ACTION_KEYS) {
                 const block = (en()[ns] ?? {}) as Record<string, unknown>;
-                const value = block[key];
+                const value = resolveKey(block, key);
                 expect(typeof value).toBe('string');
                 expect(value as string).not.toMatch(FORBIDDEN);
             }
@@ -105,6 +128,11 @@ describe('Action-button canonical entity label', () => {
                 'src/app/t/[tenantSlug]/(app)/vendors/VendorsClient.tsx',
                 'new-vendor-btn',
                 'Vendor',
+            ],
+            [
+                'src/app/t/[tenantSlug]/(app)/agents/AgentsClient.tsx',
+                'new-agent-btn',
+                'Agent',
             ],
         ];
 

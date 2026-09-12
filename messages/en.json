@@ -5008,6 +5008,7 @@
         "applicableSplitNone": "Every risk in the framework applies to this agent"
       },
       "breaker": {
+        "handClosed": "This breaker was closed by hand on {at} as {reason}. The verdict below is the one that tripped it: it predates the close and is not a judgement that the behaviour resolved.",
         "stateHeading": "Breaker state",
         "badge": {
           "unobserved": "Never observed",

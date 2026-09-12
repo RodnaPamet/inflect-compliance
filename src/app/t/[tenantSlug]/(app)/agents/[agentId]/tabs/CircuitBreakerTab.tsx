@@ -434,6 +434,27 @@ export function CircuitBreakerTab({
                     })}
                 </InlineNotice>
 
+                {/* A TRIP CLOSED BY HAND SAYS SO (#2461).
+                    Closing writes `closedAt`, `closedByUserId` and
+                    `closeReason` — and deliberately does NOT touch
+                    `lastVerdict`. So after a hand-close the verdict on this card
+                    is the one that TRIPPED the breaker, sitting under a CLOSED
+                    badge: it predates the close and does not justify it.
+                    Without this line, a breaker somebody waved through and one
+                    the detector was satisfied about render identically. */}
+                {breaker?.closedAt && (
+                    <InlineNotice variant="info" data-testid="breaker-hand-closed">
+                        {t('agentDetail.breaker.handClosed', {
+                            at: formatDateTime(breaker.closedAt),
+                            reason: t(
+                                breaker.closeReason === 'ACCEPTED_NEW_BASELINE'
+                                    ? 'agentDetail.breaker.reasonAcceptedShort'
+                                    : 'agentDetail.breaker.reasonResolvedShort',
+                            ),
+                        })}
+                    </InlineNotice>
+                )}
+
                 {breaker && (
                     <dl className="flex flex-wrap gap-default">
                         <Fact
