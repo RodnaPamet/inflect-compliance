@@ -32,7 +32,7 @@ describeFn('RQ3-8 — control ROI (integration)', () => {
 
     afterAll(async () => {
         const t = { tenantId: TENANT_ID };
-        for (const m of ['riskControl', 'control', 'risk', 'auditLog', 'tenantMembership'] as const) {
+        for (const m of ['riskControl', 'control', 'risk', 'tenantMembership'] as const) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             try { await (globalPrisma as any)[m].deleteMany({ where: t }); } catch { /* best effort */ }
         }

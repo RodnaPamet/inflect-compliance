@@ -133,9 +133,6 @@ describeFn('Epic O-2 — atomic org member role change (DB-backed)', () => {
     });
 
     afterAll(async () => {
-        await prisma.auditLog.deleteMany({
-            where: { tenantId: { in: tenantIds } },
-        }).catch(() => {});
         await prisma.tenantMembership.deleteMany({
             where: { tenantId: { in: tenantIds } },
         }).catch(() => {});

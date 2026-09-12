@@ -119,7 +119,6 @@ describeFn('risk bulk actions — two-tenant behaviour', () => {
 
     afterAll(async () => {
         for (const tenantId of [OURS, THEIRS]) {
-            await globalPrisma.auditLog.deleteMany({ where: { tenantId } }).catch(() => {});
             await globalPrisma.riskScoreEvent.deleteMany({ where: { tenantId } }).catch(() => {});
             await globalPrisma.risk.deleteMany({ where: { tenantId } }).catch(() => {});
             await globalPrisma.tenantMembership.deleteMany({ where: { tenantId } }).catch(() => {});

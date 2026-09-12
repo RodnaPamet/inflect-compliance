@@ -91,7 +91,6 @@ describeFn('risks list — the Asset column has data (B1-3)', () => {
     });
 
     afterAll(async () => {
-        await globalPrisma.auditLog.deleteMany({ where: { tenantId: TENANT_ID } }).catch(() => {});
         await globalPrisma.tenant.deleteMany({ where: { id: TENANT_ID } }).catch(() => {});
         await globalPrisma.user.deleteMany({ where: { id: userId } }).catch(() => {});
         await globalPrisma.$disconnect().catch(() => {});

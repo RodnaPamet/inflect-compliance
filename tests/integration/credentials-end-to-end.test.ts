@@ -83,7 +83,6 @@ describeFn('Credentials path — end-to-end', () => {
     });
 
     afterAll(async () => {
-        await prisma.auditLog.deleteMany({ where: { userId } }).catch(() => {});
         await prisma.verificationToken.deleteMany({ where: { identifier: email } });
         await prisma.tenantMembership.deleteMany({ where: { userId } });
         await prisma.user.delete({ where: { id: userId } }).catch(() => {});

@@ -113,7 +113,6 @@ describeFn('computeVelocity — the RQ-9 orchestrator', () => {
 
     afterAll(async () => {
         for (const tenantId of [OURS, THEIRS]) {
-            await globalPrisma.auditLog.deleteMany({ where: { tenantId } }).catch(() => {});
             await globalPrisma.tenant.deleteMany({ where: { id: tenantId } }).catch(() => {});
         }
         await globalPrisma.user.deleteMany({ where: { id: userId } }).catch(() => {});
