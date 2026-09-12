@@ -4061,6 +4061,27 @@
     "description": "Recent activity across your compliance program"
   },
   "admin": {
+    "permissionGated": {
+      "ariaLabel": "Unavailable: {reason}"
+    },
+    "stopMethods": {
+      "heading": "Three ways to stop this agent",
+      "suspendName": "Suspend",
+      "killName": "Kill switch",
+      "retireName": "Retire",
+      "reasonYes": "A reason is required, and the server refuses a blank one.",
+      "reasonNo": "No reason is recorded.",
+      "suspendInFlight": "Refuses the next request. A run already under way continues to the end.",
+      "suspendUndo": "Reversible: activate the agent again.",
+      "suspendNote": "Its credentials are refused at registration while it is suspended.",
+      "suspendNoteUnenforced": "This workspace does not enforce agent registration, so suspending does not refuse anything. It also WIDENS what the agent may reach: an inactive agent bypasses its tool allowlist, its autonomy cap and its policy card. Use the kill switch instead.",
+      "killInFlight": "Checked on every tool call, so a run already under way stops at its next tool call.",
+      "killUndo": "Reversible: lifting it is a separate deliberate act.",
+      "killNote": "Can stop this agent alone or every agent in the workspace. It does not change the agent's status, so the register still reads ACTIVE.",
+      "retireInFlight": "Refuses the next request. A run already under way continues to the end.",
+      "retireUndo": "PERMANENT. It cannot be undone and the agent cannot be brought back into service.",
+      "retireNote": "Refused while any proposal is still awaiting review."
+    },
     "autonomy": {
       "rung0": "Suggests to a human in session and reaches nothing itself. No tool sits at this rung, so an agent registered here can call nothing.",
       "rung_read": "Reads workspace data on its own initiative.",
@@ -4521,7 +4542,7 @@
         "reasonLine": "Reason: {reason}",
         "liftReasonLine": "Lift reason: {reason}",
         "scopeLegend": "What should this stop?",
-        "scopeTenantWarning": "This stops every registered agent in the workspace at the tool boundary, not just this one. It takes effect on the next invocation and does not interrupt work already running. It is reversible, and lifting it is a separate deliberate act.",
+        "scopeTenantWarning": "This stops every registered agent in the workspace, not just this one. It is checked at the tool boundary on every call, so a run already under way stops at its next tool call rather than continuing to the end. It is reversible, and lifting it is a separate deliberate act.",
         "scopeTypeToConfirm": "Type {slug} to confirm a workspace-wide stop"
       },
       "amend": {

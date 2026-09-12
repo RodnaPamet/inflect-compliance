@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { useTranslations } from 'next-intl';
 
 import { Tooltip, TooltipProvider } from '@/components/ui/tooltip';
 
@@ -43,6 +44,7 @@ export function PermissionGated({
     reason: string;
     children: ReactNode;
 }) {
+    const t = useTranslations('admin');
     if (allowed) return <>{children}</>;
     return (
         // Its OWN provider, nested under the app's. Radix permits nesting, and
@@ -55,7 +57,16 @@ export function PermissionGated({
             {/* The span is load-bearing: a DISABLED button fires no pointer
                 events, so a tooltip bound directly to it never opens and the
                 explanation is unreachable by exactly the people who need it. */}
-            <span className="inline-flex" data-testid="permission-gated">
+            {/* A LABEL on the wrapper, not only a hover tooltip. A disabled
+                button is reachable by a screen reader and announces nothing
+                about WHY it is disabled; the tooltip is pointer-only. This is
+                the same explanation, available to the reader who cannot hover. */}
+            <span
+                className="inline-flex"
+                data-testid="permission-gated"
+                role="group"
+                aria-label={t('permissionGated.ariaLabel', { reason })}
+            >
                 {children}
             </span>
         </Tooltip>

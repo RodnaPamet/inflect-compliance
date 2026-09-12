@@ -95,7 +95,7 @@ beforeEach(() => {
 function openEngage() {
     render(
         <TenantProvider value={TENANT_CTX}>
-            <AgentKillSwitchAction agentId={AGENT_ID} canKill tenantSlug={SLUG} />
+            <AgentKillSwitchAction agentId={AGENT_ID} canKill tenantSlug={SLUG} registrationEnforced />
         </TenantProvider>,
     );
     fireEvent.click(screen.getByTestId('agent-kill-engage-open'));

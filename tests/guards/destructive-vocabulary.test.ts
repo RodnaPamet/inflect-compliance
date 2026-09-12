@@ -83,7 +83,20 @@ function resolveI18nLabel(fileSrc: string, key: string): string | null {
     return typeof v === 'string' ? v : null;
 }
 
+// 2026-09-12 — AGENTIC UI 3/4 (#2454): 'Abort' joins the nine.
+//
+// Aborting an agent run is destructive and none of the others names it. It does
+// not Delete or Remove a record, nothing is Archived, it is not an Unlink or a
+// Detach, the run is not Rejected (that is the proposal queue's verb, and
+// reusing it here would collide with a different act), and Discard would claim
+// the work already done is thrown away when it is not — an aborted run keeps
+// everything it completed. Reset means something else again.
+//
+// The point of this list is ONE vocabulary rather than a short one, so a tenth
+// act that genuinely has no name among the nine earns a word rather than
+// borrowing a wrong one. It is a stop, mid-flight, of something already running.
 const CANONICAL_VERBS = [
+    'Abort',
     'Delete',
     'Remove',
     'Revoke',

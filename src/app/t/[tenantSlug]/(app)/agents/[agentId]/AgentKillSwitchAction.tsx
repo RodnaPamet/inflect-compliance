@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Input } from '@/components/ui/input';
+import { StopMethods } from './StopMethods';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Modal } from '@/components/ui/modal';
 import { Textarea } from '@/components/ui/textarea';
@@ -107,12 +108,20 @@ export function AgentKillSwitchAction({
     canKill,
     refreshToken,
     tenantSlug,
+    registrationEnforced,
 }: {
     agentId: string;
     canKill: boolean;
     refreshToken?: number;
     /** Typed back to confirm a TENANT-WIDE kill (#2449). */
     tenantSlug: string;
+    /**
+     * Whether the tenant enforces agent registration. The stop comparison needs
+     * it: suspension is INERT without enforcement, and worse than inert — a
+     * non-ACTIVE agent bypasses its tool allowlist, autonomy cap and policy
+     * card. An operator choosing between the three has to be told that.
+     */
+    registrationEnforced: boolean;
 }) {
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
@@ -283,6 +292,23 @@ export function AgentKillSwitchAction({
                             is what makes "every agent in this workspace"
                             something the operator READS rather than something
                             they could land on by scrolling a list. */}
+                        {/* THE THREE WAYS TO STOP, HERE AND NOT ON THE
+                            OVERVIEW TAB (#2459).
+
+                            The comparison belongs where an operator chooses
+                            between them — but the overview tab deliberately owns
+                            ONE lever and says "kill switch" nowhere, a discipline
+                            its own suite enforces in the tab AND inside its
+                            confirmation, so that nobody is uncertain which lever
+                            they are pulling. Putting a three-way comparison there
+                            would erode a guard older than this feature.
+
+                            This dialog is the one control that already speaks
+                            about stopping broadly, and it is where the widest
+                            gesture is chosen, so the alternatives belong beside
+                            it. */}
+                        <StopMethods registrationEnforced={registrationEnforced} />
+
                         {/* SCOPE (#2449), on the shared RadioGroup primitive.
                             A hand-rolled fieldset+legend was written first and
                             `form-drift` refused it — rightly: the product has one
