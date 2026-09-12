@@ -1053,6 +1053,33 @@ jobs:
           retention-days: 1
           include-hidden-files: true
 
+      # Runs on cancellation too — the entire point, since this failure mode
+      # emits nothing else.
+      #
+      # THIS JOB STARTED A SAMPLER AND NEVER READ IT. `Start memory sampler`
+      # above has written /tmp/mem-samples.log since the sampler was added "to
+      # settle" whether the ceiling above is right, but only `e2e-bundle` ever
+      # reported its copy — so the numbers existed, in the job that STAYS
+      # GREEN, and never in the job that dies. Three consecutive kernel kills
+      # on 2026-09-12 (main at 75496ea46) produced no memory evidence at all
+      # for exactly that reason.
+      #
+      # `if: failure()` on the artifact step below is not a substitute and is
+      # why this needs its own step: a kernel OOM takes the runner down and
+      # GitHub marks the step CANCELLED, and `failure()` is false when the job
+      # is cancelled. The upload is also pointed at `.next/trace`, not at the
+      # samples. So on the one failure mode this instrumentation exists for,
+      # nothing was collected and nothing was printed.
+      - name: Report peak memory
+        if: always()
+        run: |
+          kill "$(cat /tmp/mem-sampler.pid)" 2>/dev/null || true
+          if [ ! -s /tmp/mem-samples.log ]; then echo "no samples captured"; exit 0; fi
+          echo "samples: $(wc -l < /tmp/mem-samples.log)  (time used_MB available_MB)"
+          echo "── PEAK used:";        sort -k2 -n -r /tmp/mem-samples.log | head -5
+          echo "── LOWEST available:"; sort -k3 -n    /tmp/mem-samples.log | head -5
+          echo "── final 15 samples:"; tail -15 /tmp/mem-samples.log
+
       - name: Upload build logs on failure
         if: failure()
         uses: actions/upload-artifact@v7
