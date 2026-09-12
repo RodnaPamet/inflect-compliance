@@ -31,6 +31,7 @@
  */
 import { test, expect } from './fixtures';
 import { safeGoto, waitForHydration } from './e2e-utils';
+import en from '../../messages/en.json';
 
 test.describe('an operator finds, registers, grants, and stops an agent', () => {
     test('the whole path holds together', async ({ authedPage: page, isolatedTenant }) => {
@@ -116,25 +117,14 @@ test.describe('an operator finds, registers, grants, and stops an agent', () => 
             // navigation that never happened.
             await waitForHydration(page, `[data-testid="agent-row-${agentId}"]`);
 
-            // BY THE ROW'S OWN HANDLE, not `getByText(name).first()`. The name
-            // appears in the breadcrumb and the detail heading too, so a text
-            // match has more than one candidate and `.first()` picks by
-            // document order rather than by meaning. This testid is on the name
-            // cell of exactly this agent's row.
-            const row = main.getByTestId(`agent-row-${agentId}`);
-            await expect(row).toBeVisible({ timeout: 30_000 });
+            // The cell is the anchor for the WAIT above (it is what hydrates);
+            // the click target is the <tr> below. Kept as one assertion that
+            // the row arrived at all, so a missing row fails here rather than
+            // as a click on nothing.
+            await expect(main.getByTestId(`agent-row-${agentId}`)).toBeVisible({
+                timeout: 30_000,
+            });
 
-            // ONE CLICK, THEN WAIT FOR THE NAVIGATION. Not `toPass` around
-            // both, which is what the previous attempt did and what the trace
-            // then disproved: attempt 1's click SUCCEEDED in 0.3s, the URL
-            // assertion ran 0.0s later — before the soft navigation had
-            // committed — and failed; attempt 2's click then hung for 46s
-            // because the row it wanted no longer existed. Retrying a
-            // non-idempotent action cannot work: once it succeeds, the second
-            // attempt has nothing left to click.
-            //
-            // `waitForURL` is the right wait because it listens for the
-            // navigation rather than re-reading a value on a timer.
             // THE <tr>, AT A COORDINATE IN ITS FIRST CELL.
             //
             // `tests/rendered/agent-register-row-open.test.tsx` already proves
@@ -272,9 +262,34 @@ test.describe('an operator finds, registers, grants, and stops an agent', () => 
             // and touches nothing already running.
             const dialog = page.getByRole('dialog');
             await expect(dialog).toBeVisible();
-            await expect(dialog).toContainText(/next request|already running/i);
 
-            await dialog.getByRole('button', { name: /^Suspend/ }).click();
+            // FROM THE CATALOGUE, not from remembered wording. My regex looked
+            // for "next request" and "already running"; the product says
+            // "refused at the next registration request" and "A run already
+            // under way is not affected" — which is BETTER copy, and precisely
+            // the suspension semantics 2/4 corrected (a dispatch control, so it
+            // does not reach work already running). The test was wrong about
+            // the product for the second time in this file.
+            //
+            // Either variant is accepted because which one renders depends on
+            // whether the workspace enforces registration, and that is the
+            // fixture's business rather than this step's.
+            const scope = en.admin.agentDetail.overview;
+            const dialogText = await dialog.innerText();
+            expect(
+                dialogText.includes(scope.suspendScope) ||
+                    dialogText.includes(scope.suspendScopeUnenforced),
+                `the dialog did not explain suspension's scope. Got: ${dialogText}`,
+            ).toBe(true);
+            // The load-bearing half, asserted on its own so a copy edit that
+            // dropped it could not pass by matching the other variant.
+            expect(dialogText).toContain('A run already under way is not affected');
+
+            // By ID. `suspendAction` and `suspendConfirm` are both "Suspend
+            // agent", so a name regex is one DOM change away from matching the
+            // trigger instead of the confirm — and it is translated copy this
+            // step has no business pinning.
+            await dialog.locator('#agent-status-suspend-confirm').click();
 
             // The ANSWER, which is the point of the step: the header states the
             // standing, and the page says what that standing means rather than
