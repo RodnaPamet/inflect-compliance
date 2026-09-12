@@ -124,6 +124,32 @@ export interface ScheduleRegLogger {
  * would not hand us — in particular a non-empty one, since a sweep over zero
  * schedulers removes nothing and proves nothing.
  *
+ * ═══ WHAT IS ACTUALLY DELETABLE, AND WHY THE COUNT IS NOT WRITTEN HERE ═══
+ *
+ * The removable set is `Object.keys(JOB_DEFAULTS) ∪ RETIRED_SCHEDULED_JOB_NAMES`
+ * MINUS `SCHEDULED_JOBS`. An earlier risk assessment described that as "the three
+ * deliberately-unscheduled monitors". It is an order of magnitude larger, and the
+ * members matter more than the size: it includes the FAN-OUT TARGETS of the live
+ * JML chain — `identity-sync`, `hris-sync`, `identity-leaver-pass` — plus
+ * `key-rotation`, `tenant-dek-rotation`, `control-test-runner` and the posture
+ * collectors.
+ *
+ * Those belong in `JOB_DEFAULTS` because they carry retry policy, and they are
+ * absent from `SCHEDULED_JOBS` because they are ENQUEUED PER UNIT by a
+ * dispatcher rather than scheduled. So a scheduler bearing one of their names is
+ * by definition an orphan — somebody scheduled a fan-out target directly, most
+ * likely while debugging — and removing it is correct. But "correct" is not
+ * "small": this sweep can delete a scheduler for the job that disables accounts
+ * in a customer's directory, and whoever reviews a change to the triage rule
+ * should know that before they reason about blast radius.
+ *
+ * NO NUMBER IS RECORDED IN THIS COMMENT ON PURPOSE. It is derived from two
+ * constants that move independently, and a figure written here would be wrong
+ * within a release while still reading as authoritative — the failure this repo
+ * has already paid for in the assertion-reach baselines and the
+ * doc-classification counts header. Derive it if you need it; the guard below
+ * asserts the SHAPE, never a size.
+ *
  * @param liveSchedulerIds scheduler ids as returned in `JobSchedulerJson.key`
  *        (the id passed to `upsertJobScheduler`, which is also what
  *        `removeJobScheduler` takes — NOT the job-template `name`).
