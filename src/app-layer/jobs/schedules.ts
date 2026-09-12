@@ -430,3 +430,31 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
     },
 ];
 
+
+/**
+ * Job names this app once scheduled and no longer does.
+ *
+ * Removing an entry from {@link SCHEDULED_JOBS} does NOT remove its scheduler
+ * from Redis — the scheduler outlives the code and keeps firing on its old
+ * cadence, and `scripts/worker.ts` logs "no executor registered for job —
+ * skipping" on every tick. Listing the name here is what authorises
+ * `registerSchedules` to delete that scheduler on its next run (see
+ * `register-schedules.ts`). The list is an ALLOWLIST, not a record: a name
+ * absent from it is never deleted, so forgetting to add one costs you the log
+ * noise, while adding the wrong one deletes a live schedule. The guard in
+ * `tests/guards/scheduler-orphan-reconciliation.test.ts` refuses any name that
+ * is also in SCHEDULED_JOBS for exactly that reason.
+ *
+ * These names are deliberately plain strings, not `JobName`. The whole point is
+ * to name jobs that no longer exist in `JobPayloadMap` — typing this as
+ * `JobName` would make it impossible to retire a job in the same change that
+ * deletes its type.
+ *
+ * Entries may be dropped once every deployment has registered at least once
+ * since the retirement, because by then no scheduler with that name survives
+ * anywhere. Keep a dated note when you add one so a later reader can tell.
+ *
+ * Empty today, and that is the honest state — no scheduled job has been removed
+ * since the reconciliation path was added. The first removal fills it in.
+ */
+export const RETIRED_SCHEDULED_JOB_NAMES: readonly string[] = [];
