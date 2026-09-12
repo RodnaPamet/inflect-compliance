@@ -45,15 +45,28 @@ interface DashboardEntry {
 }
 
 const DASHBOARDS: DashboardEntry[] = [
+    // ── Adopted ──
     {
         file: 'src/app/t/[tenantSlug]/(app)/agents/reports/ReportsClient.tsx',
         adopted: true,
+        // AGENTIC UI 4/4 (#2468) — the assessor governance pack. Five reports
+        // composed on one page, which is multi-section BY DESIGN and exactly
+        // what this shell is for; `ListPageShell` would be the wrong shell
+        // because the page is not a viewport-clamped list of one entity.
+        //
+        // NOT AN EXEMPTION, and the distinction is worth keeping straight: this
+        // registry has no exemption mechanism beyond omission, and
+        // `admin/integrations` is not a precedent here — that entry lives in
+        // `entity-detail-shell-coverage.test.ts`, which governs
+        // EntityDetailLayout and is a different ratchet. An earlier draft of
+        // this note cited it, which would have pointed the next reader at a
+        // mechanism this file does not have.
         note:
-            'AGENTIC UI 4/4 — the assessor pack. A multi-section composite of ' +
-            'five reports rather than a viewport-clamped list, so ListPageShell ' +
-            'is the wrong shell (admin/integrations is the exemption precedent).',
+            'AGENTIC UI 4/4 — the assessor pack. Five reports composed on one ' +
+            'page: multi-section by design, which is what DashboardLayout is ' +
+            'for. Adopted, not exempt — this registry has no exemption ' +
+            'mechanism beyond omission.',
     },
-    // ── Adopted ──
     {
         file: "src/app/t/[tenantSlug]/(app)/dashboard/DashboardClient.tsx",
         adopted: true,
