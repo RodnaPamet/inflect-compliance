@@ -179,7 +179,44 @@ const defaultOptions = {
         //
         // So do NOT read "6144 is a deterministic V8 OOM" as still binding.
         // It was true for ONE heap doing all three compilations.
-        webpackBuildWorker: true,
+        //
+        // ── 2026-09-13: TURNED OFF AGAIN, because the CONSTRAINT MOVED ──
+        //
+        // Everything above is still true about the constraint it was written
+        // for. That constraint was PER-PROCESS: one heap hit a V8 ceiling, and
+        // splitting the compile was the only lever that reduced demand rather
+        // than moving it. Correct then.
+        //
+        // The binding constraint is now TOTAL, and splitting makes that worse.
+        // `--max-old-space-size` arrives via NODE_OPTIONS and BOTH processes
+        // inherit it, so two heaps may claim 2x the ceiling on one 16 GB
+        // runner. Measured on #2502, both ends, on current code:
+        //
+        //   7168 x 2 = 14 GB allowance -> kernel OOM-kill. `E2E bundle`'s own
+        //     sampler on a run that PASSED: 15625 MB used / 363 MB available.
+        //     A 2.3% margin decided per job by luck; `Build` lost it six times
+        //     while `E2E bundle` won it.
+        //
+        //   6144 x 2 = 12 GB allowance -> the WORKER's single compilation now
+        //     needs more than 6144 on its own:
+        //       Mark-Compact 6038.1 (6160.5) -> 6035.2 (6155.0) MB
+        //       FATAL ERROR: Ineffective mark-compacts near heap limit
+        //     and it took `E2E bundle` down with it.
+        //
+        // So the floor (one compilation) has risen above half the ceiling (what
+        // two heaps may share). No per-process number satisfies both, which is
+        // why this is a structural change and not another retune.
+        //
+        // One heap at 12288 claims LESS in total than two at 7168 (12 GB vs
+        // 14 GB) and leaves ~4 GB on the runner — the same headroom the
+        // 6144 x 2 configuration was chosen for, but all of it available to the
+        // accumulated union this comment describes, instead of stranded in a
+        // second heap that cannot lend it.
+        //
+        // If the union does exceed 12288, the failure is LOUD and deterministic
+        // (`SIGABRT` + a V8 stack), never the silent kernel kill — and `Build`
+        // now prints its own memory curve, so the next reader gets numbers.
+        webpackBuildWorker: false,
         // optimizePackageImports remains experimental in Next 15.
         // Barrel/submodule packages — let Next rewrite imports to the
         // specific entry points so unused code tree-shakes out of the

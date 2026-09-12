@@ -1006,7 +1006,13 @@ jobs:
           # BOTH jobs changed together. The old "ceiling difference is
           # unexplained, not justified" note is resolved by making them equal
           # rather than by explaining the gap.
-          NODE_OPTIONS: "--max-old-space-size=7168"
+          # 12288 for ONE heap. `webpackBuildWorker` is now off (see the long
+          # note in next.config.js): the constraint moved from per-process to
+          # TOTAL, and two heaps each allowed 7168 claim 14 GB on a 16 GB
+          # runner. One heap at 12288 claims 12 GB and leaves ~4 GB — less in
+          # total, and all of it reachable by the single compilation rather
+          # than stranded in a second heap that cannot lend it.
+          NODE_OPTIONS: "--max-old-space-size=12288"
           NODE_ENV: production
 
       # The worker/scheduler bundle. Until 2026-08-25 this ran in exactly ONE
@@ -1273,7 +1279,13 @@ jobs:
           # 206 MB available at peak, on a run that passed.
           # 6144 to match `Build` — see the long note there. This job's own
           # sampler is what measured 15625 MB / 363 MB available.
-          NODE_OPTIONS: "--max-old-space-size=7168"
+          # 12288 for ONE heap. `webpackBuildWorker` is now off (see the long
+          # note in next.config.js): the constraint moved from per-process to
+          # TOTAL, and two heaps each allowed 7168 claim 14 GB on a 16 GB
+          # runner. One heap at 12288 claims 12 GB and leaves ~4 GB — less in
+          # total, and all of it reachable by the single compilation rather
+          # than stranded in a second heap that cannot lend it.
+          NODE_OPTIONS: "--max-old-space-size=12288"
           NODE_ENV: production
           NEXT_TEST_MODE: "1"
           # NEXT_PUBLIC_* is inlined at BUILD time, so it must be set on
