@@ -158,6 +158,11 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     // incident notification deadlines PENDING→DUE→OVERDUE.
     'incident-notification-deadlines',
     'notification-dispatch',
+    // #2485 — flushes the notification outbox on its own short cadence.
+    // Previously the only SCHEDULED flush lived inside daily-evidence-expiry
+    // at 06:00, behind three unguarded awaits, so a throw in an unrelated
+    // evidence sweep delayed the 05:00 leaver mail by ~25 hours.
+    'notification-outbox-flush',
     // Vuln integration — daily NVD CVE catalog ingestion +
     // cross-tenant asset-match pass.
     'nvd-cve-sync',
