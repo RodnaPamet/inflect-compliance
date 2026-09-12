@@ -961,7 +961,33 @@ jobs:
           # higher: the 8192-era peak was measured at 15783 MB / 16 GB, and
           # returning to that band trades a loud, debuggable V8 abort for the
           # silent kernel kill this ceiling was introduced to stop.
-          NODE_OPTIONS: "--max-old-space-size=7168"
+          #
+          # 2026-09-13 — LOWERED TO 6144, on the measurement this comment
+          # asked for rather than on reasoning.
+          #
+          # `E2E bundle` compiles the SAME app with the SAME flags (NODE_ENV
+          # production, 7168, webpackBuildWorker) — the only difference is
+          # NEXT_TEST_MODE's distDir. On #2502 it PASSED while `Build` died, and
+          # its sampler recorded:
+          #     peak  15625 MB used / 363 MB available   (16 GB runner)
+          # It survived by 2.3%. Two jobs doing identical work at the same
+          # ceiling, one over the line and one under, is a coin flip — which is
+          # precisely the "intermittent and silent" mode described above,
+          # returned at 7168 because the app grew into it.
+          #
+          # #2502's bisect showed no culprit file: with the feature split into
+          # three groups, ANY TWO fail and ANY ONE passes. A threshold, not a
+          # regression.
+          #
+          # 6144 x 2 = ~12 GB, leaving ~4 GB. The 2026-08-29 risk stands — a
+          # single heap may again cross 6144 — but that failure is LOUD and
+          # deterministic (`SIGABRT` + a V8 stack), which this comment already
+          # argues is the better trade than a silent kernel kill.
+          #
+          # BOTH jobs changed together. The old "ceiling difference is
+          # unexplained, not justified" note is resolved by making them equal
+          # rather than by explaining the gap.
+          NODE_OPTIONS: "--max-old-space-size=6144"
           NODE_ENV: production
 
       # The worker/scheduler bundle. Until 2026-08-25 this ran in exactly ONE
@@ -981,6 +1007,24 @@ jobs:
       # resolution errors in the entrypoints and their relative/aliased
       # imports, not every broken import. Typechecking `scripts/` is the
       # complementary fix — it currently sits in tsconfig `exclude`.
+      # The sampler this job has STARTED since 2026-08-19 was never read: only
+      # `e2e-bundle` had the reporting half. So the one instrument that could
+      # explain a silent kernel kill was running and discarding its output in
+      # exactly the job that suffers it — #2502 took six CI rounds partly for
+      # want of these numbers.
+      #
+      # `always()`, because the failure mode this exists for CANCELS the job and
+      # emits nothing else.
+      - name: Report peak memory
+        if: always()
+        run: |
+          kill "$(cat /tmp/mem-sampler.pid)" 2>/dev/null || true
+          if [ ! -s /tmp/mem-samples.log ]; then echo "no samples captured"; exit 0; fi
+          echo "samples: $(wc -l < /tmp/mem-samples.log)  (time used_MB available_MB)"
+          echo "── PEAK used:";        sort -k2 -n -r /tmp/mem-samples.log | head -5
+          echo "── LOWEST available:"; sort -k3 -n    /tmp/mem-samples.log | head -5
+          echo "── final 15 samples:"; tail -15 /tmp/mem-samples.log
+
       - name: Build worker + scheduler bundle
         run: npm run build:worker
 
@@ -1208,7 +1252,9 @@ jobs:
           # AND a worker the 8192 became a 16 GB effective ceiling on a 16 GB
           # runner. This job's own sampler measured the result: 15783 MB used /
           # 206 MB available at peak, on a run that passed.
-          NODE_OPTIONS: "--max-old-space-size=7168"
+          # 6144 to match `Build` — see the long note there. This job's own
+          # sampler is what measured 15625 MB / 363 MB available.
+          NODE_OPTIONS: "--max-old-space-size=6144"
           NODE_ENV: production
           NEXT_TEST_MODE: "1"
           # NEXT_PUBLIC_* is inlined at BUILD time, so it must be set on
