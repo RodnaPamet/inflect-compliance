@@ -363,6 +363,24 @@ export function planLeaverNotifications(
         case 'REFUSED_TARGET':
         case 'FAILED':
             return { it: 'IDENTITY_LEAVER_NEEDS_ACTION', manager: null };
+        // The blast-radius numerator did not count this write, because the
+        // last sync recorded the account as not active, and the live read then
+        // said it is ENABLED — so the write was withheld (#2498). IT is the
+        // audience for the same reason REFUSED_TARGET is: a terminated
+        // person's account is still live and somebody has to act. The action
+        // is not "disable this by hand" but "fix the directory sync", which is
+        // why the cause travels in `detail` rather than in the type.
+        //
+        // NOT silent, even though the refusal is deliberate. The silent arms
+        // above (OPERATOR_FLAG, REFUSED_MODE, DRY_RUN) are the ones where
+        // nothing was supposed to happen; here something was supposed to
+        // happen and did not, and the account is enabled either way.
+        //
+        // Manager: null, as for every other still-live outcome. A manager can
+        // do nothing about a stale identity mirror, and the nightly repeat
+        // until the sync is fixed would be a mail they cannot action.
+        case 'REFUSED_UNMEASURED':
+            return { it: 'IDENTITY_LEAVER_NEEDS_ACTION', manager: null };
         // Two rails share this outcome and they want opposite mail.
         //
         // SELF_ACCOUNT is the bind account this connection authenticates AS.

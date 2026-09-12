@@ -214,6 +214,7 @@ describe('unreachedManagerLogLevel', () => {
         'REFUSED_MODE',
         'DRY_RUN',
         'ALREADY_DISABLED',
+        'REFUSED_UNMEASURED',
     ] as const;
 
     it('warns for every outcome the routing table actually sends to a manager', () => {
