@@ -39,6 +39,14 @@
  * no test of its own. This file is the structural half only — do not read a
  * green run here as certifying all three.
  *
+ * The census reads COLUMN NAMES OUT OF SOURCE TEXT, so a write whose key set
+ * is not spelled at the call site cannot be read — `data: { ...patch }` and
+ * `data: SOME_CONST` are both opaque. It does not skip them: each surfaces as
+ * a sentinel (`...` / `<indirect>`) and the status census treats an opaque set
+ * as a possible `status` write, so the unknown case fails CLOSED. The cost is
+ * that a legitimate indirect write cannot be expressed here without reddening
+ * this guard — which is the intended trade on this column, not an oversight.
+ *
  * Named for the invariant, not the issue.
  */
 import { readFileSync } from 'fs';
@@ -139,6 +147,13 @@ function topLevelEntries(objectLiteral: string): string[] {
 }
 
 /**
+ * Column-set tokens that mean "this write's keys are not knowable from the
+ * text". Both must read as a possible `status` write rather than as an empty
+ * set — see the status-attribution census below.
+ */
+const UNKNOWABLE = ['...', '<indirect>'] as const;
+
+/**
  * The column names an object literal writes. A spread is reported as the
  * literal token `...`, because its key set is not knowable from the text and
  * "unknown" must read as a failure rather than as an empty set.
@@ -176,7 +191,17 @@ function employeeWrites(masked: string): EmployeeWrite[] {
                 if (key === undefined) continue;
                 if (!(COLUMN_MAP_KEYS as readonly string[]).includes(key)) continue;
                 const valueAt = entry.indexOf('{', entry.indexOf(':'));
-                if (valueAt < 0) continue;
+                if (valueAt < 0) {
+                    // `data: TERMINATION_PATCH` rather than `data: { … }`. The
+                    // key set is not knowable from the text, so it surfaces as
+                    // a sentinel for exactly the reason a spread does: skipping
+                    // it would contribute ZERO columns and make the write
+                    // invisible to the attribution filter below — a new
+                    // function writing `status` through a variable would pass.
+                    // Unknown must read as a failure, never as an empty set.
+                    columns.push('<indirect>');
+                    continue;
+                }
                 columns.push(...writtenColumns(balanced(entry, valueAt, '{')));
             }
         }
@@ -233,8 +258,14 @@ describe('Employee.status keeps one update seam, and the manager path is not it'
         // list would make the census below vacuously correct.
         expect(writes.length).toBeGreaterThanOrEqual(2);
 
+        // An UNKNOWABLE column set counts as a status writer, and that is the
+        // whole point of the two sentinels. `data: { ...patch }` and
+        // `data: TERMINATION_PATCH` both hide their keys from a text scan, so
+        // filtering on the literal 'status' alone would let a new function
+        // write the column through one level of indirection and stay green —
+        // measured, before this line existed. Unknown reads as a hit.
         const statusWriters = writes
-            .filter((w) => w.columns.includes('status'))
+            .filter((w) => w.columns.some((c) => c === 'status' || (UNKNOWABLE as readonly string[]).includes(c)))
             .map((w) => enclosingFunction(masked, w.index));
 
         expect(statusWriters.sort()).toStrictEqual([STATUS_WRITER]);

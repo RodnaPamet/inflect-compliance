@@ -190,9 +190,21 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     // register's PAGE is at `/t/:slug/agents` since that prompt; every API
     // route it drives is still at `/api/t/:slug/admin/agents/*`, which is what
     // these patterns match. This map is the API surface only — `T` is
-    // `\/api\/t\/[^/]+`, and `resolveRoutePermission` is called from the
-    // middleware against `req.nextUrl.pathname` for API requests — so a UI
-    // route needs no rule here and adding one would match nothing. Page-level
+    // `\/api\/t\/[^/]+` — so a UI route needs no rule here and adding one
+    // would match nothing.
+    //
+    // BE PRECISE ABOUT WHAT THIS MAP IS, because this comment used to say
+    // `resolveRoutePermission` "is called from the middleware against
+    // `req.nextUrl.pathname` for API requests" and that was never true:
+    // `src/middleware.ts` does not mention it, and across `src/` the only
+    // occurrence is the definition itself — every other caller is under
+    // `tests/`. This map is a DECLARATIVE POLICY RECORD that
+    // `tests/guardrails/api-permission-coverage.test.ts` checks each
+    // privileged route against. The LIVE gate is the literal
+    // `requirePermission(...)` wrapper in the route file; that is what denies
+    // the request and writes the hash-chained `AUTHZ_DENIED` row. Reading
+    // this map as a second enforcement layer overstates the defence in depth
+    // by one layer. Page-level
     // gating is each page's own `ctx.appPermissions` check, asserted by
     // `tests/integration/agents-{page,subpage}-authz.test.ts`.
     //
