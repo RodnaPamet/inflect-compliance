@@ -38,10 +38,12 @@ jest.mock('@/lib/observability/logger', () => ({
     logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
+import { logger } from '@/lib/observability/logger';
 import {
     buildLeaverAudienceBook,
     notifyLeaverOutcome,
     planLeaverNotifications,
+    unreachedManagerLogLevel,
 } from '@/app-layer/notifications/leaver';
 import { makeRequestContext } from '../../helpers/make-context';
 
@@ -186,6 +188,70 @@ describe('planLeaverNotifications', () => {
             it: 'IDENTITY_LEAVER_DISABLED',
             manager: 'IDENTITY_LEAVER_DISABLED',
         });
+    });
+});
+
+// ─── How loudly an undeliverable manager mail is recorded ───
+//
+// The rule these two protect is "severity follows the outcome". It was not
+// followed on 2026-09-12, when this product performed its first real directory
+// disable: the worker had no manager in the feed, so an account in a customer's
+// tenant was disabled, the write journal took its first APPLIED row ever, and
+// the fact that nobody outside IT had been told was recorded at INFO. The
+// counter could not rescue it — `recordLeaverNotification` fires the same
+// `no_recipient` result for a refusal that had nobody to tell, and carries no
+// outcome label to tell the two apart.
+
+describe('unreachedManagerLogLevel', () => {
+    // The whole `DisableOutcome` union, written out so the sweep below runs
+    // over the real set rather than the three an author happened to recall.
+    const ALL_OUTCOMES = [
+        'DISABLED',
+        'INDETERMINATE',
+        'REFUSED_TARGET',
+        'REFUSED_PROTECTED',
+        'FAILED',
+        'REFUSED_MODE',
+        'DRY_RUN',
+        'ALREADY_DISABLED',
+    ] as const;
+
+    it('warns for every outcome the routing table actually sends to a manager', () => {
+        // Deliberately not a hand-written list of three. The sweep ASKS
+        // `planLeaverNotifications` which outcomes reach a manager at all, so a
+        // future arm that starts mailing managers about something new is graded
+        // here — instead of shipping a real directory write at INFO because
+        // nobody remembered this rule existed.
+        const warned: string[] = [];
+        for (const outcome of ALL_OUTCOMES) {
+            for (const hasJournalRef of [true, false]) {
+                const planned = planLeaverNotifications(outcome, hasJournalRef).manager;
+                if (!planned) continue;
+                expect(unreachedManagerLogLevel(planned)).toBe('warn');
+                warned.push(outcome);
+            }
+        }
+
+        // The sweep must not be vacuous. An empty selection is a PASS: if the
+        // routing table stopped planning manager mail entirely, every assertion
+        // in the loop above would run zero times and this test would still be
+        // green while saying nothing. Pinning WHICH outcomes were graded is what
+        // makes the green mean something.
+        expect([...new Set(warned)].sort()).toEqual([
+            'ALREADY_DISABLED',
+            'DISABLED',
+            'INDETERMINATE',
+        ]);
+    });
+
+    it('stays at info for a mail that says the account is still live', () => {
+        // NEEDS_ACTION is this subsystem's "nothing was written" — the account
+        // is live, so a manager nobody could find cost nothing. No outcome
+        // routes it to a manager today, which is precisely why the rule is
+        // asserted directly rather than through the enqueue: this arm exists so
+        // a FUTURE non-write manager mail degrades on its own instead of
+        // inheriting a warning somebody has to remember to re-derive.
+        expect(unreachedManagerLogLevel('IDENTITY_LEAVER_NEEDS_ACTION')).toBe('info');
     });
 });
 
@@ -725,6 +791,91 @@ describe('notifyLeaverOutcome', () => {
             audience: 'MANAGER',
             result: 'no_recipient',
         });
+    });
+
+    /** Every "had no manager recipient" line emitted at one level, with fields. */
+    function noManagerLines(level: 'warn' | 'info'): unknown[][] {
+        return (logger[level] as jest.Mock).mock.calls.filter(
+            (c) => c[0] === 'leaver notification had no manager recipient',
+        );
+    }
+
+    /** A link whose employee has no manager at all — the commonest org chart. */
+    function withNoManager() {
+        db.identityAccountLink.findMany.mockResolvedValue([
+            linkRow({
+                employee: { id: 'emp-1', fullName: 'Dana Okafor', workEmail: 'dana@acme.test', manager: null },
+            }),
+        ]);
+    }
+
+    it('WARNS, not infos, when a real disable had nobody to tell', async () => {
+        // The 2026-09-12 05:00 UTC pass, in one test. A live account in a
+        // customer's directory was disabled and the org chart held no manager,
+        // so the only record that a human was left uninformed about a real
+        // write was this line — logged at INFO, where nobody greps.
+        //
+        // Asserting the ABSENCE of the info line matters as much as the
+        // presence of the warn one: a fix that logged both would look green on
+        // a `toHaveBeenCalled` while leaving the quiet line that started this.
+        withNoManager();
+
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            journalId: 'jrnl-77',
+        });
+
+        expect(noManagerLines('info')).toHaveLength(0);
+        expect(noManagerLines('warn')).toHaveLength(1);
+        // The journal reference is what makes the warning actionable rather
+        // than merely alarming: it names the write nobody was told about, so an
+        // operator can read the captured prior state and reverse it by hand.
+        expect(noManagerLines('warn')[0][1]).toMatchObject({
+            outcome: 'DISABLED',
+            provider: 'entra-id',
+            journalId: 'jrnl-77',
+        });
+    });
+
+    it('WARNS when the outcome is unknown and nobody can be told it is unknown', async () => {
+        // INDETERMINATE is the outcome the module header calls the one a human
+        // MUST act on. A manager unreachable about it is strictly worse than
+        // one unreachable about a clean disable: the manager is the person best
+        // placed to know what their report can still get to, and nobody has
+        // asked them.
+        withNoManager();
+
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'INDETERMINATE',
+            journalId: 'jrnl-78',
+        });
+
+        expect(noManagerLines('info')).toHaveLength(0);
+        expect(noManagerLines('warn')).toHaveLength(1);
+    });
+
+    it('says nothing at all when the plan never wanted a manager told', async () => {
+        // The other half of the split, and the reason it is a split rather than
+        // an unconditional warn. REFUSED_TARGET writes nothing and tells IT
+        // only, so a null manager is not a miss — `plan.manager` is null and
+        // the log site is never reached. Without this, raising the level would
+        // have been one routing-table change away from a nightly warning about
+        // every hybrid-synced account in the estate.
+        withNoManager();
+
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'REFUSED_TARGET',
+            reason: 'Azure AD Connect masters this object',
+        });
+
+        expect(noManagerLines('warn')).toHaveLength(0);
+        expect(noManagerLines('info')).toHaveLength(0);
     });
 
     it('counts what was planned but never reached an insert attempt', async () => {
