@@ -89,10 +89,23 @@ test.describe('an operator finds, registers, grants, and stops an agent', () => 
             await expect(row).toBeVisible({ timeout: 30_000 });
             // SINGLE, not double — the register opts out of row selection
             // (#2434), so the row's action no longer competes with a gesture.
-            await row.click();
-            await expect
-                .poll(() => new URL(page.url()).pathname, { timeout: 30_000 })
-                .toBe(`/t/${tenantSlug}/agents/${agentId}`);
+            // CLICK AND ASSERT TOGETHER, retried.
+            //
+            // The first CI run failed here with the URL still on `/agents`, and
+            // the cause is not the route: `onRowClick` is a React handler, so
+            // until the table hydrates the row is inert markup and the click is
+            // a silent no-op. Clicking once and then polling the URL for 30s
+            // polls a page nothing is going to change — it waits for the
+            // consequence of an event that never fired.
+            //
+            // `waitForHydration` is deliberately `.catch(() => {})` here and
+            // cannot be leant on. So the retry wraps BOTH halves: each attempt
+            // clicks again and re-reads the URL, which is what makes the wait
+            // actually about hydration finishing.
+            await expect(async () => {
+                await row.click();
+                expect(new URL(page.url()).pathname).toBe(`/t/${tenantSlug}/agents/${agentId}`);
+            }).toPass({ timeout: 45_000 });
         });
 
         // ─── 4. GRANT A TOOL ────────────────────────────────────────────
@@ -114,11 +127,58 @@ test.describe('an operator finds, registers, grants, and stops an agent', () => 
             });
         });
 
-        // ─── 5. STOP IT, AND READ WHY ───────────────────────────────────
-        await test.step('suspending says what it reached and what it did not', async () => {
+        // ─── 5. SCORE IT, SO IT CAN BE ADMITTED ─────────────────────────
+        //
+        // THE SECOND THING THE FIRST CI RUN TAUGHT. A freshly registered agent
+        // is DRAFT and UNSCORED, and the product refuses both moves on purpose:
+        // `canSuspend` requires `status === 'ACTIVE'`, and Activate is
+        // `disabled={unscored}`. So the original spec looked for a Suspend
+        // button that the page was correct not to render — the test was wrong
+        // about the product, and the product was right.
+        //
+        // That refusal is the register's central claim (an unscored agent's
+        // credential resolves to DENY_CEILING), so the journey now goes THROUGH
+        // it rather than around it. Scored via the API for the same reason the
+        // agent was registered via the API: the questionnaire has its own
+        // coverage, and a failure in it should not read as a broken path.
+        await test.step('an unscored agent cannot be admitted, so score it', async () => {
+            const res = await page.request.post(
+                `/api/t/${tenantSlug}/admin/agents/${agentId}/risk-assessment/complete`,
+                { headers: { 'Content-Type': 'application/json' } },
+            );
+            expect(
+                res.ok(),
+                `scoring failed ${res.status()}: ${await res.text()}`,
+            ).toBe(true);
+        });
+
+        // ─── 6. ADMIT IT ────────────────────────────────────────────────
+        await test.step('a scored agent can be admitted', async () => {
+            await safeGoto(page, `/t/${tenantSlug}/agents/${agentId}`, {
+                waitUntil: 'domcontentloaded',
+            });
+            await waitForHydration(page).catch(() => {});
             await main.getByRole('tab', { name: /overview/i }).click();
 
-            const suspend = main.getByRole('button', { name: /^Suspend/ });
+            // By ID, not by accessible name. The name is translated copy that
+            // this spec has no business pinning, and `/^Suspend/` would also
+            // match a heading or a dialog title if either ever gained one.
+            const activate = main.locator('#agent-status-activate-btn');
+            await expect(activate).toBeVisible({ timeout: 30_000 });
+            // ENABLED is the assertion that matters: it is the visible proof
+            // that scoring lifted the refusal, and it would have been false a
+            // step ago.
+            await expect(activate).toBeEnabled({ timeout: 30_000 });
+            await activate.click();
+
+            await expect(main.locator('#agent-status-suspend-btn')).toBeVisible({
+                timeout: 30_000,
+            });
+        });
+
+        // ─── 7. STOP IT, AND READ WHY ───────────────────────────────────
+        await test.step('suspending says what it reached and what it did not', async () => {
+            const suspend = main.locator('#agent-status-suspend-btn');
             await expect(suspend).toBeVisible({ timeout: 30_000 });
             await suspend.click();
 
