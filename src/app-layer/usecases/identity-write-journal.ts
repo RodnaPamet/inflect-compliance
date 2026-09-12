@@ -155,6 +155,252 @@ export async function beginWrite(ctx: RequestContext, input: BeginWriteInput): P
 }
 
 /**
+ * ═══ THE READ HALF ═══
+ *
+ * Everything above this line WRITES the journal. What follows lets a human read
+ * one back, and it exists because the product was already telling them to.
+ *
+ * The DISABLED notification this subsystem sends says, in as many words: "held
+ * against journal reference <id> … quote that reference to your platform
+ * administrator, who can read the captured state and re-apply it". Neither half
+ * of that sentence was true. `findRestorableState` had no caller anywhere in
+ * `src/`, there was no route and no page, and the id in the mail resolved to
+ * nothing an operator could open. An instruction that cannot be followed is
+ * worse than no instruction: it sends somebody looking for a screen that does
+ * not exist at the exact moment they are trying to undo a disable, and the whole
+ * point of capturing first is that that moment is survivable.
+ *
+ * This is the READ half only. Re-applying the captured state is a WRITE back
+ * into a customer's directory — `DirectoryWriter` declares no `enable()` verb,
+ * deliberately — and that is a separate decision from letting an authorised
+ * human SEE what was replaced.
+ *
+ * ─── Why two shapes and not one ───
+ *
+ * `listJournalWrites` is an INDEX: enough to find the row, and nothing more.
+ * `getJournalWrite` is the ANSWER: the captured state itself.
+ *
+ * That split is not tidiness. The index is a page of up to a hundred rows about
+ * named people's access changes, and nobody scanning it needs the prior state of
+ * all hundred; fetching it anyway would put a hundred directory captures on the
+ * wire to answer "which row was it?". The captured state is reached by asking
+ * for ONE row, by id — which is the shape the mail already hands out.
+ */
+
+/** Bound on one page of the journal index. */
+const MAX_JOURNAL_PAGE = 100;
+
+/** Every outcome a journalled write can settle at. Mirrors the Prisma enum. */
+export type IdentityWriteOutcome =
+    | 'PENDING'
+    | 'APPLIED'
+    | 'FAILED'
+    | 'INDETERMINATE'
+    | 'REVERTED';
+
+/**
+ * One row as it appears in the index.
+ *
+ * `externalUserId` is NOT here, and that is the same refusal `listUnsettledWrites`
+ * makes further down this file: this subsystem does not hand the raw directory
+ * identifier out of the module, because every surface that has ever received one
+ * eventually persisted it somewhere unencrypted. `linkId` is the handle that
+ * does the same job safely — opaque, tenant-scoped, and resolvable to a person
+ * only through an authorised read of the roster.
+ *
+ * `detail` is NOT here either. See `getJournalWrite`, which is where it lives
+ * and where the reasoning for that belongs.
+ */
+export interface JournalIndexEntry {
+    readonly journalId: string;
+    readonly linkId: string | null;
+    readonly provider: string;
+    readonly action: IdentityWriteAction;
+    readonly mode: IdentityWriteMode;
+    readonly outcome: IdentityWriteOutcome;
+    readonly attemptedAt: Date;
+    readonly settledAt: Date | null;
+    /** Null for a scheduled pass with no human behind it. */
+    readonly actorUserId: string | null;
+}
+
+/** The index entry plus the two fields that make it an answer. */
+export interface JournalWriteDetail extends JournalIndexEntry {
+    /**
+     * The provider-shaped state the write replaced. THE POINT OF THE WHOLE
+     * SUBSYSTEM: it is what a restore reads, and for an on-prem account it is
+     * the only surviving copy of a `userAccountControl` integer whose other bits
+     * — password-never-expires, smartcard-required — were destroyed the instant
+     * the disable landed.
+     */
+    readonly priorState: Record<string, unknown>;
+    /** Why a FAILED write failed, or why a REVERTED one was undone. */
+    readonly detail: string | null;
+}
+
+/** The columns both readers select. The two detail-only columns are added at
+ *  the one call site that takes them, so the narrow shape is the default and
+ *  the wide one is the exception a reader can see. */
+const JOURNAL_INDEX_SELECT = {
+    id: true,
+    linkId: true,
+    provider: true,
+    action: true,
+    mode: true,
+    outcome: true,
+    attemptedAt: true,
+    settledAt: true,
+    actorUserId: true,
+} as const;
+
+/**
+ * Shape a Prisma row into the index entry.
+ *
+ * One function rather than two inline object literals, so the index and the
+ * by-id read cannot drift into two different accounts of the same row — the
+ * failure that would show up as a field present on one surface and quietly
+ * missing on the other.
+ */
+function toIndexEntry(row: {
+    id: string;
+    linkId: string | null;
+    provider: string;
+    action: string;
+    mode: string;
+    outcome: string;
+    attemptedAt: Date;
+    settledAt: Date | null;
+    actorUserId: string | null;
+}): JournalIndexEntry {
+    return {
+        journalId: row.id,
+        linkId: row.linkId,
+        provider: row.provider,
+        action: row.action as IdentityWriteAction,
+        mode: row.mode as IdentityWriteMode,
+        outcome: row.outcome as IdentityWriteOutcome,
+        attemptedAt: row.attemptedAt,
+        settledAt: row.settledAt,
+        actorUserId: row.actorUserId,
+    };
+}
+
+/**
+ * One journal row by its id — what the reference in the DISABLED mail resolves
+ * to.
+ *
+ * Returns null rather than throwing for a row that is not there, so the caller
+ * answers "no such reference in this tenant" without leaking, through the shape
+ * of the failure, whether the id exists in somebody else's. The read runs inside
+ * `runInTenantContext`, so RLS is what actually enforces that; the null is about
+ * not undoing it at the edge.
+ *
+ * ═══ WHY `detail` IS RETURNED HERE, AND NOWHERE ELSE ═══
+ *
+ * `IdentityWriteJournal.detail` is on the Epic B encryption manifest. That entry
+ * is right about what the column holds — free text about a NAMED person's access
+ * change, and provider rejections routinely echo the UPN back — so the question
+ * is a real one and the answer is not automatic.
+ *
+ * It is returned, for three reasons.
+ *
+ * THE MANIFEST GOVERNS REST, NOT AUDIENCE. Its job is that a stolen database
+ * file, a leaked backup or a replica read yields no plaintext; it makes no claim
+ * about who may read the value through an authorised, tenant-scoped request. The
+ * codebase already settles this the same way one entry over:
+ * `ConnectedIdentityAccount.protectionReason` sits on the manifest immediately
+ * below this one, holds the same shape of free text about the same people, and
+ * is selected by the identity-accounts roster read and rendered on that page —
+ * at `admin.manage`. This route is gated a full tier above that, at OWNER.
+ *
+ * WITHHOLDING IT WOULD DEFEAT THE LOOKUP. The operator arriving here has been
+ * told to read the captured state and decide whether to re-apply it. For an
+ * APPLIED row the prior state is the whole answer — but for a FAILED or
+ * INDETERMINATE row, `detail` IS the answer: it is the provider's own account of
+ * what happened, and without it an INDETERMINATE row says "we do not know
+ * whether your directory changed" and offers not one clue toward finding out.
+ * That is precisely the row a human was summoned for.
+ *
+ * AND THE ALTERNATIVE IS WORSE THAN IT LOOKS. An operator denied the reason
+ * in-product does not stop needing it — they open the provider's own admin
+ * centre and read the same message there, with none of this tenant's permission
+ * model in front of it and no audit row behind it. Withholding a field does not
+ * un-reveal the fact; it relocates the read somewhere we cannot see.
+ *
+ * The narrower reads keep the narrower shape. `listUnsettledWrites` and
+ * `listJournalWrites` both leave `detail` unselected: a nightly sweep and an
+ * index would decrypt it once per row for a value no caller reads, which costs a
+ * decrypt per row per night and would warn per row for ever on a key problem.
+ * One row, fetched deliberately, by an OWNER who was handed the id, is a
+ * different transaction from a hundred rows nobody asked about.
+ */
+export async function getJournalWrite(
+    ctx: RequestContext,
+    journalId: string,
+): Promise<JournalWriteDetail | null> {
+    const id = journalId.trim();
+    // An empty id is not a lookup, and `findFirst` with `id: ''` would happily
+    // return the tenant's newest row on some future edit that drops the
+    // predicate. Refusing here means the miss is explicit rather than lucky.
+    if (!id) return null;
+
+    const row = await runInTenantContext(ctx, (db) =>
+        db.identityWriteJournal.findFirst({
+            // `tenantId` is stated as well as relied upon. RLS is the enforcing
+            // layer; this predicate is the one that still holds if the same
+            // query is ever run from a context where it is not.
+            where: { id, tenantId: ctx.tenantId },
+            select: { ...JOURNAL_INDEX_SELECT, priorStateJson: true, detail: true },
+        }),
+    );
+    if (!row) return null;
+
+    return {
+        ...toIndexEntry(row),
+        priorState: row.priorStateJson as Record<string, unknown>,
+        detail: row.detail,
+    };
+}
+
+/**
+ * A page of the journal, most recent first — the index an operator browses when
+ * the reference is not to hand.
+ *
+ * Bounded at `MAX_JOURNAL_PAGE` and CLAMPED to it, so a caller passing
+ * `?limit=100000` receives a hundred rows rather than the tenant's entire write
+ * history: the ceiling belongs to the function, not to the request. Ordered
+ * `attemptedAt` desc, which the `(tenantId, attemptedAt)` index on the model
+ * serves directly.
+ *
+ * `provider` is an optional filter rather than a required argument: a tenant may
+ * write to more than one directory, and the answer to "what have we done to this
+ * person" spans all of them.
+ */
+export async function listJournalWrites(
+    ctx: RequestContext,
+    options: { limit?: number; provider?: string } = {},
+): Promise<JournalIndexEntry[]> {
+    const take = Math.min(Math.max(1, options.limit ?? MAX_JOURNAL_PAGE), MAX_JOURNAL_PAGE);
+    const rows = await runInTenantContext(ctx, (db) =>
+        db.identityWriteJournal.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                ...(options.provider ? { provider: options.provider } : {}),
+            },
+            orderBy: { attemptedAt: 'desc' },
+            take,
+            // NARROW, for the reasons written out on `JournalIndexEntry` and on
+            // `getJournalWrite`: no `externalUserId` (a directory identifier
+            // this subsystem does not hand out), no `detail` (manifest-encrypted
+            // free text nobody reads from an index), no `priorStateJson` (the
+            // answer, fetched one row at a time on purpose).
+            select: JOURNAL_INDEX_SELECT,
+        }),
+    );
+    return rows.map(toIndexEntry);
+}
+
+/**
  * The most recent APPLIED write against an account — what a restore reads.
  *
  * Scoped by (provider, externalUserId) rather than by link, so it still answers

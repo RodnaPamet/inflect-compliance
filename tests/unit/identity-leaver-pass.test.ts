@@ -179,6 +179,75 @@ describe('the durable record a dry run leaves behind', () => {
         expect(decisions[0].outcome).toBe('REFUSED_PROTECTED');
     });
 
+    it('carries the JOURNAL ID onto the decision, so the report can reach the capture', async () => {
+        // The DISABLED mail tells IT to quote the journal reference to somebody
+        // who "can read the captured state and re-apply it". `disableAccount`
+        // returns that reference on the result, and `recordPassExecution` used
+        // to drop it — leaving `detailsJson.journalId` on the audit row as the
+        // only in-product pointer from a disable to what it replaced, which the
+        // leaver report cannot reach. Without this field the report can show
+        // that an account was disabled and offer no route to the capture.
+        disableBatch.mockResolvedValue({
+            results: [{ outcome: 'DISABLED', linkId: 'l1', journalId: 'jrnl_abc123' }],
+        });
+
+        await run();
+
+        const decisions = mockDb.integrationExecution.create.mock.calls[0][0].data.resultJson
+            .decisions as Array<Record<string, unknown>>;
+        expect(decisions[0]).toMatchObject({
+            linkId: 'l1',
+            outcome: 'DISABLED',
+            journalId: 'jrnl_abc123',
+        });
+    });
+
+    it('leaves the journal id UNSCRUBBED — it is an opaque cuid, not an account', async () => {
+        // Every `reason` on a decision goes through `redactDirectoryIdentifiers`
+        // because a provider sentence embeds the account it is about. A journal
+        // id embeds nothing: it is minted by our own database and resolves only
+        // through an authorised read of a table we own. Scrubbing it would
+        // corrupt the one field whose whole value is being quotable verbatim —
+        // and the scrubber is reason-shaped, so a future edit that widened it
+        // over the rest of the decision would land here first.
+        //
+        // Asserted against a candidate whose directory identifier is a
+        // substring-rich value, so a scrubber applied to this field would have
+        // something to find and would visibly change it.
+        findCandidates.mockResolvedValue([
+            { linkId: 'l1', externalUserId: 'abc123', onPremisesSyncEnabled: false },
+        ]);
+        disableBatch.mockResolvedValue({
+            results: [{ outcome: 'DISABLED', linkId: 'l1', journalId: 'jrnl_abc123' }],
+        });
+
+        await run();
+
+        const decisions = mockDb.integrationExecution.create.mock.calls[0][0].data.resultJson
+            .decisions as Array<Record<string, unknown>>;
+        expect(decisions[0].journalId).toBe('jrnl_abc123');
+    });
+
+    it('OMITS the journal id on a decision that never reached a write', async () => {
+        // `journalId` exists only once `beginWrite` has committed a capture, so
+        // the refusals decided before it carry none. A `null` on the row would
+        // read on screen as "a capture was attempted and produced nothing",
+        // which is a different and far more alarming claim than "no write was
+        // attempted". Same rule the basis follows.
+        disableBatch.mockResolvedValue({
+            results: [{ outcome: 'REFUSED_PROTECTED', linkId: 'l1', reason: 'service account' }],
+        });
+
+        await run();
+
+        const decisions = mockDb.integrationExecution.create.mock.calls[0][0].data.resultJson
+            .decisions as Array<Record<string, unknown>>;
+        expect(decisions[0]).not.toHaveProperty('journalId');
+        // Paired positive: the decision IS on the row, so the absence above is
+        // about the journal id and not about a row that never got written.
+        expect(decisions[0].outcome).toBe('REFUSED_PROTECTED');
+    });
+
     it('keys decisions by link id and never by directory identifier', async () => {
         // IntegrationExecution is not encrypted at rest — the Epic B manifest is
         // String-only, so a Json column cannot join it — and these rows outlive

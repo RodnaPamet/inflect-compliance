@@ -290,6 +290,42 @@ async function recordPassExecution(
         // nothing has looked at yet — and after #2144 widened the rail, telling
         // those apart is the seven-day window's whole job.
         ...(r.basis ? { basis: r.basis } : {}),
+        // THE POINTER FROM A DISABLE BACK TO WHAT IT REPLACED.
+        //
+        // `disableAccount` captures the account's prior state into
+        // IdentityWriteJournal BEFORE it calls the provider, and hands the row's
+        // id back on the result. Until this line, `recordPassExecution` threw it
+        // away — so the only surviving in-product pointer from a disable to its
+        // capture was `detailsJson.journalId` on the audit row, which the leaver
+        // report cannot reach and an operator reading that report cannot see.
+        //
+        // That absence had a user-visible consequence. The DISABLED notification
+        // tells IT to quote the journal reference to "your platform
+        // administrator, who can read the captured state and re-apply it" — and
+        // the reference printed in that mail IS this id. With it dropped here,
+        // the only copy of the pointer was in an email somebody had to still
+        // have. Carrying it onto the decision makes the report the second,
+        // durable place to find it.
+        //
+        // NOT SCRUBBED, deliberately, and this is the line to read twice. Every
+        // `reason` above goes through `redactDirectoryIdentifiers` because a
+        // provider sentence embeds the account it is about. A journal id is not
+        // a sentence and not a directory identifier: it is an opaque cuid minted
+        // by our own database, tenant-scoped by RLS, and resolvable only through
+        // an authorised read of a row in a table we own. Putting it through the
+        // scrubber would be theatre — there is no account name in it to remove —
+        // and `IntegrationExecution.resultJson` is not encrypted at rest, which
+        // is exactly why the value stored has to be an opaque handle rather than
+        // anything that names a person. It is.
+        //
+        // ABSENT rather than null on a decision that never reached a write.
+        // `journalId` exists only once `beginWrite` has committed, so the three
+        // refusals decided before it (self-account, protected, ladder) and the
+        // stranded-connection refusal carry none. Same rule as `basis` directly
+        // above, and for the same reason: a `null` on the row would read on
+        // screen as "a capture was attempted and produced nothing", which is a
+        // different and much more alarming claim than "no write was attempted".
+        ...(r.journalId ? { journalId: r.journalId } : {}),
     }));
     // Deliberately the SAME predicate `leaverPassStatus` applies, spelled the
     // same way. The row carries truncation as a flag as well as a status, and
