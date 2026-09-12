@@ -875,6 +875,24 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
             // the run. `beginWrite` never runs for this path, so the capture
             // below is documentation rather than a restore source — but it must
             // still be non-empty and self-describing.
+            //
+            // `staleEvidence` IS LOAD-BEARING, and its absence was a defect
+            // (#2481). `enabled: false` here does not mean "we observed this
+            // account disabled"; it means "there is no account left to ask
+            // about". Those are different claims, and exactly one consumer
+            // depends on telling them apart: the already-disabled branch in
+            // `identity-disable-account` settles a stranded INDETERMINATE
+            // journal row as APPLIED unless the evidence is marked stale — on
+            // the inference that a later read seeing the account disabled
+            // proves the earlier write landed. For a 404 that inference is
+            // FALSE: an administrator deleting the user produces the identical
+            // read, and settling on it records someone else's deletion as
+            // proof of our write, in the journal this product offers as audit
+            // evidence.
+            //
+            // The comment above says beginWrite never runs here, which is true
+            // and is what made this easy to miss — the damage lands on a row
+            // that already existed, not on this pass's write.
             logger.info('Entra account no longer exists — treating as already disabled', {
                 component: 'integration-entra-id-writer',
                 externalUserId: id,
@@ -886,6 +904,7 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
                     capturedAt: new Date(this.now()).toISOString(),
                     id,
                     notFound: true,
+                    staleEvidence: true,
                 },
             };
         }

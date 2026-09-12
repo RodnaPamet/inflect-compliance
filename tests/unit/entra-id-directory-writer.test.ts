@@ -382,6 +382,30 @@ describe('readState', () => {
         expect(Object.keys(state.priorState).length).toBeGreaterThan(0);
     });
 
+    it('marks a deleted account as STALE evidence, so it cannot settle a journal row (#2481)', async () => {
+        const { impl } = scriptedFetch([
+            tokenRoute(TOKEN_WITH_WRITE),
+            { when: isUserGet, reply: () => json({ error: { code: 'Request_ResourceNotFound' } }, 404) },
+        ]);
+        const writer = createEntraIdWriter(BASE_CONFIG, deps(impl));
+
+        const state = await writer.readState(USER_ID);
+
+        // THE WHOLE POINT, and the reason `enabled: false` above is not enough.
+        // `identity-disable-account`'s already-disabled branch settles a
+        // stranded INDETERMINATE row as APPLIED unless the evidence says it is
+        // stale — inferring "our earlier write landed" from "the account reads
+        // disabled now". A 404 produces that same read and does NOT support
+        // that inference: the account is GONE, which an administrator can cause
+        // without us writing anything. Settling on it records their deletion as
+        // proof of our write.
+        //
+        // Asserted on the writer because the writer is what knows the request
+        // 404'd; by the time the usecase sees `enabled: false` the two cases
+        // are indistinguishable unless this key is set.
+        expect(state.priorState.staleEvidence).toBe(true);
+    });
+
     it('captures what a restore needs, and only that', async () => {
         const { impl } = scriptedFetch([
             tokenRoute(TOKEN_WITH_WRITE),

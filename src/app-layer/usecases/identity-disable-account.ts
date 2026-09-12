@@ -752,8 +752,28 @@ async function decideWithTarget(
         // sync flag has flipped since — so the inference being drawn is the same
         // one, from the same live evidence, and leaving the row unsettled would
         // strand its captured prior state exactly as before.
+        // `notFound` IS STALE EVIDENCE, and reading only `staleEvidence` here
+        // was a defect (#2481). A deleted account answers this read with
+        // `enabled: false` exactly as a disabled one does, but it is not an
+        // observation that our write landed — it is the absence of anything to
+        // observe. An administrator deleting the user would otherwise settle a
+        // stranded row APPLIED and send a RECONCILED mail on the strength of
+        // someone else's action.
+        //
+        // BOTH KEYS ARE CHECKED ON PURPOSE. The Entra writer now marks its 404
+        // capture `staleEvidence: true` at the source, which is the better
+        // place because the reader is what knows the request 404'd. This second
+        // site is not redundancy for that fix — it is the invariant stated
+        // where it is CONSUMED, so a future provider that reports an absent
+        // account without having read this comment inherits the safe answer
+        // rather than the dangerous one. Unknown must fail toward NOT settling:
+        // an unsettled row asks a human to look, a wrongly settled one tells
+        // them there is nothing to look at.
+        const prior = state.priorState as
+            | { staleEvidence?: unknown; notFound?: unknown }
+            | null;
         const staleEvidence =
-            (state.priorState as { staleEvidence?: unknown } | null)?.staleEvidence === true;
+            prior?.staleEvidence === true || prior?.notFound === true;
         const settled = staleEvidence
             ? null
             : await settleIndeterminateAsApplied(ctx, writer.provider, input.externalUserId);
