@@ -295,6 +295,18 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/processes/[id]/snapshots/[version]/restore',
         why: 'Rolling a process map back to an earlier snapshot — processes.edit, mirroring the assertCanWrite in restoreProcessMapSnapshot. Narrow leaf root: the snapshots list + by-version siblings are reads, and processes/[id] itself stays unregistered because its GET carries no matching key.',
     },
+    // ── The employee manager field (#2492) ──────────────────────────
+    // NARROW LEAF ROOT, and the narrowness is the whole reason it can be
+    // here at all. `personnel` as a directory is NOT privileged — its
+    // collection route's GET is gated on `personnel.view`, which every role
+    // holds — so taking the parent would pull that read in and force an
+    // exclusion entry for a route nobody set out to triage. The leaf is the
+    // one handler this tranche examined: the single-column write that lets a
+    // tenant with no HRIS feed give an employee a manager at all.
+    {
+        relPath: 'src/app/api/t/[tenantSlug]/personnel/[employeeId]/manager',
+        why: 'Setting or clearing one employee\'s manager — personnel.manage, the same key createEmployee gates on, so a denial writes an AUTHZ_DENIED row rather than the silent usecase-layer forbidden(). In scope because this is the second writer of an Employee row and the org chart it edits decides who is told about a colleague\'s offboarding. Narrow leaf root: the /personnel collection route is not in scope and keeps its unregistered requirePermission.',
+    },
 ];
 
 /**

@@ -468,11 +468,14 @@ export function planLeaverNotifications(
  * irrelevant AT THIS SITE, because the ordinary case never reaches it:
  * `planLeaverNotifications` returns `manager: null` for every silent and
  * IT-only outcome, so the caller's `plan.manager &&` guard has already
- * discarded them. `Employee.managerEmployeeId` is null for most rows and will
- * stay that way — one writer in the repo (`hris-sync.ts`), needing an enabled
+ * discarded them. `Employee.managerEmployeeId` is null for most rows: until
+ * #2492 the repo had ONE writer for it (`hris-sync.ts`), needing an enabled
  * BambooHR/Workday feed carrying `managerEmail` AND that manager present in the
- * same roster, with no `updateEmployee` to fix it after the fact — but that
- * commonness is spent BEFORE the log line, not at it.
+ * same roster, with no update path to fix it after the fact. #2492 added the
+ * second writer — `personnel.ts::setEmployeeManager`, gated on
+ * `personnel.manage` — so a tenant with no HRIS feed can now give somebody a
+ * manager at all. The column stays null until a human or a feed says
+ * otherwise, and that commonness is spent BEFORE the log line, not at it.
  *
  * ═══ WHY THIS KEYS ON THE PLANNED MAIL, NOT ON A LIST OF OUTCOMES ═══
  *

@@ -190,9 +190,21 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     // register's PAGE is at `/t/:slug/agents` since that prompt; every API
     // route it drives is still at `/api/t/:slug/admin/agents/*`, which is what
     // these patterns match. This map is the API surface only — `T` is
-    // `\/api\/t\/[^/]+`, and `resolveRoutePermission` is called from the
-    // middleware against `req.nextUrl.pathname` for API requests — so a UI
-    // route needs no rule here and adding one would match nothing. Page-level
+    // `\/api\/t\/[^/]+` — so a UI route needs no rule here and adding one
+    // would match nothing.
+    //
+    // BE PRECISE ABOUT WHAT THIS MAP IS, because this comment used to say
+    // `resolveRoutePermission` "is called from the middleware against
+    // `req.nextUrl.pathname` for API requests" and that was never true:
+    // `src/middleware.ts` does not mention it, and across `src/` the only
+    // occurrence is the definition itself — every other caller is under
+    // `tests/`. This map is a DECLARATIVE POLICY RECORD that
+    // `tests/guardrails/api-permission-coverage.test.ts` checks each
+    // privileged route against. The LIVE gate is the literal
+    // `requirePermission(...)` wrapper in the route file; that is what denies
+    // the request and writes the hash-chained `AUTHZ_DENIED` row. Reading
+    // this map as a second enforcement layer overstates the defence in depth
+    // by one layer. Page-level
     // gating is each page's own `ctx.appPermissions` check, asserted by
     // `tests/integration/agents-{page,subpage}-authz.test.ts`.
     //
@@ -1009,6 +1021,25 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note:
             'Linking a BIA to a control as continuity evidence — the edge that ' +
             'makes the control satisfy NIS2 Art.21(2)(c) in the coverage view.',
+    },
+    // ── The employee manager field (#2492) ──────────────────────────
+    // `Employee.managerEmployeeId` had one writer, the HRIS sync, so a tenant
+    // with no BambooHR/Workday feed could not give anyone a manager — and the
+    // leaver mail therefore had no recipient on every disable. This is the
+    // route that fixes that, and it is gated on the same key that creates the
+    // employee row. Scoped to PUT and to the `/manager` leaf deliberately: the
+    // /personnel collection route one level up is NOT covered by this map, and
+    // widening this pattern to `personnel(\/.*)?` would claim coverage over
+    // its `personnel.view` GET without gating it.
+    {
+        path: new RegExp(`^${T}\\/personnel\\/[^/]+\\/manager$`),
+        methods: ['PUT'],
+        permission: 'personnel.manage',
+        note:
+            'Setting or clearing one employee\'s manager — the same key ' +
+            'createEmployee requires (OWNER + ADMIN), so the caller set is ' +
+            'exactly the one that can already add the person. `status` is ' +
+            'unreachable from this route by construction.',
     },
     {
         path: new RegExp(`^${T}\\/processes\\/[^/]+\\/snapshots\\/[^/]+\\/restore$`),
