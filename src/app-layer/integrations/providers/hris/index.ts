@@ -95,6 +95,37 @@ export interface HrisSyncDeps {
      * `secretEncrypted`. The sync owns that split and does the merge.
      */
     persistSecret?: (patch: Record<string, unknown>) => Promise<void>;
+
+    /**
+     * Wall-clock instant (epoch ms) after which the provider must not START
+     * another request for this run.
+     *
+     * WHY A READ HAS A DEADLINE AT ALL (#2508). The run holds a
+     * per-connection lease (`SYNC_LOCK_TTL_MS`), and that lease is the only
+     * thing making it the sole writer. A read that outlives the lease does not
+     * get aborted: `acquireSyncLock` reaps the stale lease and a SECOND run
+     * starts against the same connection. The two then share `syncCursor` and
+     * `syncPassStartedAt`, and whichever completes its pass first clears both
+     * and reconciles against its own `passStartedAt` — terminating employees
+     * the other has not reached, which the other upserts back. That is the
+     * flip-and-flip-back corruption `jobs/hris-sync.ts` documents.
+     *
+     * A PROVIDER THAT REACHES THIS MUST STOP AND RETURN `complete: false` WITH
+     * A `resumeToken`. Returning `complete: false` and NO token lands in the
+     * usecase's permanently-non-retryable arm, which would convert a throttled
+     * provider into a connection that can never finish a pass — worse than the
+     * overlap this is closing.
+     *
+     * CHECK IT BETWEEN REQUESTS, never mid-flight: abandoning a page already
+     * in progress throws away the rows it carries and costs the run its
+     * progress. The budget in `sync-transaction.ts` is sized for exactly that,
+     * allowing one full request to complete after the instant passes.
+     *
+     * Optional, and safely ignored by a provider that issues a single request
+     * (BambooHR): its worst case is one `MAX_HTTP_REQUEST_MS` and already fits
+     * inside the budget.
+     */
+    readDeadlineAt?: number;
 }
 
 export interface HrisSyncProvider {

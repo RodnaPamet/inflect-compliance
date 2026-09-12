@@ -34,6 +34,28 @@ export const WORKDAY_PAGE_SIZE = 500;
 /** Rows a single run will accumulate before handing back a resume token. */
 export const WORKDAY_MAX_PER_RUN = 5_000;
 
+/**
+ * Sequential HTTP requests one run's paging loop makes to reach the row cap
+ * WHEN EVERY ROW NORMALISES.
+ *
+ * Derived rather than written down, because it is one of the numbers the lock
+ * lease has to compose against (#2508) and a hand-written 10 would go on
+ * reporting the comfortable answer the first time either constant moved.
+ * `Math.ceil` for the same reason: a page size that no longer divides the cap
+ * must round UP, or the figure understates the work by a whole request.
+ *
+ * IT IS A FLOOR, NOT A CEILING, and saying so is the point. The loop's row
+ * test counts NORMALISED employees, and `normalise` drops any row with no work
+ * email — so a report carrying email-less rows pages PAST this, in the limit
+ * until a short page ends it. The unbounded read is therefore at least this
+ * bad and can be worse.
+ *
+ * That does not weaken the deadline; it is the reason for it. A row-count cap
+ * cannot bound wall-clock time, because it does not bound REQUESTS. The read
+ * deadline does, and it does so whatever fraction of rows the report drops.
+ */
+export const WORKDAY_MAX_PAGES_PER_RUN = Math.ceil(WORKDAY_MAX_PER_RUN / WORKDAY_PAGE_SIZE);
+
 /** A row as the documented Inflect RaaS report template emits it. */
 interface WorkdayRosterRow {
     employeeId?: string;
@@ -118,16 +140,42 @@ export interface WorkdayRosterConfig {
 /**
  * Read one run's worth of the roster, resuming from `resumeFrom` if given.
  *
- * Returns `complete: false` + a `resumeToken` when it stopped at the per-run
- * cap with more rows available — the shape the HRIS usecase treats as progress
- * rather than failure. Returns `complete: true` when it reached the end, which
- * is the only state that permits the departure reconcile to run.
+ * Returns `complete: false` + a `resumeToken` when it stopped short with more
+ * rows available — the shape the HRIS usecase treats as progress rather than
+ * failure. Returns `complete: true` when it reached the end, which is the only
+ * state that permits the departure reconcile to run.
+ *
+ * TWO THINGS CAN STOP IT SHORT, and both take the same exit. The per-run ROW
+ * cap (`WORKDAY_MAX_PER_RUN`) bounds how much one pass-leg writes; the
+ * `readDeadlineAt` WALL-CLOCK budget bounds how long it may spend reading,
+ * which is what keeps the read inside the connection's lock lease (#2508 —
+ * see `HrisSyncDeps.readDeadlineAt` for what happens when it does not). They
+ * are independent: a throttled provider hits the clock long before the rows.
  */
 export async function readWorkdayRoster(
     cfg: WorkdayRosterConfig,
     accessToken: string,
     resumeFrom?: string | null,
-    deps: { fetchImpl?: typeof fetch; now?: () => Date } = {},
+    deps: {
+        fetchImpl?: typeof fetch;
+        /**
+         * The clock the read deadline is measured on. Injectable so the
+         * deadline is testable without a real ten-minute wait.
+         *
+         * It is NOT threaded into `mapWorkdayStatus`, which takes its own
+         * `now` per row and defaults to the real clock. Status derivation
+         * decides ONBOARDING / OFFBOARDING from hire and termination dates,
+         * and moving that onto a test-controlled clock is a behaviour change
+         * in the most consequential part of this file — out of scope here.
+         */
+        now?: () => Date;
+        /**
+         * Epoch ms after which no further PAGE is started. See
+         * `HrisSyncDeps.readDeadlineAt`. Absent (or null) means unbounded,
+         * which is what every direct-call test and every non-sync caller gets.
+         */
+        readDeadlineAt?: number | null;
+    } = {},
 ): Promise<ListEmployeesResult> {
     const doFetch = deps.fetchImpl ?? resilientFetch;
     // assertWorkdayHost, not a string trim. This request sends a LIVE BEARER
@@ -148,7 +196,15 @@ export async function readWorkdayRoster(
     let offset = startOffset;
     let sawFullPage = true;
 
-    while (employees.length < WORKDAY_MAX_PER_RUN && sawFullPage) {
+    const clock = deps.now ?? (() => new Date());
+    const deadlineAt = deps.readDeadlineAt ?? null;
+    /**
+     * Evaluated BEFORE each page, so a page already in flight always runs to
+     * its own timeout. The read-phase budget is sized for that overshoot.
+     */
+    const readBudgetSpent = (): boolean => deadlineAt !== null && clock().getTime() >= deadlineAt;
+
+    while (employees.length < WORKDAY_MAX_PER_RUN && sawFullPage && !readBudgetSpent()) {
         const url = new URL(`https://${host}${cfg.reportPath.startsWith('/') ? '' : '/'}${cfg.reportPath}`);
         url.searchParams.set('format', 'json');
         url.searchParams.set('Offset', String(offset));
@@ -173,7 +229,15 @@ export async function readWorkdayRoster(
         sawFullPage = rows.length === WORKDAY_PAGE_SIZE;
     }
 
+    // A short page means the report ended, and THAT VERDICT OUTRANKS THE
+    // DEADLINE. Checking the clock first would report a finished roster as
+    // partial, store a cursor past the end of the report, and leave the next
+    // run reading an empty page to discover what this one already knew — with
+    // the departure reconcile deferred a whole scheduled run for nothing.
     if (!sawFullPage) return { employees, complete: true, resumeToken: null };
-    // Stopped at the per-run cap with the report still going.
+    // Stopped with the report still going: either the per-run row cap, or the
+    // read deadline. Both are progress, and both resume from the same offset —
+    // the usecase does not need to tell them apart, because the response to
+    // each is identical (store the cursor, continue next run).
     return { employees, complete: false, resumeToken: String(offset) };
 }

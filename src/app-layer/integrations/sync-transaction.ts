@@ -50,14 +50,37 @@
  * inside `SYNC_LOCK_TTL_MS` — the per-connection lease a sync must finish
  * within, or a second run may steal the lock and interleave with it.
  *
- * WHAT IS NOT COMPOSED HERE, STATED PLAINLY: the ROSTER READ's worst case is
- * not bounded by anything in this file. `MAX_HTTP_ATTEMPTS` (3) × (30 s
- * timeout + 60 s absorbed Retry-After) per request, across up to ten
- * sequential pages, exceeds `SYNC_LOCK_TTL_MS` on its own. This change does
- * not fix that and must not be read as having fixed it — it moves the read out
- * of a transaction, which stops the read from destroying the run's evidence,
- * and leaves the read-versus-lease composition to #2508.
+ * ═══ AND SO IS THE READ PHASE, NOW (#2508) ═══
+ *
+ * It was not when #2501 landed, and the paragraph that stood here said so: the
+ * roster read's worst case was bounded by nothing, and exceeded
+ * `SYNC_LOCK_TTL_MS` on its own. A read that outlives the lease is not an
+ * aborted read — `acquireSyncLock` reaps the stale lease and a SECOND run
+ * starts against the same connection, which is precisely the overlap the lock
+ * exists to prevent.
+ *
+ * The half that moved is the READ, not the lease. {@link
+ * ROSTER_READ_DEADLINE_MS} is the budget; the usecase adds it to its own run
+ * start and hands the provider the resulting INSTANT, so the budget cannot be
+ * restarted at a seam it crosses. The roster reader checks that instant
+ * BETWEEN pages and, once it has passed, stops early and hands back the resume
+ * cursor it already holds. The run then
+ * ends as a PARTIAL that the next scheduled run continues, so the failure
+ * direction is "fewer pages per run", never "two writers". What the lease has
+ * to accommodate is {@link ROSTER_READ_PHASE_BUDGET_MS}, and
+ * `tests/guards/sync-transaction-budget-composes.test.ts` asserts read + write
+ * fits inside `SYNC_LOCK_TTL_MS`.
+ *
+ * WHAT IS STILL NOT COMPOSED, STATED PLAINLY: identity-sync's enumeration.
+ * Okta and Google Workspace each fan out a per-USER enrichment request after
+ * the page walk (`enrichAccounts`, `enrichSso`), so their worst case is a
+ * different derivation from the one below, and no deadline is threaded into
+ * them by this change. The composition the guard asserts covers the HRIS
+ * roster read only, and `SYNC_LOCK_TTL_MS` says the same thing at its own
+ * declaration.
  */
+import { DEFAULT_TIMEOUT_MS } from './bounded-fetch';
+import { MAX_ABSORBED_RETRY_AFTER_MS, MAX_HTTP_ATTEMPTS } from './http-resilience';
 
 /**
  * Budget for the short transactions that carry the run's own bookkeeping.
@@ -136,6 +159,82 @@ export const MAX_SYNC_WRITE_CHUNKS = Math.ceil(MAX_SYNC_ROWS_PER_RUN / SYNC_UPSE
  * the chunk size or the per-run ceiling.
  */
 export const SYNC_WRITE_PHASE_BUDGET_MS = (2 * MAX_SYNC_WRITE_CHUNKS + 1) * SYNC_WRITE_TX_TIMEOUT_MS;
+
+/**
+ * Worst case for ONE outbound provider request, retries included.
+ *
+ * Derived, because the three numbers live in three files:
+ * `createResilientFetch` makes at most {@link MAX_HTTP_ATTEMPTS} attempts,
+ * each bounded at {@link DEFAULT_TIMEOUT_MS} by `bounded-fetch`, and sleeps an
+ * absorbed `Retry-After` of at most {@link MAX_ABSORBED_RETRY_AFTER_MS}
+ * BETWEEN attempts.
+ *
+ * THE SLEEP COUNT IS ONE FEWER THAN THE ATTEMPT COUNT, and it is worth being
+ * exact: #2508's own description composed this as 3 × (30 s + 60 s) = 270 s,
+ * which is 60 s per request too high. The loop throws on the last attempt
+ * instead of sleeping after it (`if (attempt === maxAttempts) throw`), so
+ * three attempts carry two sleeps — 3 × 30 s + 2 × 60 s = 210 s. The same
+ * bound covers a page that eventually SUCCEEDS: two throttled attempts then a
+ * slow 200 costs exactly as much.
+ *
+ * The error arm sleeps a jittered backoff rather than a Retry-After, and that
+ * arm is never the ceiling here: its base is `min(1000 * 2 ** (attempt - 1),
+ * 30_000)`, so at the only two attempts that can sleep it is at most 1 s and
+ * 2 s.
+ */
+export const MAX_HTTP_REQUEST_MS =
+    MAX_HTTP_ATTEMPTS * DEFAULT_TIMEOUT_MS + (MAX_HTTP_ATTEMPTS - 1) * MAX_ABSORBED_RETRY_AFTER_MS;
+
+/**
+ * How long a run's provider read may run before the reader stops paging.
+ *
+ * CHOSEN, not derived — this is the number #2508 moved, and it is the one the
+ * guard makes somebody choose on purpose. Ten minutes is far beyond any
+ * healthy read (a ten-page Workday roster off an unthrottled tenant is
+ * seconds) and comfortably inside what the lease can carry alongside the write
+ * phase.
+ *
+ * WHY NOT SIMPLY RAISE THE LEASE. `SYNC_LOCK_TTL_MS` is also the REAPER's
+ * threshold: it is how long a connection stays wedged after a worker is killed
+ * mid-sync. Sizing it to the read's unbounded worst case would widen that
+ * window to most of an hour, so a stuck sync would block its own retry for
+ * longer the slower the provider got — the wrong direction on exactly the
+ * input that causes the problem.
+ *
+ * THE COST, STATED. A provider throttling every page to the full
+ * {@link MAX_HTTP_REQUEST_MS} gets through roughly three pages per run instead
+ * of ten, so a large roster takes more scheduled runs to complete a pass and
+ * the departure reconcile waits for the pass to finish. That is visible — each
+ * run writes a PASSED execution row with `partial: true` and an advancing
+ * cursor — and it is strictly better than the alternative it replaces, which
+ * is a second run writing the same pass state concurrently.
+ */
+export const ROSTER_READ_DEADLINE_MS = 10 * 60_000;
+
+/**
+ * Worst case for the whole read phase: the deadline, plus the one request that
+ * may still be in flight when it passes.
+ *
+ * The deadline is checked BETWEEN pages — never mid-request, because aborting
+ * a page in flight would throw away the rows it was carrying and cost the run
+ * its progress. So a page started at `deadline - 1 ms` still runs to its own
+ * ceiling, and the honest bound is the deadline plus ONE
+ * {@link MAX_HTTP_REQUEST_MS}, not one per remaining page.
+ *
+ * Adding it ONCE holds only while every request a provider issues BEFORE its
+ * paging loop can itself finish inside the deadline — for Workday that is the
+ * OAuth token exchange in `listEmployees`, which is at most one request
+ * (`resolveWorkdayAccessToken` refreshes or returns the cached token; it never
+ * loops). The precondition is `MAX_HTTP_REQUEST_MS < ROSTER_READ_DEADLINE_MS`,
+ * and the guard asserts it rather than leaving it as prose.
+ *
+ * STRICTLY less than, and the strictness is the second thing it buys: the
+ * reader's check is `now >= deadline`, so equality here would let a maximally
+ * slow token exchange land exactly on the deadline and leave the run zero
+ * pages. `<=` would be enough for the budget arithmetic alone; `<` is what
+ * makes "every run attempts at least one page" true as well.
+ */
+export const ROSTER_READ_PHASE_BUDGET_MS = ROSTER_READ_DEADLINE_MS + MAX_HTTP_REQUEST_MS;
 
 /**
  * Options for a bookkeeping transaction.
