@@ -41,7 +41,10 @@ test.describe('an operator finds, registers, grants, and stops an agent', () => 
         // ─── 1. FIND IT FROM THE DASHBOARD ──────────────────────────────
         const agentId = await test.step('the sidebar reaches the register', async () => {
             await safeGoto(page, `/t/${tenantSlug}/dashboard`, { waitUntil: 'domcontentloaded' });
-            await waitForHydration(page).catch(() => {});
+            // The sidebar is OUTSIDE `main`, so the default selector would be
+            // waiting on a subtree that has nothing to do with the thing being
+            // clicked. Same class of bug as step 3 — see the note there.
+            await waitForHydration(page, '[data-testid="nav-agents"]');
 
             const navEntry = page
                 .getByRole('navigation')
@@ -84,7 +87,35 @@ test.describe('an operator finds, registers, grants, and stops an agent', () => 
         // ─── 3. OPEN IT, IN ONE CLICK ───────────────────────────────────
         await test.step('a single click opens the agent', async () => {
             await safeGoto(page, `/t/${tenantSlug}/agents`, { waitUntil: 'domcontentloaded' });
-            await waitForHydration(page).catch(() => {});
+
+            // HYDRATION OF `main` IS NOT HYDRATION OF THE TABLE, and that gap is
+            // what failed this step three times in CI.
+            //
+            // `waitForHydration`'s default selector is `main`, which the root
+            // layout hydrates almost immediately — long before a nested
+            // virtualised table attaches its row handlers. So the wait returned
+            // true, the click landed on inert markup, and `onRowClick` never
+            // ran. The server log proves it rather than suggests it: for the
+            // failing attempt's tenant there is no request to
+            // `/admin/agents/{agentId}` at ALL, and the agent id appears exactly
+            // once in the whole run — the POST that created it. A click that
+            // navigated would have left a request behind.
+            //
+            // `[cursor=pointer]` on the row in the DOM snapshot is not evidence
+            // against this: that className is computed during render, so it is
+            // in the server-rendered HTML whether or not React has attached
+            // anything to it.
+            //
+            // So: wait for the ROW ITSELF to carry React's fibers — the element
+            // this step is about to click, whose ancestor owns the handler.
+            // Hydration is top-down, so fibers on this node mean the row above
+            // it is live.
+            //
+            // NOT `.catch(() => {})`. A table that never hydrates is the real
+            // failure and should say so here, rather than 30s later as a
+            // navigation that never happened.
+            await waitForHydration(page, `[data-testid="agent-row-${agentId}"]`);
+
             // BY THE ROW'S OWN HANDLE, not `getByText(name).first()`. The name
             // appears in the breadcrumb and the detail heading too, so a text
             // match has more than one candidate and `.first()` picks by
@@ -157,7 +188,9 @@ test.describe('an operator finds, registers, grants, and stops an agent', () => 
             await safeGoto(page, `/t/${tenantSlug}/agents/${agentId}`, {
                 waitUntil: 'domcontentloaded',
             });
-            await waitForHydration(page).catch(() => {});
+            // The tab strip, not `main` — the control being clicked. Same
+            // reasoning as step 3.
+            await waitForHydration(page, '[role="tab"]');
             await main.getByRole('tab', { name: /overview/i }).click();
 
             // By ID, not by accessible name. The name is translated copy that
