@@ -2,11 +2,18 @@
  * The leaver pass — every gate in front of the batch, and the clamp.
  *
  * The two assertions that carry the weight:
- *   - a tenant configured at AUTOMATIC gets NOTHING, because it reached that
- *     rung by elapsed days and no pass has ever run;
+ *   - every rung the ladder can reach RUNS, including AUTOMATIC. The clamp is a
+ *     ceiling at the top rung, not a permission, and what keeps a tenant off
+ *     AUTOMATIC is the ladder itself (DISABLED by default, one rung per widen,
+ *     DRY_RUN_MIN_DAYS of dwell);
  *   - an empty candidate set with terminated workers present is reported as its
  *     own refusal, not as a quiet success — a leaver pass that disables nobody
  *     and says "done" is the failure this whole subsystem is most prone to.
+ *
+ * This header used to say "a tenant configured at AUTOMATIC gets NOTHING …
+ * no pass has ever run". #2187 falsified the first half on 2026-08-30 and the
+ * 05:00 pass on 2026-09-12 falsified the second, by disabling a live directory
+ * account. Corrected in #2487 along with the rest of that sweep.
  */
 jest.mock('@/lib/observability/logger', () => ({
     logger: { trace: jest.fn(), debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(), fatal: jest.fn() },
@@ -46,6 +53,7 @@ jest.mock('@/lib/observability/integration-metrics', () => ({
 
 import {
     runIdentityLeaverPass,
+    clampRefusalDetail,
     LEAVER_MAX_MODE,
     LINK_FRESHNESS_MS,
     MAX_REPORTED_DECISIONS,
@@ -507,6 +515,102 @@ describe('the ladder gate', () => {
         // this subsystem may write to a customer's directory at all. A change
         // here should be deliberate enough to update a test in the same diff.
         expect(LEAVER_MAX_MODE).toBe('AUTOMATIC');
+    });
+
+    it('no rung is above the clamp — the tripwire for the day one is', () => {
+        // WHAT THIS IS FOR. `MODE_ABOVE_CLAMP` in the pass is unreachable while
+        // the clamp sits on the TOP rung, and #2487 kept that branch anyway
+        // rather than deleting a safety refusal for being temporarily inert.
+        // Keeping dead code is only defensible if something announces the
+        // moment it stops being dead. This is that something.
+        //
+        // DERIVED FROM LADDER, never a literal list, and that is the whole
+        // design. The adjacent test in identity-write-ladder.test.ts asserts
+        // `permitted` equals the three rungs by name — which a rung added ABOVE
+        // AUTOMATIC satisfies unchanged, because the new rung is simply not in
+        // the permitted set. It passes while the thing it is watching happens.
+        // Filtering for what IS above the clamp has no such blind spot: the
+        // moment LADDER grows past LEAVER_MAX_MODE, or LEAVER_MAX_MODE is
+        // narrowed beneath LADDER's top, this list is non-empty and goes red.
+        //
+        // When it does go red, that is not a broken test. It means the clamp
+        // branch in `runIdentityLeaverPass` is live again — go read the note on
+        // it, and check the refusal text below is still the sentence you want
+        // an operator to find mid-incident.
+        expect(LADDER.filter((m) => isAboveClamp(m, LEAVER_MAX_MODE))).toEqual([]);
+    });
+
+    describe('the refusal text nobody can reach today', () => {
+        // `clampRefusalDetail` is lifted out of the branch precisely so it can
+        // be called here. The branch cannot be entered — an invented
+        // out-of-ladder mode does not work either, because `isAboveClamp` sorts
+        // an unknown value to -1 and reads it as BELOW the clamp — so the
+        // string had no reader at all, and went on telling operators that "no
+        // tenant has yet watched a single pass" after one had watched one.
+        //
+        // Called with the clamp LOWERED to DRY_RUN: the incident rollback that
+        // wakes this branch up. That is not a hypothetical shape invented for a
+        // test. LEAVER_MAX_MODE is a source constant specifically so it can be
+        // narrowed in a reviewed diff when a pass misbehaves, and the operator
+        // reading this sentence is doing so in the minutes after that ships.
+        const LOWERED = 'DRY_RUN';
+        const detail = clampRefusalDetail('AUTOMATIC', LOWERED);
+
+        it('names both the configured mode and the clamp, and no other rung', () => {
+            // Neither value alone is actionable. "You are clamped" without both
+            // rungs leaves the operator unable to tell whether to change a
+            // setting or escalate for a deploy, which is the only decision this
+            // message exists to inform.
+            expect(detail).toContain('AUTOMATIC');
+            expect(detail).toContain(LOWERED);
+
+            // A rung it was not handed must not appear — that is the signature
+            // of a hardcoded value surviving inside a function whose whole
+            // contract is to report what it was given. Derived from LADDER so a
+            // retired or added rung updates the check rather than dating it.
+            for (const rung of LADDER.filter((m) => m !== 'AUTOMATIC' && m !== LOWERED)) {
+                expect(detail).not.toContain(rung);
+            }
+        });
+
+        it('says the clamp is a constant, and that this refusal records no row', () => {
+            // The two facts that change what the operator does next.
+            //
+            // "Source constant" is the difference between a fix in the admin UI
+            // and a fix that needs review and a deploy; guessing wrong costs
+            // them the incident.
+            expect(detail).toMatch(/source constant/i);
+            expect(detail).toMatch(/not a tenant setting/i);
+
+            // And this is one of only two refusals that write no
+            // IntegrationExecution row, so the passes page stays empty. An
+            // operator who does not know that goes hunting for a dead worker.
+            // The asymmetry is documented in CLAUDE.md and it is the single
+            // most misreadable property of this subsystem.
+            expect(detail).toMatch(/IntegrationExecution/);
+            expect(detail).toContain('/admin/identity-leaver-passes');
+        });
+
+        it('asserts nothing about the state of the world', () => {
+            // THE ROT THIS SWEEP EXISTS TO PREVENT, checked as a claim SHAPE
+            // rather than as a truth — a test cannot know whether a sentence is
+            // true, and one that greps for today's wording just dates itself
+            // alongside the wording (the lesson in CLAUDE.md's "never gate CI
+            // on prose", and the same reasoning as
+            // tests/guards/scheduled-job-description-claims.test.ts).
+            //
+            // What IS decidable: a string baked into a build at compile time
+            // cannot know how many tenants have run a pass, or whether one ever
+            // has. Any such clause is wrong on a long enough timeline and this
+            // one proved it — it claimed "no tenant has yet watched a single
+            // pass" while an account sat disabled in a customer's directory.
+            // The detail may describe THIS refusal, and nothing beyond it.
+            expect(detail).not.toMatch(/no tenant|nobody|never been|has yet|not yet|first (real |live )?(pass|disable|time)|in the field/i);
+
+            // Positive counterweight — an empty string satisfies every negative
+            // above, and a message that says nothing is its own failure here.
+            expect(detail.length).toBeGreaterThan(120);
+        });
     });
 
     it('DISABLED is still refused, and still records nothing', () => {

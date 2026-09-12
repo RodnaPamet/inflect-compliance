@@ -149,7 +149,12 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     // connection (BambooHR, Workday).
     'hris-sync-dispatch',
     // Daily leaver pass fan-out, one per (tenant, writable directory
-    // provider). Clamped at DRY_RUN — it decides, it does not write.
+    // provider). It DOES write: #2187 raised LEAVER_MAX_MODE from DRY_RUN to
+    // AUTOMATIC on 2026-08-30, and on 2026-09-12 at 05:00 UTC this chain
+    // disabled a live directory account for the first time. How far a given
+    // tenant may go is that tenant's identityLeaverMode, never a property of
+    // the job — see tests/guards/scheduled-job-description-claims.test.ts, which
+    // exists because the same dead claim sat in the job's own description.
     'identity-leaver-dispatch',
     // PR-2 — daily cross-tenant fan-out: an identity-sync per enabled
     // Okta / Google Workspace / Entra ID / Active Directory connection.

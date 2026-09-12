@@ -877,13 +877,26 @@ the reasoning behind plan limits, the failure-shape contract
 do" list (no UI-only gating, no second mode-detection mechanism, no
 duplicating the limits table).
 
-### Identity lifecycle — JML (joiner / mover / leaver)
+### Identity lifecycle — JML (joiner / leaver)
 
 The subsystem that can **disable accounts in a customer's own directory**. It is
 the highest-blast-radius capability in the product, and it is deliberately
 throttled — though less than it was: the leaver clamp was raised to `AUTOMATIC`
 on 2026-08-30 (#2187), so the ladder alone now governs how far a tenant may go.
 The joiner is not implemented at all.
+
+**There is no mover, and the M in JML has never stood for anything here.** This
+header carried the industry's three-letter expansion until #2487, and it was the
+only first-party place in the repo the word appeared — which is exactly how a
+word becomes a roadmap item nobody wrote. `IdentityDirection` in
+`src/lib/identity/write-ladder.ts` is a closed `'leaver' | 'joiner'` union,
+`DIRECTION_IMPLEMENTED` has those two keys, and `TenantSecuritySettings` carries
+those two columns (`identityLeaverMode`, `identityJoinerMode`). So a mover is not
+an unimplemented direction — it is an unrepresentable one, with no rung to set,
+no column to set it in and no value to name it by. Adding one is a schema change
+and a migration before it is a feature. The distinction matters when reading the
+joiner: the joiner is a direction that EXISTS and is switched off, which is a
+different kind of nothing.
 
 **The chain is three scheduled jobs, and the order is load-bearing.**
 
@@ -993,14 +1006,38 @@ still decrypt the connection secret (for self-account ids) and degrades to
 config-only with a WARN if that fails.
 
 `beginWrite` on the write journal sits *below* the mode allowlist, so it is
-reached only at `AUTOMATIC`. This sentence used to read "`IdentityWriteJournal`
-has no reachable caller today", which was true when the clamp was `DRY_RUN` and
-became **false on 2026-08-30 when #2187 raised it to `AUTOMATIC`** — a caller
-appeared and the prose did not move. `IdentityWriteJournal` still has **0 rows**,
-so the practical advice is unchanged (do not treat journal rows as evidence a
-pass ran), but the reason is now "nobody has reached AUTOMATIC yet", not "no
-caller exists". The first `AUTOMATIC` pass is also this journal's first exercise,
-and `checkDisableBlastRadius`'s.
+reached only at `AUTOMATIC`. **On 2026-09-12 at 05:00 UTC it was reached for
+real.** One live Entra account was disabled, confirmed in the customer's portal;
+`IdentityWriteJournal` took its first row ever, `APPLIED`; and
+`checkDisableBlastRadius` ran against a real batch for the first time.
+
+**That inverts the advice this paragraph used to give.** It said "do not treat
+journal rows as evidence a pass ran", which was correct only while the table was
+empty — a row could then only have come from a test or a hand-written insert. A
+row is now the *strongest* evidence the subsystem produces, because of where
+`beginWrite` sits: reaching it means the tenant was at `AUTOMATIC`, the ladder
+and the clamp both cleared, a complete sync had left fresh links, a live writer
+was constructed, the blast-radius breaker passed the batch, and a call to the
+customer's directory was about to be made.
+
+**Hold onto the asymmetry, which is the half that did not change: a row proves a
+write was attempted, and no rows prove nothing whatsoever.** Every tenant at
+`DISABLED` or `DRY_RUN` leaves the journal empty by design, and so does every
+refusal that stops the pass above `beginWrite` — which is most of them. Two of
+those, the ladder refusals, leave no `IntegrationExecution` row either, so they
+are invisible on both surfaces at once. "Did a pass run?" is answered by
+`/admin/identity-leaver-passes`; "what did it change?" is answered by the
+journal. Reading the second for the first is how an empty page gets mistaken for
+a quiet night.
+
+The journal has a read surface as of #2490: `admin/identity-write-journal`, an
+index plus a per-row detail route that resolves the `journal reference <id>`
+that the DISABLED notification quotes. Both are gated `admin.tenant_lifecycle` —
+OWNER-only; ADMIN deliberately does not hold it, because a row names a change
+made to one of a customer's people's accounts. Both are read-only, and that is a
+decision rather than an unfinished half: `DirectoryWriter` declares no `enable()`
+verb, so re-applying a captured prior state is an act somebody performs in the
+customer's own directory, holding the state this surface hands them.
 
 **Refusal order matters when reading an outcome.** `ALREADY_DISABLED` is checked
 before the write-target rail, so an account that last synced as suspended returns
