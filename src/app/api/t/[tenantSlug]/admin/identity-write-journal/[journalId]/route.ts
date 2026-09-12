@@ -65,7 +65,16 @@ export const GET = withApiErrorHandling(
                 // has just pasted a cuid out of an email needs to see WHICH
                 // reference came back empty — most often because they quoted the
                 // id from a different tenant's mail, or truncated it.
-                throw notFound(`No identity write journal entry for reference ${journalId}`);
+                //
+                // TRUNCATED, because this echoes a caller-controlled path
+                // segment. A cuid is ~25 characters; nothing stops a client
+                // sending kilobytes, and `withApiErrorHandling` writes the
+                // message to the structured log as well as the response body,
+                // so an unbounded echo is a log-volume lever handed to anyone
+                // who can reach the route. Generous enough that a real
+                // reference is never clipped.
+                const quoted = journalId.slice(0, 64);
+                throw notFound(`No identity write journal entry for reference ${quoted}`);
             }
 
             return jsonResponse({ write });

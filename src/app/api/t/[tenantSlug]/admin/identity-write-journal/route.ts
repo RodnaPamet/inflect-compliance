@@ -55,9 +55,15 @@ export const GET = withApiErrorHandling(
         // rejected request teaches them nothing about their directory; the
         // usecase clamps the value to its own ceiling regardless, so a garbage
         // limit costs a default page rather than an error page.
+        //
+        // Non-POSITIVE is treated as unset rather than passed through. `?limit=`
+        // parses as 0 (`Number('')` is 0, and it is finite), which the usecase's
+        // `Math.max(1, …)` floor would turn into a one-row page — a silent,
+        // baffling answer to a request that plainly meant "no opinion".
         const rawLimit = url.searchParams.get('limit');
         const parsedLimit = rawLimit === null ? NaN : Number(rawLimit);
-        const limit = Number.isFinite(parsedLimit) ? Math.trunc(parsedLimit) : undefined;
+        const limit =
+            Number.isFinite(parsedLimit) && parsedLimit >= 1 ? Math.trunc(parsedLimit) : undefined;
 
         const provider = url.searchParams.get('provider') ?? undefined;
 
