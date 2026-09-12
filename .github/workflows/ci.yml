@@ -997,12 +997,32 @@ jobs:
           # buff/cache, so this is real resident memory, consistent with two
           # heaps sitting near their ceiling.
           #
-          # So this comes DOWN, and the arithmetic is the reason rather than a
-          # preference: 6144 x 2 caps worst-case heap at 12.3 GB, which against
-          # the ~1.4 GB of measured non-heap overhead lands near 13.7 GB and
-          # leaves ~2.3 GB. Six consecutive kills at 7168 (main x5, this branch
-          # x1) against one pass, so the previous value is not a coin flip any
-          # more.
+          # BOTH SIDES ARE NOW MEASURED, and they bracket the answer:
+          #
+          #   7168 -> peak 15706 MB, 283 MB free  -> SILENT kernel kill
+          #   6144 -> peak 12975 MB, 3149 MB free -> LOUD V8 abort
+          #           "Mark-Compact 6124.2 (6148.8) MB ... FATAL ERROR:
+          #            Ineffective mark-compacts near heap limit"
+          #           Next.js build worker exited ... signal: SIGABRT
+          #
+          # So the demand sits BETWEEN them: one heap needs more than 6144,
+          # and two heaps at 7168 need more than the runner has. Both of this
+          # file's earlier values are outside the window, which is why each
+          # produced a different failure and why swapping between them never
+          # converged.
+          #
+          # The two points give the slope: +1024 of ceiling moved the peak by
+          # 2731 MB (~2.67x per heap, i.e. the pair plus worker overhead). To
+          # keep the peak under ~14.5 GB and hold ~1.9 GB back from the 16 GB
+          # runner: ceiling <= (14500 + 3428) / 2.67 ~= 6714. 6656 is the
+          # value in that window, and it also hands the single heap 512 MB
+          # more than the one that just aborted at 6124.
+          #
+          # BE HONEST ABOUT THE MARGIN: this build now wants nearly a whole
+          # 16 GB runner, so the window is narrow rather than comfortable. If
+          # 6656 aborts LOUDLY the heap genuinely needs more and the fix is a
+          # bigger runner (`vars.LARGE_RUNNER`, unset today) or less demand --
+          # not another trip around this loop.
           #
           # If a single heap now needs more than 6144 the failure is LOUD and
           # deterministic (V8 "Reached heap limit" + a stack, SIGABRT) rather
@@ -1020,7 +1040,7 @@ jobs:
           # (Historical, for the band: the 8192-era peak was 15783 MB / 16 GB,
           # and returning to that band trades a loud, debuggable V8 abort for the
           # silent kernel kill this ceiling was introduced to stop.)
-          NODE_OPTIONS: "--max-old-space-size=6144"
+          NODE_OPTIONS: "--max-old-space-size=6656"
           NODE_ENV: production
 
       # The worker/scheduler bundle. Until 2026-08-25 this ran in exactly ONE
