@@ -17,7 +17,12 @@ import {
     renderMeasure,
     type PackDocumentInput,
 } from '@/lib/agentic/pack-document';
-import { measured, noPopulation, notAssessed } from '@/lib/agentic/report-measures';
+import {
+    MEASURE_BASES,
+    measured,
+    noPopulation,
+    notAssessed,
+} from '@/lib/agentic/report-measures';
 import { METRIC_DEFINITIONS } from '@/lib/agentic/report-definitions';
 
 const GENERATED = new Date('2026-05-04T09:30:00.000Z');
@@ -116,7 +121,7 @@ describe('no figure is coerced', () => {
     });
 
     it('says a missing framework has not been assessed rather than scoring it zero', () => {
-        const line = renderMeasure('m', notAssessed('FRAMEWORK_NOT_INSTALLED'));
+        const line = renderMeasure('m', notAssessed('ASI_FRAMEWORK_NOT_INSTALLED'));
         expect(line).toContain('NOT_ASSESSED');
         expect(line).toContain('NOT a coverage of zero');
     });
@@ -124,6 +129,35 @@ describe('no figure is coerced', () => {
     it('names an id that produced no measure at all rather than omitting it', () => {
         expect(renderMeasure('m', undefined)).toContain('NOT REPORTED');
     });
+});
+
+describe('every basis code has a sentence', () => {
+    /**
+     * DRIVEN FROM `MEASURE_BASES`, not from a list retyped here.
+     *
+     * The original map was `Record<string, string>` with seven INVENTED keys —
+     * names recalled instead of read — so seven of the twelve real codes
+     * rendered "no explanation is registered for this code" in the filed
+     * document. Every hand-written test passed, because they asserted the same
+     * invented constants.
+     *
+     * The type now makes that impossible at compile time. This is the runtime
+     * half: it reads the real vocabulary, so a code added later without a
+     * sentence fails here too, and it can never agree with a mistake because it
+     * does not restate the list.
+     */
+    it.each(MEASURE_BASES.map((b) => [b] as const))(
+        '%s renders a real explanation, not the fallback',
+        (basis) => {
+            const line = renderMeasure('m', notAssessed(basis));
+            expect(line).toContain(basis);
+            expect(line).not.toContain('No explanation is registered');
+            // And the sentence is not merely present but SAYS something: the
+            // code plus a bare period would satisfy a `toContain` check.
+            const sentence = line.split('—')[1] ?? '';
+            expect(sentence.trim().length).toBeGreaterThan(20);
+        },
+    );
 });
 
 describe('the document carries its own meaning', () => {

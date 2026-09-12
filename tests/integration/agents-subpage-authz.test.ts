@@ -422,7 +422,7 @@ describe('the reports page’s export offer is a SEPARATE grant (#2467)', () => 
         getTenantCtxMock.mockResolvedValue(withEvidenceEdit(T1, true));
         const el = await renderPage(ReportsPage, T1);
         expect(el.type).not.toBe(ForbiddenPage);
-        expect((el.props as { canExport: boolean }).canExport).toBe(true);
+        expect((el as unknown as { props: { canExport: boolean } }).props.canExport).toBe(true);
     });
 
     it('withholds it from a principal who may read the pack but not write evidence', async () => {
@@ -433,7 +433,7 @@ describe('the reports page’s export offer is a SEPARATE grant (#2467)', () => 
         // action that always 403s is a defect report waiting to be filed
         // against a working permission model.
         expect(el.type).not.toBe(ForbiddenPage);
-        expect((el.props as { canExport: boolean }).canExport).toBe(false);
+        expect((el as unknown as { props: { canExport: boolean } }).props.canExport).toBe(false);
     });
 });
 

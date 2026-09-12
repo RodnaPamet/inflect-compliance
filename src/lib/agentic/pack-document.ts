@@ -31,6 +31,16 @@
  * and flattening them here would undo the work `report-measures.ts` did to keep
  * them apart.
  *
+ * The basis map below is typed `Record<MeasureBasis, string>` ON PURPOSE.
+ * Written as `Record<string, string>` it compiled with SEVEN INVENTED KEYS —
+ * names recalled rather than read — so seven of the twelve real codes fell
+ * through to "no explanation is registered for this code", in the one artefact
+ * whose whole job is explaining its own absences. The PAGE never had this bug,
+ * because `agents-copy-keys-resolve` checks its i18n keys resolve; the document
+ * had no equivalent, and this type is now that guard. A unit test is not a
+ * substitute: the one written alongside it asserted the same invented constant
+ * and passed.
+ *
  * ── THE DEFINITIONS TRAVEL WITH IT ─────────────────────────────────────────
  *
  * Every metric the document cites gets its population, moment, inclusions and
@@ -43,7 +53,7 @@
  */
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
-import type { Measure } from './report-measures';
+import type { Measure, MeasureBasis } from './report-measures';
 import type { MetricDefinition } from './report-definitions';
 
 /** Tenant-controlled text is stripped by the caller; this only bounds length. */
@@ -60,20 +70,29 @@ export const DOCUMENT_ROW_CAP = 100;
  * workspace, and a figure whose explanation changes with the reader's locale is
  * a figure two readers can disagree about while both quoting it correctly.
  */
-const BASIS_SENTENCE: Record<string, string> = {
+const BASIS_SENTENCE: Record<MeasureBasis, string> = {
     NO_AGENTS_REGISTERED: 'No agents are registered, so there is nothing to count.',
-    NO_THIRD_PARTY_AGENTS: 'No agent here is supplied by a third party.',
-    NO_PROPOSALS_IN_WINDOW: 'No proposals were raised in the window.',
-    NO_DECISIONS_IN_WINDOW: 'No proposal was decided in the window.',
-    NO_REVIEWERS_IN_WINDOW: 'Nobody reviewed a proposal in the window.',
-    NO_SAMPLE_AUDITED: 'No decision has been through a second-opinion audit.',
-    NO_DRILLS_RUN: 'No kill-switch drill has been run.',
-    NO_MEASURING_DRILLS: 'Drills exist, but none of them reached a graded outcome.',
-    FRAMEWORK_NOT_INSTALLED:
-        'The framework is not installed in this workspace, so coverage has not been ' +
-        'assessed. This is NOT a coverage of zero.',
-    NO_KILLS_ENGAGED: 'The kill switch has not been engaged.',
-    NO_SUPPLYING_VENDORS: 'No vendor supplies an agent here, so vendor assurance has no subject.',
+    NO_AGENTS_IN_SCOPE: 'No agent of the kind this figure counts over exists here.',
+    ASI_FRAMEWORK_NOT_INSTALLED:
+        'The OWASP agentic framework is not installed in this workspace, so ' +
+        'coverage has not been assessed. This is NOT a coverage of zero.',
+    ASI_FRAMEWORK_EMPTY:
+        'The agentic framework is installed but carries no risk rows, so there ' +
+        'is nothing to assess against — which is not the same as failing to cover them.',
+    NO_DECIDED_PROPOSALS: 'No proposal was approved or rejected in the window.',
+    BELOW_REPORTABLE_SAMPLE:
+        'Decisions exist, but too few to report a rate without misleading.',
+    NO_ANSWERED_SAMPLE_AUDITS:
+        'No sampled approval has been re-checked, so a disagreement rate has no base.',
+    NO_DRILLS_RUN:
+        'The stop control has never been drilled, so nothing has been proven about it.',
+    ALL_DRILLS_ERRORED:
+        'Drills ran and every one of them errored, so none produced a ' +
+        'measurement. Distinct from never having drilled: the control is not ' +
+        'unproven here, it is failing to be exercised.',
+    NO_KILLS_ENGAGED: 'No kill switch was engaged in the window.',
+    NO_SUPPLYING_VENDORS:
+        'No vendor supplies an agent here, so vendor assurance has no subject.',
     OUTSIDE_PLATFORM_BOUNDARY:
         'This fact is not observable from inside this platform. See the definition.',
 };
