@@ -17,7 +17,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { formatDate } from '@/lib/format-date';
+import { formatDateTime } from '@/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -66,6 +66,51 @@ interface AccountRow {
     linked: boolean;
     /** From the LAST reconcile, and only when still unlinked. May be absent. */
     unlinkedReason: string | null;
+    /**
+     * What WE last did to this account, and whether the mirror has caught up (#2480).
+     *
+     * `status` above is what the DIRECTORY said at `syncedAt`. The sync runs at
+     * 03:00 and the leaver pass at 05:00, so a disable always lands two hours
+     * AFTER the observation that could have seen it — leaving the row reading
+     * ACTIVE until the next 03:00, roughly 22 hours. This page's own subtitle
+     * invites an access review from this data, so for that window the review
+     * concluded the opposite of the truth.
+     *
+     * `writeNewerThanSync` is computed server-side rather than by comparing
+     * `lastWriteAt` to `syncedAt` here: both are wire strings, the comparison is
+     * the whole point of the fix, and two places deciding it is how they drift.
+     */
+    lastWriteAction: string | null;
+    lastWriteOutcome: string | null;
+    lastWriteAt: string | null;
+    writeNewerThanSync: boolean;
+}
+
+/**
+ * The badge a row earns when we have acted since the directory was last read.
+ *
+ * Returns null — meaning "render the mirror's status, unchanged" — unless there
+ * is a settled write the sync has not yet re-observed. Once the next sync lands,
+ * `status` is authoritative again and this goes quiet on its own.
+ *
+ * ONLY `DISABLE_ACCOUNT` IS TREATED AS NEWS, and every outcome is spelled out
+ * rather than defaulted. `APPLIED` is the common case; `INDETERMINATE` is the
+ * most valuable of them, because nobody knows whether that write landed and the
+ * mirror cannot tell you. `FAILED` deliberately yields null: it is a positive
+ * claim that the directory is UNCHANGED, so the mirror's own status is correct
+ * and flagging it would invent a discrepancy. `REVERTED` likewise — the account
+ * was put back, which is what `status` already says.
+ */
+function writeSignal(row: AccountRow): { label: string; tip: string } | null {
+    if (!row.writeNewerThanSync || row.lastWriteAction !== 'DISABLE_ACCOUNT') return null;
+    switch (row.lastWriteOutcome) {
+        case 'APPLIED':
+            return { label: 'disableApplied', tip: 'disableAppliedTip' };
+        case 'INDETERMINATE':
+            return { label: 'disableUnconfirmed', tip: 'disableUnconfirmedTip' };
+        default:
+            return null;
+    }
 }
 
 export default function IdentityAccountsPage() {
@@ -284,7 +329,46 @@ function IdentityAccountsContent() {
             : []),
         { accessorKey: 'email', header: t('identityAccounts.colEmail'), cell: ({ row }) => <span className="font-medium">{row.original.email ?? row.original.displayName ?? '—'}</span> },
         { id: 'name', accessorKey: 'displayName', header: t('identityAccounts.colName'), cell: ({ getValue }) => <span className="text-content-muted">{String(getValue() ?? '—')}</span> },
-        { id: 'status', accessorKey: 'status', header: t('integrations.colStatus'), cell: ({ row }) => <StatusBadge variant={row.original.status === 'ACTIVE' ? 'success' : 'neutral'}>{row.original.status}</StatusBadge> },
+        {
+            id: 'status',
+            accessorKey: 'status',
+            header: t('integrations.colStatus'),
+            // THE CORRECTION GOES WHERE THE WRONG CLAIM IS RENDERED (#2480).
+            //
+            // One badge, replaced — not a second badge beside it and not a new
+            // column. The defect was that this cell asserted ACTIVE for an
+            // account we had disabled hours earlier; a discreet marker elsewhere
+            // would leave the false claim standing and add a footnote.
+            //
+            // ONE badge, with its content and variant computed — not a second
+            // badge beside the first. `tests/guards/badge-density.test.ts` caps
+            // this file at 6 and says why: "ONE loud badge, not a secondary
+            // competing with another". A warning pill sitting next to a green
+            // ACTIVE pill would also leave the false claim standing and add a
+            // footnote to it, which is the opposite of the fix.
+            cell: ({ row }) => {
+                const signal = writeSignal(row.original);
+                return (
+                    <StatusBadge
+                        variant={signal ? 'warning' : row.original.status === 'ACTIVE' ? 'success' : 'neutral'}
+                        tone={signal ? 'solid' : undefined}
+                        tooltip={
+                            signal
+                                ? t(`identityAccounts.${signal.tip}`, {
+                                      status: row.original.status,
+                                      observedAt: row.original.syncedAt ? formatDateTime(row.original.syncedAt) : '—',
+                                      appliedAt: row.original.lastWriteAt
+                                          ? formatDateTime(row.original.lastWriteAt)
+                                          : '—',
+                                  })
+                                : undefined
+                        }
+                    >
+                        {signal ? t(`identityAccounts.${signal.label}`) : row.original.status}
+                    </StatusBadge>
+                );
+            },
+        },
         { id: 'admin', accessorKey: 'isAdmin', header: t('identityAccounts.colAdmin'), cell: ({ row }) => row.original.isAdmin ? <StatusBadge variant="warning">{t('identityAccounts.admin')}</StatusBadge> : <span className="text-content-subtle">—</span> },
         {
             id: 'linked',
@@ -361,7 +445,7 @@ function IdentityAccountsContent() {
             ),
         },
         { id: 'mfa', accessorKey: 'mfaEnrolled', header: t('identityAccounts.colMfa'), cell: ({ row }) => row.original.mfaEnrolled ? <StatusBadge variant="success">{t('identityAccounts.mfaOn')}</StatusBadge> : <StatusBadge variant="error">{t('identityAccounts.mfaOff')}</StatusBadge> },
-        { id: 'synced', accessorKey: 'syncedAt', header: t('identityAccounts.colSynced'), cell: ({ row }) => <span className="text-content-muted tabular-nums">{row.original.syncedAt ? formatDate(row.original.syncedAt) : '—'}</span> },
+        { id: 'synced', accessorKey: 'syncedAt', header: t('identityAccounts.colSynced'), cell: ({ row }) => <span className="text-content-muted tabular-nums">{row.original.syncedAt ? formatDateTime(row.original.syncedAt) : '—'}</span> },
     ]);
 
     return (

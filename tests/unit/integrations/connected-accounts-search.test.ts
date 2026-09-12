@@ -23,11 +23,16 @@ jest.mock('@/lib/prisma', () => ({ __esModule: true, default: {} }));
 
 const findManyAccounts = jest.fn();
 const findManyExecutions = jest.fn();
+const findManyWrites = jest.fn();
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) =>
         fn({
             connectedIdentityAccount: { findMany: (...a: unknown[]) => findManyAccounts(...a) },
             integrationExecution: { findMany: (...a: unknown[]) => findManyExecutions(...a) },
+            // #2480 — the roster now reads what WE last did, beside what the
+            // directory last said. Defaults to no writes so every existing
+            // assertion here still describes a roster with nothing applied.
+            identityWriteJournal: { findMany: (...a: unknown[]) => findManyWrites(...a) },
         }),
     ),
 }));
@@ -58,6 +63,7 @@ beforeEach(() => {
     jest.clearAllMocks();
     findManyAccounts.mockResolvedValue([]);
     findManyExecutions.mockResolvedValue([]);
+    findManyWrites.mockResolvedValue([]);
 });
 
 describe('the unfiltered read is unchanged', () => {
