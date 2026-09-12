@@ -887,8 +887,10 @@ The joiner is not implemented at all.
 
 **There is no mover, and the M in JML has never stood for anything here.** This
 header carried the industry's three-letter expansion until #2487, and it was the
-only first-party place in the repo the word appeared — which is exactly how a
-word becomes a roadmap item nobody wrote. `IdentityDirection` in
+only place in the repo the word appeared AS A PRODUCT DIRECTION — which is
+exactly how a word becomes a roadmap item nobody wrote. (The qualifier is load-
+bearing: "top movers" appears in two risk-trend implementation notes, in an
+unrelated sense.) `IdentityDirection` in
 `src/lib/identity/write-ladder.ts` is a closed `'leaver' | 'joiner'` union,
 `DIRECTION_IMPLEMENTED` has those two keys, and `TenantSecuritySettings` carries
 those two columns (`identityLeaverMode`, `identityJoinerMode`). So a mover is not

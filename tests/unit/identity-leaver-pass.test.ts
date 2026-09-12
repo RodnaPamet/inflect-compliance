@@ -537,6 +537,12 @@ describe('the ladder gate', () => {
         // branch in `runIdentityLeaverPass` is live again — go read the note on
         // it, and check the refusal text below is still the sentence you want
         // an operator to find mid-incident.
+        // POSITIVE CONTROL FIRST. The assertion below passes when the selection
+        // is empty, and an empty LADDER would satisfy it vacuously — the exact
+        // shape this file applies a counterweight to one screen down
+        // (`detail.length` guarding a stack of negatives). Applying it there and
+        // not here was an oversight, not a distinction.
+        expect(LADDER.length).toBeGreaterThan(0);
         expect(LADDER.filter((m) => isAboveClamp(m, LEAVER_MAX_MODE))).toEqual([]);
     });
 
@@ -605,7 +611,35 @@ describe('the ladder gate', () => {
             // one proved it — it claimed "no tenant has yet watched a single
             // pass" while an account sat disabled in a customer's directory.
             // The detail may describe THIS refusal, and nothing beyond it.
+            // WHAT THIS IS, STATED HONESTLY: a blocklist of the wording the old
+            // sentence used. An earlier version of this comment called it a
+            // "claim SHAPE rather than a truth" and compared it to
+            // scheduled-job-description-claims.test.ts. That comparison does not
+            // hold and the claim was false: THAT guard derives its rung alphabet
+            // from LADDER and matches clamp-wording adjacent to a rung, which is
+            // structural. This is a literal grep for yesterday's sentence.
+            //
+            // Adversarial review proved the gap by appending a NEW false clause
+            // ("Only three tenants have ever reached this rung, and the subsystem
+            // remains unproven against a live directory.") — 58/58 stayed green.
+            // A fresh instance of the exact rot this PR exists to remove, waved
+            // through by the guard named after removing it.
+            //
+            // It is kept because a blocklist of the KNOWN-bad phrasing still
+            // stops the specific regression — reinstating the deleted sentence —
+            // and that is worth something. What it must not do is claim to be
+            // more. The general problem (a build-time string asserting facts
+            // about the world) is not decidable by a regex, and the durable
+            // defence is the structural one below: the detail may describe THIS
+            // refusal and must name the two modes it compares, so a sentence
+            // that wanders into world-claims has nowhere to attach.
             expect(detail).not.toMatch(/no tenant|nobody|never been|has yet|not yet|first (real |live )?(pass|disable|time)|in the field/i);
+            // The structural half already exists and is the durable defence:
+            // 'names both the configured mode and the clamp, and no other rung'
+            // above asserts the detail contains exactly the two rungs it was
+            // handed, with the negative derived from LADDER. That is what keeps
+            // the sentence a description of THIS refusal; this blocklist only
+            // stops the one deleted sentence coming back.
 
             // Positive counterweight — an empty string satisfies every negative
             // above, and a message that says nothing is its own failure here.

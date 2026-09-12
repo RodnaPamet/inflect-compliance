@@ -149,7 +149,9 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     // connection (BambooHR, Workday).
     'hris-sync-dispatch',
     // Daily leaver pass fan-out, one per (tenant, writable directory
-    // provider). It DOES write: #2187 raised LEAVER_MAX_MODE from DRY_RUN to
+    // provider). This job enqueues and never touches a directory itself — the
+    // pass it dispatches is what writes, and THAT chain writes for real: #2187
+    // raised LEAVER_MAX_MODE from DRY_RUN to
     // AUTOMATIC on 2026-08-30, and on 2026-09-12 at 05:00 UTC this chain
     // disabled a live directory account for the first time. How far a given
     // tenant may go is that tenant's identityLeaverMode, never a property of
