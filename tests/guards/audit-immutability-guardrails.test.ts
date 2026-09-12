@@ -39,12 +39,23 @@
  * walk with a hand-written `node_modules` skip. That walk was the
  * anti-pattern CLAUDE.md documents under "A source scan's population comes
  * from git": the skip list is a hand-maintained denominator and nothing
- * checks it against reality. It was rooted at `src/`, which is the only
- * reason it had not yet read `.claude/worktrees/<id>/` — a FULL checkout of
- * the repo — and reported a copy of itself. It was one `path.resolve` away
- * from the bug `tests/guardrails/source-scan-population.test.ts` exists to
- * prevent, and widening it to `tests/` by the same method would have walked
- * it straight into that.
+ * checks it against reality.
+ *
+ * BE PRECISE ABOUT WHAT THAT DID AND DID NOT COST HERE. This guard was NOT
+ * in violation of `tests/guardrails/source-scan-population.test.ts`. That
+ * ratchet fires on a binding of `path.resolve(__dirname, '../..')`, and this
+ * one bound `path.resolve(__dirname, '..', '..', 'src')` — a third segment,
+ * which stops the match. Nor would widening the same walk to `tests/` have
+ * reached `.claude/worktrees/<id>/`: that tree is a SIBLING of `tests/`, not
+ * inside it. Measured today the two populations agree exactly — the walk and
+ * `repoFiles({ under: 'tests' })` both yield 2382 files.
+ *
+ * What the move buys is that the denominator stops being hand-maintained.
+ * The skip list knows about `node_modules` and dot-directories and nothing
+ * else, while `.gitignore` already excludes `tests/load/results/`,
+ * `tests/stress/results/` and `tests/e2e/.tenant-tracker.jsonl` — and
+ * nothing would ever make the list learn about the next entry. Asking git
+ * removes the list, and with it the question.
  */
 import * as fs from 'fs';
 import * as path from 'path';
