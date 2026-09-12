@@ -301,6 +301,46 @@ describe('ActiveDirectoryProvider.listAccounts', () => {
         const { p } = provider(client);
         expect((await p.listAccounts({ ...CONFIG, ...SECRETS })).accounts).toEqual([]);
     });
+
+    it('a dropped entry makes the enumeration INCOMPLETE, not merely shorter', async () => {
+        // `complete` used to be `searchEntries.length < MAX_USERS` while the
+        // caller upserted the FILTERED list — two different collections. An
+        // entry we cannot key is an entry we cannot write a row for, so the
+        // deprovision reconcile would read its absence as a departure and mark
+        // a present account DEPROVISIONED, on a run recorded PASSED.
+        //
+        // One keyable entry beside one unkeyable one, so this cannot be
+        // satisfied by an empty-result short circuit: the accounts array is
+        // non-empty and `complete` is still false.
+        const client = ldapClient({
+            search: jest.fn().mockResolvedValue({
+                searchEntries: [
+                    adEntry(),
+                    { sAMAccountName: undefined, distinguishedName: undefined, objectGUID: undefined },
+                ],
+            }),
+        });
+        const { p } = provider(client);
+        const res = await p.listAccounts({ ...CONFIG, ...SECRETS });
+
+        expect(res.accounts).toHaveLength(1);
+        expect(res.complete).toBe(false);
+    });
+
+    it('an enumeration whose every entry is ingested is complete', async () => {
+        // The positive control the assertion above needs. `complete` must still
+        // be reachable, or the fix would simply have disabled the reconcile —
+        // which reads as safe and is how a directory silently stops being
+        // reconciled at all.
+        const client = ldapClient({
+            search: jest.fn().mockResolvedValue({ searchEntries: [adEntry(), adEntry({ objectGUID: Buffer.alloc(16, 2) })] }),
+        });
+        const { p } = provider(client);
+        const res = await p.listAccounts({ ...CONFIG, ...SECRETS });
+
+        expect(res.accounts).toHaveLength(2);
+        expect(res.complete).toBe(true);
+    });
 });
 
 describe('ActiveDirectoryProvider — entry normalization', () => {
