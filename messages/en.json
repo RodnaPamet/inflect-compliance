@@ -4788,6 +4788,8 @@
         "aboveDeclaredScopeBody": "The card reaches {card} and this agent is registered as reaching {scope} — the register was narrowed after this version was written, and a stored version is never rewritten. Nothing clamps this one: the tool boundary reads the card's rung and never the register's, so the wider reach is live on every call. Narrow the card to {scope}, or raise the agent's registered data-access scope if the wider reach is intended. Every other change stays open meanwhile."
       },
       "tools": {
+        "revokeScheduled": "Tool access revoked for {toolName}",
+        "revokeUndo": "Undo",
         "heading": "Granted tools",
         "intro": "This agent can call only the tools listed here. Anything absent is refused at the MCP boundary, however widely its credential is scoped.",
         "grantCount": "{granted} of {total} granted",

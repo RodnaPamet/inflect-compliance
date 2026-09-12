@@ -57,7 +57,7 @@ import { Card } from '@/components/ui/card';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { ErrorState } from '@/components/ui/error-state';
 import { FormField } from '@/components/ui/form-field';
-import { useToast } from '@/components/ui/hooks';
+import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { Plug2 } from '@/components/ui/icons/nucleo';
 import { InlineEmptyState } from '@/components/ui/inline-empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
@@ -147,6 +147,7 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
     const t = useTranslations('admin');
     const apiUrl = useTenantApiUrl();
     const toast = useToast();
+    const triggerUndoToast = useToastWithUndo();
 
     const { data, error, isLoading, mutate } = useTenantSWR<AgentToolsPayload>(
         canGrantTools ? `/admin/agents/${agentId}/tools` : null,
@@ -170,7 +171,6 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
 
     const [selected, setSelected] = useState<ComboboxOption | null>(null);
     const [granting, setGranting] = useState(false);
-    const [revoking, setRevoking] = useState<string | null>(null);
     const [writeError, setWriteError] = useState<string | null>(null);
     const [stale, setStale] = useState<StaleNotice | null>(null);
 
@@ -246,54 +246,90 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
         }
     }
 
-    async function revoke(toolName: string) {
-        if (revoking) return;
-        setRevoking(toolName);
+    /**
+     * REVOKE — Epic 67 delayed commit (#2453).
+     *
+     * This deleted on one click, with no undo rail, and `AgentToolGrant` has no
+     * soft-delete: the row is gone and re-granting is a new grant by a new
+     * actor at a new time. A destructive action with no way back is precisely
+     * what Epic 67 exists to replace.
+     *
+     * The row disappears IMMEDIATELY via a local SWR write, and the DELETE is
+     * deferred. Undo cancels before anything reaches the server, so the grant
+     * survives with its original `grantedByUserId` and `createdAt` — which a
+     * re-grant could not preserve.
+     *
+     * Revoking is also the EMERGENCY direction, and a delay is exactly what an
+     * emergency does not want. That tension is resolved in the operator's
+     * favour rather than the abstraction's: the tool stops being reachable when
+     * the DELETE lands, not when the toast appears, so the kill switch — which
+     * is immediate and carries no delay — remains the control for "stop this
+     * now". The copy for that distinction lives in the stop-comparison (#2459).
+     */
+    function revoke(toolName: string) {
         setWriteError(null);
         // The standing staleness notice names a tool the agent could reach. It
-        // stops being true the moment one is taken back, and a revoke does not
-        // re-run the reconcile that would refresh it.
+        // stops being true the moment one is taken back.
         setStale(null);
-        try {
-            // The tool rides in the QUERY STRING, not a body: revocation is the
-            // emergency direction and has to work from anything that can form a
-            // URL, so the route reads `?tool=` and 400s without it.
-            const res = await fetch(
-                apiUrl(`/admin/agents/${agentId}/tools?tool=${encodeURIComponent(toolName)}`),
-                { method: 'DELETE' },
+
+        const previous = data;
+        // Optimistic, and local-only: `revalidate: false` or the pending row
+        // reappears on the next focus revalidation and the undo window becomes
+        // a flicker.
+        if (previous) {
+            void mutate(
+                { ...previous, granted: previous.granted.filter((g) => g.toolName !== toolName) },
+                { revalidate: false },
             );
-
-            if (!res.ok) {
-                const body: unknown = await res.json().catch(() => null);
-                if (res.status === 404) {
-                    // The revoke is NOT idempotent — a second one 404s. That is
-                    // a stale list, not a failure: the row is gone, which is
-                    // what was asked for. Re-read and say so quietly rather
-                    // than showing a red banner for a state the operator wanted.
-                    toast.info(t('agentDetail.tools.revokeAlreadyGone', { toolName }));
-                    await mutate().catch(() => undefined);
-                    return;
-                }
-                setWriteError(
-                    res.status === 403
-                        ? t('agentDetail.tools.revokeForbidden')
-                        : apiErrorMessage(body, t('agentDetail.tools.revokeFailed')),
-                );
-                return;
-            }
-
-            await mutate().catch(() => undefined);
-            onChanged?.();
-            toast.success(t('agentDetail.tools.revokeSuccess', { toolName }));
-        } catch {
-            // The damaging silence of the two: without this the operator clicks
-            // the emergency direction, the row stays exactly as it was, and
-            // nothing distinguishes "the request never landed" from "already
-            // revoked". Same idiom as `AgentKillSwitchAction`.
-            setWriteError(t('agentDetail.tools.revokeFailed'));
-        } finally {
-            setRevoking(null);
         }
+        const restore = () => {
+            if (previous) void mutate(previous, { revalidate: false });
+        };
+
+        triggerUndoToast({
+            message: t('agentDetail.tools.revokeScheduled', { toolName }),
+            undoMessage: t('agentDetail.tools.revokeUndo'),
+            action: async () => {
+                const res = await fetch(
+                    // The tool rides in the QUERY STRING, not a body: revocation
+                    // is the emergency direction and has to work from anything
+                    // that can form a URL, so the route reads `?tool=` and 400s
+                    // without it.
+                    apiUrl(`/admin/agents/${agentId}/tools?tool=${encodeURIComponent(toolName)}`),
+                    { method: 'DELETE' },
+                );
+                if (!res.ok) {
+                    if (res.status === 404) {
+                        // NOT a failure: the revoke is not idempotent and a
+                        // second one 404s, but the row being gone is what was
+                        // asked for. Re-read and say so quietly rather than
+                        // restoring a grant that does not exist.
+                        toast.info(t('agentDetail.tools.revokeAlreadyGone', { toolName }));
+                        await mutate().catch(() => undefined);
+                        return;
+                    }
+                    const body: unknown = await res.json().catch(() => null);
+                    setWriteError(
+                        res.status === 403
+                            ? t('agentDetail.tools.revokeForbidden')
+                            : apiErrorMessage(body, t('agentDetail.tools.revokeFailed')),
+                    );
+                    // THROW so the rail's own error path runs: without it the
+                    // toast reports a commit that did not happen and the row
+                    // stays optimistically absent.
+                    throw new Error('revoke failed');
+                }
+                await mutate().catch(() => undefined);
+                onChanged?.();
+            },
+            undoAction: restore,
+            onError: () => {
+                restore();
+                // Set only if `action` did not already say something more
+                // specific — a network throw reaches here with nothing set.
+                setWriteError((prev) => prev ?? t('agentDetail.tools.revokeFailed'));
+            },
+        });
     }
 
     function grantsBody() {
@@ -458,7 +494,6 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
                                     <Button
                                         variant="destructive"
                                         size="sm"
-                                        loading={revoking === row.toolName}
                                         onClick={() => void revoke(row.toolName)}
                                         data-testid={`agent-tool-revoke-${row.toolName}`}
                                     >

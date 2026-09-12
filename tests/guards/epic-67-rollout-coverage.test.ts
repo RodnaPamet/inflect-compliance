@@ -31,6 +31,15 @@ interface SiteContract {
 
 const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
     {
+        // AGENTIC UI 3/4 (#2453). `AgentToolGrant` has NO soft-delete rail: a
+        // revoke deletes the row, and re-granting is a new grant by a new actor
+        // at a new time. The undo window is the only thing that preserves the
+        // original `grantedByUserId` and `createdAt`.
+        file: 'src/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/ToolsTab.tsx',
+        name: 'Agent tool revoke (ToolsTab)',
+        handlers: ['revoke'],
+    },
+    {
         file: 'src/components/TraceabilityPanel.tsx',
         name: 'Cross-entity unlink (TraceabilityPanel)',
         handlers: ['handleUnlink'],
