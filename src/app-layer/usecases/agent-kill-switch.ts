@@ -68,6 +68,28 @@ export interface KillSwitchRecord {
     liftedAt: Date | null;
     liftedByUserId: string | null;
     liftReason: string | null;
+    /**
+     * WHO, resolved (#2450).
+     *
+     * The model stores ids and carries no `User` relation, so every surface that
+     * wanted to say "stopped by Dana" had to either print a cuid or run its own
+     * lookup. The usecase calls this "the evidence that agents were stopped
+     * between two timestamps" — evidence naming an opaque id is evidence an
+     * incident review cannot use.
+     *
+     * NULL when the actor no longer exists. A deleted user is not an error and
+     * must not blank the row: the stop still happened, and losing the record
+     * because the person left is the failure mode this field exists to avoid.
+     */
+    engagedBy: KillSwitchActor | null;
+    liftedBy: KillSwitchActor | null;
+}
+
+/** An actor on a kill-switch row, named rather than referenced. */
+export interface KillSwitchActor {
+    id: string;
+    name: string | null;
+    email: string;
 }
 
 /** One recorded drill, as the operator surface reports it. */
@@ -116,8 +138,13 @@ function toRecord(row: {
     liftedAt: Date | null;
     liftedByUserId: string | null;
     liftReason: string | null;
-}): KillSwitchRecord {
-    return { ...row, scope: killScopeOf(row.agentId) };
+}, actors?: Map<string, KillSwitchActor>): KillSwitchRecord {
+    return {
+        ...row,
+        scope: killScopeOf(row.agentId),
+        engagedBy: actors?.get(row.engagedByUserId) ?? null,
+        liftedBy: row.liftedByUserId ? (actors?.get(row.liftedByUserId) ?? null) : null,
+    };
 }
 
 /**
@@ -386,7 +413,29 @@ export async function listKillSwitches(
             },
         });
 
-        const records = rows.map(toRecord);
+        // ONE lookup for every actor on the page, not one per row. `take` is
+        // bounded at 500, so this is at most 1000 ids before dedup — and the
+        // alternative, resolving per row in the client, is the N+1 that made
+        // every previous surface print the cuid instead.
+        const actorIds = [
+            ...new Set(
+                rows.flatMap((r) => [r.engagedByUserId, r.liftedByUserId]).filter(
+                    (id): id is string => typeof id === 'string' && id.length > 0,
+                ),
+            ),
+        ];
+        const actors = new Map<string, KillSwitchActor>(
+            actorIds.length === 0
+                ? []
+                : (
+                      await db.user.findMany({
+                          where: { id: { in: actorIds } },
+                          select: { id: true, name: true, email: true },
+                      })
+                  ).map((u) => [u.id, u]),
+        );
+
+        const records = rows.map((r) => toRecord(r, actors));
         return {
             inForce: records.filter((r) => r.liftedAt === null),
             history: records,

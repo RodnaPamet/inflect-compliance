@@ -4439,7 +4439,25 @@
       "revokeUserConfirm": "Revoke all sessions for user {id}?",
       "userSessionsRevoked": "Sessions revoked for user.",
       "failedRevokeUser": "Failed to revoke user sessions",
-      "userRevocationFailed": "User revocation failed"
+      "userRevocationFailed": "User revocation failed",
+      "agentEnforcement": {
+        "title": "Agent registration enforcement",
+        "on": "Enforcing",
+        "off": "Not enforcing",
+        "notEnforcing": "Agent registration is not being enforced. Any credential can act at the tool boundary, registered or not — the agent register is a catalogue, and the tool allowlist, autonomy limits, policy card, circuit breaker and kill switch refuse nothing.",
+        "enforcingClean": "Agent registration is enforced. Only credentials bound to a registered agent can act, and every credential is bound.",
+        "enforcingWithUnbound": "Agent registration is enforced, but {count} credential(s) are not bound to an agent. Those are being refused at the tool boundary right now.",
+        "wouldBreak": "{count} credential(s) would stop working the moment enforcement is switched on:",
+        "enableAction": "Enforce registration",
+        "disableAction": "Stop enforcing",
+        "enableTitle": "Enforce agent registration",
+        "disableTitle": "Stop enforcing agent registration",
+        "enableBody": "From the moment this is on, the tool boundary refuses any credential that is not bound to a registered agent. This applies to the whole workspace and takes effect immediately.",
+        "disableBody": "This removes the boundary for the whole workspace. Any credential will be able to act, registered or not, and nothing in the product will look different afterwards — which is why this asks you to type the workspace name.",
+        "typeToConfirm": "Type {slug} to confirm",
+        "unavailable": "You do not have permission to read the agent register, so this setting cannot be changed here. Enforcing agent registration requires the agent register permission as well as security settings access.",
+        "saveFailed": "Could not change agent-registration enforcement."
+      }
     },
     "agentDetail": {
       "tabOverview": "Overview",
@@ -4482,7 +4500,37 @@
         "reasonLabel": "Reason",
         "liftReasonLabel": "Reason for resuming",
         "charCount": "{count}/2000",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "historyHeading": "Stop history",
+        "historyEmpty": "This agent has never been stopped. Nightly drill kills are excluded.",
+        "scopeTenant": "Whole workspace",
+        "scopeAgent": "This agent",
+        "lifted": "Lifted",
+        "inForce": "In force",
+        "engagedLine": "Stopped by {actor} on {at}",
+        "liftedLine": "Lifted by {actor} on {at}",
+        "reasonLine": "Reason: {reason}",
+        "liftReasonLine": "Lift reason: {reason}",
+        "scopeLegend": "What should this stop?",
+        "scopeTenantWarning": "This stops every registered agent in the workspace at the tool boundary, not just this one. It takes effect on the next invocation and does not interrupt work already running. It is reversible, and lifting it is a separate deliberate act.",
+        "scopeTypeToConfirm": "Type {slug} to confirm a workspace-wide stop"
+      },
+      "amend": {
+        "action": "Amend",
+        "title": "Amend {name}",
+        "name": "Name",
+        "description": "Description",
+        "autonomy": "Autonomy level",
+        "loweringAlwaysAllowed": "Lowering autonomy is always permitted and needs no re-assessment. Raising it is capped by the agent's assessed risk tier.",
+        "dataAccess": "Data access scope",
+        "reversibility": "Reversibility",
+        "provenance": "Provenance",
+        "modelRef": "Model reference",
+        "owner": "Accountable owner",
+        "vendor": "Supplier",
+        "vendorNone": "No supplier — first party",
+        "save": "Save {count} change(s)",
+        "failed": "Could not amend this agent."
       },
       "overview": {
         "profileHeading": "Governing profile",
@@ -4546,7 +4594,15 @@
           "ACTIVE": "This agent's credentials are accepted at registration. This workspace does not require registered agents, so they would be accepted whatever the register said about this agent — but while it is active, its granted tools, its autonomy ceiling and its policy card do apply to them at the tool boundary.",
           "SUSPENDED": "This agent is suspended in the register. This workspace does not require registered agents, so its credentials are still accepted at registration — but while it is suspended every tool call is refused at the boundary, and its granted tools, its autonomy ceiling, its policy card and its stop controls apply again. It can still read the framework catalogue. It stays in the register and can be activated again.",
           "RETIRED": "This agent is retired. This workspace does not require registered agents, so retirement does not refuse a credential bound to it — and it stops applying this agent's granted tools, autonomy ceiling and policy card to that credential. The register keeps its record and the authority it held."
-        }
+        },
+        "retireAction": "Retire",
+        "retireTitle": "Retire this agent",
+        "retirePrompt": "Retirement is permanent. It cannot be undone, and the agent cannot be brought back into service.",
+        "retireBlocked": "This agent has {count} proposal(s) still awaiting review. Retirement is refused until they are resolved — approve or reject them, or suspend the agent instead, which stops it immediately and is reversible.",
+        "retireBlockedLink": "Open the proposal queue",
+        "retireIrreversible": "Suspension stops this agent just as completely and can be lifted. Retirement cannot.",
+        "retireTypeToConfirm": "Type {name} to confirm",
+        "retireError": "Could not retire this agent."
       },
       "risk": {
         "standingHeading": "Standing assessment",
@@ -5281,7 +5337,19 @@
       "revokedResourceSingular": "revoked key",
       "revokeConfirmTitle": "Revoke API key \"{name}\"?",
       "revokeConfirmTitleGeneric": "Revoke API key?",
-      "revokeConfirmDesc": "Key prefix {prefix}… will stop working immediately. Any integration using it will lose access. This cannot be undone."
+      "revokeConfirmDesc": "Key prefix {prefix}… will stop working immediately. Any integration using it will lose access. This cannot be undone.",
+      "bindingLabel": "Agent binding",
+      "bindingAria": "About agent binding",
+      "bindingTooltip": "The registered agent this credential acts as. When this workspace enforces agent registration, a credential with no binding is refused at the tool boundary — it can still be created, but it will not work.",
+      "bindingUnavailable": "You do not have permission to read the agent register, so this credential cannot be bound to an agent here. Someone with agent register access can bind it after creation.",
+      "agentPlaceholder": "No agent — unbound credential",
+      "autonomyLabel": "Autonomy ceiling",
+      "autonomyAria": "About the autonomy ceiling",
+      "autonomyTooltip": "The highest rung this credential may drive its agent to. The effective limit is the lower of this and the agent's own level, so a ceiling can only ever narrow what the agent may do — never widen it.",
+      "autonomyNone": "No key-level limit",
+      "autonomyCap": "max L{level}",
+      "colBinding": "Acts as",
+      "noBinding": "No binding"
     },
     "notifications": {
       "runJobConfirm": "Are you sure you want to run the {jobType} job now?",
@@ -7865,6 +7933,15 @@
         "notEnforcing": "This workspace does not require agents to be registered. Every row below is a record and nothing more — suspending an agent here does not stop it, and a credential bound to no agent still reaches the agent surface. Turn on \"Require registered agent\" in Security settings to make this register binding.",
         "enforcingUnbound": "Registration is enforced, and {count, plural, one {# live MCP credential is bound to no agent} other {# live MCP credentials are bound to no agent}} — each is refused at the agent surface until you bind it to a registered agent.",
         "enforcing": "Registration is enforced: a credential must name an ACTIVE agent below before it reaches the agent surface."
+      },
+      "assurance": {
+        "heading": "Assurance",
+        "coverageEmpty": "No agents are registered, so there is nothing to assess.",
+        "coverageComplete": "All {total} registered agent(s) have an assessed risk tier.",
+        "coveragePartial": "{scored} of {total} registered agent(s) have an assessed risk tier. The {unscored} unscored agent(s) are refused at the tool boundary until they are assessed.",
+        "sampleNone": "No approved proposal has been sample-audited yet, so nothing is re-checking what reviewers approve.",
+        "sampleRate": "A second reviewer disagreed with {dissented} of {answered} sampled approvals ({percent}%) in the last 90 days.",
+        "checkNeverRun": "never run"
       }
     },
     "views": {

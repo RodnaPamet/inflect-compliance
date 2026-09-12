@@ -159,6 +159,7 @@ function renderRegister(
                 vendors={[]}
                 kpiCounts={COUNTS}
                 governance={opts.governance ?? { enforcing: true, unboundCredentials: 0 }}
+                assurance={null}
                 proposalsAwaitingReview={null}
                 canWrite={opts.canWrite ?? true}
                 canReviewProposals

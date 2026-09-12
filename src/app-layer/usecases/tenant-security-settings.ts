@@ -46,6 +46,106 @@ function assertCanManageSecuritySettings(ctx: RequestContext) {
     }
 }
 
+/**
+ * Turning agent-registration enforcement ON OR OFF needs the AGENT key as well
+ * as the settings key (#2444).
+ *
+ * `admin.manage` governs this row because it holds an HMAC secret and session
+ * policy. But `requireRegisteredAgent` is not a settings field in the ordinary
+ * sense — it is the switch that decides whether the register, the tool
+ * allowlist, both autonomy terms, the policy card, the circuit breaker and the
+ * agent arm of the kill switch mean anything at all. Every one of those is
+ * gated on `admin.agent_registry`, and it would be incoherent for the switch
+ * that makes them load-bearing to be reachable by someone who cannot read the
+ * register it enforces.
+ *
+ * BOTH, not either: this narrows who may flip it, and never widens it. A holder
+ * of the agent key alone still cannot write this row.
+ */
+function assertCanGovernAgentEnforcement(ctx: RequestContext) {
+    assertCanManageSecuritySettings(ctx);
+    if (!ctx.appPermissions.admin.agent_registry) {
+        throw forbidden(
+            'Enforcing agent registration also requires the agent register permission — '
+                + 'the setting decides whether the register is load-bearing, so it is not '
+                + 'separable from being able to read it.',
+        );
+    }
+}
+
+/** A credential that enforcement would stop working, named so a human can act. */
+export interface BreakingCredential {
+    id: string;
+    name: string;
+    keyPrefix: string;
+    lastUsedAt: Date | null;
+}
+
+export interface AgentEnforcementPreflight {
+    /** What the tenant does TODAY. */
+    enforcing: boolean;
+    /**
+     * The credentials that would be refused at the tool boundary the moment
+     * enforcement is switched on — every ACTIVE key with no agent binding.
+     */
+    breaking: BreakingCredential[];
+}
+
+/**
+ * What would break if this tenant started enforcing agent registration.
+ *
+ * ── WHY A PRE-FLIGHT AND NOT A WARNING ──────────────────────────────
+ *
+ * The two preconditions interact badly and neither is visible from any screen.
+ * `requireRegisteredAgent` was set to false for every pre-existing tenant by the
+ * introducing migration — deliberately, because the second precondition was not
+ * met: the create-key form sent no `agentId`, so every UI-minted credential
+ * stands at `no_binding`. Switching enforcement on without fixing that stops
+ * every agent using a UI-minted key, at once, at the tool boundary.
+ *
+ * A generic "this may affect existing integrations" warning is not enough to act
+ * on. THE LIST is: an operator can read it, bind those keys, and come back.
+ *
+ * ── WHAT COUNTS AS "WOULD BREAK" ────────────────────────────────────
+ *
+ * ACTIVE and UNBOUND. Revoked and expired keys are excluded deliberately —
+ * they do not work now, so calling them casualties of a change that has not
+ * happened would pad the list with rows an operator cannot act on, and a list
+ * you cannot act on is a list people learn to skip.
+ */
+export async function previewAgentEnforcement(
+    ctx: RequestContext,
+): Promise<AgentEnforcementPreflight> {
+    assertCanGovernAgentEnforcement(ctx);
+
+    return runInTenantContext(ctx, async (db) => {
+        const row = await db.tenantSecuritySettings.findUnique({
+            where: { tenantId: ctx.tenantId },
+            select: { requireRegisteredAgent: true },
+        });
+
+        const breaking = await db.tenantApiKey.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                agentId: null,
+                revokedAt: null,
+                OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            },
+            select: { id: true, name: true, keyPrefix: true, lastUsedAt: true },
+            orderBy: [{ lastUsedAt: 'desc' }, { name: 'asc' }],
+        });
+
+        return {
+            // An ABSENT row reads as ENFORCING — the column defaults true, and a
+            // tenant created after the gate shipped has no row at all. Defaulting
+            // this to `false` would tell such a tenant it is unprotected when it
+            // is the one tenant that is.
+            enforcing: row?.requireRegisteredAgent ?? true,
+            breaking,
+        };
+    });
+}
+
 export interface TenantSecurityConfig {
     maxConcurrentSessions: number | null;
     auditStreamUrl: string | null;
@@ -156,6 +256,12 @@ export async function updateTenantSecurityConfig(
     patch: TenantSecurityConfigPatch,
 ): Promise<TenantSecurityConfig> {
     assertCanManageSecuritySettings(ctx);
+    // The agent-enforcement switch carries its own, stronger gate — and it is
+    // checked HERE rather than only on the dedicated route, because a gate that
+    // lives on one caller is a gate the next caller does not have.
+    if (patch.requireRegisteredAgent !== undefined) {
+        assertCanGovernAgentEnforcement(ctx);
+    }
 
     const data: Record<string, unknown> = {};
     const changed: string[] = [];

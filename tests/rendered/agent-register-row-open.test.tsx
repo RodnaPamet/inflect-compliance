@@ -113,6 +113,7 @@ function renderRegister() {
                 vendors={[]}
                 kpiCounts={{ total: 2, active: 2, unscored: 0, egress: 0 }}
                 governance={{ enforcing: true, unboundCredentials: 0 }}
+                assurance={null}
                 proposalsAwaitingReview={null}
                 canWrite
                 canReviewProposals

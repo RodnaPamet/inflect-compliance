@@ -609,6 +609,25 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     // Admin-only on BOTH verbs, unlike the sibling MFA-policy route whose
     // GET is member-visible: this payload carries the session cap and
     // reveals whether an outbound audit-stream endpoint is configured.
+    // The agent-enforcement PRE-FLIGHT. Listed ABOVE its sibling because the
+    // sibling's pattern is anchored with `$` and would not match this path
+    // anyway — the ordering here is for the READER, so the narrower route is
+    // found first when someone scans this file for "security-settings".
+    //
+    // `admin.manage` is the ROUTE gate, matching its sibling. The usecase
+    // additionally requires `admin.agent_registry` (#2444): the setting decides
+    // whether the agent register is load-bearing, so flipping it without being
+    // able to read the register is not a coherent authority. That check lives in
+    // the usecase rather than here so the PUT path writing the same field cannot
+    // bypass it.
+    {
+        path: new RegExp(`^${T}\\/admin\\/security-settings\\/agent-enforcement$`),
+        permission: 'admin.manage',
+        note:
+            'Pre-flight for enforcing agent registration: lists the ACTIVE, ' +
+            'UNBOUND credentials that the tool boundary would begin refusing. ' +
+            'Read-only; the write goes through the sibling PUT.',
+    },
     {
         path: new RegExp(`^${T}\\/admin\\/security-settings$`),
         permission: 'admin.manage',

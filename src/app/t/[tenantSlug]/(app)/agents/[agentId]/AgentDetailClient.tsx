@@ -12,6 +12,8 @@ import { ToolsTab } from './tabs/ToolsTab';
 import { CoverageTab } from './tabs/CoverageTab';
 import { CircuitBreakerTab } from './tabs/CircuitBreakerTab';
 import { AgentKillSwitchAction, AgentKillSwitchBanner } from './AgentKillSwitchAction';
+import { AgentAmendModal } from './AgentAmendModal';
+import { Button } from '@/components/ui/button';
 
 export interface AgentSummary {
     id: string;
@@ -23,6 +25,27 @@ export interface AgentSummary {
     provenance: string;
     riskTier: string | null;
     aiActRiskTier: string | null;
+    /**
+     * The amendable fields the header strip does not render (#2447). Present so
+     * the amend form opens on the agent's REAL values: a form that starts blank
+     * silently proposes clearing every field it does not show.
+     */
+    description: string | null;
+    modelRef: string | null;
+    ownerUserId: string;
+    vendorId: string | null;
+}
+
+/** A member who may own an agent — ACTIVE-only, as the usecase requires. */
+export interface OwnerChoice {
+    id: string;
+    label: string;
+}
+
+/** A supplier this agent may be attributed to. */
+export interface VendorChoice {
+    id: string;
+    name: string;
 }
 
 /**
@@ -58,10 +81,14 @@ export function AgentDetailClient({
     tenantSlug,
     agent,
     perms,
+    owners,
+    vendors,
 }: {
     tenantSlug: string;
     agent: AgentSummary;
     perms: AgentDetailPermissions;
+    owners: OwnerChoice[];
+    vendors: VendorChoice[];
 }) {
     const t = useTranslations('admin');
     // The register's copy lives in the top-level `agents` namespace now that
@@ -71,6 +98,7 @@ export function AgentDetailClient({
     const tAgents = useTranslations('agents');
     const [tab, setTab] = useState<TabKey>('overview');
     const [refreshToken, setRefreshToken] = useState(0);
+    const [amending, setAmending] = useState(false);
 
     // Handed to tabs so a mutation in one (suspending the agent, pulling the
     // breaker) can make the others re-read without the shell knowing what
@@ -120,11 +148,28 @@ export function AgentDetailClient({
             }
             meta={<MetaStrip items={meta} />}
             actions={
-                <AgentKillSwitchAction
-                    agentId={agent.id}
-                    canKill={perms.canKill}
-                    refreshToken={refreshToken}
-                />
+                <>
+                    {/* AMEND (#2447). Beside the kill switch because they are
+                        the two things an operator reaches for about an agent
+                        rather than about one of its tabs — and because autonomy
+                        lives in here, which is the dial somebody turns DOWN in
+                        the same minute they consider stopping it. */}
+                    {perms.canManageRegistry && (
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setAmending(true)}
+                            data-testid="agent-amend-action"
+                            text={t('agentDetail.amend.action')}
+                        />
+                    )}
+                    <AgentKillSwitchAction
+                        agentId={agent.id}
+                        canKill={perms.canKill}
+                        refreshToken={refreshToken}
+                        tenantSlug={tenantSlug}
+                    />
+                </>
             }
             tabs={[
                 { key: 'overview', label: t('agentDetail.tabOverview') },
@@ -194,6 +239,18 @@ export function AgentDetailClient({
                     {...props}
                     onChanged={refresh}
                     canCloseBreaker={perms.canCloseBreaker}
+                />
+            )}
+            {amending && (
+                <AgentAmendModal
+                    agent={agent}
+                    owners={owners}
+                    vendors={vendors}
+                    onClose={() => setAmending(false)}
+                    // The whole shell re-reads rather than this header alone:
+                    // an amend can change autonomy and provenance, which the
+                    // risk and coverage tabs both derive from.
+                    onAmended={refresh}
                 />
             )}
         </EntityDetailLayout>

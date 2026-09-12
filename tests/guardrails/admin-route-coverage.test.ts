@@ -151,6 +151,12 @@ const ADMIN_ONLY_ROUTES = [
     // secret, AI guard mode + residency. Admin-only on BOTH verbs: the read
     // reveals whether an outbound streaming endpoint is configured.
     'admin/security-settings/route.ts',
+    // The agent-enforcement PRE-FLIGHT (#2443). Read-only: it lists the ACTIVE,
+    // UNBOUND credentials the tool boundary would begin refusing. Route-gated on
+    // `admin.manage` like its sibling; the usecase additionally requires
+    // `admin.agent_registry`, so the write path through the sibling PUT cannot
+    // be used to go around the narrower key.
+    'admin/security-settings/agent-enforcement/route.ts',
 
     // Billing routes (admin-only)
     'billing/checkout/route.ts',

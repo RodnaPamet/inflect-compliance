@@ -10,6 +10,8 @@ import { Card } from '@/components/ui/card';
 import { ErrorState } from '@/components/ui/error-state';
 import { ArrowUpRight } from '@/components/ui/icons/nucleo';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { Heading } from '@/components/ui/typography';
@@ -43,6 +45,8 @@ import type { RegistryWritableTabProps } from './types';
  * renders those.
  */
 interface AgentDetail {
+    /** Typed back by the operator to confirm retirement (#2448). */
+    name: string;
     description: string | null;
     modelRef: string | null;
     provenance: 'FIRST_PARTY' | 'THIRD_PARTY';
@@ -74,7 +78,15 @@ interface AgentDetail {
      * everything bound. The copy below says "live" BECAUSE of that filter: if
      * the filtered `_count` ever leaves the repository, the copy is a lie.
      */
-    _count: { apiKeys: number };
+    _count: {
+        apiKeys: number;
+        /**
+         * PENDING proposals — the RETIREMENT PRECONDITION (#2448).
+         * `retireRegisteredAgent` refuses while this is non-zero, so the dialog
+         * states it before the click instead of after the 409.
+         */
+        proposals: number;
+    };
     /**
      * Whether `requireRegisteredAgent` is ON for this tenant — i.e. whether
      * the register is consulted at all when a credential registers.
@@ -135,8 +147,39 @@ export function OverviewTab({
     }, [refreshToken, mutate]);
 
     const [confirmSuspend, setConfirmSuspend] = useState(false);
+    const [confirmRetire, setConfirmRetire] = useState(false);
+    const [retireTyped, setRetireTyped] = useState('');
     const [busy, setBusy] = useState(false);
     const [failure, setFailure] = useState<string | null>(null);
+
+    /**
+     * RETIRE — the only permanent decommission, on DELETE rather than the
+     * status route, because `AGENT_LIFECYCLE_MOVES` deliberately excludes
+     * RETIRED: retirement carries a precondition that a value in a dropdown
+     * cannot express.
+     */
+    const retire = useCallback(async () => {
+        setBusy(true);
+        setFailure(null);
+        try {
+            const res = await fetch(apiUrl(`/admin/agents/${agentId}`), { method: 'DELETE' });
+            if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                // The server's 409 names the number still awaiting review. Kept
+                // rather than replaced: this path is reachable even with the
+                // pre-check, because a proposal can arrive between the read and
+                // the click.
+                setFailure(apiErrorMessage(body, t('agentDetail.overview.retireError')));
+                return;
+            }
+            setConfirmRetire(false);
+            await mutate();
+            onChanged?.();
+            router.refresh();
+        } finally {
+            setBusy(false);
+        }
+    }, [apiUrl, agentId, mutate, onChanged, router, t]);
 
     const move = useCallback(
         async (next: LifecycleMove) => {
@@ -500,6 +543,30 @@ export function OverviewTab({
                                 {t('agentDetail.overview.suspendAction')}
                             </Button>
                         )}
+                        {/* RETIRE (#2448). Last in the row and destructive-toned
+                            because it is the only move here that cannot be
+                            undone — suspension stops an agent just as
+                            completely and is reversible, which is why the
+                            server's own refusal offers it as the alternative.
+                            Hidden once retired: a permanent state has no
+                            second application. */}
+                        {agent.status !== 'RETIRED' && (
+                            <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                disabled={busy}
+                                id="agent-status-retire-btn"
+                                data-testid="agent-retire-action"
+                                onClick={() => {
+                                    setFailure(null);
+                                    setRetireTyped('');
+                                    setConfirmRetire(true);
+                                }}
+                            >
+                                {t('agentDetail.overview.retireAction')}
+                            </Button>
+                        )}
                     </div>
                 ) : (
                     <p className="text-sm text-content-subtle">
@@ -507,6 +574,107 @@ export function OverviewTab({
                     </p>
                 )}
             </Card>
+
+            {confirmRetire && (
+                <Modal
+                    showModal
+                    setShowModal={(v) => {
+                        if (!v && !busy) {
+                            setConfirmRetire(false);
+                            setFailure(null);
+                        }
+                    }}
+                    size="md"
+                    preventDefaultClose={busy}
+                >
+                    <Modal.Header
+                        title={t('agentDetail.overview.retireTitle')}
+                        description={t('agentDetail.overview.retirePrompt')}
+                    />
+                    <Modal.Body>
+                        <div className="space-y-default" data-testid="agent-retire-modal">
+                            {/* THE PRECONDITION, STATED BEFORE THE CLICK.
+                                `retireRegisteredAgent` refuses while any
+                                proposal is PENDING, and the 409 names the
+                                count — but a precondition you only meet by
+                                being rejected is one you discover by failing.
+                                The queue is LINKED, because "approve or reject
+                                them first" is an instruction the page can
+                                actually help with. */}
+                            {agent._count.proposals > 0 ? (
+                                <InlineNotice
+                                    variant="warning"
+                                    data-testid="agent-retire-blocked"
+                                >
+                                    <div className="space-y-1">
+                                        <p>
+                                            {t('agentDetail.overview.retireBlocked', {
+                                                count: agent._count.proposals,
+                                            })}
+                                        </p>
+                                        <Link
+                                            className="underline"
+                                            href={`/t/${tenantSlug}/agents/proposals`}
+                                        >
+                                            {t('agentDetail.overview.retireBlockedLink')}
+                                        </Link>
+                                    </div>
+                                </InlineNotice>
+                            ) : (
+                                <>
+                                    <p className="text-sm text-content-muted">
+                                        {t('agentDetail.overview.retireIrreversible')}
+                                    </p>
+                                    <FormField
+                                        label={t('agentDetail.overview.retireTypeToConfirm', {
+                                            name: agent.name,
+                                        })}
+                                        required
+                                    >
+                                        <Input
+                                            value={retireTyped}
+                                            onChange={(e) => setRetireTyped(e.target.value)}
+                                            autoComplete="off"
+                                            autoFocus
+                                            placeholder={agent.name}
+                                            data-testid="agent-retire-confirm-input"
+                                        />
+                                    </FormField>
+                                </>
+                            )}
+                            {failure && <InlineNotice variant="error">{failure}</InlineNotice>}
+                        </div>
+                    </Modal.Body>
+                    <Modal.Footer>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy}
+                            onClick={() => setConfirmRetire(false)}
+                        >
+                            {t('agentDetail.kill.cancel')}
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            // Blocked by the precondition OR by the typed name.
+                            // Both, not either: the precondition is the server's
+                            // rule and the typing is this dialog's.
+                            disabled={
+                                busy
+                                || agent._count.proposals > 0
+                                || retireTyped !== agent.name
+                            }
+                            data-testid="agent-retire-commit"
+                            onClick={() => void retire()}
+                        >
+                            {t('agentDetail.overview.retireAction')}
+                        </Button>
+                    </Modal.Footer>
+                </Modal>
+            )}
 
             {confirmSuspend && (
                 <Modal

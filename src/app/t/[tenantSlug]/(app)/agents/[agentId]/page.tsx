@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getTenantCtx } from '@/app-layer/context';
 import { getRegisteredAgent } from '@/app-layer/usecases/agent-registry';
+import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
+import { listVendors } from '@/app-layer/usecases/vendor';
 import { NotFoundError } from '@/lib/errors/types';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { AgentDetailClient } from './AgentDetailClient';
@@ -68,6 +70,20 @@ export default async function AgentDetailPage({
         throw err;
     }
 
+    // The amend form's two reference lists (#2447), resolved here for the same
+    // reason the register resolves them: `listAssignableUsers` is ACTIVE-only by
+    // construction, which is exactly the population the usecase will accept as
+    // an owner. A picker offering a name the server rejects is a form that lies
+    // about what it can do.
+    //
+    // Best-effort, and separately: a reader who may amend the agent but not list
+    // vendors still gets the form, with the supplier field disabled rather than
+    // the whole page failing.
+    const [owners, vendors] = await Promise.all([
+        listAssignableUsers(ctx).catch(() => []),
+        listVendors(ctx, {}, { take: 200 }).catch(() => []),
+    ]);
+
     return (
         <AgentDetailClient
             tenantSlug={tenantSlug}
@@ -81,7 +97,21 @@ export default async function AgentDetailPage({
                 provenance: agent.provenance,
                 riskTier: agent.riskTier ?? null,
                 aiActRiskTier: agent.aiSystem?.riskTier ?? null,
+                // The amendable fields the header strip does not show. Threaded
+                // so the amend form opens on the agent's REAL current values
+                // rather than blanks the operator has to re-type — an edit form
+                // that starts empty is a form that silently proposes clearing
+                // everything it does not show.
+                description: agent.description ?? null,
+                modelRef: agent.modelRef ?? null,
+                ownerUserId: agent.ownerUserId,
+                vendorId: agent.vendorId ?? null,
             }}
+            owners={owners.map((m: { id: string; name: string | null; email: string }) => ({
+                id: m.id,
+                label: m.name ?? m.email,
+            }))}
+            vendors={vendors.map((v: { id: string; name: string }) => ({ id: v.id, name: v.name }))}
             // Resolved on the SERVER and threaded down rather than read per
             // tab: the shell has to decide which tabs are even reachable
             // before a tab mounts, and six tabs each re-deriving the same four

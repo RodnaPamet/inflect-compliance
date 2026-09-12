@@ -33,6 +33,12 @@ import { AgentDataAccessScope, AgentStatus, SuggestionItemStatus } from '@prisma
 
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
+import {
+    AGENTIC_CHECK_IDS,
+    AGENTIC_CHECKS,
+    parseAgenticCheckConfig,
+} from '@/app-layer/services/agent-control-tests';
+import { getSampleAuditDisagreementRate } from '@/app-layer/usecases/agent-proposal-sample-audit';
 import type { PrismaTx } from '@/lib/db-context';
 import { badRequest, conflict, forbidden, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -305,6 +311,129 @@ export async function getAgentGovernanceStatus(ctx: RequestContext): Promise<{
         }),
     ]);
     return { enforcing, unboundCredentials };
+}
+
+/**
+ * THE THREE ASSURANCE SIGNALS (#2451) — is the governance actually working?
+ *
+ * The register answers "what is registered" and the banner answers "is the
+ * boundary switched on". Neither answers the question an assessor asks, which is
+ * whether any of it is being CHECKED. All three of these existed, were computed,
+ * and had no surface:
+ *
+ *   · RISK COVERAGE, tenant-wide. `riskTier === null` is UNSCORED, and an
+ *     unscored agent's credential resolves to DENY_CEILING — so coverage is not
+ *     a completeness metric, it is the share of the register that can do
+ *     anything at all.
+ *   · SAMPLE-AUDIT DISAGREEMENT. `getSampleAuditDisagreementRate` measures how
+ *     often a second reviewer disagreed with an approval. A propose-not-commit
+ *     queue whose approvals nobody re-checks is a rubber stamp with extra steps,
+ *     and this is the only number that would say so.
+ *   · SCHEDULED AGENTIC CONTROL TESTS. Four checks run on a schedule and write
+ *     `ControlTestRun` rows. A check that has NEVER RUN is reported as such
+ *     rather than omitted — "no result" and "passed" are the two things an
+ *     assurance surface must never conflate, and omission reads as the latter.
+ *
+ * 4/4's assessor pack is built from these, which is why they land here first.
+ */
+export interface AgenticCheckStatus {
+    checkId: string;
+    title: string;
+    /** `null` when the check has never produced a run — NOT a pass. */
+    result: string | null;
+    lastRunAt: Date | null;
+}
+
+export async function getAgenticAssuranceSignals(ctx: RequestContext): Promise<{
+    riskCoverage: { scored: number; total: number };
+    sampleAudit: { answered: number; dissented: number; disagreementRate: number | null };
+    controlTests: AgenticCheckStatus[];
+}> {
+    assertCanReadAgentRegister(ctx);
+
+    const [coverage, sampleAudit, controlTests] = await Promise.all([
+        runInTenantContext(ctx, async (db) => {
+            // Live agents only: a retired agent's tier says nothing about
+            // whether the RUNNING register is assessed.
+            const where = {
+                tenantId: ctx.tenantId,
+                deletedAt: null,
+                status: { not: 'RETIRED' as const },
+            };
+            const [total, scored] = await Promise.all([
+                db.registeredAgent.count({ where }),
+                db.registeredAgent.count({ where: { ...where, riskTier: { not: null } } }),
+            ]);
+            return { scored, total };
+        }),
+        // Best-effort: the sample-audit read asserts its own permission, and a
+        // reader who may see the register but not the audit trail should still
+        // get the register. An absent number is honest; a zero would not be.
+        getSampleAuditDisagreementRate(ctx, { sinceDays: 90 }).catch(() => null),
+        runInTenantContext(ctx, async (db) => {
+            const plans = await db.controlTestPlan.findMany({
+                where: { tenantId: ctx.tenantId, deletedAt: null, automationType: 'INTEGRATION' },
+                select: { id: true, automationConfig: true },
+                take: 200,
+            });
+            const byCheck = new Map<string, string[]>();
+            for (const plan of plans) {
+                const cfg = parseAgenticCheckConfig(plan.automationConfig);
+                if (!cfg) continue;
+                byCheck.set(cfg.check, [...(byCheck.get(cfg.check) ?? []), plan.id]);
+            }
+
+            // ONE read for every check, not one per check. Four iterations is
+            // still an N+1 — `query-shape-guardrails` counts the SHAPE, and it
+            // is right to: the loop is over a constant today and over whatever
+            // the check registry grows into tomorrow.
+            //
+            // Ordered newest-first and grouped in memory, so the first row seen
+            // for a plan is that plan's latest run.
+            const allPlanIds = [...byCheck.values()].flat();
+            const runs = allPlanIds.length
+                ? await db.controlTestRun.findMany({
+                      where: { tenantId: ctx.tenantId, testPlanId: { in: allPlanIds } },
+                      orderBy: { executedAt: 'desc' },
+                      select: { testPlanId: true, result: true, executedAt: true },
+                      take: 500,
+                  })
+                : [];
+            const latestByPlan = new Map<string, (typeof runs)[number]>();
+            for (const run of runs) {
+                if (!latestByPlan.has(run.testPlanId)) latestByPlan.set(run.testPlanId, run);
+            }
+
+            return AGENTIC_CHECK_IDS.map((checkId) => {
+                // A check can have more than one plan; the most recent run
+                // across all of them is the answer.
+                const candidates = (byCheck.get(checkId) ?? [])
+                    .map((id) => latestByPlan.get(id))
+                    .filter((r): r is (typeof runs)[number] => Boolean(r));
+                const run = candidates.sort(
+                    (a, b) => (b.executedAt?.getTime() ?? 0) - (a.executedAt?.getTime() ?? 0),
+                )[0];
+                return {
+                    checkId,
+                    title: AGENTIC_CHECKS[checkId].title,
+                    result: run?.result ?? null,
+                    lastRunAt: run?.executedAt ?? null,
+                };
+            });
+        }),
+    ]);
+
+    return {
+        riskCoverage: coverage,
+        sampleAudit: sampleAudit
+            ? {
+                  answered: sampleAudit.answered,
+                  dissented: sampleAudit.dissented,
+                  disagreementRate: sampleAudit.disagreementRate,
+              }
+            : { answered: 0, dissented: 0, disagreementRate: null },
+        controlTests,
+    };
 }
 
 /**
