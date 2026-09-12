@@ -78,7 +78,24 @@ async function clearOwnRows(): Promise<void> {
     await prisma.employee.updateMany({ where, data: { managerEmployeeId: null } });
     await prisma.employee.deleteMany({ where });
     await prisma.integrationConnection.deleteMany({ where });
-    await prisma.auditLog.deleteMany({ where });
+    // AuditLog IS DELIBERATELY NOT CLEARED, and an earlier version of this
+    // helper tried to. That line was green here and RED in CI, which is the
+    // tell: `audit_log_immutable` is a BEFORE DELETE OR UPDATE ... FOR EACH ROW
+    // trigger that raises unconditionally — but a BEFORE-ROW trigger never
+    // fires on a ZERO-ROW match. On a box whose AuditLog happens to be empty
+    // the statement is a silent no-op and passes; in CI the sync's own upserts
+    // produce audit rows for this tenant, the delete matches, and it raises
+    // (surfacing as Prisma P2003, "Foreign key constraint violated on the (not
+    // available)", which points nowhere near the real cause).
+    //
+    // An empty selection is a PASS — the same shape this repo hunts in
+    // assertions, here in a teardown.
+    //
+    // The rows are harmless to leave: the trail is append-only by design and
+    // tenantId T is unique to this suite, so nothing else reads them. Deleting
+    // them would also contradict the module doc of the code under test, which
+    // keeps per-row Prisma upserts INSTEAD of a batched INSERT ... ON CONFLICT
+    // precisely so the audit trail exists.
 }
 
 async function seedConnection(provider: string): Promise<string> {

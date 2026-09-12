@@ -75,8 +75,12 @@ export const SYNC_BOOKKEEPING_TX_TIMEOUT_MS = 15_000;
  *
  * At {@link SYNC_UPSERT_CHUNK_SIZE} = 500 rows this is 40 ms per row, and every
  * row costs two statements (the upsert plus the audit extension's own insert),
- * so the ceiling sits at roughly 20 ms per statement — already past the 50 ms
- * `SLOW_QUERY_THRESHOLD_MS` for half of them. It is a ceiling, not a target: a
+ * so the ceiling sits at roughly 20 ms per statement — comfortably UNDER the
+ * 50 ms `SLOW_QUERY_THRESHOLD_MS`, which is the point: a chunk that exhausts
+ * this budget is made of statements each slow enough to be logged
+ * individually, so the timeout is not the first thing to tell you. (An earlier
+ * version of this paragraph said 20 ms was "already past" 50 ms. It is not, and
+ * the inverted comparison made the budget look tighter than it is.) It is a ceiling, not a target: a
  * chunk that genuinely needs this long is a database in trouble, and the right
  * answer then is to fail the run loudly rather than hold a pooled connection
  * open while the pile-up gets worse.
@@ -133,8 +137,23 @@ export const MAX_SYNC_WRITE_CHUNKS = Math.ceil(MAX_SYNC_ROWS_PER_RUN / SYNC_UPSE
  */
 export const SYNC_WRITE_PHASE_BUDGET_MS = (2 * MAX_SYNC_WRITE_CHUNKS + 1) * SYNC_WRITE_TX_TIMEOUT_MS;
 
-/** Options for a bookkeeping transaction. */
-export const SYNC_BOOKKEEPING_TX_OPTIONS = { timeout: SYNC_BOOKKEEPING_TX_TIMEOUT_MS } as const;
+/**
+ * Options for a bookkeeping transaction.
+ *
+ * `maxWait` IS SET EXPLICITLY AND MATCHES THE WRITE TRANSACTION, which an
+ * earlier version of this file omitted. Prisma's default is 2000 ms, so the
+ * transaction whose entire job is to LEAVE EVIDENCE had less patience for a
+ * busy connection pool than the transaction it exists to record — which had
+ * 10_000. That is backwards in the failure that matters: pool exhaustion is a
+ * likely cause of a write phase dying, and it is exactly the moment the ERROR
+ * row must still be written. Losing the evidence write to a 2-second pool wait
+ * reproduces #2501's original symptom — an absence indistinguishable from a
+ * dispatcher that never fired — from a different direction.
+ */
+export const SYNC_BOOKKEEPING_TX_OPTIONS = {
+    timeout: SYNC_BOOKKEEPING_TX_TIMEOUT_MS,
+    maxWait: SYNC_WRITE_TX_MAX_WAIT_MS,
+} as const;
 
 /** Options for a bounded write transaction. */
 export const SYNC_WRITE_TX_OPTIONS = {
