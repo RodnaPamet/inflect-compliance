@@ -67,10 +67,12 @@ Both normalisers drop emailless rows downstream of that, and say why:
   anything — the whole personnel graph is keyed on it"* (`workday/roster.ts:90-95`).
 - BambooHR ends its map with `.filter((e) => e.workEmail)` (`hris/index.ts:245`).
 
-So relaxing the filters is not enough and would in fact make things worse: an emailless row would
-reach an upsert keyed on `tenantId_workEmail` (`usecases/hris-sync.ts:233`) with an empty string for
-the key, and every emailless pre-hire in the tenant would collide onto one row. A pre-hire cannot be
-an `Employee` today; the identity key itself has to change, or pre-hires need their own
+So relaxing the two normaliser filters is not enough — it buys a silent no-op. There is a THIRD
+drop downstream of both: `hris-sync.ts:231` is `if (!e.workEmail) continue;`, one line above the
+upsert keyed on `tenantId_workEmail` (`:233`), and `employee.upsert` appears exactly once in that
+file. So an emailless row that survived the providers would still never reach a write: the sync
+would run, report success, and persist nothing — precisely the failure shape this issue is about.
+A pre-hire cannot be an `Employee` today; the identity key itself has to change, or pre-hires need their own
 representation until an email exists. That touches every `(tenantId, workEmail)` lookup — including
 the leaver's matching rule, which is the same key by way of `emailKey`
 (`usecases/identity-account-link.ts:93-97`).
@@ -203,13 +205,16 @@ missing capabilities above priced into the first of those, not the second.
 Kept as a list rather than silently corrected, because each of these was cited *as support* and a
 reader who remembers the old text needs to know which way it moved. **In all five cases the
 argument survived and only the evidence was false** — which is exactly the failure mode that makes a
-design doc dangerous rather than merely stale.
+design doc dangerous rather than merely stale. Row three is the one to read carefully: there the
+CLAIM was true the whole time and only its line numbers had rotted. A drifted citation is not
+evidence that the semantics moved, and re-deriving the order from where a verdict is COMPUTED rather
+than where it is RETURNED is how a true sentence gets "corrected" into a false one.
 
 | The old claim | What is actually true | Does the argument survive? |
 | --- | --- | --- |
 | `listUnsettledWrites` has "no production caller" and `recordIdentityWritesUnsettled` is "imported and never called" | Both false. `listUnsettledWrites` is imported at `identity-leaver-pass.ts:84` and called at `:835`, from `readUnsettledBacklog` (`:829`) at the head of every pass (`:873`); the docblock at `:810-828` explains why it runs there. `recordIdentityWritesUnsettled` is imported at `identity-write-journal.ts:34` and called at `:511`, inside `listUnsettledWrites` itself. It is no longer imported by `identity-disable-account.ts` at all. | **Yes, narrowed.** A journal read surface DID ship (#2490): `GET /api/t/:slug/admin/identity-write-journal` plus its `[journalId]` sibling, both gated `admin.tenant_lifecycle`. But it is driven by `listJournalWrites` (`identity-write-journal.ts:379`), which orders by `attemptedAt desc` and does NOT filter to the unsettled subset — and there is no UI page under `src/app/t/[tenantSlug]/(app)/admin/identity-write-journal/`, only the API route. So `grep -rn listUnsettledWrites src/app/` is still empty and the unsettled QUEUE has no surface. The joiner's reader must ship with a caller **and** a route that reads the reader the copy names. |
 | `EntraIdDirectoryWriter.preflight()` "has no caller and is unreachable through the seam anyway" | Both false. `preflight?()` is a declared member of `DirectoryWriter` (`identity-disable-account.ts:307`) and is called at `:1337-1339`; the Entra implementation is at `entra-id/writer.ts:836`, and its docblock at `:802-812` names `disableAccountsForLeaver` as the caller and the interface as where the contract lives. | **Partly.** It is now a precedent, not merely "a shape to adopt". What does NOT transfer is the failure direction: `preflight` proceeds on an unsure result and only a PROVEN refusal shortcuts the batch (`identity-disable-account.ts:295-305`). A joiner batch probe must decide its own direction rather than inherit that one. |
-| `ALREADY_DISABLED` "precedes the write-target rail", cited to justify the joiner *inverting* the leaver's ordering | Inverted. The gates today run 0 self-lockout (`:579`), 1 ladder (`:639`), 2 write-target (`:656`, `resolveWriteTarget` at `:686`), 3 `readState` (`:772`, `:795`) → `ALREADY_DISABLED` (`:871-878`). The already-done check is now LAST of the four. | **Yes, but it is no longer an inversion.** The joiner checking `ALREADY_PROVISIONED` last now AGREES with the leaver. Keep the rule; drop the contrast. |
+| `ALREADY_DISABLED` "precedes the write-target rail", cited to justify the joiner *inverting* the leaver's ordering | **True — only the citation drifted.** The old line numbers (`:612-618` before `:631`) now point at `REFUSED_PROTECTED`, which is what made this look inverted. It is not. `resolveWriteTarget` is COMPUTED early (`:686`) but its verdict is HELD, exactly as the gate says at `:656` — *"DECIDED here, RETURNED after the read"*. The RETURN order is what an outcome reader sees: `REFUSED_PROTECTED` (`:613`, `:631`) → `REFUSED_MODE` (`:642`) → [`readState` `:795`] → `ALREADY_DISABLED` (`:872`) → `REFUSED_TARGET` (`:891`) → `REFUSED_UNMEASURED` (`:946`) → `DRY_RUN` (`:964`). The already-done check still precedes the write-target refusal, and `:880-886` says that ordering is the point of the fix. | **Yes, unchanged.** The joiner checking `ALREADY_PROVISIONED` last really does invert the leaver, and the reason below is its own. |
 | "05:00 holds three dispatchers and 06:00 holds three too, so occupancy distinguishes nothing" | The counts moved. 05:00 holds three jobs (`schedules.ts:128`, `:211`, `:366`) of which one is a dispatcher; 06:00 holds **four** (`:144`, `:193`, `:217`, `:229`). | **Yes.** Occupancy still distinguishes nothing — and the count is exactly the kind of claim that rots, so the [slot argument](#trigger-schedule-and-the-day-one-constraint) rests on ordering instead. |
 | "there is no tenant timezone anywhere in the schema (verified: zero `timezone` columns)" | False as written. `ControlTestPlan.scheduleTimezone` (`prisma/schema/controls.prisma:349`) is a `timezone` column. What IS true is the narrower claim the argument actually needs: neither `Tenant` nor `TenantSecuritySettings` carries one. | **Yes, once narrowed.** A control-test schedule's zone is unreachable from the joiner path, so decision 4 still has no tenant zone to fire in. See [the timezone question](#the-timezone-question-decision-4-cannot-be-honoured-without). |
 
@@ -640,12 +645,14 @@ down why: `recordOutboundWrite` types `action: 'created' | 'adopted' | 'updated'
 rate would mean the correlation lookup had stopped matching and duplicates were being made —
 *"Collapsing it into `created` would hide exactly that"* (`:137-138`).
 
-**`ALREADY_PROVISIONED` is checked LAST — and this now AGREES with the leaver rather than inverting
-it.** The previous revision cited the leaver checking `ALREADY_DISABLED` before the write-target
-rail. It does not: the gates run self-lockout (`identity-disable-account.ts:579`), ladder (`:639`),
-write-target (`:656`), then `readState` (`:772`) and only then `ALREADY_DISABLED` (`:871-878`). Both
-directions now put the already-done check after the free rails. The joiner's reason is its own and
-is unchanged: for a create in DRY_RUN, the only evidence is a `ConnectedIdentityAccount` table that
+**`ALREADY_PROVISIONED` is checked LAST**, inverting the leaver's ordering. The leaver does check
+`ALREADY_DISABLED` before the write-target rail — the previous revision's *claim* was right and only
+its *citation* had rotted. `resolveWriteTarget` is computed early (`identity-disable-account.ts:686`)
+but its verdict is held until after the read, which the gate states at `:656` (*"DECIDED here,
+RETURNED after the read"*): `ALREADY_DISABLED` returns at `:872`, `REFUSED_TARGET` only at `:891`,
+and the comment at `:880-886` names that ordering as the whole of the fix — the same candidate, once
+disabled, stops being re-refused. For a disable that is right. The joiner's reason for going the
+other way is its own: for a create in DRY_RUN, the only evidence is a `ConnectedIdentityAccount` table that
 by construction cannot know about anything created since 03:00 — so checking it first turns an
 unobservable state into a clean skip.
 
@@ -1010,8 +1017,8 @@ filters by tenantId (+status) — covered by `@@index([tenantId, status])`"*
 `findMany` **falsifies that reason**, and no `startDate` index exists — `Employee` carries
 `@@unique([tenantId, workEmail])` and two `@@index` entries and nothing else
 (`personnel.prisma:257-259`). Add `@@index([tenantId, startDate])` and move the entry to
-`LIST_QUERY_INDEXES` (`:274`) **in the same diff**, per that guardrail's no-stale-entries rule
-(`:1072-1082`).
+`LIST_QUERY_INDEXES` (`schema-index-coverage.test.ts:274`) **in the same diff**, per that
+guardrail's no-stale-entries rule (`schema-index-coverage.test.ts:1072-1082`).
 
 **And `Employee` is only half of it — the collision read needs an index too.**
 `ConnectedIdentityAccount` carries `@@unique([tenantId, connectionId, externalUserId])` plus
