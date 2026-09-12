@@ -158,6 +158,17 @@ const HIGH_MULTIPLICITY = 5;
  *   • 251 (2026-09-05): the whole-seed `/OWASP/` needle (54 positions) retired
  *     with the OWASP-privacy guard's rebinding; the two `CC-BY-SA` needles that
  *     the second OWASP framework pushed to five went with it.
+ *   • 239 (2026-09-12, #2501): 240 → 242 → 239. The class fired on a diff that
+ *     touched no test, which is the behaviour it exists for. Bare
+ *     `/runInTenantContext/` needles read hris-sync.ts and identity-sync.ts
+ *     whole; splitting both syncs into several transactions — and writing a
+ *     docblock explaining why — took each from four satisfying positions to
+ *     five, hollowing out two standing guards with no visible change to them.
+ *     The fix bound all three such needles (hris-sync, identity-sync and the
+ *     personnel.ts read beside it, which was already past five) to the single
+ *     `@/lib/db-context` import line that actually makes a file
+ *     tenant-scoped — the thing each test claims. Two crossed in, three
+ *     retired, −1 net. RE-SEATED DOWNWARD IN THE SAME DIFF.
  */
 //   • 250 (2026-09-06): −1, measured on a pristine base commit exactly as the
 //     parent count above was. Same reading, same refusal to invent a cause.
@@ -175,8 +186,12 @@ const HIGH_MULTIPLICITY = 5;
 //   positions inside comments, so masking made them unique. RE-SEATED IN THE
 //   SAME DIFF, downward: the alternative reading — "the ratchet went red, widen
 //   it" — is the exact move #2246 exists to refuse.
-const AMBIGUOUS_NEEDLE_BASELINE = 1431;
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 240;
+// • 1428 (2026-09-12, #2501): −3, the same three bare `/runInTenantContext/`
+//   needles described in the HIGHLY_AMBIGUOUS history above, bound to their
+//   import line. All three were already ambiguous here before that diff, so
+//   this end moves by the full three rather than by the net one.
+const AMBIGUOUS_NEEDLE_BASELINE = 1428;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 239;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise

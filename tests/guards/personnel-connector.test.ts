@@ -29,9 +29,20 @@ describe('personnel / HRIS — registration + wiring', () => {
 
     it('the hris-sync + personnel usecases are tenant-scoped (no global prisma)', () => {
         const hris = read('src/app-layer/usecases/hris-sync.ts');
-        expect(hris).toMatch(/runInTenantContext/);
+        // BOUND TO THE IMPORT, not to the bare identifier — see the twin of
+        // this assertion in identity-providers-connector.test.ts. A whole-file
+        // `/runInTenantContext/` was satisfied by any mention anywhere,
+        // including a comment, so #2501's docblock alone moved it from four
+        // satisfying positions to five. The import occurs exactly once and is
+        // what actually makes the file tenant-scoped.
+        //
+        // Written out at both call sites rather than hoisted into a variable:
+        // the Class D analyser recovers a LITERAL needle and books a variable
+        // one as un-analysable, which would trade a capped ambiguity for an
+        // uncapped blind spot.
+        expect(hris).toMatch(/import \{[^}]*\brunInTenantContext\b[^}]*\} from '@\/lib\/db-context';/);
         expect(hris).not.toMatch(/from '@\/lib\/prisma'/);
-        expect(read('src/app-layer/usecases/personnel.ts')).toMatch(/runInTenantContext/);
+        expect(read('src/app-layer/usecases/personnel.ts')).toMatch(/import \{[^}]*\brunInTenantContext\b[^}]*\} from '@\/lib\/db-context';/);
     });
 
     it('Employee carries RLS + tenant indexes + self-FK', () => {
