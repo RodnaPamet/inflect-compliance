@@ -58,7 +58,7 @@ describeFn('RQ3-6 — loss-event register (integration)', () => {
 
     afterAll(async () => {
         const t = { tenantId: TENANT_ID };
-        for (const m of ['lossEvent', 'auditLog', 'risk', 'tenantMembership'] as const) {
+        for (const m of ['lossEvent', 'risk', 'tenantMembership'] as const) {
             try {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 await (globalPrisma as any)[m].deleteMany({ where: t });

@@ -9,10 +9,27 @@
  * WHY THE PRISMA-CALL SCANS COVER `tests/` TOO (#2510)
  * ────────────────────────────────────────────────────
  * They used to stop at `src/`, and 21 teardowns under `tests/` had grown an
- * `auditLog.deleteMany({ where: { tenantId } })`. Eight were wrapped in
- * `.catch(() => {})` or `try { … } catch {}` — eight recorded instances of
- * somebody hitting the trigger and silencing it. A wrapped call can neither
- * fail nor succeed; it is pure noise that reads as cleanup.
+ * `auditLog.deleteMany({ where: { tenantId } })`. Classified mechanically at
+ * the base commit, TWELVE of the 21 were already silenced — 6 carrying a
+ * literal `.catch(() => {})`, 3 sitting in their own same-line
+ * `try { … } catch {}` (each carrying a "best effort" comment), and 3 more
+ * passed as thunks into a per-iteration `try { await fn(); } catch {}`
+ * upstream. Twelve recorded instances of somebody
+ * hitting the trigger and making it quiet. A wrapped call can neither fail
+ * nor succeed; it is pure noise that reads as cleanup.
+ *
+ * The remaining NINE were bare. In seven of those the audit delete is the
+ * first statement of its block, so the raise skipped the sibling cleanup
+ * that followed it — removing the call is what restores that cleanup. In the
+ * other two (`platform-admin-tenant-creation`, `tenant-lifecycle`) it is the
+ * LAST statement and the siblings had already run, so nothing was being
+ * skipped there; only the leak below applies.
+ *
+ * FOUR MORE reached the same table through a model-name array
+ * (`for (const m of ['lossEvent', 'auditLog', …]) (db as any)[m].deleteMany`).
+ * Those carry no `auditLog.deleteMany(` for a textual scan to find, which is
+ * why the scan below is not the only check in this file — see
+ * `DYNAMIC_MODEL_INDEX_WRITE`.
  *
  * The reason it took 21 sites to notice is the interesting part.
  * `audit_log_immutable` is a `BEFORE DELETE OR UPDATE … FOR EACH ROW`
@@ -25,8 +42,16 @@
  * the cause. #2509 shipped one of these — green locally, RED in CI — and
  * that is what surfaced the class.
  *
- * The rows are harmless to leave: the trail is append-only by design and
- * those suites use tenant ids unique to themselves. A suite that genuinely
+ * The rows are safe to leave in the sense that matters — the trail is
+ * append-only by design and those suites use tenant ids unique to
+ * themselves, so no assertion can see another run's rows. Be precise about
+ * the cost, though: `AuditLog_tenantId_fkey` is ON DELETE RESTRICT, so the
+ * surviving audit rows also block the teardown's own `tenant.deleteMany`,
+ * and each such run leaks its Tenant row as well. That was ALREADY happening
+ * — the delete raised and was swallowed — so removing these calls does not
+ * cause it; it just stops hiding it. The shared `inflect_test` database grows
+ * accordingly, which is a real cost tracked separately rather than a reason
+ * to keep a call that cannot work. A suite that genuinely
  * needs a clean slate uses the repo's other idiom — a
  * `SET LOCAL session_replication_role = 'replica'` transaction around a raw
  * `DELETE FROM "AuditLog"`, which disables the trigger instead of tripping
@@ -72,14 +97,37 @@ const PRISMA_DIR = path.resolve(__dirname, '..', '..', 'prisma');
  * "empty selection is a PASS" shape that let the 21 teardowns survive. These
  * floors make a collapsed population fail loudly instead. They are
  * order-of-magnitude rather than exact, so ordinary churn never touches them
- * (measured 2026-09-12: 2660 files under `src`, 2382 under `tests`, of which
- * 145 are prisma-mocking doubles).
+ * (measured 2026-09-12: 2660 files under `src`, 2382 under `tests`; the
+ * prisma-mocking doubles that `reachesDatabase` filters out are a low-
+ * hundreds minority of the latter). A precise count is deliberately NOT
+ * recorded here — it is derived data, it would rot on the next test added,
+ * and nothing below asserts on it.
  */
 const MIN_SRC_FILES = 1500;
 const MIN_TEST_FILES = 1500;
 
 const UPDATE_CALL = /auditLog\s*\.\s*(update|updateMany)\s*\(/;
 const DELETE_CALL = /auditLog\s*\.\s*(delete|deleteMany)\s*\(/;
+
+/**
+ * The SAME write, spelled so the two patterns above cannot see it.
+ *
+ * `for (const m of ['lossEvent', 'auditLog', …]) await (db as any)[m].deleteMany(…)`
+ * contains no `auditLog.deleteMany(` anywhere — the model name is a string
+ * in an array and the call is a dynamic index. Four such teardowns existed;
+ * three were found by reading and the fourth stayed GREEN under the widened
+ * textual scan, which is how it survived being fixed in the same pass as its
+ * three siblings. A guard that cannot see a shape does not protect against
+ * it, and the shape is the cheap one to reach for next time.
+ *
+ * BOTH halves are required to report a violation, which is what keeps this
+ * from firing on the many files that legitimately mention `'auditLog'` (a
+ * `where: { action: … }` filter, a model-name union, a comment). Measured
+ * across every file git lists: exactly one file in the repo satisfies both,
+ * and it was the defect.
+ */
+const DYNAMIC_MODEL_INDEX_WRITE = /\[\s*[A-Za-z_$][\w$]*\s*\]\s*\.\s*(delete|deleteMany|update|updateMany)\s*\(/;
+const AUDIT_LOG_AS_STRING = /['"`]auditLog['"`]/;
 const RAW_UPDATE = /UPDATE\s+["']?AuditLog["']?/i;
 const RAW_DELETE = /DELETE\s+(FROM\s+)?["']?AuditLog["']?/i;
 
@@ -198,6 +246,36 @@ describe('AuditLog Immutability Guardrails', () => {
         expect(UPDATE_CALL.test(mockedButAlsoLive)).toBe(true);
         expect(DELETE_CALL.test(proseOnly)).toBe(false);
         expect(UPDATE_CALL.test(proseOnly)).toBe(false);
+
+        // The array-driven shape, and the reason it needs its own pattern:
+        // the two above see NOTHING in it.
+        const viaModelArray = `
+            for (const m of ['lossEvent', 'auditLog', 'risk'] as const) {
+                await (globalPrisma as any)[m].deleteMany({ where: t });
+            }
+        `;
+        expect(DELETE_CALL.test(viaModelArray)).toBe(false);
+        expect(UPDATE_CALL.test(viaModelArray)).toBe(false);
+        expect(DYNAMIC_MODEL_INDEX_WRITE.test(viaModelArray)).toBe(true);
+        expect(AUDIT_LOG_AS_STRING.test(viaModelArray)).toBe(true);
+
+        // …and both halves are load-bearing. A dynamic delete over models
+        // that are not AuditLog is ordinary teardown, and a file that merely
+        // NAMES the model is prose or a filter.
+        const dynamicButNotAudit = `
+            for (const m of ['lossEvent', 'risk'] as const) {
+                await (globalPrisma as any)[m].deleteMany({ where: t });
+            }
+        `;
+        const namesAuditLogOnly = `await db.thing.findMany({ where: { model: 'auditLog' } });`;
+        expect(
+            DYNAMIC_MODEL_INDEX_WRITE.test(dynamicButNotAudit) &&
+                AUDIT_LOG_AS_STRING.test(dynamicButNotAudit),
+        ).toBe(false);
+        expect(
+            DYNAMIC_MODEL_INDEX_WRITE.test(namesAuditLogOnly) &&
+                AUDIT_LOG_AS_STRING.test(namesAuditLogOnly),
+        ).toBe(false);
     });
 
     it('no db-reaching code calls the Prisma update verbs on AuditLog', () => {
@@ -206,6 +284,22 @@ describe('AuditLog Immutability Guardrails', () => {
 
     it('no db-reaching code calls the Prisma delete verbs on AuditLog', () => {
         expect(scan(['src', 'tests'], DELETE_CALL, 'removes audit rows')).toEqual([]);
+    });
+
+    it('no db-reaching code reaches AuditLog through a dynamic model index', () => {
+        // The array-driven spelling of the same write. Reported separately
+        // from the two scans above because the failure message has to say
+        // WHICH shape was found — "removes audit rows" sends a reader looking
+        // for a call that is not written anywhere in the file.
+        const violations: string[] = [];
+        for (const subtree of ['src', 'tests']) {
+            for (const { rel, code } of dbReachingSources(subtree)) {
+                if (DYNAMIC_MODEL_INDEX_WRITE.test(code) && AUDIT_LOG_AS_STRING.test(code)) {
+                    violations.push(`${rel}: names 'auditLog' beside a dynamic [model].delete/update`);
+                }
+            }
+        }
+        expect(violations).toEqual([]);
     });
 
     // ── Raw SQL: `src/` only, deliberately ────────────────────────────
