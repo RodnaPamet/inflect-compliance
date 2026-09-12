@@ -320,7 +320,18 @@ export function AgentProposalsClient({
             {proposals.length === 0 ? (
                 <EmptyState
                     title={t('proposals.emptyTitle')}
-                    description={t('proposals.emptyDesc')}
+                    // WHO CAN APPROVE, not just what lands here (#2458). An
+                    // empty queue is the one moment an operator reads this
+                    // screen, and "wait for something to appear" is the least
+                    // useful thing it could say. The copy varies on the same
+                    // role-tier term the buttons do, so a reader is told plainly
+                    // that approving is not theirs rather than discovering it
+                    // when the first proposal arrives and the button is greyed.
+                    description={
+                        canOperate
+                            ? t('proposals.emptyDesc')
+                            : t('proposals.emptyDescReader')
+                    }
                 />
             ) : (
                 <ul className="space-y-default">
