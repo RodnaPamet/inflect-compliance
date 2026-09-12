@@ -60,9 +60,11 @@
  * exists to prevent.
  *
  * The half that moved is the READ, not the lease. {@link
- * ROSTER_READ_DEADLINE_MS} is a wall-clock instant the usecase hands the
- * provider; the roster reader checks it BETWEEN pages and, once it has passed,
- * stops early and hands back the resume cursor it already holds. The run then
+ * ROSTER_READ_DEADLINE_MS} is the budget; the usecase adds it to its own run
+ * start and hands the provider the resulting INSTANT, so the budget cannot be
+ * restarted at a seam it crosses. The roster reader checks that instant
+ * BETWEEN pages and, once it has passed, stops early and hands back the resume
+ * cursor it already holds. The run then
  * ends as a PARTIAL that the next scheduled run continues, so the failure
  * direction is "fewer pages per run", never "two writers". What the lease has
  * to accommodate is {@link ROSTER_READ_PHASE_BUDGET_MS}, and
@@ -221,10 +223,16 @@ export const ROSTER_READ_DEADLINE_MS = 10 * 60_000;
  *
  * Adding it ONCE holds only while every request a provider issues BEFORE its
  * paging loop can itself finish inside the deadline — for Workday that is the
- * OAuth token exchange in `listEmployees`. The precondition is therefore
- * `MAX_HTTP_REQUEST_MS <= ROSTER_READ_DEADLINE_MS`, and the guard asserts it
- * rather than leaving it as prose. It is also what guarantees a run always
- * gets to attempt at least one page.
+ * OAuth token exchange in `listEmployees`, which is at most one request
+ * (`resolveWorkdayAccessToken` refreshes or returns the cached token; it never
+ * loops). The precondition is `MAX_HTTP_REQUEST_MS < ROSTER_READ_DEADLINE_MS`,
+ * and the guard asserts it rather than leaving it as prose.
+ *
+ * STRICTLY less than, and the strictness is the second thing it buys: the
+ * reader's check is `now >= deadline`, so equality here would let a maximally
+ * slow token exchange land exactly on the deadline and leave the run zero
+ * pages. `<=` would be enough for the budget arithmetic alone; `<` is what
+ * makes "every run attempts at least one page" true as well.
  */
 export const ROSTER_READ_PHASE_BUDGET_MS = ROSTER_READ_DEADLINE_MS + MAX_HTTP_REQUEST_MS;
 

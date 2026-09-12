@@ -33,6 +33,16 @@ covers a page that eventually *succeeds* — two throttled attempts then a slow
 200 costs exactly the same. Ten pages is therefore 35 minutes of read, not 45;
 either way it is longer than the 30-minute lease, so the defect stands.
 
+**Ten pages is a FLOOR, not a ceiling**, which the issue's table does not say
+and the first draft of this change got wrong too. The paging loop's row test
+counts NORMALISED employees and `normalise` drops any row with no work email,
+so a report carrying email-less rows never advances toward `WORKDAY_MAX_PER_RUN`
+and pages on until a short page ends it. A row-count cap cannot bound
+wall-clock time because it does not bound REQUESTS. That strengthens the case
+for a clock rather than weakening it, and
+`tests/unit/roster-read-within-lock-lease.test.ts` demonstrates it against a
+report made entirely of droppable rows.
+
 ### The option chosen, and the direction it fails in
 
 Four were on the table. **(a) bound the read** was taken.
@@ -84,10 +94,13 @@ and `tests/guards/sync-transaction-budget-composes.test.ts` asserts
 `read + write <= SYNC_LOCK_TTL_MS` (810 s + 820 s ≤ 1,800 s).
 
 Adding one request rather than one per remaining page holds only while the
-token exchange — the one request issued *before* the paging loop — finishes
-inside the deadline. That precondition is `MAX_HTTP_REQUEST_MS <=
-ROSTER_READ_DEADLINE_MS`, asserted rather than left as prose; it is also what
-guarantees every run attempts at least one page.
+token exchange — the one request issued *before* the paging loop, and
+`resolveWorkdayAccessToken` never loops — finishes inside the deadline. That
+precondition is `MAX_HTTP_REQUEST_MS < ROSTER_READ_DEADLINE_MS`, asserted
+rather than left as prose. **Strictly** less than: the reader's check is
+`now >= deadline`, so `<=` would be enough for the budget arithmetic and would
+*not* be enough for the other thing the source claims — that every run gets to
+attempt at least one page.
 
 ### The 120 s citation was a ghost, and its provenance is the lesson
 
@@ -131,9 +144,18 @@ and restates neither number — a restated number is what drifts.
   it from the two budgets would mean raising the chunk size silently widened
   the reaper's window. Keeping it explicit and asserting the composition is
   what makes the next move somebody's decision.
-- **`WORKDAY_MAX_PAGES_PER_RUN` uses `Math.ceil`.** A page size that no longer
-  divides the row cap must round up, or the derived worst case understates the
-  work by a whole request.
+- **`WORKDAY_MAX_PAGES_PER_RUN` uses `Math.ceil`, and is documented as a
+  FLOOR.** A page size that no longer divides the row cap must round up, or the
+  figure understates the work by a whole request — and even rounded up it is
+  only the page count needed to reach the row cap with no dropped rows.
+- **The droppable-row fixture carries a tripwire, and the mutation proof is why.**
+  Mutating the deadline away was first measured against an untripwired version:
+  the loop ran until the jest worker died of heap exhaustion after 150 seconds,
+  reported as "Test suite failed to run" naming no test. A regression that reads
+  as an OOM is a regression nobody attributes to this change (see
+  `agri-saas`'s exit-134 lesson, same shape). The fetch double now throws a
+  named error on the first page past the budget, so the same mutation fails in
+  seconds with the sentence "roster read did not stop on its deadline".
 - **`UNBOUNDED_ROSTER_READ_MS` lives in the guard, not in source.** It is the
   diagnosis the deadline replaces, and a constant nothing consumes is precisely
   the shape #1970 deleted — and the shape whose ghost this PR is cleaning up.

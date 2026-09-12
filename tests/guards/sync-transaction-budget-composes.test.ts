@@ -101,6 +101,12 @@ describe('the READ phase fits inside the lease too (#2508)', () => {
      * retry ladder. Computed here rather than exported from source, because it
      * is the DIAGNOSIS — the number the deadline exists to replace — and a
      * constant nothing consumes is the shape #1970 deleted.
+     *
+     * A LOWER bound on that cost, not the cost. `WORKDAY_MAX_PAGES_PER_RUN`
+     * counts the pages needed to reach the ROW cap with no dropped rows, and
+     * the reader drops rows with no work email, so a real report can page
+     * further. That only makes the assertion below stronger: even the
+     * optimistic figure already overruns the lease.
      */
     const UNBOUNDED_ROSTER_READ_MS = WORKDAY_MAX_PAGES_PER_RUN * MAX_HTTP_REQUEST_MS;
 
@@ -143,16 +149,23 @@ describe('the READ phase fits inside the lease too (#2508)', () => {
         // because Workday's OAuth token exchange — issued before the paging
         // loop starts — always completes before the deadline. Break this and
         // a run could spend a request reaching the loop and another leaving
-        // it, putting the real worst case outside the budget above. It is
-        // also what guarantees every run attempts at least one page.
-        expect(MAX_HTTP_REQUEST_MS).toBeLessThanOrEqual(ROSTER_READ_DEADLINE_MS);
+        // it, putting the real worst case outside the budget above.
+        //
+        // STRICTLY less than. `toBeLessThanOrEqual` would be enough for that
+        // arithmetic and would NOT be enough for the other claim the source
+        // makes: the reader's check is `now >= deadline`, so on equality a
+        // maximally slow token exchange lands exactly on the deadline and the
+        // run reads zero pages. The strict form is what makes "every run
+        // attempts at least one page" true.
+        expect(MAX_HTTP_REQUEST_MS).toBeLessThan(ROSTER_READ_DEADLINE_MS);
     });
 
     it('the deadline is not vacuous — the unbounded read really did overrun', () => {
         // Without this, a deadline set above the unbounded worst case would
         // satisfy every assertion here while bounding nothing at all. Both
         // halves are asserted: the read WAS longer than the lease, and the
-        // deadline IS shorter than the read.
+        // deadline IS shorter than the read. Read against a LOWER bound (see
+        // the constant above), so both hold a fortiori for the real read.
         expect(UNBOUNDED_ROSTER_READ_MS).toBeGreaterThan(SYNC_LOCK_TTL_MS);
         expect(ROSTER_READ_DEADLINE_MS).toBeLessThan(UNBOUNDED_ROSTER_READ_MS);
     });

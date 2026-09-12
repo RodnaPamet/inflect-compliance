@@ -188,6 +188,56 @@ describe('the roster reader stops on the read deadline', () => {
         expect(out.resumeToken).toBe(String(WORKDAY_PAGE_SIZE));
     });
 
+    it('bounds a read the ROW cap cannot bound at all', async () => {
+        // WHY THE ROW CAP IS NOT A SECOND BOUND, demonstrated rather than
+        // asserted in prose. The loop's row test counts NORMALISED employees
+        // and `normalise` drops a row with no work email, so a report made of
+        // email-less rows never advances toward WORKDAY_MAX_PER_RUN and pages
+        // on until a short page ends it. WORKDAY_MAX_PAGES_PER_RUN is a FLOOR
+        // on the unbounded read, not a ceiling — and the deadline is the only
+        // thing standing between that report and the lock lease.
+        //
+        // No no-deadline control is run here, deliberately: without the
+        // deadline this fixture does not terminate, which IS the claim.
+        //
+        // Hence the TRIPWIRE, and it is not belt-and-braces. Mutating the
+        // deadline away was measured against an untripwired version of this
+        // fixture: it looped until the worker died of heap exhaustion after
+        // 150 seconds, and jest reported "Test suite failed to run", naming no
+        // test. A regression that reads as an OOM is a regression nobody
+        // attributes to this change. The tripwire converts it into a named
+        // failure on the first page past the budget.
+        const PAGES_AFFORDED = WORKDAY_MAX_PAGES_PER_RUN + 2;
+        const TRIPWIRE = PAGES_AFFORDED + 1;
+        const state = { nowMs: 0, calls: 0 };
+        const fetchImpl = jest.fn(async () => {
+            state.calls += 1;
+            if (state.calls > TRIPWIRE) {
+                throw new Error(`roster read did not stop on its deadline (page ${state.calls})`);
+            }
+            state.nowMs += PER_PAGE_MS;
+            const rows = Array.from({ length: WORKDAY_PAGE_SIZE }, (_, k) => ({
+                ...row(k),
+                primaryWorkEmail: '',
+            }));
+            return { ok: true, status: 200, json: async () => ({ Report_Entry: rows }) } as unknown as Response;
+        });
+
+        const out = await readWorkdayRoster(cfg, 'tok', null, {
+            fetchImpl: fetchImpl as unknown as typeof fetch,
+            now: () => new Date(state.nowMs),
+            readDeadlineAt: PAGES_AFFORDED * PER_PAGE_MS,
+        });
+
+        expect(state.calls).toBe(PAGES_AFFORDED);
+        expect(state.calls).toBeGreaterThan(WORKDAY_MAX_PAGES_PER_RUN);
+        expect(out.employees).toHaveLength(0);
+        // Still progress: the offset advanced over every row it read, dropped
+        // or not, so the next run resumes past them rather than re-reading.
+        expect(out.complete).toBe(false);
+        expect(out.resumeToken).toBe(String(PAGES_AFFORDED * WORKDAY_PAGE_SIZE));
+    });
+
     it('a report that ENDED is complete, even when the deadline has passed', async () => {
         // The inversion that would cost a scheduled run for nothing: the short
         // page already proved the report is exhausted, so reporting partial

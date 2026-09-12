@@ -35,15 +35,24 @@ export const WORKDAY_PAGE_SIZE = 500;
 export const WORKDAY_MAX_PER_RUN = 5_000;
 
 /**
- * Sequential HTTP requests one run's paging loop can make at the row cap.
+ * Sequential HTTP requests one run's paging loop makes to reach the row cap
+ * WHEN EVERY ROW NORMALISES.
  *
- * Derived rather than written down, because it is one of the four numbers the
- * lock lease has to compose against (#2508) and a hand-written 10 would go on
+ * Derived rather than written down, because it is one of the numbers the lock
+ * lease has to compose against (#2508) and a hand-written 10 would go on
  * reporting the comfortable answer the first time either constant moved.
+ * `Math.ceil` for the same reason: a page size that no longer divides the cap
+ * must round UP, or the figure understates the work by a whole request.
  *
- * `Math.ceil` is deliberate for the same reason: a page size that no longer
- * divides the cap must round UP, or the derived worst case understates the
- * work by a whole request.
+ * IT IS A FLOOR, NOT A CEILING, and saying so is the point. The loop's row
+ * test counts NORMALISED employees, and `normalise` drops any row with no work
+ * email — so a report carrying email-less rows pages PAST this, in the limit
+ * until a short page ends it. The unbounded read is therefore at least this
+ * bad and can be worse.
+ *
+ * That does not weaken the deadline; it is the reason for it. A row-count cap
+ * cannot bound wall-clock time, because it does not bound REQUESTS. The read
+ * deadline does, and it does so whatever fraction of rows the report drops.
  */
 export const WORKDAY_MAX_PAGES_PER_RUN = Math.ceil(WORKDAY_MAX_PER_RUN / WORKDAY_PAGE_SIZE);
 
