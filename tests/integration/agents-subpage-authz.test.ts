@@ -146,12 +146,28 @@ jest.mock('@/app-layer/usecases/workflow-runs', () => {
     };
 });
 
+const packSpy = jest.fn();
+jest.mock('@/app-layer/usecases/agent-governance-reports', () => {
+    const actual = jest.requireActual('@/app-layer/usecases/agent-governance-reports');
+    return {
+        __esModule: true,
+        ...actual,
+        buildAgentGovernancePack: (...a: unknown[]) => {
+            packSpy(...a);
+            return (
+                actual as { buildAgentGovernancePack: (...x: unknown[]) => unknown }
+            ).buildAgentGovernancePack(...a);
+        },
+    };
+});
+
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import ReceiptsPage from '@/app/t/[tenantSlug]/(app)/agents/receipts/page';
 import QuarantinePage from '@/app/t/[tenantSlug]/(app)/agents/quarantine/page';
 import ReviewQualityPage from '@/app/t/[tenantSlug]/(app)/agents/review-quality/page';
 import ProposalsPage from '@/app/t/[tenantSlug]/(app)/agents/proposals/page';
 import RunsPage from '@/app/t/[tenantSlug]/(app)/agents/runs/page';
+import ReportsPage from '@/app/t/[tenantSlug]/(app)/agents/reports/page';
 import { listReceipts } from '@/app-layer/usecases/agent-action-receipt';
 import { listAgentProposals } from '@/app-layer/usecases/agent-proposals';
 
@@ -278,6 +294,7 @@ afterEach(() => {
     reviewQualitySpy.mockClear();
     listProposalsSpy.mockClear();
     listRunsSpy.mockClear();
+    packSpy.mockClear();
     getTenantCtxMock.mockReset();
 });
 
@@ -321,6 +338,19 @@ const PAGES = [
         spy: listProposalsSpy,
     },
     { name: 'runs', page: RunsPage, key: 'view' as const, spy: listRunsSpy },
+    {
+        // AGENTIC UI 4/4. The pack NAMES PEOPLE — who approved what, who owns
+        // which agent — so it sits on the register key rather than the narrower
+        // tool-exposure key an operations team routinely holds. And the spy
+        // matters more here than on any other row: this page's load is five
+        // reports over the whole register, so a gate that refused only after
+        // loading would have run the most expensive read in the subsystem on
+        // behalf of somebody it then refused.
+        name: 'reports',
+        page: ReportsPage,
+        key: 'agent_registry' as const,
+        spy: packSpy,
+    },
 ];
 
 describe('each moved page refuses at the PAGE, before its own data load', () => {
@@ -359,7 +389,51 @@ describe('each moved page refuses at the PAGE, before its own data load', () => 
             'review-quality:agent_registry',
             'proposals:view',
             'runs:view',
+            'reports:agent_registry',
         ]);
+    });
+});
+
+describe('the reports page’s export offer is a SEPARATE grant (#2467)', () => {
+    /**
+     * Holding the page is not holding the button. Filing the pack writes into
+     * the evidence library, which is the library's grant to give — so an
+     * assessor-facing reader can legitimately read every figure here and still
+     * be unable to file them.
+     *
+     * Asserted on the PROP rather than on rendered text: the button's label is
+     * translated copy that will change, and the question is which permission
+     * the server decided on.
+     */
+    const withEvidenceEdit = (tenantId: string, edit: boolean): RequestContext => {
+        const admin = getPermissionsForRole('ADMIN');
+        return makeRequestContext('ADMIN', {
+            tenantId,
+            tenantSlug: tenantId,
+            userId: seeded[tenantId].ownerUserId,
+            appPermissions: {
+                ...admin,
+                evidence: { ...admin.evidence, edit },
+            },
+        });
+    };
+
+    it('offers the export to a principal holding evidence.edit', async () => {
+        getTenantCtxMock.mockResolvedValue(withEvidenceEdit(T1, true));
+        const el = await renderPage(ReportsPage, T1);
+        expect(el.type).not.toBe(ForbiddenPage);
+        expect((el as unknown as { props: { canExport: boolean } }).props.canExport).toBe(true);
+    });
+
+    it('withholds it from a principal who may read the pack but not write evidence', async () => {
+        getTenantCtxMock.mockResolvedValue(withEvidenceEdit(T1, false));
+        const el = await renderPage(ReportsPage, T1);
+        // Still the PAGE, not a refusal: losing the evidence key must not cost
+        // them the report. Hidden rather than shown-and-refused, because an
+        // action that always 403s is a defect report waiting to be filed
+        // against a working permission model.
+        expect(el.type).not.toBe(ForbiddenPage);
+        expect((el as unknown as { props: { canExport: boolean } }).props.canExport).toBe(false);
     });
 });
 

@@ -111,6 +111,12 @@ const ADMIN_ONLY_ROUTES = [
     // The assessor-facing governance pack — read-only, gated by the same
     // `admin/agents` subtree rule as the register itself.
     'admin/agents/reports/route.ts',
+    // Filing that pack into the evidence library (#2467). The SAME
+    // `admin/agents` subtree rule gates it — the rules are path-only, so they
+    // cover this POST exactly as they cover the GET above. Listed separately
+    // here because this route WRITES: it creates a retained Evidence row per
+    // call, where its read-only sibling deliberately writes nothing at all.
+    'admin/agents/reports/export/route.ts',
     // Quarantine triage — the proposals the agentic output guard refused, with
     // the content that was attempted. Read-only, gated on
     // `admin.agent_registry` by its own rule in ROUTE_PERMISSIONS (nothing in
