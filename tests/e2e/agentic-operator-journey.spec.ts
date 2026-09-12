@@ -135,8 +135,60 @@ test.describe('an operator finds, registers, grants, and stops an agent', () => 
             //
             // `waitForURL` is the right wait because it listens for the
             // navigation rather than re-reading a value on a timer.
-            await row.click();
-            await page.waitForURL(`**/agents/${agentId}`, { timeout: 30_000 });
+            // THE <tr>, AT A COORDINATE IN ITS FIRST CELL.
+            //
+            // `tests/rendered/agent-register-row-open.test.tsx` already proves
+            // this contract and passes — it clicks `cell.closest('tr')`, and
+            // its comment says why: the row carries the handler, and reaching
+            // for it explicitly beats relying on bubbling from whichever
+            // element the name happens to sit in. Three CI failures clicked the
+            // CELL instead, so this now matches the target the passing test
+            // uses.
+            //
+            // The position matters. Playwright clicks an element's CENTRE with
+            // real coordinates, and the centre of a full-width row lands in the
+            // middle columns — where the authority-tier cell renders a "More
+            // information" BUTTON. `isClickOnInteractiveChild` walks up from
+            // the event target and RETURNS EARLY on a button, skipping
+            // `onRowClick` entirely. Clicking near the left edge keeps the
+            // press inside the name cell, which holds no interactive child.
+            const rowEl = main.locator(`tr:has([data-testid="agent-row-${agentId}"])`);
+            await expect(rowEl).toBeVisible({ timeout: 30_000 });
+            await rowEl.click({ position: { x: 12, y: 12 } });
+
+            try {
+                await page.waitForURL(`**/agents/${agentId}`, { timeout: 30_000 });
+            } catch (err) {
+                // If it STILL does not navigate, fail with the state of the DOM
+                // rather than with a bare timeout. Three rounds of this were
+                // spent inferring from a timeout what one `elementFromPoint`
+                // would have said outright.
+                const diag = await page.evaluate((id: string) => {
+                    const cell = document.querySelector(`[data-testid="agent-row-${id}"]`);
+                    const tr = cell?.closest('tr') ?? null;
+                    const rect = tr?.getBoundingClientRect() ?? null;
+                    const hit = rect
+                        ? document.elementFromPoint(rect.left + 12, rect.top + 12)
+                        : null;
+                    return JSON.stringify({
+                        cellFound: Boolean(cell),
+                        rowFound: Boolean(tr),
+                        // The decisive one: React attaches these on hydration,
+                        // so their absence means the handler was never wired.
+                        rowReactKeys: tr
+                            ? Object.keys(tr).filter((k) => k.startsWith('__react'))
+                            : [],
+                        rowRect: rect
+                            ? { x: rect.left, y: rect.top, w: rect.width, h: rect.height }
+                            : null,
+                        topmostAtClickPoint: hit
+                            ? `${hit.tagName}#${hit.id}.${String(hit.className).slice(0, 60)}`
+                            : null,
+                        pathname: window.location.pathname,
+                    });
+                }, agentId);
+                throw new Error(`row click did not navigate — DOM at failure: ${diag}`);
+            }
         });
 
         // ─── 4. GRANT A TOOL ────────────────────────────────────────────
