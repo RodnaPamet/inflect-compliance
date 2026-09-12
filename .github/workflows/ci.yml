@@ -890,7 +890,30 @@ jobs:
 
       - name: Build Next.js (production)
         # --webpack: nonce strict-CSP chunks (see Dockerfile + impl note).
-        run: npx next build --webpack
+        #
+        # THE SAMPLES ARE STREAMED INTO THIS STEP'S OWN LOG, and that is the
+        # whole reason this is not just `run: npx next build --webpack` with a
+        # reporting step afterwards. A POST-HOC STEP CANNOT WORK FOR THIS
+        # FAILURE MODE, measured: a reporting step guarded with `if: always()`
+        # was added and still came out SKIPPED, because `always()` covers a
+        # cancelled STEP inside a live job — here the RUNNER is torn down
+        # ("The runner has received a shutdown signal"), so no later step runs
+        # at all. That is also why `e2e-bundle`'s identical always() step
+        # works: that job never loses its runner.
+        #
+        # A background loop started in an EARLIER step is no better: its stdout
+        # belongs to that step and is closed when it ends, which is why the
+        # existing sampler's output has only ever reached /tmp. Sampling from
+        # inside this step puts each line in this step's live log, so the curve
+        # survives up to the instant the machine disappears.
+        run: |
+          ( while true; do
+              echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk 'NR==2{print $3" used_MB "$7" avail_MB"}')"
+              sleep 5
+            done ) &
+          sampler=$!
+          trap 'kill "$sampler" 2>/dev/null || true' EXIT
+          npx next build --webpack
         env:
           # 6144 PER PROCESS, because there are now TWO of them.
           #
@@ -1053,8 +1076,13 @@ jobs:
           retention-days: 1
           include-hidden-files: true
 
-      # Runs on cancellation too — the entire point, since this failure mode
-      # emits nothing else.
+      # The post-hoc half, and it is the WEAKER half — read the streaming
+      # sampler in the build step above for the failure mode that actually
+      # bites. `if: always()` covers a cancelled step inside a LIVE job (a V8
+      # abort, a build error), and was measured coming out SKIPPED when the
+      # runner itself was torn down, because no later step runs at all then.
+      # Kept because the loud-abort case is real and this prints the curve for
+      # it; not relied on for the silent kernel kill.
       #
       # THIS JOB STARTED A SAMPLER AND NEVER READ IT. `Start memory sampler`
       # above has written /tmp/mem-samples.log since the sampler was added "to
