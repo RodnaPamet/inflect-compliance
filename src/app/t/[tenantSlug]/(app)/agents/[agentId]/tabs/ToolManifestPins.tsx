@@ -57,6 +57,7 @@ import { useTenantSWR } from '@/lib/hooks/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 
 import { Button } from '@/components/ui/button';
+import { Modal } from '@/components/ui/modal';
 import { Card } from '@/components/ui/card';
 import { CopyText } from '@/components/ui/copy-text';
 import { ErrorState } from '@/components/ui/error-state';
@@ -89,6 +90,14 @@ export interface ToolManifestState {
     liveManifestHash: string;
     liveDescriptionHash: string;
     liveSchemaHash: string;
+    /**
+     * The LIVE text, so the approval can be read rather than guessed.
+     * There is deliberately no `approvedDescription` twin: the pin stores
+     * hashes only, so the previously approved wording is not recoverable and
+     * this screen must not imply a comparison it cannot make.
+     */
+    liveDescription: string;
+    liveSchema: string;
     approvedManifestHash: string | null;
     approvedDescriptionHash: string | null;
     approvedSchemaHash: string | null;
@@ -186,6 +195,13 @@ export function ToolManifestPins({ refreshToken }: ToolManifestPinsProps) {
 
     const [pending, setPending] = useState<string | null>(null);
     const [writeError, setWriteError] = useState<string | null>(null);
+    /**
+     * The row awaiting confirmation (#2452). Approving a pin was ONE CLICK, and
+     * it is the widest action on this screen: it accepts a new tool definition
+     * and clears the boundary's refusal for EVERY agent in the tenant at once.
+     * It is also the tool-poisoning surface — see `movedHalves` above.
+     */
+    const [confirming, setConfirming] = useState<ToolManifestState | null>(null);
 
     const rows = useMemo(() => {
         const list = data ?? [];
@@ -443,7 +459,10 @@ export function ToolManifestPins({ refreshToken }: ToolManifestPinsProps) {
                                     variant="secondary"
                                     size="sm"
                                     loading={pending === row.toolName}
-                                    onClick={() => void approve(row)}
+                                    onClick={() => {
+                                        setWriteError(null);
+                                        setConfirming(row);
+                                    }}
                                     data-testid={`tool-manifest-approve-${row.toolName}`}
                                 >
                                     {t('agentDetail.tools.manifests.approveAction')}
@@ -499,6 +518,165 @@ export function ToolManifestPins({ refreshToken }: ToolManifestPinsProps) {
             )}
 
             {body()}
+
+            {confirming && (
+                <ManifestApprovalDialog
+                    row={confirming}
+                    busy={pending === confirming.toolName}
+                    onCancel={() => setConfirming(null)}
+                    onConfirm={async () => {
+                        const row = confirming;
+                        await approve(row);
+                        setConfirming(null);
+                    }}
+                />
+            )}
         </Card>
+    );
+}
+
+/**
+ * WHAT ACCEPTING THIS PIN ACTUALLY DOES (#2452).
+ *
+ * ── WHY A DIFF, AND WHY IT IS NOT A TEXT DIFF ───────────────────────
+ *
+ * The pin stores HASHES ONLY — `McpToolManifestPin` has `descriptionHash`,
+ * `schemaHash`, `manifestHash` and no text. The previously approved WORDING IS
+ * NOT RECOVERABLE, at any cost, so an old-vs-new text diff is not a thing this
+ * screen can honestly render. It says so, rather than implying a comparison it
+ * cannot make.
+ *
+ * What it renders instead is the two things that are true and sufficient:
+ * WHICH of the halves moved, from the hashes, and the LIVE TEXT the operator is
+ * being asked to accept.
+ *
+ * ── THE DESCRIPTION-ONLY CASE IS CALLED OUT BY NAME ─────────────────
+ *
+ * `tool-manifest.ts` explains why: the description is instruction text
+ * delivered straight to the model, so it is the one field an attacker can edit
+ * to change behaviour while every structural signal stays identical. A reader
+ * skimming "name unchanged, schema unchanged" waves that through. So when the
+ * description moved and the schema did not, that combination gets its own
+ * warning rather than being left for the reader to assemble.
+ */
+function ManifestApprovalDialog({
+    row,
+    busy,
+    onCancel,
+    onConfirm,
+}: {
+    row: ToolManifestState;
+    busy: boolean;
+    onCancel: () => void;
+    onConfirm: () => void | Promise<void>;
+}) {
+    const t = useTranslations('admin');
+    const moved = movedHalves(row);
+    const descriptionOnly = moved.descriptionMoved && !moved.schemaMoved;
+
+    return (
+        <Modal showModal setShowModal={(v) => { if (!v && !busy) onCancel(); }} size="lg" preventDefaultClose={busy}>
+            <Modal.Header
+                title={t('agentDetail.tools.manifests.confirmTitle', { tool: row.toolName })}
+            />
+            <Modal.Body>
+                <div className="space-y-default" data-testid="manifest-approval-dialog">
+                    {/* TENANT-WIDE, said first. This is not this agent's pin. */}
+                    <InlineNotice variant="warning" data-testid="manifest-approval-scope">
+                        {t('agentDetail.tools.manifests.confirmTenantWide')}
+                    </InlineNotice>
+
+                    {descriptionOnly && (
+                        <InlineNotice variant="error" data-testid="manifest-approval-description-only">
+                            {t('agentDetail.tools.manifests.confirmDescriptionOnly')}
+                        </InlineNotice>
+                    )}
+
+                    <dl className="space-y-tight text-sm" data-testid="manifest-approval-halves">
+                        <div>
+                            <dt className="text-xs uppercase tracking-wide text-content-subtle">
+                                {t('agentDetail.tools.manifests.halfName')}
+                            </dt>
+                            {/* The tool NAME cannot move without becoming a
+                                different tool — a rename is a new row, not a
+                                changed one. Stated so its absence from the
+                                changed list is not read as "not checked". */}
+                            <dd data-testid="manifest-half-name">
+                                {row.toolName} — {t('agentDetail.tools.manifests.halfUnchanged')}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt className="text-xs uppercase tracking-wide text-content-subtle">
+                                {t('agentDetail.tools.manifests.halfDescription')}
+                            </dt>
+                            <dd
+                                data-testid="manifest-half-description"
+                                className={moved.descriptionMoved ? 'text-content-error' : undefined}
+                            >
+                                {moved.descriptionMoved
+                                    ? t('agentDetail.tools.manifests.halfChanged')
+                                    : t('agentDetail.tools.manifests.halfUnchanged')}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt className="text-xs uppercase tracking-wide text-content-subtle">
+                                {t('agentDetail.tools.manifests.halfSchema')}
+                            </dt>
+                            <dd
+                                data-testid="manifest-half-schema"
+                                className={moved.schemaMoved ? 'text-content-error' : undefined}
+                            >
+                                {moved.schemaMoved
+                                    ? t('agentDetail.tools.manifests.halfChanged')
+                                    : t('agentDetail.tools.manifests.halfUnchanged')}
+                            </dd>
+                        </div>
+                    </dl>
+
+                    <p className="text-xs text-content-muted">
+                        {t('agentDetail.tools.manifests.confirmNoPriorText')}
+                    </p>
+
+                    <div>
+                        <p className="text-xs uppercase tracking-wide text-content-subtle">
+                            {t('agentDetail.tools.manifests.liveDescriptionLabel')}
+                        </p>
+                        <pre
+                            className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-bg-subtle p-2 text-xs"
+                            data-testid="manifest-live-description"
+                        >
+                            {row.liveDescription}
+                        </pre>
+                    </div>
+
+                    <div>
+                        <p className="text-xs uppercase tracking-wide text-content-subtle">
+                            {t('agentDetail.tools.manifests.liveSchemaLabel')}
+                        </p>
+                        <pre
+                            className="mt-1 max-h-48 overflow-auto rounded bg-bg-subtle p-2 text-xs"
+                            data-testid="manifest-live-schema"
+                        >
+                            {row.liveSchema}
+                        </pre>
+                    </div>
+                </div>
+            </Modal.Body>
+            <Modal.Footer>
+                <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onCancel}>
+                    {t('agentDetail.kill.cancel')}
+                </Button>
+                <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    loading={busy}
+                    data-testid="manifest-approval-confirm"
+                    onClick={() => void onConfirm()}
+                >
+                    {t('agentDetail.tools.manifests.confirmAction')}
+                </Button>
+            </Modal.Footer>
+        </Modal>
     );
 }

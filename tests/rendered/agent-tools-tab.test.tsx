@@ -191,6 +191,11 @@ function manifest(overrides: Partial<ToolManifestState> = {}): ToolManifestState
         liveManifestHash: MANIFEST_APPROVED,
         liveDescriptionHash: DESC_APPROVED,
         liveSchemaHash: SCHEMA_APPROVED,
+        // The live TEXT the approval dialog renders (#2452). Real-ish rather
+        // than empty: an empty description would make the dialog's "read what
+        // you are accepting" panel pass while showing nothing.
+        liveDescription: 'List the risks in this tenant.',
+        liveSchema: '{\n  "type": "object"\n}',
         approvedManifestHash: MANIFEST_APPROVED,
         approvedDescriptionHash: DESC_APPROVED,
         approvedSchemaHash: SCHEMA_APPROVED,
