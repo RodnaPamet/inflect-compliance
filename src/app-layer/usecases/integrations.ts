@@ -795,24 +795,122 @@ export async function listConnectedAccounts(
             take: options.limit ?? IDENTITY_ROSTER_PAGE_SIZE,
         }).then(async (rows) => {
             const reasons = await latestUnresolvedReasons(db, ctx.tenantId);
+            // What WE last did to these accounts, for rows the mirror has not
+            // re-observed since. See the helper for why this is a read-side
+            // join and not a second writer of the mirror.
+            const linkIds = rows
+                .map((r) => r.identityLink?.id)
+                .filter((id): id is string => typeof id === 'string');
+            const writes =
+                linkIds.length === 0
+                    ? new Map<string, LatestWrite>()
+                    : await latestSettledWritesByLink(db, ctx.tenantId, linkIds);
             // FLATTENED to scalar fields. Both relation objects are stripped
             // because this response is consumed by the access-review page
             // through an `Array.isArray` check that fails open — the docblock
             // above says adding FIELDS is safe and changing the SHAPE is not,
             // and a nested object on every row is closer to the second.
-            return rows.map(({ identityLink, connection, ...account }) => ({
-                ...account,
-                // The operator-legible half of `connectionId`, which is a cuid.
-                // Flattened rather than passed through as `connection: { name }`
-                // — see the select above and the docblock on this usecase.
-                connectionName: connection.name,
-                linked: identityLink !== null,
-                // Only meaningful when unlinked. A linked account carries no
-                // reason, rather than a stale one from before it linked.
-                unlinkedReason: identityLink === null ? (reasons.get(account.id) ?? null) : null,
-            }));
+            return rows.map(({ identityLink, connection, ...account }) => {
+                const write = identityLink ? (writes.get(identityLink.id) ?? null) : null;
+                return {
+                    ...account,
+                    // The operator-legible half of `connectionId`, which is a cuid.
+                    // Flattened rather than passed through as `connection: { name }`
+                    // — see the select above and the docblock on this usecase.
+                    connectionName: connection.name,
+                    linked: identityLink !== null,
+                    // Only meaningful when unlinked. A linked account carries no
+                    // reason, rather than a stale one from before it linked.
+                    unlinkedReason: identityLink === null ? (reasons.get(account.id) ?? null) : null,
+                    // ── The write this page could not see (#2480) ──
+                    //
+                    // FOUR SCALARS, not a nested `lastWrite` object, for the same
+                    // reason everything else here is flattened: the access-review
+                    // gate reads this body through a tolerant check and new sibling
+                    // fields cannot disturb it.
+                    //
+                    // `lastWriteOutcome` travels WITH the action and is not
+                    // optional. FAILED is a positive claim that the directory is
+                    // UNCHANGED, REVERTED means re-enabled, and INDETERMINATE means
+                    // settled-but-unknown. Rendering any of those as "disabled"
+                    // would be a worse lie than the staleness this fixes.
+                    lastWriteAction: write?.action ?? null,
+                    lastWriteOutcome: write?.outcome ?? null,
+                    lastWriteAt: write?.settledAt ?? null,
+                    // The comparison the caller must not re-derive: a write is only
+                    // news if the mirror has NOT re-observed the account since. Once
+                    // the next sync lands, `status` is authoritative again and this
+                    // goes quiet on its own.
+                    writeNewerThanSync:
+                        write !== null &&
+                        (account.syncedAt === null || write.settledAt > account.syncedAt),
+                };
+            });
         })
     );
+}
+
+interface LatestWrite {
+    action: string;
+    outcome: string;
+    settledAt: Date;
+}
+
+/**
+ * What WE last did to each account, keyed by link id — the fact the roster had
+ * and did not read (#2480).
+ *
+ * WHY THIS IS A READ-SIDE JOIN AND NOT A MIRROR WRITE. `ConnectedIdentityAccount`
+ * records what the DIRECTORY said at last observation, and it has exactly three
+ * writers (`identity-sync` twice, `identity-account-protection` once). None is
+ * the disable path, and that is deliberate: making the disable write `SUSPENDED`
+ * would have the mirror assert an observation it never made, and if Azure AD
+ * Connect or an administrator reverted the change the mirror would then be
+ * confidently wrong in the other direction. The staleness is not the bug. The bug
+ * was that the page had this row one join away and never asked.
+ *
+ * SETTLED ONLY. An unsettled row is a write still in flight or stranded
+ * INDETERMINATE-and-unreconciled; neither is something to render as a completed
+ * action beside a status.
+ *
+ * THE CAP TRUNCATES IN THE SAFE DIRECTION, which is the property to preserve if
+ * anyone tunes it. Ordering globally by `settledAt desc` and taking a page's
+ * worth means a link whose latest write falls outside the cap simply shows the
+ * mirror alone — today's behaviour. It can never surface an OLDER write as the
+ * latest, because anything older sorts below something newer that is already in.
+ *
+ * `detail` IS NOT SELECTED, on purpose: it is on the Epic B encryption manifest,
+ * so selecting it decrypts per row and puts free text naming a person on the
+ * wire. `priorStateJson` and `externalUserId` stay off for the same class of
+ * reason — the roster deliberately searches `externalUserId` and never renders it.
+ *
+ * LIMITATION, stated rather than papered over: `IdentityWriteJournal.linkId` is
+ * nullable (`ON DELETE SET NULL`) so the journal outlives an employee deletion.
+ * Such a row cannot join here — but an account whose link is gone already renders
+ * as unlinked on this page, and a leaver disable always carries the link because
+ * `beginWrite` requires it.
+ */
+async function latestSettledWritesByLink(
+    db: PrismaTx,
+    tenantId: string,
+    linkIds: string[],
+): Promise<Map<string, LatestWrite>> {
+    const rows = await db.identityWriteJournal.findMany({
+        // `tenantId` beside the RLS policy, matching every other journal read.
+        where: { tenantId, linkId: { in: linkIds }, settledAt: { not: null } },
+        orderBy: [{ settledAt: 'desc' }, { attemptedAt: 'desc' }],
+        take: IDENTITY_ROSTER_PAGE_SIZE,
+        select: { linkId: true, action: true, outcome: true, settledAt: true },
+    });
+
+    const out = new Map<string, LatestWrite>();
+    for (const r of rows) {
+        // First win per link — the order above makes the first row the latest.
+        if (r.linkId && r.settledAt && !out.has(r.linkId)) {
+            out.set(r.linkId, { action: r.action, outcome: r.outcome, settledAt: r.settledAt });
+        }
+    }
+    return out;
 }
 
 /**
