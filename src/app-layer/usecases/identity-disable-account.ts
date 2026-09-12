@@ -382,6 +382,48 @@ export interface DisableAccountInput {
      * silently shrinking the batch the breaker is measuring.
      */
     readonly lastObservedEnabled?: boolean;
+    /**
+     * Is the connection whose sync OBSERVED this account still ENABLED?
+     *
+     * The same question, and deliberately the same spelling, as
+     * `WriteTargetInput.connectionEnabled` — this field exists only to carry
+     * that one to the rail. Read its docblock for why `false` refuses at any
+     * age and `undefined` does not: the two must not drift, because the whole
+     * point of adding it here is that one caller was applying a WEAKER rail
+     * than the pass (#2476).
+     *
+     * ═══ THE CALLER THAT NEEDED IT ═══
+     *
+     * The blast-radius numerator in `disableAccountsForLeaver` routes every
+     * candidate through `resolveWriteTarget` so the count is a count of WRITES
+     * rather than of rows. Without this field it could not pass the one input
+     * that refuses at the head of that function, so `CONNECTION_DISABLED` was
+     * unreachable from the only caller that measures blast radius — and the
+     * numerator and the rail disagreed for exactly one population: a candidate
+     * on a soft-disabled connection whose observation is still FRESH, which the
+     * `OBSERVATION_STALE` arm does not catch until the age bound elapses.
+     *
+     * ═══ ABSENT COUNTS, THE SAME WAY ITS SIBLING ABOVE DOES ═══
+     *
+     * `lastObservedEnabled` fails toward COUNTING because a producer that
+     * forgets it would otherwise shrink the batch the breaker is measuring.
+     * This field fails toward counting too, and for the identical reason. What
+     * differs is only WHERE the rule lives: the sibling spells its own
+     * `!== false` out in the numerator, while this one arrives at the same
+     * answer through the rail, which already reads `=== false` and treats
+     * `undefined` as "the caller did not ask". A second copy of that reading in
+     * this file would be a second thing to keep in step with #2419.
+     *
+     * What differs is the PRODUCER, and that is the part worth being explicit
+     * about. `findLeaverCandidates` answers `connection?.isEnabled === true`, so
+     * a hop it could not read maps to `false` — REFUSE — not to absent. That is
+     * not an inconsistency with the paragraph above: a producer that CAN ask and
+     * got no answer has learned something, and "we could not confirm the
+     * connection" must never collapse into "the connection is fine". Absent is
+     * reserved for a caller that never asked at all, which is every producer
+     * that predates this field.
+     */
+    readonly connectionEnabled?: boolean;
 }
 
 /**
@@ -627,6 +669,26 @@ async function decideAndDisable(
         // disagree about whether an account may be disabled, which is exactly
         // what a per-caller `Boolean(...)` invites.
         onPremStateObservedAt: input.onPremStateObservedAt,
+        // NO `connectionEnabled` HERE, AND THAT IS A BOUNDARY, NOT AN OVERSIGHT.
+        //
+        // The field exists on the input as of #2476 and the candidates this
+        // batch loops over do carry it, so passing it would compile and would
+        // refuse in the safe direction. It is left off because nothing reaching
+        // this line can answer `false` today: `runIdentityLeaverPass` reads the
+        // connection per candidate and refuses the disabled ones BY NAME —
+        // `findStrandedLinkIds`, then `refuseStrandedCandidate`, which builds
+        // its refusal from `CONNECTION_DISABLED_REFUSAL` so the two cannot
+        // drift — before the batch is assembled. Adding a second copy of that
+        // rail here would change no outcome and would give one rule two owners.
+        //
+        // What it WOULD change is the day a caller assembles a batch without
+        // that pre-filter. Then this line and the numerator in
+        // `disableAccountsForLeaver` would disagree in the other direction —
+        // the count excluding a candidate this path still writes — and the
+        // right response is to move the refusal onto the rail here rather than
+        // to widen it quietly. #2476 deliberately did not, because this is the
+        // path that disables real accounts and the change would be untestable
+        // against any caller that exists.
     });
 
     // ═══ THE ONE PLACE A BASIS IS ATTACHED ═══
@@ -1084,6 +1146,28 @@ export async function disableAccountsForLeaver(
                 provider: writer.provider,
                 onPremisesSyncEnabled: c.onPremisesSyncEnabled,
                 onPremStateObservedAt: c.onPremStateObservedAt,
+                // PASSED, or the rail this line calls is not the rail the pass
+                // applies. `resolveWriteTarget` refuses `connectionEnabled ===
+                // false` at its head, so omitting the key here made
+                // `CONNECTION_DISABLED` unreachable from the one caller that
+                // measures blast radius — "the same pure function, called with
+                // the same fields" was true of every field but this one (#2476).
+                //
+                // The gap was not covered by the age bound below it. A row on a
+                // soft-disabled connection freezes only its
+                // `onPremStateObservedAt`, and a surviving connection's
+                // provider-scoped link reconcile keeps re-stamping everything
+                // else — so for up to OBSERVATION_FRESHNESS_MS the observation
+                // is still FRESH and `OBSERVATION_STALE` does not fire. That
+                // window is exactly the population the numerator counted as a
+                // write the pass was never going to perform.
+                //
+                // Absent stays absent. The rail reads `=== false`, never falsy,
+                // so a candidate from a producer that cannot answer counts —
+                // the same direction `lastObservedEnabled` above fails in, and
+                // for the same reason: a forgotten field must not quietly
+                // shrink the batch the breaker is measuring.
+                connectionEnabled: c.connectionEnabled,
             }).allowed,
     ).length;
 
@@ -1392,6 +1476,35 @@ export async function findLeaverCandidates(
                         status: true,
                         onPremisesSyncEnabled: true,
                         onPremStateObservedAt: true,
+                        // Two hops, no extra round trip, for the SAME reason
+                        // `identity-leaver-pass` takes them in its own stranded
+                        // read: the account names the connection that observed
+                        // it, and the connection carries the flag
+                        // `removeIntegrationConnection` clears.
+                        //
+                        // DROPPING THIS FROM THE SELECT FAILS OPEN, and an
+                        // earlier draft of this comment said the opposite —
+                        // worth recording, because the wrong intuition is the
+                        // natural one. Every row would map to
+                        // `connectionEnabled: false`, and the reflex is to read
+                        // that as "the rail refuses everything". It does not:
+                        // the rail is not consulted per candidate here. This
+                        // value feeds the blast-radius NUMERATOR, so mapping
+                        // every row false empties it, and
+                        // `checkDisableBlastRadius` returns `{ allowed: true }`
+                        // on `proposed <= 0` — the batch sails through and
+                        // every candidate is written, with `MAX_DISABLES_PER_RUN`
+                        // and the share cap both silently unable to fire.
+                        //
+                        // That is the #2290 shape this file exists to prevent.
+                        // It is the same mechanism the `status` entry above
+                        // describes, and `status` is not the only omission that
+                        // causes it — any field this numerator reads has the
+                        // property. The hypothetical is doubly blocked (TS2339
+                        // at compile time, plus the select-pin test below), but
+                        // a comment calling the fail-open direction "loud" is
+                        // worse than no comment.
+                        connection: { select: { isEnabled: true } },
                     },
                 },
             },
@@ -1429,6 +1542,31 @@ export async function findLeaverCandidates(
             // days of dry runs has to tell an account nothing has looked at yet
             // from one observed last night, and a boolean cannot say that.
             onPremStateObservedAt: r.connectedAccount.onPremStateObservedAt,
+            // The input the blast-radius numerator could not pass before #2476.
+            //
+            // POSITIVELY `=== true`, and optional-chained on the CONNECTION hop
+            // even though the relation is REQUIRED in the schema — the same two
+            // decisions `findStrandedLinkIds` makes over the same hop, copied
+            // deliberately rather than simplified. Prisma types it non-null
+            // (`connectionId` has been NOT NULL since the phase-2 migration),
+            // but a value that decides whether we write to a customer's
+            // directory must not depend on that holding at runtime under every
+            // RLS configuration: a hop the query could not return lands on
+            // `undefined === true`, which is `false`, which REFUSES at the
+            // rail's head — rather than on a TypeError that ends the pass, or
+            // on an absent key that would COUNT the candidate.
+            //
+            // Only that hop. `r.connectedAccount` is dereferenced unguarded by
+            // every field above, so chaining it here would guard nothing that
+            // had not already thrown three lines earlier — and a `?.` that
+            // cannot fire reads as a claim about reachability that is not true.
+            //
+            // So a row whose connection this query could not read is treated as
+            // stranded, not as fine. "We could not confirm the connection" and
+            // "the connection is enabled" are the two answers this subsystem
+            // must never collapse, and the account rows a soft-disabled
+            // connection leaves behind are precisely the ones nothing sweeps.
+            connectionEnabled: r.connectedAccount.connection?.isEnabled === true,
         }));
     });
 }

@@ -898,6 +898,104 @@ describe('the batch gate', () => {
         expect(r.results.filter((x) => x.outcome === 'REFUSED_TARGET')).toHaveLength(5);
     });
 
+    // ─────────────────────────────────────────────────────────────────────
+    // THE RAIL THE NUMERATOR COULD NOT REACH (#2476).
+    //
+    // `resolveWriteTarget` refuses `connectionEnabled === false` at its head,
+    // and until now this caller had no such field to pass — so the one place
+    // that measures blast radius evaluated a WEAKER rail than the pass applies.
+    //
+    // These two cases are a PAIR and neither is worth much alone. The first
+    // asserts the exclusion; the second is the control that says WHICH rail did
+    // it. A soft-disabled connection's rows freeze their observation and go
+    // stale eventually, so a candidate that happened to be stale would be
+    // excluded by `OBSERVATION_STALE` and the first case would pass green
+    // against the unfixed code. Both fixtures therefore carry an observation an
+    // hour old — unambiguously FRESH — and the control proves it, by counting
+    // the same eleven rows when the connection is enabled.
+    //
+    // They assert the NUMBER, not the verdict. Both batches are refused either
+    // way (eleven proposed against a population of ten refuses just as six
+    // does), so a test that only checked `refused` would be green before and
+    // after the fix while the count it exists to pin moved by five.
+    // ─────────────────────────────────────────────────────────────────────
+    it('does not count candidates a rail will refuse — the connection is no longer ENABLED', async () => {
+        // RELATIVE, never a literal instant. The rail bounds the observation
+        // against the wall clock, so a fixed date turns this assertion into a
+        // fuse that goes off on an unrelated morning (main, 2026-08-28).
+        const freshlyObserved = new Date(Date.now() - 60 * 60 * 1000);
+        const w = fakeWriter();
+        const candidates = [
+            ...Array.from({ length: 6 }, (_, i) =>
+                input({
+                    linkId: `l-live-${i}`,
+                    externalUserId: `live-${i}`,
+                    connectionEnabled: true,
+                    onPremStateObservedAt: freshlyObserved,
+                }),
+            ),
+            // The population the two rails disagreed about: the connection that
+            // observed these was soft-disabled, but a SURVIVING connection's
+            // provider-scoped link reconcile keeps re-stamping them, so the
+            // observation is still inside the freshness window and the age
+            // bound does not fire. The pass refuses them by name; the numerator
+            // counted them as writes it was never going to perform.
+            ...Array.from({ length: 5 }, (_, i) =>
+                input({
+                    linkId: `l-stranded-${i}`,
+                    externalUserId: `stranded-${i}`,
+                    connectionEnabled: false,
+                    onPremStateObservedAt: freshlyObserved,
+                }),
+            ),
+        ];
+
+        const r = await disableAccountsForLeaver(ctx, w, { candidates, population: 10 });
+
+        // SIX, not eleven. The five stranded rows are still inspected — they
+        // stay in `candidates`, and the log line below says eleven were looked
+        // at — but they are not writes, so they are not blast radius.
+        expect(recordBatchRefused).toHaveBeenCalledWith({
+            provider: 'entra-id',
+            proposed: 6,
+            population: 10,
+        });
+        expect(r.refused).toMatch(/6 of 10/);
+        const warn = (logger.warn as jest.Mock).mock.calls.find(
+            (c) => c[0] === 'leaver batch refused by blast-radius breaker',
+        );
+        expect(warn?.[1]).toMatchObject({ proposed: 6, candidates: 11, population: 10 });
+        expect(w.disabled).toEqual([]);
+    });
+
+    it('and it is the CONNECTION doing that, not the observation age', async () => {
+        // The control. Identical eleven rows, identical fresh observation, one
+        // field flipped — and now all eleven count. Without this, the case
+        // above would be satisfied by any rail that happened to refuse the
+        // fixture, including the stale-observation arm it was written to
+        // distinguish itself from.
+        const freshlyObserved = new Date(Date.now() - 60 * 60 * 1000);
+        const w = fakeWriter();
+        const candidates = Array.from({ length: 11 }, (_, i) =>
+            input({
+                linkId: `l-${i}`,
+                externalUserId: `ext-${i}`,
+                connectionEnabled: true,
+                onPremStateObservedAt: freshlyObserved,
+            }),
+        );
+
+        const r = await disableAccountsForLeaver(ctx, w, { candidates, population: 10 });
+
+        expect(recordBatchRefused).toHaveBeenCalledWith({
+            provider: 'entra-id',
+            proposed: 11,
+            population: 10,
+        });
+        expect(r.refused).toMatch(/11 of 10/);
+        expect(w.disabled).toEqual([]);
+    });
+
     it('does NOT latch: ten nights, ten leavers, ten disables in a tenant of ten', async () => {
         // The regression test for the ISSUE rather than for the arithmetic.
         //
@@ -1168,6 +1266,7 @@ describe('candidate selection demands FRESH link evidence', () => {
                     status: 'ACTIVE',
                     onPremisesSyncEnabled: true,
                     onPremStateObservedAt: observedAt,
+                    connection: { isEnabled: true },
                 },
             },
         ]);
@@ -1181,6 +1280,13 @@ describe('candidate selection demands FRESH link evidence', () => {
                 lastObservedEnabled: true,
                 onPremisesSyncEnabled: true,
                 onPremStateObservedAt: observedAt,
+                // The blast-radius numerator's other input (#2476). Named in
+                // this EXHAUSTIVE `toEqual` on purpose: the mapping must not be
+                // able to stop producing it, and — unlike the fields above —
+                // the failure would be silent in the other direction too, since
+                // a candidate that quietly lost this field starts counting
+                // again rather than starting to refuse.
+                connectionEnabled: true,
             },
         ]);
     });
@@ -1281,7 +1387,67 @@ describe('candidate selection demands FRESH link evidence', () => {
             // cloud-only population would silently go back to REFUSED_TARGET,
             // which is precisely the inert state #2144 was written to end.
             onPremStateObservedAt: true,
+            // The two hops that answer whether the connection which OBSERVED
+            // these accounts is still enabled. Dropping it maps every row to
+            // `connectionEnabled: false` (the mapping reads `=== true`), which
+            // empties the numerator — the SAME failure the `status` entry above
+            // describes, and it FAILS OPEN: `checkDisableBlastRadius` allows on
+            // `proposed <= 0`, so the batch proceeds with the cap unable to
+            // fire. Not a distinguished case on this list; every field the
+            // numerator reads has the property, which is why the whole select
+            // is pinned rather than the interesting half of it.
+            connection: { select: { isEnabled: true } },
         });
+    });
+
+    it('a DISABLED connection reaches the candidate as such, and an unreadable hop does too', async () => {
+        // The producer half of #2476, and the direction that is worth a test of
+        // its own: the mapping asks `connection?.isEnabled === true`, so the
+        // only answer that makes a candidate countable is a POSITIVE one.
+        //
+        // Three rows, three readings, and the third is the point. Prisma types
+        // the connection hop non-null — `connectionId` has been NOT NULL since
+        // the phase-2 migration — but a value that decides whether we write to
+        // a customer's directory must not rest on that holding at runtime under
+        // every row-level-security configuration. A hop the query could not
+        // return lands on `undefined === true`, which refuses, rather than on a
+        // TypeError that takes the whole pass down with it.
+        //
+        // Which is why `l3` here is a row with an account and NO connection,
+        // not a row with no account: the account hop is dereferenced unguarded
+        // by every other field in the mapping, so an absent one throws before
+        // this line is ever reached and would be proving something else.
+        //
+        // "We could not confirm the connection" and "the connection is fine"
+        // are the two answers this subsystem must never collapse, and the rows
+        // a soft-disabled connection leaves behind are exactly the ones nothing
+        // sweeps: still present, still linked, still carrying the on-premises
+        // state they last held.
+        const account = (over: Record<string, unknown>) => ({
+            externalUserId: 'x',
+            email: 'a@corp.example',
+            isProtected: false,
+            status: 'ACTIVE',
+            onPremisesSyncEnabled: false,
+            onPremStateObservedAt: null,
+            ...over,
+        });
+        db.identityAccountLink.findMany.mockResolvedValue([
+            { id: 'l1', connectedAccount: account({ connection: { isEnabled: true } }) },
+            { id: 'l2', connectedAccount: account({ connection: { isEnabled: false } }) },
+            // The hop that is not there at all.
+            { id: 'l3', connectedAccount: account({}) },
+        ]);
+
+        const out = await findLeaverCandidates(ctx, 'entra-id', ['e1'], new Date('2026-08-01'));
+
+        expect(out.map((c) => c.connectionEnabled)).toEqual([true, false, false]);
+        // Still three CANDIDATES, for the same reason the account-state case
+        // above keeps all of its rows: what this field changes is the count the
+        // breaker measures, and nothing else. The pass refuses these by name —
+        // `findStrandedLinkIds` / `refuseStrandedCandidate` — so a row dropped
+        // here would be a person the report never mentions at all.
+        expect(out).toHaveLength(3);
     });
 });
 
