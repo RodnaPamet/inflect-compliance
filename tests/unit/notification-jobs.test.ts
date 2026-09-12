@@ -192,9 +192,13 @@ describe('a failing evidence sweep does not withhold the outbox', () => {
         expect(thrown.message).toContain('outbox flush was skipped by the caller');
     });
 
-    it('a sweep that threw contributes zeros, not a sibling sweep\'s numbers', async () => {
-        // The aggregate an operator reads must not attribute work to a sweep
-        // that never ran. Only the 1-day sweep succeeds here.
+    it('one throwing sweep does not stop its siblings, and each failure is named', async () => {
+        // RENAMED: the old name promised that a failed sweep "contributes zeros,
+        // not a sibling's numbers", which is not observable — the aggregate is
+        // unreachable once any sweep throws. What this test actually asserts,
+        // and the thing worth protecting, is that a throw does not cancel the
+        // other sweeps and that every failure is named in the error.
+        // Only the 1-day sweep succeeds here.
         mockedRetention
             .mockRejectedValueOnce(new Error('30d blew up'))
             .mockRejectedValueOnce(new Error('7d blew up'))

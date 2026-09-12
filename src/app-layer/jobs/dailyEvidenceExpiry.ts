@@ -58,7 +58,21 @@ export class EvidenceSweepFailedError extends Error {
     }
 }
 
-/** The shape a sweep that threw contributes to the aggregate — zeros, not a guess. */
+/**
+ * The placeholder a caught sweep yields so the remaining sweeps can carry on.
+ *
+ * AND THAT IS ALL IT IS — an earlier version of this comment claimed these zeros
+ * "contribute to the aggregate", which is not observable. The aggregate is only
+ * returned when NO sweep failed; the moment one throws, this job raises
+ * EvidenceSweepFailedError instead, and the registry's catch reports
+ * itemsScanned/Actioned/Skipped as 0 with no details blob at all. So nothing an
+ * operator reads ever shows these values.
+ *
+ * What IS real, and what the test below actually covers, is that a throwing
+ * sweep does not cancel its siblings: the 7-day and 1-day sweeps still run and
+ * still persist their tasks after the 30-day sweep throws. That behaviour is
+ * the reason this constant exists; the reporting story was fiction.
+ */
 const NO_SWEEP: RetentionNotificationResult = { scanned: 0, tasksCreated: 0, skippedDuplicate: 0 };
 
 export async function runDailyEvidenceExpiryNotifications(

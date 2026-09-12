@@ -124,7 +124,11 @@ describe('notification-outbox-flush is wired, not merely written', () => {
         expect(JOB_DEFAULTS[JOB].attempts).toBe(1);
     });
 
-    it('daily-evidence-expiry keeps its own flush — this job is an addition', () => {
+    // NAME NARROWED to what it checks. It asserts daily-evidence-expiry is still
+    // REGISTERED, not that its processOutbox tail survives — deleting that tail
+    // leaves this green. The tail is covered in notification-jobs.test.ts, which
+    // asserts the mocked outbox is called once.
+    it('daily-evidence-expiry is still registered — this job is an addition, not a move', () => {
         // Not a replacement. The expiry sweeps enqueue mail and then hand it
         // straight to a flush; removing that tail would make their output wait
         // up to a full tick for no benefit, since a second drain in the same
