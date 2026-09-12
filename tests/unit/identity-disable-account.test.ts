@@ -1388,13 +1388,14 @@ describe('candidate selection demands FRESH link evidence', () => {
             // which is precisely the inert state #2144 was written to end.
             onPremStateObservedAt: true,
             // The two hops that answer whether the connection which OBSERVED
-            // these accounts is still enabled. Dropping this one is the only
-            // omission on the list whose failure is LOUD — the mapping reads
-            // `=== true`, so every row would map to `connectionEnabled: false`
-            // and the numerator would fall to zero for the whole tenant — but
-            // it is pinned here beside the others because "loud" is not the
-            // same as "noticed", and a numerator of zero reads on the report
-            // exactly like a quiet night with nobody to offboard.
+            // these accounts is still enabled. Dropping it maps every row to
+            // `connectionEnabled: false` (the mapping reads `=== true`), which
+            // empties the numerator — the SAME failure the `status` entry above
+            // describes, and it FAILS OPEN: `checkDisableBlastRadius` allows on
+            // `proposed <= 0`, so the batch proceeds with the cap unable to
+            // fire. Not a distinguished case on this list; every field the
+            // numerator reads has the property, which is why the whole select
+            // is pinned rather than the interesting half of it.
             connection: { select: { isEnabled: true } },
         });
     });

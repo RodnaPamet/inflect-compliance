@@ -1480,11 +1480,30 @@ export async function findLeaverCandidates(
                         // `identity-leaver-pass` takes them in its own stranded
                         // read: the account names the connection that observed
                         // it, and the connection carries the flag
-                        // `removeIntegrationConnection` clears. Dropping this
-                        // from the select maps every row to
-                        // `connectionEnabled: false`, which refuses the WHOLE
-                        // tenant at the rail's head — the loud direction, and
-                        // the one the mapping below chooses on purpose.
+                        // `removeIntegrationConnection` clears.
+                        //
+                        // DROPPING THIS FROM THE SELECT FAILS OPEN, and an
+                        // earlier draft of this comment said the opposite —
+                        // worth recording, because the wrong intuition is the
+                        // natural one. Every row would map to
+                        // `connectionEnabled: false`, and the reflex is to read
+                        // that as "the rail refuses everything". It does not:
+                        // the rail is not consulted per candidate here. This
+                        // value feeds the blast-radius NUMERATOR, so mapping
+                        // every row false empties it, and
+                        // `checkDisableBlastRadius` returns `{ allowed: true }`
+                        // on `proposed <= 0` — the batch sails through and
+                        // every candidate is written, with `MAX_DISABLES_PER_RUN`
+                        // and the share cap both silently unable to fire.
+                        //
+                        // That is the #2290 shape this file exists to prevent.
+                        // It is the same mechanism the `status` entry above
+                        // describes, and `status` is not the only omission that
+                        // causes it — any field this numerator reads has the
+                        // property. The hypothetical is doubly blocked (TS2339
+                        // at compile time, plus the select-pin test below), but
+                        // a comment calling the fail-open direction "loud" is
+                        // worse than no comment.
                         connection: { select: { isEnabled: true } },
                     },
                 },
