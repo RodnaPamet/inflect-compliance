@@ -91,5 +91,13 @@ export default async function AgentProposalsPage({
         },
     }));
 
-    return <AgentProposalsClient tenantSlug={tenantSlug} initialProposals={rows} />;
+    return (
+        <AgentProposalsClient
+            tenantSlug={tenantSlug}
+            initialProposals={rows}
+            // ROLE-TIER write: both approve and reject assert it, and this
+            // page's `admin.view` gate does not imply it.
+            canOperate={ctx.permissions.canWrite}
+        />
+    );
 }

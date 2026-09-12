@@ -8050,7 +8050,10 @@
       "abort": "Abort",
       "awaitingApprovalPre": "Paused for review — approve its proposals in the ",
       "proposalsLink": "agent proposals",
-      "awaitingApprovalPost": " queue, then Resume."
+      "awaitingApprovalPost": " queue, then Resume.",
+      "needsWrite": "You have read access to this workspace but not write access, so this action is not yours to take. An administrator can grant it.",
+      "abortConfirmTitle": "Abort this run?",
+      "abortConfirmBody": "This stops the {workflow} run mid-execution. Work already completed is not rolled back, and the run cannot be resumed afterwards — a new run starts from the beginning."
     },
     "quarantine": {
       "crumb": "Quarantine",
