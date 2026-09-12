@@ -59,6 +59,7 @@ must not.
 | `public/openapi.json` | Regenerated — one new stub path. |
 | `tests/unit/identity-leaver-pass-run-route.test.ts` | Authz, the job-id property with its two controls, payload/validation, the audit row, the map. |
 | `tests/guardrails/admin-route-coverage.test.ts` | The new route file added to `ADMIN_ONLY_ROUTES`. |
+| `tests/guards/regression-scanner.test.ts` | Fifth entry on the `@/lib/prisma`-in-a-route allowlist, with the same reason as the four before it. |
 
 ## Decisions
 
@@ -115,6 +116,21 @@ must not.
   up; this row is the only trace that a human asked for an off-schedule
   directory write, and it survives a worker that never runs and BullMQ's
   `removeOnComplete` horizon. Modelled on `admin/av-rescan`, the nearest peer.
+
+- **The `@/lib/prisma` import is allowlisted, not routed around.**
+  `tests/guards/regression-scanner.test.ts` bans that import from
+  `src/app/api/t/**/route.ts`, and it caught this route. The four routes
+  already listed — key-rotation, tenant-dek-rotation, sessions, av-rescan — are
+  the identical shape, and each carries the identical reason in that file: the
+  only mention of prisma is the handle handed to `logEvent`, and no
+  `prisma.<model>` query appears in the route. The alternative idiom
+  (`runInTenantContext(ctx, (db) => logEvent(db, ctx, …))`, used by the PDF
+  report route) would satisfy the scan without an entry, but `logEvent` ignores
+  the handle entirely — the insert goes through the global client inside
+  `appendAuditEntry` — so that shape opens a transaction that does nothing, in
+  order to make a text scan happy. The entry is listed by its full
+  `identity-leaver-passes/run` segment rather than by the parent directory, so
+  the sibling report route keeps the gate.
 
 - **`API_KEY_CREATE_LIMIT` (5/hr), not the default mutation tier.** Same preset
   as the other OWNER-gated enqueue-a-job routes. A second run on a correct day

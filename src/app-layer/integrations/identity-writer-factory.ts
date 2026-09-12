@@ -58,21 +58,20 @@ import {
 } from '../usecases/identity-disable-account';
 import { createEntraIdWriter } from './providers/entra-id/writer';
 import { createActiveDirectoryWriter } from './providers/active-directory/writer';
+import {
+    WRITABLE_IDENTITY_PROVIDERS,
+    isWritableIdentityProvider,
+} from './identity-writable-providers';
 
-// The NAME of the writable set lives in a leaf module with no imports, and is
-// re-exported here so this file stays the one place callers reach for. Asking
-// "can we write to this provider?" must not require loading both provider
-// writers and, through the AD provider's index, `undici` — see
+// The NAME of the writable set lives in a leaf module with no imports of its
+// own, and is re-exported here so this file stays the one place callers reach
+// for. Asking "can we write to this provider?" must not require loading both
+// provider writers and, through the AD provider's index, `undici` — see
 // `identity-writable-providers.ts` for the whole reason.
 export {
     WRITABLE_IDENTITY_PROVIDERS,
     isWritableIdentityProvider,
     type WritableIdentityProvider,
-} from './identity-writable-providers';
-
-import {
-    WRITABLE_IDENTITY_PROVIDERS,
-    isWritableIdentityProvider,
 } from './identity-writable-providers';
 
 /** Why no writer could be produced. Each is a distinct operator action. */
