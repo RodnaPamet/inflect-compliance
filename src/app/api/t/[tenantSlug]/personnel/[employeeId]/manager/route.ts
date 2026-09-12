@@ -16,8 +16,13 @@ import { jsonResponse } from '@/lib/api-response';
  * it. A route whose last segment is `manager` cannot grow one without moving,
  * which is a diff a reviewer sees. The usecase carries the other two rails —
  * a `.strict()` one-key schema and a one-column Prisma `data` literal — and
- * `tests/guards/employee-status-single-write-seam.test.ts` fails if any of the
- * three is taken away.
+ * they are pinned by different tests, not by one:
+ * `tests/guards/employee-status-single-write-seam.test.ts` fails if the write
+ * names any column but `managerEmployeeId`, and
+ * `tests/unit/personnel-manager-update.test.ts` fails if the schema stops
+ * refusing a body that carries `status`. THIS rail — the URL — has no test of
+ * its own; what it has is that moving the route breaks the `ROUTE_PERMISSIONS`
+ * rule and the `PRIVILEGED_ROOTS` leaf below, both of which name this path.
  *
  * PUT, not PATCH: the body replaces the single value the URL names. `null`
  * clears it, which is how "reports to nobody" is said.

@@ -132,9 +132,16 @@ export async function createEmployee(ctx: RequestContext, data: z.infer<typeof C
  *      field it writes, so adding a second field means moving the route,
  *      which is a diff a reviewer cannot miss.
  *
- * Pinned by `tests/guards/employee-status-single-write-seam.test.ts`, which
- * fails if this body ever writes `status` or if a third file starts writing
- * `Employee.status` at all.
+ * Which test pins which rail, because they are not all the same kind of claim:
+ * rail 2 is structural and belongs to
+ * `tests/guards/employee-status-single-write-seam.test.ts`, which fails if this
+ * body writes anything but `managerEmployeeId` — a spread included — and also
+ * if a third FILE starts writing an `Employee` row at all. Rail 1 is
+ * behavioural and belongs to `tests/unit/personnel-manager-update.test.ts`,
+ * which parses a body carrying `status` and requires it to throw. Rail 3 is
+ * neither: it is a shape a reviewer reads, and its only mechanical trace is
+ * that moving the route breaks the `ROUTE_PERMISSIONS` rule and the
+ * `PRIVILEGED_ROOTS` leaf that name this path.
  *
  * ═══ PRECEDENCE: THE FEED WINS WHEN IT SPEAKS, THE MANUAL VALUE STANDS WHEN
  *     IT DOES NOT ═══

@@ -17,7 +17,9 @@
  * to write `status`, and the prohibition must be pinned rather than described.
  * This is the pin.
  *
- * Three claims, each failing on a different regression:
+ * Three claims, each failing on a different regression — plus a fourth test
+ * that asserts the population is non-empty, because every census below is
+ * vacuously correct over nothing:
  *
  *   1. Only two FILES write an `Employee` row at all — a third one is a
  *      finding to fix, never an entry to add. There is deliberately no
@@ -29,6 +31,13 @@
  *   3. `setEmployeeManager`'s write names exactly one column. A spread of the
  *      parsed body counts as a failure, not as an unknown: the whole point of
  *      the literal is that widening the schema cannot widen the write.
+ *
+ * WHAT THIS GUARD DOES NOT PIN. The other two rails #2492 put in front of
+ * `status` are a `.strict()` one-key schema and a URL that names the field.
+ * The first is behavioural and is asserted in
+ * `tests/unit/personnel-manager-update.test.ts`; the second is a shape, with
+ * no test of its own. This file is the structural half only — do not read a
+ * green run here as certifying all three.
  *
  * Named for the invariant, not the issue.
  */
