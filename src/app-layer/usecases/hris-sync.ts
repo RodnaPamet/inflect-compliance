@@ -160,11 +160,17 @@ export async function runHrisSync(input: {
             // handed config and secrets merged and cannot tell them apart,
             // so it states only what changed and the split stays here.
             //
-            // Its own short transaction, opened and committed mid-read — which
-            // is what finally makes the persist survive a roster read that
-            // fails AFTER the rotation. Inside the old single transaction the
-            // rotated secret rolled back with everything else, so the one
-            // guarantee this callback exists to give was not actually given.
+            // Its own short transaction, opened and committed mid-read.
+            //
+            // BE PRECISE ABOUT WHAT THAT BUYS, because the obvious claim is
+            // wrong: under the old single transaction an ordinary provider
+            // error did NOT lose the rotated secret. This usecase catches
+            // provider errors and returns normally, so the transaction
+            // COMMITTED and the persist stood. What lost it was the
+            // transaction ABORTING — the blown budget, or a throw that
+            // escaped the callback entirely. Those are the same long, paging,
+            // token-rotating reads this callback exists for, which is why the
+            // hole was worth closing, but it was never every failure.
             persistSecret: async (patch) => {
                 Object.assign(secrets, patch);
                 await shortTx((db) =>
