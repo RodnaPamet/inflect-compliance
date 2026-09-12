@@ -25,8 +25,12 @@ import { isPostureProvider } from '../integrations/posture-providers';
 import type { CheckResult, EvidencePayload } from '../integrations/types';
 import { encryptField, decryptField } from '@/lib/security/encryption';
 import { logEvent } from '../events/audit';
-import { notFound, badRequest, forbidden } from '@/lib/errors/types';
+import { notFound, badRequest, forbidden, conflict } from '@/lib/errors/types';
 import { validateProviderConfig } from '../integrations/config-schema';
+// The ONE list of HRIS provider ids, imported rather than restated — see the
+// note on its declaration for why a second copy is the specific defect that
+// module exists to prevent.
+import { HRIS_PROVIDERS, isHrisProviderId } from '../integrations/providers/hris';
 import { LEAVER_PASS_AUTOMATION_SUFFIX } from './identity-leaver-pass';
 import { logger } from '@/lib/observability/logger';
 import { CONNECTION_STALE_AFTER_SECONDS } from '@/lib/observability/connection-freshness';
@@ -120,6 +124,101 @@ export async function getIntegrationConnection(ctx: RequestContext, connectionId
 }
 
 /**
+ * ONE ENABLED HRIS CONNECTION PER TENANT. Refused here, at config time.
+ *
+ * ═══ WHAT TWO ENABLED HRIS CONNECTIONS DO ═══
+ *
+ * The departure reconcile in `usecases/hris-sync` is TENANT-scoped —
+ * `{ tenantId, source: 'HRIS', status: { not: 'TERMINATED' },
+ *    syncedAt: { lt: passStartedAt } }` — and it cannot be connection-scoped,
+ * because `Employee` carries `externalId` and `source` and no `connectionId`
+ * (`prisma/schema/personnel.prisma`).
+ *
+ * So two enabled HRIS connections on one tenant do not split the roster between
+ * them. Each pass stamps ITS OWN people with a fresh `syncedAt` and then marks
+ * everyone carrying an older stamp TERMINATED — which is the whole of the other
+ * connection's population. `hris-sync-dispatch` fans out one job per enabled
+ * connection with no per-tenant collapse, and `acquireSyncLock` is keyed on the
+ * CONNECTION, so the two runs never contend for the lock that would have
+ * serialised them. They simply alternate, and whichever commits last wins the
+ * night.
+ *
+ * This is not cosmetic churn. TERMINATED is the status that makes an employee a
+ * candidate for a real directory disable on the 05:00 leaver pass, so the
+ * losing connection's ENTIRE roster becomes disable-eligible — every night, for
+ * whichever half lost. The live shape is a BambooHR → Workday migration, which
+ * is exactly the window in which an operator reads roster churn as migration
+ * noise.
+ *
+ * ═══ WHY REFUSING IS THE FIX, NOT A STOPGAP ═══
+ *
+ * One authoritative HRIS per tenant is the product intent. The joiner design
+ * writes an Entra-generated work email BACK to the HRIS, which needs a single
+ * system of record to write into; a second authoritative roster is not a
+ * feature this product is trying to have.
+ *
+ * REFUSED AT CONFIG TIME rather than collapsed in the dispatcher. Collapsing
+ * would stop syncing one of the two while it still reads "Enabled" in the admin
+ * UI — a connection that looks live and silently ingests nothing, which is a
+ * worse failure than the one being fixed. Refusing at the moment an operator
+ * asks for the second connection says so out loud and names the connection
+ * holding the slot.
+ *
+ * ═══ WHAT THIS DOES AND DOES NOT REACH ═══
+ *
+ * It fires on ENABLING, not just on creating: an update whose resulting state
+ * is enabled is checked the same way a create is. That matters because a
+ * create-only guard would leave every tenant that ALREADY has two enabled HRIS
+ * connections exactly as broken as before, silently.
+ *
+ * What it still cannot do is repair such a tenant on its own. Nothing here runs
+ * unless somebody writes; a tenant nobody touches keeps alternating. What
+ * changes is that the FIRST write to either connection now refuses and names the
+ * other one, instead of succeeding and leaving the operator no wiser.
+ *
+ * DISABLING IS NEVER REFUSED, and that is the way out. `willBeEnabled === false`
+ * returns immediately, and `removeIntegrationConnection` (the admin UI's
+ * Disable button) is not gated at all — so an operator holding two enabled HRIS
+ * connections can always disable one, after which every other write is
+ * permitted again.
+ */
+async function assertSoleEnabledHrisConnection(
+    db: PrismaTx,
+    tenantId: string,
+    args: { provider: string; willBeEnabled: boolean; selfId?: string },
+): Promise<void> {
+    // Ordered cheapest-first, and the first two arms are the ones that keep this
+    // guard off every non-HRIS connection and every disabling write.
+    if (!args.willBeEnabled) return;
+    if (!isHrisProviderId(args.provider)) return;
+
+    const holder = await db.integrationConnection.findFirst({
+        where: {
+            tenantId,
+            provider: { in: [...HRIS_PROVIDERS] },
+            isEnabled: true,
+            // Excluded on the update path, so re-saving the connection that
+            // already holds the slot is not refused by itself.
+            ...(args.selfId ? { id: { not: args.selfId } } : {}),
+        },
+        select: { id: true, provider: true, name: true },
+        // Oldest first so the message names the SAME connection on every
+        // attempt, rather than whichever row the planner happened to return.
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    if (!holder) return;
+
+    throw conflict(
+        `This tenant already has an enabled HRIS connection: "${holder.name}" (provider ${holder.provider}, ` +
+            `id ${holder.id}). Only one HRIS connection can be enabled per tenant. The employee roster is ` +
+            `reconciled per TENANT rather than per connection, so a second enabled HRIS connection would mark ` +
+            `"${holder.name}"'s entire roster TERMINATED on its next nightly pass — and TERMINATED is what makes ` +
+            `an employee a candidate for a directory disable. To migrate between HRIS vendors, disable ` +
+            `"${holder.name}" first, then enable this one.`,
+    );
+}
+
+/**
  * Create or update an integration connection.
  * Secrets are encrypted before storage.
  */
@@ -153,6 +252,15 @@ export async function upsertIntegrationConnection(
     // the boundary that stops the next one being stored at all.
     const validatedConfig = validateProviderConfig(input.provider, input.configJson);
 
+    // ONE expression for the resulting enabled state, read by the HRIS guard AND
+    // by both writes below — so the state the guard measures cannot drift from
+    // the state the write produces.
+    //
+    // Note what `?? true` means on the UPDATE path: an update that OMITS
+    // `isEnabled` RE-ENABLES a disabled connection. That request is an enable,
+    // and the guard has to treat it as one.
+    const willBeEnabled = input.isEnabled ?? true;
+
     return runInTenantContext(ctx, async (db) => {
         if (input.id) {
             // Update existing
@@ -161,13 +269,25 @@ export async function upsertIntegrationConnection(
             });
             if (!existing) throw notFound('Connection not found');
 
+            // `existing.provider`, NOT `input.provider`. The update below writes
+            // name / configJson / secrets / isEnabled and never `provider`, so
+            // the row keeps the provider it was created with whatever the caller
+            // passes. Reading the guard's provider off the INPUT would let
+            // `{ id: <bamboohr connection>, provider: 'github' }` enable a second
+            // HRIS connection without this guard ever looking at it.
+            await assertSoleEnabledHrisConnection(db, ctx.tenantId, {
+                provider: existing.provider,
+                willBeEnabled,
+                selfId: existing.id,
+            });
+
             const updated = await db.integrationConnection.update({
                 where: { id: input.id },
                 data: {
                     name: input.name,
                     configJson: input.configJson != null ? (validatedConfig as Prisma.InputJsonValue) : undefined,
                     ...(secretEncrypted ? { secretEncrypted } : {}),
-                    isEnabled: input.isEnabled ?? true,
+                    isEnabled: willBeEnabled,
                 },
             });
 
@@ -191,6 +311,11 @@ export async function upsertIntegrationConnection(
         }
 
         // Create new
+        await assertSoleEnabledHrisConnection(db, ctx.tenantId, {
+            provider: input.provider,
+            willBeEnabled,
+        });
+
         const created = await db.integrationConnection.create({
             data: {
                 tenantId: ctx.tenantId,
@@ -198,7 +323,7 @@ export async function upsertIntegrationConnection(
                 name: input.name,
                 configJson: validatedConfig as Prisma.InputJsonValue,
                 secretEncrypted,
-                isEnabled: input.isEnabled ?? true,
+                isEnabled: willBeEnabled,
             },
         });
 
