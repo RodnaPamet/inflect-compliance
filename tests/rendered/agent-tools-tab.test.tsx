@@ -52,7 +52,7 @@
  * render, so a component that rendered nothing cannot pass.
  */
 import * as React from 'react';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 
 // next-intl is ESM (jest cannot parse it); mock it resolving real en.json
 // values. `make` is MEMOISED per namespace — a fresh `t` identity on every
@@ -191,6 +191,11 @@ function manifest(overrides: Partial<ToolManifestState> = {}): ToolManifestState
         liveManifestHash: MANIFEST_APPROVED,
         liveDescriptionHash: DESC_APPROVED,
         liveSchemaHash: SCHEMA_APPROVED,
+        // The live TEXT the approval dialog renders (#2452). Real-ish rather
+        // than empty: an empty description would make the dialog's "read what
+        // you are accepting" panel pass while showing nothing.
+        liveDescription: 'List the risks in this tenant.',
+        liveSchema: '{\n  "type": "object"\n}',
         approvedManifestHash: MANIFEST_APPROVED,
         approvedDescriptionHash: DESC_APPROVED,
         approvedSchemaHash: SCHEMA_APPROVED,
@@ -274,6 +279,31 @@ function installFetch(reply: (url: string, init?: RequestInit) => { status: numb
             json: async () => r.body ?? null,
         } as unknown as Response;
     }) as unknown as typeof fetch;
+}
+
+
+/**
+ * Click revoke and let the Epic 67 window elapse (#2453).
+ *
+ * Revoke no longer writes on click — it schedules, and the DELETE lands after
+ * the undo window. The three assertions below are about what happens WHEN IT
+ * COMMITS (a 404 read as already-gone, a 500 reported loudly, the tool in the
+ * query string), so they have to drive through the window rather than assert on
+ * the click. The scheduling half is covered by tool-revoke-undo.test.tsx.
+ *
+ * Fake timers are installed per-test rather than file-wide: the other sixteen
+ * tests here render Radix surfaces that spin their own timers, and switching
+ * the whole file would be a much larger change than the behaviour warrants.
+ */
+async function revokeAndCommit(testId: string) {
+    jest.useFakeTimers();
+    try {
+        fireEvent.click(screen.getByTestId(testId));
+        await act(async () => { await jest.advanceTimersByTimeAsync(10_000); });
+    } finally {
+        jest.runOnlyPendingTimers();
+        jest.useRealTimers();
+    }
 }
 
 beforeEach(() => {
@@ -562,7 +592,7 @@ describe('the grants list is exactly what the payload says', () => {
         mockReads({ granted: [grant('list_risks')], manifests: [manifest()] });
         renderTab(true);
 
-        fireEvent.click(screen.getByTestId('agent-tool-revoke-list_risks'));
+        await revokeAndCommit('agent-tool-revoke-list_risks');
 
         await waitFor(() => {
             expect(mockToast.info).toHaveBeenCalledWith('list_risks was already revoked');
@@ -580,7 +610,7 @@ describe('the grants list is exactly what the payload says', () => {
         mockReads({ granted: [grant('list_risks')], manifests: [manifest()] });
         renderTab(true);
 
-        fireEvent.click(screen.getByTestId('agent-tool-revoke-list_risks'));
+        await revokeAndCommit('agent-tool-revoke-list_risks');
 
         await waitFor(() => {
             expect(screen.getByText('boom')).toBeInTheDocument();
@@ -593,7 +623,7 @@ describe('the grants list is exactly what the payload says', () => {
         mockReads({ granted: [grant('list_risks')], manifests: [manifest()] });
         renderTab(true);
 
-        fireEvent.click(screen.getByTestId('agent-tool-revoke-list_risks'));
+        await revokeAndCommit('agent-tool-revoke-list_risks');
 
         await waitFor(() => {
             expect(global.fetch).toHaveBeenCalled();

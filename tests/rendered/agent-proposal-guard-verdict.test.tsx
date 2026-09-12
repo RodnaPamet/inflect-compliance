@@ -191,7 +191,7 @@ const UNSCANNED_ROW = makeRow({
 const CLEAN_ROW = makeRow();
 
 function renderQueue(rows: ProposalRow[]) {
-    return render(<AgentProposalsClient tenantSlug="acme" initialProposals={rows} />);
+    return render(<AgentProposalsClient tenantSlug="acme" initialProposals={rows} canOperate />);
 }
 
 /** A 200 with an applied-immediately body — the single-approver success shape. */

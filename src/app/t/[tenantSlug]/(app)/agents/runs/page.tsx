@@ -49,5 +49,16 @@ export default async function AgentRunsPage({
 
     const workflows = listWorkflowDefinitions().map((w) => ({ key: w.key, name: w.name, description: w.description }));
 
-    return <AgentRunsClient tenantSlug={tenantSlug} initialRuns={rows} workflows={workflows} />;
+    return (
+        <AgentRunsClient
+            tenantSlug={tenantSlug}
+            initialRuns={rows}
+            workflows={workflows}
+            // The ROLE-TIER write, resolved on the server. Every mutating
+            // workflow-run usecase opens with `assertCanWrite(ctx)`, which reads
+            // this rather than the permissions blob — so the page's own
+            // `admin.view` gate is not the question the buttons must ask.
+            canOperate={ctx.permissions.canWrite}
+        />
+    );
 }

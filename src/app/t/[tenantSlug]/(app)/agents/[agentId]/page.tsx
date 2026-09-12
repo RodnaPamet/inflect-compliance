@@ -106,6 +106,7 @@ export default async function AgentDetailPage({
                 modelRef: agent.modelRef ?? null,
                 ownerUserId: agent.ownerUserId,
                 vendorId: agent.vendorId ?? null,
+                registrationEnforced: agent.registrationEnforced,
             }}
             owners={owners.map((m: { id: string; name: string | null; email: string }) => ({
                 id: m.id,

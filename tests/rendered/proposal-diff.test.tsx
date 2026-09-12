@@ -199,7 +199,7 @@ const REVIEWABLE_ROWS = [CREATE_ROW, UPDATE_ROW, NO_CHANGES_ROW];
 const UNREVIEWABLE_ROWS = [TARGET_MISSING_ROW, UNREADABLE_ROW];
 
 function renderQueue(rows: ProposalRow[] = ALL_ROWS) {
-    return render(<AgentProposalsClient tenantSlug="acme" initialProposals={rows} />);
+    return render(<AgentProposalsClient tenantSlug="acme" initialProposals={rows} canOperate />);
 }
 
 afterEach(cleanup);
@@ -390,7 +390,7 @@ describe('a first signature does not look like an approval', () => {
             }),
         });
 
-        render(<AgentProposalsClient tenantSlug="acme" initialProposals={[CREATE_ROW]} />);
+        render(<AgentProposalsClient tenantSlug="acme" initialProposals={[CREATE_ROW]} canOperate />);
 
         const approve = screen.getByTestId(`proposal-approve-${CREATE_ROW.id}`);
         await act(async () => {
@@ -418,7 +418,7 @@ describe('a first signature does not look like an approval', () => {
             }),
         });
 
-        render(<AgentProposalsClient tenantSlug="acme" initialProposals={[CREATE_ROW]} />);
+        render(<AgentProposalsClient tenantSlug="acme" initialProposals={[CREATE_ROW]} canOperate />);
 
         await act(async () => {
             screen.getByTestId(`proposal-approve-${CREATE_ROW.id}`).click();

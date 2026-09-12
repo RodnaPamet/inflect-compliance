@@ -34,6 +34,8 @@ export interface AgentSummary {
     modelRef: string | null;
     ownerUserId: string;
     vendorId: string | null;
+    /** Whether the tenant enforces registration — the stop comparison needs it. */
+    registrationEnforced: boolean;
 }
 
 /** A member who may own an agent — ACTIVE-only, as the usecase requires. */
@@ -168,6 +170,7 @@ export function AgentDetailClient({
                         canKill={perms.canKill}
                         refreshToken={refreshToken}
                         tenantSlug={tenantSlug}
+                        registrationEnforced={agent.registrationEnforced}
                     />
                 </>
             }

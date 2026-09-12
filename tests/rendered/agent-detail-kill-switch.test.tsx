@@ -229,7 +229,7 @@ function renderSurface(rows: KillSwitchRow[], canKill = true) {
     return render(
         <TenantProvider value={TENANT_CTX}>
             <AgentKillSwitchBanner agentId={AGENT_ID} canKill={canKill} />
-            <AgentKillSwitchAction agentId={AGENT_ID} canKill={canKill} tenantSlug="acme" />
+            <AgentKillSwitchAction agentId={AGENT_ID} canKill={canKill} tenantSlug="acme" registrationEnforced />
         </TenantProvider>,
     );
 }

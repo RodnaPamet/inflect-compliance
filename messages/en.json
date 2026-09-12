@@ -4061,6 +4061,36 @@
     "description": "Recent activity across your compliance program"
   },
   "admin": {
+    "permissionGated": {
+      "ariaLabel": "Unavailable: {reason}"
+    },
+    "stopMethods": {
+      "heading": "Three ways to stop this agent",
+      "suspendName": "Suspend",
+      "killName": "Kill switch",
+      "retireName": "Retire",
+      "reasonYes": "A reason is required, and the server refuses a blank one.",
+      "reasonNo": "No reason is recorded.",
+      "suspendInFlight": "Refuses the next request. A run already under way continues to the end.",
+      "suspendUndo": "Reversible: activate the agent again.",
+      "suspendNote": "Its credentials are refused at registration while it is suspended.",
+      "suspendNoteUnenforced": "This workspace does not enforce agent registration, so suspending does not refuse anything. It also WIDENS what the agent may reach: an inactive agent bypasses its tool allowlist, its autonomy cap and its policy card. Use the kill switch instead.",
+      "killInFlight": "Checked on every tool call, so a run already under way stops at its next tool call.",
+      "killUndo": "Reversible: lifting it is a separate deliberate act.",
+      "killNote": "Can stop this agent alone or every agent in the workspace. It does not change the agent's status, so the register still reads ACTIVE.",
+      "retireInFlight": "Refuses the next request. A run already under way continues to the end.",
+      "retireUndo": "PERMANENT. It cannot be undone and the agent cannot be brought back into service.",
+      "retireNote": "Refused while any proposal is still awaiting review."
+    },
+    "autonomy": {
+      "rung0": "Suggests to a human in session and reaches nothing itself. No tool sits at this rung, so an agent registered here can call nothing.",
+      "rung_read": "Reads workspace data on its own initiative.",
+      "rung_propose": "Drafts changes into the approval queue. Still human-gated: it puts words in front of an approver, it does not commit.",
+      "rung_orchestrate": "Chains steps unattended between checkpoints.",
+      "rungAboveTop": "No capability requires this rung today, so it grants nothing beyond orchestrate. Registering an agent here does not widen what it can reach.",
+      "registeredHere": "(registered here)",
+      "effectiveNote": "What an agent may actually do is the LOWEST of this rung, its credential's ceiling, and the cap its assessed risk tier allows. An unassessed agent is refused everything, whatever this says."
+    },
     "title": "Administration",
     "auditLog": "Audit Log",
     "policyTemplates": "Policy Templates",
@@ -4512,7 +4542,7 @@
         "reasonLine": "Reason: {reason}",
         "liftReasonLine": "Lift reason: {reason}",
         "scopeLegend": "What should this stop?",
-        "scopeTenantWarning": "This stops every registered agent in the workspace at the tool boundary, not just this one. It takes effect on the next invocation and does not interrupt work already running. It is reversible, and lifting it is a separate deliberate act.",
+        "scopeTenantWarning": "This stops every registered agent in the workspace, not just this one. It is checked at the tool boundary on every call, so a run already under way stops at its next tool call rather than continuing to the end. It is reversible, and lifting it is a separate deliberate act.",
         "scopeTypeToConfirm": "Type {slug} to confirm a workspace-wide stop"
       },
       "amend": {
@@ -4533,6 +4563,7 @@
         "failed": "Could not amend this agent."
       },
       "overview": {
+        "autonomyLabel": "Autonomy",
         "profileHeading": "Governing profile",
         "ownerLabel": "Accountable owner",
         "ownerEmpty": "Name not recorded",
@@ -4788,6 +4819,11 @@
         "aboveDeclaredScopeBody": "The card reaches {card} and this agent is registered as reaching {scope} — the register was narrowed after this version was written, and a stored version is never rewritten. Nothing clamps this one: the tool boundary reads the card's rung and never the register's, so the wider reach is live on every call. Narrow the card to {scope}, or raise the agent's registered data-access scope if the wider reach is intended. Every other change stays open meanwhile."
       },
       "tools": {
+        "widensRead": "{tool} can READ this workspace's data. It cannot propose or change anything.",
+        "widensPropose": "{tool} can PROPOSE changes. Proposals land in the approval queue for a human — granting this does not let the agent commit anything on its own.",
+        "widensBlocked": "The tool boundary is refusing this tool right now because its definition changed and no one has accepted the new one. Granting it will have no effect until that pin is approved.",
+        "revokeScheduled": "Tool access revoked for {toolName}",
+        "revokeUndo": "Undo",
         "heading": "Granted tools",
         "intro": "This agent can call only the tools listed here. Anything absent is refused at the MCP boundary, however widely its credential is scoped.",
         "grantCount": "{granted} of {total} granted",
@@ -4869,7 +4905,19 @@
           "copyDigest": "Digest",
           "explainDefinitionOpaque": "The definition digest differs, although neither the description nor the parameters changed. Nothing on this row explains the difference — treat it as a change until somebody can.",
           "descriptionUnchanged": "Description, unchanged",
-          "schemaUnchanged": "Schema, unchanged"
+          "schemaUnchanged": "Schema, unchanged",
+          "confirmTitle": "Accept the new definition of {tool}?",
+          "confirmTenantWide": "This pin is TENANT-WIDE. Accepting it clears the boundary's refusal of this tool for every agent in the workspace at once — not just this one.",
+          "confirmDescriptionOnly": "The DESCRIPTION changed and the schema did not. The description is instruction text delivered straight to the model, so this is the shape a tool-poisoning change takes: the structure looks identical and the behaviour is not. Read the text below before accepting.",
+          "confirmNoPriorText": "Only hashes are pinned, so the previously approved wording is not retained and cannot be shown. What follows is the definition you are accepting, not a comparison.",
+          "confirmAction": "Accept for every agent",
+          "halfName": "Tool name",
+          "halfDescription": "Description",
+          "halfSchema": "Parameter schema",
+          "halfChanged": "changed",
+          "halfUnchanged": "unchanged",
+          "liveDescriptionLabel": "Description you are accepting",
+          "liveSchemaLabel": "Parameter schema you are accepting"
         },
         "refusedTitle": "The register would not list these tools",
         "blockedHint": "The MCP boundary is refusing this tool for every agent in this workspace, because its definition no longer matches the one approved here. The grant stands; the call does not get through until the definition is reviewed again below.",
@@ -4960,6 +5008,7 @@
         "applicableSplitNone": "Every risk in the framework applies to this agent"
       },
       "breaker": {
+        "handClosed": "This breaker was closed by hand on {at} as {reason}. The verdict below is the one that tripped it: it predates the close and is not a judgement that the behaviour resolved.",
         "stateHeading": "Breaker state",
         "badge": {
           "unobserved": "Never observed",
@@ -7980,7 +8029,8 @@
       "approveFailed": "Failed to approve",
       "rejectFailed": "Failed to reject",
       "emptyTitle": "No pending proposals",
-      "emptyDesc": "When an agent proposes a risk, control, policy, or finding via the MCP server, it appears here for your review.",
+      "emptyDesc": "Nothing is waiting for review. When an agent drafts a risk, control, policy or finding, it lands here instead of being written straight into the register, and stays here until a person approves or rejects it. You can approve from this queue.",
+      "emptyDescReader": "Nothing is waiting for review. When an agent drafts a risk, control, policy or finding, it lands here instead of being written straight into the register, and stays here until a person approves or rejects it. Approving needs write access to this workspace, which you do not have.",
       "proposedAt": "proposed {date}",
       "keySuffix": " · key {key}",
       "reject": "Reject",
@@ -8036,7 +8086,10 @@
       "abort": "Abort",
       "awaitingApprovalPre": "Paused for review — approve its proposals in the ",
       "proposalsLink": "agent proposals",
-      "awaitingApprovalPost": " queue, then Resume."
+      "awaitingApprovalPost": " queue, then Resume.",
+      "needsWrite": "You have read access to this workspace but not write access, so this action is not yours to take. An administrator can grant it.",
+      "abortConfirmTitle": "Abort this run?",
+      "abortConfirmBody": "This stops the {workflow} run mid-execution. Work already completed is not rolled back, and the run cannot be resumed afterwards — a new run starts from the beginning."
     },
     "quarantine": {
       "crumb": "Quarantine",

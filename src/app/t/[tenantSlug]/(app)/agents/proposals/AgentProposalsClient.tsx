@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
+import { PermissionGated } from '../PermissionGated';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
@@ -163,9 +164,17 @@ function guardRuleText(
 export function AgentProposalsClient({
     tenantSlug,
     initialProposals,
+    canOperate,
 }: {
     tenantSlug: string;
     initialProposals: ProposalRow[];
+    /**
+     * The role-tier `canWrite` (#2456). This page is gated on `admin.view`;
+     * `approveAgentProposal` and `rejectAgentProposal` both open with
+     * `assertCanWrite(ctx)`. Approve and Reject rendered enabled for readers
+     * and returned 403 on press.
+     */
+    canOperate: boolean;
 }) {
     const t = useTranslations('agents');
     const apiUrl = useTenantApiUrl();
@@ -311,7 +320,18 @@ export function AgentProposalsClient({
             {proposals.length === 0 ? (
                 <EmptyState
                     title={t('proposals.emptyTitle')}
-                    description={t('proposals.emptyDesc')}
+                    // WHO CAN APPROVE, not just what lands here (#2458). An
+                    // empty queue is the one moment an operator reads this
+                    // screen, and "wait for something to appear" is the least
+                    // useful thing it could say. The copy varies on the same
+                    // role-tier term the buttons do, so a reader is told plainly
+                    // that approving is not theirs rather than discovering it
+                    // when the first proposal arrives and the button is greyed.
+                    description={
+                        canOperate
+                            ? t('proposals.emptyDesc')
+                            : t('proposals.emptyDescReader')
+                    }
                 />
             ) : (
                 <ul className="space-y-default">
@@ -365,15 +385,17 @@ export function AgentProposalsClient({
                                   it is rendered by the diff panel below, in the
                                   branch that has already rendered a diff body.
                                 */}
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    data-testid={`proposal-reject-${p.id}`}
-                                    disabled={busy === p.id}
-                                    onClick={() => act(p, 'reject')}
-                                >
-                                    {t('proposals.reject')}
-                                </Button>
+                                <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        data-testid={`proposal-reject-${p.id}`}
+                                        disabled={!canOperate || busy === p.id}
+                                        onClick={() => act(p, 'reject')}
+                                    >
+                                        {t('proposals.reject')}
+                                    </Button>
+                                </PermissionGated>
                             </div>
 
                             {p.targetEntityId && (
@@ -438,15 +460,17 @@ export function AgentProposalsClient({
                                 proposalId={p.id}
                                 diff={p.diff}
                                 approveAction={
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        data-testid={`proposal-approve-${p.id}`}
-                                        disabled={busy === p.id}
-                                        onClick={() => onApproveClick(p)}
-                                    >
-                                        {t('proposals.approve')}
-                                    </Button>
+                                    <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            data-testid={`proposal-approve-${p.id}`}
+                                            disabled={!canOperate || busy === p.id}
+                                            onClick={() => onApproveClick(p)}
+                                        >
+                                            {t('proposals.approve')}
+                                        </Button>
+                                    </PermissionGated>
                                 }
                             />
                         </li>

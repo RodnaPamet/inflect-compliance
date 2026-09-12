@@ -46,6 +46,26 @@ export interface ToolManifestState {
     /** The hash of the definition this build carries. */
     liveManifestHash: string;
     liveDescriptionHash: string;
+    /**
+     * THE LIVE TEXT, so an approval can be read rather than guessed (#2452).
+     *
+     * Only HASHES are pinned — `McpToolManifestPin` stores `descriptionHash`,
+     * `schemaHash`, `manifestHash` and no text at all. So the previously
+     * approved wording is NOT RECOVERABLE, and a true old-vs-new textual diff
+     * cannot be rendered from stored state at any cost. The screen says so
+     * rather than implying a comparison it cannot make.
+     *
+     * What IS renderable, and is the thing that matters: WHICH of the three
+     * fields moved (from the hashes) plus the live text the operator is being
+     * asked to accept. This module's own header explains why that is enough to
+     * be dangerous — "the description is instruction text delivered straight to
+     * the model", so a description-only change with an identical name and
+     * schema is the poisoning case, and it is precisely the case a reader
+     * skimming hashes would wave through.
+     */
+    liveDescription: string;
+    /** The live input schema, canonical JSON, for the same reason. */
+    liveSchema: string;
     liveSchemaHash: string;
     /** The hash on file, or `null` when nothing is pinned. */
     approvedManifestHash: string | null;
@@ -97,6 +117,8 @@ export async function listToolManifests(ctx: RequestContext): Promise<ToolManife
             status: verdict.status,
             liveManifestHash: verdict.live.manifestHash,
             liveDescriptionHash: verdict.live.descriptionHash,
+            liveDescription: def.description,
+            liveSchema: JSON.stringify(def.inputSchema, null, 2),
             liveSchemaHash: verdict.live.schemaHash,
             approvedManifestHash: pin?.manifestHash ?? null,
             approvedDescriptionHash: pin?.descriptionHash ?? null,

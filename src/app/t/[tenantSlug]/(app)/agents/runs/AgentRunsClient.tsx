@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { PermissionGated } from '../PermissionGated';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -48,16 +50,34 @@ export function AgentRunsClient({
     tenantSlug,
     initialRuns,
     workflows,
+    canOperate,
 }: {
     tenantSlug: string;
     initialRuns: RunRow[];
     workflows: WorkflowOption[];
+    /**
+     * The role-tier `canWrite` (#2456), NOT a permissions-blob key.
+     *
+     * This page is gated on `admin.view`, but `startWorkflowRun`,
+     * `resumeWorkflowRun` and `abortWorkflowRun` all open with
+     * `assertCanWrite(ctx)` — so a READER or AUDITOR holding `admin.view`
+     * reaches this page and is refused on press. Start, Resume and Abort
+     * rendered enabled for exactly those people, and an operator discovered
+     * which controls were theirs by trying them.
+     *
+     * DISABLED, never hidden: the detail tabs already settled this — "a greyed
+     * tab tells you the surface exists and is not yours; a missing one would
+     * tell you the product does not have it."
+     */
+    canOperate: boolean;
 }) {
     const t = useTranslations('agents');
     const apiUrl = useTenantApiUrl();
     const tenantHref = useTenantHref();
     const [runs, setRuns] = useState(initialRuns);
     const [busy, setBusy] = useState<string | null>(null);
+    /** The run awaiting an abort confirmation — aborting stops a LIVE execution. */
+    const [confirmAbort, setConfirmAbort] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     async function refresh() {
@@ -101,8 +121,25 @@ export function AgentRunsClient({
         }
     }
 
+    const abortTarget = runs.find((r) => r.id === confirmAbort) ?? null;
+
     return (
         <div className="space-y-section animate-fadeIn">
+            <ConfirmDialog
+                showModal={confirmAbort !== null}
+                setShowModal={(open) => { if (!open) setConfirmAbort(null); }}
+                tone="danger"
+                title={t('runs.abortConfirmTitle')}
+                description={t('runs.abortConfirmBody', {
+                    workflow: abortTarget?.workflowKey ?? '',
+                })}
+                confirmLabel={t('runs.abort')}
+                onConfirm={async () => {
+                    if (confirmAbort) await act(confirmAbort, 'abort');
+                    setConfirmAbort(null);
+                }}
+                onCancel={() => setConfirmAbort(null)}
+            />
             <PageHeader
                 back={{ smart: true }}
                 breadcrumbs={[
@@ -127,16 +164,17 @@ export function AgentRunsClient({
                     <p className="text-sm font-medium text-content-emphasis">{t('runs.startWorkflow')}</p>
                     <div className="flex flex-wrap gap-tight">
                         {workflows.map((w) => (
+                            <PermissionGated key={w.key} allowed={canOperate} reason={t('runs.needsWrite')}>
                             <Button
-                                key={w.key}
                                 variant="secondary"
                                 size="sm"
-                                disabled={busy === 'start'}
+                                disabled={!canOperate || busy === 'start'}
                                 onClick={() => start(w.key)}
                                 title={w.description}
                             >
                                 {w.name}
                             </Button>
+                            </PermissionGated>
                         ))}
                     </div>
                 </div>
@@ -169,14 +207,32 @@ export function AgentRunsClient({
                                 </div>
                                 <div className="flex items-center gap-tight">
                                     {r.status === 'AWAITING_APPROVAL' && (
-                                        <Button variant="secondary" size="sm" disabled={busy === r.id} onClick={() => act(r.id, 'resume')}>
-                                            {t('runs.resume')}
-                                        </Button>
+                                        <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                disabled={!canOperate || busy === r.id}
+                                                onClick={() => act(r.id, 'resume')}
+                                            >
+                                                {t('runs.resume')}
+                                            </Button>
+                                        </PermissionGated>
                                     )}
                                     {['RUNNING', 'AWAITING_APPROVAL', 'PAUSED'].includes(r.status) && (
-                                        <Button variant="ghost" size="sm" disabled={busy === r.id} onClick={() => act(r.id, 'abort')}>
-                                            {t('runs.abort')}
-                                        </Button>
+                                        <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                disabled={!canOperate || busy === r.id}
+                                                data-testid={`agent-run-abort-${r.id}`}
+                                                // Aborting stops a LIVE execution
+                                                // mid-flight. It committed on one
+                                                // click (#2454).
+                                                onClick={() => setConfirmAbort(r.id)}
+                                            >
+                                                {t('runs.abort')}
+                                            </Button>
+                                        </PermissionGated>
                                     )}
                                 </div>
                             </div>
