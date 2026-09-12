@@ -9,9 +9,18 @@
  *   - `limit` is included only when entry.options.limit is truthy.
  *   - optional logger is called per schedule when provided, and the
  *     no-logger path also works.
+ *
+ * The fake also models the scheduler SET (get/remove), because
+ * `registerSchedules` no longer only upserts — it reconciles (#2497). The
+ * reconciliation's own safety behaviour is guarded in
+ * `tests/guards/scheduler-orphan-reconciliation.test.ts`; what this file
+ * checks is that the upsert contract above is unchanged by it.
  */
 import type { Queue } from 'bullmq';
-import { registerSchedules } from '@/app-layer/jobs/register-schedules';
+import {
+    registerSchedules,
+    reconcileRetiredSchedulers,
+} from '@/app-layer/jobs/register-schedules';
 import { SCHEDULED_JOBS } from '@/app-layer/jobs/schedules';
 
 interface CapturedCall {
@@ -20,8 +29,15 @@ interface CapturedCall {
     template: { name: string; data: unknown };
 }
 
-function makeFakeQueue() {
+/**
+ * `preloaded` seeds scheduler ids that already exist in "Redis" before the
+ * run — the only way to give the reconciliation a NON-EMPTY population, since
+ * an empty scheduler set makes every sweep assertion vacuously true.
+ */
+function makeFakeQueue(preloaded: readonly string[] = []) {
     const calls: CapturedCall[] = [];
+    const removed: string[] = [];
+    const schedulers = new Set<string>(preloaded);
     const queue = {
         upsertJobScheduler: async (
             name: string,
@@ -29,9 +45,21 @@ function makeFakeQueue() {
             template: CapturedCall['template'],
         ) => {
             calls.push({ name, repeat, template });
+            schedulers.add(name);
+        },
+        // BullMQ returns `key` (the scheduler id) alongside the template
+        // `name`; the two are equal for every job this app registers, and the
+        // reconciliation reads `key` because that is what removeJobScheduler
+        // takes. The fake keeps them equal so a code path reading the wrong
+        // field is caught by the guard file, not silently by this one.
+        getJobSchedulers: async () =>
+            [...schedulers].map((key) => ({ key, name: key })),
+        removeJobScheduler: async (id: string) => {
+            removed.push(id);
+            return schedulers.delete(id);
         },
     } as unknown as Queue;
-    return { calls, queue };
+    return { calls, removed, schedulers, queue };
 }
 
 describe('registerSchedules', () => {
@@ -80,10 +108,76 @@ describe('registerSchedules', () => {
         const { queue } = makeFakeQueue();
         const info = jest.fn();
         await registerSchedules(queue, { info });
+        // Exactly the registrations: nothing is retired on a queue that holds
+        // only the current schedule set, so the reconciliation logs nothing.
         expect(info).toHaveBeenCalledTimes(SCHEDULED_JOBS.length);
         // Each log call carries jobName + pattern.
         expect(info.mock.calls[0][0]).toHaveProperty('jobName');
         expect(info.mock.calls[0][1]).toBe('repeatable registered');
+    });
+
+    it('leaves every current schedule in place while reconciling', async () => {
+        // Positive control for the assertion below: the queue starts with a
+        // removable orphan, so "nothing was removed" cannot pass vacuously.
+        const { queue, removed, schedulers } = makeFakeQueue(['deadline-monitor']);
+        await registerSchedules(queue);
+        expect(removed).toEqual(['deadline-monitor']);
+        for (const entry of SCHEDULED_JOBS) {
+            expect(schedulers.has(entry.name)).toBe(true);
+        }
+    });
+
+    it('survives a logger with no warn/error channel', async () => {
+        // `ScheduleRegLogger.warn`/`.error` are optional; a caller passing only
+        // `info` (as the suite above does) must not crash the sweep.
+        const { queue } = makeFakeQueue(['someone-elses-scheduler']);
+        const info = jest.fn();
+        await expect(registerSchedules(queue, { info })).resolves.toBe(
+            SCHEDULED_JOBS.length,
+        );
+    });
+});
+
+describe('reconcileRetiredSchedulers — failure direction', () => {
+    it('reports and returns 0 when the scheduler set cannot be enumerated', async () => {
+        // getJobSchedulers throws on a legacy BullMQ repeatable key. The sweep
+        // must fail OPEN (orphans survive) rather than propagate, because the
+        // caller would otherwise report a registration failure that did not
+        // happen.
+        const error = jest.fn();
+        const queue = {
+            getJobSchedulers: async () => {
+                throw new Error('legacy repeatable key');
+            },
+        } as unknown as Queue;
+        await expect(
+            reconcileRetiredSchedulers(queue, { info: jest.fn(), error }),
+        ).resolves.toBe(0);
+        expect(error).toHaveBeenCalledTimes(1);
+        expect(error.mock.calls[0][1]).toContain('left in place');
+    });
+
+    it('keeps sweeping after one removal fails, and does not count it', async () => {
+        const error = jest.fn();
+        // Two removable orphans; the first throws. A `removed` count of 1 with
+        // both attempted is the proof the loop did not abort on the first.
+        const attempted: string[] = [];
+        const queue = {
+            getJobSchedulers: async () => [
+                { key: 'deadline-monitor', name: 'deadline-monitor' },
+                { key: 'vendor-renewal-check', name: 'vendor-renewal-check' },
+            ],
+            removeJobScheduler: async (id: string) => {
+                attempted.push(id);
+                if (id === 'deadline-monitor') throw new Error('redis down');
+                return true;
+            },
+        } as unknown as Queue;
+        await expect(
+            reconcileRetiredSchedulers(queue, { info: jest.fn(), error }),
+        ).resolves.toBe(1);
+        expect(attempted).toEqual(['deadline-monitor', 'vendor-renewal-check']);
+        expect(error).toHaveBeenCalledTimes(1);
     });
 });
 
