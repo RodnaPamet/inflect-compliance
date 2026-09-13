@@ -39,7 +39,7 @@ model Finding {
   updatedAt             DateTime          @updatedAt
   deletedAt             DateTime?
   deletedByUserId       String?
-  audit                 Audit?            @relation(fields: [auditId], references: [id])
+  audit                 Audit?            @relation(fields: [auditId, tenantId], references: [id, tenantId])
   tenant                Tenant            @relation(fields: [tenantId], references: [id])
   assignee              User?             @relation("FindingAssignee", fields: [assigneeUserId], references: [id])
   control               Control?          @relation("FindingControl", fields: [controlId], references: [id], onDelete: SetNull)
