@@ -67,6 +67,7 @@ const AGENTIC_ROUTES: readonly string[] = [
     '/agents/receipts',
     '/agents/quarantine',
     '/agents/review-quality',
+    '/agents/reports',
 ] as const;
 
 /**
@@ -209,6 +210,7 @@ describe('every agentic route under (app)/ has at least one inbound link', () =>
             '/agents/receipts',
             '/agents/quarantine',
             '/agents/review-quality',
+            '/agents/reports',
         ]) {
             expect(inboundLinkers(route)).toContain(menu);
         }

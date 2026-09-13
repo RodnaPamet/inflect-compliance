@@ -154,9 +154,20 @@ describe('the gears stay OUTSIDE the menu, and one rung smaller', () => {
         renderRegister();
         await user.click(document.getElementById('agents-views-menu') as HTMLElement);
         const rows = screen.queryAllByRole('menuitem');
-        // Five agentic destinations and nothing else. The gear folded in would
-        // make six and would read as "another way to look at this data".
-        expect(rows.length).toBe(5);
+        // AGENTIC DESTINATIONS AND NOTHING ELSE. The gear folded in would read
+        // as "another way to look at this data", which it is not.
+        //
+        // The exact count used to be pinned at five and is deliberately not any
+        // more: this test is about WHAT is in the menu, not how much, and the
+        // loop below already makes that claim for every item. A number here
+        // only records how many destinations existed the day it was written —
+        // AGENTIC UI 4/4 added Reports and turned a true statement about
+        // composition into a false one about arithmetic. Same reasoning as the
+        // count removed from `agents-views-navigation.spec.ts`.
+        //
+        // The floor stays, because the loop is vacuous on an empty menu: a
+        // popover that rendered no items at all would satisfy it.
+        expect(rows.length).toBeGreaterThanOrEqual(5);
         for (const row of rows) {
             expect(row.id.startsWith('agents-view-')).toBe(true);
         }

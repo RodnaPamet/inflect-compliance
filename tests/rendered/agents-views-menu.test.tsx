@@ -3,8 +3,8 @@
  *
  * Five claims:
  *
- *   1. FIVE ENTRIES, IN TWO LABELLED GROUPS. Pinned as exact ordered lists, not
- *      as counts: `>= 5` is satisfied by five of the wrong things, and a group
+ *   1. THE ENTRIES, IN TWO LABELLED GROUPS. Pinned as exact ordered lists, not
+ *      as counts: `>= n` is satisfied by n of the wrong things, and a group
  *      heading that went missing would leave the rows reading as one flat list
  *      while every count still held.
  *
@@ -77,12 +77,13 @@ const EN = require('../../messages/en.json') as {
 };
 const VIEWS = EN.agents.views;
 
-/** The five entry ids, in the order the menu declares them. */
+/** The entry ids, in the order the menu declares them. */
 const ENTRY_IDS = [
     'agents-view-proposals',
     'agents-view-runs',
     'agents-view-receipts',
     'agents-view-quarantine',
+    'agents-view-reports',
     'agents-view-review-quality',
 ] as const;
 
@@ -112,11 +113,13 @@ async function openMenu(
 /** The rendered menu-item rows, in DOM order. */
 const items = () => screen.queryAllByRole('menuitem');
 
-describe('five entries in two labelled groups', () => {
-    it('renders exactly the five, in order', async () => {
+describe('six entries in two labelled groups', () => {
+    it('renders exactly those, in order', async () => {
         await openMenu();
-        // The ids, as an exact ordered list — a count would pass for five rows
-        // pointing anywhere.
+        // The ids, as an exact ordered list — a count would pass for six rows
+        // pointing anywhere. Reports joined the ASSURANCE group in 4/4: it is
+        // the assessor pack, which is an assurance question rather than an
+        // operate one.
         expect(items().map((el) => el.id)).toEqual([...ENTRY_IDS]);
     });
 
@@ -127,6 +130,7 @@ describe('five entries in two labelled groups', () => {
             '/t/acme/agents/runs',
             '/t/acme/agents/receipts',
             '/t/acme/agents/quarantine',
+            '/t/acme/agents/reports',
             '/t/acme/agents/review-quality',
         ]);
     });
@@ -144,6 +148,7 @@ describe('five entries in two labelled groups', () => {
             VIEWS.runs,
             VIEWS.receipts,
             VIEWS.quarantine,
+            VIEWS.reports,
             VIEWS.reviewQuality,
         ]);
     });
@@ -170,7 +175,7 @@ describe('`selected` marks the current route', () => {
         expect(items().filter((el) => el.className.includes('bg-bg-subtle'))).toEqual([]);
         // Paired positive over the same render: the menu is populated, so the
         // empty selection above is a real answer rather than an empty menu.
-        expect(items().length).toBe(5);
+        expect(items().length).toBe(ENTRY_IDS.length);
     });
 });
 
@@ -180,11 +185,12 @@ describe('a permission-absent entry is NOT RENDERED', () => {
         expect(items().map((el) => el.id)).toEqual([
             'agents-view-receipts',
             'agents-view-quarantine',
+            'agents-view-reports',
             'agents-view-review-quality',
         ]);
     });
 
-    it('drops the three assurance entries without the register key', async () => {
+    it('drops the assurance entries without the register key', async () => {
         await openMenu({ canInvestigate: false });
         expect(items().map((el) => el.id)).toEqual([
             'agents-view-proposals',
