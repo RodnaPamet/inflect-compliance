@@ -22,6 +22,7 @@ import {
     getPolicyAttestation,
 } from '@/app-layer/usecases/policy-attestation';
 import { coverageSummary } from '@/app-layer/usecases/traceability';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -75,9 +76,9 @@ describeFn('policy attestation loop (integration)', () => {
         // PolicyAcknowledgement + PolicyAcknowledgementAssignment cascade on version delete.
         await globalPrisma.policyVersion.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.policy.deleteMany({ where: { tenantId: TENANT_ID } });
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT_ID);
         });
         await globalPrisma.user.deleteMany({ where: { id: { in: [adminUserId, readerUserId] } } });

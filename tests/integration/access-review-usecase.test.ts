@@ -38,6 +38,7 @@ import {
     submitDecision,
     getAccessReview,
 } from '@/app-layer/usecases/access-review';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -117,15 +118,7 @@ async function teardownFixtures() {
     // Tenant DEK backfill writes audit rows on first context use;
     // strip them before the FK target goes (immutability trigger
     // bypassed under postgres role + session_replication_role=replica).
-    await globalPrisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(
-            `SET LOCAL session_replication_role = 'replica'`,
-        );
-        await tx.$executeRawUnsafe(
-            `DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`,
-            tenantIds,
-        );
-    });
+    await deleteAuditRowsForTenants(globalPrisma, tenantIds);
     const userIds = [
         admin?.userId,
         reviewer?.userId,

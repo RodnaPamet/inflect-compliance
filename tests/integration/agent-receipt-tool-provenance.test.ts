@@ -59,6 +59,7 @@ import { hashToolManifest } from '@/lib/mcp/tool-manifest';
 import { toolDefinitionByName } from '@/lib/mcp/tool-definitions';
 import { verifyToolManifestForTenant } from '@/lib/agentic/tool-manifest-store';
 import { getReceiptForExport, ingestReceipt } from '@/app-layer/usecases/agent-action-receipt';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(60_000);
@@ -111,9 +112,9 @@ async function clearOwnRows(): Promise<void> {
     // The immutable-audit trigger and the last-OWNER guard both fire on an
     // ordinary DELETE and would take the teardown — and therefore the whole
     // suite — down with them.
+    await deleteAuditRowsForTenants(prisma, TENANT);
     await prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT);
         await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT);
     });
     await prisma.user.deleteMany({ where: { emailHash: hashForLookup(`owner@${TENANT}.test`) } });

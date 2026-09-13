@@ -37,6 +37,7 @@ import {
     bulkAssignTestPlan,
 } from '@/app-layer/usecases/control';
 import { setTaskStatus } from '@/app-layer/usecases/task';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -93,9 +94,9 @@ describeFn('control-test usecase — branch coverage (integration)', () => {
         await globalPrisma.task.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.evidence.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.control.deleteMany({ where: { tenantId: TENANT_ID } });
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT_ID);
         });
         await globalPrisma.user.deleteMany({ where: { id: { in: [ownerUserId, readerUserId] } } });

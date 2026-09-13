@@ -170,6 +170,7 @@ import RunsPage from '@/app/t/[tenantSlug]/(app)/agents/runs/page';
 import ReportsPage from '@/app/t/[tenantSlug]/(app)/agents/reports/page';
 import { listReceipts } from '@/app-layer/usecases/agent-action-receipt';
 import { listAgentProposals } from '@/app-layer/usecases/agent-proposals';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma: PrismaClient = prismaTestClient();
 
@@ -218,12 +219,9 @@ async function clearOwnRows(): Promise<void> {
     await prisma.agentProposal.deleteMany({ where: t });
     await prisma.registeredAgent.deleteMany({ where: t });
     await prisma.aiSystem.deleteMany({ where: t });
+    await deleteAuditRowsForTenants(prisma, [T1, T2]);
     await prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(
-            `DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`,
-            [T1, T2],
-        );
         await tx.$executeRawUnsafe(
             `DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`,
             [T1, T2],

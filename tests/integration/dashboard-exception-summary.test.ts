@@ -18,6 +18,7 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { DashboardRepository } from '@/app-layer/repositories/DashboardRepository';
 import { runInTenantContext } from '@/lib/db-context';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -64,15 +65,7 @@ async function teardown() {
     await globalPrisma.tenantMembership.deleteMany({
         where: { tenantId: TENANT_ID },
     });
-    await globalPrisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(
-            `SET LOCAL session_replication_role = 'replica'`,
-        );
-        await tx.$executeRawUnsafe(
-            `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-            TENANT_ID,
-        );
-    });
+    await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
     if (admin) {
         await globalPrisma.user.delete({ where: { id: admin.userId } });
     }

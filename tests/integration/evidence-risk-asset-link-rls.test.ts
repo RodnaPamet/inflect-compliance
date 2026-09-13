@@ -25,6 +25,7 @@ import { withTenantDb } from '@/lib/db-context';
 import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -118,10 +119,7 @@ async function teardown() {
     // AuditLog is append-only (IMMUTABLE_AUDIT_LOG trigger); TenantMembership
     // carries the LAST_OWNER_GUARD — drop under replica role so the sweep
     // isn't blocked by those triggers.
-    await globalPrisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`, tenantIds);
-    });
+    await deleteAuditRowsForTenants(globalPrisma, tenantIds);
     if (USER_A_ID) await globalPrisma.user.delete({ where: { id: USER_A_ID } });
     if (USER_B_ID) await globalPrisma.user.delete({ where: { id: USER_B_ID } });
     await globalPrisma.tenant.deleteMany({ where: { id: { in: tenantIds } } });

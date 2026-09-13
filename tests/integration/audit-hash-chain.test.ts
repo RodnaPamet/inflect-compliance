@@ -1,11 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- test
- * mocks, fixtures, and adapter shims that mirror runtime contracts
- * (Prisma extensions, NextRequest mocks, JSON-loaded fixtures,
- * spy harnesses). Per-line typing has poor cost/benefit ratio in
- * test files; the file-level disable is the codebase's standard
- * pattern for these surfaces (see also
- * tests/guards/helm-chart-foundation.test.ts and
- * tests/integration/audit-middleware.test.ts). */
 /**
  * Audit Hash Chain — Integration Tests
  *
@@ -21,6 +13,12 @@ import { prismaTestClient } from '../helpers/db';
 import { PrismaClient } from '@prisma/client';
 import { appendAuditEntry, verifyAuditChain } from '../../src/lib/audit/audit-writer';
 
+import {
+    deleteAuditRowsByActionLike,
+    deleteAuditRowsForTenants,
+    tamperAuditRow,
+} from '../helpers/audit-cleanup';
+
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
 // Unique prefix to identify test entries and clean up
@@ -33,14 +31,6 @@ function testAction(name: string): string {
 describeFn('Audit Hash Chain — Integration', () => {
     let prisma: PrismaClient;
     let tenantId: string;
-
-    /** Run a callback with the immutability trigger temporarily disabled, then re-enable. */
-    async function withTriggerDisabled(fn: (tx: PrismaClient) => Promise<void>) {
-        await prisma.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await fn(tx as any);
-        });
-    }
 
     beforeAll(async () => {
         prisma = prismaTestClient();
@@ -55,27 +45,14 @@ describeFn('Audit Hash Chain — Integration', () => {
         tenantId = tenant.id;
 
         // Clean up prior entries — disable trigger momentarily
-        await withTriggerDisabled(async (tx) => {
-            await tx.$executeRawUnsafe(
-                `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-                tenantId,
-            );
-        });
+        await deleteAuditRowsForTenants(prisma, tenantId);
     });
 
     afterAll(async () => {
         // Clean up test entries with trigger temporarily disabled
         try {
-            await withTriggerDisabled(async (tx) => {
-                await tx.$executeRawUnsafe(
-                    `DELETE FROM "AuditLog" WHERE "action" LIKE $1`,
-                    `${TEST_PREFIX}%`,
-                );
-                await tx.$executeRawUnsafe(
-                    `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-                    tenantId,
-                );
-            });
+            await deleteAuditRowsByActionLike(prisma, `${TEST_PREFIX}%`);
+            await deleteAuditRowsForTenants(prisma, tenantId);
         } catch { /* best effort */ }
         await prisma.$disconnect();
     });
@@ -161,13 +138,7 @@ describeFn('Audit Hash Chain — Integration', () => {
             }, prisma);
 
             // Tamper with e1's action field (trigger must be off for UPDATE)
-            await withTriggerDisabled(async (tx) => {
-                await tx.$executeRawUnsafe(
-                    `UPDATE "AuditLog" SET "action" = $1 WHERE "id" = $2`,
-                    `${tamperPrefix}_TAMPERED`,
-                    e1.id,
-                );
-            });
+            await tamperAuditRow(prisma, e1.id, 'action', `${tamperPrefix}_TAMPERED`);
 
             // The stored entryHash was computed with original action.
             // Recomputing from DB row would produce a different hash.
@@ -180,12 +151,7 @@ describeFn('Audit Hash Chain — Integration', () => {
             expect(row[0].entryHash).toBe(e1.entryHash);
 
             // Clean up
-            await withTriggerDisabled(async (tx) => {
-                await tx.$executeRawUnsafe(
-                    `DELETE FROM "AuditLog" WHERE "action" LIKE $1`,
-                    `${tamperPrefix}%`,
-                );
-            });
+            await deleteAuditRowsByActionLike(prisma, `${tamperPrefix}%`);
         });
     });
     describe('per-tenant isolation', () => {
@@ -205,16 +171,7 @@ describeFn('Audit Hash Chain — Integration', () => {
             });
 
             // Clear both tenants' audit logs
-            await withTriggerDisabled(async (tx) => {
-                await tx.$executeRawUnsafe(
-                    `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-                    isoTenant1.id,
-                );
-                await tx.$executeRawUnsafe(
-                    `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-                    isoTenant2.id,
-                );
-            });
+            await deleteAuditRowsForTenants(prisma, [isoTenant1.id, isoTenant2.id]);
 
             // Insert into isoTenant1
             const t1e1 = await appendAuditEntry({
@@ -253,12 +210,7 @@ describeFn('Audit Hash Chain — Integration', () => {
             expect(t1e2.previousHash).toBe(t1e1.entryHash);
 
             // Clean up
-            await withTriggerDisabled(async (tx) => {
-                await tx.$executeRawUnsafe(
-                    `DELETE FROM "AuditLog" WHERE "action" LIKE $1`,
-                    `${isoPrefix}%`,
-                );
-            });
+            await deleteAuditRowsByActionLike(prisma, `${isoPrefix}%`);
         });
     });
 
@@ -289,12 +241,7 @@ describeFn('Audit Hash Chain — Integration', () => {
             expect(verification.valid).toBe(true);
 
             // Clean up
-            await withTriggerDisabled(async (tx) => {
-                await tx.$executeRawUnsafe(
-                    `DELETE FROM "AuditLog" WHERE "action" LIKE $1`,
-                    `${concPrefix}%`,
-                );
-            });
+            await deleteAuditRowsByActionLike(prisma, `${concPrefix}%`);
         });
     });
 
@@ -331,12 +278,7 @@ describeFn('Audit Hash Chain — Integration', () => {
             expect(row[0].entryHash).toBe(r1.entryHash);
 
             // Clean up
-            await withTriggerDisabled(async (tx) => {
-                await tx.$executeRawUnsafe(
-                    `DELETE FROM "AuditLog" WHERE "action" LIKE $1`,
-                    `${structPrefix}%`,
-                );
-            });
+            await deleteAuditRowsByActionLike(prisma, `${structPrefix}%`);
         });
     });
 });

@@ -61,6 +61,7 @@ import { grantAgentTool } from '@/app-layer/usecases/agent-tool-exposure';
 import { completeAgentRiskAssessment } from '@/app-layer/usecases/agent-risk-assessment';
 import { MAX_AUTONOMY_BY_TIER } from '@/lib/agentic/agent-risk-scoring';
 import fixture from '../../prisma/fixtures/agent-risk-assessment.json';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -242,9 +243,9 @@ describeFn('a widening re-scores the agent', () => {
     });
 
     afterAll(async () => {
+        await deleteAuditRowsForTenants(prisma, TENANT);
         await prisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT);
             await tx.$executeRawUnsafe(
                 `DELETE FROM "TenantMembership" WHERE "tenantId" = $1`,
                 TENANT,

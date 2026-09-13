@@ -8,8 +8,8 @@
  *
  * Cleanup order per tenant (FK-respecting, with the AuditLog
  * immutability trigger bypassed via
- * `SET LOCAL session_replication_role = 'replica'` — same pattern
- * as `tests/integration/audit-immutability.test.ts`):
+ * `SET LOCAL session_replication_role = 'replica'` — through
+ * `tests/helpers/audit-cleanup.ts`, the one module allowed to set it):
  *
  *   1. AuditLog rows where tenantId = X
  *   2. Tenant-scoped child tables (the most common ones — see
@@ -43,6 +43,7 @@ import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const TRACKER_PATH = resolvePath(__dirname, '.tenant-tracker.jsonl');
 
@@ -70,8 +71,11 @@ const TENANT_CHILD_TABLES: readonly string[] = [
     "TenantCalendarConsent",
     "UserCalendarEventMapping",
     "UserCalendarConnection",
-    // Audit + identity
-    'AuditLog',
+    // NOTE: 'AuditLog' is deliberately ABSENT. Interpolating a table name
+    // into `DELETE FROM "${table}"` is the spelling the audit-immutability
+    // guard's textual scan cannot see, and the immutability trigger refuses
+    // the statement anyway. `deleteTenant` clears it through the audited
+    // helper before this loop runs.
     // Epic G-4 — children must come before TenantMembership (FK target).
     'AccessReviewDecision',
     'AccessReview',
@@ -155,6 +159,13 @@ async function deleteTenant(
     entry: TenantTrackerEntry,
 ): Promise<{ ok: boolean; reason?: string }> {
     try {
+        // Audit rows first, through the one helper allowed to disable the
+        // immutability trigger. Best-effort for the same reason the
+        // savepoints below are: on a non-superuser role the bypass is
+        // refused, and the file-level docstring accepts orphan rows.
+        try {
+            await deleteAuditRowsForTenants(prisma, entry.tenantId);
+        } catch { /* orphan audit rows are acceptable — see docstring */ }
         await prisma.$transaction(async (tx) => {
             // SAVEPOINT-per-statement, otherwise Postgres poisons the
             // whole transaction on the first failed statement and every
@@ -175,10 +186,8 @@ async function deleteTenant(
             };
             // The SET LOCAL needs superuser; on a non-superuser role it
             // fails and would poison the transaction without the savepoint.
-            // If suppressed, the AuditLog immutability trigger still fires
-            // and the AuditLog DELETE rolls back to its savepoint — the
-            // remaining deletes still succeed, leaving AuditLog rows as
-            // orphans (acceptable per the file-level docstring).
+            // It still matters for the last-OWNER guard on TenantMembership;
+            // AuditLog is already gone by here (see above).
             await tryStmt(
                 `SET LOCAL session_replication_role = 'replica'`,
             );

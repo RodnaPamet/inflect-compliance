@@ -21,6 +21,7 @@ import {
     unlinkEvidence,
     getIncident,
 } from '@/app-layer/usecases/incident';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -56,9 +57,9 @@ describeFn('incident containment + forensic linking (integration)', () => {
         await globalPrisma.incidentEvidence.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.evidence.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.incident.deleteMany({ where: { tenantId: TENANT_ID } });
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT_ID);
         });
         // Guarded: an undefined filter value is DROPPED, not matched —

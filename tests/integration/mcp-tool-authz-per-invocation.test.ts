@@ -44,6 +44,7 @@ import { generateApiKey } from '@/lib/auth/api-key-auth';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { appendAuditEntry } from '@/lib/audit';
 import { POST } from '@/app/api/mcp/route';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -308,10 +309,10 @@ describeFn('an agent cannot exceed the human it speaks for', () => {
             // AuditLog is immutable and its trigger fires on an ordinary
             // DELETE; TenantMembership has the last-OWNER guard. Both need the
             // replica-mode escape or the teardown takes the suite down with it.
+            await deleteAuditRowsForTenants(prisma, t).catch(() => {});
             await prisma
                 .$transaction(async (tx) => {
                     await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-                    await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, t);
                     await tx.$executeRawUnsafe(
                         `DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, t,
                     );

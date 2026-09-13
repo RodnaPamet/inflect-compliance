@@ -24,6 +24,7 @@ import { runWithAuditContext, getAuditContext } from '@/lib/audit-context';
 import { redactSensitiveFields, extractChangedFields } from '@/lib/audit-redact';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const RealDbUrl = DB_URL;
 
@@ -184,7 +185,7 @@ describeFn('Audit Middleware — Integration Tests', () => {
         // console.warn just pollutes CI output without telling anyone
         // anything actionable.
         if (tenantId) {
-            await rawPrisma.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, tenantId).catch(() => {});
+            await deleteAuditRowsForTenants(rawPrisma, tenantId).catch(() => {});
             await rawPrisma.$executeRawUnsafe(`DELETE FROM "Risk" WHERE "tenantId" = $1`, tenantId).catch(() => {});
             await rawPrisma.$executeRawUnsafe(`DELETE FROM "Tenant" WHERE "id" = $1`, tenantId).catch(() => {});
             if (userId) await rawPrisma.$executeRawUnsafe(`DELETE FROM "User" WHERE "id" = $1`, userId).catch(() => {});

@@ -34,6 +34,7 @@ import {
     _resetTenantDekRotationForTests,
 } from '@/app-layer/jobs/tenant-dek-rotation';
 import { _resetTenantDekCache } from '@/lib/security/tenant-key-manager';
+import { deleteAuditRowsForTenants } from '../../helpers/audit-cleanup';
 
 // Mock the BullMQ queue boundary so no Redis is required (matches the
 // integration test's mock). The job itself doesn't enqueue, but
@@ -71,10 +72,7 @@ describeFn('runTenantDekRotation — executor branches (real DB)', () => {
     });
 
     async function cleanupTenant(tenantId: string): Promise<void> {
-        await prisma.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, tenantId);
-        });
+        await deleteAuditRowsForTenants(prisma, tenantId);
         await prisma.risk.deleteMany({ where: { tenantId } });
         await prisma.tenant.deleteMany({ where: { id: tenantId } });
     }

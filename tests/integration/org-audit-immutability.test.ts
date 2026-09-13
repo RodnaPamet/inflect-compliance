@@ -20,6 +20,11 @@ import {
     appendOrgAuditEntry,
     verifyOrgAuditChain,
 } from '@/lib/audit/org-audit-writer';
+import {
+    attemptAuditDelete,
+    attemptAuditUpdate,
+    deleteOrgAuditRowsForOrganizations,
+} from '../helpers/audit-cleanup';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -55,16 +60,10 @@ describeFn('OrgAuditLog — immutability + hash chain', () => {
     });
 
     afterAll(async () => {
-        // Cleanup using the documented bypass — same pattern as
-        // audit-immutability.test.ts.
+        // Cleanup through the documented bypass, which lives in
+        // tests/helpers/audit-cleanup.ts and nowhere else.
         try {
-            await prisma.$transaction(async (tx) => {
-                await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-                await tx.$executeRawUnsafe(
-                    `DELETE FROM "OrgAuditLog" WHERE "organizationId" = $1`,
-                    organizationId,
-                );
-            });
+            await deleteOrgAuditRowsForOrganizations(prisma, organizationId);
         } catch { /* tolerate */ }
         await prisma.$disconnect();
     });
@@ -141,9 +140,8 @@ describeFn('OrgAuditLog — immutability + hash chain', () => {
 
         let threw = false;
         try {
-            await prisma.$executeRawUnsafe(
-                `UPDATE "OrgAuditLog" SET "actorType" = 'TAMPERED' WHERE "id" = $1`,
-                rows[0].id,
+            await attemptAuditUpdate(
+                prisma, 'OrgAuditLog', `"actorType" = 'TAMPERED'`, '"id" = $1', rows[0].id,
             );
         } catch (e) {
             threw = true;
@@ -161,10 +159,7 @@ describeFn('OrgAuditLog — immutability + hash chain', () => {
 
         let threw = false;
         try {
-            await prisma.$executeRawUnsafe(
-                `DELETE FROM "OrgAuditLog" WHERE "id" = $1`,
-                rows[0].id,
-            );
+            await attemptAuditDelete(prisma, 'OrgAuditLog', '"id" = $1', rows[0].id);
         } catch (e) {
             threw = true;
             expect(String(e)).toMatch(/IMMUTABLE_ORG_AUDIT_LOG/);
@@ -220,13 +215,7 @@ describeFn('OrgAuditLog — immutability + hash chain', () => {
             expect(verification.firstBreakId).toBe(bogusId);
         } finally {
             // Clean the forged + first row using the bypass.
-            await prisma.$transaction(async (tx) => {
-                await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-                await tx.$executeRawUnsafe(
-                    `DELETE FROM "OrgAuditLog" WHERE "organizationId" = $1`,
-                    tamperOrg.id,
-                );
-            });
+            await deleteOrgAuditRowsForOrganizations(prisma, tamperOrg.id);
             await prisma.organization.delete({ where: { id: tamperOrg.id } });
         }
     });

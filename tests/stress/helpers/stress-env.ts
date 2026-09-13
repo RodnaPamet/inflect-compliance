@@ -43,6 +43,7 @@
 import { getTestDatabaseUrl, prismaTestClient } from '../../helpers/db';
 import { createResilientFetch } from '@/app-layer/integrations/http-resilience';
 import { createBoundedFetch } from '@/app-layer/integrations/bounded-fetch';
+import { deleteAuditRowsForTenants } from '../../helpers/audit-cleanup';
 
 /**
  * Volume multiplier. 1 locally, 10 in the scheduled workflow.
@@ -167,9 +168,9 @@ export async function teardownTenant(
     await prisma.integrationSyncMapping.deleteMany({ where: { tenantId } });
     await prisma.evidence.deleteMany({ where: { tenantId } });
     await prisma.integrationConnection.deleteMany({ where: { tenantId } });
+    await deleteAuditRowsForTenants(prisma, tenantId);
     await prisma.$transaction(async (tx: { $executeRawUnsafe: (q: string, ...a: unknown[]) => Promise<unknown> }) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, tenantId);
         await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, tenantId);
     });
     if (userIds.length > 0) {

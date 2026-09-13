@@ -40,6 +40,7 @@ import {
     listRegisteredAgents,
     parseAgentListFilters,
 } from '@/app-layer/usecases/agent-registry';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(180_000);
@@ -81,9 +82,9 @@ const ctx = () =>
 async function clearOwnRows(): Promise<void> {
     await prisma.registeredAgent.deleteMany({ where: { tenantId: T1 } });
     await prisma.aiSystem.deleteMany({ where: { tenantId: T1 } });
+    await deleteAuditRowsForTenants(prisma, T1);
     await prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, T1);
         await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, T1);
     });
     await prisma.user.deleteMany({

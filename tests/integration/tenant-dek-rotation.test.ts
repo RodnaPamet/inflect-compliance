@@ -42,6 +42,7 @@ import type { TenantDekRotationProgress } from '@/app-layer/jobs/tenant-dek-rota
 import { DB_AVAILABLE } from './db-helper';
 import { prismaTestClient } from '../helpers/db';
 import type { PrismaClient } from '@prisma/client';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 // Mock the BullMQ queue so we don't need Redis for an integration
 // test focused on DB behaviour. Real job execution is covered by
@@ -75,19 +76,7 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
             });
             const tenantIds = ids.map((t) => t.id);
             if (tenantIds.length > 0) {
-                await prisma
-                    .$transaction(async (tx) => {
-                        await tx.$executeRawUnsafe(
-                            `SET LOCAL session_replication_role = 'replica'`,
-                        );
-                        for (const tid of tenantIds) {
-                            await tx.$executeRawUnsafe(
-                                `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-                                tid,
-                            );
-                        }
-                    })
-                    .catch(() => undefined);
+                await deleteAuditRowsForTenants(prisma, tenantIds).catch(() => undefined);
                 await prisma.risk
                     .deleteMany({ where: { tenantId: { in: tenantIds } } })
                     .catch(() => undefined);
@@ -388,18 +377,9 @@ describeFn('rotateTenantDek (integration — real DB)', () => {
         expect(() => decryptWithKey(previousDek, freshRow.threat)).toThrow();
 
         // ── Cleanup ────────────────────────────────────────────────
-        // AuditLog has an immutability trigger; bypass with
-        // `SET LOCAL session_replication_role = 'replica'` inside a
-        // transaction (same pattern as audit-immutability.test.ts).
-        await prisma.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe(
-                `SET LOCAL session_replication_role = 'replica'`,
-            );
-            await tx.$executeRawUnsafe(
-                `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-                tenant.id,
-            );
-        });
+        // AuditLog has an immutability trigger; the audited helper owns
+        // the bypass.
+        await deleteAuditRowsForTenants(prisma, tenant.id);
         await prisma.risk.deleteMany({ where: { tenantId: tenant.id } });
         await prisma.user
             .delete({ where: { id: lifecycleUser.id } })

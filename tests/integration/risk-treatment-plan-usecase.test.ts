@@ -33,6 +33,7 @@ import {
     getTreatmentPlan,
     listTreatmentPlans,
 } from '@/app-layer/usecases/risk-treatment-plan';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -114,15 +115,7 @@ async function teardown() {
     await globalPrisma.tenantMembership.deleteMany({
         where: { tenantId: { in: tenantIds } },
     });
-    await globalPrisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(
-            `SET LOCAL session_replication_role = 'replica'`,
-        );
-        await tx.$executeRawUnsafe(
-            `DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`,
-            tenantIds,
-        );
-    });
+    await deleteAuditRowsForTenants(globalPrisma, tenantIds);
     const userIds = [admin, editor, reader, foreignAdmin]
         .filter(Boolean)
         .map((u) => u.userId);
@@ -161,15 +154,7 @@ describeFn('Epic G-7 — risk treatment plan usecases', () => {
             where: { id: RISK_ID },
             data: { status: 'OPEN' },
         });
-        await globalPrisma.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe(
-                `SET LOCAL session_replication_role = 'replica'`,
-            );
-            await tx.$executeRawUnsafe(
-                `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-                TENANT_ID,
-            );
-        });
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
     });
 
     // ── 1. createTreatmentPlan ─────────────────────────────────────

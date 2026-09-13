@@ -33,6 +33,7 @@ import {
 } from '@/app-layer/usecases/task';
 import { getAutomationBus } from '@/app-layer/automation';
 import type { AutomationDomainEvent } from '@/app-layer/automation';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const db = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -139,7 +140,7 @@ describeFn('task status change — one sequence for both entry points', () => {
 
     afterAll(async () => {
         try {
-            await db.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT);
+            await deleteAuditRowsForTenants(db, TENANT);
             await db.$executeRawUnsafe(`DELETE FROM "Notification" WHERE "tenantId" = $1`, TENANT);
             await db.$executeRawUnsafe(`DELETE FROM "TaskWatcher" WHERE "tenantId" = $1`, TENANT);
             await db.$executeRawUnsafe(`DELETE FROM "TaskLink" WHERE "tenantId" = $1`, TENANT);

@@ -73,6 +73,7 @@ import {
     disconnectSharePoint,
     SHAREPOINT_PROVIDER,
 } from '@/app-layer/integrations/providers/sharepoint/service';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -182,11 +183,11 @@ describeFn('identity connections are unreachable from the SharePoint disconnect'
     afterAll(async () => {
         await globalPrisma.connectedIdentityAccount.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.integrationConnection.deleteMany({ where: { tenantId: TENANT_ID } });
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
         await globalPrisma.$transaction(async (tx) => {
             // AuditLog is append-only at the DB level and the disconnect below
             // writes to it, so cleanup has to step around the trigger.
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(
                 `DELETE FROM "TenantMembership" WHERE "tenantId" = $1`,
                 TENANT_ID,

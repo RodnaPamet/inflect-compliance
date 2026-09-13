@@ -32,6 +32,7 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { runAutomationEventDispatch } from '@/app-layer/jobs/automation-event-dispatch';
 import { toDispatchPayload } from '@/app-layer/automation';
 import type { AutomationEventDispatchPayload } from '@/app-layer/jobs/types';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -117,7 +118,7 @@ describeFn('automation rules execute under the principal\'s real authority', () 
 
     afterAll(async () => {
         try {
-            await db.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT);
+            await deleteAuditRowsForTenants(db, TENANT);
             await db.automationExecution.deleteMany({ where: { tenantId: TENANT } });
             await db.automationRule.deleteMany({ where: { tenantId: TENANT } });
             await db.task.deleteMany({ where: { tenantId: TENANT } });

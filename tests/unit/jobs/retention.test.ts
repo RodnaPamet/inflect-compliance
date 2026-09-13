@@ -26,6 +26,7 @@ import type { PrismaClient } from '@prisma/client';
 import { DB_AVAILABLE } from '../../integration/db-helper';
 import { prismaTestClient } from '../../helpers/db';
 import { runEvidenceRetentionSweep } from '@/app-layer/jobs/retention';
+import { deleteAuditRowsForTenants } from '../../helpers/audit-cleanup';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -135,9 +136,6 @@ describeFn('runEvidenceRetentionSweep (real DB)', () => {
 });
 
 async function cleanupTenant(prisma: PrismaClient, tenantId: string): Promise<void> {
-    await prisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, tenantId);
-    });
+    await deleteAuditRowsForTenants(prisma, tenantId);
     await prisma.evidence.deleteMany({ where: { tenantId } });
 }

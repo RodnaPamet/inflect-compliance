@@ -38,6 +38,7 @@ import {
     submitDecision,
     closeAccessReview,
 } from '@/app-layer/usecases/access-review';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -106,16 +107,13 @@ async function teardownFixtures() {
         where: { tenantId: TENANT_ID, domain: 'evidence' },
     });
     // Bypass triggers (last-OWNER guard fires otherwise) + immutability.
+    await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
     await globalPrisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(
             `SET LOCAL session_replication_role = 'replica'`,
         );
         await tx.$executeRawUnsafe(
             `DELETE FROM "TenantMembership" WHERE "tenantId" = $1`,
-            TENANT_ID,
-        );
-        await tx.$executeRawUnsafe(
-            `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
             TENANT_ID,
         );
     });
@@ -218,15 +216,7 @@ describeFn('Epic G-4 — closeAccessReview executes decisions + emits evidence',
         // Clear audit log so cross-test audit-count assertions stay
         // deterministic. AuditLog has the immutability trigger; bypass
         // via session_replication_role=replica (postgres role).
-        await globalPrisma.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe(
-                `SET LOCAL session_replication_role = 'replica'`,
-            );
-            await tx.$executeRawUnsafe(
-                `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-                TENANT_ID,
-            );
-        });
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
         // Restore any membership we mutated mid-test.
         const restore: Array<{
             id: string;

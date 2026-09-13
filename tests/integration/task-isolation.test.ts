@@ -28,6 +28,7 @@ import {
     listTaskLinks,
     addTaskWatcher,
 } from '@/app-layer/usecases/task';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -97,10 +98,10 @@ describeFn('task isolation — two tenants (integration)', () => {
             await globalPrisma.task.deleteMany({ where: { tenantId: tid } });
             await globalPrisma.control.deleteMany({ where: { tenantId: tid } });
         }
+        await deleteAuditRowsForTenants(globalPrisma, [TENANT_A, TENANT_B]);
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
             for (const tid of [TENANT_A, TENANT_B]) {
-                await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, tid);
                 await tx.$executeRawUnsafe(`DELETE FROM "Notification" WHERE "tenantId" = $1`, tid);
                 await tx.$executeRawUnsafe(`DELETE FROM "NotificationOutbox" WHERE "tenantId" = $1`, tid);
                 await tx.$executeRawUnsafe(`DELETE FROM "AutomationExecution" WHERE "tenantId" = $1`, tid);

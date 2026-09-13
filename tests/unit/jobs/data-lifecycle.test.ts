@@ -34,6 +34,7 @@ import {
     runRetentionSweep,
     DEFAULT_SOFT_DELETE_GRACE_DAYS,
 } from '@/app-layer/jobs/data-lifecycle';
+import { deleteAuditRowsForTenants } from '../../helpers/audit-cleanup';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -253,10 +254,7 @@ async function rawExists(prisma: PrismaClient, table: string, id: string): Promi
 }
 
 async function cleanup(prisma: PrismaClient, tenantId: string): Promise<void> {
-    await prisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, tenantId);
-    });
+    await deleteAuditRowsForTenants(prisma, tenantId);
     await prisma.evidence.deleteMany({ where: { tenantId } });
     await prisma.$executeRawUnsafe(`DELETE FROM "Risk" WHERE "tenantId" = $1`, tenantId);
     await prisma.$executeRawUnsafe(`DELETE FROM "Asset" WHERE "tenantId" = $1`, tenantId);

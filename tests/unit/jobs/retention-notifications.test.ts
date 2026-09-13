@@ -29,6 +29,7 @@ import { DB_AVAILABLE } from '../../integration/db-helper';
 import { prismaTestClient } from '../../helpers/db';
 import { hashForLookup } from '@/lib/security/encryption';
 import { runEvidenceRetentionNotifications } from '@/app-layer/jobs/retention-notifications';
+import { deleteAuditRowsForTenants } from '../../helpers/audit-cleanup';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -73,9 +74,9 @@ describeFn('runEvidenceRetentionNotifications (real DB)', () => {
         // RLS suites use). Done inside one replica transaction so the FK
         // order (links → tasks → evidence → memberships → settings →
         // tenant) is satisfied.
+        await deleteAuditRowsForTenants(prisma, tenantId);
         await prisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, tenantId);
             await tx.$executeRawUnsafe(`DELETE FROM "NotificationOutbox" WHERE "tenantId" = $1`, tenantId);
             await tx.$executeRawUnsafe(`DELETE FROM "TaskLink" WHERE "tenantId" = $1`, tenantId);
             await tx.$executeRawUnsafe(`DELETE FROM "Task" WHERE "tenantId" = $1`, tenantId);

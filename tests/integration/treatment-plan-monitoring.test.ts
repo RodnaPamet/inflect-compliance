@@ -26,6 +26,7 @@ import { DashboardRepository } from '@/app-layer/repositories/DashboardRepositor
 import { runInTenantContext } from '@/lib/db-context';
 import { runDeadlineMonitor } from '@/app-layer/jobs/deadline-monitor';
 import { getComplianceCalendarEvents } from '@/app-layer/usecases/compliance-calendar';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -90,15 +91,7 @@ async function teardown() {
     await globalPrisma.tenantMembership.deleteMany({
         where: { tenantId: { in: tenantIds } },
     });
-    await globalPrisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(
-            `SET LOCAL session_replication_role = 'replica'`,
-        );
-        await tx.$executeRawUnsafe(
-            `DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`,
-            tenantIds,
-        );
-    });
+    await deleteAuditRowsForTenants(globalPrisma, tenantIds);
     const userIds = [admin, foreignAdmin]
         .filter(Boolean)
         .map((u) => u.userId);

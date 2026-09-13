@@ -48,6 +48,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(120_000);
@@ -120,11 +121,12 @@ async function clearProbeRows() {
     await prisma.aiSystem.deleteMany({ where: t });
     // The immutable-audit-log trigger and the last-OWNER guard both fire on an
     // ordinary DELETE and would take the teardown — and the suite — down with
-    // them, so these two go through `session_replication_role = 'replica'`,
-    // the same way the other #2356 suites do it.
+    // them. Audit rows go through tests/helpers/audit-cleanup.ts, the one module
+    // allowed to disable the audit trigger (#2523); TenantMembership keeps its
+    // own replica-role transaction, which trips a different trigger.
+    await deleteAuditRowsForTenants(prisma, [T1, T2]);
     await prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`, [T1, T2]);
         await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`, [T1, T2]);
     });
     await prisma.tenant.deleteMany({ where: { id: { in: [T1, T2] } } });

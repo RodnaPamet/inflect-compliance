@@ -27,6 +27,7 @@ import { createTask, setTaskStatus, addTaskLink } from '@/app-layer/usecases/tas
 // Direct import satisfies the usecase-test-coverage guardrail for the
 // new task-source-reconcile.ts module (exercised via setTaskStatus).
 import { reconcileTaskSource } from '@/app-layer/usecases/task-source-reconcile';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const db = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -69,7 +70,7 @@ describeFn('task-source reconciliation (integration)', () => {
     afterAll(async () => {
         const ids = [TENANT_A, TENANT_B];
         try {
-            await db.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1)`, ids);
+            await deleteAuditRowsForTenants(db, ids);
             await db.$executeRawUnsafe(`DELETE FROM "ControlTestRun" WHERE "tenantId" = ANY($1)`, ids);
             await db.$executeRawUnsafe(`DELETE FROM "ControlTestPlan" WHERE "tenantId" = ANY($1)`, ids);
             await db.$executeRawUnsafe(`DELETE FROM "AssetVulnerability" WHERE "tenantId" = ANY($1)`, ids);

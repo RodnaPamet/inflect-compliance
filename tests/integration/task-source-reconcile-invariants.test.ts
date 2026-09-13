@@ -43,6 +43,7 @@ import {
 import { processOverdueReminders } from '@/app-layer/jobs/policyReviewReminder';
 import { runInTenantContext } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const db = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -78,8 +79,11 @@ describeFn('task→source reconciliation invariants (integration)', () => {
     });
 
     afterAll(async () => {
+        // AuditLog is NOT in this list: the immutability trigger refuses a
+        // plain DELETE, so it needs the audited bypass helper.
+        await deleteAuditRowsForTenants(db, TENANT);
         const tables = [
-            'AuditLog', 'AutomationExecution', 'NotificationOutbox', 'Notification',
+            'AutomationExecution', 'NotificationOutbox', 'Notification',
             'TaskComment', 'TaskWatcher', 'TaskLink',
             'AssetVulnerability', 'Asset',
             'KriReading', 'KeyRiskIndicator', 'RiskAppetiteBreach',

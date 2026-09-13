@@ -36,6 +36,7 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { getComplianceCalendarEvents } from '@/app-layer/usecases/compliance-calendar';
 import { makeRequestContext } from '../helpers/make-context';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -128,13 +129,11 @@ async function teardown() {
         // @ts-expect-error — indexed model access is the point of the loop
         await globalPrisma[model].deleteMany({ where: { tenantId: { in: ids } } });
     }
+    await deleteAuditRowsForTenants(globalPrisma, ids);
     await globalPrisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
         await tx.$executeRawUnsafe(
             `DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`, ids,
-        );
-        await tx.$executeRawUnsafe(
-            `DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`, ids,
         );
     });
     await globalPrisma.user.deleteMany({

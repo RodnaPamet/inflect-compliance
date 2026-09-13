@@ -50,6 +50,7 @@ import { getPermissionsForRole } from '@/lib/permissions';
 import { resolveRoutePermission } from '@/lib/security/route-permissions';
 import { makeRequestContext } from '../helpers/make-context';
 import type { RequestContext } from '@/app-layer/types';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -174,9 +175,9 @@ describeFn('editing a policy card is privileged (real route, real DB)', () => {
             await prisma.agentPolicyCard.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
             await prisma.registeredAgent.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
             await prisma.aiSystem.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
+            await deleteAuditRowsForTenants(prisma, TENANT).catch(() => {});
             await prisma.$transaction(async (tx) => {
                 await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-                await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT);
                 await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT);
             }).catch(() => {});
             await prisma.tenant.deleteMany({ where: { id: TENANT } }).catch(() => {});

@@ -24,6 +24,7 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { dispatchDigest } from '@/app-layer/notifications/digest-dispatcher';
 import type { DueItem } from '@/app-layer/jobs/types';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -102,14 +103,11 @@ async function teardown() {
     // Replica mode: the LAST_OWNER_GUARD trigger raises P0001 on deleting an
     // ACTIVE OWNER, and this suite creates one deliberately. `SET LOCAL` keeps
     // the bypass inside this transaction so it cannot leak to a parallel worker.
+    await deleteAuditRowsForTenants(globalPrisma, tenantIds);
     await globalPrisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
         await tx.$executeRawUnsafe(
             `DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`,
-            tenantIds,
-        );
-        await tx.$executeRawUnsafe(
-            `DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`,
             tenantIds,
         );
     });

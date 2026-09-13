@@ -60,6 +60,7 @@ import { SCHEDULED_JOBS } from '@/app-layer/jobs/schedules';
 import { JOB_DEFAULTS } from '@/app-layer/jobs/types';
 import { listKillSwitches } from '@/app-layer/usecases/agent-kill-switch';
 import { makeRequestContext } from '../helpers/make-context';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -135,9 +136,9 @@ describeFn('the kill-switch drill runs, records, and raises (real DB)', () => {
             await prisma.mcpToolManifestPin.deleteMany({ where: { tenantId: t } }).catch(() => {});
             await prisma.registeredAgent.deleteMany({ where: { tenantId: t } }).catch(() => {});
             await prisma.aiSystem.deleteMany({ where: { tenantId: t } }).catch(() => {});
+            await deleteAuditRowsForTenants(prisma, t).catch(() => {});
             await prisma.$transaction(async (tx) => {
                 await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-                await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, t);
                 await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, t);
             }).catch(() => {});
             await prisma.tenant.deleteMany({ where: { id: t } }).catch(() => {});

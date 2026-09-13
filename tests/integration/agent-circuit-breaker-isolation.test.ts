@@ -36,6 +36,7 @@ import {
     openBreakerGate,
     readBreakerLatch,
 } from '@/lib/agentic/circuit-breaker-store';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(60_000);
@@ -79,9 +80,9 @@ async function clearOwnRows(): Promise<void> {
     await prisma.agentCircuitBreaker.deleteMany({ where: t });
     await prisma.registeredAgent.deleteMany({ where: t });
     await prisma.aiSystem.deleteMany({ where: t });
+    await deleteAuditRowsForTenants(prisma, [T1, T2]);
     await prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`, [T1, T2]);
         await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`, [T1, T2]);
     });
     await prisma.user.deleteMany({

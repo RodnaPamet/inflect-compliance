@@ -36,6 +36,7 @@ import { generateApiKey } from '@/lib/auth/api-key-auth';
 import { verifyAuditChain } from '@/lib/audit/audit-writer';
 import { mintExchangedToken } from '@/lib/mcp/token-exchange';
 import { POST } from '@/app/api/mcp/route';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -309,10 +310,10 @@ describeFn('every agent denial writes exactly one hash-chained AUTHZ_DENIED row'
     });
 
     afterAll(async () => {
+        await deleteAuditRowsForTenants(prisma, TENANT).catch(() => {});
         await prisma
             .$transaction(async (tx) => {
                 await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-                await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT);
                 await tx.$executeRawUnsafe(
                     `DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT,
                 );

@@ -21,6 +21,7 @@ import {
     setOrgThreatLevel,
     getOrgThreatLevelHistory,
 } from '@/app-layer/usecases/org-threat-level';
+import { deleteOrgAuditRowsForOrganizations } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -54,10 +55,7 @@ describeFn('org-maturity + org-threat-level — branch coverage (integration)', 
     afterAll(async () => {
         await globalPrisma.orgMaturityRating.deleteMany({ where: { organizationId: ORG_ID } });
         await globalPrisma.orgThreatLevel.deleteMany({ where: { organizationId: ORG_ID } });
-        await globalPrisma.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "OrgAuditLog" WHERE "organizationId" = $1`, ORG_ID);
-        });
+        await deleteOrgAuditRowsForOrganizations(globalPrisma, ORG_ID);
         // Guarded: an undefined filter value is DROPPED, not matched —
         // see the teardown note in ./db-helper.ts.
         if (userId) {

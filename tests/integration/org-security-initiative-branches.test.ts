@@ -23,6 +23,7 @@ import {
     unlinkWork,
     getInitiativesForWidget,
 } from '@/app-layer/usecases/org-security-initiative';
+import { deleteAuditRowsForTenants, deleteOrgAuditRowsForOrganizations } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -72,10 +73,10 @@ describeFn('org-security-initiative usecase — branch coverage (integration)', 
         await globalPrisma.orgInitiativeLink.deleteMany({ where: { organizationId: ORG_ID } });
         await globalPrisma.orgSecurityInitiative.deleteMany({ where: { organizationId: ORG_ID } });
         await globalPrisma.control.deleteMany({ where: { tenantId: TENANT_ID } });
+        await deleteOrgAuditRowsForOrganizations(globalPrisma, ORG_ID);
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "OrgAuditLog" WHERE "organizationId" = $1`, ORG_ID);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT_ID);
         });
         // Guarded: an undefined filter value is DROPPED, not matched —

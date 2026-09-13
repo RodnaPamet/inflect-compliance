@@ -34,6 +34,7 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import * as issueUsecase from '@/app-layer/usecases/issue';
 import * as taskUsecase from '@/app-layer/usecases/task';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -71,9 +72,9 @@ describeFn('issue usecase — evidence-bundle surface only', () => {
     });
 
     afterAll(async () => {
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT_ID);
         });
         await globalPrisma.user.deleteMany({ where: { id: { in: [ownerUserId, readerUserId] } } });
