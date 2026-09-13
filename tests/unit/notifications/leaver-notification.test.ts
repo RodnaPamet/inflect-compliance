@@ -1093,15 +1093,21 @@ describe('notifyLeaverOutcome', () => {
     });
 
     it('stays silent about IT when it was the MANAGER who was unreachable', async () => {
-        // THE AUDIENCE THE GUARD IS NAMED FOR. `says nothing when the IT
-        // audience was actually reached` above only covers the run where BOTH
-        // recipients resolve, so it cannot tell `book.it.length === 0` from
-        // "somebody was unreachable". Widen the guard to
-        // `plan.it && (book.it.length === 0 || !subject?.manager)` and every
-        // other test in this block stays green — the runs there have no manager
-        // either — while a tenant whose IT desk is perfectly reachable starts
-        // getting a nightly WARN saying its mail was lost on the very runs
-        // where the row WAS written. This is the test that goes red.
+        // THE AUDIENCE THE GUARD IS NAMED FOR. Until this test, nothing in
+        // the file combined a REACHABLE IT audience with a MISSING manager, so
+        // widening the guard to
+        // `plan.it && (book.it.length === 0 || !subject?.manager)` left
+        // everything green. Not because the other runs lack a manager — the
+        // `withNoItAudience()` tests keep the default link, manager and all —
+        // but because in those the FIRST disjunct already holds, so a second
+        // one changes nothing, and in `says nothing when the IT audience was
+        // actually reached` the manager resolves so the added disjunct is
+        // false. The runs that do have the shape are the `withNoManager()`
+        // tests further up, and they assert only on `noManagerLines`.
+        //
+        // So under that mutation a tenant whose IT desk is perfectly reachable
+        // gets a nightly WARN saying its mail was lost, on the very runs where
+        // the row WAS written, with nothing red. This is the test that reddens.
         withNoManager();
 
         await notifyLeaverOutcome(ctx, await book(), {
