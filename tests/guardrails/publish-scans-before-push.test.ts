@@ -834,9 +834,12 @@ describe('the detector itself — driven by synthetic workflows', () => {
     it.each(PUSH_SPELLINGS.map((s) => [s.label, s.run] as const))(
         'sees a push spelled `%s`',
         (label, run) => {
-            const reasons = registryWritesIn(run);
-            expect({ label, reasons }).toEqual({ label, reasons: expect.any(Array) });
-            expect(reasons.length).toBeGreaterThan(0);
+            // Asserted as an object carrying the label, so a failure names
+            // WHICH spelling went blind rather than only that one did.
+            expect({ label, detected: registryWritesIn(run).length > 0 }).toEqual({
+                label,
+                detected: true,
+            });
             // …and it is a push wherever it sits, so the ordering rule fires.
             const sites = auditPushSites([
                 synthetic('spelling.yml', [BUILD_NO_PUSH, { name: label, run }, BLOCKING_SCAN]),
