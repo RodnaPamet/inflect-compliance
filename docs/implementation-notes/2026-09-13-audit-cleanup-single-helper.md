@@ -29,21 +29,30 @@ single exemption only works if all three live behind it:
 
 1. **CLEANUP** — `deleteAuditRowsForTenants` / `deleteAuditRowsByActionLike` /
    `deleteOrgAuditRowsForOrganizations`, all routed through one private
-   `withAuditTriggersDisabled`. The bulk: 118 statements (119 cleanup sites
-   minus the DSAR oracle, which stays put).
+   `withAuditTriggersDisabled`. The bulk: 121 call sites.
 2. **TAMPER** — `tamperAuditRow` / `tamperOrgAuditRow`, also under the bypass.
    The hash-chain suites forge a stored column and assert the recorded
    `entryHash` no longer matches, i.e. that tampering is detectable. Forging
-   requires the trigger off. 3 statements.
+   requires the trigger off. 3 call sites.
 3. **REFUSAL** — `attemptAuditUpdate` / `attemptAuditDelete`, deliberately
    WITHOUT a bypass. These are the detector for the trigger itself:
    `audit-immutability.test.ts` asserts they reject with `IMMUTABLE_AUDIT_LOG`.
-   12 statements. Giving these a bypass would delete the only evidence the
+   12 call sites. Giving these a bypass would delete the only evidence the
    trigger works — the same reasoning the guard file already records for the
    DSAR erasure oracle.
 
-The two raw-SQL scans in `tests/guards/audit-immutability-guardrails.test.ts`
-widen from `['src']` to `['src', 'tests']`, with that one module exempt. The
+121 + 3 + 12 = **136 call sites across 103 test files**, counted on the branch
+rather than inferred from the base-commit statement count — the two are not the
+same number, because three sites that had no literal statement at base (the
+interpolated-table files) acquired one, and `#2531`'s teardown landed after the
+base commit. Anybody can re-derive the 136 with one grep for the seven exported
+names; nobody can re-derive a statement count that only ever existed at a commit
+this branch has merged past.
+
+The two pre-existing raw-SQL scans in
+`tests/guards/audit-immutability-guardrails.test.ts` widen from `['src']` to
+`['src', 'tests']`, with that one module exempt (two further scans join them —
+the interpolated-table shape below, and TRUNCATE). The
 exemption is **derived**: the helper exports its own `__filename` as
 `AUDIT_CLEANUP_MODULE` and the guard runs it through `repoRelative`, exactly the
 way it already resolves its own SELF skip. There is no allowlist array of
@@ -82,14 +91,52 @@ one file. "Update " before an interpolation is prose; `UPDATE "<x>" SET` is not.
 The UPDATE arm now requires the trailing `SET`. `DELETE FROM` is specific enough
 to stand alone.
 
+## Three more spellings the regex could not see (found in review)
+
+An adversarial review of the PR ran four mutations the author had not, and three
+came back GREEN against the patterns first shipped here. None is exotic:
+
+| spelling | why it missed | status |
+| --- | --- | --- |
+| `DELETE FROM "OrgAuditLog" …` | both literal patterns required `AuditLog` directly after the optional quote; the interpolated scan requires a `${` | **fixed** — `(?:Org)?` |
+| `DELETE FROM "public"."AuditLog" …` | same, with a schema qualifier in the way | **fixed** — optional qualifier |
+| `TRUNCATE TABLE "AuditLog"` | no pattern existed, and a BEFORE-**ROW** trigger never fires on a statement-level TRUNCATE — so this one needs no bypass at all | **fixed** — `RAW_TRUNCATE` + its own scan |
+
+The Org one is the finding that mattered, because this PR is what brought
+`OrgAuditLog` into scope (`deleteOrgAuditRowsForOrganizations`,
+`tamperOrgAuditRow`, and the migrated Org sites) — so this PR was the one leaving
+that trail unguarded. A complete `SET LOCAL session_replication_role = 'replica'`
+transaction around a literal Org delete, dropped into an ordinary test file, left
+the guard suite fully green.
+
+Widening cost nothing: across the whole scanned population not one existing file
+newly matches, and the only literal Org statement in the repo is the helper's
+own, already covered by the derived exemption.
+
+**The fourth mutation is still open, and is recorded rather than fixed.**
+`AUDIT_TABLE_AS_STRING` is evaluated per-file, so the interpolated-table scan
+only fires while the table-name array and the `DELETE FROM "${table}"` that
+consumes it sit in the SAME file. Two new modules — the list in one, the loop in
+the other — are invisible. That is precisely the shape this PR exists to close,
+and its closure here is an accident of co-location: moving `TENANT_CHILD_TABLES`
+into a shared constants module would reopen it silently. Closing it needs import
+resolution rather than another regex, so the guard header states it as a live
+residual instead.
+
 ## Files
 
 | file | role |
 | --- | --- |
 | `tests/helpers/audit-cleanup.ts` | NEW. The sole sanctioned raw audit DML, and the only `session_replication_role` set for it |
-| `tests/guards/audit-immutability-guardrails.test.ts` | raw scans widened to `['src','tests']`; derived exemption; third scan for the interpolated-table shape; exemption self-check |
-| 102 files under `tests/` | migrated to the helper |
+| `tests/guards/audit-immutability-guardrails.test.ts` | raw scans widened to `['src','tests']`; derived exemption; scans for the interpolated-table and TRUNCATE shapes; exemption self-check; pattern discrimination proof |
 | `tests/e2e/global-teardown.ts` | `'AuditLog'` removed from `TENANT_CHILD_TABLES`; helper called before the loop so the Tenant DELETE is not blocked |
+| 102 other files under `tests/` | migrated to the helper |
+
+**103 migrated files, 105 `.ts` files changed.** The three rows above account for
+the difference: the helper is new and the guard is not a migrated call site, and
+`global-teardown.ts` is one of the 103, listed separately because its change is
+not the ordinary one. An earlier revision of this table left the reconciliation
+implicit and the "102" was read as the migration total in three other places.
 
 ## Decisions
 
@@ -126,10 +173,14 @@ not just audit rows.
 Classified mechanically at the base commit, the 134 statements are three
 different things: **113** carried the bypass and worked, **12** are the
 immutability assertions (deliberately unbypassed, asserting the trigger
-refuses), and **9** were simply BROKEN — a raw audit DELETE with no
-replica-role transaction anywhere, which raises the moment the table is
-non-empty. Eight of those nine reach a real database and now work through the
-helper; the ninth is the DSAR oracle on a mocked client and stays put.
+refuses), and **9** were simply BROKEN — no replica-role transaction anywhere,
+so the statement raises the moment the table is non-empty. Be exact about the
+shape of those nine, because "9 files carrying a raw audit DELETE" is not what
+the set difference says: **eight** files carry a raw `DELETE FROM "AuditLog"`
+with no bypass (one statement each), and the ninth is an `UPDATE "AuditLog"` —
+the DSAR oracle, on a mocked client. So eight reach a real database and now work
+through the helper; the ninth reaches none and stays put. The guard header names
+all nine.
 
 An earlier draft of this note said "24", carried forward from a classification
 that counted `withTriggerDisabled(async (tx) => …)` as unbypassed. It is a

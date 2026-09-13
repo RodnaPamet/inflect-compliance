@@ -67,10 +67,33 @@
  * Classified mechanically at the base commit: **113** carried the bypass and
  * therefore worked. **12** are the opposite of a bypass — the immutability
  * ASSERTIONS, which issue the forbidden statement deliberately and assert the
- * trigger refuses it. The remaining **9** were simply BROKEN: a raw audit
- * DELETE with no replica-role transaction anywhere, which raises the moment
- * the table is non-empty. Those nine were #2510's failure mode wearing raw
- * SQL, and routing them through the helper is what makes them start working.
+ * trigger refuses it. The remaining **9** were simply BROKEN: no replica-role
+ * transaction anywhere, so the statement raises the moment the table is
+ * non-empty. Those nine were #2510's failure mode wearing raw SQL, and
+ * routing them through the helper is what makes them start working.
+ *
+ * THE NINE, NAMED, because "which of these actually did anything" is the
+ * question a reader arrives with. All at base commit `f31514057`, one
+ * statement each — eight a raw `DELETE FROM "AuditLog"` with no bypass:
+ *
+ *     tests/integration/audit-middleware.test.ts
+ *     tests/integration/automation-actor-authority.test.ts
+ *     tests/integration/automation-update-status-gates.test.ts
+ *     tests/integration/control-test-flow.test.ts
+ *     tests/integration/data-lifecycle.test.ts
+ *     tests/integration/epic8-regression-guards.test.ts
+ *     tests/integration/task-source-reconcile.test.ts
+ *     tests/integration/task-status-change-sequence.test.ts
+ *
+ * …and the ninth an `UPDATE "AuditLog"`, in
+ * `tests/guardrails/dsar-workflow-coverage.test.ts`, described below. Eight
+ * of the nine reach a real database and now work through the helper; that
+ * ninth does not reach one at all.
+ *
+ * (Commit `bb52047e0` claimed this list was already here. It was not — it
+ * named only two of the nine, one of those in an unrelated paragraph. The
+ * list above is what makes that claim true, added after the #2533 review
+ * caught it.)
  *
  * The decision was taken: ALLOW the bypass, through exactly one documented
  * helper, and forbid the idiom everywhere else. `tests/helpers/audit-cleanup.ts`
@@ -99,6 +122,53 @@
  * and the suite reported 9/9 passing either way, which is why a leaking
  * teardown is invisible from inside the suite that leaks.
  *
+ * WHAT THE SCANS COULD NOT SEE, AND WHAT THEY STILL CANNOT (#2533 review)
+ * ──────────────────────────────────────────────────────────────────────
+ * Three spellings were demonstrated GREEN against the shipped patterns, by
+ * mutation rather than by reading. All three are ordinary SQL, not exotica:
+ *
+ *   1. `DELETE FROM "OrgAuditLog" …` — the OTHER trigger-protected trail,
+ *      the one `deleteOrgAuditRowsForOrganizations` exists for. The literal
+ *      patterns wanted `AuditLog` immediately after the optional quote, so
+ *      the `Org` prefix missed them; the interpolated scan needs a `${`,
+ *      which a literal has not got. A full replica-role transaction around
+ *      that statement, dropped into an ordinary test file, left this suite
+ *      11/11 green. This PR is the one that brought `OrgAuditLog` into
+ *      scope, so this PR is the one that left that trail unguarded.
+ *   2. `DELETE FROM "public"."AuditLog" …` — same defect, schema qualifier
+ *      instead of a table-name prefix.
+ *   3. `TRUNCATE TABLE "AuditLog"` — and this one is the worst of the
+ *      three, because it needs NO bypass whatsoever. `audit_log_immutable`
+ *      is a BEFORE **ROW** trigger and TRUNCATE is a statement-level
+ *      operation, so it never fires: the trail is gone with no
+ *      `session_replication_role` anywhere for a reader to notice.
+ *
+ * All three are covered now — `(?:Org)?`, an optional schema qualifier, and
+ * a third literal pattern — and widening cost nothing: measured across the
+ * scanned population, not one existing file newly matches.
+ *
+ * STILL BLIND, and stated plainly rather than left as "a spelling nobody
+ * has written yet":
+ *
+ *   - THE LIST ONE MODULE AWAY. `AUDIT_TABLE_AS_STRING` is evaluated
+ *     per-file, so the interpolated-table scan only fires while the
+ *     `['Control', 'AuditLog', …]` literal and the
+ *     `DELETE FROM "${table}"` that consumes it live in the SAME file.
+ *     Moving `TENANT_CHILD_TABLES` into a shared constants module would
+ *     reopen exactly the shape this PR exists to close, silently, with no
+ *     file changing behaviour. Demonstrated GREEN with two new files.
+ *     Closing it needs import resolution, not another regex, and is not
+ *     attempted here.
+ *   - CONCATENATION. `'DELETE FROM "' + table + '"'` matches nothing.
+ *   - THE ROLE SWITCH ITSELF IS NOT POLICED. These scans forbid raw DML
+ *     against the audit TABLES; they say nothing about
+ *     `session_replication_role`. Measured on this branch, 72 files under
+ *     `tests/` besides the helper still open their own replica-role
+ *     transactions — 94 statements — for `TenantMembership`'s last-OWNER
+ *     guard and for FK ordering, and each is a natural place for a future
+ *     audit delete to be written. A scan on the role switch itself, with
+ *     the same derived exemption, would be the stronger form of this guard.
+ *
  * POPULATION COMES FROM GIT
  * ─────────────────────────
  * `repoFiles()` from `tests/helpers/repo-files.ts`, not an `fs.readdirSync`
@@ -113,8 +183,12 @@
  * one bound `path.resolve(__dirname, '..', '..', 'src')` — a third segment,
  * which stops the match. Nor would widening the same walk to `tests/` have
  * reached `.claude/worktrees/<id>/`: that tree is a SIBLING of `tests/`, not
- * inside it. Measured today the two populations agree exactly — the walk and
- * `repoFiles({ under: 'tests' })` both yield 2382 files.
+ * inside it. The two populations agreed exactly when the move landed
+ * (#2510) — the walk and `repoFiles({ under: 'tests' })` yielded the same
+ * file for file. No live count is quoted here on purpose: the figure that
+ * used to sit in this sentence ("both yield 2382 files") was already stale
+ * by ten when #2533's review read it, which is an argument for asking git
+ * rather than for pasting in a fresher number.
  *
  * What the move buys is that the denominator stops being hand-maintained.
  * The skip list knows about `node_modules` and dot-directories and nothing
@@ -138,12 +212,18 @@ const PRISMA_DIR = path.resolve(__dirname, '..', '..', 'prisma');
  * and an empty array is also what a scan of ZERO files produces — the same
  * "empty selection is a PASS" shape that let the 21 teardowns survive. These
  * floors make a collapsed population fail loudly instead. They are
- * order-of-magnitude rather than exact, so ordinary churn never touches them
- * (measured 2026-09-12: 2660 files under `src`, 2382 under `tests`; the
- * prisma-mocking doubles that `reachesDatabase` filters out are a low-
- * hundreds minority of the latter). A precise count is deliberately NOT
- * recorded here — it is derived data, it would rot on the next test added,
- * and nothing below asserts on it.
+ * order-of-magnitude rather than exact, so ordinary churn never touches
+ * them: both trees hold thousands of files and the prisma-mocking doubles
+ * that `reachesDatabase` filters out are a low-hundreds minority of
+ * `tests/`.
+ *
+ * A PRECISE COUNT IS DELIBERATELY NOT RECORDED HERE. It is derived data, it
+ * rots on the next test added, and nothing below asserts on it — this
+ * docblock used to carry one anyway ("2660 files under `src`, 2382 under
+ * `tests`") and both halves were stale inside a day. The live figure is not
+ * lost by leaving it out: `toBeGreaterThan` prints the actual count as
+ * `Received:` the moment the floor is the thing that fails, which is the
+ * only moment it matters.
  */
 const MIN_SRC_FILES = 1500;
 const MIN_TEST_FILES = 1500;
@@ -170,8 +250,26 @@ const DELETE_CALL = /auditLog\s*\.\s*(delete|deleteMany)\s*\(/;
  */
 const DYNAMIC_MODEL_INDEX_WRITE = /\[\s*[A-Za-z_$][\w$]*\s*\]\s*\.\s*(delete|deleteMany|update|updateMany)\s*\(/;
 const AUDIT_LOG_AS_STRING = /['"`]auditLog['"`]/;
-const RAW_UPDATE = /UPDATE\s+["']?AuditLog["']?/i;
-const RAW_DELETE = /DELETE\s+(FROM\s+)?["']?AuditLog["']?/i;
+/**
+ * A LITERAL audit table in raw SQL. Both trails, and an optional schema
+ * qualifier — neither is decoration; see the "#2533 review" section above.
+ *
+ * These two used to read `["']?AuditLog["']?`, which requires `AuditLog`
+ * DIRECTLY after the optional quote. So `DELETE FROM "OrgAuditLog"` matched
+ * neither of them (wrong table name) nor the interpolated scan below (it
+ * needs a `${`), and `DELETE FROM "public"."AuditLog"` matched nothing
+ * either. A complete replica-role transaction around either statement, in an
+ * ordinary test file, left this suite 11/11 green.
+ *
+ * `RAW_TRUNCATE` is new and is the one to read twice: a BEFORE **ROW**
+ * trigger does not fire on a statement-level TRUNCATE at all, so
+ * `TRUNCATE TABLE "AuditLog"` destroys the trail needing no bypass to
+ * disable and leaving none for a reader to spot.
+ */
+const RAW_UPDATE = /UPDATE\s+(?:["']?\w+["']?\s*\.\s*)?["']?(?:Org)?AuditLog["']?/i;
+const RAW_DELETE = /DELETE\s+(?:FROM\s+)?(?:["']?\w+["']?\s*\.\s*)?["']?(?:Org)?AuditLog["']?/i;
+const RAW_TRUNCATE =
+    /TRUNCATE\s+(?:TABLE\s+)?(?:ONLY\s+)?(?:["']?\w+["']?\s*\.\s*)?["']?(?:Org)?AuditLog["']?/i;
 
 /**
  * The raw-SQL twin of `DYNAMIC_MODEL_INDEX_WRITE`, and it existed here too.
@@ -397,6 +495,32 @@ describe('AuditLog Immutability Guardrails', () => {
 
     // ── Raw SQL: `src/` AND `tests/`, one derived exemption (#2523) ───
 
+    it('the literal raw-SQL patterns see both trails, a schema qualifier and TRUNCATE', () => {
+        // Every line below was GREEN against the patterns this PR first
+        // shipped — not as a hypothetical, as a mutation: the Org statement
+        // went into an ordinary test file wrapped in a full replica-role
+        // transaction and the suite reported 11/11. These are the anchors
+        // for that fix, so that narrowing the patterns back reddens HERE
+        // rather than only on whatever file happens to carry the shape.
+        expect(RAW_DELETE.test('DELETE FROM "OrgAuditLog" WHERE "organizationId" = $1')).toBe(true);
+        expect(RAW_DELETE.test('DELETE FROM "public"."AuditLog" WHERE "tenantId" = $1')).toBe(true);
+        expect(RAW_UPDATE.test('UPDATE "OrgAuditLog" SET "actorType" = $1')).toBe(true);
+        expect(RAW_TRUNCATE.test('TRUNCATE TABLE "AuditLog"')).toBe(true);
+        expect(RAW_TRUNCATE.test('TRUNCATE "OrgAuditLog" CASCADE')).toBe(true);
+
+        // …and they still DISCRIMINATE. A widened pattern that matched every
+        // raw statement would make the three scans below vacuous in the
+        // opposite direction — red on ordinary teardown of ordinary tables.
+        expect(RAW_DELETE.test('DELETE FROM "TenantMembership" WHERE "tenantId" = $1')).toBe(false);
+        expect(RAW_UPDATE.test('UPDATE "Tenant" SET "name" = $1')).toBe(false);
+        expect(RAW_TRUNCATE.test('TRUNCATE TABLE "Control"')).toBe(false);
+
+        // The shapes that remain blind, asserted rather than described, so
+        // that closing one of them turns this line red and forces the
+        // docblock above to be corrected in the same diff.
+        expect(RAW_DELETE.test(`'DELETE FROM "' + table + '"'`)).toBe(false);
+    });
+
     it('the raw-SQL exemption resolves to a file these scans actually read', () => {
         // If the derivation breaks, this fails FIRST and says so, instead of
         // the exemption silently covering nothing (or, worse, the helper's
@@ -433,15 +557,40 @@ describe('AuditLog Immutability Guardrails', () => {
         ).toBe(true);
     });
 
-    it('no raw SQL UPDATE on AuditLog outside the audited helper', () => {
+    it('no raw SQL UPDATE on an audit table outside the audited helper', () => {
         expect(
-            scan(['src', 'tests'], RAW_UPDATE, 'raw SQL UPDATE on AuditLog', AUDIT_CLEANUP_HELPER),
+            scan(
+                ['src', 'tests'],
+                RAW_UPDATE,
+                'raw SQL UPDATE on an audit table',
+                AUDIT_CLEANUP_HELPER,
+            ),
         ).toEqual([]);
     });
 
-    it('no raw SQL DELETE on AuditLog outside the audited helper', () => {
+    it('no raw SQL DELETE on an audit table outside the audited helper', () => {
         expect(
-            scan(['src', 'tests'], RAW_DELETE, 'raw SQL DELETE on AuditLog', AUDIT_CLEANUP_HELPER),
+            scan(
+                ['src', 'tests'],
+                RAW_DELETE,
+                'raw SQL DELETE on an audit table',
+                AUDIT_CLEANUP_HELPER,
+            ),
+        ).toEqual([]);
+    });
+
+    it('no raw SQL TRUNCATE on an audit table outside the audited helper', () => {
+        // Reported separately from the DELETE scan because the remedy is
+        // different: a TRUNCATE is not a delete somebody forgot to route
+        // through the helper — the helper has no TRUNCATE to route it to,
+        // and there is no bypass beside it to explain what the author meant.
+        expect(
+            scan(
+                ['src', 'tests'],
+                RAW_TRUNCATE,
+                'raw SQL TRUNCATE on an audit table',
+                AUDIT_CLEANUP_HELPER,
+            ),
         ).toEqual([]);
     });
 
