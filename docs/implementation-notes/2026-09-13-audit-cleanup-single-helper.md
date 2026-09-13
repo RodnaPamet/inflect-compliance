@@ -41,7 +41,9 @@ single exemption only works if all three live behind it:
    trigger works — the same reasoning the guard file already records for the
    DSAR erasure oracle.
 
-121 + 3 + 12 = **136 call sites across 103 test files**, counted on the branch
+121 + 3 + 12 = **136 call sites across 103 files under `tests/`** (101 of those
+are jest suites; `global-teardown.ts` and `stress/helpers/stress-env.ts` are
+not), counted on the branch
 rather than inferred from the base-commit statement count — the two are not the
 same number, because three sites that had no literal statement at base (the
 interpolated-table files) acquired one, and `#2531`'s teardown landed after the
@@ -108,7 +110,9 @@ The Org one is the finding that mattered, because this PR is what brought
 `tamperOrgAuditRow`, and the migrated Org sites) — so this PR was the one leaving
 that trail unguarded. A complete `SET LOCAL session_replication_role = 'replica'`
 transaction around a literal Org delete, dropped into an ordinary test file, left
-the guard suite fully green.
+the guard suite 11/11 green. With the fix it is RED, naming that file; the
+byte-identical statement inside the helper stays green, so the derived exemption
+still covers what it is meant to.
 
 Widening cost nothing: across the whole scanned population not one existing file
 newly matches, and the only literal Org statement in the repo is the helper's
@@ -117,8 +121,10 @@ own, already covered by the derived exemption.
 **The fourth mutation is still open, and is recorded rather than fixed.**
 `AUDIT_TABLE_AS_STRING` is evaluated per-file, so the interpolated-table scan
 only fires while the table-name array and the `DELETE FROM "${table}"` that
-consumes it sit in the SAME file. Two new modules — the list in one, the loop in
-the other — are invisible. That is precisely the shape this PR exists to close,
+consumes it sit in the SAME file. Re-run here against the **widened** patterns
+rather than quoted from the review — the list in one new module, the loop in
+another — and the guard is still GREEN 13/13. That is precisely the shape this
+PR exists to close,
 and its closure here is an accident of co-location: moving `TENANT_CHILD_TABLES`
 into a shared constants module would reopen it silently. Closing it needs import
 resolution rather than another regex, so the guard header states it as a live
