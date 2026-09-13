@@ -37,25 +37,34 @@
  *
  * "Read + write fits inside the lease" was a composition of TWO PHASES OUT OF
  * THREE. `SYNC_WRITE_PHASE_BUDGET_MS` counts the chunk and reconcile `writeTx`
- * budgets only, so the run's four lease-held BOOKKEEPING transactions were in
+ * budgets only, so the run's five lease-held BOOKKEEPING transactions were in
  * neither term — and the run-open is not even inside the clock the read
  * deadline is measured from, because `jobs/hris-sync.ts` takes the lock before
- * `runHrisSync` takes its `start`. Roughly 60 s unaccounted against 170 s of
- * margin, and the sentence a future author would have reasoned from while
- * moving one of these constants was true of a subtotal.
+ * `runHrisSync` takes its `start`. 75 s unaccounted against 170 s of margin,
+ * and the sentence a future author would have reasoned from while moving one
+ * of these constants was true of a subtotal.
  *
  * ═══ WHAT ARITHMETIC CERTIFIES, AND WHAT IT DOES NOT ═══
  *
  * Stated at the top because it governs every assertion below. This file adds
  * up CONSTANTS. It fails when the numbers stop composing, and it stays GREEN
  * when the code stops honouring them — a transaction opened with the wrong
- * options, a reader that stops checking its deadline, a fifth bookkeeping
+ * options, a reader that stops checking its deadline, a SIXTH bookkeeping
  * transaction added to the long path. None of those move a constant.
+ *
+ * THAT IS NOT A HYPOTHETICAL, AND THIS FILE SHIPPED WRONG BECAUSE OF IT. The
+ * count started at four, taken over the resumable arm that SUCCEEDS. The
+ * write-phase `catch` in `usecases/hris-sync.ts` wraps that arm rather than
+ * standing beside it, so a finalise that blows its own bookkeeping budget —
+ * the precise failure `SYNC_BOOKKEEPING_TX_TIMEOUT_MS` is sized for — opens a
+ * FIFTH. Every assertion here stayed green at 60,000 ms while the reachable
+ * worst case was 75,000 ms. Arithmetic over a wrong census is still arithmetic.
  *
  * So the third term is bound to CONDUCT somewhere a sum cannot be:
  * `tests/unit/sync-transaction-shape.test.ts` counts the bookkeeping
- * transactions a real `runHrisSync` opens, against the same
- * `MAX_SYNC_BOOKKEEPING_TXS` this file multiplies — so adding one to the long
+ * transactions a real `runHrisSync` opens — on the failing arm AND on the
+ * succeeding one, so the difference between them is pinned too — against the
+ * same `MAX_SYNC_BOOKKEEPING_TXS` this file multiplies. Adding one to the long
  * path fails there even though it moves nothing here. The deadline's conduct
  * is proved in `tests/unit/roster-read-within-lock-lease.test.ts`.
  */
@@ -229,12 +238,17 @@ describe('the THIRD phase is in the composition too (#2522)', () => {
      * of the three phase budgets is inside the lease.
      *
      * WHAT THEY DO NOT CERTIFY: that a run opens only the transactions this
-     * sum counts. Adding a fifth bookkeeping transaction to the long path
+     * sum counts. Adding a SIXTH bookkeeping transaction to the long path
      * moves no constant in this file, so every assertion here would stay
-     * green. That is measured against a real run in
+     * green — and that is exactly how the count reached main one short, at
+     * four against a reachable five. Nor do they certify that a lease-held
+     * transaction carries either of these two timeouts at all: one opened with
+     * a third value is in no term of this sum and in no census. Both are
+     * measured against a real run in
      * `tests/unit/sync-transaction-shape.test.ts`, which counts the
      * bookkeeping transactions `runHrisSync` actually opens against this same
-     * `MAX_SYNC_BOOKKEEPING_TXS`.
+     * `MAX_SYNC_BOOKKEEPING_TXS`, and asserts the timeout partition over the
+     * long arms rather than over the short one.
      */
     it('composes read + write + BOOKKEEPING against the lease', () => {
         // The assertion #2522 was opened for. Every term is lease-held, so
