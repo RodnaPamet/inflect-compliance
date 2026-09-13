@@ -997,9 +997,17 @@ function progressValue(have: number, required: number, t: Translate): string {
  */
 function reachValue(spanHours: number | null, t: Translate): string {
     if (spanHours === null) return t('agentDetail.breaker.baselineReachNone');
-    return spanHours >= 48
-        ? t('agentDetail.breaker.baselineReachDays', { count: Math.round(spanHours / 24) })
-        : t('agentDetail.breaker.baselineReachHours', { count: spanHours });
+    // Two days is the threshold, so the days branch never renders "1 days" —
+    // the catalogue interpolates rather than pluralising, matching the
+    // `baselineLookbackValue` beside it.
+    if (spanHours >= 48) {
+        return t('agentDetail.breaker.baselineReachDays', {
+            count: Math.round(spanHours / 24),
+        });
+    }
+    // The one count the hours branch cannot phrase with a plain interpolation.
+    if (spanHours === 1) return t('agentDetail.breaker.baselineReachHour');
+    return t('agentDetail.breaker.baselineReachHours', { count: spanHours });
 }
 
 /**
