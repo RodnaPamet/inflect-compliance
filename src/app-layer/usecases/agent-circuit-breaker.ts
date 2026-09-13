@@ -246,6 +246,40 @@ export async function getAgentCircuitBreaker(ctx: RequestContext, agentId: strin
                 requiredWindows: MIN_BASELINE_WINDOWS,
                 requiredObservations: MIN_BASELINE_OBSERVATIONS,
                 lookbackWindows: BASELINE_WINDOW_LIMIT,
+                /**
+                 * HOW OLD the evidence is, which the counts above cannot say
+                 * (#2461).
+                 *
+                 * `windows` counts ACTIVE hours, so `lookbackWindows` of 168 is
+                 * seven days for an agent that calls every hour and roughly 84
+                 * days for one that calls twice a day. A surface reporting
+                 * "168 of 168 windows" was therefore silent about whether the
+                 * comparison reached back a week or a quarter.
+                 *
+                 * `null` when the baseline is empty — no oldest window at all,
+                 * which is a different fact from a span of zero.
+                 */
+                oldestWindowStart: accepted.length > 0
+                    ? accepted.reduce(
+                          (oldest, w) => (w.windowStart < oldest ? w.windowStart : oldest),
+                          accepted[0].windowStart,
+                      )
+                    : null,
+                /** Whole hours from that oldest window to the one being judged. */
+                spanHours: accepted.length > 0
+                    ? Math.max(
+                          0,
+                          Math.round(
+                              (currentWindowStart.getTime() -
+                                  accepted.reduce(
+                                      (oldest, w) =>
+                                          w.windowStart < oldest ? w.windowStart : oldest,
+                                      accepted[0].windowStart,
+                                  ).getTime()) /
+                                  3_600_000,
+                          ),
+                      )
+                    : null,
             },
             windowsToTrip: WINDOWS_TO_TRIP,
             closeReasons: [...BREAKER_CLOSE_REASONS],
