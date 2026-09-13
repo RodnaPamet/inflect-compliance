@@ -121,6 +121,13 @@ interface BaselineBlock {
     requiredWindows: number;
     requiredObservations: number;
     lookbackWindows: number;
+    /**
+     * The oldest accepted window, and how far back the baseline actually
+     * reaches in WALL-CLOCK time. `null` when nothing has been accepted — an
+     * absent oldest window, which is not the same fact as a span of zero.
+     */
+    oldestWindowStart: string | null;
+    spanHours: number | null;
 }
 
 interface BreakerPayload {
@@ -625,6 +632,15 @@ export function CircuitBreakerTab({
                             count: baseline.lookbackWindows,
                         })}
                     />
+                    {/* What the look-back above cannot say. `lookbackWindows`
+                        counts ACTIVE windows, so the same "168" is a week for
+                        an agent that calls hourly and about a quarter for one
+                        that calls twice a day — and an operator challenging a
+                        trip needs to know which. See #2461. */}
+                    <Fact
+                        label={t('agentDetail.breaker.baselineReach')}
+                        value={reachValue(baseline.spanHours, t)}
+                    />
                     <Fact
                         label={t('agentDetail.breaker.baselineTrip')}
                         value={t('agentDetail.breaker.baselineTripValue', {
@@ -963,6 +979,27 @@ function progressValue(have: number, required: number, t: Translate): string {
     return have >= required
         ? t('agentDetail.breaker.baselineMet', { have, required })
         : t('agentDetail.breaker.baselineProgress', { have, required });
+}
+
+/**
+ * The baseline's reach in wall-clock time, which the window COUNT cannot
+ * express — see the comment at the call site.
+ *
+ * Rendered in days past two of them because "412 hours" is a figure nobody
+ * converts under pressure, and the question this answers ("is the history I am
+ * being judged against recent?") is a question about days. Below that the hours
+ * are the honest unit: rounding 30 hours to "1 day" would lose the distinction
+ * between a baseline gathered overnight and one gathered last week.
+ *
+ * `null` is NOT zero. An empty baseline has no oldest window at all, and
+ * printing "0 hours" would read as "gathered just now" — the reassurance-shaped
+ * failure this panel is arranged against.
+ */
+function reachValue(spanHours: number | null, t: Translate): string {
+    if (spanHours === null) return t('agentDetail.breaker.baselineReachNone');
+    return spanHours >= 48
+        ? t('agentDetail.breaker.baselineReachDays', { count: Math.round(spanHours / 24) })
+        : t('agentDetail.breaker.baselineReachHours', { count: spanHours });
 }
 
 /**
