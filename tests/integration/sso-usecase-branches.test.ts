@@ -267,18 +267,32 @@ describeFn('sso usecase — branch coverage (integration)', () => {
             reason: 'domain_mismatch',
         });
 
-        // cross_tenant — pre-create a link in OTHER_TENANT for (pOpen, sub-ct)
+        // cross_tenant — the link now lives WITH ITS PROVIDER, in OTHER_TENANT.
+        //
+        // This used to create the link in OTHER_TENANT while pointing it at
+        // `pOpen`, which belongs to TENANT_ID. #2356 batch 3a made
+        // UserIdentityLink.providerId carry `tenantId`, so that row is no longer
+        // representable — the database refuses it on
+        // `UserIdentityLink_providerId_tenantId_fkey`.
+        //
+        // The BRANCH is not dead, and this still reaches it: the tenant comes
+        // from the CALLER, not from the provider. A caller asking to link into
+        // TENANT_ID against a provider whose existing link sits in
+        // OTHER_TENANT is exactly the mismatch `cross_tenant` exists to refuse —
+        // and it is the shape that can actually occur, rather than one that
+        // required an impossible row to stage.
+        const pOther = await makeProvider({ tenantId: OTHER_TENANT_ID, name: 'Link Other' });
         await globalPrisma.userIdentityLink.create({
             data: {
                 userId: adminPwUserId,
                 tenantId: OTHER_TENANT_ID,
-                providerId: pOpen.id,
+                providerId: pOther.id,
                 externalSubject: 'sub-ct',
                 emailAtLinkTime: 'x@x.test',
                 emailAtLinkTimeHash: hashForLookup('x@x.test'),
             },
         });
-        expect(await linkExternalIdentity(TENANT_ID, pOpen.id, 'sub-ct', 'a@x.test')).toEqual({
+        expect(await linkExternalIdentity(TENANT_ID, pOther.id, 'sub-ct', 'a@x.test')).toEqual({
             status: 'rejected',
             reason: 'cross_tenant',
         });
