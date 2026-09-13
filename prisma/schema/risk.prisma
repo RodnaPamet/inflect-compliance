@@ -315,7 +315,7 @@ model RiskAppetiteBreach {
   /// as "no task"; breach telemetry never blocks task lifecycle.
   remediationTaskId   String?
   tenant              Tenant    @relation(fields: [tenantId], references: [id])
-  risk                Risk?     @relation(fields: [riskId], references: [id])
+  risk                Risk?     @relation(fields: [riskId, tenantId], references: [id, tenantId])
 
   @@index([tenantId, detectedAt])
   @@index([tenantId, breachType])
@@ -447,7 +447,7 @@ model KeyRiskIndicator {
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
   tenant           Tenant       @relation(fields: [tenantId], references: [id])
-  risk             Risk?        @relation(fields: [riskId], references: [id])
+  risk             Risk?        @relation(fields: [riskId, tenantId], references: [id, tenantId])
   owner            User?        @relation("KriOwner", fields: [ownerUserId], references: [id])
   readings         KriReading[]
 
@@ -609,7 +609,7 @@ model LossEvent {
   /// Mark-as-resolved style soft delete so historical predictions
   /// can still see the actual that came in then later got reclassified.
   deletedAt       DateTime?
-  risk            Risk?           @relation(fields: [riskId], references: [id], onDelete: SetNull)
+  risk            Risk?           @relation(fields: [riskId, tenantId], references: [id, tenantId])
   tenant          Tenant          @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId, occurredAt])

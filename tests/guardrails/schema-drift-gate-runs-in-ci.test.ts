@@ -190,6 +190,51 @@ const SIGNED_OFF: Array<{ name: string; members: readonly string[] }> = [
             'ALTER TABLE "RiskSuggestionItem" ADD CONSTRAINT "RiskSuggestionItem_assetId_tenantId_fkey" FOREIGN KEY ("assetId", "tenantId") REFERENCES "Asset"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
         ],
     },
+    {
+        name: 'group 4 — #2356 batch 2, ten more column-scoped SET NULL FKs',
+        // Same shape and same reason as group 3, kept SEPARATE rather than
+        // appended so provenance stays readable: group 3 invented the
+        // column-scoped form (20260911120000, 20260911160000); these arrived
+        // with 20260913000000_tenant_fks_composite_batch2.
+        //
+        // Why they are residue at all: the FK carries `tenantId` so a
+        // cross-tenant reference is unrepresentable, and its referential action
+        // is `ON DELETE SET NULL ("<the fk column>")` — a column list Prisma's
+        // DSL has no syntax for. With a required `tenantId` in the FK the schema
+        // renders RESTRICT, so the diff proposes replacing the column-scoped
+        // constraint with a RESTRICT one, permanently, and we refuse
+        // permanently. The group 3 prose in the residue file is the long form.
+        //
+        // FOUR SITES THAT LOOK LIKE THESE ARE DELIBERATELY ABSENT:
+        // Finding.controlId, Finding.compensatingControlId,
+        // IntegrationExecution.controlId and Task.controlId. `Control.tenantId`
+        // is NULLABLE — a Control with a NULL tenant is a GLOBAL library
+        // control — so a composite FK there would make a tenant-scoped child
+        // unable to reference one. If a later batch adds them here, that is the
+        // claim to challenge.
+        members: [
+            'ALTER TABLE "AiDecisionLog" DROP CONSTRAINT "AiDecisionLog_aiSystemId_tenantId_fkey";',
+            'ALTER TABLE "ControlTestEvidenceLink" DROP CONSTRAINT "ControlTestEvidenceLink_evidenceId_tenantId_fkey";',
+            'ALTER TABLE "Evidence" DROP CONSTRAINT "Evidence_riskId_tenantId_fkey";',
+            'ALTER TABLE "Finding" DROP CONSTRAINT "Finding_auditId_tenantId_fkey";',
+            'ALTER TABLE "KeyRiskIndicator" DROP CONSTRAINT "KeyRiskIndicator_riskId_tenantId_fkey";',
+            'ALTER TABLE "LossEvent" DROP CONSTRAINT "LossEvent_riskId_tenantId_fkey";',
+            'ALTER TABLE "PolicyEvidenceItem" DROP CONSTRAINT "PolicyEvidenceItem_evidenceId_tenantId_fkey";',
+            'ALTER TABLE "RiskAppetiteBreach" DROP CONSTRAINT "RiskAppetiteBreach_riskId_tenantId_fkey";',
+            'ALTER TABLE "Task" DROP CONSTRAINT "Task_findingId_tenantId_fkey";',
+            'ALTER TABLE "VendorAssessmentAnswer" DROP CONSTRAINT "VendorAssessmentAnswer_evidenceId_tenantId_fkey";',
+            'ALTER TABLE "AiDecisionLog" ADD CONSTRAINT "AiDecisionLog_aiSystemId_tenantId_fkey" FOREIGN KEY ("aiSystemId", "tenantId") REFERENCES "AiSystem"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "ControlTestEvidenceLink" ADD CONSTRAINT "ControlTestEvidenceLink_evidenceId_tenantId_fkey" FOREIGN KEY ("evidenceId", "tenantId") REFERENCES "Evidence"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "Evidence" ADD CONSTRAINT "Evidence_riskId_tenantId_fkey" FOREIGN KEY ("riskId", "tenantId") REFERENCES "Risk"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "Finding" ADD CONSTRAINT "Finding_auditId_tenantId_fkey" FOREIGN KEY ("auditId", "tenantId") REFERENCES "Audit"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "PolicyEvidenceItem" ADD CONSTRAINT "PolicyEvidenceItem_evidenceId_tenantId_fkey" FOREIGN KEY ("evidenceId", "tenantId") REFERENCES "Evidence"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "RiskAppetiteBreach" ADD CONSTRAINT "RiskAppetiteBreach_riskId_tenantId_fkey" FOREIGN KEY ("riskId", "tenantId") REFERENCES "Risk"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "KeyRiskIndicator" ADD CONSTRAINT "KeyRiskIndicator_riskId_tenantId_fkey" FOREIGN KEY ("riskId", "tenantId") REFERENCES "Risk"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "LossEvent" ADD CONSTRAINT "LossEvent_riskId_tenantId_fkey" FOREIGN KEY ("riskId", "tenantId") REFERENCES "Risk"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "Task" ADD CONSTRAINT "Task_findingId_tenantId_fkey" FOREIGN KEY ("findingId", "tenantId") REFERENCES "Finding"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "VendorAssessmentAnswer" ADD CONSTRAINT "VendorAssessmentAnswer_evidenceId_tenantId_fkey" FOREIGN KEY ("evidenceId", "tenantId") REFERENCES "Evidence"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+        ],
+    },
 ];
 
 /** Every signed-off statement, flattened. */
