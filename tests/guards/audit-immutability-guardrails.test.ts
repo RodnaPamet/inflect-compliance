@@ -49,14 +49,35 @@
  * surviving audit rows also block the teardown's own `tenant.deleteMany`,
  * and each such run leaks its Tenant row as well. That was ALREADY happening
  * — the delete raised and was swallowed — so removing these calls does not
- * cause it; it just stops hiding it. The shared `inflect_test` database grows
- * accordingly, which is a real cost tracked separately rather than a reason
- * to keep a call that cannot work. A suite that genuinely
- * needs a clean slate uses the repo's other idiom — a
- * `SET LOCAL session_replication_role = 'replica'` transaction around a raw
- * `DELETE FROM "AuditLog"`, which disables the trigger instead of tripping
- * it. That idiom is why the two RAW-SQL scans below stay scoped to `src/`;
- * see the comment above them.
+ * cause it; it just stops hiding it.
+ *
+ * WHY THE RAW-SQL SCANS NOW COVER `tests/` TOO (#2523)
+ * ────────────────────────────────────────────────────
+ * The note above used to end "…which is a real cost tracked separately", and
+ * the two RAW-SQL scans below deliberately stopped at `src/`, because the
+ * repo's OTHER idiom — a `SET LOCAL session_replication_role = 'replica'`
+ * transaction around a raw `DELETE FROM "AuditLog"` — disables the trigger
+ * instead of tripping it, and therefore actually deletes. That is a
+ * different finding from #2510's: a visible, working bypass rather than a
+ * call that could neither fail nor succeed. Measured at #2523's base commit
+ * it stood at 134 statements across 100 files, and widening the scans would
+ * have turned all of them red on a decision nobody had taken.
+ *
+ * The decision was taken: ALLOW the bypass, through exactly one documented
+ * helper, and forbid the idiom everywhere else. `tests/helpers/audit-cleanup.ts`
+ * now owns it; every one of those sites calls into it; and these scans read
+ * `['src', 'tests']` with that ONE module exempt.
+ *
+ * THE EXEMPTION IS DERIVED, NOT NAMED. There is no allowlist array of
+ * filenames here. The helper exports its own `__filename` and this file runs
+ * it through `repoRelative`, the same way it resolves its own SELF skip — so
+ * renaming or moving the helper moves the exemption with it, and deleting it
+ * breaks this file's import rather than silently widening what is permitted.
+ *
+ * AND IT SETTLES THE COST NOTED ABOVE: with teardowns actually deleting
+ * their audit rows, `AuditLog_tenantId_fkey` stops firing and the suites
+ * stop leaking a Tenant row per run. Measured empirically on one suite
+ * before and after the change — the PR carries the numbers.
  *
  * POPULATION COMES FROM GIT
  * ─────────────────────────
@@ -85,8 +106,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { repoFiles, repoRelative } from '../helpers/repo-files';
-import { codeOf } from '../helpers/source-blocks';
+import { AUDIT_CLEANUP_MODULE } from '../helpers/audit-cleanup';
+import { REPO_ROOT, repoFiles, repoRelative } from '../helpers/repo-files';
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const SRC_DIR = path.resolve(__dirname, '..', '..', 'src');
 const PRISMA_DIR = path.resolve(__dirname, '..', '..', 'prisma');
@@ -132,6 +154,32 @@ const RAW_UPDATE = /UPDATE\s+["']?AuditLog["']?/i;
 const RAW_DELETE = /DELETE\s+(FROM\s+)?["']?AuditLog["']?/i;
 
 /**
+ * The raw-SQL twin of `DYNAMIC_MODEL_INDEX_WRITE`, and it existed here too.
+ *
+ * `for (const table of TENANT_CHILD_TABLES) await tx.$executeRawUnsafe(
+ *      \`DELETE FROM "${table}" WHERE "tenantId" = $1\`, id)`
+ *
+ * contains no `DELETE FROM "AuditLog"` for `RAW_DELETE` to find, yet
+ * 'AuditLog' was the sixth entry of that list. Three files under `tests/`
+ * were written this way. A textual guard cannot see a shape it has no
+ * pattern for, and this is the cheap shape to reach for next time.
+ *
+ * BOTH halves are required, which keeps it off the many files that
+ * legitimately interpolate a table name (`soft-delete-lifecycle.ts`,
+ * `key-rotation.ts`, the DEK-rotation jobs) without ever naming an audit
+ * table, and off the files that name one in prose or a filter.
+ *
+ * THE UPDATE ARM NEEDS `SET`, AND THAT IS NOT TIDINESS. Written as a bare
+ * `UPDATE\s+["'`]?\$\{` it matched `` `AMW Risk Update ${testRunId}` `` —
+ * an English fixture title in `audit-middleware.test.ts`, three times over.
+ * "Update " before an interpolation is ordinary prose; `UPDATE "<x>" SET` is
+ * not. `DELETE FROM` is already specific enough to stand alone.
+ */
+const RAW_DML_ON_INTERPOLATED_TABLE =
+    /DELETE\s+FROM\s+["'`]?\$\{|UPDATE\s+["'`]?\$\{[^}]*\}["'`]?\s+SET\b/i;
+const AUDIT_TABLE_AS_STRING = /['"`](?:Org)?AuditLog['"`]/;
+
+/**
  * Can a Prisma call written in this file reach Postgres?
  *
  * A file that swaps the client module for a double **and** never builds a
@@ -168,6 +216,17 @@ export function reachesDatabase(src: string): boolean {
  */
 const SELF = repoRelative(__filename).replace(/\.js$/, '.ts');
 
+/**
+ * The ONE module allowed to write raw SQL against the audit trails.
+ *
+ * Derived, never named: `AUDIT_CLEANUP_MODULE` is that module's own
+ * `__filename`, resolved here exactly the way SELF is. A rename cannot leave
+ * a stale literal behind, and a deletion breaks the import above rather than
+ * quietly removing the guard's only exception. There is deliberately no
+ * allowlist array of filenames in this file.
+ */
+const AUDIT_CLEANUP_HELPER = repoRelative(AUDIT_CLEANUP_MODULE).replace(/\.js$/, '.ts');
+
 interface ScannedFile {
     rel: string;
     /** Comment-masked source: a JSDoc that QUOTES the forbidden call — e.g.
@@ -194,11 +253,23 @@ function dbReachingSources(subtree: string): ScannedFile[] {
     return out;
 }
 
-/** Repo-relative paths whose code matches `pattern`, across `subtrees`. */
-function scan(subtrees: readonly string[], pattern: RegExp, label: string): string[] {
+/**
+ * Repo-relative paths whose code matches `pattern`, across `subtrees`.
+ *
+ * `exemptRel` is a single DERIVED path, not a list — the same shape as the
+ * `rel === SELF` skip above. Callers pass `AUDIT_CLEANUP_HELPER`; nothing
+ * here can be extended into an allowlist without changing this signature.
+ */
+function scan(
+    subtrees: readonly string[],
+    pattern: RegExp,
+    label: string,
+    exemptRel?: string,
+): string[] {
     const violations: string[] = [];
     for (const subtree of subtrees) {
         for (const { rel, code } of dbReachingSources(subtree)) {
+            if (rel === exemptRel) continue;
             if (pattern.test(code)) violations.push(`${rel}: ${label}`);
         }
     }
@@ -302,24 +373,75 @@ describe('AuditLog Immutability Guardrails', () => {
         expect(violations).toEqual([]);
     });
 
-    // ── Raw SQL: `src/` only, deliberately ────────────────────────────
-    //
-    // Under `tests/` the established teardown idiom is a
-    // `SET LOCAL session_replication_role = 'replica'` transaction wrapped
-    // around `DELETE FROM "AuditLog"` — 116 call sites across ~95 files,
-    // which DISABLE the trigger rather than trip it, and therefore actually
-    // delete. That is a different finding from #2510's: a visible, working
-    // bypass instead of a call that could neither fail nor succeed. Widening
-    // these two scans would turn ~95 files red on a decision nobody has
-    // taken, so they stay at `src/` and the bypass is tracked separately.
-    // Application code has no such idiom and no exception.
+    // ── Raw SQL: `src/` AND `tests/`, one derived exemption (#2523) ───
 
-    it('no raw SQL UPDATE on AuditLog table in application code', () => {
-        expect(scan(['src'], RAW_UPDATE, 'raw SQL UPDATE on AuditLog')).toEqual([]);
+    it('the raw-SQL exemption resolves to a file these scans actually read', () => {
+        // If the derivation breaks, this fails FIRST and says so, instead of
+        // the exemption silently covering nothing (or, worse, the helper's
+        // own sanctioned SQL being reported as the violation).
+        expect(AUDIT_CLEANUP_HELPER).toMatch(/^tests\/helpers\/[\w-]+\.ts$/);
+        expect(dbReachingSources('tests').some((f) => f.rel === AUDIT_CLEANUP_HELPER)).toBe(true);
+
+        // …and the exemption is load-bearing rather than decorative: the
+        // file it resolves to really does contain the forbidden idioms, so
+        // removing it from the skip would turn this scan red.
+        const code = codeOf(
+            fs.readFileSync(path.resolve(REPO_ROOT, AUDIT_CLEANUP_HELPER), 'utf-8'),
+        );
+        expect(RAW_DELETE.test(code)).toBe(true);
+
+        // BOUND, not a whole-file `toContain`. The claim is not "the bypass
+        // appears somewhere in this file" — it is that the bypass lives in
+        // THAT function, which is what makes the module a single seam. A
+        // whole-file needle would also be a Class-D ambiguous read against a
+        // DRIFT_ALLOWANCE-0 ratchet, and narrowing is the fix the ratchet
+        // asks for rather than a number to move.
+        expect(functionBodyOf(code, 'withAuditTriggersDisabled')).toContain(
+            `SET LOCAL session_replication_role = 'replica'`,
+        );
+
+        // The helper's UPDATE path is spelled `UPDATE "${table}" SET …`, so
+        // RAW_UPDATE — which wants a LITERAL table name — does not see it and
+        // the interpolated-table scan does. That asymmetry is the whole point
+        // of having the third scan: if the exemption covered only what
+        // RAW_UPDATE can read, the helper's own tamper statement would be an
+        // unreported violation and every copy of it elsewhere would be too.
+        expect(
+            RAW_DML_ON_INTERPOLATED_TABLE.test(code) && AUDIT_TABLE_AS_STRING.test(code),
+        ).toBe(true);
     });
 
-    it('no raw SQL DELETE on AuditLog table in application code', () => {
-        expect(scan(['src'], RAW_DELETE, 'raw SQL DELETE on AuditLog')).toEqual([]);
+    it('no raw SQL UPDATE on AuditLog outside the audited helper', () => {
+        expect(
+            scan(['src', 'tests'], RAW_UPDATE, 'raw SQL UPDATE on AuditLog', AUDIT_CLEANUP_HELPER),
+        ).toEqual([]);
+    });
+
+    it('no raw SQL DELETE on AuditLog outside the audited helper', () => {
+        expect(
+            scan(['src', 'tests'], RAW_DELETE, 'raw SQL DELETE on AuditLog', AUDIT_CLEANUP_HELPER),
+        ).toEqual([]);
+    });
+
+    it('no raw SQL reaches an audit table through an interpolated table name', () => {
+        // The raw-SQL twin of DYNAMIC_MODEL_INDEX_WRITE, and it caught a real
+        // site: `tests/e2e/global-teardown.ts` looped a hand-maintained
+        // `TENANT_CHILD_TABLES` list — 'AuditLog' among them — through
+        // `DELETE FROM "${table}" WHERE "tenantId" = $1`. RAW_DELETE sees
+        // NOTHING in that: the table name is a string in an array and the
+        // statement interpolates it. Two more test files had the same shape.
+        const violations: string[] = [];
+        for (const subtree of ['src', 'tests']) {
+            for (const { rel, code } of dbReachingSources(subtree)) {
+                if (rel === AUDIT_CLEANUP_HELPER) continue;
+                if (RAW_DML_ON_INTERPOLATED_TABLE.test(code) && AUDIT_TABLE_AS_STRING.test(code)) {
+                    violations.push(
+                        `${rel}: names "AuditLog" beside a raw DELETE/UPDATE on an interpolated table`,
+                    );
+                }
+            }
+        }
+        expect(violations).toEqual([]);
     });
 
     test('Prisma audit middleware excludes AuditLog from WRITE_ACTIONS', () => {

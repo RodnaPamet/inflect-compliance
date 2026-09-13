@@ -21,6 +21,7 @@ import {
 } from '@/app-layer/usecases/org-invites';
 import type { OrgContext } from '@/app-layer/types';
 import { hashForLookup } from '@/lib/security/encryption';
+import { deleteOrgAuditRowsForOrganizations } from '../helpers/audit-cleanup';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -79,12 +80,9 @@ describeFn('Epic D — org invite lifecycle (integration)', () => {
         // Bypass audit immutability for cleanup; same pattern as
         // org-audit-immutability.test.ts.
         try {
+            await deleteOrgAuditRowsForOrganizations(prisma, organizationId);
             await prisma.$transaction(async (tx) => {
                 await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-                await tx.$executeRawUnsafe(
-                    `DELETE FROM "OrgAuditLog" WHERE "organizationId" = $1`,
-                    organizationId,
-                );
                 await tx.$executeRawUnsafe(
                     `DELETE FROM "OrgInvite" WHERE "organizationId" = $1`,
                     organizationId,

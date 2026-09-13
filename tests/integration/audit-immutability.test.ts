@@ -14,6 +14,7 @@ import { DB_AVAILABLE } from './db-helper';
 import { prismaTestClient } from '../helpers/db';
 import { PrismaClient } from '@prisma/client';
 import { hashForLookup } from '@/lib/security/encryption';
+import { attemptAuditDelete, attemptAuditUpdate, deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -75,13 +76,7 @@ describeFn('AuditLog Immutability (DB Trigger)', () => {
         // parallel test suites (e.g. audit-hash-chain). Set session_replication_role
         // to 'replica' to bypass the immutability trigger for cleanup.
         try {
-            await prisma.$transaction(async (tx) => {
-                await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-                await tx.$executeRawUnsafe(
-                    `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-                    tenantId,
-                );
-            });
+            await deleteAuditRowsForTenants(prisma, tenantId);
         } catch {
             // Ignore — globalSetup handles reset
         }
@@ -119,20 +114,14 @@ describeFn('AuditLog Immutability (DB Trigger)', () => {
 
     test('UPDATE is blocked — trigger raises IMMUTABLE_AUDIT_LOG exception', async () => {
         await expect(
-            prisma.$executeRawUnsafe(
-                `UPDATE "AuditLog" SET "details" = 'tampered' WHERE "id" = $1`,
-                testId,
-            ),
+            attemptAuditUpdate(prisma, 'AuditLog', `"details" = 'tampered'`, '"id" = $1', testId),
         ).rejects.toThrow(/IMMUTABLE_AUDIT_LOG/);
     });
 
     test('UPDATE error message mentions operation type and append-only', async () => {
         let errorMessage = '';
         try {
-            await prisma.$executeRawUnsafe(
-                `UPDATE "AuditLog" SET "action" = 'TAMPERED' WHERE "id" = $1`,
-                testId,
-            );
+            await attemptAuditUpdate(prisma, 'AuditLog', `"action" = 'TAMPERED'`, '"id" = $1', testId);
             // Should not reach here
             expect(true).toBe(false);
         } catch (err: unknown) {
@@ -147,20 +136,14 @@ describeFn('AuditLog Immutability (DB Trigger)', () => {
 
     test('DELETE is blocked — trigger raises IMMUTABLE_AUDIT_LOG exception', async () => {
         await expect(
-            prisma.$executeRawUnsafe(
-                `DELETE FROM "AuditLog" WHERE "id" = $1`,
-                testId,
-            ),
+            attemptAuditDelete(prisma, 'AuditLog', '"id" = $1', testId),
         ).rejects.toThrow(/IMMUTABLE_AUDIT_LOG/);
     });
 
     test('DELETE error message mentions operation type and append-only', async () => {
         let errorMessage = '';
         try {
-            await prisma.$executeRawUnsafe(
-                `DELETE FROM "AuditLog" WHERE "id" = $1`,
-                testId,
-            );
+            await attemptAuditDelete(prisma, 'AuditLog', '"id" = $1', testId);
             expect(true).toBe(false);
         } catch (err: unknown) {
             errorMessage = err instanceof Error ? err.message : String(err);
@@ -187,19 +170,13 @@ describeFn('AuditLog Immutability (DB Trigger)', () => {
 
     test('bulk UPDATE is blocked', async () => {
         await expect(
-            prisma.$executeRawUnsafe(
-                `UPDATE "AuditLog" SET "details" = 'mass tamper' WHERE "tenantId" = $1`,
-                tenantId,
-            ),
+            attemptAuditUpdate(prisma, 'AuditLog', `"details" = 'mass tamper'`, '"tenantId" = $1', tenantId),
         ).rejects.toThrow(/IMMUTABLE_AUDIT_LOG/);
     });
 
     test('bulk DELETE is blocked', async () => {
         await expect(
-            prisma.$executeRawUnsafe(
-                `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-                tenantId,
-            ),
+            attemptAuditDelete(prisma, 'AuditLog', '"tenantId" = $1', tenantId),
         ).rejects.toThrow(/IMMUTABLE_AUDIT_LOG/);
     });
 });

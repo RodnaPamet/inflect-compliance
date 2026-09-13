@@ -37,6 +37,7 @@ import {
     recordBaselinePins,
 } from '@/lib/agentic/tool-manifest-store';
 import { approveToolManifest, listToolManifests } from '@/app-layer/usecases/mcp-tool-manifest';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(60_000);
@@ -84,9 +85,9 @@ async function asAppUserWithNoTenant<T>(fn: (tx: PrismaClient) => Promise<T>): P
 async function clearOwnRows(): Promise<void> {
     const t = { tenantId: { in: [T1, T2] } };
     await prisma.mcpToolManifestPin.deleteMany({ where: t });
+    await deleteAuditRowsForTenants(prisma, [T1, T2]);
     await prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`, [T1, T2]);
         await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`, [T1, T2]);
     });
     await prisma.user.deleteMany({

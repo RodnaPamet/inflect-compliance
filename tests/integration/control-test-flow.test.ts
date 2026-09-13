@@ -12,6 +12,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { computeNextDueAt } from '@/app-layer/utils/cadence';
 import { withPiiEncryptionExtension } from '@/lib/security/pii-middleware';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = withPiiEncryptionExtension(new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -65,7 +66,7 @@ describeFn('Control Test Flow — Integration', () => {
     afterAll(async () => {
         if (tenantAId) {
             try {
-                await prisma.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" IN ($1, $2)`, tenantAId, tenantBId);
+                await deleteAuditRowsForTenants(prisma, [tenantAId, tenantBId]);
                 await prisma.$executeRawUnsafe(`DELETE FROM "ControlTestEvidenceLink" WHERE "tenantId" IN ($1, $2)`, tenantAId, tenantBId);
                 await prisma.$executeRawUnsafe(`DELETE FROM "ControlTestStep" WHERE "tenantId" IN ($1, $2)`, tenantAId, tenantBId);
                 await prisma.$executeRawUnsafe(`DELETE FROM "ControlTestRun" WHERE "tenantId" IN ($1, $2)`, tenantAId, tenantBId);

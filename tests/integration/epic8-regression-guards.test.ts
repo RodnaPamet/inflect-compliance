@@ -18,6 +18,7 @@ import { SOFT_DELETE_MODELS, withDeleted, withSoftDeleteExtension } from '@/lib/
 import { encryptField, decryptField, hashForLookup, isEncryptedValue } from '@/lib/security/encryption';
 import { withPiiEncryptionExtension, _getPiiFieldMap } from '@/lib/security/pii-middleware';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 // Prisma 7 — soft-delete moved from `$use` to `$extends`. Wrap inline
 // to mirror the production `src/lib/prisma.ts` composition.
@@ -46,7 +47,7 @@ if (DB_AVAILABLE) {
     });
 
     afterAll(async () => {
-        await prisma.$executeRawUnsafe('DELETE FROM "AuditLog" WHERE "tenantId" = $1', testTenantId).catch(() => {});
+        await deleteAuditRowsForTenants(prisma, testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Risk" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Control" WHERE "tenantId" = $1', testTenantId).catch(() => {});
         await prisma.$executeRawUnsafe('DELETE FROM "Vendor" WHERE "tenantId" = $1', testTenantId).catch(() => {});

@@ -36,6 +36,7 @@ import {
     getAccessReviewWithActivity,
 } from '@/app-layer/usecases/access-review';
 import { processAccessReviewReminders } from '@/app-layer/jobs/access-review-reminder';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -113,16 +114,13 @@ describeFn('Epic G-4 — end-to-end campaign lifecycle', () => {
         await globalPrisma.fileRecord.deleteMany({
             where: { tenantId: TENANT_ID, domain: 'evidence' },
         });
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(
                 `SET LOCAL session_replication_role = 'replica'`,
             );
             await tx.$executeRawUnsafe(
                 `DELETE FROM "TenantMembership" WHERE "tenantId" = $1`,
-                TENANT_ID,
-            );
-            await tx.$executeRawUnsafe(
-                `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
                 TENANT_ID,
             );
         });

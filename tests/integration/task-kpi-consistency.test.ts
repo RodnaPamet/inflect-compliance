@@ -26,6 +26,7 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { createTask, setTaskStatus, getTaskMetrics } from '@/app-layer/usecases/task';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -117,9 +118,9 @@ describeFn('task KPI consistency — list KPIs are server-sourced (integration)'
         // `session_replication_role = 'replica'` transaction — the canonical
         // integration-teardown pattern (mirrors task-filters.test.ts) that
         // disables triggers for the cleanup only.
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "Notification" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "NotificationOutbox" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "AutomationExecution" WHERE "tenantId" = $1`, TENANT_ID);

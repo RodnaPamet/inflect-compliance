@@ -42,6 +42,7 @@ import {
 import { loadPolicyCardInForce, reserveDailyAction } from '@/lib/agentic/policy-card-store';
 import { NO_POLICY_CARD } from '@/lib/agentic/policy-card';
 import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 /**
  * Every escalation trigger, spelled out.
@@ -101,9 +102,9 @@ async function clearOwnRows(): Promise<void> {
     await prisma.registeredAgentTool.deleteMany({ where: t });
     await prisma.registeredAgent.deleteMany({ where: t });
     await prisma.aiSystem.deleteMany({ where: t });
+    await deleteAuditRowsForTenants(prisma, [T1, T2]);
     await prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`, [T1, T2]);
         await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`, [T1, T2]);
     });
     await prisma.user.deleteMany({

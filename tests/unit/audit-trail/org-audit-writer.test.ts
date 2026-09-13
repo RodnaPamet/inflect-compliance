@@ -23,6 +23,12 @@ import {
     appendOrgAuditEntry,
     verifyOrgAuditChain,
 } from '@/lib/audit/org-audit-writer';
+import {
+    attemptAuditDelete,
+    attemptAuditUpdate,
+    deleteOrgAuditRowsForOrganizations,
+    tamperOrgAuditRow,
+} from '../../helpers/audit-cleanup';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -59,13 +65,7 @@ describeFn('appendOrgAuditEntry — org hash chain (real DB)', () => {
 
     afterAll(async () => {
         // OrgAuditLog is append-only — bypass its trigger to clean up.
-        await prisma.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(
-                `DELETE FROM "OrgAuditLog" WHERE "organizationId" = ANY($1::text[])`,
-                orgIds,
-            );
-        });
+        await deleteOrgAuditRowsForOrganizations(prisma, orgIds);
         await prisma.user.deleteMany({ where: { id: { in: [actorUserId, targetUserId] } } });
         await prisma.organization.deleteMany({ where: { id: { in: orgIds } } });
         await prisma.$disconnect();
@@ -172,14 +172,7 @@ describeFn('appendOrgAuditEntry — org hash chain (real DB)', () => {
             prisma,
         );
 
-        await prisma.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(
-                `UPDATE "OrgAuditLog" SET "entryHash" = $1 WHERE "id" = $2`,
-                'deadbeef'.repeat(8),
-                a.id,
-            );
-        });
+        await tamperOrgAuditRow(prisma, a.id, 'entryHash', 'deadbeef'.repeat(8));
 
         const verdict = await verifyOrgAuditChain(org.id, prisma);
         expect(verdict.valid).toBe(false);
@@ -193,10 +186,7 @@ describeFn('appendOrgAuditEntry — org hash chain (real DB)', () => {
             prisma,
         );
         await expect(
-            prisma.$executeRawUnsafe(
-                `UPDATE "OrgAuditLog" SET "actorType" = 'TAMPER' WHERE "id" = $1`,
-                res.id,
-            ),
+            attemptAuditUpdate(prisma, 'OrgAuditLog', `"actorType" = 'TAMPER'`, '"id" = $1', res.id),
         ).rejects.toThrow(/IMMUTABLE_ORG_AUDIT_LOG/);
     });
 
@@ -206,7 +196,7 @@ describeFn('appendOrgAuditEntry — org hash chain (real DB)', () => {
             prisma,
         );
         await expect(
-            prisma.$executeRawUnsafe(`DELETE FROM "OrgAuditLog" WHERE "id" = $1`, res.id),
+            attemptAuditDelete(prisma, 'OrgAuditLog', '"id" = $1', res.id),
         ).rejects.toThrow(/IMMUTABLE_ORG_AUDIT_LOG/);
     });
 });

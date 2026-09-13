@@ -81,6 +81,7 @@ import {
 import { POST as KILL_POST, PATCH as KILL_PATCH } from '@/app/api/t/[tenantSlug]/admin/agents/kill-switch/route';
 import { makeRequestContext } from '../helpers/make-context';
 import type { RequestContext } from '@/app-layer/types';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -324,9 +325,9 @@ describeFn('the agent kill switch stops a run already in flight (real DB)', () =
             await prisma.mcpToolManifestPin.deleteMany({ where: { tenantId: t } }).catch(() => {});
             await prisma.registeredAgent.deleteMany({ where: { tenantId: t } }).catch(() => {});
             await prisma.aiSystem.deleteMany({ where: { tenantId: t } }).catch(() => {});
+            await deleteAuditRowsForTenants(prisma, t).catch(() => {});
             await prisma.$transaction(async (tx) => {
                 await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-                await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, t);
                 await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, t);
             }).catch(() => {});
             await prisma.tenant.deleteMany({ where: { id: t } }).catch(() => {});

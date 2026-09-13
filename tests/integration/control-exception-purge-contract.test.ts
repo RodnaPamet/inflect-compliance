@@ -59,6 +59,7 @@ import {
     deleteControl,
     purgeControl,
 } from '@/app-layer/usecases/control';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 /** Raw client — no soft-delete extension, so `.delete()` really deletes. */
 const globalPrisma = new PrismaClient({
@@ -207,15 +208,7 @@ async function teardown() {
     await globalPrisma.tenantMembership.deleteMany({
         where: { tenantId: { in: tenantIds } },
     });
-    await globalPrisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(
-            `SET LOCAL session_replication_role = 'replica'`,
-        );
-        await tx.$executeRawUnsafe(
-            `DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`,
-            tenantIds,
-        );
-    });
+    await deleteAuditRowsForTenants(globalPrisma, tenantIds);
     const userIds = [admin, foreignAdmin].filter(Boolean).map((u) => u.userId);
     if (userIds.length > 0) {
         await globalPrisma.user.deleteMany({ where: { id: { in: userIds } } });

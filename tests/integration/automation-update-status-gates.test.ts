@@ -48,6 +48,7 @@ import { createTask, getTask } from '@/app-layer/usecases/task';
 import { runAutomationEventDispatch } from '@/app-layer/jobs/automation-event-dispatch';
 import { toDispatchPayload } from '@/app-layer/automation';
 import type { AutomationEventDispatchPayload } from '@/app-layer/jobs/types';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -192,7 +193,7 @@ describeFn('automation UPDATE_STATUS obeys the status gates', () => {
 
     afterAll(async () => {
         try {
-            await db.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT);
+            await deleteAuditRowsForTenants(db, TENANT);
             await db.automationExecution.deleteMany({ where: { tenantId: TENANT } });
             await db.automationRule.deleteMany({ where: { tenantId: TENANT } });
             await db.taskLink.deleteMany({ where: { tenantId: TENANT } });

@@ -41,6 +41,7 @@ import { withTenantDb } from '@/lib/db-context';
 import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -113,13 +114,7 @@ async function teardownFixtures() {
     // reject DELETE — do it under postgres role with the trigger
     // bypassed via session_replication_role=replica (same pattern
     // global-teardown uses).
-    await globalPrisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(
-            `DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`,
-            [TENANT_A_ID, TENANT_B_ID],
-        );
-    });
+    await deleteAuditRowsForTenants(globalPrisma, [TENANT_A_ID, TENANT_B_ID]);
     await globalPrisma.user.deleteMany({
         where: { id: { in: [USER_A_ID, USER_B_ID] } },
     });

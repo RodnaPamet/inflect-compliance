@@ -36,6 +36,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { generateApiKey, verifyApiKey } from '@/lib/auth/api-key-auth';
 import { hashForLookup } from '@/lib/security/encryption';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -113,9 +114,9 @@ describeFn('an agent-bound key cannot exceed its principal', () => {
         // whole suite with "failed to run" — a broken-suite signal for what is
         // really just cleanup. Replica mode suspends triggers for the
         // transaction, which is the shape the other integration suites use.
+        await deleteAuditRowsForTenants(prisma, TENANT);
         await prisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT);
             await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT);
         });
         await prisma.user.deleteMany({ where: { id: { in: [OWNER, READER] } } });

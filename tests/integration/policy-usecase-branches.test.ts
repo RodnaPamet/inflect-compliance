@@ -38,6 +38,7 @@ import {
     bulkDeletePolicy,
     bulkArchivePolicy,
 } from '@/app-layer/usecases/policy';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -104,9 +105,9 @@ describeFn('policy usecase — branch coverage (integration)', () => {
         if (templateId) {
             await globalPrisma.policyTemplate.deleteMany({ where: { id: templateId } });
         }
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT_ID);
         });
         await globalPrisma.user.deleteMany({ where: { id: { in: [ownerUserId, adminUserId, editorUserId, readerUserId] } } });

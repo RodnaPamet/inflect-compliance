@@ -26,6 +26,7 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { ProcessMapRepository } from '@/app-layer/repositories/ProcessMapRepository';
 import { runInTenantContext } from '@/lib/db-context';
 import { makeRequestContext } from '../helpers/make-context';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -59,15 +60,7 @@ async function cleanup() {
     // of the integration suite uses to clean its audit fixtures.
     // We seed audit rows via the usecase layer (logEvent), so the
     // map creates + replaceGraph commits both write audit entries.
-    await globalPrisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(
-            `SET LOCAL session_replication_role = 'replica'`,
-        );
-        await tx.$executeRawUnsafe(
-            `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-            TENANT_ID,
-        );
-    });
+    await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
     await globalPrisma.user.deleteMany({ where: { id: USER_ID } });
     await globalPrisma.tenant.deleteMany({ where: { id: TENANT_ID } });
 }

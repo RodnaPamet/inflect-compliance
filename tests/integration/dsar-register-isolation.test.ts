@@ -26,6 +26,7 @@ import {
     recordDsarRequest,
     transitionDsarRequest,
 } from '@/app-layer/usecases/dsar-register';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = prismaTestClient();
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -95,10 +96,10 @@ describeFn('DSAR register — tenant isolation (integration)', () => {
         // transaction so fixtures can be cleaned up without weakening the
         // trigger itself. Same pattern as tests/integration/task-filters.test.ts.
         await prisma.dataSubjectRequest.deleteMany({ where: { id: { in: [dsarA, dsarB] } } });
+        await deleteAuditRowsForTenants(prisma, [tenantA, tenantB]);
         await prisma.$transaction(async (tx: typeof prisma) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
             for (const id of [tenantA, tenantB]) {
-                await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, id);
                 await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, id);
             }
         });

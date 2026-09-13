@@ -52,6 +52,7 @@ import { completeAgentRiskAssessment } from '@/app-layer/usecases/agent-risk-ass
 import { listAgentCredentials } from '@/app-layer/usecases/api-keys';
 import { MAX_AUTONOMY_BY_TIER } from '@/lib/agentic/agent-risk-scoring';
 import { DENY_CEILING } from '@/lib/agentic/autonomy-ceiling';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -201,9 +202,9 @@ describeFn('the assessed risk tier is load-bearing', () => {
     });
 
     afterAll(async () => {
+        await deleteAuditRowsForTenants(prisma, TENANT);
         await prisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT);
             await tx.$executeRawUnsafe(
                 `DELETE FROM "TenantMembership" WHERE "tenantId" = $1`,
                 TENANT,

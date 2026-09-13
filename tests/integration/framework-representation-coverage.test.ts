@@ -78,6 +78,7 @@ import { getFrameworkTree } from '@/app-layer/usecases/framework/tree';
 import { getSoA } from '@/app-layer/usecases/soa';
 import { getRequirementTraceability, performGapAnalysis } from '@/app-layer/usecases/gap-analysis';
 import type { FrameworkTreeNode } from '@/lib/framework-tree/types';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma: PrismaClient = prismaTestClient();
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -178,9 +179,9 @@ async function clearOwnRows(): Promise<void> {
     const t = { tenantId: { in: TENANTS } };
     await prisma.controlRequirementLink.deleteMany({ where: t });
     await prisma.control.deleteMany({ where: t });
+    await deleteAuditRowsForTenants(prisma, TENANTS);
     await prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`, TENANTS);
         await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`, TENANTS);
     });
     await prisma.user.deleteMany({

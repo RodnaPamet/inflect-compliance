@@ -47,6 +47,7 @@ import {
 } from '@/app-layer/usecases/agent-policy-card';
 import { NO_POLICY_CARD } from '@/lib/agentic/policy-card';
 import { makeRequestContext } from '../helpers/make-context';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -179,9 +180,9 @@ describeFn('the policy-card version pin (real DB, real engine)', () => {
             await prisma.registeredAgent.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
             await prisma.aiSystem.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
             await prisma.risk.deleteMany({ where: { tenantId: TENANT } }).catch(() => {});
+            await deleteAuditRowsForTenants(prisma, TENANT).catch(() => {});
             await prisma.$transaction(async (tx) => {
                 await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-                await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT);
                 await tx.$executeRawUnsafe(
                     `DELETE FROM "TenantMembership" WHERE "tenantId" = $1`,
                     TENANT,

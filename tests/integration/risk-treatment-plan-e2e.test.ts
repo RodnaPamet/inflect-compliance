@@ -27,6 +27,7 @@ import {
     getTreatmentPlan,
 } from '@/app-layer/usecases/risk-treatment-plan';
 import { runDeadlineMonitor } from '@/app-layer/jobs/deadline-monitor';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -79,15 +80,7 @@ async function teardown() {
     await globalPrisma.tenantMembership.deleteMany({
         where: { tenantId: TENANT_ID },
     });
-    await globalPrisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(
-            `SET LOCAL session_replication_role = 'replica'`,
-        );
-        await tx.$executeRawUnsafe(
-            `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-            TENANT_ID,
-        );
-    });
+    await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
     const userIds = [admin, editor].filter(Boolean).map((u) => u.userId);
     if (userIds.length > 0) {
         await globalPrisma.user.deleteMany({ where: { id: { in: userIds } } });
@@ -121,15 +114,7 @@ describeFn('Epic G-7 — end-to-end lifecycle + audit integrity', () => {
             where: { id: RISK_ID },
             data: { status: 'OPEN' },
         });
-        await globalPrisma.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe(
-                `SET LOCAL session_replication_role = 'replica'`,
-            );
-            await tx.$executeRawUnsafe(
-                `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-                TENANT_ID,
-            );
-        });
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
     });
 
     // ── 1. Auto-activate DRAFT → ACTIVE on first milestone add ─────

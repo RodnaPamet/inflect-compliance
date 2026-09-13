@@ -35,6 +35,7 @@ import {
     closeAssessment,
     listVendorAssessments,
 } from '@/app-layer/usecases/vendor-assessment-review';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 // Route writes through the PII-encryption-enabled client (emailHash on
 // User is NOT NULL at the DB but populated by middleware).
@@ -150,6 +151,7 @@ describeFn('Epic G-3 — vendor assessment lifecycle (integration)', () => {
 
     afterAll(async () => {
         try {
+            await deleteAuditRowsForTenants(prisma, tenantId);
             await prisma.$transaction(async (tx: typeof prisma) => {
                 await tx.$executeRawUnsafe(
                     `SET LOCAL session_replication_role = 'replica'`,
@@ -174,7 +176,6 @@ describeFn('Epic G-3 — vendor assessment lifecycle (integration)', () => {
                     'Vendor',
                     'NotificationOutbox',
                     'Notification',
-                    'AuditLog',
                 ]) {
                     await tx.$executeRawUnsafe(
                         `DELETE FROM "${table}" WHERE "tenantId" = $1`,

@@ -32,6 +32,12 @@ import {
     appendAuditEntry,
     verifyAuditChain,
 } from '@/lib/audit/audit-writer';
+import {
+    attemptAuditDelete,
+    attemptAuditUpdate,
+    deleteAuditRowsForTenants,
+    tamperAuditRow,
+} from '../../helpers/audit-cleanup';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -69,13 +75,7 @@ describeFn('appendAuditEntry — hash chain (real DB)', () => {
         // AuditLog is append-only — bypass the immutability trigger with
         // session_replication_role=replica (same pattern as
         // audit-immutability.test.ts). Then drop the tenants.
-        await prisma.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(
-                `DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`,
-                [TENANT_ID, OTHER_TENANT_ID],
-            );
-        });
+        await deleteAuditRowsForTenants(prisma, [TENANT_ID, OTHER_TENANT_ID]);
         await prisma.tenant.deleteMany({
             where: { id: { in: [TENANT_ID, OTHER_TENANT_ID] } },
         });
@@ -240,16 +240,9 @@ describeFn('appendAuditEntry — hash chain (real DB)', () => {
             prisma,
         );
 
-        // Tamper with the first row's entryHash (bypass the immutability
-        // trigger via session_replication_role=replica).
-        await prisma.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(
-                `UPDATE "AuditLog" SET "entryHash" = $1 WHERE "id" = $2`,
-                'deadbeef'.repeat(8),
-                a.id,
-            );
-        });
+        // Forge the first row's entryHash so chain verification must
+        // report it broken. Requires the immutability trigger off.
+        await tamperAuditRow(prisma, a.id, 'entryHash', 'deadbeef'.repeat(8));
 
         const verdict = await verifyAuditChain(tenantId, prisma);
         expect(verdict.valid).toBe(false);
@@ -267,10 +260,7 @@ describeFn('appendAuditEntry — hash chain (real DB)', () => {
             prisma,
         );
         await expect(
-            prisma.$executeRawUnsafe(
-                `UPDATE "AuditLog" SET "details" = 'tamper' WHERE "id" = $1`,
-                res.id,
-            ),
+            attemptAuditUpdate(prisma, 'AuditLog', `"details" = 'tamper'`, '"id" = $1', res.id),
         ).rejects.toThrow(/IMMUTABLE_AUDIT_LOG/);
     });
 
@@ -280,19 +270,13 @@ describeFn('appendAuditEntry — hash chain (real DB)', () => {
             prisma,
         );
         await expect(
-            prisma.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "id" = $1`, res.id),
+            attemptAuditDelete(prisma, 'AuditLog', '"id" = $1', res.id),
         ).rejects.toThrow(/IMMUTABLE_AUDIT_LOG/);
     });
 });
 
 /** Drop a per-test tenant: bypass the AuditLog trigger, then delete the tenant. */
 async function cleanupTenant(prisma: PrismaClient, tenantId: string): Promise<void> {
-    await prisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(
-            `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-            tenantId,
-        );
-    });
+    await deleteAuditRowsForTenants(prisma, tenantId);
     await prisma.tenant.delete({ where: { id: tenantId } });
 }

@@ -57,6 +57,7 @@ import {
 } from '@/app-layer/services/mapping-set-importer';
 import { createRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { computeAgentRiskCoverage } from '@/app-layer/usecases/agent-coverage';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma: PrismaClient = prismaTestClient();
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -203,9 +204,9 @@ async function clearOwnRows(): Promise<void> {
     await prisma.aiSystem.deleteMany({ where: t });
     await prisma.controlRequirementLink.deleteMany({ where: t });
     await prisma.control.deleteMany({ where: t });
+    await deleteAuditRowsForTenants(prisma, TENANTS);
     await prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`, TENANTS);
         await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`, TENANTS);
     });
     await prisma.user.deleteMany({

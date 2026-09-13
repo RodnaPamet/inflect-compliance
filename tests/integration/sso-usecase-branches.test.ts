@@ -33,6 +33,7 @@ import {
     getIdentityLinks,
     unlinkIdentity,
 } from '@/app-layer/usecases/sso';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -129,9 +130,9 @@ describeFn('sso usecase — branch coverage (integration)', () => {
     afterAll(async () => {
         await globalPrisma.userIdentityLink.deleteMany({ where: { tenantId: { in: [TENANT_ID, OTHER_TENANT_ID] } } });
         await globalPrisma.tenantIdentityProvider.deleteMany({ where: { tenantId: { in: [TENANT_ID, OTHER_TENANT_ID] } } });
+        await deleteAuditRowsForTenants(globalPrisma, [TENANT_ID, OTHER_TENANT_ID]);
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" IN ($1, $2)`, TENANT_ID, OTHER_TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" IN ($1, $2)`, TENANT_ID, OTHER_TENANT_ID);
         });
         // Remove any JIT-created users (email-prefixed by suite tag).

@@ -41,6 +41,7 @@ import {
 } from '@/app-layer/usecases/test-hardening';
 // PR-R — hashing on evidence link moved to the live linkEvidenceToRun path.
 import { linkEvidenceToRun } from '@/app-layer/usecases/control';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -102,10 +103,7 @@ describeFn('test-hardening usecases (real DB)', () => {
     });
 
     async function cleanup() {
-        await prisma.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT);
-        });
+        await deleteAuditRowsForTenants(prisma, TENANT);
         await prisma.auditPackItem.deleteMany({ where: { tenantId: TENANT } });
         await prisma.auditPack.deleteMany({ where: { tenantId: TENANT } });
         await prisma.controlTestEvidenceLink.deleteMany({ where: { tenantId: TENANT } });

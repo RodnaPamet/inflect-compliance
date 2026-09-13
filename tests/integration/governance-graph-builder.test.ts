@@ -21,6 +21,7 @@ import {
     type MapStat,
     type GraphLink,
 } from '@/app-layer/services/governance-graph-builder';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 // ─── Pure assembler (no DB) ──────────────────────────────────────────
 
@@ -192,9 +193,9 @@ describeFn('getGovernanceGraph — usecase (integration)', () => {
         await globalPrisma.processNode.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.automationRule.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.processMap.deleteMany({ where: { tenantId: TENANT_ID } });
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT_ID);
         });
         await globalPrisma.user.deleteMany({ where: { id: { in: [ownerUserId, readerUserId] } } });

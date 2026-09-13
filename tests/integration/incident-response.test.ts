@@ -33,6 +33,7 @@ import {
     getIncident,
 } from '@/app-layer/usecases/incident';
 import { processIncidentNotificationDeadlines } from '@/app-layer/jobs/incident-notification-deadlines';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -83,12 +84,9 @@ describeFn('NIS2 incident-response integration', () => {
         // session_replication_role=replica bypasses the AuditLog
         // immutability trigger AND the last-OWNER guard so the fixture
         // tears down cleanly.
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(
-                `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-                TENANT_ID,
-            );
             await tx.$executeRawUnsafe(
                 `DELETE FROM "TenantMembership" WHERE "tenantId" = $1`,
                 TENANT_ID,

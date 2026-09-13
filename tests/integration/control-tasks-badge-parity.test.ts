@@ -26,6 +26,7 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { createTask, setTaskStatus, addTaskLink, listTasks } from '@/app-layer/usecases/task';
 import { getControlHeader } from '@/app-layer/usecases/control/queries';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -72,9 +73,9 @@ describeFn('control Tasks-tab badge == list (integration)', () => {
         await globalPrisma.taskLink.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.task.deleteMany({ where: { tenantId: TENANT_ID } });
         await globalPrisma.control.deleteMany({ where: { tenantId: TENANT_ID } });
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "Notification" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "NotificationOutbox" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "AutomationExecution" WHERE "tenantId" = $1`, TENANT_ID);

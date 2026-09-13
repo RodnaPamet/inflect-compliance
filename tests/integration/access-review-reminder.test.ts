@@ -28,6 +28,7 @@ import {
     isInReminderWindow,
     processAccessReviewReminders,
 } from '@/app-layer/jobs/access-review-reminder';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -99,16 +100,13 @@ async function teardown() {
     await globalPrisma.accessReview.deleteMany({
         where: { tenantId: { in: tenantIds } },
     });
+    await deleteAuditRowsForTenants(globalPrisma, tenantIds);
     await globalPrisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(
             `SET LOCAL session_replication_role = 'replica'`,
         );
         await tx.$executeRawUnsafe(
             `DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`,
-            tenantIds,
-        );
-        await tx.$executeRawUnsafe(
-            `DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`,
             tenantIds,
         );
     });

@@ -62,6 +62,7 @@ import {
     ASI_LIBRARY_URN,
     EU_AI_ACT_LIBRARY_URN,
 } from '@/lib/agentic/evidence-artefact';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(90_000);
@@ -173,9 +174,9 @@ async function clearOwnRows(): Promise<void> {
         where: { framework: { key: { startsWith: 'TEST-' } } },
     });
     await prisma.framework.deleteMany({ where: { key: { startsWith: 'TEST-' } } });
+    await deleteAuditRowsForTenants(prisma, TENANT);
     await prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT);
         await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT);
     });
     await prisma.user.deleteMany({ where: { emailHash: hashForLookup(`owner@${TENANT}.test`) } });

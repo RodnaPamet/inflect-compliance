@@ -22,6 +22,7 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { createRisk, updateRisk } from '@/app-layer/usecases/risk';
 import { listScoreEvents } from '@/app-layer/usecases/risk-score-events';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -69,13 +70,7 @@ async function teardown() {
     await globalPrisma.riskScoreEvent.deleteMany({ where: { tenantId: { in: tenantIds } } });
     await globalPrisma.risk.deleteMany({ where: { tenantId: { in: tenantIds } } });
     await globalPrisma.tenantMembership.deleteMany({ where: { tenantId: { in: tenantIds } } });
-    await globalPrisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(
-            `DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`,
-            tenantIds,
-        );
-    });
+    await deleteAuditRowsForTenants(globalPrisma, tenantIds);
     const userIds = [editor, foreignReader].filter(Boolean).map((u) => u.userId);
     if (userIds.length > 0) {
         await globalPrisma.user.deleteMany({ where: { id: { in: userIds } } });

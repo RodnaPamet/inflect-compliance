@@ -16,6 +16,7 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { ForbiddenError } from '@/lib/errors/types';
 import { bulkSetVendorStatus, bulkAssignVendor, bulkDeleteVendor, listVendorKpiCounts } from '@/app-layer/usecases/vendor';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -54,10 +55,7 @@ function ctxAs(role: Role, userId: string) {
 }
 
 async function clearAudit() {
-    await globalPrisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT_ID);
-    });
+    await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
 }
 
 describeFn('vendor bulk actions — integration', () => {

@@ -22,6 +22,7 @@ import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
 import { getEvidenceRetentionMetrics } from '@/app-layer/usecases/evidence';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -128,9 +129,9 @@ describeFn('evidence retention metrics — full-dataset aggregate (integration)'
         // AuditLog is append-only + TenantMembership is last-OWNER-guarded;
         // drop them inside a `session_replication_role = 'replica'` tx (the
         // canonical teardown, mirrors task-filters.test.ts).
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT_ID);
         });
         // Guarded: an undefined filter value is DROPPED, not matched —

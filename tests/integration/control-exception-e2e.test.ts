@@ -32,6 +32,7 @@ import {
     rejectException,
 } from '@/app-layer/usecases/control';
 import { runExceptionExpiryMonitor } from '@/app-layer/jobs/exception-expiry-monitor';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -87,15 +88,7 @@ async function teardown() {
     await globalPrisma.tenantMembership.deleteMany({
         where: { tenantId: TENANT_ID },
     });
-    await globalPrisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(
-            `SET LOCAL session_replication_role = 'replica'`,
-        );
-        await tx.$executeRawUnsafe(
-            `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-            TENANT_ID,
-        );
-    });
+    await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
     const userIds = [admin, approver, editor]
         .filter(Boolean)
         .map((u) => u.userId);
@@ -124,15 +117,7 @@ describeFn('Epic G-5 — end-to-end lifecycle + audit integrity', () => {
         await globalPrisma.controlException.deleteMany({
             where: { tenantId: TENANT_ID },
         });
-        await globalPrisma.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe(
-                `SET LOCAL session_replication_role = 'replica'`,
-            );
-            await tx.$executeRawUnsafe(
-                `DELETE FROM "AuditLog" WHERE "tenantId" = $1`,
-                TENANT_ID,
-            );
-        });
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
     });
 
     // ── 1. Full lifecycle — request → approve → expire → renew ─────

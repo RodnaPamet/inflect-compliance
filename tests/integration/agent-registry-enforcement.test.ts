@@ -69,6 +69,7 @@ import { utcDay } from '@/lib/agentic/policy-card-store';
 import { MCP_RESOURCES_AUDIENCE } from '@/lib/mcp/token-exchange';
 import { windowKeyFor } from '@/lib/agentic/circuit-breaker';
 import { makeRequestContext } from '../helpers/make-context';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -315,10 +316,7 @@ describeFn('the agent-registration gate', () => {
         // `session_replication_role = 'replica'` for AuditLog: the
         // immutable-audit-log trigger fires on an ordinary DELETE and would
         // take the teardown, and therefore the whole suite, down with it.
-        await prisma.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT);
-        });
+        await deleteAuditRowsForTenants(prisma, TENANT);
         await prisma.agentProposal.deleteMany({ where: { tenantId: TENANT } });
         // Table D's own rows, deleted before the agent they hang off. Every one
         // of these tables is a CONTROL keyed to an agent, so a leak here does
@@ -351,10 +349,7 @@ describeFn('the agent-registration gate', () => {
     });
 
     beforeEach(async () => {
-        await prisma.$transaction(async (tx) => {
-            await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT);
-        });
+        await deleteAuditRowsForTenants(prisma, TENANT);
     });
 
     describe('flag OFF — today’s behaviour is preserved', () => {

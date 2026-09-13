@@ -29,6 +29,7 @@ import {
     upsertIntegrationConnection,
     removeIntegrationConnection,
 } from '@/app-layer/usecases/integrations';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const globalPrisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: DB_URL }),
@@ -96,9 +97,9 @@ describeFn('one enabled HRIS connection per tenant (integration)', () => {
 
     afterAll(async () => {
         await clearConnections();
+        await deleteAuditRowsForTenants(globalPrisma, TENANT_ID);
         await globalPrisma.$transaction(async (tx) => {
             await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-            await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT_ID);
             await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = $1`, TENANT_ID);
         });
         if (ownerUserId) await globalPrisma.user.deleteMany({ where: { id: ownerUserId } });

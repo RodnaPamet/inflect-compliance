@@ -52,6 +52,7 @@ import { listRisksTool } from '@/lib/mcp/tools/risk-tools';
 import { registerWorkflow } from '@/lib/agentic/workflow-registry';
 import { startWorkflowRun, getWorkflowRun } from '@/app-layer/usecases/workflow-runs';
 import { makeRequestContext } from '../helpers/make-context';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -247,10 +248,10 @@ describeFn('audience-scoped tokens, the autonomy ceiling, and mid-run revocation
     });
 
     afterAll(async () => {
+        await deleteAuditRowsForTenants(prisma, TENANT).catch(() => {});
         await prisma
             .$transaction(async (tx) => {
                 await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-                await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = $1`, TENANT);
                 await tx.$executeRawUnsafe(
                     `DELETE FROM "TenantMembership" WHERE "tenantId" = $1`,
                     TENANT,
