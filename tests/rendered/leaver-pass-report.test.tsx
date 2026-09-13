@@ -381,6 +381,43 @@ async function rowFor(provider: string): Promise<HTMLElement> {
 // ── Tests ──────────────────────────────────────────────────────────────
 
 describe('an empty page says WHY it is empty', () => {
+    // THE CLOCK IS PINNED, AND IT HAS TO BE. `overdue` compares `dryRunSince`
+    // against `lastDueAt(new Date())` — the most recent 05:00 UTC at or before
+    // now — so a fixture expressed as "now minus X" and the boundary can land on
+    // OPPOSITE SIDES of 05:00 while the suite runs.
+    //
+    // MEASURED, not feared. With the clock pinned and JUST_NOW at 60 s, the two
+    // "not overdue" tests fail for exactly [05:00:00.000, 05:01:00.000) UTC and
+    // pass at 05:01:00.000 and at 14:00. That window is 60 s wide because the
+    // OFFSET is 60 s: the failure condition is `now - X < lastDueAt(now)`, i.e.
+    // `now` in [boundary, boundary + X). So moving JUST_NOW further from the
+    // boundary WIDENS the window rather than narrowing it — a 10-minute offset
+    // would fail for ten minutes every morning. Pinning is the fix; a bigger
+    // number is the opposite of one.
+    //
+    // It is a daily window rather than a random flake, so it hits whoever merges
+    // around 05:00 and looks like their change — and 05:00 UTC is exactly when
+    // someone is most likely to be running CI on this subsystem, because it is
+    // the dispatch cron these tests are about.
+    //
+    // 14:00 UTC is chosen for being unambiguously after the boundary and nowhere
+    // near it. Only Date is faked: faking the timer APIs as well hangs Testing
+    // Library's async `findBy*`.
+    beforeEach(() => {
+        jest.useFakeTimers({
+            doNotFake: [
+                'nextTick', 'setImmediate', 'clearImmediate',
+                'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval',
+                'queueMicrotask', 'performance', 'hrtime',
+                'requestAnimationFrame', 'cancelAnimationFrame',
+                'requestIdleCallback', 'cancelIdleCallback',
+            ],
+        });
+        jest.setSystemTime(new Date('2026-06-15T14:00:00.000Z'));
+    });
+    afterEach(() => {
+        jest.useRealTimers();
+    });
     // One sentence had at least three causes: nobody switched it on, it is set
     // above the clamp so every pass refuses WITHOUT recording, or the worker is
     // dead. Those want completely different responses and looked identical.
@@ -393,7 +430,9 @@ describe('an empty page says WHY it is empty', () => {
         honoured: { leaver: { maxMode } },
     });
     // The dispatch cron is 05:00 UTC. "Long ago" is unambiguously overdue;
-    // "just now" cannot be, whatever time the suite runs.
+    // "just now" is not — but ONLY because the clock above is pinned. This
+    // comment used to end "whatever time the suite runs", which was false for
+    // 60 seconds every day; see the beforeEach.
     const LONG_AGO = '2020-01-01T00:00:00.000Z';
     const JUST_NOW = () => new Date(Date.now() - 60_000).toISOString();
 
