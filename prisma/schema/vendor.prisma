@@ -396,7 +396,7 @@ model VendorAssessmentAnswer {
   assessment             VendorAssessment                  @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
   question               QuestionnaireQuestion             @relation(fields: [questionId], references: [id])
   templateQuestion       VendorAssessmentTemplateQuestion? @relation("AnswerByTemplateQuestion", fields: [templateQuestionId], references: [id])
-  evidence               Evidence?                         @relation("VendorAnswerEvidence", fields: [evidenceId], references: [id])
+  evidence               Evidence?                         @relation("VendorAnswerEvidence", fields: [evidenceId, tenantId], references: [id, tenantId])
   tenant                 Tenant                            @relation(fields: [tenantId], references: [id])
 
   @@unique([assessmentId, questionId])
