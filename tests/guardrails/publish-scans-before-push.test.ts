@@ -125,7 +125,17 @@ function isPushStep(step: Step): boolean {
     if ((step.uses ?? '').includes('docker/build-push-action')) {
         // The action's `push` input is YAML-parsed, so it may arrive as a
         // boolean or as the string 'true'. Both mean push.
-        if (String((step.with ?? {}).push ?? '').toLowerCase() === 'true') return true;
+        const raw = String((step.with ?? {}).push ?? '');
+        if (raw.toLowerCase() === 'true') return true;
+        // FAIL CLOSED on a value this cannot read. `push: ${{ … }}` is
+        // decided by GitHub at run time, so a static check that treats it as
+        // "not a push" would let `push: ${{ github.event_name != 'pull_request' }}`
+        // publish from above the gate while this guard stayed green — the
+        // detector would be reporting on the subset of syntax it happens to
+        // understand. An expression here is counted as a push, which is the
+        // conservative direction: a genuinely conditional push sitting above
+        // the scan IS the hazard, so the red is correct rather than noise.
+        if (raw.includes('${{')) return true;
     }
     // A bare `docker push` in a run block. `docker buildx imagetools create`
     // also writes a tag to the registry, so it counts too.
@@ -336,6 +346,27 @@ describe('the detector itself — driven by synthetic workflows', () => {
         const sites = auditPushSites([synthetic('d.yml', [BUILD_NO_PUSH, BLOCKING_SCAN, RUN_PUSH])]);
         expect(sites).toHaveLength(1);
         expect(offendersOf(sites)).toEqual([]);
+    });
+
+    it('FAILS CLOSED on an expression-valued push: it cannot evaluate', () => {
+        // The evasion this closes: `push: ${{ … }}` is resolved by GitHub at
+        // run time, so a detector that string-compares against 'true' reads
+        // it as "not a push" and goes green on a workflow that publishes
+        // from above the gate on every push to main.
+        const conditionalPush: Step = {
+            name: 'Build and push (conditionally)',
+            uses: 'docker/build-push-action@v7',
+            with: { push: "${{ github.event_name != 'pull_request' }}", tags: 'ghcr.io/x/y:latest' },
+        };
+        const sites = auditPushSites([synthetic('g.yml', [conditionalPush, BLOCKING_SCAN])]);
+        expect(sites).toHaveLength(1);
+        expect(offendersOf(sites)).toEqual([
+            'g.yml:publish pushes at step 0 ("Build and push (conditionally)") BEFORE its blocking scan at step 1 ("Gate: Trivy vulnerability scan (critical+high)")',
+        ]);
+        // …and the same expression BELOW a blocking scan is accepted, so the
+        // rule above is "fail closed", not "reject every expression".
+        const after = auditPushSites([synthetic('h.yml', [BUILD_NO_PUSH, BLOCKING_SCAN, conditionalPush])]);
+        expect(offendersOf(after)).toEqual([]);
     });
 
     it('a CRITICAL-only gate does not count as blocking', () => {
