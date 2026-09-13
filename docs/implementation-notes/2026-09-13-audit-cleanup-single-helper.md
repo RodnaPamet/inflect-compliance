@@ -27,9 +27,10 @@ the repo that writes raw SQL against an audit trail. It carries three groups of
 entry point, because three different jobs need raw audit DML and a guard with a
 single exemption only works if all three live behind it:
 
-1. **CLEANUP** — `deleteAuditRowsForTenants` / `…ById` / `…ByActionLike` /
-   `deleteOrgAuditRowsForOrganizations` / `…ById`, all routed through one private
-   `withAuditTriggersDisabled`. The bulk: 118 statements.
+1. **CLEANUP** — `deleteAuditRowsForTenants` / `deleteAuditRowsByActionLike` /
+   `deleteOrgAuditRowsForOrganizations`, all routed through one private
+   `withAuditTriggersDisabled`. The bulk: 118 statements (119 cleanup sites
+   minus the DSAR oracle, which stays put).
 2. **TAMPER** — `tamperAuditRow` / `tamperOrgAuditRow`, also under the bypass.
    The hash-chain suites forge a stored column and assert the recorded
    `entryHash` no longer matches, i.e. that tampering is detectable. Forging
@@ -87,7 +88,7 @@ to stand alone.
 | --- | --- |
 | `tests/helpers/audit-cleanup.ts` | NEW. The sole sanctioned raw audit DML, and the only `session_replication_role` set for it |
 | `tests/guards/audit-immutability-guardrails.test.ts` | raw scans widened to `['src','tests']`; derived exemption; third scan for the interpolated-table shape; exemption self-check |
-| 99 files under `tests/` | migrated to the helper |
+| 102 files under `tests/` | migrated to the helper |
 | `tests/e2e/global-teardown.ts` | `'AuditLog'` removed from `TENANT_CHILD_TABLES`; helper called before the loop so the Tenant DELETE is not blocked |
 
 ## Decisions
@@ -120,8 +121,20 @@ to stand alone.
 
 `AuditLog_tenantId_fkey` is ON DELETE RESTRICT, so audit rows a teardown failed
 to delete also block its own `Tenant` delete: a suite leaks a Tenant row per run,
-not just audit rows. 24 sites had a raw audit DELETE with no bypass at all, which
-raises the moment the table is non-empty.
+not just audit rows.
+
+Classified mechanically at the base commit, the 134 statements are three
+different things: **113** carried the bypass and worked, **12** are the
+immutability assertions (deliberately unbypassed, asserting the trigger
+refuses), and **9** were simply BROKEN — a raw audit DELETE with no
+replica-role transaction anywhere, which raises the moment the table is
+non-empty. Eight of those nine reach a real database and now work through the
+helper; the ninth is the DSAR oracle on a mocked client and stays put.
+
+An earlier draft of this note said "24", carried forward from a classification
+that counted `withTriggerDisabled(async (tx) => …)` as unbypassed. It is a
+local wrapper whose own body sets the replica role, so those sites always
+worked. The number above is re-derived from the base commit.
 
 `tests/integration/audit-middleware.test.ts` run serially against the shared
 `inflect_test`, counting tenants whose slug matches `amw-%`:

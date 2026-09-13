@@ -59,14 +59,31 @@
  * transaction around a raw `DELETE FROM "AuditLog"` — disables the trigger
  * instead of tripping it, and therefore actually deletes. That is a
  * different finding from #2510's: a visible, working bypass rather than a
- * call that could neither fail nor succeed. Measured at #2523's base commit
- * it stood at 134 statements across 100 files, and widening the scans would
- * have turned all of them red on a decision nobody had taken.
+ * call that could neither fail nor succeed. Measured at #2523's base commit:
+ * 134 raw audit DML statements across 100 files, and widening the scans
+ * would have turned all of them red on a decision nobody had taken.
+ *
+ * BE PRECISE ABOUT THAT 134, BECAUSE IT IS THREE DIFFERENT THINGS.
+ * Classified mechanically at the base commit: **113** carried the bypass and
+ * therefore worked. **12** are the opposite of a bypass — the immutability
+ * ASSERTIONS, which issue the forbidden statement deliberately and assert the
+ * trigger refuses it. The remaining **9** were simply BROKEN: a raw audit
+ * DELETE with no replica-role transaction anywhere, which raises the moment
+ * the table is non-empty. Those nine were #2510's failure mode wearing raw
+ * SQL, and routing them through the helper is what makes them start working.
  *
  * The decision was taken: ALLOW the bypass, through exactly one documented
  * helper, and forbid the idiom everywhere else. `tests/helpers/audit-cleanup.ts`
- * now owns it; every one of those sites calls into it; and these scans read
- * `['src', 'tests']` with that ONE module exempt.
+ * now owns it, and these scans read `['src', 'tests']` with that ONE module
+ * exempt.
+ *
+ * ONE site does not call the helper, and should not — it is the ninth of
+ * those nine. The C6 case in `tests/guardrails/dsar-workflow-coverage.test.ts`
+ * drives a deliberately wrong `UPDATE "AuditLog" …` through an instrumented
+ * probe to prove the erasure oracle reports `UNVERIFIABLE_RAW_SQL`. That file
+ * mocks `@/lib/prisma` and builds no real client, so `reachesDatabase`
+ * already excludes it — the same reasoning recorded above for the
+ * Prisma-verb scans. Rewriting it would delete the detector.
  *
  * THE EXEMPTION IS DERIVED, NOT NAMED. There is no allowlist array of
  * filenames here. The helper exports its own `__filename` and this file runs
@@ -76,8 +93,11 @@
  *
  * AND IT SETTLES THE COST NOTED ABOVE: with teardowns actually deleting
  * their audit rows, `AuditLog_tenantId_fkey` stops firing and the suites
- * stop leaking a Tenant row per run. Measured empirically on one suite
- * before and after the change — the PR carries the numbers.
+ * stop leaking a Tenant row per run. Measured on `audit-middleware.test.ts`
+ * against the shared `inflect_test`: one run of the old teardown left +1
+ * Tenant row and +8 AuditLog rows behind, through the helper +0 and +0 —
+ * and the suite reported 9/9 passing either way, which is why a leaking
+ * teardown is invisible from inside the suite that leaks.
  *
  * POPULATION COMES FROM GIT
  * ─────────────────────────
