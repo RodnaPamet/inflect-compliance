@@ -229,7 +229,7 @@ const firstOpOf = (index: number): string | undefined => {
 };
 
 /**
- * The LONG arm: a resumable PARTIAL, on a provider that rotates its secret.
+ * The RESUMABLE arm, on a provider that rotates its secret.
  *
  * Both halves matter to the census. The resumable arm is the one that stores a
  * cursor AND finalises the execution — four bookkeeping transactions outside
@@ -239,10 +239,11 @@ const firstOpOf = (index: number): string | undefined => {
  * difference between absorbed and unaccounted, which is the distinction the
  * constant rests on.
  *
- * NOT the longest, and the difference is the whole of #2522's review finding —
- * see `failTheFinaliseOnce` below.
+ * THIS WAS CALLED `hrisProviderOnTheLongestPath`, AND THAT NAME WAS WRONG —
+ * which is the whole of #2522's review finding, sitting in an identifier. Pair
+ * it with `failTheFinaliseOnce` below for the path that really is the longest.
  */
-function hrisProviderOnTheLongestPath(window: ReadWindow) {
+function hrisProviderOnTheResumableArm(window: ReadWindow) {
     return {
         listEmployees: jest.fn(async (_config: Record<string, unknown>, _resume: string | null | undefined, deps: HrisSyncDeps) => {
             window.from = txs.length;
@@ -420,7 +421,7 @@ describe('the bookkeeping transactions the lease pays for are COUNTED (#2522)', 
         // reachable on exactly the input the budget is about.
         failTheFinaliseOnce();
         const window: ReadWindow = { from: -1, to: -1 };
-        const provider = hrisProviderOnTheLongestPath(window);
+        const provider = hrisProviderOnTheResumableArm(window);
 
         const r = await runHrisSync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
 
@@ -451,7 +452,7 @@ describe('the bookkeeping transactions the lease pays for are COUNTED (#2522)', 
         // both pins the DIFFERENCE at exactly the one transaction the catch
         // adds, so neither number can move without the other.
         const window: ReadWindow = { from: -1, to: -1 };
-        const provider = hrisProviderOnTheLongestPath(window);
+        const provider = hrisProviderOnTheResumableArm(window);
 
         const r = await runHrisSync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
 
@@ -471,7 +472,7 @@ describe('the bookkeeping transactions the lease pays for are COUNTED (#2522)', 
         failTheFinaliseOnce();
         const window: ReadWindow = { from: -1, to: -1 };
 
-        await runHrisSync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: hrisProviderOnTheLongestPath(window) });
+        await runHrisSync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: hrisProviderOnTheResumableArm(window) });
 
         // One MORE bookkeeping transaction exists on this run than the budget
         // counts, and the budget is right not to count it: it is opened
@@ -497,14 +498,14 @@ describe('the bookkeeping transactions the lease pays for are COUNTED (#2522)', 
         // either budget is derived from: 25 s added to the resumable arm left
         // all three suites green. Both long arms are covered here.
         const partialWindow: ReadWindow = { from: -1, to: -1 };
-        const partial = await runHrisSync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: hrisProviderOnTheLongestPath(partialWindow) });
+        const partial = await runHrisSync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: hrisProviderOnTheResumableArm(partialWindow) });
         expect(partial.status).toBe('PARTIAL');
         const afterPartial = txs.length;
         expect(afterPartial).toBeGreaterThan(0); // positive control
 
         failTheFinaliseOnce();
         const errorWindow: ReadWindow = { from: -1, to: -1 };
-        const errored = await runHrisSync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: hrisProviderOnTheLongestPath(errorWindow) });
+        const errored = await runHrisSync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: hrisProviderOnTheResumableArm(errorWindow) });
         expect(errored.status).toBe('ERROR');
         // Positive control on the SECOND population: the failure arm really
         // ran and contributed transactions of its own.
@@ -525,7 +526,7 @@ describe('the bookkeeping transactions the lease pays for are COUNTED (#2522)', 
         behaviours['integrationConnection.findFirst'] = () => null;
         const window: ReadWindow = { from: -1, to: -1 };
 
-        const r = await runHrisSync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: hrisProviderOnTheLongestPath(window) });
+        const r = await runHrisSync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: hrisProviderOnTheResumableArm(window) });
 
         expect(r.status).toBe('ERROR');
         expect(window.from).toBe(-1); // the provider was never reached
