@@ -46,11 +46,12 @@ jest.mock('@/lib/observability/integration-metrics', () => ({
 import { runHrisSync } from '@/app-layer/usecases/hris-sync';
 import { runIdentitySync } from '@/app-layer/usecases/identity-sync';
 import {
+    MAX_SYNC_BOOKKEEPING_TXS,
     SYNC_BOOKKEEPING_TX_TIMEOUT_MS,
     SYNC_UPSERT_CHUNK_SIZE,
     SYNC_WRITE_TX_TIMEOUT_MS,
 } from '@/app-layer/integrations/sync-transaction';
-import type { NormalizedEmployee } from '@/app-layer/integrations/providers/hris';
+import type { HrisSyncDeps, NormalizedEmployee } from '@/app-layer/integrations/providers/hris';
 import type { NormalizedIdentityAccount } from '@/app-layer/integrations/providers/identity/types';
 
 const NOW = new Date('2026-09-12T03:00:00.000Z');
@@ -196,6 +197,59 @@ function runningRowTx(): number {
     return create ? create.tx : -1;
 }
 
+// ── The bookkeeping census (#2522) ───────────────────────────────────────
+
+/**
+ * The span of transaction indices opened while the provider read was in
+ * flight, recorded by the fixture below. `{ from: -1, to: -1 }` means the
+ * provider was never reached — every transaction is then outside the read,
+ * which is the honest answer for an arm that never gets there.
+ */
+interface ReadWindow {
+    from: number;
+    to: number;
+}
+
+const insideWindow = (w: ReadWindow, index: number): boolean => index >= w.from && index < w.to;
+
+/** Bookkeeping transactions the lease pays for OUTSIDE the read window. */
+function bookkeepingOutsideRead(w: ReadWindow): TxRecord[] {
+    return txs.filter((t) => t.timeout === SYNC_BOOKKEEPING_TX_TIMEOUT_MS && !insideWindow(w, t.index));
+}
+
+/** Bookkeeping transactions absorbed by the read's own wall-clock deadline. */
+function bookkeepingInsideRead(w: ReadWindow): TxRecord[] {
+    return txs.filter((t) => t.timeout === SYNC_BOOKKEEPING_TX_TIMEOUT_MS && insideWindow(w, t.index));
+}
+
+/** `model.op` of the first statement in a transaction — names it in a failure. */
+const firstOpOf = (index: number): string | undefined => {
+    const o = ops.find((op) => op.tx === index);
+    return o && `${o.model}.${o.op}`;
+};
+
+/**
+ * The LONGEST arm: a resumable PARTIAL, on a provider that rotates its secret.
+ *
+ * Both halves matter to the census. The resumable arm is the one that stores a
+ * cursor AND finalises the execution — four bookkeeping transactions outside
+ * the read where a completed pass opens three. And `persistSecret` is the
+ * fifth, which the budget deliberately does NOT count because it is opened
+ * inside the read's wall-clock window; a double that could not fire it could
+ * not show the difference between absorbed and unaccounted, which is the
+ * distinction the constant rests on.
+ */
+function hrisProviderOnTheLongestPath(window: ReadWindow) {
+    return {
+        listEmployees: jest.fn(async (_config: Record<string, unknown>, _resume: string | null | undefined, deps: HrisSyncDeps) => {
+            window.from = txs.length;
+            await deps.persistSecret?.({ accessToken: 'rotated', refreshToken: 'rotated', expiresAt: 1 });
+            window.to = txs.length;
+            return { employees: [emp(1)], complete: false, resumeToken: 'cursor-page-2' };
+        }),
+    };
+}
+
 const upsertsPerTx = (model: string): number[] => {
     const counts = new Map<number, number>();
     for (const o of ops) {
@@ -289,6 +343,94 @@ describe('runHrisSync opens the right transactions', () => {
         const failedTx = ops.filter((o) => o.model === 'employee' && o.op === 'upsert').at(-1)?.tx;
         expect(errorWrite!.tx).not.toBe(failedTx);
         expect(txs[errorWrite!.tx].timeout).toBe(SYNC_BOOKKEEPING_TX_TIMEOUT_MS);
+    });
+});
+
+describe('the bookkeeping transactions the lease pays for are COUNTED (#2522)', () => {
+    /**
+     * WHY THIS LIVES HERE AND NOT IN THE GUARD.
+     *
+     * `tests/guards/sync-transaction-budget-composes.test.ts` multiplies
+     * `MAX_SYNC_BOOKKEEPING_TXS` by the bookkeeping timeout and asserts the
+     * three-phase total fits inside `SYNC_LOCK_TTL_MS`. That is arithmetic
+     * over constants, and it certifies no CONDUCT: adding a fifth bookkeeping
+     * transaction to the long path moves no constant, so the guard stays green
+     * while the real lease-held total grows by 15 s.
+     *
+     * These tests are the other half. The count in the budget is measured
+     * against a run, so the census and the arithmetic fail together.
+     */
+    it('the census reads THIS run — with no run it selects nothing', () => {
+        // EMPTY-SELECTION CONTROL. An empty selection is a PASS for every
+        // `≤` and `.every()` shape, so the assertion below is an EXACT count
+        // — and this is what the population reports when it collapses. If
+        // `bookkeepingOutsideRead` were mis-keyed (a renamed option, a
+        // timeout that no longer matches) it would return this same empty
+        // array after a real run, and `toHaveLength(MAX_SYNC_BOOKKEEPING_TXS)`
+        // rejects it.
+        expect(txs).toHaveLength(0);
+        expect(bookkeepingOutsideRead({ from: -1, to: -1 })).toEqual([]);
+        expect(MAX_SYNC_BOOKKEEPING_TXS).toBeGreaterThan(0);
+    });
+
+    it('opens exactly MAX_SYNC_BOOKKEEPING_TXS of them outside the read', async () => {
+        const window: ReadWindow = { from: -1, to: -1 };
+        const provider = hrisProviderOnTheLongestPath(window);
+
+        const r = await runHrisSync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
+
+        // POSITIVE CONTROLS: the longest arm is the one that ran, and the
+        // read window was actually recorded. Without these a run that failed
+        // early would report a small count and pass a `≤`.
+        expect(r.status).toBe('PARTIAL');
+        expect(provider.listEmployees).toHaveBeenCalledTimes(1);
+        expect(window.from).toBeGreaterThanOrEqual(0);
+
+        // Named rather than counted, so a failure says WHICH transaction
+        // joined or left the lease-held path.
+        expect(bookkeepingOutsideRead(window).map((t) => firstOpOf(t.index))).toEqual([
+            'integrationConnection.findFirst', // 1. the run-open, before `start`
+            'employee.findMany', //               2. the manager map
+            'integrationConnection.updateMany', // 3. the cursor store
+            'integrationExecution.update', //      4. the execution finalise
+        ]);
+        expect(bookkeepingOutsideRead(window)).toHaveLength(MAX_SYNC_BOOKKEEPING_TXS);
+    });
+
+    it('the persist transaction is INSIDE the read window — absorbed, not added', async () => {
+        const window: ReadWindow = { from: -1, to: -1 };
+
+        await runHrisSync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: hrisProviderOnTheLongestPath(window) });
+
+        // A FIFTH bookkeeping transaction exists on this run, and the budget
+        // is right not to count it: it is opened between the run's `start` and
+        // the reader's last page, and that span is bounded by
+        // `ROSTER_READ_PHASE_BUDGET_MS` — a wall-clock deadline it SPENDS
+        // rather than extends. Counting it would charge the lease twice for
+        // the same seconds.
+        const absorbed = bookkeepingInsideRead(window);
+        expect(absorbed).toHaveLength(1);
+        expect(firstOpOf(absorbed[0].index)).toBe('integrationConnection.update');
+        // The distinction is load-bearing: five open, four are counted.
+        expect(absorbed.length + bookkeepingOutsideRead(window).length)
+            .toBeGreaterThan(MAX_SYNC_BOOKKEEPING_TXS);
+    });
+
+    it('a run that never reaches the write phase opens fewer', async () => {
+        // Proves the census varies with the RUN rather than reporting a
+        // constant — the other way a population can be silently wrong. The
+        // arms are alternatives, not addends: this one returns after the
+        // run-open, so `MAX_SYNC_BOOKKEEPING_TXS` is a maximum over arms and
+        // not a sum of them.
+        behaviours['integrationConnection.findFirst'] = () => null;
+        const window: ReadWindow = { from: -1, to: -1 };
+
+        const r = await runHrisSync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider: hrisProviderOnTheLongestPath(window) });
+
+        expect(r.status).toBe('ERROR');
+        expect(window.from).toBe(-1); // the provider was never reached
+        expect(bookkeepingOutsideRead(window)).toHaveLength(1);
+        expect(bookkeepingOutsideRead(window).length).toBeLessThan(MAX_SYNC_BOOKKEEPING_TXS);
     });
 });
 

@@ -71,11 +71,27 @@ import { recordSyncLock } from '@/lib/observability/integration-metrics';
  * against a per-page budget nothing enforced — which is how a read whose real
  * worst case is longer than the lease went unnoticed until #2508.
  *
- * What it is sized against instead: `ROSTER_READ_PHASE_BUDGET_MS +
- * SYNC_WRITE_PHASE_BUDGET_MS` from `integrations/sync-transaction.ts`, which
+ * What it is sized against instead: `SYNC_LEASE_HELD_BUDGET_MS` from
+ * `integrations/sync-transaction.ts`, which
  * `tests/guards/sync-transaction-budget-composes.test.ts` asserts fits inside
- * this value. Neither number is restated here, deliberately: a restated number
+ * this value. No number is restated here, deliberately: a restated number
  * drifts silently, which is the defect described above.
+ *
+ * THAT SUM HAS THREE TERMS, AND IT USED TO HAVE TWO (#2522). This comment
+ * said "read + write", which was a subtotal: the run's BOOKKEEPING
+ * transactions are lease-held and were in neither budget, and one of them —
+ * the run-open — is not even inside the clock the read deadline is measured
+ * from, because the lock below is taken BEFORE the usecase takes its `start`.
+ * A subtotal asserted against this TTL is a guard that goes red later than the
+ * overlap it exists to prevent goes reachable.
+ *
+ * WHAT THE SUM STILL LEAVES OUT is the two transactions THIS FILE'S functions
+ * run inside: `jobs/hris-sync.ts` calls `acquireSyncLock` and
+ * `releaseSyncLock` through `runInTenantContext` with no options, so both
+ * inherit Prisma's 5 s default, and the lease clock starts at the
+ * `syncLockedAt` acquire writes rather than when its transaction commits. The
+ * guard asserts the residual margin under this TTL covers them rather than
+ * folding a number nothing enforces into the sum.
  *
  * SCOPE, because the composition is not universal. It covers the HRIS roster
  * read, which is the one that takes a read deadline. identity-sync's

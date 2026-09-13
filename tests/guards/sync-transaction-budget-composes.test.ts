@@ -32,14 +32,45 @@
  * by #1950, cited by the lock in #1958, and DELETED by #1970 for having no
  * consumer. A prose justification outlived the constant it rested on, and
  * nothing failed.
+ *
+ * ═══ #2522 ADDED THE THIRD PHASE ═══
+ *
+ * "Read + write fits inside the lease" was a composition of TWO PHASES OUT OF
+ * THREE. `SYNC_WRITE_PHASE_BUDGET_MS` counts the chunk and reconcile `writeTx`
+ * budgets only, so the run's four lease-held BOOKKEEPING transactions were in
+ * neither term — and the run-open is not even inside the clock the read
+ * deadline is measured from, because `jobs/hris-sync.ts` takes the lock before
+ * `runHrisSync` takes its `start`. Roughly 60 s unaccounted against 170 s of
+ * margin, and the sentence a future author would have reasoned from while
+ * moving one of these constants was true of a subtotal.
+ *
+ * ═══ WHAT ARITHMETIC CERTIFIES, AND WHAT IT DOES NOT ═══
+ *
+ * Stated at the top because it governs every assertion below. This file adds
+ * up CONSTANTS. It fails when the numbers stop composing, and it stays GREEN
+ * when the code stops honouring them — a transaction opened with the wrong
+ * options, a reader that stops checking its deadline, a fifth bookkeeping
+ * transaction added to the long path. None of those move a constant.
+ *
+ * So the third term is bound to CONDUCT somewhere a sum cannot be:
+ * `tests/unit/sync-transaction-shape.test.ts` counts the bookkeeping
+ * transactions a real `runHrisSync` opens, against the same
+ * `MAX_SYNC_BOOKKEEPING_TXS` this file multiplies — so adding one to the long
+ * path fails there even though it moves nothing here. The deadline's conduct
+ * is proved in `tests/unit/roster-read-within-lock-lease.test.ts`.
  */
 import {
     MAX_HTTP_REQUEST_MS,
+    MAX_SYNC_BOOKKEEPING_TXS,
     MAX_SYNC_ROWS_PER_RUN,
     MAX_SYNC_WRITE_CHUNKS,
     ROSTER_READ_DEADLINE_MS,
     ROSTER_READ_PHASE_BUDGET_MS,
+    SYNC_BOOKKEEPING_PHASE_BUDGET_MS,
+    SYNC_BOOKKEEPING_TXS_AFTER_READ,
+    SYNC_BOOKKEEPING_TXS_BEFORE_READ,
     SYNC_BOOKKEEPING_TX_TIMEOUT_MS,
+    SYNC_LEASE_HELD_BUDGET_MS,
     SYNC_UPSERT_CHUNK_SIZE,
     SYNC_WRITE_PHASE_BUDGET_MS,
     SYNC_WRITE_TX_MAX_WAIT_MS,
@@ -110,9 +141,13 @@ describe('the READ phase fits inside the lease too (#2508)', () => {
      */
     const UNBOUNDED_ROSTER_READ_MS = WORKDAY_MAX_PAGES_PER_RUN * MAX_HTTP_REQUEST_MS;
 
-    it('composes read + write against the lease, which is the whole ask', () => {
-        // The assertion #2508 was opened for. Whichever of the four numbers
-        // has to move to keep this true is then somebody's decision.
+    it('composes read + write — the SUBTOTAL #2508 was opened for', () => {
+        // Kept, and demoted. This was the headline assertion until #2522, and
+        // it is now a term: read + write is the part of the lease-held total
+        // these two budgets cover, and the block below asserts the total. Left
+        // standing because it localises a failure — if the three-phase
+        // assertion goes red and this one does not, the bookkeeping term is
+        // what moved.
         expect(ROSTER_READ_PHASE_BUDGET_MS + SYNC_WRITE_PHASE_BUDGET_MS)
             .toBeLessThanOrEqual(SYNC_LOCK_TTL_MS);
     });
@@ -144,12 +179,18 @@ describe('the READ phase fits inside the lease too (#2508)', () => {
         expect(ROSTER_READ_PHASE_BUDGET_MS).toBe(ROSTER_READ_DEADLINE_MS + MAX_HTTP_REQUEST_MS);
     });
 
-    it('leaves room INSIDE the deadline for the pre-paging token exchange', () => {
+    it('leaves room INSIDE the deadline for everything that precedes paging', () => {
         // Adding MAX_HTTP_REQUEST_MS once, rather than twice, holds only
-        // because Workday's OAuth token exchange — issued before the paging
-        // loop starts — always completes before the deadline. Break this and
-        // a run could spend a request reaching the loop and another leaving
-        // it, putting the real worst case outside the budget above.
+        // because everything Workday does before the paging loop starts
+        // completes before the deadline. Break this and a run could spend a
+        // request reaching the loop and another leaving it, putting the real
+        // worst case outside the budget above.
+        //
+        // TWO THINGS PRECEDE THE LOOP, not one, and #2522 found the second:
+        // the OAuth token exchange, and the `persistSecret` callback it fires
+        // on rotation — which is a BOOKKEEPING TRANSACTION, opened and
+        // committed inside this window. Asserting the request alone described
+        // a pre-loop cost 15 s smaller than the real one.
         //
         // STRICTLY less than. `toBeLessThanOrEqual` would be enough for that
         // arithmetic and would NOT be enough for the other claim the source
@@ -157,7 +198,8 @@ describe('the READ phase fits inside the lease too (#2508)', () => {
         // maximally slow token exchange lands exactly on the deadline and the
         // run reads zero pages. The strict form is what makes "every run
         // attempts at least one page" true.
-        expect(MAX_HTTP_REQUEST_MS).toBeLessThan(ROSTER_READ_DEADLINE_MS);
+        expect(MAX_HTTP_REQUEST_MS + SYNC_BOOKKEEPING_TX_TIMEOUT_MS)
+            .toBeLessThan(ROSTER_READ_DEADLINE_MS);
     });
 
     it('the deadline is not vacuous — the unbounded read really did overrun', () => {
@@ -178,6 +220,92 @@ describe('the READ phase fits inside the lease too (#2508)', () => {
         // ONE-page cap would keep that test passing while describing a
         // provider that never pages.
         expect(WORKDAY_MAX_PAGES_PER_RUN).toBeGreaterThan(1);
+    });
+});
+
+describe('the THIRD phase is in the composition too (#2522)', () => {
+    /**
+     * WHAT THESE ASSERTIONS CERTIFY: that the constants compose — that the sum
+     * of the three phase budgets is inside the lease.
+     *
+     * WHAT THEY DO NOT CERTIFY: that a run opens only the transactions this
+     * sum counts. Adding a fifth bookkeeping transaction to the long path
+     * moves no constant in this file, so every assertion here would stay
+     * green. That is measured against a real run in
+     * `tests/unit/sync-transaction-shape.test.ts`, which counts the
+     * bookkeeping transactions `runHrisSync` actually opens against this same
+     * `MAX_SYNC_BOOKKEEPING_TXS`.
+     */
+    it('composes read + write + BOOKKEEPING against the lease', () => {
+        // The assertion #2522 was opened for. Every term is lease-held, so
+        // whichever number has to move to keep this true is somebody's
+        // decision — which is the whole job of this file.
+        expect(SYNC_LEASE_HELD_BUDGET_MS).toBeLessThanOrEqual(SYNC_LOCK_TTL_MS);
+    });
+
+    it('the total is the SUM OF THREE terms, not two', () => {
+        expect(SYNC_LEASE_HELD_BUDGET_MS).toBe(
+            ROSTER_READ_PHASE_BUDGET_MS + SYNC_WRITE_PHASE_BUDGET_MS + SYNC_BOOKKEEPING_PHASE_BUDGET_MS,
+        );
+        // And the third term is really there. Dropping it would leave the
+        // headline assertion above green — a two-phase subtotal fits the
+        // lease, which is exactly the thing #2522 says is not enough — so the
+        // strict inequality is what makes the omission fail rather than pass.
+        expect(SYNC_LEASE_HELD_BUDGET_MS)
+            .toBeGreaterThan(ROSTER_READ_PHASE_BUDGET_MS + SYNC_WRITE_PHASE_BUDGET_MS);
+    });
+
+    it('derives the bookkeeping term from a COUNT of transactions', () => {
+        expect(MAX_SYNC_BOOKKEEPING_TXS)
+            .toBe(SYNC_BOOKKEEPING_TXS_BEFORE_READ + SYNC_BOOKKEEPING_TXS_AFTER_READ);
+        expect(SYNC_BOOKKEEPING_PHASE_BUDGET_MS)
+            .toBe(MAX_SYNC_BOOKKEEPING_TXS * SYNC_BOOKKEEPING_TX_TIMEOUT_MS);
+        // At least one of them is opened BEFORE the read clock starts — the
+        // run-open, which commits the RUNNING row. The lock is taken in
+        // `jobs/hris-sync.ts` before `runHrisSync` is called, and `start` is
+        // taken after that transaction commits, so a zero here would claim the
+        // lease and the read deadline start together. They do not, and that
+        // gap is the half of #2522 no other budget can see.
+        expect(SYNC_BOOKKEEPING_TXS_BEFORE_READ).toBeGreaterThanOrEqual(1);
+    });
+
+    it('the third term is not decorative — the subtotal is BLIND to it', () => {
+        // Non-vacuity, in the shape the deadline's own test uses: show the
+        // term changes a verdict. `SYNC_WRITE_PHASE_BUDGET_MS` never mentions
+        // the bookkeeping timeout, so the two-phase subtotal is unmoved by ANY
+        // value of it — including one that puts the real lease-held total over
+        // the lease.
+        const leaseHeldAt = (bookkeepingTimeoutMs: number) =>
+            ROSTER_READ_PHASE_BUDGET_MS
+            + SYNC_WRITE_PHASE_BUDGET_MS
+            + MAX_SYNC_BOOKKEEPING_TXS * bookkeepingTimeoutMs;
+        // Raising it is a REASONABLE change for a future author to make: the
+        // constant's own comment says the failure mode of a number too small
+        // is silence, which argues for a bigger one.
+        const RAISED_MS = 45_000;
+        expect(RAISED_MS).toBeGreaterThan(SYNC_BOOKKEEPING_TX_TIMEOUT_MS);
+        // The subtotal: unchanged, and still comfortable.
+        expect(ROSTER_READ_PHASE_BUDGET_MS + SYNC_WRITE_PHASE_BUDGET_MS)
+            .toBeLessThanOrEqual(SYNC_LOCK_TTL_MS);
+        // The real total at that timeout: over the lease, which is #2508's
+        // corruption becoming reachable again with nothing red.
+        expect(leaseHeldAt(RAISED_MS)).toBeGreaterThan(SYNC_LOCK_TTL_MS);
+        // Tied back to the shipped constant, so the hypothetical above cannot
+        // drift away from the number actually in force.
+        expect(leaseHeldAt(SYNC_BOOKKEEPING_TX_TIMEOUT_MS)).toBe(SYNC_LEASE_HELD_BUDGET_MS);
+    });
+
+    it('leaves residual margin for the two transactions the sum does NOT carry', () => {
+        // `jobs/hris-sync.ts` wraps `acquireSyncLock` and `releaseSyncLock` in
+        // `runInTenantContext` with no options, so each inherits the same 5 s
+        // default the block below refuses, and the lease clock starts at the
+        // `syncLockedAt` acquire writes rather than at its commit. No constant
+        // is folded in for them — nothing enforces one, and a constant with no
+        // consumer is the ghost this file's header records. Asserting the
+        // RESIDUAL instead keeps the omission honest: the margin under the TTL
+        // has to be wide enough to hold both.
+        expect(SYNC_LOCK_TTL_MS - SYNC_LEASE_HELD_BUDGET_MS)
+            .toBeGreaterThanOrEqual(2 * PRISMA_DEFAULT_TX_TIMEOUT_MS);
     });
 });
 
