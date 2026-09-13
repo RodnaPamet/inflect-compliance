@@ -26,7 +26,32 @@ import { deriveEmploymentStatus, type EmploymentStatusValue } from './employment
 
 /** A roster row normalized across HRIS vendors. */
 export interface NormalizedEmployee {
+    /**
+     * Best-effort provenance id. NOT an address.
+     *
+     * BambooHR puts `employeeNumber` (a customer-entered payroll field) here,
+     * or the work email when there is none; Workday puts `employeeId` /
+     * `workerId` / the work email, drawn from a report template the customer
+     * authors. Neither addresses an HRIS update API. `hrisRecordId` does.
+     */
     externalId: string;
+    /**
+     * The HRIS's OWN row id, or null/absent when the provider cannot supply
+     * one — which is the honest answer for most rows and for every Workday
+     * row.
+     *
+     * OPTIONAL BECAUSE IT IS UNKNOWABLE, not because it is unimportant. A
+     * provider that has no row id must leave this null rather than reach for
+     * `externalId` or the work email: an HRIS update addressed by work email
+     * would be addressed by the value the JML write-back exists to CREATE,
+     * which is circular by construction
+     * (docs/jml-hris-write-back-design.md, Decision 3).
+     *
+     * Nothing reads it yet. It is persisted now so that when a write-back
+     * pass exists it has a subject — Phase 0 of that document's phasing, and
+     * the one piece everything else is blocked on.
+     */
+    hrisRecordId?: string | null;
     fullName: string;
     workEmail: string;
     /** EmploymentStatus. */
@@ -256,7 +281,11 @@ export class BambooHrProvider implements ScheduledCheckProvider, HrisSyncProvide
         const res = await doFetch(url, {
             method: 'POST',
             headers: { Authorization: `Basic ${auth}`, Accept: 'application/json', 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fields: ['workEmail', 'firstName', 'lastName', 'status', 'department', 'jobTitle', 'supervisorEmail', 'hireDate', 'terminationDate', 'employeeNumber'] }),
+            // `id` is BambooHR's own row id and the ONLY field here that can
+            // address an update API. It is requested explicitly rather than
+            // relied on arriving unasked — which is what the mapper below used
+            // to do, in a fallback term that could therefore never be reached.
+            body: JSON.stringify({ fields: ['id', 'workEmail', 'firstName', 'lastName', 'status', 'department', 'jobTitle', 'supervisorEmail', 'hireDate', 'terminationDate', 'employeeNumber'] }),
         });
         if (!res.ok) throw new Error(`BambooHR roster fetch failed (HTTP ${res.status})`);
         const body = (await res.json()) as { employees?: Array<Record<string, string>> };
@@ -264,7 +293,29 @@ export class BambooHrProvider implements ScheduledCheckProvider, HrisSyncProvide
         // H3 — signal truncation instead of silently dropping rows past the cap.
         const complete = rows.length <= MAX_EMPLOYEES;
         const employees = rows.slice(0, MAX_EMPLOYEES).map((r) => ({
-            externalId: r.employeeNumber || r.id || r.workEmail,
+            // `r.id` USED TO SIT BETWEEN THESE TWO TERMS, and removing it is
+            // load-bearing rather than tidy. Requesting `id` and LEAVING the
+            // term in place would repoint `externalId` at the row id for every
+            // row with no employeeNumber, on the next sync — rewriting a column
+            // already on disk. Deleting it first is what makes requesting the
+            // field a no-op for existing data; the row id goes to
+            // `hrisRecordId`, which nothing has ever written.
+            //
+            // WHAT IS NOT KNOWN, and must not be written down as if it were:
+            // whether BambooHR returns `id` for rows that did not request it.
+            // docs/jml-hris-write-back-design.md Open Question 2 is explicit
+            // that this is unresolved and says to check against a real tenant;
+            // there is no BambooHR tenant to check (see issue #2548). So the
+            // historical contents of `externalId` on employeeNumber-less rows
+            // are UNKNOWN — they may be row ids. What makes that tolerable is
+            // not the premise but the column's reach: nothing reads
+            // `externalId`. listEmployees' projection omits it, getEmployee has
+            // no production caller, no .tsx references it and no Employee query
+            // filters on it. Were it read anywhere, this deletion would need a
+            // backfill decision rather than a comment.
+            externalId: r.employeeNumber || r.workEmail,
+            // Null, never a fallback. See NormalizedEmployee.hrisRecordId.
+            hrisRecordId: r.id || null,
             fullName: [r.firstName, r.lastName].filter(Boolean).join(' ') || r.workEmail,
             workEmail: r.workEmail || '',
             status: mapBambooStatus(r),
