@@ -60,8 +60,8 @@ describeFn('OrgAuditLog — immutability + hash chain', () => {
     });
 
     afterAll(async () => {
-        // Cleanup using the documented bypass — same pattern as
-        // audit-immutability.test.ts.
+        // Cleanup through the documented bypass, which lives in
+        // tests/helpers/audit-cleanup.ts and nowhere else.
         try {
             await deleteOrgAuditRowsForOrganizations(prisma, organizationId);
         } catch { /* tolerate */ }

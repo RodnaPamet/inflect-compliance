@@ -77,8 +77,10 @@ describeFn('Epic D — org invite lifecycle (integration)', () => {
     });
 
     afterAll(async () => {
-        // Bypass audit immutability for cleanup; same pattern as
-        // org-audit-immutability.test.ts.
+        // Org audit rows go through tests/helpers/audit-cleanup.ts — the
+        // only module allowed to disable the immutability trigger. The
+        // OrgInvite / OrgMembership deletes below keep their own replica-mode
+        // transaction: those trip different triggers and are not audit rows.
         try {
             await deleteOrgAuditRowsForOrganizations(prisma, organizationId);
             await prisma.$transaction(async (tx) => {

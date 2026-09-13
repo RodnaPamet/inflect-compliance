@@ -72,9 +72,9 @@ describeFn('appendAuditEntry — hash chain (real DB)', () => {
     });
 
     afterAll(async () => {
-        // AuditLog is append-only — bypass the immutability trigger with
-        // session_replication_role=replica (same pattern as
-        // audit-immutability.test.ts). Then drop the tenants.
+        // AuditLog is append-only; tests/helpers/audit-cleanup.ts owns the
+        // bypass. With the audit rows gone, AuditLog_tenantId_fkey (ON DELETE
+        // RESTRICT) no longer blocks the tenant delete below.
         await deleteAuditRowsForTenants(prisma, [TENANT_ID, OTHER_TENANT_ID]);
         await prisma.tenant.deleteMany({
             where: { id: { in: [TENANT_ID, OTHER_TENANT_ID] } },

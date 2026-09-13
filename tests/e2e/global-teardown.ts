@@ -8,8 +8,8 @@
  *
  * Cleanup order per tenant (FK-respecting, with the AuditLog
  * immutability trigger bypassed via
- * `SET LOCAL session_replication_role = 'replica'` — same pattern
- * as `tests/integration/audit-immutability.test.ts`):
+ * `SET LOCAL session_replication_role = 'replica'` — through
+ * `tests/helpers/audit-cleanup.ts`, the one module allowed to set it):
  *
  *   1. AuditLog rows where tenantId = X
  *   2. Tenant-scoped child tables (the most common ones — see
