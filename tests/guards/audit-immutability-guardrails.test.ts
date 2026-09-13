@@ -563,7 +563,8 @@ describe('AuditLog Immutability Guardrails', () => {
             scan(
                 ['src', 'tests'],
                 RAW_UPDATE,
-                'raw SQL UPDATE on an audit table',
+                'raw SQL UPDATE on an audit table — route it through tests/helpers/audit-cleanup.ts '
+                    + '(tamperAuditRow / tamperOrgAuditRow), the only sanctioned bypass',
                 AUDIT_CLEANUP_HELPER,
             ),
         ).toEqual([]);
@@ -574,7 +575,8 @@ describe('AuditLog Immutability Guardrails', () => {
             scan(
                 ['src', 'tests'],
                 RAW_DELETE,
-                'raw SQL DELETE on an audit table',
+                'raw SQL DELETE on an audit table — route it through tests/helpers/audit-cleanup.ts '
+                    + '(deleteAuditRowsForTenants), the only sanctioned bypass',
                 AUDIT_CLEANUP_HELPER,
             ),
         ).toEqual([]);
@@ -589,7 +591,8 @@ describe('AuditLog Immutability Guardrails', () => {
             scan(
                 ['src', 'tests'],
                 RAW_TRUNCATE,
-                'raw SQL TRUNCATE on an audit table',
+                'raw SQL TRUNCATE on an audit table — the helper has no TRUNCATE to route to; '
+                    + 'delete by tenant with deleteAuditRowsForTenants from tests/helpers/audit-cleanup.ts',
                 AUDIT_CLEANUP_HELPER,
             ),
         ).toEqual([]);
