@@ -146,16 +146,16 @@
  * an account still live and needing a hand. DISABLED and journal-bearing
  * ALREADY_DISABLED are not actions but RECORDS — "the record and the reversal
  * handle", as the outcome table above puts it — and a record planned,
- * undeliverable and unmentioned leaves no row, no error and no retry, which the
- * comment over the counter calls the quietest way this subsystem can fail (the
- * header's own failure mode, a channel nobody reads, is a different argument and
- * does not cover this). So an empty IT audience is
- * one unconditional WARN naming the outcome, the link and the journal row,
- * sitting beside the manager's. Both are at the ENQUEUE rather than at
- * audience-build time: the build-time line fires once per pass, before any
- * outcome is known, so it can say the tenant has nobody to tell but never which
- * of the pass's candidates that cost, nor whether it cost anything at all
- * (#2521).
+ * undeliverable and unmentioned leaves no row, no error and no retry, which is
+ * what the comment over the `no_recipient` counter below calls the quietest way
+ * this subsystem can fail. (The failure mode THIS header opens with is the
+ * opposite one — a channel so noisy it gets filtered — and it does not cover
+ * the silent case.) So an empty IT audience is one unconditional WARN naming
+ * the outcome, the link and the journal row, sitting beside the manager's. Both
+ * are at the ENQUEUE rather than at audience-build time: the build-time line
+ * fires once per pass, before any outcome is known, so it can say the tenant
+ * has nobody to tell but never which of the pass's candidates that cost, nor
+ * whether it cost anything at all (#2521).
  *
  * @module notifications/leaver
  */
