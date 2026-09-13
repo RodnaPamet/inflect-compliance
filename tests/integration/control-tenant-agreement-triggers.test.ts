@@ -101,9 +101,12 @@ afterAll(async () => { await clearProbeRows(); await prisma.$disconnect(); });
 
 describe('the five triggers exist, and the capability they protect still does', () => {
     it('all five are installed, BEFORE INSERT OR UPDATE, on the right tables', async () => {
-        const rows = await prisma.$queryRawUnsafe<Array<{ tgname: string; tbl: string; args: string }>>(
+        const rows = await prisma.$queryRawUnsafe<
+            Array<{ tgname: string; tbl: string; args: string; enabled: string }>
+        >(
             `SELECT t.tgname, c.relname AS tbl,
-                    encode(t.tgargs, 'escape') AS args
+                    encode(t.tgargs, 'escape') AS args,
+                    t.tgenabled::text AS enabled
                FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
               WHERE NOT t.tgisinternal`,
         );
@@ -120,6 +123,16 @@ describe('the five triggers exist, and the capability they protect still does', 
             .map((g) => `${g.trigger} -> ${byName.get(g.trigger)!.args}`)).toEqual([]);
 
         expect(byName.has('control_retenant_trg')).toBe(true);
+
+        // `ALTER TABLE ... DISABLE TRIGGER` leaves the row in `pg_trigger`
+        // untouched — same name, same table, same arguments — so every
+        // assertion above passes against a database where all five are inert.
+        // Measured: disabling the four child triggers reddened the behavioural
+        // tests and left this one green. `tgenabled` is the only column that
+        // separates installed from enforcing ('O' = enabled, 'D' = disabled).
+        const inert = [...GUARDED.map((g) => g.trigger), 'control_retenant_trg']
+            .filter((t) => byName.get(t)!.enabled === 'D');
+        expect(inert).toEqual([]);
     });
 
     it('Control.tenantId is still NULLABLE — the exemption must remain reachable', async () => {
