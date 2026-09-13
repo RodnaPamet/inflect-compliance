@@ -214,8 +214,22 @@ customer's tenant, not about which vendor's API is better:
 | --- | --- | --- |
 | Read surface | REST resource under a gateway base URL (`hris/index.ts:255`) | RaaS custom report, path is per-connection config (`workday/roster.ts:1-8`) |
 | Distance to a write | Same client, same Basic auth header, different path and method | An entirely different API surface, with no client in this repo |
-| Credential change for the customer | Issue/repermission one API key and paste it in | New scope on a registered API client (`WORKDAY_SCOPES`, `token.ts:42`) — which invalidates every token issued against the old scope set, so **every existing Workday connection re-consents** |
+| Credential change for the customer | Issue/repermission one API key and paste it in | A new scope on `WORKDAY_SCOPES` (`token.ts:42`), which is read **only** by `buildWorkdayAuthorizeUrl` (`token.ts:108`) — so every existing connection must be taken back through the consent flow by hand |
 | Address for the write | BambooHR row id — obtainable by adding one field to `hris/index.ts:259` | A Worker WID, which the RaaS template may or may not emit (`workday/roster.ts:118`) |
+
+**A correction to a claim this document made in draft, because the code contradicts it.** It is
+tempting to say a `WORKDAY_SCOPES` change *invalidates* existing tokens. It does not.
+`refreshWorkdayToken` sends `{ grant_type: 'refresh_token', refresh_token }` and **no `scope`
+parameter at all** (`workday/token.ts:170`), and `WORKDAY_SCOPES` appears in exactly one other place
+— the authorize URL (`token.ts:108`). So every existing Workday connection keeps refreshing
+indefinitely, holding the **old** scope set, with nothing anywhere reporting that it is now
+insufficient.
+
+That is worse than invalidation, not better. An invalidated token fails loudly at the next sync. A
+silently under-scoped one works perfectly for the roster read it already does and fails only at the
+first write attempt, as a 403, per candidate, long after somebody ticked a box. Whatever ships for
+Workday must therefore treat scope as **unobservable from stored state** and prove it by attempting
+something — the same conclusion BambooHR's opaque API key forces, reached by a different route.
 
 **The counter-evidence, recorded rather than argued away.** BambooHR is the *weaker* provider on
 verification: `liveValidation = false` (`hris/index.ts:220`) against Workday's `true`
