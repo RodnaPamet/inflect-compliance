@@ -45,10 +45,11 @@
  * carried three budgets nobody had multiplied together. So the write phase's
  * worst case is derived here rather than asserted in prose:
  * {@link SYNC_WRITE_PHASE_BUDGET_MS} is every chunk transaction plus the
- * reconcile transaction at their full timeout, and
- * `tests/guards/sync-transaction-budget-composes.test.ts` asserts it fits
- * inside `SYNC_LOCK_TTL_MS` — the per-connection lease a sync must finish
- * within, or a second run may steal the lock and interleave with it.
+ * reconcile transaction at their full timeout, and it is one of the three
+ * terms of {@link SYNC_LEASE_HELD_BUDGET_MS}, which
+ * `tests/guards/sync-transaction-budget-composes.test.ts` asserts fits inside
+ * `SYNC_LOCK_TTL_MS` — the per-connection lease a sync must finish within, or
+ * a second run may steal the lock and interleave with it.
  *
  * ═══ AND SO IS THE READ PHASE, NOW (#2508) ═══
  *
@@ -67,9 +68,26 @@
  * cursor it already holds. The run then
  * ends as a PARTIAL that the next scheduled run continues, so the failure
  * direction is "fewer pages per run", never "two writers". What the lease has
- * to accommodate is {@link ROSTER_READ_PHASE_BUDGET_MS}, and
- * `tests/guards/sync-transaction-budget-composes.test.ts` asserts read + write
- * fits inside `SYNC_LOCK_TTL_MS`.
+ * to accommodate is {@link ROSTER_READ_PHASE_BUDGET_MS}.
+ *
+ * ═══ AND THE THIRD PHASE, NOW (#2522) ═══
+ *
+ * "Read plus write fits inside the lease" was TRUE OF TWO PHASES OUT OF
+ * THREE, and it was the sentence a future author would have reasoned from
+ * while changing one of these constants. `SYNC_WRITE_PHASE_BUDGET_MS` counts
+ * the chunk and reconcile `writeTx` budgets and NOTHING ELSE, so the
+ * bookkeeping transactions — the run-open, the manager map, the cursor store,
+ * the finalise, and the second finalise the catch opens when the first one
+ * throws — sat inside the lease and inside neither budget. Worse, the
+ * run-open sits inside the lease and OUTSIDE THE CLOCK THE READ DEADLINE IS
+ * MEASURED FROM: `jobs/hris-sync.ts` takes the lock before calling the
+ * usecase, and the usecase takes its `start` AFTER the run-open transaction
+ * has committed.
+ *
+ * {@link SYNC_BOOKKEEPING_PHASE_BUDGET_MS} is that third term and
+ * {@link SYNC_LEASE_HELD_BUDGET_MS} is the sum the guard now asserts against
+ * `SYNC_LOCK_TTL_MS`, so the guard fails when the REAL lease-held total
+ * crosses the TTL rather than when a two-phase subtotal does.
  *
  * WHAT IS STILL NOT COMPOSED, STATED PLAINLY: identity-sync's enumeration.
  * Okta and Google Workspace each fan out a per-USER enrichment request after
@@ -221,20 +239,179 @@ export const ROSTER_READ_DEADLINE_MS = 10 * 60_000;
  * ceiling, and the honest bound is the deadline plus ONE
  * {@link MAX_HTTP_REQUEST_MS}, not one per remaining page.
  *
- * Adding it ONCE holds only while every request a provider issues BEFORE its
- * paging loop can itself finish inside the deadline — for Workday that is the
- * OAuth token exchange in `listEmployees`, which is at most one request
- * (`resolveWorkdayAccessToken` refreshes or returns the cached token; it never
- * loops). The precondition is `MAX_HTTP_REQUEST_MS < ROSTER_READ_DEADLINE_MS`,
- * and the guard asserts it rather than leaving it as prose.
+ * Adding it ONCE holds only while everything a provider does BEFORE its paging
+ * loop can itself finish inside the deadline. For Workday that is TWO things,
+ * not one, and the second was missed until #2522:
+ *
+ *   • the OAuth token exchange in `listEmployees`, at most one request
+ *     (`resolveWorkdayAccessToken` refreshes or returns the cached token; it
+ *     never loops);
+ *   • the `persistSecret` callback it fires ON ROTATION, which is a
+ *     BOOKKEEPING TRANSACTION — `SYNC_BOOKKEEPING_TX_TIMEOUT_MS` of pre-loop
+ *     cost, opened and committed inside this window.
+ *
+ * So the precondition is `MAX_HTTP_REQUEST_MS + SYNC_BOOKKEEPING_TX_TIMEOUT_MS
+ * < ROSTER_READ_DEADLINE_MS`, and the guard asserts that rather than leaving
+ * it as prose.
  *
  * STRICTLY less than, and the strictness is the second thing it buys: the
  * reader's check is `now >= deadline`, so equality here would let a maximally
  * slow token exchange land exactly on the deadline and leave the run zero
  * pages. `<=` would be enough for the budget arithmetic alone; `<` is what
  * makes "every run attempts at least one page" true as well.
+ *
+ * THIS IS ALSO WHY THE PERSIST TRANSACTION IS ABSORBED RATHER THAN ADDED —
+ * AND THE REASON IS NARROWER THAN THE WALL CLOCK. An earlier version of this
+ * paragraph ended "it is a property of the wall clock rather than of how many
+ * times a provider happens to call the callback", and that generalisation is
+ * FALSE. The budget is the deadline plus exactly ONE
+ * {@link MAX_HTTP_REQUEST_MS}, and `roster.ts` evaluates the deadline BEFORE
+ * each page, so the overshoot allowance buys one in-flight request and nothing
+ * else. A `persistSecret` fired AFTER the final deadline check — a mid-loop
+ * rotation — would add its {@link SYNC_BOOKKEEPING_TX_TIMEOUT_MS} on top of
+ * deadline + one request: 825,000 ms against an 810,000 ms budget. It would be
+ * ADDED, not absorbed.
+ *
+ * What makes it absorbed today is a property of the PROVIDER: Workday fires
+ * the callback inside `resolveToken`, BEFORE `readWorkdayRoster`'s paging loop
+ * begins (`providers/workday/index.ts`), so the transaction lands in the
+ * pre-loop window the precondition above reserves for it. That precondition —
+ * `MAX_HTTP_REQUEST_MS + SYNC_BOOKKEEPING_TX_TIMEOUT_MS <
+ * ROSTER_READ_DEADLINE_MS` — is the whole of the guarantee, and it covers ONE
+ * pre-loop bookkeeping transaction. A provider that rotated mid-loop, or
+ * twice, would need this budget re-derived before its persist could be called
+ * absorbed.
  */
 export const ROSTER_READ_PHASE_BUDGET_MS = ROSTER_READ_DEADLINE_MS + MAX_HTTP_REQUEST_MS;
+
+/**
+ * Bookkeeping transactions one run opens while holding the lease and OUTSIDE
+ * the read window, at the worst path through `usecases/hris-sync.ts`.
+ *
+ * COUNTED, NOT ESTIMATED, and the census is the resumable-PARTIAL path WHOSE
+ * FINALISE THEN FAILS — the longest path a run can actually walk:
+ *
+ *   1. THE RUN-OPEN. `shortTx` reads the connection and commits the `RUNNING`
+ *      row. This is the one that is invisible to every other budget: the lock
+ *      is taken in `jobs/hris-sync.ts` BEFORE `runHrisSync` is called, and
+ *      `start` — the instant `ROSTER_READ_DEADLINE_MS` is measured from — is
+ *      taken AFTER this transaction commits. It is inside the lease and
+ *      outside the read clock.
+ *   2. THE MANAGER MAP. One `findMany` between the upsert chunks and the
+ *      manager-link chunks. Bookkeeping-budgeted, so `SYNC_WRITE_PHASE_BUDGET_MS`
+ *      — which counts `writeTx` only — does not see it either.
+ *   3. THE CURSOR STORE, on the resumable arm.
+ *   4. THE EXECUTION FINALISE, which carries `clearAuthFailure` with it.
+ *   5. THE WRITE-FAILURE FINALISE, opened when (4) THROWS.
+ *
+ * THE FIFTH IS WHY THIS SPLIT IS 1 + 4, AND THE SENTENCE IT REPLACES WAS
+ * FALSE. That sentence said the truncation-ERROR, read-failure,
+ * provider-unsupported and write-failure arms "each RETURN, so a run walks one
+ * of them; the four above are the longest". The write-failure arm is not an
+ * ALTERNATIVE to the resumable arm — it is the CATCH WRAPPING IT. In
+ * `usecases/hris-sync.ts` the `try` opens above the upsert chunks and the
+ * `catch` sits below every arm inside it, so a resumable run whose finalise
+ * `shortTx` throws — a blown {@link SYNC_BOOKKEEPING_TX_TIMEOUT_MS} or a lost
+ * pool, precisely what that budget exists to bound — walks (1)–(4) and then
+ * opens (5). Five transactions at their full timeout is 75,000 ms of
+ * lease-held bookkeeping where the old count said 60,000 ms, and a blown
+ * bookkeeping budget was the one input that made the lease-held total grow
+ * while the term meant to carry it did not.
+ *
+ * The other arms really are alternatives, and each is strictly shorter: the
+ * provider-unsupported arm returns after two, the read-failure arm after two,
+ * the non-resumable truncation arm after three — four if ITS finalise throws,
+ * still under the five above. `tests/unit/sync-transaction-shape.test.ts`
+ * measures this arm against a real `runHrisSync` rather than trusting this
+ * comment, and measures the successful resumable arm at one fewer beside it,
+ * so neither number can drift alone.
+ *
+ * NOT COUNTED, deliberately: `persistSecret`. It is a SIXTH bookkeeping
+ * transaction on a Workday run, and it is opened INSIDE the read window,
+ * whose budget is a wall-clock deadline — see {@link
+ * ROSTER_READ_PHASE_BUDGET_MS}, which states exactly how narrow that
+ * absorption is. Counting it here would charge the lease twice for the same
+ * seconds.
+ */
+export const SYNC_BOOKKEEPING_TXS_BEFORE_READ = 1;
+
+/**
+ * The manager map, the cursor store, the finalise, and the write-failure
+ * finalise the catch opens when that finalise throws — see the constant above.
+ */
+export const SYNC_BOOKKEEPING_TXS_AFTER_READ = 4;
+
+/** Every bookkeeping transaction the lease pays for outside the read window. */
+export const MAX_SYNC_BOOKKEEPING_TXS =
+    SYNC_BOOKKEEPING_TXS_BEFORE_READ + SYNC_BOOKKEEPING_TXS_AFTER_READ;
+
+/**
+ * Worst case for the bookkeeping phase: every such transaction at its full
+ * timeout.
+ *
+ * Derived from the count rather than written down, for the same reason
+ * {@link MAX_SYNC_WRITE_CHUNKS} is: raising
+ * {@link SYNC_BOOKKEEPING_TX_TIMEOUT_MS} because an evidence write timed out
+ * under load is a REASONABLE thing for a future author to do, and it must move
+ * this number and fail the composition rather than quietly eat the lease's
+ * margin.
+ */
+export const SYNC_BOOKKEEPING_PHASE_BUDGET_MS =
+    MAX_SYNC_BOOKKEEPING_TXS * SYNC_BOOKKEEPING_TX_TIMEOUT_MS;
+
+/**
+ * What the lease actually has to carry: read + write + bookkeeping.
+ *
+ * THE WHOLE POINT OF THE THIRD TERM. Read + write is a SUBTOTAL, and a
+ * subtotal asserted against the TTL is a guard that goes red later than the
+ * thing it is guarding goes wrong. #2508's failure — a sync outliving its
+ * lease, a second run starting, and two runs destroying each other's roster —
+ * arrives when the LEASE-HELD total crosses `SYNC_LOCK_TTL_MS`, not when a
+ * two-phase subtotal does.
+ *
+ * WHAT THIS DOES NOT INCLUDE, so the next author does not have to rediscover
+ * it:
+ *
+ *   • THE LOCK'S OWN TRANSACTIONS. `jobs/hris-sync.ts` wraps `acquireSyncLock`
+ *     and `releaseSyncLock` in `runInTenantContext` with NO options, so each
+ *     inherits Prisma's 5 s default — the number `db-context.ts` forwards only
+ *     when present, and the number this whole file exists to stop inheriting.
+ *     The lease clock starts at the `syncLockedAt` that acquire writes, so the
+ *     tail of that transaction is lease-held time this sum does not carry. No
+ *     constant is declared for it here on purpose: nothing enforces one, and a
+ *     constant with no consumer is exactly the ghost the lock's own comment
+ *     records (`ENUMERATION_TIMEOUT_MS`, #1950 → #1970). The guard asserts
+ *     instead that the RESIDUAL margin under the TTL is wide enough to cover
+ *     both.
+ *   • IN-PROCESS CPU BETWEEN TRANSACTIONS — the secret decrypt, the manager
+ *     map build, the chunking. Bounded by nothing here, and nothing here can
+ *     bound it; it is milliseconds against a lease measured in minutes.
+ *
+ * AND WHAT ARITHMETIC CANNOT CERTIFY AT ALL: that the code still honours any
+ * of these numbers. A sum of constants stays green when a transaction is
+ * opened with the wrong options, when the reader stops checking the deadline,
+ * or when a SIXTH bookkeeping transaction joins the long path. That is not
+ * hypothetical — it is how this constant first reached review 15,000 ms
+ * short: the count was taken over the arm that SUCCEEDS, the arithmetic
+ * multiplied it faithfully, and the failure arm that opens one more moved
+ * nothing. The
+ * conduct is measured in `tests/unit/sync-transaction-shape.test.ts` and
+ * `tests/unit/roster-read-within-lock-lease.test.ts`.
+ *
+ * AND ONE MORE THING THE CENSUS ITSELF DOES NOT CERTIFY, because it is the
+ * same shape one level down: `bookkeepingOutsideRead` selects on a
+ * transaction's TIMEOUT and on the span of the PROVIDER CALL. So it counts
+ * transactions outside the provider call, not outside the read CLOCK that
+ * `start` begins, and a lease-held transaction opened with some THIRD timeout
+ * is in neither this sum nor that census. The second hole is closed by the
+ * partition assertion in the shape test — every transaction on the long arms
+ * carries `SYNC_BOOKKEEPING_TX_TIMEOUT_MS` or `SYNC_WRITE_TX_TIMEOUT_MS` and
+ * nothing else. The first is not closed by any test: that the run-open commits
+ * before `start` is verified by reading `usecases/hris-sync.ts`, and moving
+ * `start` above it would move no assertion here.
+ */
+export const SYNC_LEASE_HELD_BUDGET_MS =
+    ROSTER_READ_PHASE_BUDGET_MS + SYNC_WRITE_PHASE_BUDGET_MS + SYNC_BOOKKEEPING_PHASE_BUDGET_MS;
 
 /**
  * Options for a bookkeeping transaction.
