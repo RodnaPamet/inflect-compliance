@@ -32,6 +32,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(120_000);
@@ -88,9 +89,17 @@ async function clearProbeRows() {
     // the RESTRICT-free SET NULL still leaves ordering to chance.
     await prisma.employee.updateMany({ where: t, data: { managerEmployeeId: null } });
     await prisma.employee.deleteMany({ where: t });
+    // Audit rows go through tests/helpers/audit-cleanup.ts, the ONE module
+    // allowed to disable the audit trigger (#2523). A raw DELETE here is what
+    // turned main red when batch 3a met that guard: each PR was green alone and
+    // no union of the two existed until both had landed.
+    //
+    // TenantMembership keeps its own replica-role transaction — it trips the
+    // LAST-OWNER trigger, not the audit one, and it is not an audit table, so
+    // the raw-SQL audit scans have nothing to say about it.
+    await deleteAuditRowsForTenants(prisma, [T1, T2]);
     await prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`, [T1, T2]);
         await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`, [T1, T2]);
     });
     await prisma.tenant.deleteMany({ where: { id: { in: [T1, T2] } } });
