@@ -42,6 +42,7 @@ import {
     BREAKER_CLOSE_REASONS,
     MIN_BASELINE_OBSERVATIONS,
     MIN_BASELINE_WINDOWS,
+    WINDOW_MS,
     WINDOWS_TO_TRIP,
     windowKeyFor,
     windowStartFor,
@@ -219,6 +220,18 @@ export async function getAgentCircuitBreaker(ctx: RequestContext, agentId: strin
             judgementPending ? lookback.slice(1) : lookback.slice(0, BASELINE_WINDOW_LIMIT)
         ).filter((w) => !w.anomalous);
 
+        // The oldest window in the accepted population, computed ONCE because
+        // both figures below are derived from it. Taken as a MINIMUM rather than
+        // read off either end: `lookback` arrives newest-first today, but that
+        // is the store's ordering and not this function's contract.
+        const oldestAcceptedWindowStart =
+            accepted.length > 0
+                ? accepted.reduce(
+                      (oldest, w) => (w.windowStart < oldest ? w.windowStart : oldest),
+                      accepted[0].windowStart,
+                  )
+                : null;
+
         return {
             agentId: agent.id,
             agentName: agent.name,
@@ -259,27 +272,19 @@ export async function getAgentCircuitBreaker(ctx: RequestContext, agentId: strin
                  * `null` when the baseline is empty — no oldest window at all,
                  * which is a different fact from a span of zero.
                  */
-                oldestWindowStart: accepted.length > 0
-                    ? accepted.reduce(
-                          (oldest, w) => (w.windowStart < oldest ? w.windowStart : oldest),
-                          accepted[0].windowStart,
-                      )
-                    : null,
+                oldestWindowStart: oldestAcceptedWindowStart,
                 /** Whole hours from that oldest window to the one being judged. */
-                spanHours: accepted.length > 0
-                    ? Math.max(
-                          0,
-                          Math.round(
-                              (currentWindowStart.getTime() -
-                                  accepted.reduce(
-                                      (oldest, w) =>
-                                          w.windowStart < oldest ? w.windowStart : oldest,
-                                      accepted[0].windowStart,
-                                  ).getTime()) /
-                                  3_600_000,
+                spanHours:
+                    oldestAcceptedWindowStart === null
+                        ? null
+                        : Math.max(
+                              0,
+                              Math.round(
+                                  (currentWindowStart.getTime() -
+                                      oldestAcceptedWindowStart.getTime()) /
+                                      WINDOW_MS,
+                              ),
                           ),
-                      )
-                    : null,
             },
             windowsToTrip: WINDOWS_TO_TRIP,
             closeReasons: [...BREAKER_CLOSE_REASONS],
