@@ -145,8 +145,11 @@
  * the mail a manager could do nothing with is, to IT, this subsystem's name for
  * an account still live and needing a hand. DISABLED and journal-bearing
  * ALREADY_DISABLED are not actions but RECORDS — "the record and the reversal
- * handle", as the table above puts it — and losing a record with nobody told is
- * the quietest failure this header opens by naming. So an empty IT audience is
+ * handle", as the outcome table above puts it — and a record planned,
+ * undeliverable and unmentioned leaves no row, no error and no retry, which the
+ * comment over the counter calls the quietest way this subsystem can fail (the
+ * header's own failure mode, a channel nobody reads, is a different argument and
+ * does not cover this). So an empty IT audience is
  * one unconditional WARN naming the outcome, the link and the journal row,
  * sitting beside the manager's. Both are at the ENQUEUE rather than at
  * audience-build time: the build-time line fires once per pass, before any
@@ -817,9 +820,10 @@ export async function notifyLeaverOutcome(
             // The other arms `planLeaverNotifications` gives IT are records
             // rather than actions — DISABLED and journal-bearing
             // ALREADY_DISABLED carry the write and its reversal handle — and a
-            // record nobody received is the failure the module header opens by
-            // calling the quietest one. So no arm here is a shrug, for one
-            // reason on NEEDS_ACTION and a different one on the rest.
+            // record nobody received leaves no row, no error and no retry,
+            // which is what the comment over the counter above calls the
+            // quietest way this subsystem can fail. So no arm here is a shrug,
+            // for one reason on NEEDS_ACTION and a different one on the rest.
             //
             // VOLUME: at most one line per candidate that planned an IT mail,
             // in a tenant with no privileged member holding an address. The
