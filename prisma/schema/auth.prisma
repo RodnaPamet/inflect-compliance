@@ -718,7 +718,7 @@ model AccessReviewConnectedDecision {
 
   tenant       Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   accessReview AccessReview              @relation(fields: [accessReviewId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  account      ConnectedIdentityAccount? @relation(fields: [connectedAccountId], references: [id], onDelete: SetNull)
+  account      ConnectedIdentityAccount? @relation(fields: [connectedAccountId, tenantId], references: [id, tenantId])
   decidedBy    User?                     @relation("ConnectedDecisionDecider", fields: [decidedByUserId], references: [id])
 
   @@unique([accessReviewId, subjectRef])
@@ -754,7 +754,7 @@ model TenantMembership {
   /// (The deprovision usecase is the canonical cleanup path; the FK
   /// rule is referential-integrity defence-in-depth.)
   provisionedByOrgId    String?
-  customRole            TenantCustomRole?      @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
+  customRole            TenantCustomRole?      @relation(fields: [customRoleId, tenantId], references: [id, tenantId])
   invitedBy             User?                  @relation("MembershipInviter", fields: [invitedByUserId], references: [id])
   tenant                Tenant                 @relation(fields: [tenantId], references: [id])
   user                  User                   @relation(fields: [userId], references: [id])
@@ -923,7 +923,7 @@ model AccessReviewDecision {
 
   tenant       Tenant            @relation(fields: [tenantId], references: [id])
   accessReview AccessReview      @relation(fields: [accessReviewId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  membership   TenantMembership? @relation("AccessReviewDecisionMembership", fields: [membershipId], references: [id], onDelete: SetNull)
+  membership   TenantMembership? @relation("AccessReviewDecisionMembership", fields: [membershipId, tenantId], references: [id, tenantId])
   subjectUser  User              @relation("AccessReviewDecisionSubject", fields: [subjectUserId], references: [id])
   decidedBy    User?             @relation("AccessReviewDecisionDecider", fields: [decidedByUserId], references: [id])
   executedBy   User?             @relation("AccessReviewDecisionExecutor", fields: [executedByUserId], references: [id])

@@ -164,7 +164,7 @@ model BusinessImpactAnalysis {
   updatedAt     DateTime  @updatedAt
 
   tenant        Tenant                @relation(fields: [tenantId], references: [id])
-  processNode   ProcessNode?          @relation(fields: [processNodeId], references: [id])
+  processNode   ProcessNode?          @relation(fields: [processNodeId, tenantId], references: [id, tenantId])
   ownerUser     User?                 @relation("BiaOwner", fields: [ownerUserId], references: [id])
   dependencies  BiaDependency[]
   /// BIA-as-evidence: the continuity control (NIS2 Art.21(2)(c)) links

@@ -399,7 +399,7 @@ model RiskHierarchyNode {
   parentId     String?
   sortOrder    Int                 @default(0)
   metadataJson Json?
-  parent       RiskHierarchyNode?  @relation("HierarchyTree", fields: [parentId], references: [id])
+  parent       RiskHierarchyNode?  @relation("HierarchyTree", fields: [parentId, tenantId], references: [id, tenantId])
   children     RiskHierarchyNode[] @relation("HierarchyTree")
   riskLinks    RiskHierarchyLink[]
   tenant       Tenant              @relation(fields: [tenantId], references: [id])

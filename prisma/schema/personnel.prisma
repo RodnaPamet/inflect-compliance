@@ -229,7 +229,7 @@ model Device {
   updatedAt              DateTime       @updatedAt
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  employee Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  employee Employee? @relation(fields: [employeeId, tenantId], references: [id, tenantId])
 
   @@unique([tenantId, serialNumber])
   @@index([tenantId, employeeId])
@@ -261,7 +261,7 @@ model Employee {
   updatedAt         DateTime         @updatedAt
 
   tenant              Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  manager             Employee?             @relation("EmployeeManager", fields: [managerEmployeeId], references: [id], onDelete: SetNull)
+  manager             Employee?             @relation("EmployeeManager", fields: [managerEmployeeId, tenantId], references: [id, tenantId])
   reports             Employee[]            @relation("EmployeeManager")
   devices             Device[]
   trainingAssignments TrainingAssignment[]
@@ -431,7 +431,7 @@ model IdentityWriteJournal {
   updatedAt DateTime @updatedAt
 
   tenant Tenant               @relation(fields: [tenantId], references: [id])
-  link   IdentityAccountLink? @relation(fields: [linkId], references: [id], onDelete: SetNull)
+  link   IdentityAccountLink? @relation(fields: [linkId, tenantId], references: [id, tenantId])
 
   /// The restore lookup: "what did we last do to this account?"
   @@index([tenantId, provider, externalUserId])

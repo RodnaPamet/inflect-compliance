@@ -49,7 +49,7 @@
 --  proposes dropping them and we always keep them.  Verify with
 --      SELECT indexdef FROM pg_indexes WHERE indexname LIKE 'Control_%_trgm_idx';
 --
---  ── GROUP 3 — 30 × column-scoped SET NULL FKs.  PERMANENT. ────────
+--  ── GROUP 3 — 49 × column-scoped SET NULL FKs.  PERMANENT. ────────
 --  Tenant-carrying composite FKs whose referential action is
 --  `ON DELETE SET NULL (<the fk column>)` in the database, and which the
 --  schema can only imply as RESTRICT.
@@ -88,7 +88,14 @@
 --  The two ControlException members arrived with
 --  20260911120000_controlexception_setnull_column_scoped, the next eight
 --  with 20260911160000_tenant_fks_setnull_column_scoped, and ten more with
---  20260913000000_tenant_fks_composite_batch2.  Batch 2 re-measured first
+--  20260913000000_tenant_fks_composite_batch2, and the last NINETEEN with
+--  20260913020000_tenant_fks_setnull_batch3b — which exhausts #2356's
+--  measured population apart from the four Control sites split to #2532.
+--  Nine of those nineteen declared `onDelete: SetNull`; the other ten
+--  declared nothing and took Prisma's default for an OPTIONAL relation,
+--  which IS SetNull, so all nineteen were already SET NULL in the database.
+--  Treating "(default)" as "no action to preserve" would have converted ten
+--  live behaviours to RESTRICT.  Batch 2 re-measured first
 --  (67 single-column FKs between tenant-scoped models; 14 targets already
 --  composite-capable, of which only TEN are safe) and excluded the four
 --  pointing at `Control`, whose `tenantId` is NULLABLE — a composite FK
@@ -120,10 +127,34 @@
 ALTER TABLE "AccessReview" DROP CONSTRAINT "AccessReview_evidenceFileRecordId_tenantId_fkey";
 
 -- DropForeignKey
+ALTER TABLE "AccessReviewConnectedDecision" DROP CONSTRAINT "AccessReviewConnectedDecision_connectedAccountId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "AccessReviewDecision" DROP CONSTRAINT "AccessReviewDecision_membershipId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "AgentActionReceipt" DROP CONSTRAINT "AgentActionReceipt_auditLogId_tenantId_fkey";
+
+-- DropForeignKey
 ALTER TABLE "AiDecisionLog" DROP CONSTRAINT "AiDecisionLog_aiSystemId_tenantId_fkey";
 
 -- DropForeignKey
 ALTER TABLE "AssetVulnerability" DROP CONSTRAINT "AssetVulnerability_remediationTaskId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "Audit" DROP CONSTRAINT "Audit_auditCycleId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "AuditPackShareComment" DROP CONSTRAINT "AuditPackShareComment_auditPackItemId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "AutomationRule" DROP CONSTRAINT "AutomationRule_elseRuleId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "AutomationRule" DROP CONSTRAINT "AutomationRule_nextRuleId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "BusinessImpactAnalysis" DROP CONSTRAINT "BusinessImpactAnalysis_processNodeId_tenantId_fkey";
 
 -- DropForeignKey
 ALTER TABLE "ControlException" DROP CONSTRAINT "ControlException_compensatingControlId_tenantId_fkey";
@@ -133,6 +164,12 @@ ALTER TABLE "ControlException" DROP CONSTRAINT "ControlException_renewedFromId_t
 
 -- DropForeignKey
 ALTER TABLE "ControlTestEvidenceLink" DROP CONSTRAINT "ControlTestEvidenceLink_evidenceId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "Device" DROP CONSTRAINT "Device_employeeId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "Employee" DROP CONSTRAINT "Employee_managerEmployeeId_tenantId_fkey";
 
 -- DropForeignKey
 ALTER TABLE "Evidence" DROP CONSTRAINT "Evidence_assetId_tenantId_fkey";
@@ -153,16 +190,34 @@ ALTER TABLE "FileRecord" DROP CONSTRAINT "FileRecord_previousFileRecordId_tenant
 ALTER TABLE "Finding" DROP CONSTRAINT "Finding_auditId_tenantId_fkey";
 
 -- DropForeignKey
+ALTER TABLE "IdentityWriteJournal" DROP CONSTRAINT "IdentityWriteJournal_linkId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "IntegrationExecution" DROP CONSTRAINT "IntegrationExecution_connectionId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "IntegrationSyncMapping" DROP CONSTRAINT "IntegrationSyncMapping_connectionId_tenantId_fkey";
+
+-- DropForeignKey
 ALTER TABLE "KeyRiskIndicator" DROP CONSTRAINT "KeyRiskIndicator_riskId_tenantId_fkey";
 
 -- DropForeignKey
 ALTER TABLE "LossEvent" DROP CONSTRAINT "LossEvent_riskId_tenantId_fkey";
 
 -- DropForeignKey
+ALTER TABLE "Policy" DROP CONSTRAINT "Policy_currentVersionId_tenantId_fkey";
+
+-- DropForeignKey
 ALTER TABLE "PolicyEvidenceItem" DROP CONSTRAINT "PolicyEvidenceItem_evidenceId_tenantId_fkey";
 
 -- DropForeignKey
+ALTER TABLE "ReadinessSnapshot" DROP CONSTRAINT "ReadinessSnapshot_auditCycleId_tenantId_fkey";
+
+-- DropForeignKey
 ALTER TABLE "RiskAppetiteBreach" DROP CONSTRAINT "RiskAppetiteBreach_riskId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "RiskHierarchyNode" DROP CONSTRAINT "RiskHierarchyNode_parentId_tenantId_fkey";
 
 -- DropForeignKey
 ALTER TABLE "RiskSuggestionItem" DROP CONSTRAINT "RiskSuggestionItem_assetId_tenantId_fkey";
@@ -174,7 +229,16 @@ ALTER TABLE "ScannerFinding" DROP CONSTRAINT "ScannerFinding_assetId_tenantId_fk
 ALTER TABLE "Task" DROP CONSTRAINT "Task_findingId_tenantId_fkey";
 
 -- DropForeignKey
+ALTER TABLE "TenantMembership" DROP CONSTRAINT "TenantMembership_customRoleId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "VendorAssessment" DROP CONSTRAINT "VendorAssessment_templateVersionId_tenantId_fkey";
+
+-- DropForeignKey
 ALTER TABLE "VendorAssessmentAnswer" DROP CONSTRAINT "VendorAssessmentAnswer_evidenceId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "VendorAssessmentAnswer" DROP CONSTRAINT "VendorAssessmentAnswer_templateQuestionId_tenantId_fkey";
 
 -- DropIndex
 DROP INDEX "Control_code_trgm_idx";
@@ -201,7 +265,40 @@ ALTER TABLE "AssetVulnerability" ADD CONSTRAINT "AssetVulnerability_remediationT
 ALTER TABLE "ScannerFinding" ADD CONSTRAINT "ScannerFinding_assetId_tenantId_fkey" FOREIGN KEY ("assetId", "tenantId") REFERENCES "Asset"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Audit" ADD CONSTRAINT "Audit_auditCycleId_tenantId_fkey" FOREIGN KEY ("auditCycleId", "tenantId") REFERENCES "AuditCycle"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AuditPackShareComment" ADD CONSTRAINT "AuditPackShareComment_auditPackItemId_tenantId_fkey" FOREIGN KEY ("auditPackItemId", "tenantId") REFERENCES "AuditPackItem"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReadinessSnapshot" ADD CONSTRAINT "ReadinessSnapshot_auditCycleId_tenantId_fkey" FOREIGN KEY ("auditCycleId", "tenantId") REFERENCES "AuditCycle"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AccessReviewConnectedDecision" ADD CONSTRAINT "AccessReviewConnectedDecision_connectedAccountId_tenantId_fkey" FOREIGN KEY ("connectedAccountId", "tenantId") REFERENCES "ConnectedIdentityAccount"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TenantMembership" ADD CONSTRAINT "TenantMembership_customRoleId_tenantId_fkey" FOREIGN KEY ("customRoleId", "tenantId") REFERENCES "TenantCustomRole"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "AccessReview" ADD CONSTRAINT "AccessReview_evidenceFileRecordId_tenantId_fkey" FOREIGN KEY ("evidenceFileRecordId", "tenantId") REFERENCES "FileRecord"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AccessReviewDecision" ADD CONSTRAINT "AccessReviewDecision_membershipId_tenantId_fkey" FOREIGN KEY ("membershipId", "tenantId") REFERENCES "TenantMembership"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "IntegrationExecution" ADD CONSTRAINT "IntegrationExecution_connectionId_tenantId_fkey" FOREIGN KEY ("connectionId", "tenantId") REFERENCES "IntegrationConnection"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "IntegrationSyncMapping" ADD CONSTRAINT "IntegrationSyncMapping_connectionId_tenantId_fkey" FOREIGN KEY ("connectionId", "tenantId") REFERENCES "IntegrationConnection"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AutomationRule" ADD CONSTRAINT "AutomationRule_nextRuleId_tenantId_fkey" FOREIGN KEY ("nextRuleId", "tenantId") REFERENCES "AutomationRule"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AutomationRule" ADD CONSTRAINT "AutomationRule_elseRuleId_tenantId_fkey" FOREIGN KEY ("elseRuleId", "tenantId") REFERENCES "AutomationRule"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "AgentActionReceipt" ADD CONSTRAINT "AgentActionReceipt_auditLogId_tenantId_fkey" FOREIGN KEY ("auditLogId", "tenantId") REFERENCES "AuditLog"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "AiDecisionLog" ADD CONSTRAINT "AiDecisionLog_aiSystemId_tenantId_fkey" FOREIGN KEY ("aiSystemId", "tenantId") REFERENCES "AiSystem"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -234,10 +331,28 @@ ALTER TABLE "FileRecord" ADD CONSTRAINT "FileRecord_previousFileRecordId_tenantI
 ALTER TABLE "Finding" ADD CONSTRAINT "Finding_auditId_tenantId_fkey" FOREIGN KEY ("auditId", "tenantId") REFERENCES "Audit"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "BusinessImpactAnalysis" ADD CONSTRAINT "BusinessImpactAnalysis_processNodeId_tenantId_fkey" FOREIGN KEY ("processNodeId", "tenantId") REFERENCES "ProcessNode"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Device" ADD CONSTRAINT "Device_employeeId_tenantId_fkey" FOREIGN KEY ("employeeId", "tenantId") REFERENCES "Employee"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Employee" ADD CONSTRAINT "Employee_managerEmployeeId_tenantId_fkey" FOREIGN KEY ("managerEmployeeId", "tenantId") REFERENCES "Employee"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "IdentityWriteJournal" ADD CONSTRAINT "IdentityWriteJournal_linkId_tenantId_fkey" FOREIGN KEY ("linkId", "tenantId") REFERENCES "IdentityAccountLink"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Policy" ADD CONSTRAINT "Policy_currentVersionId_tenantId_fkey" FOREIGN KEY ("currentVersionId", "tenantId") REFERENCES "PolicyVersion"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "PolicyEvidenceItem" ADD CONSTRAINT "PolicyEvidenceItem_evidenceId_tenantId_fkey" FOREIGN KEY ("evidenceId", "tenantId") REFERENCES "Evidence"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "RiskAppetiteBreach" ADD CONSTRAINT "RiskAppetiteBreach_riskId_tenantId_fkey" FOREIGN KEY ("riskId", "tenantId") REFERENCES "Risk"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "RiskHierarchyNode" ADD CONSTRAINT "RiskHierarchyNode_parentId_tenantId_fkey" FOREIGN KEY ("parentId", "tenantId") REFERENCES "RiskHierarchyNode"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "KeyRiskIndicator" ADD CONSTRAINT "KeyRiskIndicator_riskId_tenantId_fkey" FOREIGN KEY ("riskId", "tenantId") REFERENCES "Risk"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -250,6 +365,12 @@ ALTER TABLE "RiskSuggestionItem" ADD CONSTRAINT "RiskSuggestionItem_assetId_tena
 
 -- AddForeignKey
 ALTER TABLE "Task" ADD CONSTRAINT "Task_findingId_tenantId_fkey" FOREIGN KEY ("findingId", "tenantId") REFERENCES "Finding"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VendorAssessment" ADD CONSTRAINT "VendorAssessment_templateVersionId_tenantId_fkey" FOREIGN KEY ("templateVersionId", "tenantId") REFERENCES "VendorAssessmentTemplate"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VendorAssessmentAnswer" ADD CONSTRAINT "VendorAssessmentAnswer_templateQuestionId_tenantId_fkey" FOREIGN KEY ("templateQuestionId", "tenantId") REFERENCES "VendorAssessmentTemplateQuestion"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "VendorAssessmentAnswer" ADD CONSTRAINT "VendorAssessmentAnswer_evidenceId_tenantId_fkey" FOREIGN KEY ("evidenceId", "tenantId") REFERENCES "Evidence"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
