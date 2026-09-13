@@ -879,6 +879,155 @@ describe('notifyLeaverOutcome', () => {
         expect(noManagerLines('info')).toHaveLength(0);
     });
 
+    // ─── The IT audience, when there is nobody in it ───
+
+    /**
+     * Every per-outcome "planned an IT mail with no recipient" line at one
+     * level, with its fields.
+     *
+     * Matched on the WHOLE message rather than on a substring, and the control
+     * at the end of this block is what that buys: `buildLeaverAudienceBook`'s
+     * batch-level 'leaver notification has no IT recipient' is ONE CHARACTER
+     * away and fires on exactly the runs these tests set up. A loose needle
+     * would count that line instead, and every assertion here would pass with
+     * no per-outcome line existing anywhere in the module.
+     */
+    function noItLines(level: 'warn' | 'info'): unknown[][] {
+        return (logger[level] as jest.Mock).mock.calls.filter(
+            (c) => c[0] === 'leaver notification planned an IT mail with no recipient',
+        );
+    }
+
+    /** The batch-level line: once per pass, before any outcome exists. */
+    function batchItLines(): unknown[][] {
+        return (logger.warn as jest.Mock).mock.calls.filter(
+            (c) => c[0] === 'leaver notification has no IT recipient',
+        );
+    }
+
+    /** A tenant whose privileged members hold no address, and no mailbox either. */
+    function withNoItAudience() {
+        db.tenantMembership.findMany.mockResolvedValue([]);
+        db.tenantNotificationSettings.findUnique.mockResolvedValue({ complianceMailbox: null });
+    }
+
+    it('names the outcome whose IT mail was lost, not just the count', async () => {
+        // The IT half of the 2026-09-12 shape. A live account was disabled and
+        // the administrators who act on that mail have no address on file, so
+        // the row was never written: no error, no retry, and until this line
+        // nothing that said which disable it was.
+        withNoItAudience();
+
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            journalId: 'jrnl-77',
+        });
+
+        // The positive half, and it carries the weight. An empty IT outbox
+        // reads identically whether the mail was deduped, the audience was
+        // empty, or this function was never called at all — the manager's row
+        // proves the run happened and that it was the IT half that was lost.
+        expect(created().map((r) => r.toEmail)).toEqual(['sam@acme.test']);
+        expect(noItLines('warn')).toHaveLength(1);
+        // Outcome, link and journal row: which mail, about which candidate,
+        // about which write. The counter carries none of the three.
+        expect(noItLines('warn')[0][1]).toMatchObject({
+            tenantId: 't1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            linkId: 'link-1',
+            journalId: 'jrnl-77',
+        });
+    });
+
+    it('tells two outcomes in one batch apart, where the batch line cannot', async () => {
+        // The finding in one test. One audience build serves a whole pass, so
+        // its warning fires once no matter how many candidates lose their mail
+        // and can name none of them.
+        withNoItAudience();
+        const shared = await book();
+
+        await notifyLeaverOutcome(ctx, shared, {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            journalId: 'jrnl-77',
+        });
+        await notifyLeaverOutcome(ctx, shared, {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'REFUSED_TARGET',
+            reason: 'Azure AD Connect masters this object',
+        });
+
+        expect(batchItLines()).toHaveLength(1);
+        expect(batchItLines()[0][1]).not.toHaveProperty('outcome');
+        expect(noItLines('warn').map((c) => (c[1] as { outcome: string }).outcome)).toEqual([
+            'DISABLED',
+            'REFUSED_TARGET',
+        ]);
+    });
+
+    it('WARNS about the refusal its manager sibling would only INFO', async () => {
+        // The deliberate asymmetry, pinned. `unreachedManagerLogLevel` drops to
+        // INFO for NEEDS_ACTION because a manager can do nothing about a
+        // refusal. For IT that same mail is the most actionable one in the
+        // table: it says a terminated person's account is still live and
+        // somebody has to disable it by hand. Copying the manager's split here
+        // would file exactly that message where nobody greps.
+        withNoItAudience();
+
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'REFUSED_TARGET',
+            reason: 'Azure AD Connect masters this object',
+        });
+
+        expect(unreachedManagerLogLevel('IDENTITY_LEAVER_NEEDS_ACTION')).toBe('info');
+        expect(noItLines('info')).toHaveLength(0);
+        expect(noItLines('warn')).toHaveLength(1);
+        expect(noItLines('warn')[0][1]).toMatchObject({ outcome: 'REFUSED_TARGET' });
+    });
+
+    it('says nothing when the IT audience was actually reached', async () => {
+        // The other half of the split, without which the line could be
+        // unconditional and every test above would still be green. Positive
+        // first: both rows were written, so the silence is a decision rather
+        // than a run that never happened.
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            journalId: 'jrnl-77',
+        });
+
+        expect(created().map((r) => r.toEmail).sort()).toEqual(['it@acme.test', 'sam@acme.test']);
+        expect(noItLines('warn')).toHaveLength(0);
+        expect(noItLines('info')).toHaveLength(0);
+    });
+
+    it('does not mistake the batch-level warning for a per-outcome line', async () => {
+        // THE EMPTY-SELECTION CONTROL. Point the same fixture at nothing: no IT
+        // audience AND no candidates, so no outcome can lose a mail. The batch
+        // line still fires, which is what makes this a control rather than an
+        // empty run — if the needle above were one character looser it would
+        // count that line here, and it would count it in every test above too,
+        // where the per-outcome line could then be deleted unnoticed.
+        withNoItAudience();
+        db.identityAccountLink.findMany.mockResolvedValue([]);
+
+        const empty = await buildLeaverAudienceBook(ctx, []);
+
+        expect(empty.it).toEqual([]);
+        expect(empty.byLink.size).toBe(0);
+        expect(batchItLines()).toHaveLength(1);
+        expect(noItLines('warn')).toHaveLength(0);
+        expect(noItLines('info')).toHaveLength(0);
+    });
+
     it('counts what was planned but never reached an insert attempt', async () => {
         // The outer catch covers a throw before or between recipients — here an
         // unrepresentable date, which blows up building the payload. Both

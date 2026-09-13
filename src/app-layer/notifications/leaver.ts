@@ -138,6 +138,17 @@
  * facts meet — the `no_recipient` counter carries no outcome label, so it
  * cannot tell them apart on its own.
  *
+ * The IT side has no such split and must not grow one. The manager's level asks
+ * whether the lost mail was one its reader could have acted on; every mail IT is
+ * planned is, because the routing table gives IT a message only where something
+ * needs an operator — NEEDS_ACTION most of all, since that is this subsystem's
+ * name for an account still live. So an empty IT audience is one unconditional
+ * WARN naming the outcome, the link and the journal row, sitting beside the
+ * manager's. Both are at the ENQUEUE rather than at audience-build time: the
+ * build-time line fires once per pass, before any outcome is known, so it can
+ * say the tenant has nobody to tell but never which of fifty candidates that
+ * cost, nor whether it cost anything at all (#2521).
+ *
  * @module notifications/leaver
  */
 import type { EmailNotificationType } from '@prisma/client';
@@ -633,7 +644,11 @@ export async function notifyLeaverOutcome(
         if (plan.it) for (const to of book.it) targets.push({ type: plan.it, to, audience: 'IT' });
         // Planned but undeliverable. No row, no error, no retry — nobody is told
         // and nothing said so, which is the quietest way this subsystem can
-        // fail. It needs a number, not just the log line at audience-build time.
+        // fail. It needs a number AND a line, and this is only the number: the
+        // counter deliberately carries no outcome label, and the log at
+        // audience-build time fires once per pass before any outcome exists. The
+        // line that names WHICH outcome lost its mail is further down, beside
+        // the manager's.
         if (plan.it && book.it.length === 0) {
             recordLeaverNotification({ provider: input.provider, audience: 'IT', result: 'no_recipient' });
         }
@@ -763,6 +778,55 @@ export async function notifyLeaverOutcome(
                     error: err instanceof Error ? err.message : String(err),
                 });
             }
+        }
+
+        if (plan.it && book.it.length === 0) {
+            // Planned and undeliverable, said out loud. The counter above
+            // already moved; a counter cannot name WHICH outcome lost its mail,
+            // and that is the whole distance between "the number went up" and
+            // "this disable was announced to nobody".
+            //
+            // The batch-level WARN in `buildLeaverAudienceBook` is not this
+            // line and cannot become it. It fires ONCE per pass, before any
+            // outcome exists, and says a true but unactionable thing: this
+            // tenant has no privileged member holding an address. It cannot say
+            // whether that cost anything — a re-run over an estate that is
+            // already offboarded is nothing but silent ALREADY_DISABLED and
+            // loses no mail at all — nor, when it did cost something, which of
+            // fifty candidates it was. The wording here is deliberately not the
+            // batch line's ("has no IT recipient"): two messages one character
+            // apart are two messages nobody can tell apart in a grep.
+            //
+            // WARN unconditionally, where the manager's sibling below splits on
+            // the outcome. `unreachedManagerLogLevel` degrades to INFO for
+            // NEEDS_ACTION because the mail a manager lost there is one they
+            // could have done nothing with. That argument inverts for IT:
+            // NEEDS_ACTION is this subsystem's name for "the account is STILL
+            // LIVE and somebody must disable it by hand", which makes the IT
+            // copy the most actionable mail in the table rather than the least.
+            // `planLeaverNotifications` gives IT a mail only where something
+            // needs an operator, so there is no arm here that is a shrug.
+            //
+            // Volume is bounded by the mail it stands in for: at most one line
+            // per candidate, in a run the blast-radius breaker caps at 50, for
+            // a tenant that is misconfigured in a way somebody has to fix.
+            logger.warn('leaver notification planned an IT mail with no recipient', {
+                component: 'notifications-leaver',
+                tenantId: ctx.tenantId,
+                provider: input.provider,
+                outcome: input.outcome,
+                // WHICH candidate lost the mail. The manager's sibling carries
+                // `linkResolved` instead, and the asymmetry is the right way
+                // round: a manager miss is a question about the org chart
+                // hanging off this link, while an empty IT audience is
+                // tenant-wide and the link is purely the identity of the
+                // candidate it cost.
+                linkId: input.linkId,
+                // The write nobody was told about, when there was one. Same
+                // argument as on the manager line: it is what makes the warning
+                // actionable rather than merely alarming.
+                journalId: journalRef,
+            });
         }
 
         if (plan.manager && !subject?.manager) {
