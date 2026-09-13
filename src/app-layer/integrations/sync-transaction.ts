@@ -391,9 +391,10 @@ export const SYNC_BOOKKEEPING_PHASE_BUDGET_MS =
  * of these numbers. A sum of constants stays green when a transaction is
  * opened with the wrong options, when the reader stops checking the deadline,
  * or when a SIXTH bookkeeping transaction joins the long path. That is not
- * hypothetical — it is how this constant first shipped 15,000 ms short: the
- * count was taken over the arm that SUCCEEDS, the arithmetic multiplied it
- * faithfully, and the failure arm that opens one more moved nothing. The
+ * hypothetical — it is how this constant first reached review 15,000 ms
+ * short: the count was taken over the arm that SUCCEEDS, the arithmetic
+ * multiplied it faithfully, and the failure arm that opens one more moved
+ * nothing. The
  * conduct is measured in `tests/unit/sync-transaction-shape.test.ts` and
  * `tests/unit/roster-read-within-lock-lease.test.ts`.
  *

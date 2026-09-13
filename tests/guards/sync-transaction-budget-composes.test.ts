@@ -52,8 +52,8 @@
  * options, a reader that stops checking its deadline, a SIXTH bookkeeping
  * transaction added to the long path. None of those move a constant.
  *
- * THAT IS NOT A HYPOTHETICAL, AND THIS FILE SHIPPED WRONG BECAUSE OF IT. The
- * count started at four, taken over the resumable arm that SUCCEEDS. The
+ * THAT IS NOT A HYPOTHETICAL, AND THIS FILE REACHED REVIEW WRONG BECAUSE OF IT.
+ * The count started at four, taken over the resumable arm that SUCCEEDS. The
  * write-phase `catch` in `usecases/hris-sync.ts` wraps that arm rather than
  * standing beside it, so a finalise that blows its own bookkeeping budget —
  * the precise failure `SYNC_BOOKKEEPING_TX_TIMEOUT_MS` is sized for — opens a
@@ -240,8 +240,9 @@ describe('the THIRD phase is in the composition too (#2522)', () => {
      * WHAT THEY DO NOT CERTIFY: that a run opens only the transactions this
      * sum counts. Adding a SIXTH bookkeeping transaction to the long path
      * moves no constant in this file, so every assertion here would stay
-     * green — and that is exactly how the count reached main one short, at
-     * four against a reachable five. Nor do they certify that a lease-held
+     * green — and that is exactly how the count sat on this branch one short,
+     * at four against a reachable five, through a fully green CI run and every
+     * mutation its author thought to run. Nor do they certify that a lease-held
      * transaction carries either of these two timeouts at all: one opened with
      * a third value is in no term of this sum and in no census. Both are
      * measured against a real run in
