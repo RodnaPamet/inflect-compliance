@@ -1011,18 +1011,28 @@ jobs:
           # produced a different failure and why swapping between them never
           # converged.
           #
-          # The two points give the slope: +1024 of ceiling moved the peak by
-          # 2731 MB (~2.67x per heap, i.e. the pair plus worker overhead). To
-          # keep the peak under ~14.5 GB and hold ~1.9 GB back from the 16 GB
-          # runner: ceiling <= (14500 + 3428) / 2.67 ~= 6714. 6656 is the
-          # value in that window, and it also hands the single heap 512 MB
-          # more than the one that just aborted at 6124.
+          # 6656 WAS THEN TRIED, AND IT CLOSES THE QUESTION: THE WINDOW IS
+          # EMPTY. Three points, all measured on this branch:
           #
-          # BE HONEST ABOUT THE MARGIN: this build now wants nearly a whole
-          # 16 GB runner, so the window is narrow rather than comfortable. If
-          # 6656 aborts LOUDLY the heap genuinely needs more and the fix is a
-          # bigger runner (`vars.LARGE_RUNNER`, unset today) or less demand --
-          # not another trip around this loop.
+          #   6144 -> peak 12975 MB, 3149 free -> LOUD abort, Mark-Compact 6124
+          #   6656 -> peak 13611 MB, 2377 free -> LOUD abort, Mark-Compact 6547
+          #   7168 -> peak 15706 MB,  283 free -> SILENT kernel kill, no abort
+          #
+          # Read them together. At 6656 the heap died with 2.4 GB of MACHINE
+          # memory still free, so the binding constraint there is per-heap
+          # demand, not the runner. At 7168 the heap never aborts -- it finally
+          # has enough -- and the PAIR exhausts the runner instead. So the
+          # compile needs somewhere between 6656 and 7168 per heap, and two
+          # heaps of that size plus overhead do not fit in 16 GB.
+          #
+          # NO VALUE OF THIS CONSTANT FIXES THAT, which is why it is back at
+          # 7168 rather than parked on a third number. 7168 is not "correct" --
+          # it is the status quo, and the only one of the three with a nonzero
+          # pass rate (1 of 7 observed), because the kill depends on how close
+          # the pair drifts to the ceiling on a given run.
+          #
+          # The real options are a bigger runner (`vars.LARGE_RUNNER`, unset
+          # today) or less demand. NOT `webpackBuildWorker: false` -- see below.
           #
           # If a single heap now needs more than 6144 the failure is LOUD and
           # deterministic (V8 "Reached heap limit" + a stack, SIGABRT) rather
@@ -1040,7 +1050,7 @@ jobs:
           # (Historical, for the band: the 8192-era peak was 15783 MB / 16 GB,
           # and returning to that band trades a loud, debuggable V8 abort for the
           # silent kernel kill this ceiling was introduced to stop.)
-          NODE_OPTIONS: "--max-old-space-size=6656"
+          NODE_OPTIONS: "--max-old-space-size=7168"
           NODE_ENV: production
 
       # The worker/scheduler bundle. Until 2026-08-25 this ran in exactly ONE
