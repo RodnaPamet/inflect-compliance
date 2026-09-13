@@ -61,7 +61,7 @@ model Evidence {
   evidenceAssetLinks   EvidenceAssetLink[]
   tags                 EvidenceTag[]
   task                 Task?                     @relation(fields: [taskId, tenantId], references: [id, tenantId])
-  risk                 Risk?                     @relation(fields: [riskId], references: [id])
+  risk                 Risk?                     @relation(fields: [riskId, tenantId], references: [id, tenantId])
   asset                Asset?                    @relation(fields: [assetId, tenantId], references: [id, tenantId])
   fileRecord           FileRecord?               @relation(fields: [fileRecordId, tenantId], references: [id, tenantId])
   ownerUser            User?                     @relation("EvidenceOwner", fields: [ownerUserId], references: [id])

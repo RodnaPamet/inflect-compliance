@@ -45,7 +45,7 @@ model Task {
   retentionUntil            DateTime?
   assignee                  User?                @relation("TaskAssignee", fields: [assigneeUserId], references: [id])
   control                   Control?             @relation(fields: [controlId], references: [id])
-  finding                   Finding?             @relation("FindingTasks", fields: [findingId], references: [id], onDelete: SetNull)
+  finding                   Finding?             @relation("FindingTasks", fields: [findingId, tenantId], references: [id, tenantId])
   createdBy                 User                 @relation("TaskCreator", fields: [createdByUserId], references: [id])
   reviewer                  User?                @relation("TaskReviewer", fields: [reviewerUserId], references: [id])
   tenant                    Tenant               @relation(fields: [tenantId], references: [id])

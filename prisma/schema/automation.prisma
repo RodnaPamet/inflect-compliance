@@ -521,7 +521,7 @@ model AiDecisionLog {
   createdAt     DateTime       @default(now())
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  aiSystem AiSystem? @relation(fields: [aiSystemId], references: [id], onDelete: SetNull)
+  aiSystem AiSystem? @relation(fields: [aiSystemId, tenantId], references: [id, tenantId])
 
   @@index([tenantId, createdAt])
   @@index([tenantId, aiSystemId])
