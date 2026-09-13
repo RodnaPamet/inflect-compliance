@@ -156,9 +156,10 @@
  *     `DELETE FROM "${table}"` that consumes it live in the SAME file.
  *     Moving `TENANT_CHILD_TABLES` into a shared constants module would
  *     reopen exactly the shape this PR exists to close, silently, with no
- *     file changing behaviour. Demonstrated GREEN with two new files.
- *     Closing it needs import resolution, not another regex, and is not
- *     attempted here.
+ *     file changing behaviour. Re-demonstrated GREEN 13/13 against the
+ *     WIDENED patterns, with the list in one new module and the loop in
+ *     another. Closing it needs import resolution, not another regex, and
+ *     is not attempted here.
  *   - CONCATENATION. `'DELETE FROM "' + table + '"'` matches nothing.
  *   - THE ROLE SWITCH ITSELF IS NOT POLICED. These scans forbid raw DML
  *     against the audit TABLES; they say nothing about

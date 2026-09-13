@@ -45,9 +45,10 @@ single exemption only works if all three live behind it:
 rather than inferred from the base-commit statement count — the two are not the
 same number, because three sites that had no literal statement at base (the
 interpolated-table files) acquired one, and `#2531`'s teardown landed after the
-base commit. Anybody can re-derive the 136 with one grep for the seven exported
-names; nobody can re-derive a statement count that only ever existed at a commit
-this branch has merged past.
+base commit. The 136 is one grep for the seven exported names against the
+working tree; the statement counts are one grep against `f31514057`, which is a
+commit this branch has merged past — both are derivable, but only one of them is
+derivable from the thing the heading is describing.
 
 The two pre-existing raw-SQL scans in
 `tests/guards/audit-immutability-guardrails.test.ts` widen from `['src']` to
