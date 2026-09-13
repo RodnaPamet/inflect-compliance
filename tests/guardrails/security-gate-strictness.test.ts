@@ -44,6 +44,33 @@ function readRepoFile(rel: string): string {
 
 describe('GAP-05 ratchet — CI security gate strictness', () => {
     const ci = readRepoFile('.github/workflows/ci.yml');
+    /**
+     * The SECOND file carrying a blocking Trivy image gate, added 2026-09-13.
+     *
+     * `.github/workflows/ghcr-publish.yml` pushes `:latest` to GHCR for
+     * Watchtower to roll into production, and until that date it scanned
+     * nothing at all. It now carries its own gate, so the path that publishes
+     * the image is the path that scans it — and this file had to learn about
+     * it deliberately, because a second gate that nothing pins is a second
+     * gate that can be quietly lowered, and the one sitting in front of
+     * production is the worse of the two to lose.
+     *
+     * Read as its own binding rather than folded into an `it.each` over both
+     * paths, and that is not a style choice. A parameterised
+     * `readRepoFile(rel)` is a read the Class D analyser
+     * (`tests/guardrails/assertion-needle-uniqueness-ratchet.test.ts`) cannot
+     * resolve, so the ci.yml severity assertion below — whose needle has TWO
+     * satisfying positions in ci.yml and is therefore a COUNTED ambiguous
+     * site — silently left the counted population for the skip bucket. With
+     * DRIFT_ALLOWANCE at 0 that reads as unspent slack and fails the ratchet.
+     * Two literal reads keep the existing site analysed and add none: each
+     * needle below occurs exactly once in ghcr-publish.yml.
+     *
+     * The ORDER of that workflow's steps — scan before push, which is what
+     * makes its gate a gate at all — is a different property and lives in
+     * `tests/guardrails/publish-scans-before-push.test.ts`.
+     */
+    const publish = readRepoFile('.github/workflows/ghcr-publish.yml');
 
     it('npm audit gate blocks on MODERATE+ severity (production deps)', () => {
         // 2026-08-08: the gate moved from a bare `npm audit` line in the
@@ -124,6 +151,44 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
             l => l.match(/severity:/) && l.match(/\bCRITICAL\b/) && !l.match(/HIGH/),
         );
         expect(blockingGate).toBeUndefined();
+    });
+
+    it('the PUBLISH workflow Trivy gate blocks on CRITICAL,HIGH too', () => {
+        // Same rule, second gate. This is the one in front of production:
+        // ci.yml's verdict can be absent (its `trivy` job SKIPS when Docker
+        // Build is killed at the timeout, and a skipped dependent is not a
+        // failure), whereas this gate is in series with the push itself.
+        expect(publish).toMatch(/severity:\s*["']CRITICAL,HIGH["']/);
+        const publishLines = publish.split('\n');
+        const loweredGate = publishLines.find(
+            l => l.match(/severity:/) && l.match(/\bCRITICAL\b/) && !l.match(/HIGH/),
+        );
+        expect(loweredGate).toBeUndefined();
+    });
+
+    it('both Trivy gates can actually fail their job', () => {
+        // `severity: "CRITICAL,HIGH"` with `exit-code: "0"` is a REPORT, not
+        // a gate — it names both severities and blocks neither, so every
+        // assertion above would pass on a workflow that enforces nothing.
+        // ci.yml carries a second, deliberately non-blocking trivy-action
+        // step for the SARIF upload, so this asserts at least one blocking
+        // declaration rather than the absence of a non-blocking one.
+        expect(ci).toMatch(/exit-code:\s*["']1["']/);
+        expect(publish).toMatch(/exit-code:\s*["']1["']/);
+    });
+
+    it('the workflow that publishes :latest carries its own image scan', () => {
+        // The 2026-09-12 failure this closes: ghcr-publish.yml pushed
+        // `:latest` with no scan of any kind, and the only Trivy in the repo
+        // lived in a ci.yml job that SKIPPED when its Docker Build was
+        // killed at the timeout. A skipped dependent is not a failure, so
+        // nothing went red while an unscanned image rolled into production
+        // ~20 minutes later via Watchtower.
+        //
+        // Asserted on the `uses:` line rather than on the word "trivy",
+        // which by now appears several times in that file's comments —
+        // prose explaining a gate is not a gate.
+        expect(publish).toMatch(/uses:\s*aquasecurity\/trivy-action@/);
     });
 
     it('removed the documentation comment that explained the temporary lowering', () => {

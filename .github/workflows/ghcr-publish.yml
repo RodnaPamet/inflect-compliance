@@ -1,5 +1,5 @@
 #
-# GHCR publish — fast-path build + push for Watchtower auto-deploy.
+# GHCR publish — build, SCAN, then push for Watchtower auto-deploy.
 #
 # Runs on every push to `main` (in parallel with CI). Pushes an
 # image tagged `:latest` and `:sha-<short>` to GHCR. The VM's
@@ -10,6 +10,56 @@
 # never worked — it was `workflow_dispatch`-only with its auto-trigger
 # commented out pending an EKS environment that was never provisioned,
 # and it was removed along with the rest of the unapplied AWS estate.
+#
+# ── WHY THIS WORKFLOW SCANS, AND WHY THE SCAN COMES FIRST ──
+#
+# Until 2026-09-13 this file contained no vulnerability scan at all.
+# Trivy lived only in `ci.yml`, in a `trivy` job that `needs: [docker]`
+# — and the two facts below made that an open window rather than a
+# theoretical one:
+#
+#   1. Production is UNPINNED on `:latest` with Watchtower live, and
+#      Watchtower polls on a short interval. Measured 2026-09-12: the
+#      VM's containers restarted at 22:37 for a 22:15 publish, ~20
+#      minutes after the push — inside the window in which CI's own
+#      image build had not yet produced a verdict.
+#   2. A CI verdict is not guaranteed to arrive at all. On that sha
+#      `Docker Build` was killed at its timeout, so the dependent
+#      `trivy` job SKIPPED. A skipped dependent is not a failure, so
+#      the run did not go red. An unscanned image reached production
+#      and nothing anywhere was red.
+#
+# `ci.yml`'s Docker Build is additionally path-filtered on PULL
+# REQUESTS (the `container` filter lists Dockerfile, package.json, the
+# lockfile, next.config.*, deploy/**, prisma/**, prisma.config.ts,
+# scripts/entrypoint.sh, patches/**, .trivyignore and ci.yml — and
+# deliberately NOT `src/**`), so PR-time scanning does not cover an
+# ordinary source change either. The path that publishes `:latest` had
+# to become the path that scans it.
+#
+# ORDERING CHOSEN: BUILD → SCAN → PUSH, in one job, on one runner.
+#
+# A scan placed AFTER the push would gate nothing. The image would
+# already be on `:latest` and Watchtower could already have pulled it;
+# the scan's only remaining power would be to turn a workflow red
+# after the vulnerable image was serving traffic. So the build here
+# does NOT push. It loads the image into this runner's local daemon,
+# Trivy scans that local image, and only a passing scan reaches the
+# `docker push` step below. A finding means nothing was published at
+# all — the previous `:latest` stays in place, which is the correct
+# failure direction for an auto-deploying tag.
+#
+# The alternative considered was pushing by digest first and tagging
+# `:latest` only on a passing scan. Rejected: it still puts unscanned
+# bytes in the registry, and it needs a second tagging mechanism
+# (`buildx imagetools create`) whose failure mode is a dangling digest
+# nobody reads. Loading locally costs one extra image export and keeps
+# the invariant absolute — GHCR receives nothing until Trivy passes.
+#
+# The gate's strictness (CRITICAL,HIGH) is pinned by
+# `tests/guardrails/security-gate-strictness.test.ts`, which reads this
+# file as well as ci.yml. The build-scan-push ORDER is pinned by
+# `tests/guardrails/publish-scans-before-push.test.ts`.
 #
 name: Publish image to GHCR
 
@@ -29,6 +79,13 @@ permissions:
 env:
     REGISTRY: ghcr.io
     IMAGE_NAME: ${{ github.repository }}
+    # The local, registry-less tag the image is loaded under and Trivy
+    # scans. Mirrors ci.yml's `inflect-compliance:ci-<sha>` convention.
+    # Deliberately NOT a `ghcr.io/...` name: a registry-shaped ref lets
+    # a typo silently scan the PREVIOUSLY PUBLISHED image pulled from
+    # GHCR instead of the one just built, which would be a scan that
+    # passes while saying nothing about what is about to ship.
+    SCAN_REF: inflect-compliance:publish-${{ github.sha }}
 
 jobs:
     build-push:
@@ -36,7 +93,13 @@ jobs:
         # (npm ci + next build + worker bundle + layers) outgrew a plain
         # ubuntu-latest with a 20-minute budget once the app grew.
         runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
-        timeout-minutes: 40
+        # 40 → 70. This job now does what ci.yml splits across two jobs
+        # with budgets of 40 (Docker Build) and 25 (Trivy Image Scan).
+        # Leaving it at 40 would recreate the exact 2026-09-12 failure in
+        # a new place: the job is cancelled at the ceiling, a cancelled
+        # run is not a failed one, and nobody is told. 70 = 40 + 25 + 5
+        # for the local image load and the push.
+        timeout-minutes: 70
 
         steps:
             - name: Checkout
@@ -81,14 +144,24 @@ jobs:
             #   - `continue-on-error` here + the cacheless retry below — if the
             #     cache IMPORT 404s, rebuild without cache-from. A genuine
             #     build error still fails (the retry fails too).
-            - name: Build and push
+            #
+            # `push: false` + `load: true` is the load-bearing half of this
+            # workflow's ordering. The image goes into this runner's docker
+            # daemon and NOWHERE ELSE; the registry does not see it until the
+            # push step at the bottom of this job, which is downstream of the
+            # Trivy gate. It carries the final GHCR tags (so the pushed bytes
+            # are provably the scanned bytes) plus SCAN_REF.
+            - name: Build image (load locally, NO push)
               id: build
               uses: docker/build-push-action@v7
               continue-on-error: true
               with:
                   context: .
-                  push: true
-                  tags: ${{ steps.meta.outputs.tags }}
+                  push: false
+                  load: true
+                  tags: |
+                      ${{ steps.meta.outputs.tags }}
+                      ${{ env.SCAN_REF }}
                   labels: ${{ steps.meta.outputs.labels }}
                   cache-from: type=gha
                   cache-to: type=gha,mode=max,ignore-error=true
@@ -97,14 +170,110 @@ jobs:
             # Cacheless retry — only when the cached build above failed (cache
             # 404 or any other error). No cache-from, so a stale cache
             # reference can't abort it; if THIS fails too it's a real build
-            # error and the job fails as it should.
-            - name: Build and push (cacheless retry on cache flake)
+            # error and the job fails as it should. Still no push.
+            - name: Build image (cacheless retry on cache flake, NO push)
               if: steps.build.outcome == 'failure'
               uses: docker/build-push-action@v7
               with:
                   context: .
-                  push: true
-                  tags: ${{ steps.meta.outputs.tags }}
+                  push: false
+                  load: true
+                  tags: |
+                      ${{ steps.meta.outputs.tags }}
+                      ${{ env.SCAN_REF }}
                   labels: ${{ steps.meta.outputs.labels }}
                   cache-to: type=gha,mode=max,ignore-error=true
                   platforms: linux/amd64
+
+            # Trivy extracts the image's layers to /tmp, and unlike ci.yml's
+            # `trivy` job this one does not get a fresh runner — the build
+            # above has already spent disk. The local buildkit store is dead
+            # weight by now (the GHA cache export happened during the build),
+            # and `docker image prune` without `--all` removes only dangling
+            # images, so the tagged image Trivy is about to read survives.
+            - name: Reclaim disk before the scan
+              run: |
+                  df -h /
+                  docker buildx prune --all --force 2>/dev/null || true
+                  docker image prune --force 2>/dev/null || true
+                  docker image ls inflect-compliance
+                  df -h /
+
+            # ── Trivy scan: BLOCKING on CRITICAL,HIGH ──
+            # Same action, same version, same severities, same exemption file
+            # as ci.yml's "Gate: Trivy vulnerability scan (critical+high)".
+            # The two gates are deliberately identical: a divergence between
+            # them would mean the publish path enforced something weaker than
+            # the path everyone reads, which is the failure GAP-05 closed.
+            # `tests/guardrails/security-gate-strictness.test.ts` reads BOTH
+            # files and fails CI if either weakens.
+            #
+            # `.trivyignore` carries narrow per-CVE exemptions with written
+            # reasons + upgrade plans, and those exemptions are SHARED with
+            # ci.yml by construction — one file, both gates. That is the
+            # intent (an exemption reviewed once applies everywhere the image
+            # is scanned), but it is also the hazard: an entry added to
+            # unblock CI silences this publish gate in the same commit, with
+            # no second review. Note the shape of the exemption too — an id
+            # on its own line suppresses that CVE at EVERY severity, exactly
+            # as an IGNORE row in `.zap/rules.tsv` suppresses every alert its
+            # pluginId emits. Add entries per-CVE, with the reachability
+            # argument and the retirement trigger written down.
+            - name: "Gate: Trivy vulnerability scan (critical+high)"
+              uses: aquasecurity/trivy-action@v0.36.0
+              with:
+                  image-ref: ${{ env.SCAN_REF }}
+                  format: "table"
+                  exit-code: "1"
+                  severity: "CRITICAL,HIGH"
+                  ignore-unfixed: true
+                  vuln-type: "os,library"
+                  trivyignores: ".trivyignore"
+                  # ci.yml's SARIF step hit trivy's own 5m default on
+                  # 2026-08-20 and took main red with `context deadline
+                  # exceeded` — a timeout on a security gate fails in the
+                  # worst direction, because a re-run that passes proves only
+                  # that the runner was faster. Raise the patience here too,
+                  # never the threshold.
+                  timeout: "15m"
+
+            # Reached ONLY when the gate above exited 0. A failing scan fails
+            # the job at the previous step and this never runs, so a
+            # vulnerable image is never published under any tag — `:latest`
+            # keeps pointing at the last image that passed.
+            #
+            # No SARIF upload here on purpose: this workflow's job is to GATE,
+            # and ci.yml already owns the Security-tab reporting for the same
+            # sha (its `trivy-container-scan` category). Duplicating it would
+            # need `security-events: write` on a workflow that holds a
+            # registry-write token, and would re-fetch the vulnerability DB a
+            # second time for no new verdict.
+            - name: Push scanned image to GHCR
+              run: |
+                  set -euo pipefail
+                  mapfile -t TAGS < <(printf '%s\n' '${{ steps.meta.outputs.tags }}' | sed '/^[[:space:]]*$/d')
+                  if [ "${#TAGS[@]}" -eq 0 ]; then
+                      echo "::error::metadata-action resolved no tags — refusing to publish"
+                      exit 1
+                  fi
+                  printf 'publishing the scanned image %s as:\n' "${SCAN_REF}"
+                  printf '  %s\n' "${TAGS[@]}"
+                  # Immutable `:sha-<short>` first, rolling `:latest` LAST.
+                  # Watchtower polls `:latest`; if the push sequence is
+                  # interrupted part-way, the rolling tag must never be the
+                  # half that landed, because that would roll production onto
+                  # an image whose immutable name is not in the registry to
+                  # roll back to.
+                  for tag in "${TAGS[@]}"; do
+                      case "$tag" in *:latest) continue ;; esac
+                      docker tag "${SCAN_REF}" "$tag"
+                      docker push "$tag"
+                  done
+                  for tag in "${TAGS[@]}"; do
+                      case "$tag" in
+                          *:latest)
+                              docker tag "${SCAN_REF}" "$tag"
+                              docker push "$tag"
+                              ;;
+                      esac
+                  done
