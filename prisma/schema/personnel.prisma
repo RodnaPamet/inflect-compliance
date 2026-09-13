@@ -107,7 +107,7 @@ model ConnectedIdentityAccount {
   // represented. Deleting a connection deletes the roster it observed — which is
   // the truthful outcome, since those rows were only ever that connection's
   // account of a directory it no longer reaches.
-  connection      IntegrationConnection           @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  connection      IntegrationConnection           @relation(fields: [connectionId, tenantId], references: [id, tenantId], onDelete: Cascade)
   reviewDecisions AccessReviewConnectedDecision[]
   identityLink    IdentityAccountLink?
 
@@ -126,6 +126,13 @@ model ConnectedIdentityAccount {
   @@index([tenantId, provider])
   @@index([tenantId, status])
   @@index([tenantId, connectionId])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 /// A security-awareness training course (PR-6). Provider-synced (KnowBe4) or
@@ -144,6 +151,13 @@ model TrainingCourse {
 
   @@unique([tenantId, name])
   @@index([tenantId])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 /// A training assignment to an employee (PR-6).
@@ -160,8 +174,8 @@ model TrainingAssignment {
   updatedAt   DateTime       @updatedAt
 
   tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  employee Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  course   TrainingCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  employee Employee       @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  course   TrainingCourse @relation(fields: [courseId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@index([tenantId, employeeId])
   @@index([tenantId, status])
@@ -186,7 +200,7 @@ model BackgroundCheck {
   updatedAt     DateTime              @updatedAt
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@index([tenantId, employeeId])
   @@index([tenantId, status])
@@ -257,6 +271,13 @@ model Employee {
   @@unique([tenantId, workEmail])
   @@index([tenantId, status])
   @@index([tenantId, managerEmployeeId])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 /// The worker <-> directory-account pairing, established while BOTH sides are
@@ -313,9 +334,9 @@ model IdentityAccountLink {
   updatedAt DateTime @updatedAt
 
   tenant           Tenant                   @relation(fields: [tenantId], references: [id])
-  employee         Employee                 @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee         Employee                 @relation(fields: [employeeId, tenantId], references: [id, tenantId], onDelete: Cascade)
   writeJournal     IdentityWriteJournal[]
-  connectedAccount ConnectedIdentityAccount @relation(fields: [connectedAccountId], references: [id], onDelete: Cascade)
+  connectedAccount ConnectedIdentityAccount @relation(fields: [connectedAccountId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   /// `connectedAccountId` carries a field-level @unique (above), so an account
   /// belongs to AT MOST ONE worker. Two workers claiming one account makes
@@ -333,6 +354,21 @@ model IdentityAccountLink {
   @@index([tenantId, employeeId])
   @@index([tenantId, lastVerifiedAt])
   @@index([tenantId, contradictedAt])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
+
+  /// #2356 batch 3 — the 1:1 side needs its OWN composite unique, not just
+  /// `@unique` on the id: Prisma requires the defining side of a one-to-one
+  /// to be unique over exactly the fields the relation uses, and the
+  /// relation now uses [connectedAccountId, tenantId].  `connectedAccountId
+  /// @unique` above is kept — it is the stronger claim (one link per account
+  /// GLOBALLY, not merely per tenant) and dropping it would widen the model.
+  @@unique([connectedAccountId, tenantId])
 }
 
 /// One attempted write to a customer's directory, with the state it replaced.

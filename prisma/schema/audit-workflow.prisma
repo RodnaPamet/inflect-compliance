@@ -101,6 +101,13 @@ model AuditCycle {
 
   @@index([tenantId, frameworkKey, status])
   @@index([tenantId, deletedAt])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 model AuditPack {
@@ -120,7 +127,7 @@ model AuditPack {
   spExportItemId  String?
   spExportWebUrl  String?
   spExportedAt    DateTime?
-  cycle           AuditCycle              @relation(fields: [auditCycleId], references: [id])
+  cycle           AuditCycle              @relation(fields: [auditCycleId, tenantId], references: [id, tenantId])
   frozenBy        User?                   @relation("AuditPackFrozenBy", fields: [frozenByUserId], references: [id])
   tenant          Tenant                  @relation(fields: [tenantId], references: [id])
   items           AuditPackItem[]
@@ -148,6 +155,13 @@ model AuditPackItem {
 
   @@unique([auditPackId, entityType, entityId])
   @@index([tenantId, auditPackId])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 model AuditPackShare {
@@ -166,6 +180,13 @@ model AuditPackShare {
 
   @@index([tokenHash])
   @@index([tenantId, auditPackId])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 // feat/auditor-return-channel — the RETURN CHANNEL that closes the
@@ -203,7 +224,7 @@ model AuditPackShareComment {
 
   tenant     Tenant         @relation(fields: [tenantId], references: [id])
   pack       AuditPack      @relation(fields: [auditPackId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  share      AuditPackShare @relation(fields: [auditPackShareId], references: [id], onDelete: Cascade)
+  share      AuditPackShare @relation(fields: [auditPackShareId, tenantId], references: [id, tenantId], onDelete: Cascade)
   item       AuditPackItem? @relation(fields: [auditPackItemId], references: [id], onDelete: SetNull)
   resolvedBy User?          @relation("AuditPackShareCommentResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
 

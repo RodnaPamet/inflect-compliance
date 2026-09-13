@@ -46,6 +46,13 @@ model TrustCenter {
   documents             TrustCenterDocument[]
 
   @@index([tenantId])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 /// PR-8 — a document published on the trust center. `gated=true` requires an
@@ -62,11 +69,18 @@ model TrustCenterDocument {
   updatedAt     DateTime @updatedAt
 
   tenant      Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  trustCenter TrustCenter                @relation(fields: [trustCenterId], references: [id], onDelete: Cascade)
+  trustCenter TrustCenter                @relation(fields: [trustCenterId, tenantId], references: [id, tenantId], onDelete: Cascade)
   requests    TrustCenterAccessRequest[]
 
   @@index([tenantId])
   @@index([tenantId, trustCenterId])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 /// PR-8 — a visitor's request to access a gated document. Auto-approved when
@@ -91,7 +105,7 @@ model TrustCenterAccessRequest {
   updatedAt         DateTime                @updatedAt
 
   tenant   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  document TrustCenterDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document TrustCenterDocument @relation(fields: [documentId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([tenantId, status])

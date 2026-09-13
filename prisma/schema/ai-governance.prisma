@@ -55,6 +55,13 @@ model AiGovSelfAssessment {
   answers AiGovSelfAssessmentAnswer[]
 
   @@index([tenantId, updatedAt])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 /// Tenant-scoped: one answer within an AI-governance self-assessment.
@@ -74,7 +81,7 @@ model AiGovSelfAssessmentAnswer {
   updatedAt    DateTime @updatedAt
 
   tenant     Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  assessment AiGovSelfAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  assessment AiGovSelfAssessment @relation(fields: [assessmentId, tenantId], references: [id, tenantId], onDelete: Cascade)
   question   AiGovQuestion       @relation(fields: [questionId], references: [id])
 
   @@unique([assessmentId, questionId])

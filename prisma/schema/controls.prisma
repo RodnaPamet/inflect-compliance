@@ -211,7 +211,7 @@ model ControlEvidenceLink {
   updatedAt           DateTime                @updatedAt
   control             Control                 @relation(fields: [controlId, tenantId], references: [id, tenantId], onDelete: Cascade)
   createdBy           User?                   @relation("ControlEvidenceCreator", fields: [createdByUserId], references: [id])
-  bia                 BusinessImpactAnalysis? @relation(fields: [biaId], references: [id], onDelete: Cascade)
+  bia                 BusinessImpactAnalysis? @relation(fields: [biaId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant              Tenant                  @relation(fields: [tenantId], references: [id])
 
   @@unique([controlId, kind, fileId])
@@ -370,6 +370,13 @@ model ControlTestPlan {
   @@index([tenantId, nextRunAt])
   @@index([tenantId, automationType, status])
   @@index([tenantId, deletedAt])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 model ControlTestRun {
@@ -394,13 +401,20 @@ model ControlTestRun {
   tenant           Tenant                    @relation(fields: [tenantId], references: [id])
   // Cascade so the data-lifecycle hard-purge of a soft-deleted test plan
   // (90d) erases its runs too (runs' evidence links already cascade).
-  testPlan         ControlTestPlan           @relation(fields: [testPlanId], references: [id], onDelete: Cascade)
+  testPlan         ControlTestPlan           @relation(fields: [testPlanId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@index([tenantId])
   @@index([tenantId, testPlanId])
   @@index([tenantId, result])
   @@index([tenantId, executedAt])
   @@index([tenantId, controlId])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 model ControlTestEvidenceLink {
@@ -420,7 +434,7 @@ model ControlTestEvidenceLink {
   createdBy           User             @relation("TestEvidenceCreator", fields: [createdByUserId], references: [id])
   evidence            Evidence?        @relation(fields: [evidenceId, tenantId], references: [id, tenantId])
   tenant              Tenant           @relation(fields: [tenantId], references: [id])
-  testRun             ControlTestRun   @relation(fields: [testRunId], references: [id], onDelete: Cascade)
+  testRun             ControlTestRun   @relation(fields: [testRunId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@unique([testRunId, kind, evidenceId])
   @@unique([testRunId, kind, fileId])
@@ -438,7 +452,7 @@ model ControlTestStep {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   tenant         Tenant          @relation(fields: [tenantId], references: [id])
-  testPlan       ControlTestPlan @relation(fields: [testPlanId], references: [id], onDelete: Cascade)
+  testPlan       ControlTestPlan @relation(fields: [testPlanId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@index([tenantId, testPlanId])
 }

@@ -410,6 +410,13 @@ model WorkflowRun {
 
   @@index([tenantId, status, startedAt])
   @@index([tenantId, agentId])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 /// An append-only record of one workflow step — the run's audit narrative.
@@ -437,7 +444,7 @@ model WorkflowStep {
   status      WorkflowStepStatus @default(PENDING)
   at          DateTime           @default(now())
   actorUserId String?
-  run         WorkflowRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  run         WorkflowRun        @relation(fields: [runId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@index([runId, seq])
   @@index([tenantId, runId])

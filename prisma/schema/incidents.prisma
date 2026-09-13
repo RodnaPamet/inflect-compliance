@@ -174,6 +174,13 @@ model BusinessImpactAnalysis {
   @@index([tenantId, criticality])
   @@index([tenantId, processNodeId])
   @@index([tenantId, ownerUserId])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 /// A dependency a BIA'd process relies on — a polymorphic pointer
@@ -189,7 +196,7 @@ model BiaDependency {
   dependsOnId   String
   createdAt     DateTime @default(now())
 
-  bia    BusinessImpactAnalysis @relation(fields: [biaId], references: [id], onDelete: Cascade)
+  bia    BusinessImpactAnalysis @relation(fields: [biaId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant Tenant                 @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId, biaId])
