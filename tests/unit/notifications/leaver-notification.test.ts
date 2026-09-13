@@ -879,6 +879,277 @@ describe('notifyLeaverOutcome', () => {
         expect(noManagerLines('info')).toHaveLength(0);
     });
 
+    // ─── The IT audience, when there is nobody in it ───
+
+    /**
+     * Every per-outcome "planned an IT mail with no recipient" line at one
+     * level, with its fields.
+     *
+     * Matched on the WHOLE message rather than on a substring, and the control
+     * at the end of this block is what that buys. `buildLeaverAudienceBook`'s
+     * batch-level 'leaver notification has no IT recipient' fires on exactly
+     * the runs these tests set up, and the substring it shares with this one is
+     * 'no IT recipient' — which this message does NOT contain (it says
+     * 'planned an IT mail with no recipient'). So a needle loosened to that
+     * substring stops matching the per-outcome line and starts matching the
+     * batch line instead, and every assertion here would pass with no
+     * per-outcome line existing anywhere in the module.
+     *
+     * The two messages are not near-identical, and an earlier version of this
+     * comment said they were: Levenshtein distance is 21 over lengths 39 and
+     * 56, not 1. What IS one character apart is a past-tense NAMING of this
+     * line — 'had no IT recipient' — which is the collision the wording in
+     * `leaver.ts` was chosen to avoid. The needle has to be exact either way;
+     * the reason is the shared substring, not the near-identical string.
+     */
+    function noItLines(level: 'warn' | 'info'): unknown[][] {
+        return (logger[level] as jest.Mock).mock.calls.filter(
+            (c) => c[0] === 'leaver notification planned an IT mail with no recipient',
+        );
+    }
+
+    /** The batch-level line: once per pass, before any outcome exists. */
+    function batchItLines(): unknown[][] {
+        return (logger.warn as jest.Mock).mock.calls.filter(
+            (c) => c[0] === 'leaver notification has no IT recipient',
+        );
+    }
+
+    /** A tenant whose privileged members hold no address, and no mailbox either. */
+    function withNoItAudience() {
+        db.tenantMembership.findMany.mockResolvedValue([]);
+        db.tenantNotificationSettings.findUnique.mockResolvedValue({ complianceMailbox: null });
+    }
+
+    it('names the outcome whose IT mail was lost, not just the count', async () => {
+        // The IT half of the 2026-09-12 shape. A live account was disabled and
+        // the administrators who act on that mail have no address on file, so
+        // the row was never written: no error, no retry, and until this line
+        // nothing that said which disable it was.
+        withNoItAudience();
+
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            journalId: 'jrnl-77',
+        });
+
+        // The positive half, and it carries the weight. An empty IT outbox
+        // reads identically whether the mail was deduped, the audience was
+        // empty, or this function was never called at all — the manager's row
+        // proves the run happened and that it was the IT half that was lost.
+        expect(created().map((r) => r.toEmail)).toEqual(['sam@acme.test']);
+        expect(noItLines('warn')).toHaveLength(1);
+        // Outcome, link and journal row: which mail, about which candidate,
+        // about which write. The counter carries none of the three.
+        //
+        // `toEqual`, not `toMatchObject`: the whole payload, so a field that
+        // arrives carrying something extra or something renamed is red here
+        // rather than tolerated. Every value below is also the fixture's
+        // default, though, so this test pins SHAPE only — the two tests after
+        // it are what pin each field to the call it was read from.
+        expect(noItLines('warn')[0][1]).toEqual({
+            component: 'notifications-leaver',
+            tenantId: 't1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            linkId: 'link-1',
+            journalId: 'jrnl-77',
+        });
+    });
+
+    it('tells two outcomes in one batch apart, where the batch line cannot', async () => {
+        // The finding in one test. One audience build serves a whole pass, so
+        // its warning fires once no matter how many candidates lose their mail
+        // and can name none of them.
+        //
+        // TWO DIFFERENT candidates, and that is deliberate rather than
+        // decorative. A field asserted against the value the default fixture
+        // already hands out is anchored by PRESENCE, not by value: with both
+        // calls on `link-1`/`jrnl-77`, `linkId: input.linkId` could be the
+        // literal `'link-1'` and `journalId: journalRef` the literal
+        // `'jrnl-77'` and this suite would not notice. `link-2` is not the
+        // default link and `null` is not the default journal, so the pair
+        // below can only have been read off the two calls.
+        withNoItAudience();
+        db.identityAccountLink.findMany.mockResolvedValue([
+            linkRow(),
+            linkRow({
+                id: 'link-2',
+                employee: {
+                    id: 'emp-2',
+                    fullName: 'Ravi Shah',
+                    workEmail: 'ravi@acme.test',
+                    manager: { id: 'emp-9', fullName: 'Sam Reid', workEmail: 'sam@acme.test' },
+                },
+            }),
+        ]);
+        const shared = await buildLeaverAudienceBook(ctx, ['link-1', 'link-2']);
+
+        await notifyLeaverOutcome(ctx, shared, {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            journalId: 'jrnl-77',
+        });
+        await notifyLeaverOutcome(ctx, shared, {
+            linkId: 'link-2',
+            provider: 'entra-id',
+            outcome: 'REFUSED_TARGET',
+            reason: 'Azure AD Connect masters this object',
+        });
+
+        expect(batchItLines()).toHaveLength(1);
+        expect(batchItLines()[0][1]).not.toHaveProperty('outcome');
+        // The WHOLE payload of each line, in order, rather than the outcome
+        // alone. Which mail, about which candidate, about which write: all
+        // three have to move between the two lines, and `journalId: null` is
+        // the refusal arm saying there was no write to name — the value a
+        // frozen `'jrnl-77'` could never produce.
+        expect(noItLines('warn').map((c) => c[1])).toEqual([
+            {
+                component: 'notifications-leaver',
+                tenantId: 't1',
+                provider: 'entra-id',
+                outcome: 'DISABLED',
+                linkId: 'link-1',
+                journalId: 'jrnl-77',
+            },
+            {
+                component: 'notifications-leaver',
+                tenantId: 't1',
+                provider: 'entra-id',
+                outcome: 'REFUSED_TARGET',
+                linkId: 'link-2',
+                journalId: null,
+            },
+        ]);
+    });
+
+    it('names the tenant and the provider of the run, not the fixture default', async () => {
+        // `linkId` and `journalId` vary between the two lines above; `tenantId`
+        // and `provider` cannot, because one batch is one tenant reached
+        // through one connection. So they get their own run, against values the
+        // default fixture never produces: a SECOND tenant, equally short of a
+        // privileged member with an address, reached through a different
+        // provider. Without this, `tenantId: ctx.tenantId` could be the literal
+        // `'t1'` and `provider: input.provider` the literal `'entra-id'`, and
+        // every other assertion in this block would still be green.
+        const other = makeRequestContext('ADMIN', { tenantId: 't2', userId: 'u1' });
+        withNoItAudience();
+
+        await notifyLeaverOutcome(other, await buildLeaverAudienceBook(other, ['link-1']), {
+            linkId: 'link-1',
+            provider: 'okta',
+            outcome: 'DISABLED',
+            journalId: 'jrnl-77',
+        });
+
+        // The positive, as everywhere in this block: the manager's row proves
+        // the run happened and that it was the IT half that was lost.
+        expect(created().map((r) => r.toEmail)).toEqual(['sam@acme.test']);
+        expect(noItLines('warn')).toHaveLength(1);
+        expect(noItLines('warn')[0][1]).toMatchObject({ tenantId: 't2', provider: 'okta' });
+    });
+
+    it('WARNS about the refusal its manager sibling would only INFO', async () => {
+        // The deliberate asymmetry, pinned. `unreachedManagerLogLevel` drops to
+        // INFO for NEEDS_ACTION because a manager can do nothing about a
+        // refusal. For IT that same mail is the most actionable one in the
+        // table: it says a terminated person's account is still live and
+        // somebody has to disable it by hand. Copying the manager's split here
+        // would file exactly that message where nobody greps.
+        withNoItAudience();
+
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'REFUSED_TARGET',
+            reason: 'Azure AD Connect masters this object',
+        });
+
+        expect(unreachedManagerLogLevel('IDENTITY_LEAVER_NEEDS_ACTION')).toBe('info');
+        expect(noItLines('info')).toHaveLength(0);
+        expect(noItLines('warn')).toHaveLength(1);
+        expect(noItLines('warn')[0][1]).toMatchObject({ outcome: 'REFUSED_TARGET' });
+    });
+
+    it('says nothing when the IT audience was actually reached', async () => {
+        // The other half of the split, without which the line could be
+        // unconditional and every test above would still be green. Positive
+        // first: both rows were written, so the silence is a decision rather
+        // than a run that never happened.
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            journalId: 'jrnl-77',
+        });
+
+        expect(created().map((r) => r.toEmail).sort()).toEqual(['it@acme.test', 'sam@acme.test']);
+        expect(noItLines('warn')).toHaveLength(0);
+        expect(noItLines('info')).toHaveLength(0);
+    });
+
+    it('stays silent about IT when it was the MANAGER who was unreachable', async () => {
+        // THE AUDIENCE THE GUARD IS NAMED FOR. Until this test, nothing in
+        // the file combined a REACHABLE IT audience with a MISSING manager, so
+        // widening the guard to
+        // `plan.it && (book.it.length === 0 || !subject?.manager)` left
+        // everything green. Not because the other runs lack a manager — the
+        // `withNoItAudience()` tests keep the default link, manager and all —
+        // but because in those the FIRST disjunct already holds, so a second
+        // one changes nothing, and in `says nothing when the IT audience was
+        // actually reached` the manager resolves so the added disjunct is
+        // false. The runs that do have the shape are the `withNoManager()`
+        // tests further up, and they assert only on `noManagerLines`.
+        //
+        // So under that mutation a tenant whose IT desk is perfectly reachable
+        // gets a nightly WARN saying its mail was lost, on the very runs where
+        // the row WAS written, with nothing red. This is the test that reddens.
+        withNoManager();
+
+        await notifyLeaverOutcome(ctx, await book(), {
+            linkId: 'link-1',
+            provider: 'entra-id',
+            outcome: 'DISABLED',
+            journalId: 'jrnl-77',
+        });
+
+        // Positive first, and it is the whole point: the IT row exists. The
+        // silence below is the guard declining to fire on a delivered mail,
+        // not a run that never reached the guard.
+        expect(created().map((r) => r.toEmail)).toEqual(['it@acme.test']);
+        // And the manager half DID warn, so this really is the manager-miss
+        // shape rather than a run in which nothing was missing.
+        expect(noManagerLines('warn')).toHaveLength(1);
+        expect(noItLines('warn')).toHaveLength(0);
+        expect(noItLines('info')).toHaveLength(0);
+    });
+
+    it('does not mistake the batch-level warning for a per-outcome line', async () => {
+        // THE EMPTY-SELECTION CONTROL. Point the same fixture at nothing: no IT
+        // audience AND no candidates, so no outcome can lose a mail. The batch
+        // line still fires, which is what makes this a control rather than an
+        // empty run: loosen the needle above to the substring 'no IT
+        // recipient' and it counts THAT line here, and counts it in every test
+        // above too, where the per-outcome line could then be deleted
+        // unnoticed. (Not "one character looser" — the messages are 21 edits
+        // apart. The exact-equality needle is load-bearing because of the
+        // shared substring, which is what a loosened needle would grab.)
+        withNoItAudience();
+        db.identityAccountLink.findMany.mockResolvedValue([]);
+
+        const empty = await buildLeaverAudienceBook(ctx, []);
+
+        expect(empty.it).toEqual([]);
+        expect(empty.byLink.size).toBe(0);
+        expect(batchItLines()).toHaveLength(1);
+        expect(noItLines('warn')).toHaveLength(0);
+        expect(noItLines('info')).toHaveLength(0);
+    });
+
     it('counts what was planned but never reached an insert attempt', async () => {
         // The outer catch covers a throw before or between recipients — here an
         // unrepresentable date, which blows up building the payload. Both
