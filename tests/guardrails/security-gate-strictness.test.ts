@@ -55,6 +55,18 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
      * gate that can be quietly lowered, and the one sitting in front of
      * production is the worse of the two to lose.
      *
+     * WHAT THIS FILE DOES NOT SEE, and where that lives instead. These are
+     * TEXT assertions over the whole file: they pin the severity set and
+     * `exit-code`, and nothing else. An adversarial review applied three
+     * weakenings to the shipped `ghcr-publish.yml` — `continue-on-error: true`
+     * on the gate, an `if:` on the gate, and re-pointing `image-ref` at the
+     * previously published `ghcr.io/...:latest` — and measured 20 passed / 20
+     * total on each. Every one leaves this file's needles satisfied while the
+     * gate stops gating. They are pinned by
+     * `tests/guardrails/publish-scans-before-push.test.ts`, which parses the
+     * YAML rather than matching it, so do not read a green run here as "the
+     * publish gate is intact".
+     *
      * Read as its own binding rather than folded into an `it.each` over both
      * paths, and that is not a style choice. A parameterised
      * `readRepoFile(rel)` is a read the Class D analyser
@@ -155,9 +167,14 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
 
     it('the PUBLISH workflow Trivy gate blocks on CRITICAL,HIGH too', () => {
         // Same rule, second gate. This is the one in front of production:
-        // ci.yml's verdict can be absent (its `trivy` job SKIPS when Docker
-        // Build is killed at the timeout, and a skipped dependent is not a
-        // failure), whereas this gate is in series with the push itself.
+        // ci.yml's verdict can be absent, because its `trivy` job is declared
+        // `needs: [docker]` and `docker` is `needs: [build, changes]` — so ANY
+        // failure or skip upstream deletes the verdict and a skipped dependent
+        // is not a failure. (Measured on CI run 34722259790: `build` failed at
+        // 23:01:48, `Docker Build` completed `skipped`, `Trivy Image Scan`
+        // completed `skipped` at 23:01:49, and the run went red for the build,
+        // never for the missing scan.) This gate is in series with the push
+        // itself, so nothing in another job can delete it.
         expect(publish).toMatch(/severity:\s*["']CRITICAL,HIGH["']/);
         const publishLines = publish.split('\n');
         const loweredGate = publishLines.find(
@@ -180,10 +197,13 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
     it('the workflow that publishes :latest carries its own image scan', () => {
         // The 2026-09-12 failure this closes: ghcr-publish.yml pushed
         // `:latest` with no scan of any kind, and the only Trivy in the repo
-        // lived in a ci.yml job that SKIPPED when its Docker Build was
-        // killed at the timeout. A skipped dependent is not a failure, so
-        // nothing went red while an unscanned image rolled into production
-        // ~20 minutes later via Watchtower.
+        // lived in a ci.yml job that SKIPPED because an upstream `build` job
+        // failed (NOT because Docker Build was killed at its timeout — that
+        // job never started). A skipped dependent is not a failure, so nothing
+        // went red while Watchtower, which polls every 60 SECONDS, rolled the
+        // unscanned image into production at 22:37:20 — within a minute of
+        // `:latest` moving, and 24 minutes before CI reached the point of not
+        // scanning it.
         //
         // Asserted on the `uses:` line rather than on the word "trivy",
         // which by now appears several times in that file's comments —

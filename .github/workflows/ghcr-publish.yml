@@ -19,23 +19,37 @@
 # theoretical one:
 #
 #   1. Production is UNPINNED on `:latest` with Watchtower live, and
-#      Watchtower polls on a short interval. Measured 2026-09-12: the
-#      VM's containers restarted at 22:37 for a 22:15 publish, ~20
-#      minutes after the push — inside the window in which CI's own
-#      image build had not yet produced a verdict.
-#   2. A CI verdict is not guaranteed to arrive at all. On that sha
-#      `Docker Build` was killed at its timeout, so the dependent
-#      `trivy` job SKIPPED. A skipped dependent is not a failure, so
-#      the run did not go red. An unscanned image reached production
-#      and nothing anywhere was red.
+#      Watchtower polls every 60 SECONDS. Measured on the VM: the
+#      watchtower container logs `Session done` once a minute, and for
+#      the 2026-09-12 22:15:45 publish it logged `Found new
+#      ghcr.io/rodnapamet/inflect-compliance:latest image` at 22:37:18
+#      and `Stopping /inflect-app-1` at 22:37:20. So the exposure
+#      window between a vulnerable image landing on `:latest` and
+#      production running it is about ONE MINUTE. (The ~21 minutes
+#      between the push to `main` and that roll is build time, not a
+#      window anyone can act in — an operator who plans around "we have
+#      ~20 minutes to catch it" has no time at all.)
+#   2. A CI verdict is not guaranteed to arrive at all. On the sha that
+#      actually published (75496ea46, CI run 34722259790) the upstream
+#      `build` job FAILED at 23:01:48, so `docker` — declared
+#      `needs: [build, changes]` — completed `skipped`, and `trivy`
+#      skipped behind it at 23:01:49. A skipped dependent is not a
+#      failure, so the run never went red on the scan's absence.
+#      Watchtower had already rolled production onto that image at
+#      22:37, 24 minutes BEFORE CI reached the point of not scanning
+#      it. The trigger was NOT specifically a killed Docker Build: ANY
+#      failure or skip anywhere upstream of `docker` deletes the
+#      verdict, and none of them turn the publish red, because the
+#      publish is a different workflow that never consults it.
 #
 # `ci.yml`'s Docker Build is additionally path-filtered on PULL
-# REQUESTS (the `container` filter lists Dockerfile, package.json, the
-# lockfile, next.config.*, deploy/**, prisma/**, prisma.config.ts,
-# scripts/entrypoint.sh, patches/**, .trivyignore and ci.yml — and
-# deliberately NOT `src/**`), so PR-time scanning does not cover an
-# ordinary source change either. The path that publishes `:latest` had
-# to become the path that scans it.
+# REQUESTS. The `container` filter has THIRTEEN entries — Dockerfile,
+# Dockerfile.*, .dockerignore, package.json, package-lock.json,
+# next.config.*, deploy/**, prisma/**, prisma.config.ts,
+# scripts/entrypoint.sh, patches/**, .trivyignore and
+# .github/workflows/ci.yml — and deliberately NOT `src/**`, so PR-time
+# scanning does not cover an ordinary source change either. The path
+# that publishes `:latest` had to become the path that scans it.
 #
 # ORDERING CHOSEN: BUILD → SCAN → PUSH, in one job, on one runner.
 #
@@ -56,10 +70,13 @@
 # nobody reads. Loading locally costs one extra image export and keeps
 # the invariant absolute — GHCR receives nothing until Trivy passes.
 #
-# The gate's strictness (CRITICAL,HIGH) is pinned by
-# `tests/guardrails/security-gate-strictness.test.ts`, which reads this
-# file as well as ci.yml. The build-scan-push ORDER is pinned by
-# `tests/guardrails/publish-scans-before-push.test.ts`.
+# Two guardrails pin this, and they pin different things.
+# `tests/guardrails/security-gate-strictness.test.ts` reads this file
+# and ci.yml AS TEXT and pins the severity set and the blocking exit
+# code in both. Everything STRUCTURAL — the build-scan-push order, the gate
+# being unconditional, and the gate scanning the image about to ship —
+# is pinned by `tests/guardrails/publish-scans-before-push.test.ts`,
+# which parses the YAML GitHub executes.
 #
 name: Publish image to GHCR
 
@@ -206,7 +223,18 @@ jobs:
             # them would mean the publish path enforced something weaker than
             # the path everyone reads, which is the failure GAP-05 closed.
             # `tests/guardrails/security-gate-strictness.test.ts` reads BOTH
-            # files and fails CI if either weakens.
+            # files and fails CI if the SEVERITY SET or `exit-code` weakens in
+            # either. That is all it can see — it matches text, so an `if:`, a
+            # `continue-on-error:` or a re-pointed `image-ref` leave every one
+            # of its assertions satisfied while the gate stops gating. (An
+            # earlier version of this comment claimed it "fails CI if either
+            # weakens", full stop. That was false: all three of those
+            # weakenings were applied to this file and measured 20/20 green.)
+            # Those three are pinned by
+            # `tests/guardrails/publish-scans-before-push.test.ts`, which
+            # parses this YAML and requires the gate to be unconditional, to
+            # scan `${{ env.SCAN_REF }}`, and to sit at a lower step index
+            # than every step that can reach a registry.
             #
             # `.trivyignore` carries narrow per-CVE exemptions with written
             # reasons + upgrade plans, and those exemptions are SHARED with
