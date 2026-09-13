@@ -185,6 +185,9 @@
     "docs/integration-registry-sync-architecture.md": {
       "class": "authoritative"
     },
+    "docs/jml-hris-write-back-design.md": {
+      "class": "living"
+    },
     "docs/jml-joiner-design.md": {
       "class": "living"
     },
