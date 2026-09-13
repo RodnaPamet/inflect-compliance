@@ -185,7 +185,7 @@ model IntegrationExecution {
   executedAt    DateTime                   @default(now())
   completedAt   DateTime?
   createdAt     DateTime                   @default(now())
-  connection    IntegrationConnection?     @relation(fields: [connectionId], references: [id])
+  connection    IntegrationConnection?     @relation(fields: [connectionId, tenantId], references: [id, tenantId])
   control       Control?                   @relation(fields: [controlId], references: [id])
   tenant        Tenant                     @relation(fields: [tenantId], references: [id])
 
@@ -244,7 +244,7 @@ model IntegrationSyncMapping {
   lastSyncedAt      DateTime?
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
-  connection        IntegrationConnection? @relation(fields: [connectionId], references: [id])
+  connection        IntegrationConnection? @relation(fields: [connectionId, tenantId], references: [id, tenantId])
   tenant            Tenant                 @relation(fields: [tenantId], references: [id])
 
   @@unique([tenantId, provider, localEntityType, localEntityId])
@@ -338,9 +338,9 @@ model AutomationRule {
 
   tenant        Tenant                @relation(fields: [tenantId], references: [id])
   executions    AutomationExecution[]
-  nextRule      AutomationRule?       @relation("RuleChain", fields: [nextRuleId], references: [id])
+  nextRule      AutomationRule?       @relation("RuleChain", fields: [nextRuleId, tenantId], references: [id, tenantId])
   prevRules     AutomationRule[]      @relation("RuleChain")
-  elseRule      AutomationRule?       @relation("RuleElseChain", fields: [elseRuleId], references: [id])
+  elseRule      AutomationRule?       @relation("RuleElseChain", fields: [elseRuleId, tenantId], references: [id, tenantId])
   elsePrevRules AutomationRule[]      @relation("RuleElseChain")
 
   @@unique([tenantId, name])
@@ -492,7 +492,7 @@ model AgentActionReceipt {
   createdAt       DateTime @default(now())
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  auditLog AuditLog? @relation(fields: [auditLogId], references: [id])
+  auditLog AuditLog? @relation(fields: [auditLogId, tenantId], references: [id, tenantId])
 
   @@index([tenantId, occurredAt])
   @@index([tenantId, mcpKeyId])

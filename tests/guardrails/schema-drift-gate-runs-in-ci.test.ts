@@ -235,6 +235,66 @@ const SIGNED_OFF: Array<{ name: string; members: readonly string[] }> = [
             'ALTER TABLE "VendorAssessmentAnswer" ADD CONSTRAINT "VendorAssessmentAnswer_evidenceId_tenantId_fkey" FOREIGN KEY ("evidenceId", "tenantId") REFERENCES "Evidence"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
         ],
     },
+    {
+        name: 'group 5 — #2356 batch 3b, the last nineteen column-scoped SET NULL FKs',
+        // The same permanent divergence as groups 3 and 4, and the end of
+        // #2356's measured population apart from the four Control sites in
+        // #2532.
+        //
+        // NINE of these declared `onDelete: SetNull`; the other TEN declared
+        // nothing and took Prisma's default for an OPTIONAL relation, which IS
+        // SetNull. All nineteen were already SET NULL in the database, so the
+        // migration preserves behaviour rather than changing it — and Prisma's
+        // own generated SQL for them proposes RESTRICT, which is why every ADD
+        // in 20260913020000 is rewritten by hand rather than taken as
+        // generated.
+        //
+        // Four are SELF-REFERENTIAL (AutomationRule.nextRuleId and elseRuleId,
+        // Employee.managerId, RiskHierarchyNode.parentId). The composite is
+        // trivially satisfied there — parent and child share a row's tenant —
+        // but the SET NULL matters more than elsewhere: RESTRICT on a
+        // self-reference makes a chain undeletable from the middle.
+        members: [
+            'ALTER TABLE "AccessReviewConnectedDecision" DROP CONSTRAINT "AccessReviewConnectedDecision_connectedAccountId_tenantId_fkey";',
+            'ALTER TABLE "AccessReviewDecision" DROP CONSTRAINT "AccessReviewDecision_membershipId_tenantId_fkey";',
+            'ALTER TABLE "AgentActionReceipt" DROP CONSTRAINT "AgentActionReceipt_auditLogId_tenantId_fkey";',
+            'ALTER TABLE "Audit" DROP CONSTRAINT "Audit_auditCycleId_tenantId_fkey";',
+            'ALTER TABLE "AuditPackShareComment" DROP CONSTRAINT "AuditPackShareComment_auditPackItemId_tenantId_fkey";',
+            'ALTER TABLE "AutomationRule" DROP CONSTRAINT "AutomationRule_elseRuleId_tenantId_fkey";',
+            'ALTER TABLE "AutomationRule" DROP CONSTRAINT "AutomationRule_nextRuleId_tenantId_fkey";',
+            'ALTER TABLE "BusinessImpactAnalysis" DROP CONSTRAINT "BusinessImpactAnalysis_processNodeId_tenantId_fkey";',
+            'ALTER TABLE "Device" DROP CONSTRAINT "Device_employeeId_tenantId_fkey";',
+            'ALTER TABLE "Employee" DROP CONSTRAINT "Employee_managerEmployeeId_tenantId_fkey";',
+            'ALTER TABLE "IdentityWriteJournal" DROP CONSTRAINT "IdentityWriteJournal_linkId_tenantId_fkey";',
+            'ALTER TABLE "IntegrationExecution" DROP CONSTRAINT "IntegrationExecution_connectionId_tenantId_fkey";',
+            'ALTER TABLE "IntegrationSyncMapping" DROP CONSTRAINT "IntegrationSyncMapping_connectionId_tenantId_fkey";',
+            'ALTER TABLE "Policy" DROP CONSTRAINT "Policy_currentVersionId_tenantId_fkey";',
+            'ALTER TABLE "ReadinessSnapshot" DROP CONSTRAINT "ReadinessSnapshot_auditCycleId_tenantId_fkey";',
+            'ALTER TABLE "RiskHierarchyNode" DROP CONSTRAINT "RiskHierarchyNode_parentId_tenantId_fkey";',
+            'ALTER TABLE "TenantMembership" DROP CONSTRAINT "TenantMembership_customRoleId_tenantId_fkey";',
+            'ALTER TABLE "VendorAssessment" DROP CONSTRAINT "VendorAssessment_templateVersionId_tenantId_fkey";',
+            'ALTER TABLE "VendorAssessmentAnswer" DROP CONSTRAINT "VendorAssessmentAnswer_templateQuestionId_tenantId_fkey";',
+            'ALTER TABLE "Audit" ADD CONSTRAINT "Audit_auditCycleId_tenantId_fkey" FOREIGN KEY ("auditCycleId", "tenantId") REFERENCES "AuditCycle"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "AuditPackShareComment" ADD CONSTRAINT "AuditPackShareComment_auditPackItemId_tenantId_fkey" FOREIGN KEY ("auditPackItemId", "tenantId") REFERENCES "AuditPackItem"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "ReadinessSnapshot" ADD CONSTRAINT "ReadinessSnapshot_auditCycleId_tenantId_fkey" FOREIGN KEY ("auditCycleId", "tenantId") REFERENCES "AuditCycle"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "AccessReviewConnectedDecision" ADD CONSTRAINT "AccessReviewConnectedDecision_connectedAccountId_tenantId_fkey" FOREIGN KEY ("connectedAccountId", "tenantId") REFERENCES "ConnectedIdentityAccount"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "TenantMembership" ADD CONSTRAINT "TenantMembership_customRoleId_tenantId_fkey" FOREIGN KEY ("customRoleId", "tenantId") REFERENCES "TenantCustomRole"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "AccessReviewDecision" ADD CONSTRAINT "AccessReviewDecision_membershipId_tenantId_fkey" FOREIGN KEY ("membershipId", "tenantId") REFERENCES "TenantMembership"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "IntegrationExecution" ADD CONSTRAINT "IntegrationExecution_connectionId_tenantId_fkey" FOREIGN KEY ("connectionId", "tenantId") REFERENCES "IntegrationConnection"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "IntegrationSyncMapping" ADD CONSTRAINT "IntegrationSyncMapping_connectionId_tenantId_fkey" FOREIGN KEY ("connectionId", "tenantId") REFERENCES "IntegrationConnection"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "AutomationRule" ADD CONSTRAINT "AutomationRule_nextRuleId_tenantId_fkey" FOREIGN KEY ("nextRuleId", "tenantId") REFERENCES "AutomationRule"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "AutomationRule" ADD CONSTRAINT "AutomationRule_elseRuleId_tenantId_fkey" FOREIGN KEY ("elseRuleId", "tenantId") REFERENCES "AutomationRule"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "AgentActionReceipt" ADD CONSTRAINT "AgentActionReceipt_auditLogId_tenantId_fkey" FOREIGN KEY ("auditLogId", "tenantId") REFERENCES "AuditLog"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "BusinessImpactAnalysis" ADD CONSTRAINT "BusinessImpactAnalysis_processNodeId_tenantId_fkey" FOREIGN KEY ("processNodeId", "tenantId") REFERENCES "ProcessNode"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "Device" ADD CONSTRAINT "Device_employeeId_tenantId_fkey" FOREIGN KEY ("employeeId", "tenantId") REFERENCES "Employee"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "Employee" ADD CONSTRAINT "Employee_managerEmployeeId_tenantId_fkey" FOREIGN KEY ("managerEmployeeId", "tenantId") REFERENCES "Employee"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "IdentityWriteJournal" ADD CONSTRAINT "IdentityWriteJournal_linkId_tenantId_fkey" FOREIGN KEY ("linkId", "tenantId") REFERENCES "IdentityAccountLink"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "Policy" ADD CONSTRAINT "Policy_currentVersionId_tenantId_fkey" FOREIGN KEY ("currentVersionId", "tenantId") REFERENCES "PolicyVersion"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "RiskHierarchyNode" ADD CONSTRAINT "RiskHierarchyNode_parentId_tenantId_fkey" FOREIGN KEY ("parentId", "tenantId") REFERENCES "RiskHierarchyNode"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "VendorAssessment" ADD CONSTRAINT "VendorAssessment_templateVersionId_tenantId_fkey" FOREIGN KEY ("templateVersionId", "tenantId") REFERENCES "VendorAssessmentTemplate"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+            'ALTER TABLE "VendorAssessmentAnswer" ADD CONSTRAINT "VendorAssessmentAnswer_templateQuestionId_tenantId_fkey" FOREIGN KEY ("templateQuestionId", "tenantId") REFERENCES "VendorAssessmentTemplateQuestion"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;',
+        ],
+    },
 ];
 
 /** Every signed-off statement, flattened. */

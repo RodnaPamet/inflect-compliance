@@ -42,7 +42,7 @@ model Policy {
   /// SP-F1 — the IntegrationConnection backing this link (multi-connection
   /// tenants). Null on pre-SP-F1 links → resolve the tenant's first connection.
   spConnectionId       String?
-  currentVersion       PolicyVersion?       @relation("CurrentVersion", fields: [currentVersionId], references: [id])
+  currentVersion       PolicyVersion?       @relation("CurrentVersion", fields: [currentVersionId, tenantId], references: [id, tenantId])
   owner                User?                @relation("PolicyOwner", fields: [ownerUserId], references: [id])
   tenant               Tenant               @relation(fields: [tenantId], references: [id])
   approvals            PolicyApproval[]
@@ -63,6 +63,13 @@ model Policy {
   /// SharePoint drive/item reverse lookup on webhook delta. Declared here so a
   /// fresh DB built from the migrations matches this schema.
   @@index([tenantId, spDriveId, spItemId])
+
+  /// #2356 batch 3b — the defining side of a ONE-TO-ONE must be unique
+  /// over exactly the fields the relation uses, and the relation now uses
+  /// [currentVersionId, tenantId].  Any single-column @unique above is KEPT: it is the
+  /// stronger claim (one per id GLOBALLY, not merely per tenant), so
+  /// dropping it would widen the model rather than narrow it.
+  @@unique([currentVersionId, tenantId])
 }
 
 model PolicyVersion {

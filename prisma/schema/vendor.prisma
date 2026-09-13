@@ -379,7 +379,7 @@ model VendorAssessment {
   reviewedBy                   User?                     @relation("AssessmentReviewer", fields: [reviewedByUserId], references: [id])
   closedBy                     User?                     @relation("AssessmentCloser", fields: [closedByUserId], references: [id])
   template                     QuestionnaireTemplate?    @relation(fields: [templateId], references: [id])
-  templateVersion              VendorAssessmentTemplate? @relation("AssessmentByTemplateVersion", fields: [templateVersionId], references: [id])
+  templateVersion              VendorAssessmentTemplate? @relation("AssessmentByTemplateVersion", fields: [templateVersionId, tenantId], references: [id, tenantId])
   tenant                       Tenant                    @relation(fields: [tenantId], references: [id])
   vendor                       Vendor                    @relation(fields: [vendorId, tenantId], references: [id, tenantId], onDelete: Cascade)
   answers                      VendorAssessmentAnswer[]
@@ -430,7 +430,7 @@ model VendorAssessmentAnswer {
   updatedAt              DateTime                          @updatedAt
   assessment             VendorAssessment                  @relation(fields: [assessmentId, tenantId], references: [id, tenantId], onDelete: Cascade)
   question               QuestionnaireQuestion             @relation(fields: [questionId], references: [id])
-  templateQuestion       VendorAssessmentTemplateQuestion? @relation("AnswerByTemplateQuestion", fields: [templateQuestionId], references: [id])
+  templateQuestion       VendorAssessmentTemplateQuestion? @relation("AnswerByTemplateQuestion", fields: [templateQuestionId, tenantId], references: [id, tenantId])
   evidence               Evidence?                         @relation("VendorAnswerEvidence", fields: [evidenceId, tenantId], references: [id, tenantId])
   tenant                 Tenant                            @relation(fields: [tenantId], references: [id])
 
