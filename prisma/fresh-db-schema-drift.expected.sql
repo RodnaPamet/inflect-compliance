@@ -49,8 +49,8 @@
 --  proposes dropping them and we always keep them.  Verify with
 --      SELECT indexdef FROM pg_indexes WHERE indexname LIKE 'Control_%_trgm_idx';
 --
---  ── GROUP 3 — 20 × column-scoped SET NULL FKs.  PERMANENT. ────────
---  Ten tenant-carrying composite FKs whose referential action is
+--  ── GROUP 3 — 30 × column-scoped SET NULL FKs.  PERMANENT. ────────
+--  Tenant-carrying composite FKs whose referential action is
 --  `ON DELETE SET NULL (<the fk column>)` in the database, and which the
 --  schema can only imply as RESTRICT.
 --
@@ -69,17 +69,31 @@
 --  in prisma/schema, but a shape the DSL has no syntax for.
 --
 --  DO NOT "CLOSE" THIS BY WRITING `onDelete: SetNull` IN THE SCHEMA.
---  Prisma rejects SetNull once a required field joins the FK, and if it did
---  not, it would emit the whole-row form — the 23502 these migrations exist
---  to remove.  DO NOT close it by switching the database to RESTRICT
+--  It would emit the whole-row form — the 23502 these migrations exist to
+--  remove.
+--
+--  CORRECTION, measured 2026-09-13 while adding batch 2: this used to say
+--  "Prisma rejects SetNull once a required field joins the FK".  It does
+--  NOT.  `prisma validate` on a composite FK carrying a required `tenantId`
+--  with `onDelete: SetNull` prints a WARNING — "should not be set to
+--  SetNull when a referenced field is required" — and then reports the
+--  schema VALID.  The guard is the consequence above, not a refusal by the
+--  toolchain: nothing stops someone writing it, and the only thing that
+--  would tell them is this paragraph.  DO NOT close it by switching the database to RESTRICT
 --  either: that would not preserve behaviour, it would move the failure.
 --  The data-lifecycle sweep (src/app-layer/jobs/data-lifecycle.ts) hard
 --  deletes parents row by row with no try/catch, so one refusal stops the
 --  sweep for every soft-delete model after it.
 --
 --  The two ControlException members arrived with
---  20260911120000_controlexception_setnull_column_scoped, the other eight
---  sites with 20260911160000_tenant_fks_setnull_column_scoped.  Both
+--  20260911120000_controlexception_setnull_column_scoped, the next eight
+--  with 20260911160000_tenant_fks_setnull_column_scoped, and ten more with
+--  20260913000000_tenant_fks_composite_batch2.  Batch 2 re-measured first
+--  (67 single-column FKs between tenant-scoped models; 14 targets already
+--  composite-capable, of which only TEN are safe) and excluded the four
+--  pointing at `Control`, whose `tenantId` is NULLABLE — a composite FK
+--  there would make a tenant-scoped child unable to reference a GLOBAL
+--  library control.  See that migration's header.  Both
 --  migrations assert `pg_constraint.confdelsetcols` in a post-condition
 --  rather than `confdeltype`, because plain and column-scoped SET NULL are
 --  BOTH `confdeltype = 'n'` — only the column list tells them apart, so a
@@ -106,6 +120,9 @@
 ALTER TABLE "AccessReview" DROP CONSTRAINT "AccessReview_evidenceFileRecordId_tenantId_fkey";
 
 -- DropForeignKey
+ALTER TABLE "AiDecisionLog" DROP CONSTRAINT "AiDecisionLog_aiSystemId_tenantId_fkey";
+
+-- DropForeignKey
 ALTER TABLE "AssetVulnerability" DROP CONSTRAINT "AssetVulnerability_remediationTaskId_tenantId_fkey";
 
 -- DropForeignKey
@@ -115,10 +132,16 @@ ALTER TABLE "ControlException" DROP CONSTRAINT "ControlException_compensatingCon
 ALTER TABLE "ControlException" DROP CONSTRAINT "ControlException_renewedFromId_tenantId_fkey";
 
 -- DropForeignKey
+ALTER TABLE "ControlTestEvidenceLink" DROP CONSTRAINT "ControlTestEvidenceLink_evidenceId_tenantId_fkey";
+
+-- DropForeignKey
 ALTER TABLE "Evidence" DROP CONSTRAINT "Evidence_assetId_tenantId_fkey";
 
 -- DropForeignKey
 ALTER TABLE "Evidence" DROP CONSTRAINT "Evidence_fileRecordId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "Evidence" DROP CONSTRAINT "Evidence_riskId_tenantId_fkey";
 
 -- DropForeignKey
 ALTER TABLE "Evidence" DROP CONSTRAINT "Evidence_taskId_tenantId_fkey";
@@ -127,10 +150,31 @@ ALTER TABLE "Evidence" DROP CONSTRAINT "Evidence_taskId_tenantId_fkey";
 ALTER TABLE "FileRecord" DROP CONSTRAINT "FileRecord_previousFileRecordId_tenantId_fkey";
 
 -- DropForeignKey
+ALTER TABLE "Finding" DROP CONSTRAINT "Finding_auditId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "KeyRiskIndicator" DROP CONSTRAINT "KeyRiskIndicator_riskId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "LossEvent" DROP CONSTRAINT "LossEvent_riskId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "PolicyEvidenceItem" DROP CONSTRAINT "PolicyEvidenceItem_evidenceId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "RiskAppetiteBreach" DROP CONSTRAINT "RiskAppetiteBreach_riskId_tenantId_fkey";
+
+-- DropForeignKey
 ALTER TABLE "RiskSuggestionItem" DROP CONSTRAINT "RiskSuggestionItem_assetId_tenantId_fkey";
 
 -- DropForeignKey
 ALTER TABLE "ScannerFinding" DROP CONSTRAINT "ScannerFinding_assetId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "Task" DROP CONSTRAINT "Task_findingId_tenantId_fkey";
+
+-- DropForeignKey
+ALTER TABLE "VendorAssessmentAnswer" DROP CONSTRAINT "VendorAssessmentAnswer_evidenceId_tenantId_fkey";
 
 -- DropIndex
 DROP INDEX "Control_code_trgm_idx";
@@ -160,6 +204,12 @@ ALTER TABLE "ScannerFinding" ADD CONSTRAINT "ScannerFinding_assetId_tenantId_fke
 ALTER TABLE "AccessReview" ADD CONSTRAINT "AccessReview_evidenceFileRecordId_tenantId_fkey" FOREIGN KEY ("evidenceFileRecordId", "tenantId") REFERENCES "FileRecord"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "AiDecisionLog" ADD CONSTRAINT "AiDecisionLog_aiSystemId_tenantId_fkey" FOREIGN KEY ("aiSystemId", "tenantId") REFERENCES "AiSystem"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ControlTestEvidenceLink" ADD CONSTRAINT "ControlTestEvidenceLink_evidenceId_tenantId_fkey" FOREIGN KEY ("evidenceId", "tenantId") REFERENCES "Evidence"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "ControlException" ADD CONSTRAINT "ControlException_compensatingControlId_tenantId_fkey" FOREIGN KEY ("compensatingControlId", "tenantId") REFERENCES "Control"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -167,6 +217,9 @@ ALTER TABLE "ControlException" ADD CONSTRAINT "ControlException_renewedFromId_te
 
 -- AddForeignKey
 ALTER TABLE "Evidence" ADD CONSTRAINT "Evidence_taskId_tenantId_fkey" FOREIGN KEY ("taskId", "tenantId") REFERENCES "Task"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Evidence" ADD CONSTRAINT "Evidence_riskId_tenantId_fkey" FOREIGN KEY ("riskId", "tenantId") REFERENCES "Risk"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Evidence" ADD CONSTRAINT "Evidence_assetId_tenantId_fkey" FOREIGN KEY ("assetId", "tenantId") REFERENCES "Asset"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -178,4 +231,25 @@ ALTER TABLE "Evidence" ADD CONSTRAINT "Evidence_fileRecordId_tenantId_fkey" FORE
 ALTER TABLE "FileRecord" ADD CONSTRAINT "FileRecord_previousFileRecordId_tenantId_fkey" FOREIGN KEY ("previousFileRecordId", "tenantId") REFERENCES "FileRecord"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Finding" ADD CONSTRAINT "Finding_auditId_tenantId_fkey" FOREIGN KEY ("auditId", "tenantId") REFERENCES "Audit"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PolicyEvidenceItem" ADD CONSTRAINT "PolicyEvidenceItem_evidenceId_tenantId_fkey" FOREIGN KEY ("evidenceId", "tenantId") REFERENCES "Evidence"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "RiskAppetiteBreach" ADD CONSTRAINT "RiskAppetiteBreach_riskId_tenantId_fkey" FOREIGN KEY ("riskId", "tenantId") REFERENCES "Risk"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "KeyRiskIndicator" ADD CONSTRAINT "KeyRiskIndicator_riskId_tenantId_fkey" FOREIGN KEY ("riskId", "tenantId") REFERENCES "Risk"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "LossEvent" ADD CONSTRAINT "LossEvent_riskId_tenantId_fkey" FOREIGN KEY ("riskId", "tenantId") REFERENCES "Risk"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "RiskSuggestionItem" ADD CONSTRAINT "RiskSuggestionItem_assetId_tenantId_fkey" FOREIGN KEY ("assetId", "tenantId") REFERENCES "Asset"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Task" ADD CONSTRAINT "Task_findingId_tenantId_fkey" FOREIGN KEY ("findingId", "tenantId") REFERENCES "Finding"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VendorAssessmentAnswer" ADD CONSTRAINT "VendorAssessmentAnswer_evidenceId_tenantId_fkey" FOREIGN KEY ("evidenceId", "tenantId") REFERENCES "Evidence"("id", "tenantId") ON DELETE RESTRICT ON UPDATE CASCADE;

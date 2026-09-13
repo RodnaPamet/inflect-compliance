@@ -418,7 +418,7 @@ model ControlTestEvidenceLink {
   updatedAt           DateTime         @updatedAt
   sha256Hash          String?
   createdBy           User             @relation("TestEvidenceCreator", fields: [createdByUserId], references: [id])
-  evidence            Evidence?        @relation(fields: [evidenceId], references: [id])
+  evidence            Evidence?        @relation(fields: [evidenceId, tenantId], references: [id, tenantId])
   tenant              Tenant           @relation(fields: [tenantId], references: [id])
   testRun             ControlTestRun   @relation(fields: [testRunId], references: [id], onDelete: Cascade)
 

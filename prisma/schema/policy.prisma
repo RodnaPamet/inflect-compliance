@@ -184,7 +184,7 @@ model PolicyEvidenceItem {
   evidenceId String?
   createdAt  DateTime  @default(now())
   policy     Policy    @relation(fields: [policyId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  evidence   Evidence? @relation(fields: [evidenceId], references: [id], onDelete: SetNull)
+  evidence   Evidence? @relation(fields: [evidenceId, tenantId], references: [id, tenantId])
   tenant     Tenant    @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
