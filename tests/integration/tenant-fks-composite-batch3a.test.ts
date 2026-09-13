@@ -37,6 +37,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const prisma: PrismaClient = prismaTestClient();
 jest.setTimeout(120_000);
@@ -105,9 +106,14 @@ async function clearProbeRows() {
     await prisma.trainingAssignment.deleteMany({ where: t });
     await prisma.trainingCourse.deleteMany({ where: t });
     await prisma.employee.deleteMany({ where: t });
+    // The audit rows go through the audited helper (#2523): it is the only
+    // sanctioned place that disables the immutability trigger, and the raw-SQL
+    // scans forbid the idiom everywhere else. TenantMembership still needs the
+    // replica role in its own transaction — the last-OWNER trigger would refuse
+    // the delete — but that is not an audit table, so it stays here.
+    await deleteAuditRowsForTenants(prisma, [T1, T2]);
     await prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "AuditLog" WHERE "tenantId" = ANY($1::text[])`, [T1, T2]);
         await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`, [T1, T2]);
     });
     await prisma.tenant.deleteMany({ where: { id: { in: [T1, T2] } } });
