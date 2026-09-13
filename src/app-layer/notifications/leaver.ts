@@ -139,15 +139,20 @@
  * cannot tell them apart on its own.
  *
  * The IT side has no such split and must not grow one. The manager's level asks
- * whether the lost mail was one its reader could have acted on; every mail IT is
- * planned is, because the routing table gives IT a message only where something
- * needs an operator — NEEDS_ACTION most of all, since that is this subsystem's
- * name for an account still live. So an empty IT audience is one unconditional
- * WARN naming the outcome, the link and the journal row, sitting beside the
- * manager's. Both are at the ENQUEUE rather than at audience-build time: the
- * build-time line fires once per pass, before any outcome is known, so it can
- * say the tenant has nobody to tell but never which of fifty candidates that
- * cost, nor whether it cost anything at all (#2521).
+ * whether the lost mail was one its reader could have acted on, and the answer
+ * for IT is yes on every arm — but for two different reasons, and the split
+ * would get both wrong. NEEDS_ACTION is where the manager's reasoning INVERTS:
+ * the mail a manager could do nothing with is, to IT, this subsystem's name for
+ * an account still live and needing a hand. DISABLED and journal-bearing
+ * ALREADY_DISABLED are not actions but RECORDS — "the record and the reversal
+ * handle", as the table above puts it — and losing a record with nobody told is
+ * the quietest failure this header opens by naming. So an empty IT audience is
+ * one unconditional WARN naming the outcome, the link and the journal row,
+ * sitting beside the manager's. Both are at the ENQUEUE rather than at
+ * audience-build time: the build-time line fires once per pass, before any
+ * outcome is known, so it can say the tenant has nobody to tell but never which
+ * of the pass's candidates that cost, nor whether it cost anything at all
+ * (#2521).
  *
  * @module notifications/leaver
  */
@@ -793,9 +798,14 @@ export async function notifyLeaverOutcome(
             // whether that cost anything — a re-run over an estate that is
             // already offboarded is nothing but silent ALREADY_DISABLED and
             // loses no mail at all — nor, when it did cost something, which of
-            // fifty candidates it was. The wording here is deliberately not the
-            // batch line's ("has no IT recipient"): two messages one character
-            // apart are two messages nobody can tell apart in a grep.
+            // the pass's candidates it was. The wording here is deliberately
+            // not a past-tense echo of the batch line's ("has no IT recipient"
+            // vs "had no IT recipient" would be ONE CHARACTER apart, i.e. two
+            // messages nobody can separate in a grep). What the two messages
+            // as they stand DO share is the substring "no IT recipient", which
+            // this one does not contain at all — that is what lets the test's
+            // exact-equality needle tell them apart, and what a loosened needle
+            // would collide on.
             //
             // WARN unconditionally, where the manager's sibling below splits on
             // the outcome. `unreachedManagerLogLevel` degrades to INFO for
@@ -804,12 +814,28 @@ export async function notifyLeaverOutcome(
             // NEEDS_ACTION is this subsystem's name for "the account is STILL
             // LIVE and somebody must disable it by hand", which makes the IT
             // copy the most actionable mail in the table rather than the least.
-            // `planLeaverNotifications` gives IT a mail only where something
-            // needs an operator, so there is no arm here that is a shrug.
+            // The other arms `planLeaverNotifications` gives IT are records
+            // rather than actions — DISABLED and journal-bearing
+            // ALREADY_DISABLED carry the write and its reversal handle — and a
+            // record nobody received is the failure the module header opens by
+            // calling the quietest one. So no arm here is a shrug, for one
+            // reason on NEEDS_ACTION and a different one on the rest.
             //
-            // Volume is bounded by the mail it stands in for: at most one line
-            // per candidate, in a run the blast-radius breaker caps at 50, for
-            // a tenant that is misconfigured in a way somebody has to fix.
+            // VOLUME: at most one line per candidate that planned an IT mail,
+            // in a tenant with no privileged member holding an address. The
+            // bound is the PASS, not the breaker. `findLeaverCandidates` reads
+            // `MAX_CANDIDATES = 1_000` in one go and `disableAccountsForLeaver`
+            // loops over all of them, so the ceiling is a thousand lines.
+            // `MAX_DISABLES_PER_RUN = 50` does NOT cap it, and reading it as a
+            // candidate cap is the mistake its own contract warns against: it
+            // counts accounts a run would NEWLY DISABLE, explicitly excluding
+            // rows a per-candidate rail refuses before any write ("inspecting
+            // is not disabling"). The refusal arms are exactly the ones that
+            // route IT a mail while adding nothing to that numerator, so a pass
+            // of 1,000 REFUSED_TARGET candidates emits 1,000 of these with the
+            // breaker never firing. Acceptable because every line names a
+            // different candidate and the tenant is misconfigured in a way
+            // somebody has to fix — but it is a thousand, not fifty.
             logger.warn('leaver notification planned an IT mail with no recipient', {
                 component: 'notifications-leaver',
                 tenantId: ctx.tenantId,
