@@ -160,8 +160,10 @@ const RAW_DELETE = /DELETE\s+(FROM\s+)?["']?AuditLog["']?/i;
  *      \`DELETE FROM "${table}" WHERE "tenantId" = $1\`, id)`
  *
  * contains no `DELETE FROM "AuditLog"` for `RAW_DELETE` to find, yet
- * 'AuditLog' was the sixth entry of that list. Three files under `tests/`
- * were written this way. A textual guard cannot see a shape it has no
+ * 'AuditLog' sat in that list among two dozen ordinary table names — no
+ * position is recorded here, because an entry's index is derived data that
+ * the next edit to the list would rot. Three files under `tests/` were
+ * written this way. A textual guard cannot see a shape it has no
  * pattern for, and this is the cheap shape to reach for next time.
  *
  * BOTH halves are required, which keeps it off the many files that
