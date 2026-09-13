@@ -890,7 +890,28 @@ jobs:
 
       - name: Build Next.js (production)
         # --webpack: nonce strict-CSP chunks (see Dockerfile + impl note).
-        run: npx next build --webpack
+        run: |
+          # Streamed from INSIDE this step, not written to a file for a later
+          # step to read, because on the failure this instrument exists for
+          # there is no later step. Measured 2026-09-12: a `Report peak memory`
+          # step guarded with `if: always()` came out SKIPPED — along with every
+          # other step after the build — on a run ending in "The runner has
+          # received a shutdown signal". `always()` covers a cancelled STEP in a
+          # LIVE job; when the machine goes away nothing later runs at all. A
+          # background loop started in an EARLIER step is no better: its stdout
+          # belongs to that step and closes with it, which is why the sampler
+          # has only ever reached /tmp.
+          #
+          # The post-hoc step below is kept and is the right tool for a LOUD
+          # failure (a V8 "Reached heap limit" abort, a build error) where the
+          # job survives. This covers the silent one.
+          ( while true; do
+              echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk 'NR==2{print $3" used_MB "$7" avail_MB"}')"
+              sleep 5
+            done ) &
+          sampler=$!
+          trap 'kill "$sampler" 2>/dev/null || true' EXIT
+          npx next build --webpack
         env:
           # 6144 PER PROCESS, because there are now TWO of them.
           #
@@ -1239,7 +1260,28 @@ jobs:
 
       - name: Build Next.js app
         # --webpack: match the deployed bundler (nonce strict-CSP chunks).
-        run: npx next build --webpack
+        run: |
+          # Streamed from INSIDE this step, not written to a file for a later
+          # step to read, because on the failure this instrument exists for
+          # there is no later step. Measured 2026-09-12: a `Report peak memory`
+          # step guarded with `if: always()` came out SKIPPED — along with every
+          # other step after the build — on a run ending in "The runner has
+          # received a shutdown signal". `always()` covers a cancelled STEP in a
+          # LIVE job; when the machine goes away nothing later runs at all. A
+          # background loop started in an EARLIER step is no better: its stdout
+          # belongs to that step and closes with it, which is why the sampler
+          # has only ever reached /tmp.
+          #
+          # The post-hoc step below is kept and is the right tool for a LOUD
+          # failure (a V8 "Reached heap limit" abort, a build error) where the
+          # job survives. This covers the silent one.
+          ( while true; do
+              echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk 'NR==2{print $3" used_MB "$7" avail_MB"}')"
+              sleep 5
+            done ) &
+          sampler=$!
+          trap 'kill "$sampler" 2>/dev/null || true' EXIT
+          npx next build --webpack
         env:
           # 7168 PER PROCESS, raised from 6144 on 2026-09-06 WITH DATA, because
           # the note below is explicit that reasoning alone is how this got here.
