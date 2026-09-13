@@ -20,7 +20,7 @@ model Control {
   ///   * `Control_annexId_global_key` (migration 20260806130000) is a PARTIAL
   ///     unique index `WHERE "tenantId" IS NULL`, so the catalogue holds one
   ///     control per annex reference.
-  ///   * Six read sites scope with `OR: [{tenantId}, {tenantId: null}]`
+  ///   * Six read sites scope with an OR over the caller's tenant and NULL
   ///     (ControlRepository 275/295/348/397, DashboardRepository 347,
   ///     usecases/control/health.ts 66).
   ///   * `usecases/control/mutations.ts` refuses to update, re-status or

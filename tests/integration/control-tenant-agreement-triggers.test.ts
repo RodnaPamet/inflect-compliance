@@ -189,7 +189,7 @@ describe('a control can be referenced from its own tenant, or from anywhere if i
 
         // The NAMED error, not merely "it threw". A refusal arriving from some
         // other constraint would be a false red for this claim.
-        for (const m of messages) expect(m).toMatch(/CONTROL_TENANT_MISMATCH/);
+        for (const m of messages) expect(m).toContain('CONTROL_TENANT_MISMATCH');
         // And it names the offending control, so the four are distinguishable
         // in a log rather than reading as one generic failure.
         for (const m of messages) expect(m).toContain('ctl-c3');
@@ -204,7 +204,7 @@ describe('a control can be referenced from its own tenant, or from anywhere if i
         await insertFinding('ctl-f5', T1, 'controlId', 'ctl-c5');
 
         const msg = await failureOf(`UPDATE "Finding" SET "tenantId" = $1 WHERE "id" = 'ctl-f5'`, T2);
-        expect(msg).toMatch(/CONTROL_TENANT_MISMATCH/);
+        expect(msg).toContain('CONTROL_TENANT_MISMATCH');
 
         // The write was refused, not partially applied.
         const row = await prisma.finding.findUnique({ where: { id: 'ctl-f5' } });
@@ -218,7 +218,7 @@ describe('the same rule from the parent side', () => {
         await insertFinding('ctl-f6', T1, 'controlId', 'ctl-c6');
 
         const msg = await failureOf(`UPDATE "Control" SET "tenantId" = $1 WHERE "id" = 'ctl-c6'`, T2);
-        expect(msg).toMatch(/CONTROL_RETENANT_ORPHANS/);
+        expect(msg).toContain('CONTROL_RETENANT_ORPHANS');
         // It reports WHICH references would be stranded, not just that some are.
         expect(msg).toContain('Finding.controlId');
 
