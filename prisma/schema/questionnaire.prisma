@@ -38,6 +38,13 @@ model InboundQuestionnaire {
   items  InboundQuestionnaireItem[]
 
   @@index([tenantId, status])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 /// PR-9 — one parsed question + its AI-drafted / accepted answer.
@@ -57,7 +64,7 @@ model InboundQuestionnaireItem {
   updatedAt       DateTime                @updatedAt
 
   tenant        Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  questionnaire InboundQuestionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
+  questionnaire InboundQuestionnaire @relation(fields: [questionnaireId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@index([tenantId, questionnaireId])
   @@index([tenantId, status])

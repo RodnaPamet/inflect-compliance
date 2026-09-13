@@ -75,6 +75,13 @@ model Nis2SelfAssessment {
 
   @@index([tenantId, updatedAt])
   @@index([tenantId, createdAt])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 /// Tenant-scoped: one answer within a self-assessment.
@@ -94,7 +101,7 @@ model Nis2SelfAssessmentAnswer {
   updatedAt    DateTime @updatedAt
 
   tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  assessment Nis2SelfAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  assessment Nis2SelfAssessment @relation(fields: [assessmentId, tenantId], references: [id, tenantId], onDelete: Cascade)
   question   Nis2GapQuestion    @relation(fields: [questionId], references: [id])
 
   @@unique([assessmentId, questionId])
@@ -126,7 +133,7 @@ model Nis2GapAssignment {
   updatedAt      DateTime  @updatedAt
 
   tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  assessment Nis2SelfAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  assessment Nis2SelfAssessment @relation(fields: [assessmentId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   /// One assignment per role per run — makes dispatch idempotent (upsert).
   @@unique([assessmentId, respondentRole])

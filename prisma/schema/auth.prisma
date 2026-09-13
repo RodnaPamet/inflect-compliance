@@ -592,6 +592,13 @@ model TenantCustomRole {
   @@unique([tenantId, name])
   @@index([tenantId])
   @@index([tenantId, isActive])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 /// Tenant-scoped API keys for machine-to-machine authentication.
@@ -770,6 +777,13 @@ model TenantMembership {
   @@index([userId, status])
   @@index([customRoleId])
   @@index([provisionedByOrgId])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -1216,6 +1230,13 @@ model TenantIdentityProvider {
 
   @@unique([tenantId, name])
   @@index([tenantId])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 /// EI-2 — maps an Entra ID security-group object id to an IC role. At sign-in
@@ -1277,7 +1298,7 @@ model UserIdentityLink {
   lastLoginAt         DateTime?
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
-  provider            TenantIdentityProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  provider            TenantIdentityProvider @relation(fields: [providerId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant              Tenant                 @relation(fields: [tenantId], references: [id])
   user                User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
 

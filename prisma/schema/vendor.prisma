@@ -133,6 +133,13 @@ model VendorDocument {
   @@index([tenantId, vendorId, type])
   @@index([tenantId, vendorId, folder])
   @@index([tenantId, validTo])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 model QuestionnaireTemplate {
@@ -230,6 +237,13 @@ model VendorAssessmentTemplate {
   @@index([tenantId])
   @@index([tenantId, isLatestVersion])
   @@index([tenantId, isPublished])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 model VendorAssessmentTemplateSection {
@@ -246,10 +260,17 @@ model VendorAssessmentTemplateSection {
   createdAt   DateTime                           @default(now())
   updatedAt   DateTime                           @updatedAt
   tenant      Tenant                             @relation(fields: [tenantId], references: [id])
-  template    VendorAssessmentTemplate           @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  template    VendorAssessmentTemplate           @relation(fields: [templateId, tenantId], references: [id, tenantId], onDelete: Cascade)
   questions   VendorAssessmentTemplateQuestion[]
 
   @@index([tenantId, templateId, sortOrder])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 model VendorAssessmentTemplateQuestion {
@@ -275,12 +296,19 @@ model VendorAssessmentTemplateQuestion {
   createdAt       DateTime                        @default(now())
   updatedAt       DateTime                        @updatedAt
   tenant          Tenant                          @relation(fields: [tenantId], references: [id])
-  template        VendorAssessmentTemplate        @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  section         VendorAssessmentTemplateSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  template        VendorAssessmentTemplate        @relation(fields: [templateId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  section         VendorAssessmentTemplateSection @relation(fields: [sectionId, tenantId], references: [id, tenantId], onDelete: Cascade)
   answers         VendorAssessmentAnswer[]        @relation("AnswerByTemplateQuestion")
 
   @@index([tenantId, templateId, sortOrder])
   @@index([tenantId, sectionId, sortOrder])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 model VendorAssessment {
@@ -365,6 +393,13 @@ model VendorAssessment {
   // Index the external token hash for O(log n) lookup when the
   // external respondent hits the answer URL.
   @@index([externalAccessTokenHash])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 model VendorAssessmentAnswer {
@@ -393,7 +428,7 @@ model VendorAssessmentAnswer {
   // ─── End G-3 fields ──────────────────────────────────────────
   createdAt              DateTime                          @default(now())
   updatedAt              DateTime                          @updatedAt
-  assessment             VendorAssessment                  @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  assessment             VendorAssessment                  @relation(fields: [assessmentId, tenantId], references: [id, tenantId], onDelete: Cascade)
   question               QuestionnaireQuestion             @relation(fields: [questionId], references: [id])
   templateQuestion       VendorAssessmentTemplateQuestion? @relation("AnswerByTemplateQuestion", fields: [templateQuestionId], references: [id])
   evidence               Evidence?                         @relation("VendorAnswerEvidence", fields: [evidenceId, tenantId], references: [id, tenantId])
@@ -438,13 +473,20 @@ model VendorDocExtraction {
 
   tenant    Tenant                 @relation(fields: [tenantId], references: [id])
   vendor    Vendor                 @relation(fields: [vendorId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  document  VendorDocument         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document  VendorDocument         @relation(fields: [documentId, tenantId], references: [id, tenantId], onDelete: Cascade)
   createdBy User                   @relation("VendorDocExtractionCreator", fields: [createdByUserId], references: [id])
   proposals VendorAnswerProposal[]
 
   @@index([tenantId, vendorId])
   @@index([tenantId, status])
   @@index([tenantId, documentId])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 /// A PROPOSED vendor-assessment answer derived from a document extraction.
@@ -473,7 +515,7 @@ model VendorAnswerProposal {
   updatedAt          DateTime @updatedAt
 
   tenant     Tenant              @relation(fields: [tenantId], references: [id])
-  extraction VendorDocExtraction @relation(fields: [extractionId], references: [id], onDelete: Cascade)
+  extraction VendorDocExtraction @relation(fields: [extractionId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@index([tenantId, extractionId])
   @@index([tenantId, status])
@@ -595,6 +637,13 @@ model VendorEvidenceBundle {
   items           VendorEvidenceBundleItem[]
 
   @@index([tenantId, vendorId])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 model VendorEvidenceBundleItem {
@@ -605,7 +654,7 @@ model VendorEvidenceBundleItem {
   entityId     String
   snapshotJson Json?
   createdAt    DateTime             @default(now())
-  bundle       VendorEvidenceBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  bundle       VendorEvidenceBundle @relation(fields: [bundleId, tenantId], references: [id, tenantId], onDelete: Cascade)
   tenant       Tenant               @relation(fields: [tenantId], references: [id])
 
   @@unique([bundleId, entityType, entityId])

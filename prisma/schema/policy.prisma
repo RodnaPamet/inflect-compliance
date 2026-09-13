@@ -86,6 +86,13 @@ model PolicyVersion {
 
   @@unique([policyId, versionNumber])
   @@index([tenantId])
+
+  /// #2356 batch 3 — the composite an FK from a tenant-scoped child
+  /// references. `id` alone is already unique; this exists so Postgres
+  /// will accept ([childFk, tenantId]) -> ([id, tenantId]), which is what
+  /// makes a cross-tenant reference unrepresentable rather than merely
+  /// filtered.
+  @@unique([id, tenantId])
 }
 
 model PolicyApproval {
@@ -101,7 +108,7 @@ model PolicyApproval {
   createdAt         DateTime             @default(now())
   approvedBy        User?                @relation("PolicyApprover", fields: [approvedByUserId], references: [id])
   policy            Policy               @relation(fields: [policyId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  policyVersion     PolicyVersion        @relation(fields: [policyVersionId], references: [id], onDelete: Cascade)
+  policyVersion     PolicyVersion        @relation(fields: [policyVersionId, tenantId], references: [id, tenantId], onDelete: Cascade)
   requestedBy       User                 @relation("PolicyApprovalRequester", fields: [requestedByUserId], references: [id])
   tenant            Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
