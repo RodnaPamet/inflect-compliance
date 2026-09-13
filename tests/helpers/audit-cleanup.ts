@@ -14,9 +14,14 @@
  * seeds a tenant and asserts on its audit rows has to remove them again, and
  * `AuditLog_tenantId_fkey` is ON DELETE RESTRICT — so surviving audit rows
  * ALSO block the teardown's own `tenant.deleteMany`. A suite that cannot
- * clear its audit rows leaks a Tenant row per run, not just audit rows. The
- * shared `inflect_test` database was measured going from 986 to 1727
- * AuditLog rows in a single pass.
+ * clear its audit rows leaks a Tenant row per run, not just audit rows.
+ *
+ * MEASURED, on `tests/integration/audit-middleware.test.ts` against the
+ * shared `inflect_test`: one run of the pre-#2523 teardown left behind +1
+ * Tenant row and +8 AuditLog rows, while the suite itself reported 9/9
+ * passing. Through this module the same run leaves +0 and +0. A leaking
+ * teardown is invisible from inside the suite that leaks — which is why it
+ * went unnoticed long enough to be worth a helper.
  *
  * Wrapping the delete in a transaction that first runs
  * `SET LOCAL session_replication_role = 'replica'` turns the trigger off for
