@@ -14,6 +14,29 @@ model ControlKeySequence {
 
 model Control {
   id                           String                   @id @default(cuid())
+  /// NULLABLE ON PURPOSE. A NULL tenant is a GLOBAL LIBRARY control — the
+  /// shared catalogue every tenant can read but none can write:
+  ///
+  ///   * `Control_annexId_global_key` (migration 20260806130000) is a PARTIAL
+  ///     unique index `WHERE "tenantId" IS NULL`, so the catalogue holds one
+  ///     control per annex reference.
+  ///   * Six read sites scope with `OR: [{tenantId}, {tenantId: null}]`
+  ///     (ControlRepository 275/295/348/397, DashboardRepository 347,
+  ///     usecases/control/health.ts 66).
+  ///   * `usecases/control/mutations.ts` refuses to update, re-status or
+  ///     delete a row whose tenant is NULL.
+  ///
+  /// #2532 — THIS IS WHY four references to `Control` are single-column while
+  /// #2356 made 63 others composite. A composite FK carrying `tenantId` cannot
+  /// reference a NULL-tenant row, so converting `Finding.controlId`,
+  /// `Finding.compensatingControlId`, `Task.controlId` and
+  /// `IntegrationExecution.controlId` would have made the catalogue
+  /// unreferenceable rather than tightening anything. Tenant agreement is
+  /// enforced there by `control_tenant_agreement()` triggers instead, which
+  /// carry the exemption an FK cannot express. Migration 20260913120000.
+  ///
+  /// `ControlException`, `ControlTest`, `Evidence` and `ProcessNode` DO carry
+  /// the composite, and so already cannot reference a library control.
   tenantId                     String?
   code                         String?
   annexId                      String?
