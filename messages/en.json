@@ -4477,6 +4477,7 @@
         "notEnforcing": "Agent registration is not being enforced. Any credential can act at the tool boundary, registered or not — the agent register is a catalogue, and the tool allowlist, autonomy limits, policy card, circuit breaker and kill switch refuse nothing.",
         "enforcingClean": "Agent registration is enforced. Only credentials bound to a registered agent can act, and every credential is bound.",
         "enforcingWithUnbound": "Agent registration is enforced, but {count} credential(s) are not bound to an agent. Those are being refused at the tool boundary right now.",
+        "breakingNow": "{count} credential(s) are being refused at the tool boundary right now:",
         "wouldBreak": "{count} credential(s) would stop working the moment enforcement is switched on:",
         "enableAction": "Enforce registration",
         "disableAction": "Stop enforcing",
@@ -8057,6 +8058,7 @@
       "governance": {
         "notEnforcing": "This workspace does not require agents to be registered. Every row below is a record and nothing more — suspending an agent here does not stop it, and a credential bound to no agent still reaches the agent surface. Turn on \"Require registered agent\" in Security settings to make this register binding.",
         "enforcingUnbound": "Registration is enforced, and {count, plural, one {# live MCP credential is bound to no agent} other {# live MCP credentials are bound to no agent}} — each is refused at the agent surface until you bind it to a registered agent.",
+        "unboundMore": "+{count} more…",
         "enforcing": "Registration is enforced: a credential must name an ACTIVE agent below before it reaches the agent surface."
       },
       "assurance": {
