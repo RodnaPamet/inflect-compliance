@@ -60,6 +60,7 @@
 import type { PrismaClient } from '@prisma/client';
 
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
+import { isInAppTypeEnabled } from './settings';
 
 /** The two agentic members of `NotificationType`. */
 export type AgenticNotificationKind =
@@ -99,6 +100,36 @@ const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
         linkPath: (slug) => `/t/${slug}/agents/quarantine`,
     },
 };
+
+/** One row of the preference surface's catalogue (#2564). */
+export interface InAppNotificationTypeInfo {
+    type: AgenticNotificationKind;
+    /** The bell's own title for this type — see `listInAppNotificationTypes`. */
+    title: string;
+}
+
+/**
+ * The in-app types `/admin/notifications` offers a toggle for.
+ *
+ * Derived from `COPY`, which is the emitter's own copy, so the catalogue
+ * cannot list a type the bell would not send or omit one it would. A future
+ * agentic type is added to `COPY` to be emitted at all, and appears on the
+ * preference page by that same edit — the client renders whatever this
+ * returns and needs no change.
+ *
+ * The TITLE is the English literal the stored row carries, deliberately, and
+ * this is the one place on the page that is not translated. Bell rows are
+ * written at emit time and stored, so `next-intl` cannot reach them at render
+ * (see the note on `COPY`); a translated label here would promise the operator
+ * a Bulgarian bell that the emitter will not deliver. The surrounding section
+ * heading and helper text ARE translated — they are rendered, not stored.
+ */
+export function listInAppNotificationTypes(): InAppNotificationTypeInfo[] {
+    return (Object.keys(COPY) as AgenticNotificationKind[]).map((type) => ({
+        type,
+        title: COPY[type].title,
+    }));
+}
 
 /**
  * Build the idempotency key. Pure helper so tests can assert the format
@@ -151,7 +182,7 @@ export interface AgenticNotificationOutcome {
 }
 
 export async function createAgenticNotification(
-    db: Pick<PrismaClient, 'notification'>,
+    db: Pick<PrismaClient, 'notification' | 'tenantNotificationSettings'>,
     kind: AgenticNotificationKind,
     target: AgenticNotificationTarget,
     now: Date = new Date(),
@@ -162,6 +193,22 @@ export async function createAgenticNotification(
     // the person who needs to know already knows.
     const recipients = target.recipientUserIds.filter((id) => id !== target.actorUserId);
     if (recipients.length === 0) return { created: 0 };
+
+    // The tenant's in-app preference (#2564). Beside the empty-recipients
+    // return above because both are the same kind of answer: a legitimate
+    // "nobody is told", reported as `created: 0` rather than thrown.
+    //
+    // ABOVE the `createMany`, not filtered after it — a muted type must write
+    // no row at all. A row written and then hidden still lands in the bell's
+    // list page, still counts toward the unread badge, and still fans out over
+    // SSE; muting has to mean the write does not happen.
+    //
+    // This is the ONLY emitter that consults the list today. Moving
+    // `assignment.ts` and the other twenty types onto it is a behaviour change
+    // for surfaces nobody asked to change, and belongs on its own diff.
+    if (!(await isInAppTypeEnabled(db, target.tenantId, kind))) {
+        return { created: 0 };
+    }
 
     const copy = COPY[kind];
     const message = copy.body(target.subject);
