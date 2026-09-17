@@ -9,6 +9,7 @@ import {
     getOutboxStats,
 } from '@/app-layer/notifications/settings';
 import { jsonResponse } from '@/lib/api-response';
+import { listInAppNotificationTypes } from '@/app-layer/notifications/agentic';
 import { UpdateNotificationSettingsSchema } from '@/app-layer/schemas/notification-settings.schemas';
 
 /** GET — returns tenant notification settings + outbox stats */
@@ -24,7 +25,17 @@ export const GET = withApiErrorHandling(async (req: NextRequest, { params: param
         ]);
     });
 
-    return jsonResponse({ settings, stats });
+    // The in-app type catalogue (#2564), resolved SERVER-side against the
+    // emitter's own copy and joined to this tenant's mute list. The client
+    // renders whatever this lists, so a future agentic type reaches the
+    // preference page without a client-side edit — and a type the emitter
+    // stopped sending disappears from it by the same route.
+    const inAppTypes = listInAppNotificationTypes().map((info) => ({
+        ...info,
+        muted: settings.mutedInAppTypes.includes(info.type),
+    }));
+
+    return jsonResponse({ settings, stats, inAppTypes });
 });
 
 /** PUT — update tenant notification settings (admin-only) */

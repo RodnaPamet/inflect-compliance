@@ -50,3 +50,95 @@ describe('enqueueEmail with tenant settings', () => {
 // retired sender address alive in the tree as a supposed expectation. The real
 // behaviour is covered against the real module in
 // tests/unit/notification-sender-fallback.test.ts. Removed with #2296.
+
+
+// ─── In-app mute list (#2564) ───────────────────────────────────────
+//
+// Against the REAL module, reached through `jest.requireActual` because the
+// mock at the top of this file replaces the whole thing. That is the same
+// mistake the deleted block above made — asserting against a local literal
+// while believing it was testing the code — so these tests import the actual
+// implementation and drive it with a fake db, the shape
+// `notification-sender-fallback.test.ts` established.
+describe('in-app mute list (#2564)', () => {
+    const actual = jest.requireActual('@/app-layer/notifications/settings') as
+        typeof import('@/app-layer/notifications/settings');
+
+    /** A settings table holding exactly one row (or none). */
+    function dbWithRow(row: Record<string, unknown> | null) {
+        return {
+            tenantNotificationSettings: {
+                findUnique: async () => row,
+            },
+        } as any;
+    }
+
+    it('defaults carry an empty list when the tenant has no row', async () => {
+        const s = await actual.getTenantNotificationSettings(dbWithRow(null), 't1');
+        expect(s.mutedInAppTypes).toEqual([]);
+    });
+
+    it('reads a NULL column as an empty list, not as undefined', async () => {
+        // The column is nullable so a rolling deploy's old containers can
+        // INSERT without it. `undefined` here would reach `.includes(...)` in
+        // the emitter and throw, which the fire-and-forget catch would swallow
+        // — a bell that silently stops ringing.
+        const s = await actual.getTenantNotificationSettings(
+            dbWithRow({
+                enabled: true,
+                defaultFromName: 'N',
+                defaultFromEmail: 'a@b.test',
+                complianceMailbox: null,
+                mutedInAppTypes: null,
+            }),
+            't1',
+        );
+        expect(s.mutedInAppTypes).toEqual([]);
+    });
+
+    it('a partial update does not clear a stored list', async () => {
+        // The `definedOnly` seam: `update` must not carry the key at all.
+        // Passing it as `undefined` would ALSO leave the column alone (Prisma
+        // drops undefined args), but passing `[]` would wipe it — so the
+        // assertion is on the key's ABSENCE, which is what the code guarantees.
+        let updateArg: Record<string, unknown> | undefined;
+        const db = {
+            tenantNotificationSettings: {
+                upsert: async (args: any) => {
+                    updateArg = args.update;
+                    return {
+                        enabled: true,
+                        defaultFromName: 'Acme',
+                        defaultFromEmail: 'a@b.test',
+                        complianceMailbox: null,
+                        mutedInAppTypes: ['AGENT_KILL_SWITCH_ENGAGED'],
+                    };
+                },
+            },
+        } as any;
+
+        const ctx = { tenantId: 't1', userId: 'u1' } as any;
+        const out = await actual.updateTenantNotificationSettings(db, ctx, {
+            defaultFromName: 'Acme',
+        });
+
+        expect(updateArg).toBeDefined();
+        expect('mutedInAppTypes' in updateArg!).toBe(false);
+        // And the stored list survives into the response the route returns.
+        expect(out.mutedInAppTypes).toEqual(['AGENT_KILL_SWITCH_ENGAGED']);
+    });
+
+    it('isInAppTypeEnabled is false for a muted type and true for any other', async () => {
+        const db = dbWithRow({ mutedInAppTypes: ['AGENT_KILL_SWITCH_ENGAGED'] });
+        expect(await actual.isInAppTypeEnabled(db, 't1', 'AGENT_KILL_SWITCH_ENGAGED')).toBe(false);
+        // The paired positive: without it, a function that returned false for
+        // everything would pass the line above.
+        expect(await actual.isInAppTypeEnabled(db, 't1', 'AGENT_PROPOSAL_QUARANTINED')).toBe(true);
+    });
+
+    it('isInAppTypeEnabled fails OPEN when the tenant has no settings row', async () => {
+        expect(
+            await actual.isInAppTypeEnabled(dbWithRow(null), 't1', 'AGENT_KILL_SWITCH_ENGAGED'),
+        ).toBe(true);
+    });
+});
