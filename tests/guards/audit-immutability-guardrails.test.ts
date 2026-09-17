@@ -621,7 +621,10 @@ describe('AuditLog Immutability Guardrails', () => {
 
     test('Prisma audit middleware excludes AuditLog from WRITE_ACTIONS', () => {
         const prismaFile = path.resolve(SRC_DIR, 'lib', 'prisma.ts');
-        const content = fs.readFileSync(prismaFile, 'utf-8');
+        // Masked, like every other source read in this file: the assertion
+        // below is about the EXCLUDED_MODELS set, and a comment naming
+        // 'AuditLog' beside it would otherwise satisfy it (#2246 Class A).
+        const content = codeOf(fs.readFileSync(prismaFile, 'utf-8'));
 
         // The EXCLUDED_MODELS set must include 'AuditLog'
         expect(content).toMatch(/EXCLUDED_MODELS.*=.*new\s+Set\(\[[\s\S]*?'AuditLog'/);
