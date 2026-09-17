@@ -1,12 +1,12 @@
 /**
- * AGENTIC UI 1/4 (#2441) — in-app notifications for the two agentic events a
+ * AGENTIC UI 1/4 (#2441, #2562) — in-app notifications for the agentic events a
  * human has to know about without going and looking.
  *
- * ── WHY THESE TWO, OUT OF EVERYTHING THE SUBSYSTEM DOES ─────────────────────
+ * ── WHY THESE THREE, OUT OF EVERYTHING THE SUBSYSTEM DOES ───────────────────
  *
  * None of the twenty existing `NotificationType` members is agentic, so the
  * whole subsystem was silent: every fact it produced lived on a page somebody
- * had to already be on. Two of those facts are about a PERSON rather than a
+ * had to already be on. Three of those facts are about a PERSON rather than a
  * page:
  *
  *   • `AGENT_KILL_SWITCH_ENGAGED` — an agent, or every agent in the workspace,
@@ -22,6 +22,14 @@
  *     in the course of ordinary work. Left un-notified, an agent producing
  *     injected content goes on producing it, and the evidence accumulates on a
  *     triage page with no inbound traffic.
+ *
+ *   • `AGENT_CIRCUIT_BREAKER_TRIPPED` (#2562) — the behavioural detector
+ *     latched the breaker OPEN and the agent is stopped until a human closes
+ *     it with a reason. The odd one out in two ways: there is NO human actor,
+ *     and the only surface that shows breaker state is a tab on one agent's
+ *     detail page whose selection is local `useState`, so there is not even a
+ *     deep link to it. An un-trip is manual BY DESIGN, which assumes somebody
+ *     learns about the trip; before this, nothing told them.
  *
  * Deliberately NOT notified: proposal CREATED. That is the ordinary case — the
  * propose-not-commit queue exists to accumulate them — and one bell per
@@ -54,7 +62,8 @@
  *
  * THE ACTOR IS NEVER NOTIFIED OF THEIR OWN ACTION. An operator who just
  * engaged a kill switch does not need a bell telling them they did; a bell that
- * fires on your own click is the first one people learn to dismiss.
+ * fires on your own click is the first one people learn to dismiss. A breaker
+ * trip has no actor at all and passes `null`, which excludes nobody.
  */
 
 import type { PrismaClient } from '@prisma/client';
@@ -62,15 +71,29 @@ import type { PrismaClient } from '@prisma/client';
 import { publishNotificationEvent } from '@/lib/notifications/notification-bus';
 import { isInAppTypeEnabled } from './settings';
 
-/** The two agentic members of `NotificationType`. */
+/** The agentic members of `NotificationType`. */
 export type AgenticNotificationKind =
     | 'AGENT_KILL_SWITCH_ENGAGED'
-    | 'AGENT_PROPOSAL_QUARANTINED';
+    | 'AGENT_PROPOSAL_QUARANTINED'
+    | 'AGENT_CIRCUIT_BREAKER_TRIPPED';
 
 interface AgenticCopy {
     title: string;
-    body: (subject: string) => string;
-    linkPath: (tenantSlug: string) => string;
+    /**
+     * `detail` is the type-specific fact the sentence needs and the subject
+     * cannot carry — the firing signals, for a breaker trip. `null` for the
+     * two types whose body is complete without one, which is why the
+     * parameter is read by one entry and ignored by the other two.
+     */
+    body: (subject: string, detail: string | null) => string;
+    /**
+     * Where the bell row navigates. Takes the ENTITY as well as the slug: a
+     * breaker trip is about one agent and the only surface that shows breaker
+     * state is that agent's own detail page, so a link to the register would
+     * land the recipient on a page that says nothing about what happened. The
+     * two entries that link to a surface rather than a row ignore it.
+     */
+    linkPath: (tenantSlug: string, entityId: string) => string;
 }
 
 /**
@@ -79,9 +102,12 @@ interface AgenticCopy {
  * rows are written at emit time and stored, so they are not reachable by
  * `next-intl` at render.
  *
- * The link is to the SURFACE, not to the row. For a kill switch the register is
- * where you lift it; for a quarantined proposal the triage page is where the
- * attempted content is, and the row itself has no detail page.
+ * The link is to wherever the recipient can ACT on what they were told. For a
+ * kill switch that is the register, where you lift it; for a quarantined
+ * proposal it is the triage page, which is where the attempted content is and
+ * the row itself has no detail page. For a breaker trip it is the agent's own
+ * detail page, because the breaker tab there is the only surface in the product
+ * that renders breaker state or offers the close.
  */
 const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
     AGENT_KILL_SWITCH_ENGAGED: {
@@ -98,6 +124,17 @@ const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
             `the proposal cannot be approved. Read the attempted content before deciding ` +
             `whether the agent should keep running.`,
         linkPath: (slug) => `/t/${slug}/agents/quarantine`,
+    },
+    AGENT_CIRCUIT_BREAKER_TRIPPED: {
+        title: "An agent's circuit breaker tripped",
+        body: (subject, detail) =>
+            `${subject} was stopped automatically by its behavioural circuit breaker` +
+            `${detail === null ? '' : ` — firing signals: ${detail}`}. ` +
+            `It cannot act at the tool boundary until somebody closes the breaker with a reason.`,
+        // The AGENT's page, not the register: breaker state appears on the
+        // detail page's breaker tab and nowhere else, and closing it — the
+        // only thing that restarts the agent — is done from there.
+        linkPath: (slug, agentId) => `/t/${slug}/agents/${agentId}`,
     },
 };
 
@@ -170,10 +207,23 @@ export interface AgenticNotificationTarget {
      * credential names no registered agent.
      */
     subject: string;
+    /**
+     * The type-specific fact the body names beside the subject — the firing
+     * signals for a breaker trip. `null` where the copy needs none.
+     */
+    detail?: string | null;
     /** Who to tell. Empty is a legitimate outcome — see `resolveRecipients`. */
     recipientUserIds: readonly string[];
-    /** The person who caused it, excluded from `recipientUserIds` by the caller. */
-    actorUserId: string;
+    /**
+     * The person who caused it, excluded from `recipientUserIds` below.
+     *
+     * `null` where there is NO human actor. A circuit breaker trips on its own
+     * — that is the whole point of it — so there is nobody to exclude, and a
+     * sentinel string would have to be one no real user id can equal. `null`
+     * cannot collide with a `User.id`, and the filter below already treats it
+     * as "exclude nobody".
+     */
+    actorUserId: string | null;
 }
 
 export interface AgenticNotificationOutcome {
@@ -211,8 +261,11 @@ export async function createAgenticNotification(
     }
 
     const copy = COPY[kind];
-    const message = copy.body(target.subject);
-    const linkUrl = target.tenantSlug === null ? null : copy.linkPath(target.tenantSlug);
+    const message = copy.body(target.subject, target.detail ?? null);
+    const linkUrl =
+        target.tenantSlug === null
+            ? null
+            : copy.linkPath(target.tenantSlug, target.entityId);
 
     const res = await db.notification.createMany({
         data: recipients.map((userId) => ({

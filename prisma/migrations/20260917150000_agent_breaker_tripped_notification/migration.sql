@@ -1,0 +1,24 @@
+-- AGENTIC UI 1/4 (#2562) — the agentic notification type for a TRIPPED
+-- behavioural circuit breaker.
+--
+-- The third agentic member, and the first with no human actor behind it: the
+-- detector latches the breaker OPEN on its own, and until now that stop was
+-- neither audited nor announced while the human UN-trip was both. The
+-- reasoning lives beside the member in prisma/schema/enums.prisma.
+--
+-- ROLLING-DEPLOY SAFETY. `ADD VALUE` only — nothing is renamed and nothing is
+-- dropped, so an old container that has never heard of this value keeps
+-- reading and writing every value it knows. (Postgres cannot drop an enum
+-- value without recreating the type, and an `ALTER TYPE … RENAME` mid-deploy
+-- makes still-running containers fail with SQLSTATE 42704 — the lesson the
+-- `@@map("WorkItem*")` pins record.)
+--
+-- `IF NOT EXISTS` matches every prior NotificationType migration in this
+-- folder, so a re-run is a no-op rather than a failed deploy.
+--
+-- ORDINAL. `ADD VALUE` appends this LAST in an already-migrated database while
+-- prisma/schema/enums.prisma places it before `GENERAL` — the same divergence
+-- the two members added in 20260911140000 already carry. Nothing in this
+-- codebase matches `NotificationType` by ordinal; #2475 is the open issue
+-- covering that gap, and this change neither creates nor widens it.
+ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'AGENT_CIRCUIT_BREAKER_TRIPPED';
