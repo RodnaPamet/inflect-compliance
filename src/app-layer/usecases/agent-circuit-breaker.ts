@@ -221,9 +221,17 @@ export async function getAgentCircuitBreaker(ctx: RequestContext, agentId: strin
         ).filter((w) => !w.anomalous);
 
         // The oldest window in the accepted population, computed ONCE because
-        // both figures below are derived from it. Taken as a MINIMUM rather than
-        // read off either end: `lookback` arrives newest-first today, but that
-        // is the store's ordering and not this function's contract.
+        // both figures below are derived from it, and taken as a MINIMUM rather
+        // than read off an end.
+        //
+        // SCOPE, because the obvious reading of that is too strong: it does NOT
+        // make this function independent of the store's ordering. The slice
+        // above depends on newest-first and cannot stop depending on it —
+        // `lookback.slice(1)` drops the window awaiting a verdict, which is the
+        // NEWEST complete one, so on a reversed page it would drop the oldest
+        // instead. The minimum here is narrower than that: it means the REACH
+        // does not additionally assume the accepted rows kept their order
+        // through the slice and the anomalous filter above.
         const oldestAcceptedWindowStart =
             accepted.length > 0
                 ? accepted.reduce(
