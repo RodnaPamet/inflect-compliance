@@ -179,4 +179,101 @@ describeFn('AuditLog Immutability (DB Trigger)', () => {
             attemptAuditDelete(prisma, 'AuditLog', '"tenantId" = $1', tenantId),
         ).rejects.toThrow(/IMMUTABLE_AUDIT_LOG/);
     });
+
+    // ── The ONE permitted UPDATE: DSAR pseudonymization ───────────
+    //
+    // Migration 20260917130000 narrowed the trigger so GDPR erasure can
+    // pseudonymize the audit trail (`userId = NULL`) instead of deleting it.
+    // Everything else stays forbidden, and these cases are the difference
+    // between "narrowed" and "opened".
+    describe('narrowed contract — pseudonymization permitted, nothing else', () => {
+        let n = 0;
+        /** Each case gets its OWN row. A shared fixture lets one case's leftover
+         *  state decide another's verdict, and the failure then prints under the
+         *  wrong label. */
+        async function seed(withUser = true) {
+            n += 1;
+            const id = `pseudo-${Date.now()}-${n}`;
+            const hash = `hash-${n}`;
+            await prisma.$executeRawUnsafe(
+                `INSERT INTO "AuditLog" ("id","tenantId","userId","entity","entityId","action","details","entryHash","previousHash","createdAt")
+                 VALUES ($1,$2,$3,'TestEntity','e1','TEST_PSEUDO','keep-me',$4,'prev','NOW()'::timestamptz)`,
+                id, tenantId, withUser ? userId : null, hash,
+            );
+            return { id, hash };
+        }
+        async function readRow(id: string): Promise<Record<string, unknown>> {
+            const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+                `SELECT "userId","entryHash","details","action","actorType" FROM "AuditLog" WHERE "id" = $1`, id,
+            );
+            return rows[0];
+        }
+
+        test('PERMITS userId -> NULL when every other column is unchanged', async () => {
+            const { id, hash } = await seed();
+            // Non-vacuity: the row really does identify someone beforehand.
+            expect((await readRow(id)).userId).toBe(userId);
+
+            // Through the sanctioned helper: tests/guards/audit-immutability-guardrails
+            // forbids raw audit DML anywhere but tests/helpers/audit-cleanup.ts.
+            // `attemptAuditUpdate` runs with NO bypass, so a resolve here is the
+            // trigger genuinely permitting the write.
+            const affected = await attemptAuditUpdate(prisma, 'AuditLog', `"userId" = NULL`, `"id" = $1`, id);
+            expect(affected).toBe(1);
+
+            // A positive witness of the effect, not merely "it did not throw":
+            // the subject is gone AND the record it identified survives intact.
+            const row = await readRow(id);
+            expect(row.userId).toBeNull();
+            expect(row.entryHash).toBe(hash);
+            expect(row.details).toBe('keep-me');
+            expect(row.action).toBe('TEST_PSEUDO');
+        });
+
+        test('REFUSES nulling userId while rewriting the hash chain (oracle C4)', async () => {
+            const { id, hash } = await seed();
+            await expect(
+                attemptAuditUpdate(prisma, 'AuditLog', `"userId" = NULL, "entryHash" = 'FORGED'`, `"id" = $1`, id),
+            ).rejects.toThrow(/IMMUTABLE_AUDIT_LOG/);
+            // Refused, not partially applied.
+            const row = await readRow(id);
+            expect(row.userId).toBe(userId);
+            expect(row.entryHash).toBe(hash);
+        });
+
+        test('REFUSES nulling userId while changing any other column', async () => {
+            const { id } = await seed();
+            await expect(
+                attemptAuditUpdate(prisma, 'AuditLog', `"userId" = NULL, "actorType" = 'JOB'`, `"id" = $1`, id),
+            ).rejects.toThrow(/IMMUTABLE_AUDIT_LOG/);
+            expect((await readRow(id)).userId).toBe(userId);
+        });
+
+        test('REFUSES re-identifying a pseudonymized row (NULL -> a value)', async () => {
+            const { id } = await seed(false);
+            expect((await readRow(id)).userId).toBeNull();
+            await expect(
+                attemptAuditUpdate(prisma, 'AuditLog', `"userId" = $2`, `"id" = $1`, id, userId),
+            ).rejects.toThrow(/IMMUTABLE_AUDIT_LOG/);
+            expect((await readRow(id)).userId).toBeNull();
+        });
+
+        test('REFUSES swapping one subject for another (value -> a different value)', async () => {
+            const { id } = await seed();
+            await expect(
+                attemptAuditUpdate(prisma, 'AuditLog', `"userId" = 'someone-else'`, `"id" = $1`, id),
+            ).rejects.toThrow(/IMMUTABLE_AUDIT_LOG/);
+            expect((await readRow(id)).userId).toBe(userId);
+        });
+
+        test('DELETE is still refused for a row that WOULD be a valid pseudonymization target', async () => {
+            // The permitted shape is an UPDATE. Nothing about it makes a DELETE
+            // acceptable, and erasure must never reach for one.
+            const { id } = await seed();
+            await expect(
+                attemptAuditDelete(prisma, 'AuditLog', '"id" = $1', id),
+            ).rejects.toThrow(/IMMUTABLE_AUDIT_LOG/);
+            expect((await readRow(id)).userId).toBe(userId);
+        });
+    });
 });
