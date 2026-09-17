@@ -18,6 +18,7 @@ import {
     removeIntegrationConnection,
     listAvailableProviders,
     updateConnectionTestStatus,
+    testConnectionCredentials,
 } from '@/app-layer/usecases/integrations';
 import { registry } from '@/app-layer/integrations/registry';
 import { jsonResponse } from '@/lib/api-response';
@@ -121,21 +122,15 @@ export const PUT = withApiErrorHandling(
         return jsonResponse({ error: 'provider is required' }, { status: 400 });
     }
 
-    const providerImpl = registry.getProvider(body.provider);
-    if (!providerImpl) {
-        return jsonResponse({ error: `Unknown provider: ${body.provider}` }, { status: 400 });
-    }
-
-    // Validate connection
-    const result = await providerImpl.validateConnection(
-        body.configJson ?? {},
-        body.secrets ?? {}
-    );
-
-    // If validating existing connection, update test status via usecase
-    if (body.connectionId) {
-        await updateConnectionTestStatus(ctx, body.connectionId, result.valid ? 'ok' : 'error');
-    }
+    // Delegates rather than validating inline, because testing a SAVED
+    // connection needs the stored secrets — which live encrypted on the row and
+    // are never sent back to this client. Reading them is usecase work.
+    const result = await testConnectionCredentials(ctx, {
+        connectionId: body.connectionId,
+        provider: body.provider,
+        configJson: body.configJson,
+        secrets: body.secrets,
+    });
 
     return jsonResponse({
         valid: result.valid,

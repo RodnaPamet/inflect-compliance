@@ -195,6 +195,62 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
  * registered provider is missing, so "unknown" cannot quietly become "unchecked"
  * for anything that actually ships.
  */
+/**
+ * The config fields that decide WHERE a stored credential gets sent.
+ *
+ * `vendorOrigin` and `internalOrigin` already mark exactly these — the host of
+ * the vendor API, and the LDAPS bind target — so the set is derived rather than
+ * restated. A third origin kind added to `ConfigFieldRule` is covered here the
+ * day it is added; a hand-written list would not be.
+ */
+export function originFieldsFor(provider: string): string[] {
+    const rules = CONFIG_FIELD_RULES[provider] ?? {};
+    return Object.entries(rules)
+        .filter(([, rule]) => rule.kind === 'vendorOrigin' || rule.kind === 'internalOrigin')
+        .map(([field]) => field);
+}
+
+/**
+ * Did this update REDIRECT a stored credential at a different host?
+ *
+ * ═══ THE ATTACK THIS CLOSES ═══
+ *
+ * Connection updates preserve `secretEncrypted` whenever the caller sends no
+ * `secrets` key — which is correct and necessary, because the admin UI never
+ * receives the stored secret back and so cannot resend it. But `configJson` IS
+ * replaced wholesale on the same request. So an `admin.manage` holder could
+ * change ONLY the destination host and keep the credential:
+ *
+ *   PUT { id, provider: 'servicenow', configJson: { instance: 'attacker.service-now.com' } }
+ *
+ * and the `*​/15` automation runner would then send
+ * `Basic base64(user:password)` — the tenant's real ServiceNow integration
+ * credential — to a host the attacker controls. A free personal developer
+ * instance satisfies the allowlist, so the host allowlist does not stop it:
+ * the allowlist answers "is this the vendor?", never "is this YOUR tenant of
+ * the vendor?".
+ *
+ * Not ServiceNow-specific, and deliberately not written as though it were.
+ * Every provider whose credential is addressed by a config field has the same
+ * shape — Workday `host`, Okta `orgUrl`, OrangeHRM `baseUrl`, Active Directory
+ * `url` — and each of those sends a client secret, an API token, or a bind
+ * password to whatever that field names.
+ */
+export function redirectsStoredCredential(
+    provider: string,
+    previousConfig: Record<string, unknown>,
+    nextConfig: Record<string, unknown>,
+): string | null {
+    for (const field of originFieldsFor(provider)) {
+        const before = String(previousConfig[field] ?? '').trim().toLowerCase();
+        const after = String(nextConfig[field] ?? '').trim().toLowerCase();
+        // An ABSENT field in the update is not a redirect — it is "unchanged".
+        if (!after || before === after) continue;
+        return field;
+    }
+    return null;
+}
+
 export function validateProviderConfig(
     providerId: string,
     configJson: unknown,

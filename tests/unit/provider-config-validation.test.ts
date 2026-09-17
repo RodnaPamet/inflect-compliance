@@ -6,7 +6,11 @@
  * written at all — the call-site fixes stay, because a value already in the
  * database predates this check.
  */
-import { validateProviderConfig } from '@/app-layer/integrations/config-schema';
+import {
+    validateProviderConfig,
+    originFieldsFor,
+    redirectsStoredCredential,
+} from '@/app-layer/integrations/config-schema';
 
 describe('vendor-hosted origins must belong to the vendor', () => {
     it('accepts a real Okta org', () => {
@@ -108,5 +112,80 @@ describe('undeclared fields are refused', () => {
     it('treats null/absent config as empty rather than failing', () => {
         expect(validateProviderConfig('okta', null)).toEqual({});
         expect(validateProviderConfig('okta', undefined)).toEqual({});
+    });
+});
+
+describe('a stored credential cannot be redirected to another host by a config edit', () => {
+    /**
+     * The allowlist answers "is this the vendor?", never "is this YOUR tenant
+     * of the vendor?". A free personal ServiceNow developer instance satisfies
+     * it, so the allowlist alone never stopped an `admin.manage` holder from
+     * moving the host and keeping the credential.
+     */
+    it('flags a ServiceNow instance change — the reported attack', () => {
+        expect(
+            redirectsStoredCredential(
+                'servicenow',
+                { instance: 'acme.service-now.com' },
+                { instance: 'attacker.service-now.com' },
+            ),
+        ).toBe('instance');
+    });
+
+    it('flags the same move on every other credential-bearing provider', () => {
+        // Not a ServiceNow bug. Each of these sends a client secret, an API
+        // token or a bind password to whatever the field names.
+        expect(redirectsStoredCredential('okta', { orgUrl: 'https://a.okta.com' }, { orgUrl: 'https://b.okta.com' }))
+            .toBe('orgUrl');
+        expect(redirectsStoredCredential('workday', { host: 'a.workday.com' }, { host: 'b.workday.com' }))
+            .toBe('host');
+        expect(
+            redirectsStoredCredential(
+                'orangehrm',
+                { baseUrl: 'a.orangehrmlive.com' },
+                { baseUrl: 'b.orangehrmlive.com' },
+            ),
+        ).toBe('baseUrl');
+        expect(redirectsStoredCredential('active-directory', { url: 'ldaps://a.corp' }, { url: 'ldaps://b.corp' }))
+            .toBe('url');
+    });
+
+    it('does NOT flag an ordinary edit that leaves the host alone', () => {
+        // The positive control. Without it, a function that returned a field
+        // name unconditionally would satisfy every assertion above.
+        expect(
+            redirectsStoredCredential(
+                'servicenow',
+                { instance: 'acme.service-now.com', windowDays: 90 },
+                { instance: 'acme.service-now.com', windowDays: 30 },
+            ),
+        ).toBeNull();
+    });
+
+    it('treats an ABSENT origin field as unchanged, not as a redirect', () => {
+        // A partial update that omits the host is not moving it. Reading
+        // absence as a change would refuse routine edits and train operators to
+        // re-enter credentials for no reason — which is its own hazard.
+        expect(redirectsStoredCredential('servicenow', { instance: 'acme.service-now.com' }, { windowDays: 30 }))
+            .toBeNull();
+    });
+
+    it('ignores case and surrounding whitespace, which are not a different host', () => {
+        expect(
+            redirectsStoredCredential(
+                'servicenow',
+                { instance: 'acme.service-now.com' },
+                { instance: '  ACME.service-now.com ' },
+            ),
+        ).toBeNull();
+    });
+
+    it('derives the origin fields from the rules rather than a hand-written list', () => {
+        // A future provider gets this protection by declaring vendorOrigin,
+        // with no second list to remember.
+        expect(originFieldsFor('servicenow')).toEqual(['instance']);
+        expect(originFieldsFor('active-directory')).toEqual(['url']);
+        // An inert field is not an origin — otherwise every edit would refuse.
+        expect(originFieldsFor('okta')).not.toContain('apiToken');
     });
 });
