@@ -1,12 +1,12 @@
 /**
- * AGENTIC UI 1/4 (#2441, #2562) — in-app notifications for the agentic events a
- * human has to know about without going and looking.
+ * AGENTIC UI 1/4 (#2441, #2562, #2561) — in-app notifications for the agentic
+ * events a human has to know about without going and looking.
  *
- * ── WHY THESE THREE, OUT OF EVERYTHING THE SUBSYSTEM DOES ───────────────────
+ * ── WHY THESE FOUR, OUT OF EVERYTHING THE SUBSYSTEM DOES ────────────────────
  *
  * None of the twenty existing `NotificationType` members is agentic, so the
  * whole subsystem was silent: every fact it produced lived on a page somebody
- * had to already be on. Three of those facts are about a PERSON rather than a
+ * had to already be on. Four of those facts are about a PERSON rather than a
  * page:
  *
  *   • `AGENT_KILL_SWITCH_ENGAGED` — an agent, or every agent in the workspace,
@@ -31,6 +31,17 @@
  *     deep link to it. An un-trip is manual BY DESIGN, which assumes somebody
  *     learns about the trip; before this, nothing told them.
  *
+ *   • `AGENT_TOOL_MANIFEST_PIN_CHANGED` (#2561) — somebody accepted a new tool
+ *     DEFINITION on the tenant's behalf. The widest of the four: one approval
+ *     clears the MCP boundary's refusal for EVERY agent at once, and the
+ *     button sits on one agent's Tools tab, so the decision is taken from a
+ *     per-agent page and lands tenant-wide. The description inside a tool
+ *     definition is instruction text delivered to the model, which makes this
+ *     the tool-poisoning surface — the one act where "somebody I trust
+ *     approved something I did not see" is the attack. Fired only when the pin
+ *     actually MOVED; a re-approval matching the hash on file writes nothing
+ *     and says nothing.
+ *
  * Deliberately NOT notified: proposal CREATED. That is the ordinary case — the
  * propose-not-commit queue exists to accumulate them — and one bell per
  * proposal would train the recipient to ignore the bell, taking the two above
@@ -39,7 +50,7 @@
  *
  * ── THE EXISTING CATALOGUE, NOT A SECOND CHANNEL ────────────────────────────
  *
- * Both go through `db.notification.createMany({ skipDuplicates: true })` plus
+ * All four go through `db.notification.createMany({ skipDuplicates: true })` plus
  * `publishNotificationEvent`, which is the bell + SSE path every other in-app
  * notification uses, with the same `{tenantId}:{TYPE}:{entityId}:{userId}:{day}`
  * dedupe key shape. `createMany` rather than `create`: a duplicate key returns
@@ -56,9 +67,10 @@
  * The agent's ACCOUNTABLE OWNER first. `RegisteredAgent.ownerUserId` is NOT
  * NULL behind a real FK and the register's whole purpose is to name the human
  * who answers for an agent, so that is who is told. When there is no single
- * agent — a TENANT-scope kill, or a quarantined proposal from an unattributed
- * credential — it falls back to the workspace's ACTIVE OWNERs, because the
- * question "who answers for this" then has no narrower answer.
+ * agent — a TENANT-scope kill, a quarantined proposal from an unattributed
+ * credential, or a tool-manifest pin that binds every agent at once — it falls
+ * back to the workspace's ACTIVE OWNERs, because the question "who answers for
+ * this" then has no narrower answer.
  *
  * THE ACTOR IS NEVER NOTIFIED OF THEIR OWN ACTION. An operator who just
  * engaged a kill switch does not need a bell telling them they did; a bell that
@@ -75,15 +87,17 @@ import { isInAppTypeEnabled } from './settings';
 export type AgenticNotificationKind =
     | 'AGENT_KILL_SWITCH_ENGAGED'
     | 'AGENT_PROPOSAL_QUARANTINED'
-    | 'AGENT_CIRCUIT_BREAKER_TRIPPED';
+    | 'AGENT_CIRCUIT_BREAKER_TRIPPED'
+    | 'AGENT_TOOL_MANIFEST_PIN_CHANGED';
 
 interface AgenticCopy {
     title: string;
     /**
      * `detail` is the type-specific fact the sentence needs and the subject
-     * cannot carry — the firing signals, for a breaker trip. `null` for the
-     * two types whose body is complete without one, which is why the
-     * parameter is read by one entry and ignored by the other two.
+     * cannot carry — the firing signals for a breaker trip, and whether a
+     * manifest pin is a first approval or a replacement. `null` for the two
+     * types whose body is complete without one, which is why the parameter is
+     * read by two entries and ignored by the other two.
      */
     body: (subject: string, detail: string | null) => string;
     /**
@@ -91,7 +105,7 @@ interface AgenticCopy {
      * breaker trip is about one agent and the only surface that shows breaker
      * state is that agent's own detail page, so a link to the register would
      * land the recipient on a page that says nothing about what happened. The
-     * two entries that link to a surface rather than a row ignore it.
+     * three entries that link to a surface rather than a row ignore it.
      */
     linkPath: (tenantSlug: string, entityId: string) => string;
 }
@@ -107,7 +121,9 @@ interface AgenticCopy {
  * proposal it is the triage page, which is where the attempted content is and
  * the row itself has no detail page. For a breaker trip it is the agent's own
  * detail page, because the breaker tab there is the only surface in the product
- * that renders breaker state or offers the close.
+ * that renders breaker state or offers the close. For a manifest pin it is the
+ * register again — pin state is tenant-wide data with no tenant-level page and
+ * no per-row URL, so the register is the nearest thing to where you act.
  */
 const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
     AGENT_KILL_SWITCH_ENGAGED: {
@@ -135,6 +151,27 @@ const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
         // detail page's breaker tab and nowhere else, and closing it — the
         // only thing that restarts the agent — is done from there.
         linkPath: (slug, agentId) => `/t/${slug}/agents/${agentId}`,
+    },
+    AGENT_TOOL_MANIFEST_PIN_CHANGED: {
+        title: 'A tool definition was approved for this workspace',
+        body: (subject, detail) =>
+            `${subject} was accepted for every agent in this workspace, clearing the ` +
+            `tool boundary's refusal${detail === null ? '' : ` (${detail})`}. ` +
+            `A tool's description is instruction text the model reads, so an approval ` +
+            `nobody expected is a supply-chain event — check who approved it and why.`,
+        // THE SUBJECT AND BODY NAME THE TOOL AND NOTHING ELSE. Never the
+        // description: the whole hazard a pin exists for is that the
+        // description is instruction text, and a bell row is read by a person
+        // and rendered into surfaces a model can reach. `mcp-tool-manifest.ts`
+        // refuses to put it in the audit row for exactly this reason, and the
+        // bell must refuse the same way.
+        //
+        // The register, not a row. Pin state is TENANT-WIDE data rendered on a
+        // per-agent Tools tab (`ToolManifestPins.tsx`, TOOL_MANIFEST_PATH =
+        // '/admin/agents/tool-manifests'), and that tab's selection is local
+        // `useState` — so there is no tenant-level manifest surface and no
+        // row-level URL to deep-link. Same answer the kill switch gives.
+        linkPath: (slug) => `/t/${slug}/agents`,
     },
 };
 
@@ -175,7 +212,11 @@ export function listInAppNotificationTypes(): InAppNotificationTypeInfo[] {
  * Day granularity in UTC. For quarantine that is the point: an agent under an
  * injection attempt produces a burst of refused proposals, and one bell per
  * refusal would bury the first. For a kill switch the `entityId` is the switch
- * row, which is unique per engagement anyway.
+ * row, which is unique per engagement anyway. For a manifest pin it is the TOOL
+ * NAME, so a tool re-approved twice in one day rings once — and the day
+ * boundary is why it is the tool name rather than the manifest hash: two
+ * different accepted definitions for the same tool on the same day are the
+ * burst worth collapsing, not two events worth two bells.
  */
 export function buildAgenticDedupeKey(
     tenantId: string,
@@ -198,18 +239,25 @@ export interface AgenticNotificationTarget {
      * to.
      */
     tenantSlug: string | null;
-    /** The row the notification is about (kill-switch row, or proposal row). */
+    /**
+     * What the notification is about — a kill-switch row, a proposal row, an
+     * agent id, or (for a manifest pin, which has no row a recipient can be
+     * sent to) the TOOL NAME. Whatever it is, it is also the dedupe key's
+     * entity segment, so it must be the thing a repeat should collapse on.
+     */
     entityId: string;
     /**
-     * What was stopped / what produced the refused write, in words. An agent
-     * name where there is one agent; "Every agent in this workspace" for a
-     * tenant-scope kill; "an unattributed credential" for a proposal whose
-     * credential names no registered agent.
+     * What was stopped / what produced the refused write / what was accepted,
+     * in words. An agent name where there is one agent; "Every agent in this
+     * workspace" for a tenant-scope kill; "an unattributed credential" for a
+     * proposal whose credential names no registered agent; `The tool "<name>"`
+     * for a manifest pin — the NAME only, never the description.
      */
     subject: string;
     /**
      * The type-specific fact the body names beside the subject — the firing
-     * signals for a breaker trip. `null` where the copy needs none.
+     * signals for a breaker trip, first-approval-vs-replacement for a manifest
+     * pin. `null` where the copy needs none.
      */
     detail?: string | null;
     /** Who to tell. Empty is a legitimate outcome — see `resolveRecipients`. */

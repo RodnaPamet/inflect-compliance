@@ -1,0 +1,39 @@
+-- AGENTIC UI 1/4 (#2561) — the agentic notification type for an APPROVED
+-- tool-manifest pin.
+--
+-- The fourth agentic member, and the widest: approving a manifest accepts a new
+-- tool DEFINITION for the whole tenant and clears the MCP boundary's refusal for
+-- every agent at once. The act was already audited (`MCP_TOOL_MANIFEST_APPROVED`)
+-- and permission-gated, and announced to nobody. The reasoning lives beside the
+-- member in prisma/schema/enums.prisma.
+--
+-- ROLLING-DEPLOY SAFETY. `ADD VALUE` only — nothing is renamed and nothing is
+-- dropped, so an old container that has never heard of this value keeps
+-- reading and writing every value it knows. (Postgres cannot drop an enum
+-- value without recreating the type, and an `ALTER TYPE … RENAME` mid-deploy
+-- makes still-running containers fail with SQLSTATE 42704 — the lesson the
+-- `@@map("WorkItem*")` pins record.)
+--
+-- `IF NOT EXISTS` matches every prior NotificationType migration in this
+-- folder, so a re-run is a no-op rather than a failed deploy.
+--
+-- ORDINAL. `BEFORE 'GENERAL'` places this member where prisma/schema/enums.prisma
+-- declares it, so schema order and migration order agree on it and this change
+-- adds NO new divergence. Plain `ADD VALUE` would have appended it LAST while the
+-- schema declares it before `GENERAL`, which is exactly the mismatch
+-- tests/guardrails/enum-member-order-matches-migrations.test.ts catches --
+-- measured: it went red on the appending form, green on this one.
+--
+-- `BEFORE`/`AFTER` keeps the rolling-deploy property plain `ADD VALUE` has --
+-- nothing renamed, nothing dropped, old containers keep reading every value they
+-- know. Four migrations in this folder already use it (20260424203836,
+-- 20260524100000, 20260717140000, 20260917150000).
+--
+-- The PRE-EXISTING divergence from the two members added in 20260911140000 is
+-- untouched and remains signed off in that guard's SIGNED_OFF registry. Extending
+-- the registry for THIS member would have been the wrong fix -- the guard's own
+-- docblock says so in terms: "Adding your enum to `SIGNED_OFF` is NOT the fix."
+-- What this PR does do is EXTEND the existing NotificationType entry's two pinned
+-- sequences, which are verbatim snapshots: a legitimately placed member has to
+-- appear in both, in the slot this statement gives it.
+ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'AGENT_TOOL_MANIFEST_PIN_CHANGED' BEFORE 'GENERAL';
