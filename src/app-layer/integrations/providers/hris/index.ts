@@ -180,8 +180,16 @@ export interface HrisSyncProvider {
  *
  * It lives here rather than in either consumer so neither owns it, and so
  * adding a provider is one edit in the same directory as the provider.
+ *
+ * `orangehrm` is in it DELIBERATELY, and the consequence is the point. It is an
+ * internal test fixture rather than a customer integration (#2548), so leaving
+ * it out would have been the tempting way to keep it out of everyone's way. It
+ * would also have taken it outside `assertSoleEnabledHrisConnection`, whose
+ * refusal reads this same list — buying an enabled fixture alongside an enabled
+ * real HRIS, and with it the nightly roster flip-flop that ends in a directory
+ * disable. Membership here is what makes the fixture safe to enable at all.
  */
-export const HRIS_PROVIDERS = ['bamboohr', 'workday'] as const;
+export const HRIS_PROVIDERS = ['bamboohr', 'workday', 'orangehrm'] as const;
 
 /** Membership test for the usecase guard; the job needs the array for `in`. */
 export function isHrisProviderId(id: string): boolean {

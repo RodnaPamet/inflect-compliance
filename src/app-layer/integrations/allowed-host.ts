@@ -187,3 +187,34 @@ export const OKTA_HOSTS: HostAllowlist = {
     suffixes: ['.okta.com', '.oktapreview.com'],
     exact: ['okta.com', 'oktapreview.com'],
 };
+
+/**
+ * OrangeHRM hosts — the VENDOR-OPERATED estate only, and that limit is the
+ * point rather than an oversight.
+ *
+ * OrangeHRM is self-hostable, which is the entire reason `providers/orangehrm`
+ * exists (#2548): it is the only HR system whose HR side this team can write
+ * to. A self-hosted instance lives on a host the operator picks, and no
+ * allowlist can know that name in advance.
+ *
+ * That leaves two options and only one of them is honest. The other — dropping
+ * the allowlist for this provider and classifying its base URL as customer
+ * infrastructure, the way Active Directory's `url` is classified — would hand
+ * any `admin.manage` holder a fetch primitive aimed at an arbitrary https host
+ * from inside the worker, which is the exposure this module exists to close. AD
+ * survives that classification because it binds over LDAPS and adds a
+ * connect-time private-address assertion; a plain HTTPS roster read has
+ * neither.
+ *
+ * So the shipped allowlist covers what OrangeHRM itself operates —
+ * `*.orangehrmlive.com` is OrangeHRM Cloud, `*.orangehrm.com` the company
+ * estate — and a self-hosted fixture is admitted by ADDING ITS SUFFIX HERE, in
+ * a reviewed one-line change, once somebody has decided where that fixture will
+ * live. Deliberately not pre-empted: that domain is not this module's to
+ * invent, and a placeholder entry would be an allowlist line nobody chose.
+ */
+export const ORANGEHRM_HOSTS: HostAllowlist = {
+    label: 'OrangeHRM',
+    suffixes: ['.orangehrm.com', '.orangehrmlive.com'],
+    exact: ['orangehrm.com', 'orangehrmlive.com'],
+};
