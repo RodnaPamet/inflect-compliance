@@ -269,6 +269,8 @@ const PROVIDER_BY_HOST_SUFFIX: ReadonlyArray<[string, string]> = [
     ['bamboohr.com', 'bamboohr'],
     ['workday.com', 'workday'],
     ['workdaysuv.com', 'workday'],
+    ['orangehrm.com', 'orangehrm'],
+    ['orangehrmlive.com', 'orangehrm'],
     ['api.github.com', 'github'],
     ['service-now.com', 'servicenow'],
     ['servicenowservices.com', 'servicenow'],

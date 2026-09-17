@@ -239,10 +239,46 @@ export async function runHrisSync(input: {
                 let n = 0;
                 for (const e of group) { // guardrail-allow: n+1 — per-employee upsert, bounded by SYNC_UPSERT_CHUNK_SIZE
                     if (!e.workEmail) continue;
+                    // Both arms stay an INLINE OBJECT LITERAL naming every
+                    // column, and what enforces that is NARROWER than it looks.
+                    //
+                    // `tests/guards/employee-status-single-write-seam` does NOT
+                    // census this file's columns. It declares HRIS_SEAM (:60)
+                    // but both column-census tests read PERSONNEL_SEAM (:254,
+                    // :275); HRIS_SEAM appears only in the file-level census
+                    // (:250), which asserts WHICH FILES write an Employee row,
+                    // never which columns. Mutation-proved: replacing both arms
+                    // with `...patch` leaves that guard at 4 passed, and so
+                    // does appending a second `status` writer to this file.
+                    // The same mutant in personnel.ts DOES redden it — the
+                    // census works, it just never looks here.
+                    //
+                    // So the only thing pinning these two arms is
+                    // tests/unit/hris-record-id-handle.test.ts, which counts
+                    // the literal inside `functionBodyOf(runHrisSync)` — and a
+                    // status writer added OUTSIDE that function is invisible to
+                    // it too. Treat this as unguarded when editing: `status` is
+                    // the column the 05:00 leaver pass keys on to disable real
+                    // directory accounts.
+                    //
+                    // AND THIS FILE ALREADY HAS A SECOND `status` WRITER — the
+                    // departure reconcile below writes `status: 'TERMINATED'`
+                    // in one unbounded `updateMany`. So the single-writer rule
+                    // the guard enforces on personnel.ts is already not true
+                    // here; both writes look legitimate (one mirrors the
+                    // roster, one reconciles absence), but a fix for the gap
+                    // above has to allow exactly these two and redden a third,
+                    // not assume one.
+                    //
+                    // `hrisRecordId` is LAST-WRITE-WINS like every other
+                    // mirrored column: a row that stops reporting an id goes
+                    // back to null rather than keeping a stale handle. A stale
+                    // handle is the worse failure — a later write would address
+                    // it, where null refuses.
                     await db.employee.upsert({
                         where: { tenantId_workEmail: { tenantId: ctx.tenantId, workEmail: e.workEmail } },
-                        create: { tenantId: ctx.tenantId, externalId: e.externalId, fullName: e.fullName, workEmail: e.workEmail, status: e.status, department: e.department ?? null, jobTitle: e.jobTitle ?? null, startDate: e.startDate ?? null, endDate: e.endDate ?? null, source: 'HRIS', syncedAt: now },
-                        update: { externalId: e.externalId, fullName: e.fullName, status: e.status, department: e.department ?? null, jobTitle: e.jobTitle ?? null, startDate: e.startDate ?? null, endDate: e.endDate ?? null, source: 'HRIS', syncedAt: now },
+                        create: { tenantId: ctx.tenantId, externalId: e.externalId, hrisRecordId: e.hrisRecordId ?? null, fullName: e.fullName, workEmail: e.workEmail, status: e.status, department: e.department ?? null, jobTitle: e.jobTitle ?? null, startDate: e.startDate ?? null, endDate: e.endDate ?? null, source: 'HRIS', syncedAt: now },
+                        update: { externalId: e.externalId, hrisRecordId: e.hrisRecordId ?? null, fullName: e.fullName, status: e.status, department: e.department ?? null, jobTitle: e.jobTitle ?? null, startDate: e.startDate ?? null, endDate: e.endDate ?? null, source: 'HRIS', syncedAt: now },
                     });
                     n += 1;
                 }

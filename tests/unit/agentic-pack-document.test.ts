@@ -389,6 +389,129 @@ describe('the worst rows are stated, not softened', () => {
     });
 });
 
+/**
+ * THE AUTONOMY RUNG, IN THE ARTEFACT (#2568).
+ *
+ * The register row filed `autonomy 4` — a bare integer with no denominator and
+ * no meaning, in the one surface whose reader cannot click through to the
+ * ladder. The screen has said what a rung means since #2457; the filed document
+ * is the copy that has to carry it, because "every piece of context the screen
+ * supplies by being the screen has to be written INTO this text or it is gone".
+ *
+ * Each case below names the mutation it exists to catch. All three were run
+ * RED before this block was kept:
+ *   • reverting the row to `autonomy ${a.autonomyLevel}` reddens the first;
+ *   • one fixed sentence for every rung reddens the second;
+ *   • `AUTONOMY_MAX` 6 -> 7 reddens the third (denominator AND ladder span).
+ */
+describe('the autonomy rung is explained where it is filed', () => {
+    function agentAt(agentId: string, autonomyLevel: number, unattended = false) {
+        return {
+            agentId,
+            name: `Agent ${agentId}`,
+            status: 'ACTIVE',
+            autonomyLevel,
+            unattended,
+            ownerName: 'Ada',
+            ownerUserId: 'u1',
+            riskTier: 'LOW',
+            assessmentState: 'ASSESSED',
+            killState: 'RUNNING',
+            policyCardVersion: 3,
+        };
+    }
+
+    function docWith(agents: ReturnType<typeof agentAt>[]): string {
+        return renderGovernancePackDocument(
+            input({
+                pack: {
+                    ...input().pack,
+                    inventory: env('agent-inventory', {
+                        body: { agents, legacyPlaceholderPresent: false },
+                    }),
+                },
+            }),
+        );
+    }
+
+    /** The one register row for an agent, so a claim about it cannot be satisfied by another row. */
+    function rowFor(doc: string, agentId: string): string {
+        const row = doc.split('\n').find((line) => line.includes(`[${agentId}]`));
+        expect(row).toBeDefined();
+        return row ?? '';
+    }
+
+    /** What the row says the rung MEANS — the segment after the figure. */
+    function meaningOf(row: string): string {
+        const segments = row.split(' — ');
+        return segments[segments.length - 1];
+    }
+
+    it('files every rung with its denominator and its meaning, never a bare integer', () => {
+        const doc = docWith([agentAt('a0', 0), agentAt('a1', 1), agentAt('a2', 2), agentAt('a3', 3)]);
+
+        expect(rowFor(doc, 'a0')).toContain('autonomy 0 of 6 — suggests only, calls nothing');
+        expect(rowFor(doc, 'a1')).toContain('autonomy 1 of 6 — reads workspace data');
+        expect(rowFor(doc, 'a2')).toContain('autonomy 2 of 6 — drafts changes for approval');
+        expect(rowFor(doc, 'a3')).toContain('autonomy 3 of 6 — chains steps between checkpoints');
+
+        // The defect itself: the rung standing alone with nothing after it.
+        expect(rowFor(doc, 'a3')).not.toContain('autonomy 3,');
+    });
+
+    it('gives three rungs three DIFFERENT meanings, not one sentence repeated', () => {
+        // Rung 6 rather than an unattended rung 5 on purpose: the `(UNATTENDED)`
+        // suffix would make that row's text differ even when every rung had
+        // collapsed to one meaning, and this case is about the meanings alone.
+        const doc = docWith([agentAt('a0', 0), agentAt('a3', 3), agentAt('a6', 6)]);
+        const bottom = meaningOf(rowFor(doc, 'a0'));
+        const declaredTop = meaningOf(rowFor(doc, 'a3'));
+        const aboveTop = meaningOf(rowFor(doc, 'a6'));
+
+        expect(new Set([bottom, declaredTop, aboveTop]).size).toBe(3);
+        expect(bottom).toContain('suggests only, calls nothing');
+        expect(declaredTop).toContain('chains steps between checkpoints');
+        expect(aboveTop).toContain('no capability requires this rung');
+    });
+
+    it('states the whole ladder once, above the rows it explains', () => {
+        const doc = docWith([agentAt('a4', 4)]);
+
+        // The bounds are spelled out rather than derived from the constants:
+        // a ladder that grows reddens this, which is the point — somebody has
+        // to re-read the legend before a new rung ships in a filed artefact.
+        expect(doc).toContain('Autonomy ladder — 0 to 6, and what each rung permits:');
+        expect(doc).toContain('  0 — Suggests to a human in session.');
+        expect(doc).toContain('  1 — Reads workspace data out of the workspace');
+        expect(doc).toContain('  2 — Drafts changes into the approval queue');
+        expect(doc).toContain('  3 — Chains steps unattended between checkpoints.');
+        expect(doc).toContain('  4-6 — No capability requires this rung');
+
+        // ONCE, and before the register — not repeated per row.
+        expect(doc.split('Autonomy ladder —').length - 1).toBe(1);
+        expect(doc.indexOf('Autonomy ladder —')).toBeLessThan(doc.indexOf('Register:'));
+
+        // The rung is a claim; the enforced value is a minimum over three terms.
+        expect(doc).toContain("lowest of that rung, its credential's ceiling");
+    });
+
+    it('marks an unattended agent, says what the marker means, and marks no attended one', () => {
+        // BOTH directions in one case: a renderer that emitted the marker
+        // unconditionally passes a one-way test while telling every attended
+        // agent, in a filed record, that it runs with nobody watching.
+        const doc = docWith([agentAt('a4', 4), agentAt('a5', 5, true)]);
+
+        expect(rowFor(doc, 'a5')).toContain('(UNATTENDED)');
+        expect(rowFor(doc, 'a4')).not.toContain('UNATTENDED');
+
+        // The threshold the marker encodes, in the document rather than in
+        // `agent-risk-scoring.ts` — moving UNATTENDED_AUTONOMY reddens this.
+        expect(doc).toContain(
+            '(UNATTENDED) marks rung 5 and above — operating with no human in the loop.',
+        );
+    });
+});
+
 describe('the title', () => {
     it('carries the generation instant, because two exports are two documents', () => {
         expect(packExportTitle(GENERATED)).toBe('Agent governance pack — 2026-05-04 09:30 UTC');

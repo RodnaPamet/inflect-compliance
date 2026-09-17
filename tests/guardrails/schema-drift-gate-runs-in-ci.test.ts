@@ -300,6 +300,56 @@ const SIGNED_OFF: Array<{ name: string; members: readonly string[] }> = [
 /** Every signed-off statement, flattened. */
 const signedOffMembers = (): string[] => SIGNED_OFF.flatMap((g) => g.members);
 
+/**
+ * The capture of `re` in `text` IF IT OCCURS EXACTLY ONCE, else NaN.
+ *
+ * Uniqueness before value, deliberately. A count claim that appears twice in
+ * the prose is ambiguous no matter which copy is right — a reader takes the
+ * first, a parser takes whichever the regex reaches — and NaN fails the
+ * comparison below rather than silently reading one of them. This is the
+ * `assertion-needle-uniqueness` rule applied to the DATA the guard reads
+ * instead of to the guard's own needle.
+ */
+const soleCapture = (text: string, re: RegExp): number => {
+    const scan = new RegExp(re.source, 'g');
+    const captures: string[] = [];
+    let hit = scan.exec(text);
+    while (hit !== null) {
+        captures.push(hit[1]);
+        hit = scan.exec(text);
+    }
+    return captures.length === 1 ? Number(captures[0]) : Number.NaN;
+};
+
+/** What the residue file's HEADER PROSE claims about its own contents. */
+const headerClaims = (): Record<string, number> => {
+    const text = read(RESIDUE);
+    return {
+        total: soleCapture(text, /(\d+) statements \(THIS FILE'S CURRENT STATE\)/),
+        group1: soleCapture(text, /GROUP 1 — (\d+) statements/),
+        group2: soleCapture(text, /GROUP 2 — (\d+) statements/),
+        group3: soleCapture(text, /GROUP 3 — (\d+) statements/),
+        group3Constraints: soleCapture(text, /(\d+) × column-scoped SET NULL FKs/),
+    };
+};
+
+/** What the statements under the sentinel ACTUALLY contain. */
+const measuredContents = (): Record<string, number> => {
+    const statements = residueStatements();
+    const names = new Set<string>();
+    for (const statement of statements) {
+        const named = /CONSTRAINT "([^"]+)"/.exec(statement);
+        if (named !== null) names.add(named[1]);
+    }
+    return {
+        total: statements.length,
+        group1: statements.filter((s) => s.endsWith('DROP NOT NULL;')).length,
+        group2: statements.filter((s) => s.startsWith('DROP INDEX ')).length,
+        group3: statements.filter((s) => s.includes(' CONSTRAINT "')).length,
+        group3Constraints: names.size,
+    };
+};
+
 describe('fresh-DB schema-drift gate — actually runs in CI', () => {
     it('runs at exactly the expected site (an empty selection is not a pass)', () => {
         // Exact equality, not a count. Read this off the failure
@@ -372,5 +422,32 @@ describe('fresh-DB schema-drift gate — actually runs in CI', () => {
         const signed = new Set(signedOffMembers());
         const unclassified = residueStatements().filter((l) => !signed.has(l));
         expect(unclassified).toEqual([]);
+    });
+
+    it('the header prose states the numbers the file actually contains', () => {
+        // The residue file opens with "READ THIS BEFORE EDITING" and then
+        // tells the reader how big it is and how the size splits across the
+        // three permanent groups. Those numbers are the only thing sizing an
+        // edit to a file whose whole security property is "widening it is an
+        // argument a reviewer can see". Nothing checked them, and on
+        // 2026-09-17 every one of them was wrong:
+        //
+        //   "26 statements (this file's current state)"   file held 84
+        //   "GROUP 3 — 49 ×"                              39 constraints / 78 statements
+        //
+        // Neither was wrong when written. The 26 was measured at #2478 and
+        // then carried unchanged through #2531 (+20) and #2535 (+38); the 49
+        // was seeded as a STATEMENT count (20) and afterwards incremented by
+        // CONSTRAINT counts (+10, +19), so its unit changed under it twice and
+        // it ended up naming no quantity in the file at all. Both are the same
+        // failure: a number in prose has no denominator beside it, so it rots
+        // silently while every test around it stays green.
+        //
+        // NaN is the parse failure and it FAILS — a heading that stops
+        // matching, or that starts matching twice, is not "unknown, carry on".
+        // An emptied residue file fails here too: measured zeros cannot equal
+        // the claimed 84/3/3/78/39, so the "no drift at all" tree that would
+        // satisfy the gate's comparison still cannot satisfy this.
+        expect(headerClaims()).toEqual(measuredContents());
     });
 });

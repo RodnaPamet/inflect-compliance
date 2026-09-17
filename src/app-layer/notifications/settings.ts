@@ -5,6 +5,8 @@
  * - Outbox stats for admin dashboard
  */
 
+import type { NotificationType } from '@prisma/client';
+
 import type { PrismaTx } from '@/lib/db-context';
 import type { RequestContext } from '../types';
 import { deploymentSenderAddress } from '@/lib/email/sender-identity';
@@ -14,6 +16,17 @@ export interface TenantNotificationSettingsData {
     defaultFromName: string;
     defaultFromEmail: string;
     complianceMailbox: string | null;
+    /**
+     * IN-APP (bell + SSE) types this workspace has switched OFF (#2564).
+     *
+     * `enabled` above is EMAIL-scoped — every caller of
+     * `isNotificationsEnabled` is an outbox or digest path — so it says
+     * nothing about the bell. This is the in-app dimension, and it is a MUTE
+     * list so that an absent member means "notify": adding a
+     * `NotificationType` must never silently suppress it for tenants who saved
+     * their preferences before the member existed.
+     */
+    mutedInAppTypes: NotificationType[];
 }
 
 /**
@@ -32,6 +45,10 @@ function defaults(): TenantNotificationSettingsData {
         defaultFromName: 'Inflect Compliance',
         defaultFromEmail: deploymentSenderAddress(),
         complianceMailbox: null,
+        // Nothing muted. A tenant that has never opened the page is notified
+        // about everything, which is the behaviour every row had before the
+        // column existed.
+        mutedInAppTypes: [],
     };
 }
 
@@ -74,6 +91,12 @@ export async function getTenantNotificationSettings(
         defaultFromName: row.defaultFromName,
         defaultFromEmail: row.defaultFromEmail,
         complianceMailbox: row.complianceMailbox,
+        // The column is nullable so that a rolling deploy's old containers can
+        // INSERT without it. Prisma surfaces a NULL scalar list as `[]`, but
+        // the coalesce is written out rather than relied on: "no row yet",
+        // "row written by an old container" and "nothing muted" are three
+        // different histories that must all read as the same empty list.
+        mutedInAppTypes: row.mutedInAppTypes ?? [],
     };
 }
 
@@ -101,7 +124,42 @@ export async function updateTenantNotificationSettings(
         defaultFromName: row.defaultFromName,
         defaultFromEmail: row.defaultFromEmail,
         complianceMailbox: row.complianceMailbox,
+        mutedInAppTypes: row.mutedInAppTypes ?? [],
     };
+}
+
+/**
+ * Is this in-app notification type switched on for this tenant?
+ *
+ * The bell-side twin of `isNotificationsEnabled` above, and deliberately a
+ * SEPARATE question rather than an extra clause inside it. `enabled` is read
+ * only by email paths (`enqueue`, `digest-dispatcher`,
+ * `retention-notifications`, `policyReviewReminder`, `action-executor`), and
+ * folding the bell into it would make one switch mean two things — a tenant
+ * that wanted to stop one noisy bell would also stop every email.
+ *
+ * Fails OPEN, on both arms: no settings row, or a row whose list is NULL
+ * because an old container inserted it, both mean "notify". A notification
+ * subsystem that goes silent because a row is missing is the failure mode
+ * nobody notices, and the two types this currently governs are a stop control
+ * and a refused agent write.
+ */
+export async function isInAppTypeEnabled(
+    // Narrower than `isNotificationsEnabled`'s `PrismaTx` on purpose: the bell
+    // emitters that call this declare their own `Pick<PrismaClient, …>` db so
+    // a test can hand them a fake, and a full `PrismaTx` here would force
+    // every one of them to widen to the whole client. A real `PrismaTx`
+    // satisfies this, so existing call shapes are unaffected.
+    db: Pick<PrismaTx, 'tenantNotificationSettings'>,
+    tenantId: string,
+    type: NotificationType,
+): Promise<boolean> {
+
+    const row = await db.tenantNotificationSettings.findUnique({
+        where: { tenantId },
+        select: { mutedInAppTypes: true },
+    });
+    return !(row?.mutedInAppTypes ?? []).includes(type);
 }
 
 /**

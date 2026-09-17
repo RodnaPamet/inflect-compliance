@@ -184,13 +184,36 @@ describe('BambooHrProvider — roster fetch', () => {
         expect(e.endDate).toBeNull();
     });
 
-    it('falls back through the externalId chain', async () => {
+    it('falls back through the externalId chain — employeeNumber, then the email', async () => {
+        // THIS TEST USED TO ASSERT `ID-9`, and the change is deliberate.
+        //
+        // The chain was `r.employeeNumber || r.id || r.workEmail`. Phase 0
+        // requests `id` for real and routes it to `hrisRecordId`, so the middle
+        // term had to go or it would win this row — hence the new expectation.
+        //
+        // NOT because the old fixture was wrong. Whether BambooHR returns `id`
+        // to a request that did not ask for it is UNRESOLVED
+        // (jml-hris-write-back-design.md, Open Question 2, "check against a
+        // real tenant"; there is no such tenant — issue #2548). If it does,
+        // this fixture was modelling the API accurately and rows on disk may
+        // hold row ids. That is survivable only because nothing reads
+        // `externalId`; it is not survivable because the premise is settled.
+        //
+        // Phase 0 of the HRIS write-back requests `id` for real and moves it
+        // to `hrisRecordId`. Had the middle term survived that, this row's
+        // externalId would have silently become the row id on the next sync,
+        // rewriting a column already on disk. See
+        // docs/implementation-notes/2026-09-13-hris-writeback-phase-0.md.
         expect(
             (await rosterOf([baseRow({ employeeNumber: '', id: 'ID-9' })]))[0].externalId,
-        ).toBe('ID-9');
+        ).toBe('ada@acme.test');
         expect(
             (await rosterOf([baseRow({ employeeNumber: '', id: '' })]))[0].externalId,
         ).toBe('ada@acme.test');
+        // The id is not lost — it is in the column that means "an address".
+        expect(
+            (await rosterOf([baseRow({ employeeNumber: '', id: 'ID-9' })]))[0].hrisRecordId,
+        ).toBe('ID-9');
     });
 
     it('falls back to the email when there is no name', async () => {

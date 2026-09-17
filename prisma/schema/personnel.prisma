@@ -244,7 +244,52 @@ model Employee {
   id                String           @id @default(cuid())
   tenantId          String
   /// Stable id in the source HRIS (null for manual records).
+  ///
+  /// BEST-EFFORT AND HETEROGENEOUS, deliberately not narrowed. FROM THE
+  /// PHASE-0 SYNC ONWARD BambooHR writes `employeeNumber` or, failing that,
+  /// the work email; Workday writes `employeeId` / `workerId` / the work
+  /// email, drawn from a report template the CUSTOMER authors. So what this
+  /// holds varies by provider, by tenant and by row.
+  ///
+  /// WHAT EARLIER SYNCS WROTE IS NOT KNOWN. The chain used to carry BambooHR's
+  /// row id as its middle term, and whether BambooHR returned `id` to a request
+  /// that did not ask for it is unresolved — docs/jml-hris-write-back-design.md
+  /// Open Question 2, which says to check against a real tenant, and there is
+  /// no tenant to check (issue #2548). So a value already on disk MAY be a row
+  /// id. Do not treat this column as "payroll number or email" when deciding
+  /// whether an existing value is safe to compare, export or migrate.
+  ///
+  /// Nothing in `src/` reads it — it is a display and provenance field with no
+  /// current reader. It is NOT an address for an HRIS API, and `hrisRecordId`
+  /// exists because making it one would have changed the meaning of every
+  /// already-written value.
   externalId        String?
+  /// The HRIS's OWN row id, or null when the provider did not supply one.
+  ///
+  /// The addressable handle: the value an HRIS update API takes as the
+  /// subject of a write. `externalId` cannot serve because it is a payroll
+  /// number or an email (see above), and neither addresses a record.
+  ///
+  /// Null is a first-class answer and the expected one for most rows today.
+  /// A reader must treat null as "no handle, refuse" and must NEVER fall back
+  /// to `externalId` or `workEmail` — an update addressed by work email would
+  /// be addressed by the value the JML write-back exists to CREATE, which is
+  /// unaddressable by construction (docs/jml-hris-write-back-design.md,
+  /// Decision 3).
+  ///
+  /// Populated by BambooHR only (`providers/hris/index.ts`, from the `id`
+  /// field of the custom report). Workday leaves it null: its roster comes
+  /// from a customer-authored RaaS template, so whether any column holds a
+  /// Worker WID is per-tenant and not knowable from here.
+  ///
+  /// LAST-WRITE-WINS from the roster, like every other mirrored column on
+  /// this row. A row that stops reporting an id goes back to null rather than
+  /// keeping a stale handle, because a stale handle is worse than none: a
+  /// later write would address it, where null refuses.
+  ///
+  /// Unindexed on purpose — nothing reads it yet, and it is carried BY a row
+  /// already found by (tenantId, workEmail), not searched for.
+  hrisRecordId      String?
   fullName          String
   workEmail         String
   status            EmploymentStatus @default(ACTIVE)

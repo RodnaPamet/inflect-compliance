@@ -1,0 +1,40 @@
+-- JML HRIS write-back, Phase 0 — give the Employee row an ADDRESSABLE handle.
+--
+-- FROM THIS SYNC ONWARD `Employee.externalId` is `employeeNumber || workEmail`
+-- on BambooHR and `employeeId || workerId || workEmail` on Workday. A payroll
+-- number and an email address are both fine as provenance and neither
+-- addresses an HRIS update API, so the write-back has no subject to name.
+-- This column carries the HRIS's own row id and nothing else.
+--
+-- WHAT EARLIER SYNCS WROTE INTO `externalId` IS NOT KNOWN. Its chain used to
+-- carry BambooHR's row id as a middle term, and whether BambooHR returns `id`
+-- unrequested is unresolved (jml-hris-write-back-design.md, Open Question 2 --
+-- "check against a real tenant", and there is no such tenant; issue #2548).
+-- No backfill is attempted BECAUSE nothing reads the column, not because its
+-- prior contents are known.
+--
+-- A NEW COLUMN RATHER THAN REPOINTING `externalId`, deliberately. Making the
+-- row id win `externalId`'s fallback would have REWRITTEN that column for
+-- every BambooHR-sourced row on the next sync, retroactively changing what an
+-- already-persisted value means — for one provider only, so the column would
+-- then mean different things per provider AND per sync date. Production holds
+-- zero HRIS-sourced employees today, but the design must not rest on that:
+-- the next tenant to connect BambooHR creates the population that would have
+-- been changed underneath. See docs/jml-hris-write-back-design.md (Phasing)
+-- and docs/implementation-notes/2026-09-13-hris-writeback-phase-0.md.
+--
+-- ROLLING-DEPLOY SAFETY. Nullable with no default and no backfill, so the ADD
+-- COLUMN takes no table rewrite and no lock beyond the catalogue update. A
+-- container that has never heard of this column keeps reading and writing
+-- every column it knows; a container that has keeps writing NULL until a
+-- roster read supplies an id. Rollback is `DROP COLUMN` and costs only the
+-- handles, which the next sync re-derives.
+--
+-- NO INDEX, deliberately. Nothing queries by this column — it is carried by a
+-- row already located through @@unique([tenantId, workEmail]). An index here
+-- would be a second B-tree on a table written once per employee per sync, in
+-- support of a read that does not exist. When a Phase-2 pass needs one, it
+-- lands with the query that needs it and takes a LIST_QUERY_INDEXES entry.
+--
+-- `IF NOT EXISTS` so a re-run is a no-op rather than a failed deploy.
+ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "hrisRecordId" TEXT;

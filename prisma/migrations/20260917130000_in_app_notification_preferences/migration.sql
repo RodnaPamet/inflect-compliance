@@ -1,0 +1,22 @@
+-- #2564 — the in-app (bell + SSE) half of the notification preferences.
+--
+-- `TenantNotificationSettings.enabled` governs EMAIL only: every one of its
+-- readers is an outbox/digest path, so a workspace that had switched
+-- notifications off still rang the agentic bell with no narrower control that
+-- would stop it. This column is that control.
+--
+-- A MUTE list rather than an enable list. The two are not symmetrical under a
+-- growing enum: an absent member has to mean "notify", so that adding a
+-- `NotificationType` never silently suppresses it for every tenant that saved
+-- its preferences before the member existed.
+--
+-- Rolling-deploy safe. The column is NULLABLE with a DEFAULT, so an old
+-- container still running the previous image goes on INSERTing without it and
+-- gets the default; Prisma reads a NULL scalar list as `[]`, which is the same
+-- "nothing is muted" the pre-migration behaviour had. No backfill is needed
+-- for that reason, and no table rewrite happens — Postgres 11+ stores a
+-- non-volatile ADD COLUMN ... DEFAULT in the catalogue rather than rewriting
+-- every row.
+
+-- AlterTable
+ALTER TABLE "TenantNotificationSettings" ADD COLUMN     "mutedInAppTypes" "NotificationType"[] DEFAULT ARRAY[]::"NotificationType"[];
