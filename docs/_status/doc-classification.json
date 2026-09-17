@@ -95,6 +95,9 @@
     "docs/dependency-risk-review.md": {
       "class": "authoritative"
     },
+    "docs/deploy-approval-gate.md": {
+      "class": "authoritative"
+    },
     "docs/deployment.md": {
       "class": "authoritative"
     },

@@ -75,14 +75,40 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
      * satisfying positions in ci.yml and is therefore a COUNTED ambiguous
      * site — silently left the counted population for the skip bucket. With
      * DRIFT_ALLOWANCE at 0 that reads as unspent slack and fails the ratchet.
-     * Two literal reads keep the existing site analysed and add none: each
-     * needle below occurs exactly once in ghcr-publish.yml.
+     * Two literal reads keep the existing site analysed and add none.
+     *
+     * 2026-09-17: ghcr-publish.yml grew a SECOND blocking Trivy gate, in the
+     * `promote-latest` job that moves `:latest` behind an environment
+     * approval. The three assertions over `publish` used to be
+     * single-position `toMatch` needles, and a second gate would have given
+     * each of them two satisfying positions — three newly AMBIGUOUS sites,
+     * and a red Class D ratchet, for a change that strengthened the pipeline.
+     * They are written as EXACT assertions over the enumerated gate
+     * declarations instead, which is both ratchet-neutral and strictly
+     * stronger: `toMatch` asked whether AT LEAST ONE declaration was strict,
+     * and would have stayed green with a weak second gate sitting beside a
+     * compliant one. These enumerate every gate in the file and compare the
+     * whole list.
      *
      * The ORDER of that workflow's steps — scan before push, which is what
      * makes its gate a gate at all — is a different property and lives in
      * `tests/guardrails/publish-scans-before-push.test.ts`.
      */
     const publish = readRepoFile('.github/workflows/ghcr-publish.yml');
+
+    /**
+     * The `<key>: <value>` declarations of one YAML key in a file, trimmed and
+     * in order. Enumerating them turns "at least one is strict" into "all of
+     * them are", which is the difference between a needle and a census —
+     * and it keeps the assertion single-valued as gates are added.
+     */
+    function declarationsOf(source: string, key: string): string[] {
+        const anchor = new RegExp(String.raw`^\s*${key}:`);
+        return source
+            .split('\n')
+            .filter((line) => anchor.test(line))
+            .map((line) => line.trim());
+    }
 
     it('npm audit gate blocks on MODERATE+ severity (production deps)', () => {
         // 2026-08-08: the gate moved from a bare `npm audit` line in the
@@ -165,7 +191,7 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
         expect(blockingGate).toBeUndefined();
     });
 
-    it('the PUBLISH workflow Trivy gate blocks on CRITICAL,HIGH too', () => {
+    it('the PUBLISH workflow Trivy gates block on CRITICAL,HIGH too', () => {
         // Same rule, second gate. This is the one in front of production:
         // ci.yml's verdict can be absent, because its `trivy` job is declared
         // `needs: [docker]` and `docker` is `needs: [build, changes]` — so ANY
@@ -175,7 +201,17 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
         // completed `skipped` at 23:01:49, and the run went red for the build,
         // never for the missing scan.) This gate is in series with the push
         // itself, so nothing in another job can delete it.
-        expect(publish).toMatch(/severity:\s*["']CRITICAL,HIGH["']/);
+        //
+        // TWO gates since 2026-09-17, and both are enumerated rather than
+        // greped for. `build-push` scans the image it is about to publish
+        // under `:sha-<short>`; `promote-latest` re-scans that same digest
+        // before moving `:latest` behind an approval. A needle satisfied by
+        // either one would let the other be weakened silently, and the one
+        // sitting in front of the rolling tag is the worse of the two to lose.
+        const severities = declarationsOf(publish, 'severity');
+        expect(severities.length).toBeGreaterThan(0);
+        expect(severities.filter((d) => d !== 'severity: "CRITICAL,HIGH"')).toEqual([]);
+
         const publishLines = publish.split('\n');
         const loweredGate = publishLines.find(
             l => l.match(/severity:/) && l.match(/\bCRITICAL\b/) && !l.match(/HIGH/),
@@ -191,7 +227,13 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
         // step for the SARIF upload, so this asserts at least one blocking
         // declaration rather than the absence of a non-blocking one.
         expect(ci).toMatch(/exit-code:\s*["']1["']/);
-        expect(publish).toMatch(/exit-code:\s*["']1["']/);
+        // Enumerated for the publish workflow, for the same reason as the
+        // severities above: it now carries two gates, and `exit-code: "0"` on
+        // either of them turns that one into a report while a needle stays
+        // satisfied by the other.
+        const exitCodes = declarationsOf(publish, 'exit-code');
+        expect(exitCodes.length).toBeGreaterThan(0);
+        expect(exitCodes.filter((d) => d !== 'exit-code: "1"')).toEqual([]);
     });
 
     it('the workflow that publishes :latest carries its own image scan', () => {
@@ -208,7 +250,18 @@ describe('GAP-05 ratchet — CI security gate strictness', () => {
         // Asserted on the `uses:` line rather than on the word "trivy",
         // which by now appears several times in that file's comments —
         // prose explaining a gate is not a gate.
-        expect(publish).toMatch(/uses:\s*aquasecurity\/trivy-action@/);
+        //
+        // And counted against the severity declarations, which is the
+        // denominator this assertion needs: a `uses:` line with no `severity:`
+        // beside it is a trivy step somebody left half-configured, and a
+        // `severity:` with no `uses:` is a severity on something that is not
+        // a scan. The equality is what makes "there is a gate here" mean the
+        // same thing as "every gate here is the strict one" asserted above.
+        const trivyUses = declarationsOf(publish, 'uses').filter((d) =>
+            d.includes('aquasecurity/trivy-action@'),
+        );
+        expect(trivyUses.length).toBeGreaterThan(0);
+        expect(trivyUses.length).toBe(declarationsOf(publish, 'severity').length);
     });
 
     it('removed the documentation comment that explained the temporary lowering', () => {
