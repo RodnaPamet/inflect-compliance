@@ -171,6 +171,8 @@ interface BaselineBlock {
     requiredWindows: number;
     requiredObservations: number;
     lookbackWindows: number;
+    oldestWindowStart: string | null;
+    spanHours: number | null;
 }
 
 interface BreakerPayload {
@@ -200,6 +202,10 @@ const SHORT_BASELINE: BaselineBlock = {
     requiredWindows: REQUIRED_WINDOWS,
     requiredObservations: REQUIRED_OBSERVATIONS,
     lookbackWindows: LOOKBACK_WINDOWS,
+    // Four windows gathered over four consecutive hours — the case where reach
+    // and count happen to agree. The tests that separate them override it.
+    oldestWindowStart: '2026-05-04T05:00:00.000Z',
+    spanHours: 4,
 };
 
 /**
@@ -887,5 +893,93 @@ describe('nothing on this surface recovers on its own', () => {
         // that can let the agent act again reads as "nothing can be done".
         expect(screen.getByText(S('closeRestricted'))).toBeInTheDocument();
         expect(document.getElementById('agent-breaker-close-btn')).toBeNull();
+    });
+});
+
+/**
+ * The panel says how far back the baseline reaches, not only how much of it
+ * there is (#2461).
+ *
+ * `lookbackWindows` counts ACTIVE windows, so the look-back Fact beside this
+ * one reads "168 windows" for an agent observed hourly over a week and for one
+ * observed twice a day over a quarter. An operator challenging a trip — the
+ * single most important thing this panel supports — could not tell those apart.
+ *
+ * Every case below therefore holds the COUNT fixed and varies only the reach.
+ * A test that let both move would pass against a component rendering
+ * `baseline.windows` into this Fact, which is the defect it exists to catch.
+ */
+describe('the baseline states its reach in wall-clock time', () => {
+    /**
+     * These messages INTERPOLATE rather than pluralise, exactly as
+     * `baselineLookbackValue` beside them does, so `fill` renders them the same
+     * way the component does. That is a deliberate choice and not an oversight:
+     * the repo-wide `next-intl` mock resolves `{param}` only, so an ICU plural
+     * would render raw in every rendered test and no assertion here could reach
+     * the number. The days branch starts at two, so it never says "1 days", and
+     * the one hour count a plain interpolation cannot phrase has its own key.
+     */
+    const reach = (key: string, count: number) => fill(S(key), { count });
+
+    it('renders days, not the window count, for a baseline spread over weeks', () => {
+        renderTab(
+            makePayload({
+                // Twelve windows either way. Only the spacing differs.
+                baseline: {
+                    ...SHORT_BASELINE,
+                    windows: 12,
+                    oldestWindowStart: '2026-04-22T09:00:00.000Z',
+                    spanHours: 288,
+                },
+            }),
+        );
+
+        expect(screen.getByText(S('baselineReach'))).toBeInTheDocument();
+        expect(
+            screen.getByText(reach('baselineReachDays', 12)),
+        ).toBeInTheDocument();
+
+        // And it is NOT the count wearing a unit: 12 windows, 12 days, so the
+        // number alone cannot discriminate — the UNIT is what does.
+        expect(pageText()).not.toContain(reach('baselineReachHours', 12));
+    });
+
+    it('renders hours below two days, where rounding to days would lose the point', () => {
+        renderTab(
+            makePayload({
+                baseline: {
+                    ...SHORT_BASELINE,
+                    windows: 12,
+                    oldestWindowStart: '2026-05-03T21:00:00.000Z',
+                    spanHours: 30,
+                },
+            }),
+        );
+
+        // 30 hours is "gathered overnight". Rounded to days it would read as
+        // "1 day" and be indistinguishable from a baseline gathered yesterday.
+        expect(
+            screen.getByText(reach('baselineReachHours', 30)),
+        ).toBeInTheDocument();
+        expect(pageText()).not.toContain(reach('baselineReachDays', 1));
+    });
+
+    it('says there is no accepted history rather than printing a zero', () => {
+        renderTab(
+            makePayload({
+                baseline: {
+                    ...SHORT_BASELINE,
+                    windows: 0,
+                    observations: 0,
+                    oldestWindowStart: null,
+                    spanHours: null,
+                },
+            }),
+        );
+
+        expect(screen.getByText(S('baselineReachNone'))).toBeInTheDocument();
+        // "0 hours" reads as "gathered just now" — the reassurance-shaped
+        // failure the whole panel is arranged against.
+        expect(pageText()).not.toContain(reach('baselineReachHours', 0));
     });
 });

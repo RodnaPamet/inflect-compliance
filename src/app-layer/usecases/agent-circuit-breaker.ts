@@ -42,6 +42,7 @@ import {
     BREAKER_CLOSE_REASONS,
     MIN_BASELINE_OBSERVATIONS,
     MIN_BASELINE_WINDOWS,
+    WINDOW_MS,
     WINDOWS_TO_TRIP,
     windowKeyFor,
     windowStartFor,
@@ -219,6 +220,26 @@ export async function getAgentCircuitBreaker(ctx: RequestContext, agentId: strin
             judgementPending ? lookback.slice(1) : lookback.slice(0, BASELINE_WINDOW_LIMIT)
         ).filter((w) => !w.anomalous);
 
+        // The oldest window in the accepted population, computed ONCE because
+        // both figures below are derived from it, and taken as a MINIMUM rather
+        // than read off an end.
+        //
+        // SCOPE, because the obvious reading of that is too strong: it does NOT
+        // make this function independent of the store's ordering. The slice
+        // above depends on newest-first and cannot stop depending on it —
+        // `lookback.slice(1)` drops the window awaiting a verdict, which is the
+        // NEWEST complete one, so on a reversed page it would drop the oldest
+        // instead. The minimum here is narrower than that: it means the REACH
+        // does not additionally assume the accepted rows kept their order
+        // through the slice and the anomalous filter above.
+        const oldestAcceptedWindowStart =
+            accepted.length > 0
+                ? accepted.reduce(
+                      (oldest, w) => (w.windowStart < oldest ? w.windowStart : oldest),
+                      accepted[0].windowStart,
+                  )
+                : null;
+
         return {
             agentId: agent.id,
             agentName: agent.name,
@@ -246,6 +267,32 @@ export async function getAgentCircuitBreaker(ctx: RequestContext, agentId: strin
                 requiredWindows: MIN_BASELINE_WINDOWS,
                 requiredObservations: MIN_BASELINE_OBSERVATIONS,
                 lookbackWindows: BASELINE_WINDOW_LIMIT,
+                /**
+                 * HOW OLD the evidence is, which the counts above cannot say
+                 * (#2461).
+                 *
+                 * `windows` counts ACTIVE hours, so `lookbackWindows` of 168 is
+                 * seven days for an agent that calls every hour and roughly 84
+                 * days for one that calls twice a day. A surface reporting
+                 * "168 of 168 windows" was therefore silent about whether the
+                 * comparison reached back a week or a quarter.
+                 *
+                 * `null` when the baseline is empty — no oldest window at all,
+                 * which is a different fact from a span of zero.
+                 */
+                oldestWindowStart: oldestAcceptedWindowStart,
+                /** Whole hours from that oldest window to the one being judged. */
+                spanHours:
+                    oldestAcceptedWindowStart === null
+                        ? null
+                        : Math.max(
+                              0,
+                              Math.round(
+                                  (currentWindowStart.getTime() -
+                                      oldestAcceptedWindowStart.getTime()) /
+                                      WINDOW_MS,
+                              ),
+                          ),
             },
             windowsToTrip: WINDOWS_TO_TRIP,
             closeReasons: [...BREAKER_CLOSE_REASONS],

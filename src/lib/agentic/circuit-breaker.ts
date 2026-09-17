@@ -347,6 +347,40 @@ export interface BaselineReading {
     readonly sufficient: boolean;
     /** The stable code for WHY it was not enough, or `null` when it was. */
     readonly shortfall: string | null;
+    /**
+     * The OLDEST accepted window's key, and how far back it reaches.
+     *
+     * ── WHY A COUNT WAS NOT ENOUGH (#2461) ─────────────────────────
+     *
+     * `windows` is a count of ACTIVE windows — hours in which the agent was
+     * observed at all — because a missing hour is ambiguous and reading it as
+     * a hard zero drifts the baseline toward zero (see `BreakerInput.baseline`).
+     * That is the right rate to judge, and it means the count says NOTHING
+     * about age: `BASELINE_WINDOW_LIMIT` is 168 ACTIVE windows, which is seven
+     * days for an agent that calls every hour and about 84 days for one that
+     * calls twice a day.
+     *
+     * So a verdict could read "STEADY against 168 windows" while the history it
+     * compared against began three months ago, and nothing in the verdict said
+     * so. The only other bound is `baselineEpoch`, which a HUMAN advances on an
+     * accepted change — it constrains age only when somebody acts.
+     *
+     * These two fields do not change any judgement. They make the age of the
+     * evidence legible, so a trip can be challenged on the grounds that its
+     * baseline was stale, and a `STEADY` can be read for what it is worth.
+     *
+     * `null` when the baseline is empty — there is no oldest window, which is a
+     * different fact from a span of zero.
+     */
+    readonly oldestWindowKey: string | null;
+    /**
+     * Whole hours from the oldest accepted window to the window being judged.
+     *
+     * WALL-CLOCK, not a count of windows — that is the entire point. With 168
+     * active windows this is 168 for a continuously busy agent and can be
+     * thousands for an intermittent one.
+     */
+    readonly spanHours: number | null;
 }
 
 export interface BreakerVerdict {
@@ -556,7 +590,58 @@ function readBaseline(input: BreakerInput): BaselineReading {
             : observations < MIN_BASELINE_OBSERVATIONS
               ? 'TOO_FEW_OBSERVATIONS'
               : null;
-    return { windows, observations, sufficient: shortfall === null, shortfall };
+
+    // The caller hands `baseline` newest-first (`orderBy windowStart desc` in
+    // circuit-breaker-store). Taking the MINIMUM rather than the last element
+    // so the reading survives a caller that sorts differently — an ordering
+    // assumption is exactly the kind of thing that holds until it does not.
+    let oldestWindowKey: string | null = null;
+    for (const w of input.baseline) {
+        if (oldestWindowKey === null || w.windowKey < oldestWindowKey) {
+            oldestWindowKey = w.windowKey;
+        }
+    }
+    const spanHours =
+        oldestWindowKey === null
+            ? null
+            : Math.max(
+                  0,
+                  Math.round(
+                      (windowStartFromKey(input.current.windowKey).getTime() -
+                          windowStartFromKey(oldestWindowKey).getTime()) /
+                          WINDOW_MS,
+                  ),
+              );
+
+    return {
+        windows,
+        observations,
+        sufficient: shortfall === null,
+        shortfall,
+        oldestWindowKey,
+        spanHours,
+    };
+}
+
+/**
+ * `YYYY-MM-DDTHH` back to the instant that window opens.
+ *
+ * The inverse of `windowKeyFor`, which is `toISOString().slice(0, 13)` — so the
+ * key is always UTC and appending `:00:00.000Z` reconstructs it exactly.
+ *
+ * THE `Z` IS LOAD-BEARING AND NO TEST CAN PROVE IT. Drop it and
+ * `2026-09-01T00:00:00.000` is read as LOCAL time, moving the instant by the
+ * reader's offset. `spanHours` will not notice, because it subtracts two values
+ * that both came through here and a constant offset cancels — measured, under
+ * two zones, both green. Anything that reads a single `windowStartFromKey`
+ * result as an absolute instant WOULD notice. Keep the `Z`.
+ *
+ * (The bare key is not a local-time reading, which an earlier version of this
+ * comment claimed: `new Date('2026-09-01T00')` is an Invalid Date. Only the
+ * seconds-bearing form without a `Z` parses as local.)
+ */
+function windowStartFromKey(key: string): Date {
+    return new Date(`${key}:00:00.000Z`);
 }
 
 function novelToolNamesIn(input: BreakerInput): string[] {
