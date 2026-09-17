@@ -673,23 +673,7 @@ describe('an image push is gated by a scan that ran before it', () => {
         // The exact list. A publish job that stops being recognised as one —
         // renamed step, new push mechanism — shows up here as a shrinking
         // list rather than as a silently-green ordering check below.
-        //
-        // TWO sites since 2026-09-17, and the second one is why this list is
-        // spelled out rather than counted. `promote-latest` is the job that
-        // moves the ROLLING `:latest` tag — the one Watchtower polls every 60
-        // seconds — behind a GitHub Environment approval, with
-        // `buildx imagetools create`. It is a registry write like any other
-        // and every ordering rule below applies to it unchanged: it carries
-        // its own blocking Trivy gate, above its own push. Splitting the tags
-        // across two jobs was the only way to gate `:latest` without gating
-        // `:sha-<short>`, and an environment protection rule is a JOB-level
-        // control. What gates the SECOND job's existence and shape —
-        // the approval, the preflight that proves the approval rule is really
-        // configured — is `tests/guardrails/latest-tag-requires-approval.test.ts`.
-        expect(sites.map((s) => `${s.workflow}:${s.jobId}`).sort()).toEqual([
-            'ghcr-publish.yml:build-push',
-            'ghcr-publish.yml:promote-latest',
-        ]);
+        expect(sites.map((s) => `${s.workflow}:${s.jobId}`).sort()).toEqual(['ghcr-publish.yml:build-push']);
         expect(() => assertPopulation(sites)).not.toThrow();
     });
 
@@ -701,11 +685,7 @@ describe('an image push is gated by a scan that ran before it', () => {
     it('the publish job scans at a lower step index than it pushes', () => {
         // The same property as the test above, stated as the two numbers, so
         // a failure reports WHERE rather than only THAT.
-        // Selected by workflow AND job id. Since `promote-latest` joined the
-        // list above, `find` on the workflow alone would silently answer
-        // "whichever job YAML key order happened to put first" — and this test
-        // names `build-push` in its title.
-        const publish = sites.find((s) => s.workflow === PUBLISH_WORKFLOW && s.jobId === PUBLISH_JOB);
+        const publish = sites.find((s) => s.workflow === PUBLISH_WORKFLOW);
         expect(publish).toBeDefined();
         const gate = publish!.blockingScans[0];
         const push = publish!.pushes[0];
