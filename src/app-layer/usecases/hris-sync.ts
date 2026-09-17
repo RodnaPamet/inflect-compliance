@@ -261,6 +261,15 @@ export async function runHrisSync(input: {
                     // the column the 05:00 leaver pass keys on to disable real
                     // directory accounts.
                     //
+                    // AND THIS FILE ALREADY HAS A SECOND `status` WRITER — the
+                    // departure reconcile below writes `status: 'TERMINATED'`
+                    // in one unbounded `updateMany`. So the single-writer rule
+                    // the guard enforces on personnel.ts is already not true
+                    // here; both writes look legitimate (one mirrors the
+                    // roster, one reconciles absence), but a fix for the gap
+                    // above has to allow exactly these two and redden a third,
+                    // not assume one.
+                    //
                     // `hrisRecordId` is LAST-WRITE-WINS like every other
                     // mirrored column: a row that stops reporting an id goes
                     // back to null rather than keeping a stale handle. A stale

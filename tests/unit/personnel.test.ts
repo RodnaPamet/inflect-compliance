@@ -96,7 +96,7 @@ describe('runHrisSync', () => {
     /** An earlier run of the same pass — deliberately before NOW. */
     const PASS_START = new Date(NOW.getTime() - 24 * 60 * 60 * 1000);
     function nEmp(over: Partial<NormalizedEmployee>): NormalizedEmployee {
-        return { externalId: over.externalId ?? '1', fullName: over.fullName ?? 'X', workEmail: over.workEmail ?? 'x@x.com', status: over.status ?? 'ACTIVE', managerEmail: over.managerEmail ?? null, startDate: null, endDate: null };
+        return { externalId: over.externalId ?? '1', fullName: over.fullName ?? 'X', workEmail: over.workEmail ?? 'x@x.com', status: over.status ?? 'ACTIVE', managerEmail: over.managerEmail ?? null, startDate: null, endDate: null, hrisRecordId: over.hrisRecordId ?? null };
     }
 
     it('upserts by (tenantId, workEmail) and links managers by email', async () => {
@@ -111,6 +111,38 @@ describe('runHrisSync', () => {
         // bob's manager resolved to alice's id
         expect(r.managersLinked).toBe(1);
         expect(mockDb.employee.update).toHaveBeenCalledWith({ where: { id: 'e-bob' }, data: { managerEmployeeId: 'e-alice' } });
+    });
+
+    it('carries the hrisRecordId into BOTH arms of the upsert, and null when there is none', async () => {
+        // The persistence claim was previously pinned only by counting a
+        // literal in the source text (hris-record-id-handle.test.ts). A string
+        // count cannot see whether the value REACHES the database call, and
+        // the non-null branch of `e.hrisRecordId ?? null` was executed by no
+        // test in the repo. This observes it.
+        const provider = stub([
+            nEmp({ workEmail: 'ada@x.com', hrisRecordId: '4021' }),
+            nEmp({ workEmail: 'noid@x.com' }), // provider supplied no handle
+        ]);
+        await runHrisSync({ tenantId: 't1', connectionId: 'conn-1', now: NOW, provider });
+
+        const argsFor = (email: string) => {
+            const call = mockDb.employee.upsert.mock.calls.find(
+                (c: [{ where: { tenantId_workEmail: { workEmail: string } } }]) =>
+                    c[0].where.tenantId_workEmail.workEmail === email,
+            );
+            if (!call) throw new Error(`no upsert call for ${email} — the fixture did not reach the seam`);
+            return call[0];
+        };
+
+        // BOTH arms: create alone would leave the handle permanently null for
+        // every employee that already existed.
+        expect(argsFor('ada@x.com').create.hrisRecordId).toBe('4021');
+        expect(argsFor('ada@x.com').update.hrisRecordId).toBe('4021');
+
+        // And absence is null, never a substituted column.
+        expect(argsFor('noid@x.com').create.hrisRecordId).toBeNull();
+        expect(argsFor('noid@x.com').update.hrisRecordId).toBeNull();
+        expect(argsFor('noid@x.com').update.hrisRecordId).not.toBe('noid@x.com');
     });
 
     it('errors cleanly for a non-HRIS connection', async () => {
