@@ -71,6 +71,20 @@ export interface PaletteCommand {
     href?: string;
     /** Populated for `Actions`. Closes the palette automatically after invocation. */
     perform?: () => void;
+    /**
+     * MATCH-ONLY vocabulary. Never rendered — `command-palette.tsx` draws
+     * `label` and nothing else.
+     *
+     * This is the channel for words an operator TYPES but which must not be
+     * the row's name. The agentic entries below are labelled by destination
+     * rather than by acronym on purpose (see the comment at their site), so
+     * with label-only matching "MCP", "autonomy" and "AI" were unreachable —
+     * a word was either on screen or it found nothing, and widening the
+     * labels to cover them would undo that naming fix. Keywords separate the
+     * two axes: the label stays the thing a reader understands, the keywords
+     * are the things a searcher tries.
+     */
+    keywords?: readonly string[];
 }
 
 function tenantPath(slug: string, path: string): string {
@@ -179,12 +193,33 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
             // posture: each destination carries its own server-side
             // gate, and a client-side filter is a suggestion, never a
             // boundary. See the module header.
+            //
+            // The keywords below are the OTHER half of that decision. Four
+            // of the five words an operator was told to be able to type —
+            // AI, autonomy, MCP, kill — appear in no label here and must
+            // not, so each lands on the destination its typist wants: the
+            // register is where an agent is suspended or killed from, the
+            // proposal queue is what "approvals" means for agents, and
+            // quarantine is where a blocked one is held.
             {
                 id: 'nav:agents',
                 group: 'Navigation',
                 label: 'Go to Agent register',
                 icon: Robot,
                 href: href('/agents'),
+                keywords: [
+                    'agent',
+                    'agents',
+                    'AI',
+                    'autonomy',
+                    'autonomous',
+                    'MCP',
+                    'robot',
+                    'register',
+                    'kill',
+                    'kill switch',
+                    'suspend',
+                ],
             },
             {
                 id: 'nav:agent-proposals',
@@ -192,6 +227,16 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 label: 'Go to Agent proposals',
                 icon: Robot,
                 href: href('/agents/proposals'),
+                keywords: [
+                    'agent',
+                    'AI',
+                    'MCP',
+                    'approval',
+                    'approvals',
+                    'review',
+                    'awaiting',
+                    'human',
+                ],
             },
             {
                 id: 'nav:agent-quarantine',
@@ -199,6 +244,14 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 label: 'Go to Agent quarantine',
                 icon: Robot,
                 href: href('/agents/quarantine'),
+                keywords: [
+                    'agent',
+                    'AI',
+                    'MCP',
+                    'held',
+                    'blocked',
+                    'provenance',
+                ],
             },
             {
                 id: 'nav:admin',
@@ -227,9 +280,12 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
 }
 
 /**
- * Case-insensitive substring filter on the command label. cmdk's own
- * filter is disabled at the palette level (entity search is
- * backend-filtered), so the palette owns command filtering here.
+ * Case-insensitive substring filter on the command label OR any of its
+ * match-only `keywords`. cmdk's own filter is disabled at the palette level
+ * (`command-palette.tsx` passes `shouldFilter={false}`, because entity search
+ * is backend-filtered), so this is not one matcher of two — it is the whole
+ * command-matching mechanism, and a word absent from both channels here
+ * reaches the palette's empty state.
  */
 export function filterPaletteCommands(
     commands: PaletteCommand[],
@@ -237,5 +293,9 @@ export function filterPaletteCommands(
 ): PaletteCommand[] {
     const q = query.trim().toLowerCase();
     if (!q) return commands;
-    return commands.filter((c) => c.label.toLowerCase().includes(q));
+    return commands.filter(
+        (c) =>
+            c.label.toLowerCase().includes(q) ||
+            c.keywords?.some((k) => k.toLowerCase().includes(q)),
+    );
 }
