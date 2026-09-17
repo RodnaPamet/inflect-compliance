@@ -157,6 +157,75 @@ export function runIdentityCheck(
     accounts: NormalizedIdentityAccount[],
     config: Record<string, unknown>,
     now: Date,
+    scope: IdentityCheckScope = {},
+): CheckResult {
+    const result = evaluateIdentityCheck(checkType, accounts, config, now);
+    return applyScopeToVerdict(result, scope);
+}
+
+/**
+ * Whether the account list handed to a check is the WHOLE directory.
+ *
+ * `listAccounts` has always returned this — `{ accounts, complete, resumeToken }`
+ * — and every provider's `runCheck` destructured `{ accounts }` and dropped it
+ * on the floor. The enumerations are capped (MAX_USERS 5000 at ~999 a page), so
+ * on any directory past the cap all four identity checks were judging a slice
+ * and reporting the verdict as if they had read everything.
+ */
+export interface IdentityCheckScope {
+    /** Absent means "not stated", which is treated as complete for callers that predate this. */
+    complete?: boolean;
+    /** How many accounts were actually judged, for the evidence payload. */
+    accountsRead?: number;
+}
+
+/**
+ * ═══ A PARTIAL READ MAY FAIL A CONTROL. IT MAY NEVER PASS ONE. ═══
+ *
+ * The asymmetry is the whole point, and it is not conservatism for its own
+ * sake — the two verdicts have different logical strength over a subset:
+ *
+ *   FAILED is SOUND on a slice. Finding a dormant admin in the first 5,000
+ *   accounts proves the directory contains one. Reading the other 7,000 could
+ *   only find more. So a FAILED verdict survives truncation unchanged, and
+ *   suppressing it would hide a violation we genuinely observed.
+ *
+ *   PASSED is UNSOUND on a slice. "No dormant admin among the accounts I read"
+ *   is not "no dormant admin", and the gap is invisible precisely where it
+ *   matters: the sixth admin sits past the cap, the control reports PASSED, and
+ *   a compliance product has told a customer something false about their
+ *   directory with an authoritative face.
+ *
+ * So a truncated PASSED becomes ERROR rather than a quieter status. This repo
+ * already argued the point for an unreachable code path — "a provider that
+ * answers PASSED to a check it never performed manufactures a green signal for
+ * a control nobody evaluated. NOT_APPLICABLE would be milder and still wrong —
+ * it reads as 'assessed, and it does not apply'." A truncated read is that
+ * situation for the unread remainder.
+ *
+ * NOT_APPLICABLE is deliberately left alone. It asserts no compliance and is
+ * already the honest "earned no signal" answer; turning it into an ERROR would
+ * make a provider that simply exposes no admin signal look broken.
+ */
+function applyScopeToVerdict(result: CheckResult, scope: IdentityCheckScope): CheckResult {
+    if (scope.complete !== false) return result;
+    const details = { ...result.details, truncated: true, accountsRead: scope.accountsRead ?? null };
+    if (result.status !== 'PASSED') return { ...result, details };
+    return {
+        status: 'ERROR',
+        summary:
+            `Cannot certify this control: only ${scope.accountsRead ?? 'some'} account(s) were read before the ` +
+            'enumeration cap, so a PASS would describe a directory that was never fully examined.',
+        details,
+        errorMessage: 'directory enumeration truncated',
+    };
+}
+
+function evaluateIdentityCheck(
+    checkType: string,
+    accounts: NormalizedIdentityAccount[],
+    config: Record<string, unknown>,
+    now: Date,
 ): CheckResult {
     const active = accounts.filter((a) => a.status === 'ACTIVE');
 

@@ -175,6 +175,59 @@ describe('H2 — a run that produced no usable observation is never PASSED', () 
     });
 });
 
+describe('H2 — a TRUNCATED directory read cannot certify a control', () => {
+    /**
+     * The enumerations are capped (MAX_USERS 5000 at ~999 a page) and
+     * `listAccounts` has always reported whether it reached the end. Every
+     * provider's `runCheck` destructured `{ accounts }` and dropped `complete`,
+     * so on a directory past the cap all four checks judged a slice and
+     * returned the verdict as though the whole directory had been read.
+     *
+     * The rule restored here is asymmetric because the logic is:
+     * a violation found in a subset is a real violation, but the ABSENCE of one
+     * in a subset says nothing about the rest.
+     */
+    it('a would-be PASS over a truncated read becomes ERROR, not a quiet pass', () => {
+        const clean = [acct({ mfaEnrolled: true })];
+        // Sanity: this same population passes when the read is complete. Without
+        // this line the assertion below would also hold for a check that can
+        // never pass at all.
+        expect(runIdentityCheck('mfa_enforced', clean, {}, NOW, { complete: true }).status).toBe('PASSED');
+
+        const truncated = runIdentityCheck('mfa_enforced', clean, {}, NOW, { complete: false, accountsRead: 5994 });
+        expect(truncated.status).toBe('ERROR');
+        expect(truncated.details).toMatchObject({ truncated: true, accountsRead: 5994 });
+    });
+
+    it('a FAIL over a truncated read STANDS — a violation seen is a violation', () => {
+        // Suppressing this would hide something genuinely observed, and would
+        // make the truncation fix a net loss of signal.
+        const bad = runIdentityCheck('mfa_enforced', [acct({ mfaEnrolled: false })], {}, NOW, { complete: false });
+        expect(bad.status).toBe('FAILED');
+        expect(bad.details).toMatchObject({ truncated: true });
+    });
+
+    it('applies to the admin threshold too, which counts rather than summarises', () => {
+        // admin_count_within_threshold builds its own verdict instead of going
+        // through `summarize`, so it is the one that a fix applied in the wrong
+        // place would miss.
+        const admins = [acct({ isAdmin: true })];
+        expect(runIdentityCheck('admin_count_within_threshold', admins, {}, NOW, { complete: true }).status)
+            .toBe('PASSED');
+        expect(runIdentityCheck('admin_count_within_threshold', admins, {}, NOW, { complete: false }).status)
+            .toBe('ERROR');
+    });
+
+    it('omitting the scope keeps the old behaviour, so a caller that predates it is unchanged', () => {
+        expect(runIdentityCheck('mfa_enforced', [acct({ mfaEnrolled: true })], {}, NOW).status).toBe('PASSED');
+    });
+
+    it('NOT_APPLICABLE is left alone — it asserts no compliance to begin with', () => {
+        const r = runIdentityCheck('mfa_enforced', [acct({ mfaEnrolled: null })], {}, NOW, { complete: false });
+        expect(r.status).toBe('NOT_APPLICABLE');
+    });
+});
+
 describe('H2 — empty populations are NOT_APPLICABLE (identity)', () => {
     it('no accounts → NOT_APPLICABLE', () => {
         expect(runIdentityCheck('mfa_enforced', [], {}, NOW).status).toBe('NOT_APPLICABLE');

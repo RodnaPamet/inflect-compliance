@@ -204,7 +204,18 @@ export function isHrisSyncProvider(p: unknown): p is HrisSyncProvider {
 const MAX_EMPLOYEES = 10000;
 
 interface BambooDeps {
-    listEmployees?: (config: Record<string, unknown>) => Promise<NormalizedEmployee[]>;
+    /**
+     * Injected roster for tests. Returns EITHER a bare array (complete) or a
+     * full `ListEmployeesResult`.
+     *
+     * The union matters because the real path VARIES what this seam pinned:
+     * `fetchBambooRoster` sets `complete = rows.length <= MAX_EMPLOYEES`, so a
+     * roster over the cap returns `complete: false`. While this seam hardcoded
+     * `true`, that branch was inexpressible through it — and `complete` is the
+     * flag that releases the departure reconcile, i.e. the one that decides
+     * whether everyone unseen is marked TERMINATED.
+     */
+    listEmployees?: (config: Record<string, unknown>) => Promise<NormalizedEmployee[] | ListEmployeesResult>;
     fetchImpl?: typeof fetch;
 }
 
@@ -276,7 +287,10 @@ export class BambooHrProvider implements ScheduledCheckProvider, HrisSyncProvide
     }
 
     async listEmployees(config: Record<string, unknown>): Promise<ListEmployeesResult> {
-        if (this.deps.listEmployees) return { employees: await this.deps.listEmployees(config), complete: true };
+        if (this.deps.listEmployees) {
+            const injected = await this.deps.listEmployees(config);
+            return Array.isArray(injected) ? { employees: injected, complete: true } : injected;
+        }
         return this.fetchBambooRoster(config);
     }
 

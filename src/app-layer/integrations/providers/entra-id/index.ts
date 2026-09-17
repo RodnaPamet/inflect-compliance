@@ -76,7 +76,19 @@ const USER_SELECT_BASE =
 
 interface EntraDeps {
     /** Injectable directory fetch (defaults to the live Graph client). */
-    listAccounts?: (config: Record<string, unknown>) => Promise<NormalizedIdentityAccount[]>;
+    /**
+     * Injected enumeration for tests.
+     *
+     * Returns EITHER a bare array (complete, the long-standing shape) or a full
+     * `ListAccountsResult`. The union exists so a test can express a TRUNCATED
+     * read: this seam used to hardcode `complete: true`, which meant no test
+     * could produce the one input the truncation rule exists to handle — so
+     * reverting that rule would have reddened nothing. A double that cannot
+     * produce the failing input is not a test of the thing.
+     */
+    listAccounts?: (
+        config: Record<string, unknown>,
+    ) => Promise<NormalizedIdentityAccount[] | ListAccountsResult>;
     /** Injectable token getter (defaults to the client-credentials exchange). */
     getAccessToken?: (config: Record<string, unknown>) => Promise<string>;
     /** Injectable fetch, for validateConnection ping tests. */
@@ -223,8 +235,12 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
         config: Record<string, unknown>,
         resumeFrom?: string | null,
     ): Promise<ListAccountsResult> {
-        // A test/dep injection returns a bare array — treat it as complete.
-        if (this.deps.listAccounts) return { accounts: await this.deps.listAccounts(config), complete: true };
+        // A test/dep injection returns a bare array (treated as complete) or a
+        // full result, so a test can express truncation. See the dep's docblock.
+        if (this.deps.listAccounts) {
+            const injected = await this.deps.listAccounts(config);
+            return Array.isArray(injected) ? { accounts: injected, complete: true } : injected;
+        }
         return this.fetchEntraAccounts(config, resumeFrom);
     }
 
@@ -361,8 +377,17 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
     async runCheck(input: CheckInput): Promise<CheckResult> {
         const start = Date.now();
         try {
-            const { accounts } = await this.listAccounts(input.connectionConfig);
-            const result = runIdentityCheck(input.parsed.checkType, accounts, input.connectionConfig, new Date());
+            // `complete` is CARRIED, not dropped. The enumeration is capped, so
+            // on a directory past the cap this is a slice — and a control that
+            // reports PASSED over a slice states a falsehood about the part it
+            // never read. `runIdentityCheck` turns a truncated PASS into an
+            // ERROR and leaves a truncated FAIL standing, because a violation
+            // found in a subset is still a violation.
+            const { accounts, complete } = await this.listAccounts(input.connectionConfig);
+            const result = runIdentityCheck(input.parsed.checkType, accounts, input.connectionConfig, new Date(), {
+                complete,
+                accountsRead: accounts.length,
+            });
             return { ...result, durationMs: Date.now() - start };
         } catch (err) {
             return {

@@ -43,7 +43,19 @@ interface SsoCoverage {
 }
 
 interface GwsDeps {
-    listAccounts?: (config: Record<string, unknown>) => Promise<NormalizedIdentityAccount[]>;
+    /**
+     * Injected enumeration for tests.
+     *
+     * Returns EITHER a bare array (complete, the long-standing shape) or a full
+     * `ListAccountsResult`. The union exists so a test can express a TRUNCATED
+     * read: this seam used to hardcode `complete: true`, which meant no test
+     * could produce the one input the truncation rule exists to handle — so
+     * reverting that rule would have reddened nothing. A double that cannot
+     * produce the failing input is not a test of the thing.
+     */
+    listAccounts?: (
+        config: Record<string, unknown>,
+    ) => Promise<NormalizedIdentityAccount[] | ListAccountsResult>;
     /** Injectable token getter (defaults to a service-account JWT exchange). */
     getAccessToken?: (config: Record<string, unknown>) => Promise<string>;
     /** Injectable SSO-assignment reader (defaults to the Cloud Identity API). */
@@ -190,7 +202,13 @@ export class GoogleWorkspaceProvider implements ScheduledCheckProvider, Identity
         config: Record<string, unknown>,
         resumeFrom?: string | null,
     ): Promise<ListAccountsResult> {
-        if (this.deps.listAccounts) return { accounts: await this.deps.listAccounts(config), complete: true };
+        // Bare array (treated as complete) or a full result, so a test can
+        // express truncation. The dep type already allowed a result object
+        // while this line forced `complete: true` and wrapped it a second time.
+        if (this.deps.listAccounts) {
+            const injected = await this.deps.listAccounts(config);
+            return Array.isArray(injected) ? { accounts: injected, complete: true } : injected;
+        }
         return this.fetchGoogleAccounts(config, resumeFrom);
     }
 
@@ -254,8 +272,17 @@ export class GoogleWorkspaceProvider implements ScheduledCheckProvider, Identity
     async runCheck(input: CheckInput): Promise<CheckResult> {
         const start = Date.now();
         try {
-            const { accounts } = await this.listAccounts(input.connectionConfig);
-            const result = runIdentityCheck(input.parsed.checkType, accounts, input.connectionConfig, new Date());
+            // `complete` is CARRIED, not dropped. The enumeration is capped, so
+            // on a directory past the cap this is a slice — and a control that
+            // reports PASSED over a slice states a falsehood about the part it
+            // never read. `runIdentityCheck` turns a truncated PASS into an
+            // ERROR and leaves a truncated FAIL standing, because a violation
+            // found in a subset is still a violation.
+            const { accounts, complete } = await this.listAccounts(input.connectionConfig);
+            const result = runIdentityCheck(input.parsed.checkType, accounts, input.connectionConfig, new Date(), {
+                complete,
+                accountsRead: accounts.length,
+            });
             return { ...result, durationMs: Date.now() - start };
         } catch (err) {
             return {
