@@ -20,6 +20,17 @@
  *      rows, that a TRIP reaches the latch column, and that the accountability
  *      CHECK refuses a close nobody's name is against — the last of which is the
  *      entire reason an un-trip is manual.
+ *
+ *   4. SOMEBODY IS TOLD (#2562). The un-trip being manual assumes a human
+ *      learns about the trip, and nothing used to tell them: breaker state is
+ *      rendered on one tab of one agent's detail page, selected by local
+ *      component state, so a latched agent was visible only to whoever was
+ *      already looking at it. The bell is asserted here rather than against a
+ *      fake emitter because the properties worth pinning are which ROW gets
+ *      written and when — that an ARMED verdict writes none, that a trip which
+ *      lost the race to a human close writes none, that a muted workspace
+ *      writes none while the latch still flips, and that the one row a real
+ *      trip writes is addressed to the agent's accountable owner.
  */
 import { PrismaClient, MembershipStatus, Role } from '@prisma/client';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
@@ -35,6 +46,7 @@ import {
     observeToolCall,
     openBreakerGate,
     readBreakerLatch,
+    type BreakerLatch,
 } from '@/lib/agentic/circuit-breaker-store';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
@@ -43,6 +55,19 @@ jest.setTimeout(60_000);
 
 const T1 = 'breaker-tenant-one';
 const T2 = 'breaker-tenant-two';
+// Three more, one agent each, for the bell cases (#2562). Separate tenants
+// rather than separate agents in one: the dedupe key is
+// `{tenantId}:{TYPE}:{agentId}:{userId}:{day}`, every case here runs on the
+// same fixed clock day, and the mute is a per-TENANT setting — so sharing
+// would let one case's row (or one case's mute) decide the next case's count,
+// and a zero produced by a duplicate key is not the zero the assertion reads as.
+const T3 = 'breaker-tenant-race';
+const T4 = 'breaker-tenant-race-control';
+const T5 = 'breaker-tenant-muted';
+const ALL_TENANTS = [T1, T2, T3, T4, T5];
+
+/** The member this file exists to prove is wired. */
+const BREAKER_BELL = 'AGENT_CIRCUIT_BREAKER_TRIPPED' as const;
 
 /** A fixed clock. Hour 0 is "now" for every case below. */
 const HOUR = 3_600_000;
@@ -75,23 +100,39 @@ async function asTenant<T>(tenantId: string, fn: (tx: PrismaClient) => Promise<T
  * fire on an ordinary DELETE and would take the teardown down with them.
  */
 async function clearOwnRows(): Promise<void> {
-    const t = { tenantId: { in: [T1, T2] } };
+    const t = { tenantId: { in: ALL_TENANTS } };
     await prisma.agentBehaviourWindow.deleteMany({ where: t });
     await prisma.agentCircuitBreaker.deleteMany({ where: t });
     await prisma.registeredAgent.deleteMany({ where: t });
     await prisma.aiSystem.deleteMany({ where: t });
-    await deleteAuditRowsForTenants(prisma, [T1, T2]);
+    // `Notification` and `TenantNotificationSettings` are in neither
+    // `RESET_TABLES` nor its cascade closure (`Tenant` and `User` are not
+    // roots there), and both hold a RESTRICT-by-default FK to `Tenant` —
+    // `Notification` one to `User` as well. So they come out here, ahead of
+    // the rows they point at, or the teardown fails on a foreign key and
+    // every re-run starts on the previous run's bells.
+    await prisma.notification.deleteMany({ where: t });
+    await prisma.tenantNotificationSettings.deleteMany({ where: t });
+    await deleteAuditRowsForTenants(prisma, ALL_TENANTS);
     await prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
-        await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`, [T1, T2]);
+        await tx.$executeRawUnsafe(`DELETE FROM "TenantMembership" WHERE "tenantId" = ANY($1::text[])`, ALL_TENANTS);
     });
     await prisma.user.deleteMany({
-        where: { emailHash: { in: [T1, T2].map((x) => hashForLookup(`owner@${x}.test`)) } },
+        where: { emailHash: { in: ALL_TENANTS.flatMap(seedEmailHashes) } },
     });
-    await prisma.tenant.deleteMany({ where: { id: { in: [T1, T2] } } });
+    await prisma.tenant.deleteMany({ where: { id: { in: ALL_TENANTS } } });
 }
 
-const seeded: Record<string, { agentId: string; aiSystemId: string; ownerUserId: string }> = {};
+/** Both of a tenant's seeded people — see `seedTenantWithAgent`. */
+function seedEmailHashes(tenantId: string): string[] {
+    return [`owner@${tenantId}.test`, `agent-owner@${tenantId}.test`].map(hashForLookup);
+}
+
+const seeded: Record<
+    string,
+    { agentId: string; aiSystemId: string; ownerUserId: string; agentOwnerUserId: string }
+> = {};
 
 const ctxFor = (tenantId: string) =>
     makeRequestContext('OWNER', {
@@ -118,46 +159,124 @@ async function seedWindow(
     });
 }
 
+/**
+ * One tenant, one agent — and TWO people, which is the part that matters.
+ *
+ * `resolveAgenticRecipients` prefers the agent's own `ownerUserId` and falls
+ * back to the workspace's ACTIVE OWNERs. When one person holds both roles the
+ * two arms produce an identical recipient list, so every assertion about WHO
+ * was told passes under either and proves nothing about which one ran. The
+ * agent's owner is therefore an EDITOR here: a bell addressed to that user
+ * could only have come from the accountable-owner arm.
+ */
+async function seedTenantWithAgent(tenantId: string): Promise<void> {
+    await prisma.tenant.create({ data: { id: tenantId, name: tenantId, slug: tenantId } });
+
+    const ownerEmail = `owner@${tenantId}.test`;
+    const owner = await prisma.user.create({
+        data: { email: ownerEmail, emailHash: hashForLookup(ownerEmail) },
+    });
+    await prisma.tenantMembership.create({
+        data: {
+            tenantId,
+            userId: owner.id,
+            role: Role.OWNER,
+            status: MembershipStatus.ACTIVE,
+        },
+    });
+
+    const agentOwnerEmail = `agent-owner@${tenantId}.test`;
+    const agentOwner = await prisma.user.create({
+        data: { email: agentOwnerEmail, emailHash: hashForLookup(agentOwnerEmail) },
+    });
+    await prisma.tenantMembership.create({
+        data: {
+            tenantId,
+            userId: agentOwner.id,
+            // ACTIVE, because `createRegisteredAgent` refuses an owner who is
+            // not an active member — but NOT an OWNER, because the fallback
+            // arm selects those.
+            role: Role.EDITOR,
+            status: MembershipStatus.ACTIVE,
+        },
+    });
+
+    const aiSystem = await prisma.aiSystem.create({
+        data: { tenantId, name: `Agent host ${tenantId}`, ownerUserId: owner.id },
+    });
+    seeded[tenantId] = {
+        agentId: '',
+        aiSystemId: aiSystem.id,
+        ownerUserId: owner.id,
+        agentOwnerUserId: agentOwner.id,
+    };
+
+    const created = await createRegisteredAgent(ctxFor(tenantId), {
+        aiSystemId: aiSystem.id,
+        name: `Ops agent ${tenantId}`,
+        autonomyLevel: 3,
+        dataAccessScope: 'READ_TENANT_DATA',
+        reversibility: 'COMPENSABLE',
+        provenance: 'FIRST_PARTY',
+        ownerUserId: agentOwner.id,
+    });
+    seeded[tenantId].agentId = created.id;
+
+    // The latch, and an epoch old enough that the seeded history is inside
+    // it. In production the epoch is stamped on the agent's first observed
+    // call, so it always precedes its own ledger; a test that seeded the
+    // past without moving it would silently discard every window and then
+    // assert about an empty baseline.
+    await openBreakerGate(tenantId, created.id);
+    await prisma.agentCircuitBreaker.update({
+        where: { tenantId_agentId: { tenantId, agentId: created.id } },
+        data: { baselineEpoch: at(-100) },
+    });
+}
+
+/**
+ * The twelve read-only windows plus the propose window that ARMS, returning
+ * the still-CLOSED latch the trip evaluation will be handed.
+ *
+ * It stops one step short of the trip deliberately: the race case has to
+ * change the row BETWEEN this read and that evaluation, and that gap is the
+ * race it reproduces.
+ */
+async function armForTrip(tenantId: string): Promise<BreakerLatch> {
+    const agentId = seeded[tenantId].agentId;
+    // Exactly the minimum baseline, at five calls each, so the observation
+    // floor is met too.
+    for (let i = 0; i < 12; i++) await seedWindow(tenantId, -30 + i, { read: 5 });
+    await seedWindow(tenantId, -3, {
+        read: 4,
+        propose: 1,
+        tools: ['agent.framework_status', 'agent.propose_risk'],
+    });
+
+    const first = await readBreakerLatch(tenantId, agentId);
+    const armed = await evaluateWindow(tenantId, agentId, at(-2), first!);
+    // Asserted rather than assumed: if this fixture stopped arming, every
+    // "zero bells" below would still be green for the wrong reason.
+    expect(armed.verdict?.code).toBe('ARMED');
+
+    await seedWindow(tenantId, -2, { read: 3, propose: 2, tools: ['agent.propose_risk'] });
+    const latch = await readBreakerLatch(tenantId, agentId);
+    return latch!;
+}
+
+/** Every breaker bell a tenant holds, newest last. */
+async function breakerBells(tenantId: string) {
+    return prisma.notification.findMany({
+        where: { tenantId, type: BREAKER_BELL },
+        orderBy: { createdAt: 'asc' },
+        select: { userId: true, title: true, message: true, linkUrl: true, dedupeKey: true },
+    });
+}
+
 beforeAll(async () => {
     await resetDatabase(prisma);
     await clearOwnRows();
-
-    for (const [id, name] of [[T1, 'Tenant One'], [T2, 'Tenant Two']] as const) {
-        await prisma.tenant.create({ data: { id, name, slug: id } });
-        const email = `owner@${id}.test`;
-        const user = await prisma.user.create({ data: { email, emailHash: hashForLookup(email) } });
-        await prisma.tenantMembership.create({
-            data: { tenantId: id, userId: user.id, role: Role.OWNER, status: MembershipStatus.ACTIVE },
-        });
-        const aiSystem = await prisma.aiSystem.create({
-            data: { tenantId: id, name: `Agent host ${id}`, ownerUserId: user.id },
-        });
-        seeded[id] = { agentId: '', aiSystemId: aiSystem.id, ownerUserId: user.id };
-    }
-
-    for (const t of [T1, T2]) {
-        const created = await createRegisteredAgent(ctxFor(t), {
-            aiSystemId: seeded[t].aiSystemId,
-            name: `Ops agent ${t}`,
-            autonomyLevel: 3,
-            dataAccessScope: 'READ_TENANT_DATA',
-            reversibility: 'COMPENSABLE',
-            provenance: 'FIRST_PARTY',
-            ownerUserId: seeded[t].ownerUserId,
-        });
-        seeded[t].agentId = created.id;
-
-        // The latch, and an epoch old enough that the seeded history is inside
-        // it. In production the epoch is stamped on the agent's first observed
-        // call, so it always precedes its own ledger; a test that seeded the
-        // past without moving it would silently discard every window and then
-        // assert about an empty baseline.
-        await openBreakerGate(t, created.id);
-        await prisma.agentCircuitBreaker.update({
-            where: { tenantId_agentId: { tenantId: t, agentId: created.id } },
-            data: { baselineEpoch: at(-100) },
-        });
-    }
+    for (const t of ALL_TENANTS) await seedTenantWithAgent(t);
 });
 
 afterAll(async () => {
@@ -290,6 +409,12 @@ describe('a read-only agent that starts proposing latches OPEN, and a human clos
         const after = await readBreakerLatch(T2, seeded[T2].agentId);
         expect(after?.state).toBe('CLOSED');
         expect(after?.anomalousStreak).toBe(1);
+
+        // No bell for a streak in progress (#2562). The notification is about
+        // an agent having been STOPPED; ARMED changes no latch, so there is
+        // nothing to tell anybody yet, and a bell here would spend the
+        // recipient's attention on the case that resolves itself.
+        expect(await breakerBells(T2)).toEqual([]);
     });
 
     it('the second one trips it, and the anomalous window did not become the baseline', async () => {
@@ -320,6 +445,37 @@ describe('a read-only agent that starts proposing latches OPEN, and a human clos
         });
         expect(armed?.anomalous).toBe(true);
         expect(armed?.verdict).toBe('ARMED');
+    });
+
+    it('…and the trip rings exactly one bell, at the agent’s accountable owner', async () => {
+        const bells = await breakerBells(T2);
+        expect(bells).toHaveLength(1);
+        const [bell] = bells;
+
+        // The AGENT's owner — an EDITOR in this fixture, and NOT the tenant's
+        // ACTIVE OWNER. Both halves are asserted: the equality alone would
+        // hold if one user held both roles, which is the shape that made the
+        // original fixture unable to fail.
+        expect(bell.userId).toBe(seeded[T2].agentOwnerUserId);
+        expect(bell.userId).not.toBe(seeded[T2].ownerUserId);
+
+        // The firing signal is IN the row. A bell that only says "something
+        // stopped" sends the reader to the page to find out what, which is
+        // the trip back this exists to save.
+        expect(bell.message).toContain('TOOL_MIX');
+
+        // The agent's OWN page. The register carries no breaker column and
+        // the breaker tab is local component state, so a link to the register
+        // would land the recipient somewhere that says nothing about this.
+        expect(bell.linkUrl).toBe(`/t/${T2}/agents/${seeded[T2].agentId}`);
+
+        // Keyed on the AGENT and on the trip's own clock, not on an
+        // independent one: the latch plus day-granular dedupe is what makes
+        // this at most one bell per trip cycle.
+        const day = at(-1).toISOString().slice(0, 10);
+        expect(bell.dedupeKey).toBe(
+            `${T2}:${BREAKER_BELL}:${seeded[T2].agentId}:${seeded[T2].agentOwnerUserId}:${day}`,
+        );
     });
 
     it('the usecase surfaces the trip with the baseline it judged against', async () => {
@@ -412,5 +568,80 @@ describe('the database refuses a latch nobody is accountable for', () => {
                    SET "state" = 'HALF_OPEN'
                  WHERE "tenantId" = ${T1} AND "agentId" = ${seeded[T1].agentId}`,
         ).rejects.toThrow(/state_known/);
+    });
+});
+
+describe('the bell follows the latch, not the verdict', () => {
+    it('a trip that lost the race to a human close notifies nobody', async () => {
+        const latch = await armForTrip(T3);
+        const agentId = seeded[T3].agentId;
+
+        // The race, made deterministic. The verdict below is computed from a
+        // latch read a moment ago; the ROW has since been latched OPEN by
+        // somebody else. `applyVerdict`'s UPDATE is conditional on
+        // `state: 'CLOSED'` for exactly this reason, so it matches nothing.
+        await prisma.agentCircuitBreaker.update({
+            where: { tenantId_agentId: { tenantId: T3, agentId } },
+            data: {
+                state: 'OPEN',
+                trippedAt: at(-6),
+                trippedWindow: 'raced-by-a-human',
+                trippedSignals: ['TOOL_MIX'],
+            },
+        });
+
+        const outcome = await evaluateWindow(T3, agentId, at(-1), latch);
+        // The verdict IS a trip — this is not a case where nothing happened,
+        // which is the reading a bare "zero bells" would otherwise allow.
+        expect(outcome.verdict?.code).toBe('TRIP');
+        // But no latch flipped, and a bell announcing a stop this evaluation
+        // did not cause is the wrong thing to send about a stop control.
+        expect(await breakerBells(T3)).toEqual([]);
+
+        // The row that was already there is untouched by the lost race.
+        const after = await readBreakerLatch(T3, agentId);
+        expect(after?.trippedAt).toEqual(at(-6));
+    });
+
+    it('…and the positive control: the same fixture, un-raced, rings once', async () => {
+        const latch = await armForTrip(T4);
+        const agentId = seeded[T4].agentId;
+
+        const outcome = await evaluateWindow(T4, agentId, at(-1), latch);
+        expect(outcome.verdict?.code).toBe('TRIP');
+
+        // Without this the case above is indistinguishable from a bell that
+        // is not wired at all: zero is what an unwired emitter reads as too.
+        const bells = await breakerBells(T4);
+        expect(bells.map((b) => b.userId)).toEqual([seeded[T4].agentOwnerUserId]);
+    });
+
+    it('a workspace that muted the type gets no row, though the latch still flips', async () => {
+        await prisma.tenantNotificationSettings.create({
+            data: {
+                tenantId: T5,
+                // TRUE deliberately. `enabled` is the EMAIL switch; if the
+                // emitter's guard were wired to it rather than to the mute
+                // list, this case would still see a bell and say so.
+                enabled: true,
+                defaultFromEmail: `noreply@${T5}.test`,
+                mutedInAppTypes: [BREAKER_BELL],
+            },
+        });
+
+        const latch = await armForTrip(T5);
+        const agentId = seeded[T5].agentId;
+
+        const outcome = await evaluateWindow(T5, agentId, at(-1), latch);
+        expect(outcome.verdict?.code).toBe('TRIP');
+        expect(await breakerBells(T5)).toEqual([]);
+
+        // The paired half, and the only thing that makes the zero above mean
+        // SUPPRESSED rather than never-reached: the trip itself landed. Zero
+        // is equally what this would read if the evaluation had thrown on the
+        // way in, or if the agent had never resolved.
+        const after = await readBreakerLatch(T5, agentId);
+        expect(after?.state).toBe('OPEN');
+        expect(after?.trippedSignals).toEqual(['TOOL_MIX']);
     });
 });

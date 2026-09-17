@@ -615,6 +615,20 @@ enum NotificationType {
   // proposal would train the recipient to ignore the bell, taking these two
   // with it. The waiting count is surfaced on the register instead.
   AGENT_PROPOSAL_QUARANTINED
+  // AGENTIC UI 1/4 (#2562) — the behavioural circuit breaker LATCHED OPEN.
+  //
+  // The one agentic event with NO HUMAN ACTOR: the anomaly detector stopped the
+  // agent at the tool boundary by itself, and nothing but a human close with a
+  // reason moves it back. Nothing else says so either — the register carries no
+  // breaker column and the breaker tab is local state on one agent's detail
+  // page, so a latched agent is visible only to somebody who already opened
+  // that agent and clicked to that tab.
+  //
+  // Routed to the agent's accountable owner, and deduped per (agent, day) like
+  // the quarantine bell. The latch makes that at most one bell per trip cycle
+  // anyway: an OPEN breaker is never re-judged, so the next trip can only
+  // follow a human close.
+  AGENT_CIRCUIT_BREAKER_TRIPPED
   GENERAL
 }
 

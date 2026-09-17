@@ -42,6 +42,10 @@
  */
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/observability/logger';
+import {
+    createAgenticNotification,
+    resolveAgenticRecipients,
+} from '@/app-layer/notifications/agentic';
 
 import type { McpCapabilityClass } from './autonomy-ceiling';
 import {
@@ -372,7 +376,7 @@ async function applyVerdict(
     });
 
     if (verdict.code === 'TRIP') {
-        await prisma.agentCircuitBreaker.updateMany({
+        const latched = await prisma.agentCircuitBreaker.updateMany({
             where: { tenantId, agentId, state: 'CLOSED' },
             data: {
                 state: 'OPEN',
@@ -386,6 +390,14 @@ async function applyVerdict(
                 lastVerdictAt: now,
             },
         });
+        // Gated on the UPDATE's own count, not on the verdict. The `where`
+        // above requires `state: 'CLOSED'`, so a human close that landed
+        // between the read and this write leaves `count: 0` and the latch
+        // shut — and a bell announcing a stop that did not happen is exactly
+        // the wrong thing to send about a stop control.
+        if (latched.count > 0) {
+            await notifyBreakerTrip({ tenantId, agentId, verdict, now });
+        }
         return;
     }
 
@@ -399,6 +411,91 @@ async function applyVerdict(
             lastVerdictAt: now,
         },
     });
+}
+
+/**
+ * Tell somebody the breaker latched OPEN (#2562).
+ *
+ * The detector is the only control in the subsystem that stops an agent with
+ * no human in the loop, and until this existed it was also the only one that
+ * announced nothing: the human UN-trip is audited and metered, the automatic
+ * trip wrote one row and returned. Breaker state is rendered on exactly one
+ * surface — a tab on that agent's detail page, selected by local component
+ * state — so without a bell a latched agent is seen only by somebody who was
+ * already looking at it. The manual un-trip is manual BY DESIGN, and that
+ * design assumes a human finds out.
+ *
+ * NEVER THROWS. It is called from `applyVerdict`, which runs inside
+ * `recordAuthorizedCall`'s swallowing try/catch — that catch exists so
+ * detection can never 500 an already-authorized call. This one is its own
+ * belt: the latch is already written when we get here, and a failed
+ * notification must not make a successful trip look like a failed evaluation
+ * in the logs.
+ *
+ * Recipients come from the shared resolver, so this bell addresses the same
+ * person the kill-switch and quarantine bells do: the agent's accountable
+ * owner, falling back to the workspace's ACTIVE OWNERs. `actorUserId` is
+ * `null` because there is no actor — nobody clicked anything.
+ *
+ * `now` is threaded through rather than letting the emitter default it, so
+ * the day in the dedupe key is the day of `trippedAt` and not of an
+ * independent clock. `entityId` is the AGENT: day-granular dedupe plus the
+ * latch itself means at most one bell per trip cycle, because
+ * `recordAuthorizedCall` returns early while the latch is OPEN and only a
+ * human close can re-arm it.
+ */
+async function notifyBreakerTrip(trip: {
+    tenantId: string;
+    agentId: string;
+    verdict: BreakerVerdict;
+    now: Date;
+}): Promise<void> {
+    try {
+        const [recipients, tenant] = await Promise.all([
+            resolveAgenticRecipients(prisma, trip.tenantId, trip.agentId),
+            // The store has no `RequestContext` — it runs at the MCP tool
+            // boundary — so the slug for the deep link is looked up. A miss
+            // yields a bell with no link rather than one pointing at
+            // `/t/undefined/agents/…`.
+            prisma.tenant.findUnique({
+                where: { id: trip.tenantId },
+                select: { slug: true },
+            }),
+        ]);
+        const signals = [...trip.verdict.streakSignals];
+        await createAgenticNotification(
+            prisma,
+            'AGENT_CIRCUIT_BREAKER_TRIPPED',
+            {
+                tenantId: trip.tenantId,
+                tenantSlug: tenant?.slug ?? null,
+                entityId: trip.agentId,
+                subject: recipients.agentName ?? `Agent ${trip.agentId}`,
+                detail: signals.length === 0 ? null : signals.join(', '),
+                recipientUserIds: recipients.recipientUserIds,
+                actorUserId: null,
+            },
+            trip.now,
+        );
+    } catch (err) {
+        logger.warn('notification: failed to record agent circuit-breaker bell', {
+            // MEMBER READS, not the bare `tenantId` / `agentId` the
+            // surrounding code has in scope, and that is the whole reason
+            // this function takes an object. `local/no-raw-prompt-logging`
+            // counts a bare identifier at a value position as a HOLE in its
+            // own denominator — a position on the agentic path where it
+            // cannot say whether content reached a log — and
+            // `tests/guards/no-raw-prompt-logging.test.ts` ratchets that
+            // count downward with no allowance. A member read is analysable,
+            // so these two fields cost the rule nothing.
+            tenantId: trip.tenantId,
+            agentId: trip.agentId,
+            // `err.message`, and a LITERAL on the other arm — see the note at
+            // the quarantine bell in `agent-proposals.ts` for why this is not
+            // `String(err)`.
+            error: err instanceof Error ? err.message : 'non-Error thrown',
+        });
+    }
 }
 
 /**
