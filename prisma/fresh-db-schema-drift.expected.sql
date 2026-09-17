@@ -24,12 +24,33 @@
 --    origin/main @ 3.33.9      59 statements (53 ALTER TABLE)
 --    after the schema-only reconcile (PR1, #2410)
 --                              41 statements (38 ALTER TABLE)
---    after the referential-action reconcile (PR2)
+--    after the referential-action reconcile (PR2, #2416)
 --                              10 statements
---    after the #2356 SET NULL carve-out (this file's current state)
+--    after the #2356 SET NULL carve-out (#2478)
 --                              26 statements
+--    after #2356 batch 2 (#2531)
+--                              46 statements
+--    after #2356 batch 3b (#2535)
+--                              84 statements (THIS FILE'S CURRENT STATE)
 --
---  ── GROUP 1 — 3 × DROP NOT NULL.  PERMANENT. ───────────────────────
+--  THE ROWS ABOVE WERE RE-MEASURED, not copied.  Each is the statement
+--  count of THIS FILE at that commit, counted with the same parser the
+--  gate uses.  Two rows were missing and "26 statements (this file's
+--  current state)" had been carried through two later PRs that added 20
+--  and 38 statements to the file underneath it — so the one number a
+--  reviewer would use to size an edit to this file was wrong by 58.
+--  A prose count nobody can check is not documentation, it is an
+--  unfalsifiable claim sitting on top of the residue it describes.
+--
+--  So the counts are now CHECKED.  The three GROUP headings below and
+--  the CURRENT STATE row are parsed by
+--  tests/guardrails/schema-drift-gate-runs-in-ci.test.ts and compared
+--  against the statements under the sentinel; a heading that disagrees
+--  with the file it heads fails CI.  When you add or remove residue,
+--  update the numbers in the same commit — the test will tell you the
+--  measured value if you get them wrong.
+--
+--  ── GROUP 1 — 3 statements, DROP NOT NULL.  PERMANENT. ────────────
 --  User.emailHash, AuditorAccount.emailHash and
 --  UserIdentityLink.emailAtLinkTimeHash are NOT NULL in the database and
 --  optional (`String?`) in the schema, ON PURPOSE.  The reasoning is
@@ -41,7 +62,7 @@
 --  from the schema is exactly what that ratchet blocks.  So the diff will
 --  always want to relax the column, and we will always refuse.
 --
---  ── GROUP 2 — 3 × pg_trgm GIN indexes.  PERMANENT. ─────────────────
+--  ── GROUP 2 — 3 statements, pg_trgm GIN indexes.  PERMANENT. ───────
 --  Control_code_trgm_idx / Control_name_trgm_idx /
 --  Control_objective_trgm_idx are `USING gin (… gin_trgm_ops)`.  Prisma
 --  cannot express an operator-class-qualified GIN index, so they cannot
@@ -49,10 +70,20 @@
 --  proposes dropping them and we always keep them.  Verify with
 --      SELECT indexdef FROM pg_indexes WHERE indexname LIKE 'Control_%_trgm_idx';
 --
---  ── GROUP 3 — 49 × column-scoped SET NULL FKs.  PERMANENT. ────────
+--  ── GROUP 3 — 78 statements, 39 × column-scoped SET NULL FKs.
+--     PERMANENT. ───────────────────────────────────────────────────────
 --  Tenant-carrying composite FKs whose referential action is
 --  `ON DELETE SET NULL (<the fk column>)` in the database, and which the
---  schema can only imply as RESTRICT.
+--  schema can only imply as RESTRICT.  TWO numbers, because the diff
+--  emits a DROP CONSTRAINT and an ADD CONSTRAINT for each one: 39
+--  constraints, 78 statements.  This heading read "49 ×" before
+--  2026-09-17 and named neither quantity — it was seeded as a statement
+--  count (20, for group 3's original 10 constraints) and then bumped by
+--  CONSTRAINT counts (+10 at #2531, +19 at #2535), so the unit changed
+--  under it twice.  Verify the 39 in a database built from the
+--  migrations with
+--      SELECT count(*) FROM pg_constraint
+--       WHERE contype = 'f' AND confdelsetcols IS NOT NULL;   -- 39 of 477
 --
 --  WHY THE DATABASE AND THE SCHEMA DISAGREE ON PURPOSE.  Each of these is
 --  an OPTIONAL pointer between two tenant-scoped models, so the FK carries
