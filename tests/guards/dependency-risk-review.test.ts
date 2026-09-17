@@ -51,13 +51,26 @@ const REVIEWED: Record<string, { major: number }> = {
     'js-yaml': { major: 5 },
     jszip: { major: 3 },
     pdfkit: { major: 0 },
-    // Reviewed 2026-06-18 for the 8→9 major bump (security advisory fix,
-    // dependabot production-security group). Our only usage is
-    // `nodemailer.createTransport({host,port,secure,auth})` + `sendMail(...)`
-    // in src/lib/mailer.ts — both are stable core APIs unchanged in v9. v9's
-    // breaking change is dropping Node < 18; prod runs Node 24. Typecheck
-    // passes against the existing `@types/nodemailer`.
-    nodemailer: { major: 9 },
+    // Reviewed 2026-09-17 for the 9→10 major bump (dependabot). Our ENTIRE
+    // usage is two calls —
+    // `nodemailer.createTransport({host,port,secure,auth})` and
+    // `transporter.sendMail(...)` — in src/lib/mailer.ts, plus a `Transporter`
+    // type import; `grep -rn nodemailer src/` returns those and one comment.
+    // v10's ONLY documented breaking change is the runtime floor: "Node.js 20
+    // or newer is required. The Node.js 6 syntax compatibility check and the
+    // .npmignore file are gone." No signature, export or type change to either
+    // call we make.
+    //
+    // The floor is satisfied three times over, checked rather than assumed:
+    // package.json `engines.node` is ">=24.0.0 <25.0.0", ci.yml sets
+    // NODE_VERSION "24", and the Dockerfile is node:24-alpine in all three
+    // stages (deps, builder, runner). Typecheck passes against v10 in CI on
+    // the bump PR itself — note `@types/nodemailer` v2 is a DEPRECATED STUB,
+    // because v10 ships its own types.
+    //
+    // Previously (2026-06-18, 8→9): same two call sites, same conclusion; v9's
+    // breaking change was dropping Node < 18.
+    nodemailer: { major: 10 },
 };
 
 /** Major of a caret/tilde/plain semver range (`^8.0.7` → 8). */

@@ -16,10 +16,26 @@
  * absent optional key from its output rather than setting it to undefined,
  * which is exactly what that spread needed.
  */
+import { NotificationType } from '@prisma/client';
 import { z } from 'zod';
 
 /** Addresses are capped at the RFC 5321 maximum reverse-path length. */
 const EmailAddress = z.string().trim().email().max(320);
+
+/**
+ * The in-app mute list (#2564), validated against the RUNTIME enum rather than
+ * a hand-written union. A literal union here would be a second copy of
+ * `NotificationType` that nothing keeps in step: adding a member to
+ * `enums.prisma` would leave the PUT rejecting the very type the preference UI
+ * had just listed, and no type error would say so.
+ *
+ * Capped at the enum's own size — the list is a SET, so no valid body needs
+ * more entries than there are members, and the bound keeps an unbounded array
+ * out of a `.strict()` body.
+ */
+const MutedInAppTypes = z
+    .array(z.nativeEnum(NotificationType))
+    .max(Object.keys(NotificationType).length);
 
 export const UpdateNotificationSettingsSchema = z
     .object({
@@ -40,6 +56,15 @@ export const UpdateNotificationSettingsSchema = z
          * admin UI sends for an empty field.
          */
         complianceMailbox: EmailAddress.nullable().optional(),
+
+        /**
+         * In-app types this workspace has switched off. Optional like every
+         * other key, and for the reason the file header gives: zod OMITS an
+         * absent optional key from its output, so a partial PUT that never
+         * mentions the list reaches `definedOnly` without it and leaves the
+         * stored list alone rather than clearing it.
+         */
+        mutedInAppTypes: MutedInAppTypes.optional(),
     })
     .strict();
 

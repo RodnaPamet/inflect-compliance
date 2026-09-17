@@ -32,6 +32,12 @@ const EXPECTED_PROVIDER_IDS = [
     'gcp-posture',
     'bamboohr',
     'workday',
+    // Internal test fixture rather than a customer integration (#2548), and
+    // still listed here: this ratchet is about what the RUNTIME registry holds,
+    // and the fixture is registered because the HRIS sync resolves providers
+    // through it. A provider that is registered and absent from this list is
+    // the drift the file exists to catch, whatever the provider is for.
+    'orangehrm',
     'personnel',
     'device',
     'training',

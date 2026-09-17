@@ -630,7 +630,12 @@ describe('AuditLog Immutability Guardrails', () => {
     test('migration file for immutability trigger exists', () => {
         const migrationDir = path.join(PRISMA_DIR, 'migrations');
         const dirs = fs.readdirSync(migrationDir);
-        const immutableMigration = dirs.find(d => d.includes('audit_log_immutable'));
+        // FIRST, not latest, and deliberately: this asserts the ORIGINAL
+        // migration still says what it said. It is a historical record, and the
+        // `REVOKE UPDATE` below is the half that is still live — privileges were
+        // never granted back. The LIVE trigger definition is a different file;
+        // see the test after this one.
+        const immutableMigration = dirs.sort().find(d => d.includes('audit_log_immutable_trigger'));
 
         expect(immutableMigration).toBeDefined();
 
@@ -643,5 +648,54 @@ describe('AuditLog Immutability Guardrails', () => {
         expect(sql).toContain('IMMUTABLE_AUDIT_LOG');
         expect(sql).toContain('REVOKE UPDATE');
         expect(sql).toContain('REVOKE');
+    });
+
+    test('the LIVE trigger definition permits only DSAR pseudonymization', () => {
+        // `CREATE OR REPLACE FUNCTION` means the newest migration defining
+        // `audit_log_immutable_guard` is the one that is actually running. The
+        // test above reads the FIRST such migration, which after #2287 is a
+        // historical file describing a contract the database no longer has —
+        // reading it alone would certify "all UPDATEs blocked", which is no
+        // longer true. Resolve the LATEST and assert what is really enforced.
+        const migrationDir = path.join(PRISMA_DIR, 'migrations');
+        const defining = fs
+            .readdirSync(migrationDir)
+            .sort()
+            .filter((d) => {
+                const f = path.join(migrationDir, d, 'migration.sql');
+                return fs.existsSync(f) && fs.readFileSync(f, 'utf-8').includes('FUNCTION audit_log_immutable_guard');
+            });
+
+        // Non-vacuous: at least the original and the narrowing exist, and the
+        // list is the population this claim reasons over.
+        expect(defining.length).toBeGreaterThanOrEqual(2);
+
+        const raw = fs.readFileSync(path.join(migrationDir, defining[defining.length - 1], 'migration.sql'), 'utf-8');
+        // STRIP `--` COMMENTS BEFORE ASSERTING. Measured the hard way: the
+        // migration's own header explains why granting UPDATE back to app_user
+        // would be wrong, and that sentence matched the regex below — a guard
+        // FALSIFIED by prose, the mirror of #2246's guards SATISFIED by prose.
+        // Either way the fix is the same: assert against code, never text.
+        const live = raw.replace(/^[^\S\n]*--.*$/gm, '');
+
+        // The permitted shape, spelled out. `to_jsonb(NEW) - 'userId' =
+        // to_jsonb(OLD) - 'userId'` is the part that makes "every other column
+        // unchanged" generic over the schema: an enumerated column list would
+        // silently permit a NEW column to change inside a pseudonymization.
+        expect(live).toContain(`to_jsonb(NEW) - 'userId' = to_jsonb(OLD) - 'userId'`);
+        expect(live).toContain(`OLD."userId" IS NOT NULL`);
+        expect(live).toContain(`NEW."userId" IS NULL`);
+        // Gated on the operation, so a DELETE (where NEW is NULL) cannot fall
+        // through the NULL test into the permitted branch.
+        expect(live).toContain(`TG_OP = 'UPDATE'`);
+        // Still attached to both operations, and still raising by default.
+        expect(live).toContain('BEFORE UPDATE OR DELETE');
+        expect(live).toContain('IMMUTABLE_AUDIT_LOG');
+
+        // Privileges were NOT granted back. app_user remains unable to UPDATE an
+        // audit row at all, permitted shape or not, so the erasure must run in a
+        // context that does not drop to that role. A `GRANT UPDATE ... TO
+        // app_user` here would widen this to every tenant request in the product.
+        expect(live).not.toMatch(/GRANT[^;]*UPDATE[^;]*app_user/i);
     });
 });

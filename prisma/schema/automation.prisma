@@ -96,6 +96,18 @@ model TenantNotificationSettings {
   // deployment fact and cannot be rejected by a relay.
   defaultFromEmail  String
   complianceMailbox String?
+  // IN-APP (bell + SSE) preferences, the one dimension this row did not carry.
+  // `enabled` above governs EMAIL only -- every one of its readers is an
+  // outbox/digest path -- so a workspace that had switched notifications off
+  // still rang the bell, with no narrower control that would stop it (#2564).
+  //
+  // A MUTE list rather than an enable list, because the two are not
+  // symmetrical under a growing enum: an absent member must mean "notify", so
+  // that adding a `NotificationType` never silently suppresses it for every
+  // tenant that saved its preferences before the member existed. The default
+  // is therefore the empty array, which is also the pre-migration behaviour of
+  // every existing row.
+  mutedInAppTypes   NotificationType[] @default([])
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   tenant            Tenant   @relation(fields: [tenantId], references: [id])

@@ -54,6 +54,12 @@ const FAIL_CLOSED_COVERAGE: Readonly<Record<string, { test: string; needle: stri
     // an incomplete roster never reports PASSED, and the unreachable runCheck
     // still refuses to manufacture one.
     workday: { test: 'tests/unit/workday-provider.test.ts', needle: 'runCheck' },
+    // OrangeHRM is sync-only too, and it is the provider the widened union
+    // above was written for. Being an internal test fixture (#2548) buys it no
+    // exemption — it feeds the same `Employee` roster the personnel checks read
+    // and the leaver pass acts on, so a fixture that manufactured a green
+    // signal would be exactly as harmful as a product integration doing it.
+    orangehrm: { test: 'tests/unit/orangehrm-provider.test.ts', needle: 'runCheck' },
     // Device posture — no devices → NOT_APPLICABLE.
     device: { test: 'tests/unit/h2-fail-closed.test.ts', needle: 'runDeviceCheck' },
     // Training — no assignments → NOT_APPLICABLE; open-no-due does not silently PASS.

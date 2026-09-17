@@ -17,6 +17,22 @@ interface NotificationSettings {
     defaultFromName: string;
     defaultFromEmail: string;
     complianceMailbox: string | null;
+    /** In-app types this workspace has switched off (#2564). */
+    mutedInAppTypes: string[];
+}
+
+/**
+ * One toggle-able in-app type, as the SERVER lists it.
+ *
+ * `title` arrives from the emitter's own copy rather than from `messages/`,
+ * and that asymmetry is deliberate — see `listInAppNotificationTypes`. The
+ * bell's rows are written at emit time and stored, so a translated label here
+ * would promise a Bulgarian bell the emitter does not deliver.
+ */
+interface InAppNotificationType {
+    type: string;
+    title: string;
+    muted: boolean;
 }
 
 interface OutboxStats {
@@ -31,6 +47,7 @@ export default function NotificationSettingsPage() {
     const tenantHref = useTenantHref();
     const [tab, setTab] = useState<'settings' | 'stats'>('settings');
     const [settings, setSettings] = useState<NotificationSettings | null>(null);
+    const [inAppTypes, setInAppTypes] = useState<InAppNotificationType[]>([]);
     const [stats, setStats] = useState<OutboxStats | null>(null);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
@@ -41,6 +58,9 @@ export default function NotificationSettingsPage() {
             .then(r => r.json())
             .then(data => {
                 setSettings(data.settings);
+                // Whatever the server lists — never a client-side literal, so
+                // a future agentic type appears here with no edit to this file.
+                setInAppTypes(data.inAppTypes ?? []);
                 setStats(data.stats);
             })
             .catch(console.error);
@@ -98,7 +118,7 @@ export default function NotificationSettingsPage() {
                     items={[
                         { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
                         { label: t('crumb.admin'), href: tenantHref('/admin') },
-                        { label: t('crumb.emailNotifications') },
+                        { label: t('crumb.notifications') },
                     ]}
                     className="mb-1"
                 />
@@ -193,6 +213,53 @@ export default function NotificationSettingsPage() {
                             placeholder={t('notifications.compliancePlaceholder')}
                         />
                         <p className="text-xs text-content-subtle mt-1">{t('notifications.bccNote')}</p>
+                    </div>
+
+                    {/* In-app (bell + SSE) preferences — #2564.
+                        Separate from the `enabled` toggle above, which is
+                        email-only: every reader of that flag is an outbox or
+                        digest path, so one switch cannot mean both. */}
+                    <div
+                        className="border-t border-border-subtle pt-default"
+                        data-testid="in-app-notification-types"
+                    >
+                        <label className="block text-xs text-content-muted mb-1">{t('notifications.inAppTitle')}</label>
+                        <p className="text-xs text-content-subtle mb-2">{t('notifications.inAppDescription')}</p>
+                        {inAppTypes.length === 0 ? (
+                            <p className="text-sm text-content-muted">{t('notifications.inAppEmpty')}</p>
+                        ) : (
+                            <div className="space-y-compact">
+                                {inAppTypes.map(info => {
+                                    // Read the CHECKED state off `settings`, not off
+                                    // `info.muted`. The catalogue is fetched once; the mute
+                                    // list is what the save round-trip returns, so deriving
+                                    // from it keeps one source of truth and leaves the
+                                    // toggle correct after a save.
+                                    const muted = settings.mutedInAppTypes.includes(info.type);
+                                    return (
+                                        <label
+                                            key={info.type}
+                                            className="flex items-center gap-compact cursor-pointer"
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={!muted}
+                                                aria-label={t('notifications.inAppToggleAria', { type: info.title })}
+                                                data-testid={`in-app-type-${info.type}`}
+                                                onChange={e => setSettings({
+                                                    ...settings,
+                                                    mutedInAppTypes: e.target.checked
+                                                        ? settings.mutedInAppTypes.filter(x => x !== info.type)
+                                                        : [...settings.mutedInAppTypes, info.type],
+                                                })}
+                                                className="toggle toggle-brand"
+                                            />
+                                            <span className="text-sm">{info.title}</span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
 
                     {/* Save */}
