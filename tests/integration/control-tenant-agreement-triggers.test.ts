@@ -187,12 +187,26 @@ describe('a control can be referenced from its own tenant, or from anywhere if i
                  VALUES ('ctl-e1',$1,'ctl-c3','p','k')`, T2),
         ];
 
+        // Destructured rather than looped: a `for...of` binding is one the
+        // assertion-reach analyser cannot follow, so each assertion below
+        // would land in its un-analysable set — counted as a blind spot by
+        // tests/guardrails/assertion-needle-uniqueness-ratchet.test.ts even
+        // though none of these subjects is a file read at all. Naming the
+        // four also does what the comment below asks for.
+        const [mFindingControl, mFindingCompensating, mTask, mExecution] = messages;
+
         // The NAMED error, not merely "it threw". A refusal arriving from some
-        // other constraint would be a false red for this claim.
-        for (const m of messages) expect(m).toContain('CONTROL_TENANT_MISMATCH');
-        // And it names the offending control, so the four are distinguishable
-        // in a log rather than reading as one generic failure.
-        for (const m of messages) expect(m).toContain('ctl-c3');
+        // other constraint would be a false red for this claim. And it names
+        // the offending control, so the four are distinguishable in a log
+        // rather than reading as one generic failure.
+        expect(mFindingControl).toContain('CONTROL_TENANT_MISMATCH');
+        expect(mFindingControl).toContain('ctl-c3');
+        expect(mFindingCompensating).toContain('CONTROL_TENANT_MISMATCH');
+        expect(mFindingCompensating).toContain('ctl-c3');
+        expect(mTask).toContain('CONTROL_TENANT_MISMATCH');
+        expect(mTask).toContain('ctl-c3');
+        expect(mExecution).toContain('CONTROL_TENANT_MISMATCH');
+        expect(mExecution).toContain('ctl-c3');
 
         expect(await prisma.finding.count({ where: { id: { in: ['ctl-f3', 'ctl-f4'] } } })).toBe(0);
         expect(await prisma.task.count({ where: { id: 'ctl-t1' } })).toBe(0);
