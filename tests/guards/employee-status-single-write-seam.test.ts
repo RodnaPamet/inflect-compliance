@@ -17,7 +17,7 @@
  * to write `status`, and the prohibition must be pinned rather than described.
  * This is the pin.
  *
- * Three claims, each failing on a different regression — plus a fourth test
+ * Four claims, each failing on a different regression — plus a fifth test
  * that asserts the population is non-empty, because every census below is
  * vacuously correct over nothing:
  *
@@ -31,6 +31,25 @@
  *   3. `setEmployeeManager`'s write names exactly one column. A spread of the
  *      parsed body counts as a failure, not as an unknown: the whole point of
  *      the literal is that widening the schema cannot widen the write.
+ *   4. Inside `hris-sync.ts`, `status` is written by EXACTLY TWO writes — the
+ *      roster mirror and the departure reconcile — and a third reddens.
+ *
+ * CLAIM 4 CLOSES A HOLE THIS FILE USED TO HAVE, and it is worth saying what it
+ * was, because the shape recurs. `HRIS_SEAM` was declared here from the start
+ * but appeared ONLY in claim 1, the file-level census: this guard knew
+ * `hris-sync.ts` writes an Employee row and never looked at WHICH COLUMNS it
+ * wrote. So the column discipline was enforced against `personnel.ts` alone
+ * while the sanctioned HRIS seam — the one CLAUDE.md names as the only status
+ * path — was unconstrained. Mutation-proved before claim 4 existed: appending a
+ * second `status` writer to `hris-sync.ts` left this file at 4 passed, while the
+ * identical mutant in `personnel.ts` reddened claim 2. The census worked; it
+ * just never pointed there.
+ *
+ * Note claim 4 is TWO, not one. `status` genuinely has two legitimate writers
+ * in that file and neither can be folded into the other — the mirror copies
+ * what the roster says, the reconcile acts on a row's ABSENCE from it. A fix
+ * that forced one seam there would have to delete a behaviour. The pin is the
+ * pair, exactly.
  *
  * WHAT THIS GUARD DOES NOT PIN. The other two rails #2492 put in front of
  * `status` are a `.strict()` one-key schema and a URL that names the field.
@@ -269,6 +288,57 @@ describe('Employee.status keeps one update seam, and the manager path is not it'
             .map((w) => enclosingFunction(masked, w.index));
 
         expect(statusWriters.sort()).toStrictEqual([STATUS_WRITER]);
+    });
+
+    it('writes `status` from exactly two writes in hris-sync.ts — the roster mirror and the departure reconcile', () => {
+        // CLAUDE.md sanctions HRIS sync as THE status seam, so this file is
+        // allowed to write the column. What was never pinned is HOW MANY times
+        // and from where — and the answer today is TWO, not one:
+        //
+        //   upsert      — mirrors the roster row (`status: e.status`, both arms)
+        //   updateMany  — reconciles absence, `status: 'TERMINATED'`, unbounded
+        //
+        // So the single-writer rule this file enforces on personnel.ts is not
+        // the right shape here; both of these are legitimate and neither can be
+        // folded into the other. The pin is therefore EXACTLY THESE TWO, and a
+        // third reddens.
+        //
+        // Attribution is by VERB, not by enclosing function: both writes live
+        // in `runHrisSync`, so `enclosingFunction` returns the same name for
+        // both and cannot tell them apart. Verified, not assumed — the census
+        // reports `fn: 'runHrisSync'` for all three Employee writes here.
+        const masked = maskedSource(HRIS_SEAM);
+        const writes = employeeWrites(masked);
+
+        // Non-vacuous: the extraction found the calls it reasons over. Three,
+        // because the manager link (`managerEmployeeId`) is here too and must
+        // NOT appear in the status set below.
+        expect(writes.length).toBeGreaterThanOrEqual(3);
+
+        const statusWrites = writes
+            .filter((w) => w.columns.some((c) => c === 'status' || (UNKNOWABLE as readonly string[]).includes(c)))
+            // `opaque` rather than the full column list on purpose. Pinning
+            // every column of the roster upsert would redden this STATUS guard
+            // on any unrelated mirror column being added, which couples a
+            // schema addition to a safety invariant it has nothing to do with.
+            // Measured: the Phase-0 write-back adds `hrisRecordId` to both arms
+            // of that upsert, and this claim stays green across it by design.
+            // What must not change is the NUMBER of status writes and whether
+            // their key sets are readable at all.
+            .map((w) => ({ verb: w.verb, opaque: w.columns.some((c) => (UNKNOWABLE as readonly string[]).includes(c)) }));
+
+        expect(statusWrites).toStrictEqual([
+            { verb: 'upsert', opaque: false },
+            { verb: 'updateMany', opaque: false },
+        ]);
+
+        // The reconcile IS pinned column-for-column, unlike the mirror. It sets
+        // TERMINATED on every row the pass did not see, in one unbounded
+        // statement — the highest-stakes write on this column in the codebase,
+        // since TERMINATED is what makes a worker a candidate for a real
+        // directory disable. It has no business gaining a column quietly.
+        const reconcile = writes.find((w) => w.verb === 'updateMany' && w.columns.includes('status'));
+        expect(reconcile?.columns).toStrictEqual(['status', 'syncedAt']);
     });
 
     it('writes exactly one column from setEmployeeManager, named literally', () => {
