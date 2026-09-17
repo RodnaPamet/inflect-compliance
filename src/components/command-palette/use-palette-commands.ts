@@ -17,6 +17,14 @@
  *     deliberately excluded; running them from the palette bypasses
  *     the confirmation UX their dedicated surfaces provide.
  *
+ *     That exclusion is why the two agentic VERBS (`Suspend an agent`,
+ *     `Kill switch`, #2558) are Navigation rows and not Actions: a
+ *     kill committed from a palette row would skip the engage modal's
+ *     required reason and typed-slug tenant confirmation, which are
+ *     the only things between "stop this agent" and "stop everything".
+ *     A verb-labelled DESTINATION makes the word typeable and leaves
+ *     the lever one click away, without eroding the rule above.
+ *
  * All navigation commands are tenant-scoped via `/t/<slug>/...` so the
  * same URL-derived slug that powers entity search powers them too.
  * Outside a tenant route this hook returns an empty list, so the
@@ -176,11 +184,18 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
             //
             // The palette had ZERO agentic entries, on a product whose
             // agentic surfaces were reachable only through one pill
-            // labelled "MCP". Three, not five: the register is the
-            // sidebar-tier destination, and the other two are the
-            // surfaces an operator types their way to under time
-            // pressure — a queue somebody is waiting on, and the record
-            // of what was refused.
+            // labelled "MCP". Three DESTINATIONS: the register is the
+            // sidebar-tier one, and the other two are the surfaces an
+            // operator types their way to under time pressure — a queue
+            // somebody is waiting on, and the record of what was
+            // refused.
+            //
+            // Three was never the whole list. The prompt named two
+            // VERBS alongside them — "Suspend an agent" and "Kill
+            // switch" — and they were silently dropped; they ship below
+            // (#2558), as Navigation rows for the reason the module
+            // header gives. So: five entries, three destinations and
+            // two verbs, not "three, not five".
             //
             // Labelled by DESTINATION rather than by acronym. "Go to
             // MCP" was untypeable for anyone who did not already know
@@ -194,13 +209,17 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
             // gate, and a client-side filter is a suggestion, never a
             // boundary. See the module header.
             //
-            // The keywords below are the OTHER half of that decision. Four
-            // of the five words an operator was told to be able to type —
-            // AI, autonomy, MCP, kill — appear in no label here and must
-            // not, so each lands on the destination its typist wants: the
-            // register is where an agent is suspended or killed from, the
-            // proposal queue is what "approvals" means for agents, and
-            // quarantine is where a blocked one is held.
+            // The keywords below are the OTHER half of that decision. Of
+            // the five words an operator was told to be able to type —
+            // AI, autonomy, MCP, kill, agent — only `agent` appears in a
+            // destination label and the rest must not, so each lands on
+            // the destination its typist wants: the register is where an
+            // agent is suspended or killed from, the proposal queue is
+            // what "approvals" means for agents, and quarantine is where
+            // a blocked one is held. `kill` and `suspend` stay on the
+            // register even now that the verb rows exist — the register
+            // remains a truthful answer to both, and the two rows are
+            // ordered so the destination comes first.
             {
                 id: 'nav:agents',
                 group: 'Navigation',
@@ -251,6 +270,61 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                     'held',
                     'blocked',
                     'provenance',
+                ],
+            },
+            // ─── Agentic verbs (#2558) ────────────────────────────────
+            //
+            // The two words an operator reaches for under pressure. They
+            // are labelled by VERB, which is the deliberate inverse of
+            // the three rows above: there the word had to stay off the
+            // label and ride the keyword channel, here the word IS the
+            // label, because "kill" and "suspend" are what the operator
+            // is trying to do rather than a name for a page.
+            //
+            // Consequence worth stating: the keywords on these two carry
+            // only SYNONYMS of the verb, never the verb itself. A
+            // keyword duplicating its own label buys no reach and costs
+            // the only thing that proves these rows work — rename the
+            // label and the typed word must stop finding the row.
+            //
+            // `Suspend an agent` lands on the register filtered to
+            // ACTIVE because ACTIVE is exactly the suspendable set
+            // (`tabs/OverviewTab.tsx`: `canSuspend = canManageRegistry
+            // && agent.status === 'ACTIVE'`). `parseAgentListFilters`
+            // already parses `?status=` server-side, so this is a deep
+            // link into machinery that shipped, not a new route.
+            //
+            // `Kill switch` lands on the plain register: the engage
+            // control lives in the agent detail header
+            // (`AgentDetailClient.tsx` → `AgentKillSwitchAction`), and a
+            // kill applies regardless of status, so the register is the
+            // step before it either way. Sharing a destination with `Go
+            // to Agent register` is the point — the verb exists so the
+            // WORD is typeable, not because there is a second page.
+            {
+                id: 'nav:agent-suspend',
+                group: 'Navigation',
+                label: 'Suspend an agent',
+                icon: Robot,
+                href: href('/agents?status=ACTIVE'),
+                keywords: ['pause', 'disable', 'deactivate', 'stop', 'halt'],
+            },
+            {
+                id: 'nav:agent-kill-switch',
+                group: 'Navigation',
+                label: 'Kill switch',
+                icon: Robot,
+                href: href('/agents'),
+                keywords: [
+                    'agent',
+                    'agents',
+                    'emergency',
+                    'halt',
+                    'stop',
+                    'shutdown',
+                    'panic',
+                    'disable',
+                    'revoke',
                 ],
             },
             {
