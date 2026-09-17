@@ -404,6 +404,7 @@ export function renderGovernancePackDocument(input: PackDocumentInput): string {
             unattended: boolean;
             ownerName: string | null;
             ownerUserId: string;
+            provenance: string;
             riskTier: string | null;
             assessmentState: string;
             killState: string;
@@ -424,8 +425,16 @@ export function renderGovernancePackDocument(input: PackDocumentInput): string {
                 `${AUTONOMY_MAX} — ${RUNG_MEANING[rungClass(a.autonomyLevel)].label}` +
                 `${a.unattended ? ' (UNATTENDED)' : ''}`,
         );
+        // Provenance is stated on EVERY row, FIRST_PARTY included. The pack
+        // cites `inventory.third_party_agents` as a count and section 5 lists
+        // third-party agents only, so without this the document says how many
+        // agents are somebody else's code and never which — and "absent from
+        // section 5" is the reader's inference, not the document's statement.
+        // Both sections cap at DOCUMENT_ROW_CAP independently, so above that
+        // cap they are different subsets and the cross-reference stops working.
         invLines.push(
             `    Owner: ${clip(a.ownerName) === '(none)' ? a.ownerUserId : clip(a.ownerName)}` +
+                ` · Provenance: ${a.provenance}` +
                 ` · Risk tier: ${a.riskTier ?? 'UNSCORED'} (${a.assessmentState})` +
                 ` · Policy card: ${a.policyCardVersion === null ? 'NONE' : `v${a.policyCardVersion}`}` +
                 ` · ${a.killState}`,
