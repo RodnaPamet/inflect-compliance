@@ -85,7 +85,7 @@ interface Props {
     /** Server aggregates — see `RegisteredAgentRepository.kpiCounts`. */
     kpiCounts: AgentKpiCounts;
     /** The three-state governance banner's inputs. */
-    governance: { enforcing: boolean; unboundCredentials: number };
+    governance: GovernanceBannerInput;
     /**
      * The three assurance signals (#2451) — is any of this being CHECKED?
      * `null` when the reader may see the register but not the audit trail; the
@@ -667,11 +667,23 @@ export function AssurancePanel({ assurance }: { assurance: AgenticAssurance }) {
     );
 }
 
-export function GovernanceBanner({
-    governance,
-}: {
-    governance: { enforcing: boolean; unboundCredentials: number };
-}) {
+/**
+ * WHAT THE BANNER NEEDS, AND WHY THE NAMES ARE NOT OPTIONAL (#2565).
+ *
+ * `unboundCredentialSamples` is REQUIRED, not `?`. A dropped field is the
+ * entire defect this shape exists to close — the banner used to be handed a
+ * count and nothing else — and a required member makes `tsc` name every call
+ * site that would silently fall back to the count again.
+ */
+export interface GovernanceBannerInput {
+    enforcing: boolean;
+    /** The TOTAL. The list below is a bounded head of it, never a substitute. */
+    unboundCredentials: number;
+    /** Named credentials, so the operator knows which integration stopped. */
+    unboundCredentialSamples: { id: string; name: string; keyPrefix: string }[];
+}
+
+export function GovernanceBanner({ governance }: { governance: GovernanceBannerInput }) {
     const t = useTranslations('agents');
     if (!governance.enforcing) {
         return (
@@ -681,11 +693,39 @@ export function GovernanceBanner({
         );
     }
     if (governance.unboundCredentials > 0) {
+        const named = governance.unboundCredentialSamples;
+        // What the list could not fit. Never negative: the samples are a head
+        // of the counted population, so the count is the larger of the two.
+        const unnamed = governance.unboundCredentials - named.length;
         return (
             <InlineNotice variant="warning" data-testid="agents-governance-banner">
-                {t('register.governance.enforcingUnbound', {
-                    count: governance.unboundCredentials,
-                })}
+                <div className="space-y-1">
+                    <p>
+                        {t('register.governance.enforcingUnbound', {
+                            count: governance.unboundCredentials,
+                        })}
+                    </p>
+                    {/* The NAMES, as JSX rather than as an ICU parameter: a key
+                        name is operator-supplied text and does not belong
+                        inside a translated sentence. Same markup as the
+                        security card's pre-flight list, so the two surfaces
+                        that talk about the same credentials look alike. */}
+                    {named.length > 0 && (
+                        <ul className="list-disc pl-5" data-testid="agents-governance-unbound">
+                            {named.map((c) => (
+                                <li key={c.id}>
+                                    <span className="font-medium">{c.name}</span>{' '}
+                                    <code className="text-content-muted">{c.keyPrefix}…</code>
+                                </li>
+                            ))}
+                            {unnamed > 0 && (
+                                <li data-testid="agents-governance-unbound-more">
+                                    {t('register.governance.unboundMore', { count: unnamed })}
+                                </li>
+                            )}
+                        </ul>
+                    )}
+                </div>
             </InlineNotice>
         );
     }

@@ -92,7 +92,11 @@ function renderRegister() {
                 owners={[{ id: 'user-1', label: 'Dana Iveagh' }]}
                 vendors={[]}
                 kpiCounts={{ total: 1, active: 1, unscored: 0, egress: 0 }}
-                governance={{ enforcing: true, unboundCredentials: 0 }}
+                governance={{
+                    enforcing: true,
+                    unboundCredentials: 0,
+                    unboundCredentialSamples: [],
+                }}
                 assurance={null}
                 proposalsAwaitingReview={null}
                 canWrite

@@ -135,7 +135,11 @@ function renderRegister(rows: AgentRow[]) {
             // the cards are computed from the rows, which is the defect the
             // server counts exist to remove.
             kpiCounts={{ total: 0, active: 0, unscored: 0, egress: 0 }}
-            governance={{ enforcing: true, unboundCredentials: 0 }}
+            governance={{
+                enforcing: true,
+                unboundCredentials: 0,
+                unboundCredentialSamples: [],
+            }}
             assurance={null}
             proposalsAwaitingReview={null}
             canWrite

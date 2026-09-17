@@ -16,7 +16,12 @@
  *
  *   3. THE BANNER SAYS THE RIGHT SENTENCE FOR EACH OF THE THREE STATES. All
  *      three RENDER — including "everything is fine", because a state that
- *      renders nothing cannot be told from a banner that failed.
+ *      renders nothing cannot be told from a banner that failed. And the
+ *      unbound state NAMES the credentials (#2565): the owner asked for
+ *      "name how many, AND WHICH", and a count sends an operator to
+ *      `/admin/api-keys` to compare rows by hand instead of telling them which
+ *      integration stopped. The count assertion alone stayed green over that,
+ *      which is why the naming is asserted separately and by row.
  *
  *   4. THE PRIMARY ACTION IS `icon={<Plus />}` + THE BARE NOUN. The house
  *      vocabulary: the verb is dead weight once the glyph is doing the work,
@@ -90,6 +95,7 @@ import {
     AgentsClient,
     GovernanceBanner,
     type AgentRow,
+    type GovernanceBannerInput,
 } from '@/app/t/[tenantSlug]/(app)/agents/AgentsClient';
 
 const EN = require('../../messages/en.json') as {
@@ -142,7 +148,7 @@ const ROWS: AgentRow[] = [
 function renderRegister(
     opts: {
         rows?: AgentRow[];
-        governance?: { enforcing: boolean; unboundCredentials: number };
+        governance?: GovernanceBannerInput;
         canWrite?: boolean;
     } = {},
 ) {
@@ -158,7 +164,13 @@ function renderRegister(
                 owners={[{ id: 'user-1', label: 'Dana Iveagh' }]}
                 vendors={[]}
                 kpiCounts={COUNTS}
-                governance={opts.governance ?? { enforcing: true, unboundCredentials: 0 }}
+                governance={
+                    opts.governance ?? {
+                        enforcing: true,
+                        unboundCredentials: 0,
+                        unboundCredentialSamples: [],
+                    }
+                }
                 assurance={null}
                 proposalsAwaitingReview={null}
                 canWrite={opts.canWrite ?? true}
@@ -263,7 +275,7 @@ describe('all four KPI cards render, and each is registered kind:"kpi"', () => {
 describe('the governance banner says the right sentence for each of the three states', () => {
     /** Rendered alone — the banner is the unit, and mounting the whole
      *  register three times to read one sentence is thirty seconds a state. */
-    const bannerText = (governance: { enforcing: boolean; unboundCredentials: number }) => {
+    const bannerText = (governance: GovernanceBannerInput) => {
         const { container, unmount } = render(<GovernanceBanner governance={governance} />);
         const text = container.textContent ?? '';
         unmount();
@@ -271,7 +283,11 @@ describe('the governance banner says the right sentence for each of the three st
     };
 
     it('NOT ENFORCING — says the register decides nothing', () => {
-        const text = bannerText({ enforcing: false, unboundCredentials: 0 });
+        const text = bannerText({
+            enforcing: false,
+            unboundCredentials: 0,
+            unboundCredentialSamples: [],
+        });
         expect(text).toContain(REGISTER.governance.notEnforcing);
         // …and NOT either of the other two. A banner that concatenated them
         // would satisfy a `toContain` for the right one while also saying the
@@ -283,12 +299,30 @@ describe('the governance banner says the right sentence for each of the three st
         // Order matters: with the gate off, unbound credentials are refused by
         // nothing, so naming them would send an operator to fix a problem they
         // do not have.
-        const text = bannerText({ enforcing: false, unboundCredentials: 5 });
+        const text = bannerText({
+            enforcing: false,
+            unboundCredentials: 5,
+            unboundCredentialSamples: [
+                { id: 'k9', name: 'Dormant exporter', keyPrefix: 'ik_live_ff99' },
+            ],
+        });
+        // …and the NAME does not leak into the off-state banner either. With
+        // the gate off nothing is refused, so naming a credential here would
+        // send an operator to fix a problem they do not have.
+        expect(text).not.toContain('Dormant exporter');
         expect(text).toContain(REGISTER.governance.notEnforcing);
     });
 
     it('ENFORCING WITH UNBOUND CREDENTIALS — names the refusal and the fix', () => {
-        const text = bannerText({ enforcing: true, unboundCredentials: 3 });
+        const text = bannerText({
+            enforcing: true,
+            unboundCredentials: 3,
+            unboundCredentialSamples: [
+                { id: 'k1', name: 'Nightly sync', keyPrefix: 'ik_live_ab12' },
+                { id: 'k2', name: 'Zapier', keyPrefix: 'ik_live_cd34' },
+                { id: 'k3', name: 'Warehouse loader', keyPrefix: 'ik_live_ef56' },
+            ],
+        });
         // The sentence's TAIL, after the ICU plural the test mock does not
         // expand. It is the half that carries the instruction.
         expect(text).toContain('until you bind it to a registered agent');
@@ -297,7 +331,11 @@ describe('the governance banner says the right sentence for each of the three st
     });
 
     it('ENFORCING — renders the all-clear sentence rather than nothing', () => {
-        const text = bannerText({ enforcing: true, unboundCredentials: 0 });
+        const text = bannerText({
+            enforcing: true,
+            unboundCredentials: 0,
+            unboundCredentialSamples: [],
+        });
         expect(text).toBe(REGISTER.governance.enforcing);
     });
 
@@ -305,12 +343,123 @@ describe('the governance banner says the right sentence for each of the three st
         // The paired assertion the three above cannot make individually: a
         // state that rendered null would pass its own `not.toContain` checks.
         for (const g of [
-            { enforcing: false, unboundCredentials: 0 },
-            { enforcing: true, unboundCredentials: 3 },
-            { enforcing: true, unboundCredentials: 0 },
+            { enforcing: false, unboundCredentials: 0, unboundCredentialSamples: [] },
+            {
+                enforcing: true,
+                unboundCredentials: 3,
+                unboundCredentialSamples: [
+                    { id: 'k1', name: 'Nightly sync', keyPrefix: 'ik_live_ab12' },
+                ],
+            },
+            { enforcing: true, unboundCredentials: 0, unboundCredentialSamples: [] },
         ]) {
             expect(bannerText(g).trim().length).toBeGreaterThan(20);
         }
+    });
+});
+
+describe('the unbound state NAMES the credentials, not just their number (#2565)', () => {
+    /**
+     * The banner's named list, ROW BY ROW, plus the whole banner's text.
+     *
+     * Rows rather than a substring of the banner: `toContain('Nightly sync')`
+     * over the whole notice would also pass for a name glued into the count
+     * sentence, and the point of the list is that it is a list an operator can
+     * read down. An absent `<ul>` yields `[]` — which an exact `toEqual` fails
+     * and a `not.toContain` would have passed.
+     */
+    const banner = (governance: GovernanceBannerInput) => {
+        const { container, unmount } = render(<GovernanceBanner governance={governance} />);
+        const notice = container.querySelector('[data-testid="agents-governance-banner"]');
+        const list = container.querySelector('[data-testid="agents-governance-unbound"]');
+        const rows =
+            list === null
+                ? []
+                : Array.from(list.querySelectorAll('li')).map((li) => li.textContent ?? '');
+        const text = notice === null ? '' : (notice.textContent ?? '');
+        unmount();
+        return { rows, text };
+    };
+
+    it('names every unbound credential it was handed, by name AND key prefix', () => {
+        const { rows, text } = banner({
+            enforcing: true,
+            unboundCredentials: 2,
+            unboundCredentialSamples: [
+                { id: 'k1', name: 'Nightly sync', keyPrefix: 'ik_live_ab12' },
+                { id: 'k2', name: 'Zapier', keyPrefix: 'ik_live_cd34' },
+            ],
+        });
+        // EXACT, and in the order handed over. The prefix is half the claim:
+        // two integrations can share a label, and the prefix is what an
+        // operator matches against the row in `/admin/api-keys`.
+        expect(rows).toEqual(['Nightly sync ik_live_ab12…', 'Zapier ik_live_cd34…']);
+        // The count sentence is still there — the names are an ADDITION to it,
+        // not a replacement, so the banner still says how many as well as which.
+        expect(text).toContain('until you bind it to a registered agent');
+    });
+
+    it('the names live INSIDE the governance banner, not loose beside it', () => {
+        // A list rendered as a sibling of the notice would satisfy a
+        // whole-container `toContain` while an operator never saw it under the
+        // warning it belongs to.
+        const { unmount } = render(
+            <GovernanceBanner
+                governance={{
+                    enforcing: true,
+                    unboundCredentials: 1,
+                    unboundCredentialSamples: [
+                        { id: 'k1', name: 'Nightly sync', keyPrefix: 'ik_live_ab12' },
+                    ],
+                }}
+            />,
+        );
+        const notice = document.querySelector('[data-testid="agents-governance-banner"]');
+        expect(notice).not.toBeNull();
+        expect(
+            within(notice as HTMLElement).getByTestId('agents-governance-unbound'),
+        ).toBeTruthy();
+        expect(within(notice as HTMLElement).getByText('Nightly sync')).toBeTruthy();
+        unmount();
+    });
+
+    it('over the sample limit, the list is bounded and the REMAINDER is stated', () => {
+        // Five named, seven counted. The two that do not fit are not dropped:
+        // the overflow row carries them, so the banner never implies that the
+        // five it shows are all there is.
+        const { rows } = banner({
+            enforcing: true,
+            unboundCredentials: 7,
+            unboundCredentialSamples: [
+                { id: 'k1', name: 'One', keyPrefix: 'ik_live_0001' },
+                { id: 'k2', name: 'Two', keyPrefix: 'ik_live_0002' },
+                { id: 'k3', name: 'Three', keyPrefix: 'ik_live_0003' },
+                { id: 'k4', name: 'Four', keyPrefix: 'ik_live_0004' },
+                { id: 'k5', name: 'Five', keyPrefix: 'ik_live_0005' },
+            ],
+        });
+        expect(rows).toEqual([
+            'One ik_live_0001…',
+            'Two ik_live_0002…',
+            'Three ik_live_0003…',
+            'Four ik_live_0004…',
+            'Five ik_live_0005…',
+            '+2 more…',
+        ]);
+    });
+
+    it('with nothing over the limit there is no overflow row at all', () => {
+        // The paired negative. Without it, an overflow row that always rendered
+        // ("+0 more…") would satisfy the case above and tell an operator there
+        // is more to find when there is not.
+        const { rows } = banner({
+            enforcing: true,
+            unboundCredentials: 1,
+            unboundCredentialSamples: [
+                { id: 'k1', name: 'Only one', keyPrefix: 'ik_live_0001' },
+            ],
+        });
+        expect(rows).toEqual(['Only one ik_live_0001…']);
     });
 });
 
