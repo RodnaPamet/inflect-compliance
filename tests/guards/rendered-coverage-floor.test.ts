@@ -164,7 +164,18 @@ const ROOT = path.resolve(__dirname, '../..');
 // kill-switch history (6), kill-switch scope (5) and the assurance panel (6),
 // less the churn from props threaded through existing register fixtures.
 // An upward ratchet only works if the floor tracks the gains.
-const RENDERED_TEST_FLOOR = 280;
+// 280 -> 289 (2026-09-17, #2560): `agentic-governance-card.test.tsx` — the
+// dashboard card's first rendered coverage of any kind. Measured in this tree
+// with `ls tests/rendered/*.test.tsx | wc -l` = 289, against 288 on
+// origin/main: the floor was sitting at EXACTLY slack 8 before this file, so
+// the one addition took it to 9 and the sentinel fired. Raising it takes the
+// MEASURED count rather than 281, because the eight already-accumulated
+// suites are the ones the sentinel was refusing to leave spendable.
+//   Note for a concurrent branch: this constant is shared state. Two PRs that
+// each add a rendered test must each raise it, and the second to merge takes
+// the measured count after the first — the #2405/#2388 note above is the
+// worked example of that going wrong in the other direction.
+const RENDERED_TEST_FLOOR = 289;
 // Raised 36 → 37 (2026-06-20): page-load-budget.spec.ts — the per-route
 // server-TTFB probe for the "instant pages" performance loop.
 // Raised 37 → 42 (2026-06-27): tracks accumulated E2E growth incl. the

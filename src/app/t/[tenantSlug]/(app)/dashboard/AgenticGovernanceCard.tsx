@@ -2,12 +2,34 @@ import { Suspense } from 'react';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 
+import { AgentStatus } from '@prisma/client';
+
 import { getTenantCtx } from '@/app-layer/context';
 import { getAgenticDashboardSummary } from '@/app-layer/usecases/agent-registry';
 import { Robot } from '@/components/ui/icons/nucleo';
 import { Card } from '@/components/ui/card';
 import { Heading } from '@/components/ui/typography';
 import { InlineNotice } from '@/components/ui/inline-notice';
+
+/**
+ * The order the census recites the standings in — the agent's own lifecycle.
+ *
+ * Written as a RANK MAP rather than an array because `Record<AgentStatus, …>`
+ * is exhaustive: a member added to `AgentStatus` and not given a rank here is
+ * a type error, where a bare `AgentStatus[]` would have compiled happily and
+ * quietly left the new standing out of an operator-facing sentence while the
+ * total kept counting it.
+ */
+const STANDING_RANK: Record<AgentStatus, number> = {
+    [AgentStatus.DRAFT]: 0,
+    [AgentStatus.ACTIVE]: 1,
+    [AgentStatus.SUSPENDED]: 2,
+    [AgentStatus.RETIRED]: 3,
+};
+
+const STANDING_ORDER = (Object.keys(STANDING_RANK) as AgentStatus[]).sort(
+    (a, b) => STANDING_RANK[a] - STANDING_RANK[b],
+);
 
 /**
  * AGENTIC GOVERNANCE — the dashboard's answer to "is anything stopped?" (#2440).
@@ -40,6 +62,37 @@ import { InlineNotice } from '@/components/ui/inline-notice';
  * failure renders nothing rather than taking the page down with it — the same
  * posture `page.tsx` takes for the trend snapshot.
  *
+ * ── NOTHING AT ALL FOR A TENANT WITH AN EMPTY REGISTER (#2560) ──────────────
+ *
+ * The widget was asked for "WHEN ANY AGENT IS REGISTERED", and until #2560
+ * there was no number here that could implement the condition. Without it a
+ * workspace that has never registered an agent was told, in the reassuring
+ * voice of the all-clear line, that "every active agent is scored" — a true
+ * sentence about the empty set and a misleading one to read on a dashboard,
+ * because it describes a governed fleet rather than no fleet at all.
+ *
+ * `totalRegistered === 0` is the gate, and it sits AFTER the summary read
+ * rather than before it: the count is what the read returns.
+ *
+ * ── THE CENSUS IS A LINE, NOT A NOTICE ──────────────────────────────────────
+ *
+ * "Count by standing" answers a different question from everything below it.
+ * The notices answer "is anything wrong"; the census answers "what is here" —
+ * so it renders whatever the numbers are, ABOVE the notices, and it is not
+ * behind a `> 0` guard the way each notice is. A card that could only raise
+ * alarms read identically over a workspace with twelve SUSPENDED agents and
+ * one with a single ACTIVE one, because engaging a kill switch does not move
+ * `status` (above) and `activeUnscored` is a risk-tier fact, not a census.
+ *
+ * Inside the sentence, a standing with NO agents is suppressed: a workspace
+ * that has never suspended anything does not need to be told "Suspended: 0".
+ * The total always renders, and it is the total the gate above tested.
+ *
+ * The per-standing words are the REGISTER'S OWN labels
+ * (`register.filterEnums.status.*`), not a second set written for this card.
+ * One vocabulary for one enum, so the dashboard and the register it links to
+ * cannot come to disagree about what to call a DRAFT.
+ *
  * ── THE STATES ARE ORDERED BY WHAT AN OPERATOR SHOULD DO FIRST ──────────────
  *
  * Tenant-wide kill, then per-agent kills, then unscored-but-active, then the
@@ -48,7 +101,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
  * empty panel cannot be told apart from a panel that failed to load, and
  * "nothing is stopped" is the single most reassuring sentence here.
  */
-async function AgenticGovernanceCardBody({
+export async function AgenticGovernanceCardBody({
     tenantSlug,
 }: {
     tenantSlug: string;
@@ -64,8 +117,18 @@ async function AgenticGovernanceCardBody({
         return null;
     }
 
+    // The owner's "when any agent is registered", and the only early return
+    // that is about the DATA rather than about the reader.
+    if (summary.totalRegistered === 0) return null;
+
     const stopped = summary.tenantKillInForce || summary.agentsKilled > 0;
     const clear = !stopped && summary.activeUnscored === 0 && summary.enforcing;
+    const breakdown = STANDING_ORDER.filter((standing) => summary.byStanding[standing] > 0)
+        .map(
+            (standing) =>
+                `${t(`register.filterEnums.status.${standing}`)}: ${summary.byStanding[standing]}`,
+        )
+        .join(', ');
 
     return (
         <Card className="space-y-default" data-testid="agentic-governance-card">
@@ -86,6 +149,12 @@ async function AgenticGovernanceCardBody({
             </div>
 
             <div className="space-y-compact">
+                <p className="text-sm text-content-muted" data-testid="agentic-standing">
+                    {t('dashboardWidget.standing', {
+                        total: summary.totalRegistered,
+                        breakdown,
+                    })}
+                </p>
                 {summary.tenantKillInForce && (
                     <InlineNotice variant="error" data-testid="agentic-kill-tenant">
                         {t('dashboardWidget.killInForceTenant')}
