@@ -101,6 +101,84 @@ const pinTable = {
     },
 };
 
+// ── The bell's tables (#2561) ───────────────────────────────────────────────
+//
+// WIDENING THIS DOUBLE IS PART OF THE FIX, NOT DECORATION. The emit is
+// fire-and-forget inside an unconditional catch, so against the previous
+// double — `{ mcpToolManifestPin: pinTable }` and nothing else — `db.notification`
+// would be `undefined`, the property access would throw, the catch would
+// swallow it, and every assertion in this file would stay green while the bell
+// never rang. A double that cannot produce the failing input defeats its own
+// proof. Four tables are needed and each is needed for a different reason:
+// `notification` (the write), `tenantMembership` (who the tenant-wide accept
+// is addressed to), `tenantNotificationSettings` (the in-app mute the emitter
+// consults ABOVE the write), and `registeredAgent` (never reached on this
+// path, because the pin resolves recipients with a null agent — present so the
+// double is the shape `resolveAgenticRecipients` declares rather than the
+// subset one caller happens to touch).
+
+interface NotificationRow {
+    tenantId: string;
+    userId: string;
+    type: string;
+    title: string;
+    message: string;
+    linkUrl: string | null;
+    dedupeKey: string;
+}
+
+const notifications: NotificationRow[] = [];
+
+const notificationTable = {
+    createMany: async (args: any) => {
+        let count = 0;
+        for (const row of args.data as NotificationRow[]) {
+            // `skipDuplicates` against `dedupeKey` is the whole reason the
+            // emitter can run inside an interactive transaction: a repeat
+            // returns `count: 0` instead of throwing P2002. A double that
+            // inserted unconditionally would make the day-granular key
+            // untestable.
+            if (args.skipDuplicates && notifications.some((n) => n.dedupeKey === row.dedupeKey)) {
+                continue;
+            }
+            notifications.push(row);
+            count += 1;
+        }
+        return { count };
+    },
+};
+
+interface MembershipRow {
+    tenantId: string;
+    userId: string;
+    role: string;
+    status: string;
+}
+
+const memberships: MembershipRow[] = [];
+
+const tenantMembershipTable = {
+    findMany: async (args: any) =>
+        memberships
+            .filter(
+                (m) =>
+                    m.tenantId === args.where.tenantId &&
+                    m.role === args.where.role &&
+                    m.status === args.where.status,
+            )
+            .map((m) => ({ userId: m.userId })),
+};
+
+// Never reached from the manifest-pin path — see the note above.
+const registeredAgentTable = { findFirst: jest.fn().mockResolvedValue(null) };
+
+/** The tenant's muted in-app types (#2564). Empty = nothing muted. */
+let mutedInAppTypes: string[] = [];
+
+const tenantNotificationSettingsTable = {
+    findUnique: async () => ({ mutedInAppTypes }),
+};
+
 const tenantApiKey = { findFirst: jest.fn() };
 
 // No kill switch is in force in this suite. The boundary's step 0 asks ONE
@@ -132,7 +210,13 @@ jest.mock('@/lib/prisma', () => ({
 
 jest.mock('@/lib/db-context', () => ({
     runInTenantContext: (_ctx: unknown, cb: (db: unknown) => unknown) =>
-        cb({ mcpToolManifestPin: pinTable }),
+        cb({
+            mcpToolManifestPin: pinTable,
+            notification: notificationTable,
+            tenantMembership: tenantMembershipTable,
+            registeredAgent: registeredAgentTable,
+            tenantNotificationSettings: tenantNotificationSettingsTable,
+        }),
 }));
 
 jest.mock('@/lib/audit', () => ({
@@ -166,6 +250,16 @@ const auditRows = appendAuditEntry as unknown as jest.Mock;
 const TENANT = 'tenant-1';
 const API_KEY_ID = 'key-1';
 const APPROVER = 'user-approver';
+/**
+ * A SECOND active OWNER, and the suite is unprovable without one.
+ *
+ * The approver is himself an ACTIVE OWNER, so a workspace seeded with one
+ * owner would have that owner filtered out as the actor and the emit would
+ * write zero rows — indistinguishable from an emit that never happened. The
+ * "addressed to the workspace, never to the person who clicked" rule needs two
+ * distinct people before either half of it can fail.
+ */
+const SECOND_OWNER = 'user-second-owner';
 
 /**
  * The clean definition — the one a tenant approved. Named after a real tool so
@@ -296,10 +390,18 @@ function denialRows(): Array<Record<string, any>> {
 
 beforeEach(() => {
     pins.length = 0;
+    notifications.length = 0;
+    mutedInAppTypes = [];
+    memberships.length = 0;
+    memberships.push(
+        { tenantId: TENANT, userId: APPROVER, role: 'OWNER', status: 'ACTIVE' },
+        { tenantId: TENANT, userId: SECOND_OWNER, role: 'OWNER', status: 'ACTIVE' },
+    );
     jest.clearAllMocks();
     mockDriftMetric.mockClear();
     mockLogError.mockClear();
     tenantApiKey.findFirst.mockResolvedValue({ revokedAt: null, expiresAt: null });
+    registeredAgentTable.findFirst.mockResolvedValue(null);
 });
 
 describe('a tool whose DESCRIPTION changed is refused', () => {
@@ -498,6 +600,153 @@ describe('re-approval clears the block and records who approved', () => {
 
         // And the block is still standing.
         expect(await refusalOf(live)).not.toBeNull();
+    });
+});
+
+// ─── The bell: a tenant-wide accept that used to happen in silence (#2561) ───
+
+describe('approving a manifest pin tells the workspace', () => {
+    /**
+     * The same real registry tool the approval tests above use. A manifest pin
+     * is TENANT-WIDE — it clears the boundary's refusal for every agent at once
+     * — which is the whole reason this event is worth a bell: the decision is
+     * taken on one agent's Tools tab and it binds all of them.
+     */
+    const live = toolDefinitionByName('list_evidence_expiring') as ToolDefinition;
+
+    /** The state a tenant is in the moment a deploy changes a description. */
+    function pinStaleRevision(): void {
+        pin({ ...live, description: 'A previous description of this tool.' }, { revision: 3 });
+    }
+
+    function approve(): Promise<unknown> {
+        const ctx = makeRequestContext('OWNER', { tenantId: TENANT, userId: APPROVER });
+        return approveToolManifest(ctx, {
+            toolName: live.name,
+            expectedManifestHash: hashToolManifest(live).manifestHash,
+        });
+    }
+
+    it('writes one bell row, addressed to the other active OWNER and not to the approver', async () => {
+        pinStaleRevision();
+        await approve();
+
+        expect(notifications).toHaveLength(1);
+        const [bell] = notifications;
+        expect(bell.type).toBe('AGENT_TOOL_MANIFEST_PIN_CHANGED');
+        expect(bell.userId).toBe(SECOND_OWNER);
+        // Stated separately from the line above, because "the approver is not
+        // the recipient" is the claim, and a second row addressed to him would
+        // satisfy a `[0].userId` check on its own.
+        expect(notifications.map((n) => n.userId)).not.toContain(APPROVER);
+        // No tenant-level manifest surface exists, so the register is where a
+        // recipient can act — the same answer the kill-switch bell gives.
+        expect(bell.linkUrl).toBe('/t/acme/agents');
+    });
+
+    it('keys the row on (tenant, type, TOOL, recipient, day)', async () => {
+        pinStaleRevision();
+        await approve();
+
+        const [bell] = notifications;
+        const segments = bell.dedupeKey.split(':');
+        expect(segments.slice(0, 4)).toEqual([
+            TENANT,
+            'AGENT_TOOL_MANIFEST_PIN_CHANGED',
+            live.name,
+            SECOND_OWNER,
+        ]);
+        // Day granularity, UTC. Asserted as a shape rather than as today's
+        // date so the suite cannot go red once at a midnight boundary; that
+        // the day is what collapses repeats is asserted behaviourally below.
+        expect(segments[4]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    it('a second approval of the same tool on the same day adds no second row', async () => {
+        // The day-granular dedupe key, exercised rather than read: two real
+        // writes — two revisions, two audit rows — collapse to one bell.
+        //
+        // WHAT THIS DOES NOT PROVE, measured: it does not discriminate the
+        // TOOL NAME from the manifest hash as the key's entity segment.
+        // `approveToolManifest` resolves the definition from the BUILD, so
+        // both approvals here accept the same live definition and a
+        // hash-keyed entity dedupes identically — mutated to
+        // `entityId: live.manifestHash` this test stays green. The entity
+        // segment's identity is pinned by the key test above, which goes red
+        // under exactly that mutation.
+        pinStaleRevision();
+        await approve();
+        expect(notifications).toHaveLength(1);
+
+        // Drift it again and accept again — a REAL second write: new revision,
+        // new audit row, same tool, same day.
+        pins.length = 0;
+        pinStaleRevision();
+        await approve();
+
+        expect(notifications).toHaveLength(1);
+    });
+
+    it('a re-approval that moves nothing rings no bell', async () => {
+        // The guard is the `changed: false` early return: a call whose pin
+        // already matches writes no pin and no audit row, and must say nothing
+        // either. A bell for a no-op is how people learn to ignore a bell, and
+        // this is the one that announces a supply-chain accept.
+        pin(live);
+
+        const result = (await approve()) as { changed: boolean };
+
+        expect(result.changed).toBe(false);
+        expect(notifications).toHaveLength(0);
+    });
+
+    it('never carries the tool description — the bell is one more reader', async () => {
+        // The pin exists because a tool's DESCRIPTION is instruction text
+        // delivered to a model. A notification quoting it would deliver the
+        // same text to the bell list, the SSE stream and the recipient's
+        // screen. `mcp-tool-manifest.ts` refuses it in the audit row, the log
+        // line and the response for this reason; the bell obeys the same rule.
+        expect(live.description.length).toBeGreaterThan(20);
+
+        pinStaleRevision();
+        await approve();
+
+        expect(notifications).toHaveLength(1);
+        expect(JSON.stringify(notifications)).not.toContain(live.description);
+        // What it DOES name is the tool, so the recipient knows what was
+        // accepted without being handed the text.
+        expect(notifications[0].message).toContain(live.name);
+    });
+
+    it('honours the tenant in-app mute: a muted type writes no row at all', async () => {
+        // ABOVE the write, not filtered after it. A row written and then
+        // hidden still lands in the bell list, still counts toward the unread
+        // badge and still fans out over SSE.
+        mutedInAppTypes = ['AGENT_TOOL_MANIFEST_PIN_CHANGED'];
+        pinStaleRevision();
+
+        await approve();
+
+        expect(notifications).toHaveLength(0);
+    });
+
+    it('a bell failure never fails the approval — the pin still lands', async () => {
+        // The emit is best-effort under an unconditional catch, in the shape
+        // `agent-kill-switch.ts` established. An approval that threw because
+        // the bell was down would leave the boundary refusing a tool a human
+        // has accepted, which is the wrong failure mode for a clearing action.
+        pinStaleRevision();
+        const boom = jest
+            .spyOn(notificationTable, 'createMany')
+            .mockRejectedValueOnce(new Error('bell down'));
+
+        const result = (await approve()) as { changed: boolean };
+
+        expect(result.changed).toBe(true);
+        expect(findPin(TENANT, live.name)?.approvedByUserId).toBe(APPROVER);
+        expect(notifications).toHaveLength(0);
+        expect(boom).toHaveBeenCalled();
+        boom.mockRestore();
     });
 });
 

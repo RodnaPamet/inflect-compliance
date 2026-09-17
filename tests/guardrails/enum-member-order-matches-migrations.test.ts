@@ -258,6 +258,7 @@ const SIGNED_OFF: ReadonlyArray<{
             'AGENT_KILL_SWITCH_ENGAGED',
             'AGENT_PROPOSAL_QUARANTINED',
             'AGENT_CIRCUIT_BREAKER_TRIPPED',
+            'AGENT_TOOL_MANIFEST_PIN_CHANGED',
             'GENERAL',
         ],
         migrationOrder: [
@@ -271,6 +272,7 @@ const SIGNED_OFF: ReadonlyArray<{
             'FINDING_VERIFIED',
             'TASK_ASSIGNED',
             'AGENT_CIRCUIT_BREAKER_TRIPPED',
+            'AGENT_TOOL_MANIFEST_PIN_CHANGED',
             'GENERAL',
             'TASK_DUE',
             'VENDOR_REVIEW_DUE',

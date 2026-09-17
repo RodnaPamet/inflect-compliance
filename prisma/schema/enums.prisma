@@ -629,6 +629,27 @@ enum NotificationType {
   // anyway: an OPEN breaker is never re-judged, so the next trip can only
   // follow a human close.
   AGENT_CIRCUIT_BREAKER_TRIPPED
+  // AGENTIC UI 1/4 (#2561) — a tool-manifest PIN was approved.
+  //
+  // The WIDEST agentic act in the product: approving a manifest accepts a new
+  // tool DEFINITION for the whole tenant and clears the MCP boundary's refusal
+  // for EVERY agent at once. A tool definition is three fields the model reads
+  // — name, DESCRIPTION and parameter schema — and the description is
+  // instruction text delivered straight into an agent's context, which makes
+  // this the tool-poisoning surface (OWASP ASI04). The button sits on one
+  // agent's Tools tab, so anybody holding `admin.agent_registry` can take a
+  // tenant-wide decision from a per-agent page and nobody else was told.
+  //
+  // Routed to the workspace's ACTIVE OWNERs — the accept is tenant-wide, so
+  // there is no narrower answer to "who answers for this" — minus the approver,
+  // who does not need a bell for their own click. Deduped per (tool, recipient,
+  // day). Fired ONLY when the pin actually moved: a re-approval that matches
+  // the hash on file writes no pin and no audit row, and must ring no bell.
+  //
+  // The bell NEVER carries the description text, for the same reason the audit
+  // row refuses it — a notification is another place the injected instructions
+  // would be delivered, and every reader of it is a person or a model.
+  AGENT_TOOL_MANIFEST_PIN_CHANGED
   GENERAL
 }
 
