@@ -158,9 +158,20 @@ interface DbOptions {
     rows: Row[];
     /** The breaker row, or `null` for an agent nothing has ever judged. */
     breaker?: { baselineEpoch: Date; state: string; lastEvaluatedWindow: string | null } | null;
+    /**
+     * Hand rows back OLDEST-first instead of newest-first.
+     *
+     * The store orders `windowStart: 'desc'` today, which makes the last element
+     * of every page the oldest one — so a usecase that read either end would
+     * agree with one that takes a minimum, and no fixture could tell them apart.
+     * This inverts the seam the usecase actually reads, which is the only place
+     * the ordering can be varied: `rows` is re-sorted here, so passing a
+     * reversed array would not have reached it.
+     */
+    ascending?: boolean;
 }
 
-function makeDb({ rows, breaker = null }: DbOptions) {
+function makeDb({ rows, breaker = null, ascending = false }: DbOptions) {
     const windowQueries: any[] = [];
     const db = {
         registeredAgent: {
@@ -184,9 +195,12 @@ function makeDb({ rows, breaker = null }: DbOptions) {
                             (bound.lt === undefined || r.windowStart < bound.lt),
                     )
                     .sort((a, b) => b.windowStart.getTime() - a.windowStart.getTime());
-                return (args.take === undefined ? matched : matched.slice(0, args.take)).map(
-                    (r) => ({ ...r }),
-                );
+                // The `take` is applied to the NEWEST-first order either way —
+                // that is the row cap the store performs. Only the order the
+                // capped page is handed back in changes, so `ascending` varies
+                // the ordering without also varying the population.
+                const page = args.take === undefined ? matched : matched.slice(0, args.take);
+                return (ascending ? [...page].reverse() : page).map((r) => ({ ...r }));
             }),
         },
     };
@@ -375,5 +389,167 @@ describe('the baseline block is the detector population, not the page', () => {
             PAGE,
             BASELINE_WINDOW_LIMIT + 1,
         ]);
+    });
+});
+
+/**
+ * The baseline's REACH, which its count cannot express (#2461).
+ *
+ * `windows` counts ACTIVE hours. Two agents can hand the panel an identical
+ * "12 of 12" while one was observed over twelve consecutive hours and the other
+ * over twelve days, and until these fields existed the surface could not tell
+ * them apart — so an operator challenging a trip had no way to see that the
+ * history it was judged against began a quarter ago.
+ *
+ * The fixtures below are deliberately built to hold the COUNT fixed and vary
+ * only the spacing. A contiguous fixture would make span and count numerically
+ * equal, and every assertion here would pass against an implementation that
+ * simply returned `accepted.length` — the defect this file exists to catch.
+ */
+describe('the baseline reports how far back it reaches, not just how much', () => {
+    /** `count` complete windows spaced `everyHours` apart, plus the filling hour. */
+    function makeSparseWindows(count: number, everyHours: number): Row[] {
+        const rows: Row[] = [];
+        for (let i = 1; i <= count; i++) {
+            rows.push({
+                windowStart: new Date(CURRENT_START.getTime() - i * everyHours * WINDOW_MS),
+                readCalls: 3 + (i % 5),
+                proposeCalls: i % 3,
+                orchestrateCalls: i % 2,
+                toolNames: ['agent.framework_status'],
+                anomalous: false,
+                verdict: 'STEADY',
+            });
+        }
+        const filling: Row = {
+            windowStart: new Date(CURRENT_START),
+            readCalls: 2,
+            proposeCalls: 0,
+            orchestrateCalls: 0,
+            toolNames: ['agent.framework_status'],
+            anomalous: false,
+            verdict: null,
+        };
+        return [filling, ...rows];
+    }
+
+    it('separates twelve consecutive hours from twelve days, at the same count', async () => {
+        makeDb({ rows: makeWindows(12, 99) });
+        const consecutive = await getAgentCircuitBreaker(ctx, 'agent-1');
+
+        jest.clearAllMocks();
+        makeDb({ rows: makeSparseWindows(12, 24) });
+        const intermittent = await getAgentCircuitBreaker(ctx, 'agent-1');
+
+        // The premise: the counts are IDENTICAL, so nothing below can be
+        // explained by one baseline simply having more in it. Eleven and not
+        // twelve because the newest complete window is the one AWAITING a
+        // verdict — it is the subject of the next judgement, so it is not part
+        // of the baseline that judgement reads.
+        expect(consecutive.baseline.windows).toBe(11);
+        expect(intermittent.baseline.windows).toBe(consecutive.baseline.windows);
+
+        // And the reach is not: one week-day of history against twelve days.
+        expect(consecutive.baseline.spanHours).toBe(12);
+        expect(intermittent.baseline.spanHours).toBe(288);
+
+        // Stated as the relationship, because THIS is the claim: an
+        // implementation returning the count would satisfy the consecutive
+        // case and fail here.
+        expect(intermittent.baseline.spanHours).toBeGreaterThan(
+            intermittent.baseline.windows,
+        );
+    });
+
+    it('reports the oldest accepted window as an instant, not a count', async () => {
+        const rows = makeSparseWindows(12, 24);
+        makeDb({ rows });
+
+        const view = await getAgentCircuitBreaker(ctx, 'agent-1');
+
+        const oldest = rows
+            .map((r) => r.windowStart)
+            .reduce((a, b) => (a < b ? a : b));
+        expect(view.baseline.oldestWindowStart).toEqual(
+            new Date(CURRENT_START.getTime() - 12 * 24 * WINDOW_MS),
+        );
+        // The filling hour is NOT the oldest, but it IS in `rows` — so this
+        // also witnesses that the reduce ran over the accepted population and
+        // not over the raw ledger page.
+        expect(view.baseline.oldestWindowStart).toEqual(oldest);
+        expect(view.baseline.spanHours).toBe(288);
+    });
+
+    it('reports null — not zero — when nothing has been accepted', async () => {
+        // Only the hour still filling, which is excluded from the baseline. The
+        // accepted population is empty.
+        makeDb({ rows: makeWindows(0) });
+
+        const view = await getAgentCircuitBreaker(ctx, 'agent-1');
+
+        expect(view.baseline.windows).toBe(0);
+        // Zero here would read on the panel as "gathered just now", which is
+        // the opposite of the truth.
+        expect(view.baseline.oldestWindowStart).toBeNull();
+        expect(view.baseline.spanHours).toBeNull();
+    });
+
+    it('picks the oldest ACCEPTED window by value, not by position in the page', async () => {
+        // MUTATION-PROVING GAP, closed here. The reach is taken as a MINIMUM
+        // over `accepted` rather than off an end, and the usecase says so — but
+        // until this test every fixture arrived newest-first, so the last
+        // element WAS the oldest and `accepted[accepted.length - 1]` satisfied
+        // all four cases above. The claim had no assertion behind it.
+        //
+        // READ THE SCOPE CAREFULLY, because a wider version of this test is
+        // wrong and was written first: `getAgentCircuitBreaker` as a whole is
+        // NOT order-agnostic and does not claim to be. `accepted` is
+        // `lookback.slice(1)` while a verdict is pending, which drops the newest
+        // complete window — the one awaiting judgement — and that is correct
+        // ONLY on a newest-first page. Handing the whole function a reversed
+        // page drops the OLDEST window instead and the reach moves by a day,
+        // which is the slice failing, not the reduce.
+        //
+        // So this pins the narrow claim the new code actually makes, on the
+        // branch where the slice cannot confound it: once this hour HAS been
+        // judged, `accepted` is `slice(0, BASELINE_WINDOW_LIMIT)` over a
+        // 12-row page, which is every row in either order. Same population,
+        // different order — the only thing varying is what the reduce sees.
+        const rows = makeSparseWindows(12, 24);
+        const breaker = { ...NOT_YET_JUDGED, lastEvaluatedWindow: windowKeyFor(NOW) };
+        makeDb({ rows, breaker, ascending: true });
+
+        const view = await getAgentCircuitBreaker(ctx, 'agent-1');
+
+        // The premise: the reversal did not change WHICH windows were accepted.
+        // Without this the assertion below could be satisfied by a page that
+        // lost rows, which is the failure mode of the wider test described above.
+        expect(view.baseline.windows).toBe(12);
+        // Oldest-first input, and the oldest window is still the oldest one.
+        expect(view.baseline.oldestWindowStart).toEqual(
+            new Date(CURRENT_START.getTime() - 12 * 24 * WINDOW_MS),
+        );
+        expect(view.baseline.spanHours).toBe(288);
+    });
+
+    it('excludes anomalous windows from the reach, as it does from the count', async () => {
+        // The OLDEST window is anomalous, so a reach computed over the raw page
+        // would reach further back than the detector ever reads.
+        const rows = makeSparseWindows(6, 24);
+        rows[rows.length - 1].anomalous = true;
+
+        makeDb({ rows });
+        const view = await getAgentCircuitBreaker(ctx, 'agent-1');
+
+        // Six fixture windows, less the one awaiting a verdict, less the
+        // anomalous one the detector drops.
+        expect(view.baseline.windows).toBe(4);
+        // 120 hours and not 144: the dropped row was the OLDEST, so a reach
+        // computed over the raw page would have reached a day further back
+        // than the detector ever reads.
+        expect(view.baseline.spanHours).toBe(120);
+        expect(view.baseline.oldestWindowStart).toEqual(
+            new Date(CURRENT_START.getTime() - 5 * 24 * WINDOW_MS),
+        );
     });
 });
