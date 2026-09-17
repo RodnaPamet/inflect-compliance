@@ -319,13 +319,24 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
         // sends someone to install a CLI that is already there. Exit 3 is
         // outside powerpipe's documented {0,1,2}, so it means the run did not
         // complete — unlike 1 and 2, which do.
-        cliResult({ err: exitCode(3), stderr: 'ExpiredToken' });
+        // The stderr sample is ARBITRARY and MUST STAY MEANINGLESS. Exit 3 lands on
+        // the did-not-complete gate — `!powerpipeRunCompleted(outcome)` in this
+        // module — which is the exact branch a credential classifier would hook if
+        // one is ever built (#2413, prior art from the deleted
+        // fix/posture-auth-failure-unreachable). Put a real auth-failure code in
+        // this sample (the literal 'ExpiredToken' stood here) and the fixture
+        // silently stops being the undocumented-exit case and becomes the
+        // credential case, while every assertion below still passes: a green test
+        // no longer covering what its name claims, and a fixture shape that hands a
+        // credential verdict to anyone who copies it. Any string that could pass
+        // for a provider error code is barred here.
+        cliResult({ err: exitCode(3), stderr: 'arbitrary-stderr-sample' });
 
         const res = await runPowerpipeBenchmark({ benchmarkId: 'b', env: emptyEnv(), secretValues: [] });
 
         expect(res.status).toBe('ERROR');
         expect(res.summary).toBe('Powerpipe collector did not complete the run.');
-        expect(res.errorMessage).toContain('ExpiredToken');
+        expect(res.errorMessage).toContain('arbitrary-stderr-sample');
         // The code an operator needs in order to look it up rides in details,
         // which the usecases persist as IntegrationExecution.resultJson.
         expect(res.details).toEqual({ benchmark: 'b', collectorExitCode: 3 });
