@@ -70,13 +70,70 @@
 # nobody reads. Loading locally costs one extra image export and keeps
 # the invariant absolute — GHCR receives nothing until Trivy passes.
 #
-# Two guardrails pin this, and they pin different things.
+# ── WHY `:latest` NOW WAITS FOR A HUMAN, AND `:sha-<short>` DOES NOT ──
+#
+# A passing scan says "no known CRITICAL/HIGH CVE". It does not say the
+# change is one anybody meant to ship. Measured on the VM: Watchtower
+# polls `:latest` every 60 SECONDS, so until 2026-09-17 a merge to
+# `main` reached production about a minute after the image published,
+# with no human anywhere in the path — on a product whose 05:00 leaver
+# pass DISABLES REAL ACCOUNTS in customers' Entra/AD directories. The
+# blast radius of an unintended merge is other companies' employees
+# losing their logins.
+#
+# So the two tags are now published by two different jobs:
+#
+#   · `build-push`   — every push to `main`, NO approval. Builds, scans,
+#     and publishes the IMMUTABLE `:sha-<short>` tag. Nothing about this
+#     changed except that it no longer touches `:latest`. Every commit
+#     is therefore still built, still scanned, and still present in GHCR
+#     as a rollback target; `main` is never unable to publish.
+#   · `promote-latest` — `needs: build-push`, declares
+#     `environment: production-rollout`, and moves the ROLLING tag that
+#     Watchtower follows. GitHub holds this job until a required
+#     reviewer approves it.
+#
+# WHAT A YAML FILE CANNOT DO, STATED PLAINLY. The `environment:` line
+# below is the whole mechanism and on its own it is worthless: GitHub
+# CREATES an environment the first time a workflow names one that does
+# not exist, with ZERO protection rules, and a job whose environment
+# protects nothing does not wait for anybody. The approval lives in a
+# REPOSITORY SETTING (Settings → Environments → Required reviewers)
+# that no file in this repository can create. `docs/deploy-approval-gate.md`
+# writes the setting down, and the FIRST step of `promote-latest` reads
+# the environment back through the API and FAILS if the reviewer rule is
+# not there — because a change that looks like a gate and silently is
+# not one is worse than no change, which is what #2246 is about.
+#
+# Ordering inside `promote-latest` preserves the property above rather
+# than trading it away. The tag is moved with `buildx imagetools create`
+# from the IMMUTABLE DIGEST `build-push` published, and a SECOND
+# blocking Trivy gate scans that exact digest first. Two consequences,
+# both wanted: the bytes `:latest` ends up pointing at are provably the
+# bytes that were approved (a digest is content-addressed; a tag is
+# not), and an approval that sits for a day is re-scanned against a
+# Trivy database that has moved on, so a CVE disclosed during the wait
+# blocks the rollout.
+#
+# Concurrency is deliberate too: the workflow-level group keeps
+# `cancel-in-progress: true`, so a newer push to `main` cancels a
+# `promote-latest` still waiting for approval. You always approve the
+# newest image rather than working through a queue of stale ones. The
+# cost is that if merges outrun approvals, `:latest` does not move —
+# which is the correct direction, because nobody approved anything.
+#
+# Three guardrails pin this, and they pin different things.
 # `tests/guardrails/security-gate-strictness.test.ts` reads this file
 # and ci.yml AS TEXT and pins the severity set and the blocking exit
-# code in both. Everything STRUCTURAL — the build-scan-push order, the gate
-# being unconditional, and the gate scanning the image about to ship —
-# is pinned by `tests/guardrails/publish-scans-before-push.test.ts`,
-# which parses the YAML GitHub executes.
+# code in both. Everything STRUCTURAL about the scan — the
+# build-scan-push order, the gate being unconditional, and the gate
+# scanning the image about to ship — is pinned by
+# `tests/guardrails/publish-scans-before-push.test.ts`, which parses the
+# YAML GitHub executes. The APPROVAL property — that `:latest` is
+# unreachable from the ungated job, that the job which moves it declares
+# an environment, that the preflight runs before the move and fails
+# closed, and that the scanned digest is the promoted digest — is pinned
+# by `tests/guardrails/latest-tag-requires-approval.test.ts`.
 #
 name: Publish image to GHCR
 
@@ -96,6 +153,18 @@ permissions:
 env:
     REGISTRY: ghcr.io
     IMAGE_NAME: ${{ github.repository }}
+    # The GitHub Environment whose "Required reviewers" rule is the human
+    # decision between a merge and production running it. Named for what it
+    # gates — the rollout of the rolling tag — not for a deploy pipeline,
+    # because nothing here deploys: moving `:latest` is what makes Watchtower
+    # deploy, within its 60-second poll.
+    #
+    # This name is referenced THREE times below (the job's `environment:`, the
+    # preflight's API path, and the preflight's message) and they must be the
+    # same string: a preflight that reads a DIFFERENT environment than the one
+    # gating the job reports a gate that is not in the path. That identity is
+    # asserted by tests/guardrails/latest-tag-requires-approval.test.ts.
+    APPROVAL_ENVIRONMENT: production-rollout
     # The local, registry-less tag the image is loaded under and Trivy
     # scans. Mirrors ci.yml's `inflect-compliance:ci-<sha>` convention.
     # Deliberately NOT a `ghcr.io/...` name: a registry-shaped ref lets
@@ -117,6 +186,21 @@ jobs:
         # run is not a failed one, and nobody is told. 70 = 40 + 25 + 5
         # for the local image load and the push.
         timeout-minutes: 70
+
+        # Consumed by `promote-latest`. The image NAME comes from here rather
+        # than from `ghcr.io/${{ github.repository }}` in the second job
+        # because `github.repository` carries the owner's capitalisation
+        # (`RodnaPamet/…`) and GHCR requires lowercase — metadata-action
+        # already normalised it, so the normalised value is passed on instead
+        # of being re-derived by a second, differently-spelled expression.
+        #
+        # The DIGEST is the load-bearing one. It is read back from the
+        # registry after the push, so `promote-latest` scans and promotes a
+        # content-addressed reference rather than re-resolving a tag that
+        # something else could have moved in between.
+        outputs:
+            image: ${{ steps.push.outputs.image }}
+            digest: ${{ steps.push.outputs.digest }}
 
         steps:
             - name: Checkout
@@ -145,8 +229,19 @@ jobs:
               uses: docker/metadata-action@v6
               with:
                   images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+                  # `:sha-<short>` ONLY. The rolling `:latest` tag is NOT
+                  # produced here and must not be: this job runs with no human
+                  # in the path, and `:latest` is the tag Watchtower polls
+                  # every 60 seconds. It is minted in `promote-latest`, after
+                  # an approval, from the digest this job publishes.
+                  #
+                  # Re-adding `type=raw,value=latest` here — or dropping
+                  # `latest=false` from `flavor`, which is the other way
+                  # metadata-action emits that tag — restores the ungated
+                  # auto-deploy in a one-line diff, so both are asserted by
+                  # tests/guardrails/latest-tag-requires-approval.test.ts and
+                  # the push step below refuses a `:latest` it is handed.
                   tags: |
-                      type=raw,value=latest
                       type=sha,prefix=sha-,format=short
                   # Lowercase is required by GHCR — metadata-action handles it
                   # via the default `image` normalisation.
@@ -276,7 +371,8 @@ jobs:
             # need `security-events: write` on a workflow that holds a
             # registry-write token, and would re-fetch the vulnerability DB a
             # second time for no new verdict.
-            - name: Push scanned image to GHCR
+            - name: Push scanned image to GHCR under its immutable tag
+              id: push
               run: |
                   set -euo pipefail
                   mapfile -t TAGS < <(printf '%s\n' '${{ steps.meta.outputs.tags }}' | sed '/^[[:space:]]*$/d')
@@ -286,22 +382,178 @@ jobs:
                   fi
                   printf 'publishing the scanned image %s as:\n' "${SCAN_REF}"
                   printf '  %s\n' "${TAGS[@]}"
-                  # Immutable `:sha-<short>` first, rolling `:latest` LAST.
-                  # Watchtower polls `:latest`; if the push sequence is
-                  # interrupted part-way, the rolling tag must never be the
-                  # half that landed, because that would roll production onto
-                  # an image whose immutable name is not in the registry to
-                  # roll back to.
-                  for tag in "${TAGS[@]}"; do
-                      case "$tag" in *:latest) continue ;; esac
-                      docker tag "${SCAN_REF}" "$tag"
-                      docker push "$tag"
-                  done
+                  # THE ROLLING TAG IS NOT THIS JOB'S TO MOVE. Nothing above
+                  # asked for it, so reaching this branch means the tag list
+                  # regrew a `:latest` — a `type=raw,value=latest` back in
+                  # metadata-action, or `flavor: latest=false` dropped. Failing
+                  # is the point: the alternative is silently restoring the
+                  # ungated 60-second path to production while every scan
+                  # assertion in the repo stays green.
                   for tag in "${TAGS[@]}"; do
                       case "$tag" in
                           *:latest)
-                              docker tag "${SCAN_REF}" "$tag"
-                              docker push "$tag"
+                              echo "::error::${tag} — the rolling tag is moved by the promote-latest job, after approval. Refusing to publish it from an unapproved job."
+                              exit 1
                               ;;
                       esac
                   done
+                  for tag in "${TAGS[@]}"; do
+                      docker tag "${SCAN_REF}" "$tag"
+                      docker push "$tag"
+                  done
+                  # Read the manifest digest back FROM THE REGISTRY, with
+                  # `imagetools inspect` rather than `docker image inspect
+                  # --format '{{ index .RepoDigests 0 }}'`. Both usually agree,
+                  # but RepoDigests is local daemon bookkeeping that a push can
+                  # leave empty, and the question here is what GHCR STORED —
+                  # the promote job scans and moves `:latest` onto this digest,
+                  # so it has to be the registry's answer, not the daemon's
+                  # recollection of it.
+                  DIGEST="$(docker buildx imagetools inspect "${TAGS[0]}" --format '{{ .Manifest.Digest }}')"
+                  case "$DIGEST" in
+                      sha256:*) ;;
+                      *)
+                          echo "::error::could not read a manifest digest for ${TAGS[0]} (got '${DIGEST}')"
+                          exit 1
+                          ;;
+                  esac
+                  printf 'image=%s\n' "${TAGS[0]%:*}" >> "$GITHUB_OUTPUT"
+                  printf 'digest=%s\n' "$DIGEST" >> "$GITHUB_OUTPUT"
+                  printf 'published %s@%s\n' "${TAGS[0]%:*}" "$DIGEST"
+
+    # ── THE HUMAN DECISION ──
+    #
+    # Everything above runs with nobody in the path, and that is fine: it
+    # produces an immutable `:sha-<short>` tag nothing follows. THIS job moves
+    # the tag Watchtower polls every 60 seconds, and GitHub holds it until a
+    # required reviewer of the `production-rollout` environment approves.
+    #
+    # The `environment:` value is a LITERAL, not `${{ env.APPROVAL_ENVIRONMENT }}`
+    # — the `env` context is not available in `jobs.<id>.environment`. The two
+    # spellings are asserted identical by
+    # tests/guardrails/latest-tag-requires-approval.test.ts, because a
+    # preflight that reads a different environment than the one gating the job
+    # would confirm a gate that is not in the path.
+    promote-latest:
+        needs: [build-push]
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        environment: production-rollout
+        permissions:
+            contents: read
+            packages: write
+            # Read-only, and specifically for the preflight: GITHUB_TOKEN is a
+            # GitHub App token, and `GET /repos/{owner}/{repo}/environments/{name}`
+            # requires `actions: read` for one. Without it the preflight cannot
+            # tell "no reviewer required" from "could not look", and it treats
+            # both as a refusal.
+            actions: read
+
+        env:
+            IMAGE: ${{ needs.build-push.outputs.image }}
+            DIGEST: ${{ needs.build-push.outputs.digest }}
+
+        steps:
+            # Needed for `.trivyignore` — the re-scan below shares the same
+            # exemption file as the two gates in ci.yml and build-push, so an
+            # exemption reviewed once applies everywhere the image is scanned.
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            # FIRST, before anything that could move a tag. If the approval
+            # rule this job's `environment:` is supposed to rest on does not
+            # exist, this job did not wait for anybody, and the rolling tag
+            # must not move. See scripts/assert-approval-gate.mjs for why all
+            # three outcomes except "reviewer required" exit 1.
+            - name: "Preflight: the approval gate must actually exist"
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  set -euo pipefail
+                  # The digest is the whole contract with the job above. An
+                  # empty one would make every reference below a malformed ref
+                  # — which fails, but fails somewhere unhelpful. Say it here.
+                  case "${DIGEST}" in
+                      sha256:*) ;;
+                      *)
+                          echo "::error::build-push handed no manifest digest (got '${DIGEST}') — refusing to touch the rolling tag"
+                          exit 1
+                          ;;
+                  esac
+                  ENV_JSON="${RUNNER_TEMP}/environment.json"
+                  rm -f "$ENV_JSON"
+                  if ! gh api "repos/${GITHUB_REPOSITORY}/environments/${APPROVAL_ENVIRONMENT}" > "$ENV_JSON"; then
+                      echo "::error::the API call for environment '${APPROVAL_ENVIRONMENT}' failed — see the output above."
+                      # A failed call still left a truncated (or empty) file
+                      # behind. Delete it so the script reports UNKNOWN rather
+                      # than parsing a body nobody wrote.
+                      rm -f "$ENV_JSON"
+                  fi
+                  node scripts/assert-approval-gate.mjs "$ENV_JSON" "${APPROVAL_ENVIRONMENT}"
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v4
+
+            - name: Log in to GHCR
+              uses: docker/login-action@v4
+              with:
+                  registry: ${{ env.REGISTRY }}
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            # ── Trivy re-scan: BLOCKING on CRITICAL,HIGH, same severities and
+            # same `.trivyignore` as the gate in `build-push` ──
+            #
+            # Not redundant. Two things can have changed between that scan and
+            # this one, and both matter more here than they did there:
+            #
+            #   1. TIME. An approval may sit for hours or days. Trivy's
+            #      vulnerability database moves; a CVE disclosed during the
+            #      wait is invisible to the earlier scan and blocks here.
+            #   2. THE DIRECTION OF THE FAILURE. This is the last thing that
+            #      runs before the tag production follows starts pointing
+            #      somewhere new.
+            #
+            # `image-ref` is a DIGEST, not a tag: `${IMAGE}@${DIGEST}` is
+            # content-addressed, so the bytes scanned here are provably the
+            # bytes promoted below, and neither a concurrent push nor a
+            # re-pointed tag can slip different ones in between. That is the
+            # same invariant `SCAN_REF` buys in `build-push` by being
+            # registry-less, obtained the other way round.
+            - name: "Gate: Trivy re-scan of the digest being promoted (critical+high)"
+              uses: aquasecurity/trivy-action@v0.36.0
+              with:
+                  image-ref: ${{ env.IMAGE }}@${{ env.DIGEST }}
+                  format: "table"
+                  exit-code: "1"
+                  severity: "CRITICAL,HIGH"
+                  ignore-unfixed: true
+                  vuln-type: "os,library"
+                  trivyignores: ".trivyignore"
+                  timeout: "15m"
+
+            # Reached ONLY when a reviewer approved AND the re-scan exited 0.
+            #
+            # `imagetools create` copies the MANIFEST, so `:latest` ends up
+            # pointing at the identical digest — no re-upload, no
+            # recompression, and no possibility of the rolling tag naming
+            # bytes that differ from the approved ones. A pull/tag/push round
+            # trip would move the same layers but is not guaranteed to
+            # reproduce the same manifest digest, which is exactly the
+            # equivalence this job exists to preserve.
+            - name: Move the rolling :latest tag onto the approved digest
+              run: |
+                  set -euo pipefail
+                  printf 'promoting %s@%s to :latest\n' "$IMAGE" "$DIGEST"
+                  docker buildx imagetools create --tag "${IMAGE}:latest" "${IMAGE}@${DIGEST}"
+                  # Post-condition, not decoration: read the rolling tag back
+                  # and require it to resolve to the digest that was approved.
+                  # A silent no-op here would leave production on the previous
+                  # image while this job reported success.
+                  LANDED="$(docker buildx imagetools inspect "${IMAGE}:latest" --format '{{ .Manifest.Digest }}')"
+                  if [ "$LANDED" != "$DIGEST" ]; then
+                      echo "::error::${IMAGE}:latest resolves to ${LANDED}, not the approved ${DIGEST}"
+                      exit 1
+                  fi
+                  printf '%s:latest -> %s\n' "$IMAGE" "$LANDED"
+                  printf 'Watchtower polls every 60s; production rolls within about a minute.\n'
