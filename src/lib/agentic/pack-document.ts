@@ -53,6 +53,13 @@
  */
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
+import { UNATTENDED_AUTONOMY } from './agent-risk-scoring';
+import {
+    AUTONOMY_MAX,
+    AUTONOMY_MIN,
+    AUTONOMY_REQUIRED_BY_CAPABILITY,
+    type McpCapabilityClass,
+} from './autonomy-ceiling';
 import type { Measure, MeasureBasis } from './report-measures';
 import type { MetricDefinition } from './report-definitions';
 
@@ -96,6 +103,114 @@ const BASIS_SENTENCE: Record<MeasureBasis, string> = {
     OUTSIDE_PLATFORM_BOUNDARY:
         'This fact is not observable from inside this platform. See the definition.',
 };
+
+/**
+ * WHAT A RUNG OF THE AUTONOMY LADDER MEANS, in the document's own words.
+ *
+ * `autonomyLevel` is the central authority dial — a term in
+ * `min(key.maxAutonomyLevel, agent.autonomyLevel, tierCap)`, evaluated at the
+ * tool boundary on every call — and the register row filed it as a bare
+ * integer. The screen does better in two places (`AutonomyScale` spells the
+ * whole ladder out, the register table says "4 of 6"), which left the FILED
+ * artefact the least informative of the three: the one surface whose reader
+ * cannot click through to the other two.
+ *
+ * ── KEYED BY CLASS, SO THE LADDER CANNOT MOVE WITHOUT THIS MOVING ──────────
+ *
+ * The key is `McpCapabilityClass` — `keyof AUTONOMY_REQUIRED_BY_CAPABILITY`,
+ * the live mapping the boundary itself uses — plus the two rungs that are not
+ * a capability. Two consequences, both wanted:
+ *
+ *   • A capability class added there is a COMPILE ERROR here, exactly as
+ *     `Record<MeasureBasis, string>` above is. That type is why this one is
+ *     not `Record<number, string>`: the header records what the loose spelling
+ *     cost when it let seven invented keys through.
+ *   • A rung that MOVES there moves here — `propose` sliding from 2 to 4 is
+ *     described at 4, rather than this artefact quietly explaining a ladder the
+ *     product stopped having. `AutonomyScale.tsx:20-27` states the same
+ *     requirement for the screen; this is the filed copy of it.
+ *
+ * Written here rather than pulled from the UI message catalogue for the reason
+ * `BASIS_SENTENCE` gives: the document is not localised, and a figure whose
+ * explanation changes with the reader's locale is a figure two readers can
+ * disagree about while both quoting it correctly.
+ *
+ * `label` is what the ROW carries, beside the figure, so a row is defensible
+ * on its own; `sentence` is what the legend carries, once. Per-row sentences
+ * were the alternative and would add up to `DOCUMENT_ROW_CAP` repetitions of
+ * the same prose to a filed document.
+ */
+type RungClass = 'suggestsOnly' | McpCapabilityClass | 'aboveEveryCapability';
+
+const RUNG_MEANING: Record<RungClass, { label: string; sentence: string }> = {
+    suggestsOnly: {
+        label: 'suggests only, calls nothing',
+        sentence: 'Suggests to a human in session. No tool sits here, so it calls nothing.',
+    },
+    read: {
+        label: 'reads workspace data',
+        sentence: 'Reads workspace data out of the workspace on its own initiative.',
+    },
+    propose: {
+        label: 'drafts changes for approval',
+        sentence: 'Drafts changes into the approval queue — human-gated, not committed.',
+    },
+    orchestrate: {
+        label: 'chains steps between checkpoints',
+        sentence: 'Chains steps unattended between checkpoints.',
+    },
+    aboveEveryCapability: {
+        label: 'no capability requires this rung',
+        sentence: 'No capability requires this rung, so registering here widens nothing.',
+    },
+};
+
+/**
+ * Rung -> class, INVERTED from the live mapping rather than retyped.
+ *
+ * A declared capability wins over the floor, so a class that ever lands on
+ * `AUTONOMY_MIN` is described by its own sentence rather than by "suggests
+ * only" — the floor is what rung 0 means TODAY, not a reserved slot.
+ */
+const CLASS_AT_RUNG: ReadonlyMap<number, McpCapabilityClass> = new Map(
+    Object.entries(AUTONOMY_REQUIRED_BY_CAPABILITY).map(([cls, rung]) => [
+        rung as number,
+        cls as McpCapabilityClass,
+    ]),
+);
+
+function rungClass(rung: number): RungClass {
+    const declared = CLASS_AT_RUNG.get(rung);
+    if (declared !== undefined) return declared;
+    return rung <= AUTONOMY_MIN ? 'suggestsOnly' : 'aboveEveryCapability';
+}
+
+/**
+ * The ladder, once, at the head of the register.
+ *
+ * Contiguous rungs that mean the same thing are stated as one span: rendering
+ * "No capability requires this rung" three times over 4, 5 and 6 reads as a
+ * rendering fault, and "4-6" is the stronger sentence anyway — it is the fact
+ * that the top third of the dial buys nothing.
+ */
+function autonomyLadderLines(): string[] {
+    const out: string[] = [`Autonomy ladder — ${AUTONOMY_MIN} to ${AUTONOMY_MAX}, and what each rung permits:`];
+    let from = AUTONOMY_MIN;
+    for (let rung = AUTONOMY_MIN; rung <= AUTONOMY_MAX; rung += 1) {
+        const next = rung + 1;
+        if (next <= AUTONOMY_MAX && rungClass(next) === rungClass(rung)) continue;
+        const span = from === rung ? `${rung}` : `${from}-${rung}`;
+        out.push(`  ${span} — ${RUNG_MEANING[rungClass(rung)].sentence}`);
+        from = next;
+    }
+    out.push(
+        `  (UNATTENDED) marks rung ${UNATTENDED_AUTONOMY} and above — operating with no human in the loop.`,
+    );
+    out.push('  A rung is what an agent is REGISTERED to do. What it may actually do is the');
+    out.push("  lowest of that rung, its credential's ceiling and the cap its assessed risk");
+    out.push('  tier allows; an unassessed agent is refused everything, whatever it says.');
+    return out;
+}
 
 /**
  * THE ONE FUNNEL every tenant-controlled string passes through.
@@ -296,13 +411,17 @@ export function renderGovernancePackDocument(input: PackDocumentInput): string {
         }[];
         legacyPlaceholderPresent: boolean;
     };
-    const invLines: string[] = ['Register:'];
+    const invLines: string[] = [...autonomyLadderLines(), '', 'Register:'];
     if (inv.agents.length === 0) {
         invLines.push('  No agent is registered in this workspace.');
     }
     for (const a of inv.agents.slice(0, DOCUMENT_ROW_CAP)) {
+        // The rung carries its denominator AND its meaning. A bare integer is
+        // readable only by somebody who can reach the ladder, and the reader of
+        // this file is precisely the one who cannot.
         invLines.push(
-            `  ${clip(a.name)} [${a.agentId}] — ${a.status}, autonomy ${a.autonomyLevel}` +
+            `  ${clip(a.name)} [${a.agentId}] — ${a.status}, autonomy ${a.autonomyLevel} of ` +
+                `${AUTONOMY_MAX} — ${RUNG_MEANING[rungClass(a.autonomyLevel)].label}` +
                 `${a.unattended ? ' (UNATTENDED)' : ''}`,
         );
         invLines.push(
