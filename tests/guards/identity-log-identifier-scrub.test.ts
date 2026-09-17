@@ -192,7 +192,7 @@ function balancedArgs(code: string, open: number): string | null {
     return null;
 }
 
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
 describe('identity write path — a directory identifier never reaches a log line', () => {
     it.each(IDENTITY_WRITE_PATH)('%s scrubs every logged error/url', (rel) => {
