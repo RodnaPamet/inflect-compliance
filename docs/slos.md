@@ -414,7 +414,7 @@ are the real ones.
 |---|---|---|
 | Container crash | Compose `restart` policy | seconds |
 | Bad image | Pin the previous GHCR tag and `docker compose up -d` | 5–15 minutes |
-| App bug requiring a patched build | Merge, wait for `ghcr-publish`, **approve the `promote-latest` job** (`production-rollout` environment), let Watchtower pull (60 s poll) | 20–40 minutes + approval latency |
+| App bug requiring a patched build | Merge, wait for `ghcr-publish`, let Watchtower pull (60 s poll) | 20–40 minutes |
 | Database corruption | Restore the newest `inflect-daily-snapshot` to a new disk, attach, start Postgres, verify | 60–120 minutes, **untested under incident conditions** |
 | VM loss | Create a new VM from a snapshot-derived disk, restore `/opt/inflect/`, start the stack | 2–4 hours |
 | Zone loss (`europe-west1-b`) | Same, in another zone — snapshots are `eu` multi-region so they remain readable | 2–4 hours |

@@ -39,11 +39,6 @@
     "reason": "Publishes the image to GHCR on push to main; publishing cannot meaningfully happen from a PR.",
     "coveredBy": "ci.yml `Docker Build` builds the same Dockerfile at PR time when the container filter fires, and Build now compiles the worker bundle unconditionally."
   },
-  "ghcr-publish.yml:promote-latest": {
-    "kind": "never",
-    "reason": "Moves the rolling :latest tag onto the digest build-push published, behind the production-rollout GitHub Environment's required-reviewers rule. Push-to-main only by construction: the thing it gates is a merge reaching production, so there is no pull_request shape of it, and a PR that could reach it would be a PR that could deploy.",
-    "coveredBy": "PARTIAL, and the residual is named rather than waved at. Its SHAPE is covered at PR time by tests/guardrails/latest-tag-requires-approval.test.ts (the job declares the environment, :latest is unreachable from the ungated job, the preflight runs before the promote step and fails closed, the scanned digest is the promoted digest) and its preflight DECISION is executed there against synthetic API payloads. What no PR check can see is the repository setting itself — whether production-rollout really carries required reviewers is not in the source tree. That is exactly why the preflight exists and why it refuses on an unreadable probe: the first push to main after a settings change is where that fact becomes visible, loudly, with :latest still unmoved."
-  },
   "dast.yml:zap-baseline": {
     "kind": "never",
     "reason": "Nightly ZAP baseline scan against a booted stack; it has no pull_request trigger because it needs the full app running and takes far longer than a PR check should.",
