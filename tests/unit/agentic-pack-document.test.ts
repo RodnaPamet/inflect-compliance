@@ -250,6 +250,7 @@ describe('tenant text cannot carry markup into a filed record', () => {
                                     unattended: false,
                                     ownerName: 'Ada',
                                     ownerUserId: 'u1',
+                                    provenance: 'FIRST_PARTY',
                                     riskTier: null,
                                     assessmentState: 'NEVER_ASSESSED',
                                     killState: 'RUNNING',
@@ -414,6 +415,7 @@ describe('the autonomy rung is explained where it is filed', () => {
             unattended,
             ownerName: 'Ada',
             ownerUserId: 'u1',
+            provenance: 'FIRST_PARTY',
             riskTier: 'LOW',
             assessmentState: 'ASSESSED',
             killState: 'RUNNING',
@@ -510,6 +512,98 @@ describe('the autonomy rung is explained where it is filed', () => {
             '(UNATTENDED) marks rung 5 and above — operating with no human in the loop.',
         );
     });
+});
+
+/**
+ * Provenance on the register row.
+ *
+ * The pack cites `inventory.third_party_agents` as a figure and writes its
+ * definition into the appendix, so the filed document says HOW MANY agents in
+ * this workspace are somebody else's code. Section 1 is the section that
+ * enumerates them one per row, and it is the only place that can say WHICH.
+ *
+ * Every needle here is asserted against a SLICE of section 1 rather than the
+ * whole document, and that is the assertion rather than a tidiness: both
+ * `THIRD_PARTY` and `FIRST_PARTY` appear verbatim in the appendix definition
+ * of that figure (`Population: … provenance = THIRD_PARTY`, `Excludes:
+ * FIRST_PARTY agents`), so `expect(doc).toContain('THIRD_PARTY')` passes on a
+ * document whose register rows say nothing at all.
+ */
+describe('the register names whose code each agent is', () => {
+    function agentWith(agentId: string, provenance: string) {
+        return {
+            agentId,
+            name: `Agent ${agentId}`,
+            status: 'ACTIVE',
+            autonomyLevel: 2,
+            unattended: false,
+            ownerName: 'Ada',
+            ownerUserId: 'u1',
+            provenance,
+            riskTier: 'LOW',
+            assessmentState: 'ASSESSED',
+            killState: 'RUNNING',
+            policyCardVersion: 3,
+        };
+    }
+
+    /** Section 1 alone — from its heading up to the next section's. */
+    function section1(agents: ReturnType<typeof agentWith>[]): string {
+        const doc = renderGovernancePackDocument(
+            input({
+                pack: {
+                    ...input().pack,
+                    inventory: env('agent-inventory', {
+                        body: { agents, legacyPlaceholderPresent: false },
+                    }),
+                },
+            }),
+        );
+        const start = doc.indexOf('1 — AGENT INVENTORY');
+        const end = doc.indexOf('2 — ASI RISK COVERAGE');
+        // A backwards or empty slice would satisfy every `not.toContain` and
+        // fail every positive one for the wrong reason. State the bounds.
+        expect(start).toBeGreaterThan(-1);
+        expect(end).toBeGreaterThan(start);
+        return doc.slice(start, end);
+    }
+
+    /** The SECOND line of one agent's row — where the `·`-separated fields sit. */
+    function detailLineFor(s1: string, agentId: string): string {
+        const lines = s1.split('\n');
+        const i = lines.findIndex((line) => line.includes(`[${agentId}]`));
+        expect(i).toBeGreaterThan(-1);
+        return lines[i + 1] ?? '';
+    }
+
+    it('states provenance on the register row, third-party AND first-party', () => {
+        // BOTH directions, because an unlabelled FIRST_PARTY row leaves "not in
+        // section 5" as the reader's inference rather than the document's
+        // statement — and above DOCUMENT_ROW_CAP the two sections are different
+        // subsets, so that inference silently stops being available at all.
+        const s1 = section1([agentWith('a1', 'FIRST_PARTY'), agentWith('a2', 'THIRD_PARTY')]);
+
+        expect(s1).toContain('Provenance: THIRD_PARTY');
+        expect(s1).toContain('Provenance: FIRST_PARTY');
+    });
+
+    it('binds each provenance to the agent it describes, not merely to the section', () => {
+        // Section-level containment is satisfied by a renderer that prints both
+        // values on every row. The claim is per-agent, so the read is per-row.
+        const s1 = section1([agentWith('a1', 'FIRST_PARTY'), agentWith('a2', 'THIRD_PARTY')]);
+
+        expect(detailLineFor(s1, 'a1')).toContain('Provenance: FIRST_PARTY');
+        expect(detailLineFor(s1, 'a1')).not.toContain('THIRD_PARTY');
+        expect(detailLineFor(s1, 'a2')).toContain('Provenance: THIRD_PARTY');
+    });
+
+    // A third case asserting `not.toContain('Provenance: Third party')` was
+    // written here and REMOVED rather than kept. The enum-code decision is real
+    // — every neighbouring field on the row prints its code, and this document
+    // is deliberately not localised — but that needle could not be made to fail
+    // on its own: rendering prose reddens the two cases above first, because
+    // they name the code, so the negative never ran. An assertion that cannot
+    // fail is not protecting the decision; the two cases above already are.
 });
 
 describe('the title', () => {
