@@ -55,10 +55,17 @@ describe('the HRIS employment-status rule has one owner', () => {
         expect(offenders).toEqual([]);
     });
 
-    it('both HRIS mappers call the shared rule rather than deciding for themselves', () => {
+    it('every HRIS mapper calls the shared rule rather than deciding for itself', () => {
         for (const mapper of [
             'src/app-layer/integrations/providers/hris/index.ts',
             'src/app-layer/integrations/providers/workday/roster.ts',
+            // The third provider this guard's docblock was written in
+            // anticipation of (#2548). Listed rather than left to the
+            // `no other provider re-derives it` scan above, because that scan
+            // only proves a mapper did not hand-roll the TOKENS — a mapper that
+            // read `empStatus` and returned ACTIVE/TERMINATED from it alone
+            // would pass it while carrying exactly the #2012 inversion.
+            'src/app-layer/integrations/providers/orangehrm/roster.ts',
         ]) {
             const src = codeOnly(fs.readFileSync(path.join(ROOT, mapper), 'utf8'));
             expect(src).toMatch(/deriveEmploymentStatus\s*\(/);

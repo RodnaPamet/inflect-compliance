@@ -99,6 +99,24 @@ const PROVIDER_TRAFFIC_LABELS: Readonly<Record<string, readonly string[]>> = {
     // BambooHR lives in the generic hris/ directory; Workday has its own.
     hris: ['bamboohr'],
     okta: ['okta'],
+    /**
+     * OrangeHRM (#2548) — and the claim here is narrower than it looks, which
+     * is worth stating where the next reader will see it.
+     *
+     * The label resolves because `ORANGEHRM_HOSTS` admits only what OrangeHRM
+     * itself operates, so every host this provider can legally be pointed at
+     * today carries a suffix in `PROVIDER_BY_HOST_SUFFIX`. That is a real
+     * claim, not a formality: it holds exactly as long as the allowlist stays
+     * vendor-scoped.
+     *
+     * The day somebody adds a self-hosted suffix to `ORANGEHRM_HOSTS` — the
+     * documented way to admit the fixture, and the whole reason the provider
+     * exists — this entry goes on passing while that instance's traffic labels
+     * `other`. Same miss the module docblock above describes for `hris/`
+     * gaining a second vendor. The fix is one line in the same diff: add the
+     * suffix to `PROVIDER_BY_HOST_SUFFIX` too.
+     */
+    orangehrm: ['orangehrm'],
     servicenow: ['servicenow'],
     // Talks to Graph as well as to *.sharepoint.com.
     sharepoint: ['sharepoint', 'microsoft-graph'],
@@ -117,6 +135,7 @@ const SAMPLE_URL: Readonly<Record<string, string>> = {
     'google-workspace': 'https://admin.googleapis.com/admin/directory/v1/users',
     bamboohr: 'https://acme.bamboohr.com/api/gateway.php/acme/v1/employees',
     okta: 'https://acme.okta.com/api/v1/users',
+    orangehrm: 'https://acme.orangehrmlive.com/web/index.php/api/v2/pim/employees',
     servicenow: 'https://acme.service-now.com/api/now/table/change_request',
     sharepoint: 'https://contoso.sharepoint.com/sites/x/_api',
     workday: 'https://wd2-impl-services1.workday.com/ccx/oauth2/acme/token',

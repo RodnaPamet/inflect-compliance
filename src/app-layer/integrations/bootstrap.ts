@@ -24,6 +24,7 @@ import { AzurePostureProvider } from './providers/azure-posture-provider';
 import { GcpPostureProvider } from './providers/gcp-posture-provider';
 import { BambooHrProvider } from './providers/hris';
 import { WorkdayProvider } from './providers/workday';
+import { OrangeHrmProvider } from './providers/orangehrm';
 import { PersonnelProvider } from './providers/personnel';
 import { DeviceProvider } from './providers/device';
 import { TrainingProvider } from './providers/training';
@@ -69,6 +70,13 @@ registry.register(new BambooHrProvider());
 
 // Workday — HRIS roster sync into the personnel hub (OAuth2 + paginated RaaS).
 registry.register(new WorkdayProvider());
+
+// OrangeHRM — INTERNAL TEST FIXTURE, not a supported customer integration
+// (#2548). Registered because the HRIS sync resolves providers through this
+// registry, so an unregistered one cannot be exercised end to end — which is
+// the only thing this provider is for. See providers/orangehrm for the full
+// note, including why it is in HRIS_PROVIDERS and what that costs a tenant.
+registry.register(new OrangeHrmProvider());
 
 // Personnel — internal checks (offboarded access, onboarding SLA, manager coverage).
 registry.register(new PersonnelProvider());

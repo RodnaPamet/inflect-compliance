@@ -38,6 +38,7 @@ import { badRequest } from '@/lib/errors/types';
 import {
     assertAllowedHost,
     OKTA_HOSTS,
+    ORANGEHRM_HOSTS,
     SERVICENOW_HOSTS,
     WORKDAY_HOSTS,
     type HostAllowlist,
@@ -105,6 +106,22 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         clientId: { kind: 'inert' },
         clientSecret: { kind: 'inert' },
         reportPath: { kind: 'inert' },
+    },
+    /**
+     * OrangeHRM — an internal test fixture (#2548), and keyed by its PROVIDER
+     * ID because that is what `validateProviderConfig` is called with.
+     *
+     * Worth saying out loud next to the `hris` entry below, which is keyed by
+     * DIRECTORY name while BambooHR's provider id is `bamboohr` — so that entry
+     * matches nothing and BambooHR's `subdomain` reaches `configJson`
+     * unvalidated today. Not fixed here: changing which provider ids this table
+     * covers is a write-boundary change of its own, and a key whose rules have
+     * never run is very likely to reject config that already exists.
+     */
+    orangehrm: {
+        baseUrl: { kind: 'vendorOrigin', allow: ORANGEHRM_HOSTS },
+        clientId: { kind: 'inert' },
+        clientSecret: { kind: 'inert' },
     },
     servicenow: {
         instance: { kind: 'vendorOrigin', allow: SERVICENOW_HOSTS },
