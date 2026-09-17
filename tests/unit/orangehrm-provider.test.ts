@@ -31,6 +31,7 @@ import {
     ORANGEHRM_MAX_PER_RUN,
     ORANGEHRM_MAX_PAGES_PER_RUN,
     type OrangeHrmEmployeeRow,
+    type OrangeHrmEnrichment,
 } from '@/app-layer/integrations/providers/orangehrm/roster';
 import { fetchOrangeHrmAccessToken } from '@/app-layer/integrations/providers/orangehrm/token';
 import { HRIS_PROVIDERS, isHrisProviderId, isHrisSyncProvider } from '@/app-layer/integrations/providers/hris';
@@ -57,18 +58,79 @@ const json = (body: unknown, init: { ok?: boolean; status?: number } = {}) =>
 const mockFetch = (impl: (url: string, init?: RequestInit) => Promise<Response>) =>
     jest.fn(impl) as unknown as jest.MockedFunction<typeof fetch>;
 
+/**
+ * A list row as OrangeHRM 5.9 ACTUALLY returns one. Captured, not invented:
+ * the complete key set is empNumber, empStatus, employeeId, firstName,
+ * jobTitle, lastName, middleName, subunit, supervisors, terminationId.
+ *
+ * No workEmail. No contactDetails. No dates. The previous version of this
+ * helper put an email on the row, which is why 50 green tests coexisted with a
+ * connector that could not normalise a single employee (#2587).
+ */
 const row = (i: number, over: Partial<OrangeHrmEmployeeRow> = {}): OrangeHrmEmployeeRow => ({
     empNumber: i,
     employeeId: `BADGE-${i}`,
     firstName: 'Person',
+    middleName: '',
     lastName: String(i),
-    workEmail: `p${i}@acme.test`,
+    jobTitle: { title: null },
+    subunit: { name: null },
+    empStatus: { name: null },
+    supervisors: [],
+    terminationId: null,
     ...over,
 });
 
-/** A fetch that serves `total` rows in ORANGEHRM_PAGE_SIZE-sized pages. */
-function pagedFetch(total: number) {
+/**
+ * How many LIST pages were fetched.
+ *
+ * Every one of these assertions predates per-employee enrichment, when a page
+ * was the only kind of request and `toHaveBeenCalledTimes` happened to mean
+ * "pages". It no longer does — a 5,000-employee run makes 100 list calls and
+ * 10,000 enrichment calls — so the thing being counted is now named.
+ */
+function pageCalls(f: { mock: { calls: unknown[][] } }): number {
+    return f.mock.calls.filter((c) => !/\/pim\/employees?\/\d+\//.test(String(c[0]))).length;
+}
+
+/**
+ * Serve an explicit row set plus the two per-employee calls it implies.
+ * `emailFor` decides which employees have a work email — the email lives on
+ * contact-details now, so "this employee has no email" is a property of the
+ * ENRICHMENT response, not of the list row.
+ */
+function rosterFetch(rows: OrangeHrmEmployeeRow[], emailFor: (n: number) => string | null) {
     return mockFetch(async (url) => {
+        const contact = /\/pim\/employee\/(\d+)\/contact-details/.exec(url);
+        if (contact) return json({ data: { workEmail: emailFor(Number(contact[1])) } });
+        if (/\/job-details/.test(url)) return json({ data: { joinedDate: null, employeeTerminationRecord: { id: null, date: null } } });
+        const offset = Number(new URL(url).searchParams.get('offset') ?? '0');
+        return json({ data: offset === 0 ? rows : [] });
+    });
+}
+
+/** What the two per-employee calls yield, in the shape the real endpoints return. */
+const enrich = (over: Partial<OrangeHrmEnrichment> = {}): OrangeHrmEnrichment => ({
+    workEmail: 'p@acme.test',
+    joinedDate: null,
+    terminationDate: null,
+    managerEmail: null,
+    ...over,
+});
+
+/**
+ * A fetch that serves `total` rows in ORANGEHRM_PAGE_SIZE-sized pages AND the
+ * two per-employee calls each row now requires. Routing by URL rather than by
+ * call count, because the enrichment phase is concurrent and its request order
+ * is deliberately not deterministic.
+ */
+function pagedFetch(total: number, opts: { emailFor?: (n: number) => string | null } = {}) {
+    const emailFor = opts.emailFor ?? ((n: number) => `p${n}@acme.test`);
+    return mockFetch(async (url) => {
+        const contact = /\/pim\/employee\/(\d+)\/contact-details/.exec(url);
+        if (contact) return json({ data: { workEmail: emailFor(Number(contact[1])) } });
+        const job = /\/pim\/employees\/(\d+)\/job-details/.exec(url);
+        if (job) return json({ data: { joinedDate: null, employeeTerminationRecord: { id: null, date: null } } });
         const offset = Number(new URL(url).searchParams.get('offset') ?? '0');
         const take = Math.max(0, Math.min(ORANGEHRM_PAGE_SIZE, total - offset));
         return json({ data: Array.from({ length: take }, (_, k) => row(offset + k)) });
@@ -152,7 +214,7 @@ describe('a secret never leaves for an unlisted host', () => {
         // fetches at all. This is what makes them mean something.
         const fetchImpl = pagedFetch(1);
         const r = await readOrangeHrmRoster({ host: HOST }, 'live-bearer-token', null, { fetchImpl });
-        expect(fetchImpl).toHaveBeenCalledTimes(1);
+        expect(pageCalls(fetchImpl)).toBe(1);
         expect(r.employees).toHaveLength(1);
     });
 
@@ -221,21 +283,23 @@ describe('status derivation defers to the shared rule', () => {
         // The case offboarded_access_removed exists for. TERMINATED here hands
         // the leaver pass somebody who is still coming to work.
         const status = mapOrangeHrmStatus(
-            { empStatus: { name: 'Full-Time Permanent' }, employeeTerminationRecord: { date: '2026-07-01' } },
+            { empStatus: { name: 'Full-Time Permanent' } },
+            enrich({ terminationDate: '2026-07-01' }),
             now,
         );
         expect(status).toBe('OFFBOARDING');
     });
 
     it('a hire starting next month is ONBOARDING, not ACTIVE', () => {
-        expect(mapOrangeHrmStatus({ joinedDate: '2026-07-01' }, now)).toBe('ONBOARDING');
+        expect(mapOrangeHrmStatus({}, enrich({ joinedDate: '2026-07-01' }), now)).toBe('ONBOARDING');
     });
 
     it('a past termination date is TERMINATED even though the status string says active', () => {
         // Dates beat the status string — the string is what an administrator
         // customises per tenant, so it cannot be relied on alone.
         const status = mapOrangeHrmStatus(
-            { empStatus: { name: 'Full-Time Permanent' }, employeeTerminationRecord: { date: '2026-01-01' } },
+            { empStatus: { name: 'Full-Time Permanent' } },
+            enrich({ terminationDate: '2026-01-01' }),
             now,
         );
         expect(status).toBe('TERMINATED');
@@ -244,11 +308,11 @@ describe('status derivation defers to the shared rule', () => {
     it('a termination RECORD with no usable date is TERMINATED, not ACTIVE', () => {
         // OrangeHRM's own last resort. ACTIVE here would hide lingering access
         // for somebody the HR system has already terminated.
-        expect(mapOrangeHrmStatus({ employeeTerminationRecord: { date: null } }, now)).toBe('TERMINATED');
+        expect(mapOrangeHrmStatus({ terminationId: 1 }, enrich(), now)).toBe('TERMINATED');
     });
 
     it('no termination record and no dates is ACTIVE', () => {
-        expect(mapOrangeHrmStatus({ empStatus: { name: 'Full-Time Permanent' } }, now)).toBe('ACTIVE');
+        expect(mapOrangeHrmStatus({ empStatus: { name: 'Full-Time Permanent' } }, enrich(), now)).toBe('ACTIVE');
     });
 
     it('reads the vendor status STRING when there are no dates at all', () => {
@@ -256,8 +320,8 @@ describe('status derivation defers to the shared rule', () => {
         // other case here carries a date, and dates win — so without this the
         // field could be passed as `undefined` and nothing would notice, which
         // is the whole fallback arm gone silently.
-        expect(mapOrangeHrmStatus({ empStatus: { name: 'Terminated' } }, now)).toBe('TERMINATED');
-        expect(mapOrangeHrmStatus({ empStatus: { name: 'On Leave' } }, now)).toBe('LEAVE');
+        expect(mapOrangeHrmStatus({ empStatus: { name: 'Terminated' } }, enrich(), now)).toBe('TERMINATED');
+        expect(mapOrangeHrmStatus({ empStatus: { name: 'On Leave' } }, enrich(), now)).toBe('LEAVE');
     });
 });
 
@@ -269,7 +333,7 @@ describe('normalisation', () => {
         // from `r.id`, whose presence is Open Question 2; Workday has none.
         // OrangeHRM publishes empNumber as a first-class list field, so the
         // write-back rehearsal has a subject that is not a guess.
-        const fetchImpl = mockFetch(async () => json({ data: [row(7, { empNumber: 7, employeeId: 'BADGE-7' })] }));
+        const fetchImpl = rosterFetch([row(7, { empNumber: 7, employeeId: 'BADGE-7' })], () => 'p7@acme.test');
         const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
         expect(employees[0].hrisRecordId).toBe('7');
     });
@@ -278,54 +342,82 @@ describe('normalisation', () => {
         // externalId is provenance and not an address; mirroring BambooHR's
         // `employeeNumber || workEmail` keeps the two fields meaning the same
         // thing across providers.
-        const fetchImpl = mockFetch(async () => json({ data: [row(7, { empNumber: 7, employeeId: 'BADGE-7' })] }));
+        const fetchImpl = rosterFetch([row(7, { empNumber: 7, employeeId: 'BADGE-7' })], () => 'p7@acme.test');
         const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
         expect(employees[0].externalId).toBe('BADGE-7');
         expect(employees[0].externalId).not.toBe('7');
     });
 
-    it('hrisRecordId is NULL without empNumber — never the badge number or the email', async () => {
-        // A fallback here would address an update by the value the JML
-        // write-back exists to create, which is circular by construction.
-        const fetchImpl = mockFetch(async () => json({ data: [row(7, { empNumber: null })] }));
+    it('drops a row with no empNumber — it cannot be enriched, so it has no email', async () => {
+        // This asserted a null hrisRecordId until #2587, when the email moved
+        // to a per-employee call addressed BY empNumber. Without one there is
+        // no contact-details URL to build, so such a row can never acquire a
+        // work email and is dropped by the same rule that drops a contractor.
+        // The alternative is a request to `/pim/employee//contact-details`.
+        const fetchImpl = rosterFetch([row(7, { empNumber: null }), row(8)], (n) => `p${n}@acme.test`);
         const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
-        expect(employees[0].hrisRecordId).toBeNull();
-        expect(employees[0].externalId).toBe('BADGE-7');
+        expect(employees).toHaveLength(1);
+        expect(employees[0].hrisRecordId).toBe('8');
+        expect(fetchImpl.mock.calls.every((c) => !/\/employee\/\/|\/employees\/\//.test(String(c[0])))).toBe(true);
     });
 
     it('externalId falls back to the work email when the badge number is blank', async () => {
-        const fetchImpl = mockFetch(async () => json({ data: [row(7, { employeeId: '  ' })] }));
+        const fetchImpl = rosterFetch([row(7, { employeeId: '  ' })], () => 'p7@acme.test');
         const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
         expect(employees[0].externalId).toBe('p7@acme.test');
         expect(employees[0].hrisRecordId).toBe('7');
     });
 
-    it('reads the work email from contactDetails when the row does not carry it', async () => {
-        // Which of the two places a live instance populates is unknown — that
-        // unknown is the point of the fixture — so both are exercised.
-        const fetchImpl = jest.fn(async () =>
-            json({ data: [row(1, { workEmail: null, contactDetails: { workEmail: 'nested@acme.test' } })] }),
-        );
+    it('reads the work email from the per-employee contact-details call', async () => {
+        // The list row carries no email at all on a real 5.9 instance, so this
+        // is the ONLY path by which an employee acquires one. Verified against
+        // a live instance before this test was written (#2587).
+        const fetchImpl = rosterFetch([row(1)], () => 'enriched@acme.test');
         const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
-        expect(employees[0].workEmail).toBe('nested@acme.test');
+        expect(employees[0].workEmail).toBe('enriched@acme.test');
     });
 
-    it('takes the first supervisor with a work email as the manager', async () => {
-        const fetchImpl = jest.fn(async () =>
-            json({
-                data: [
-                    row(1, {
-                        supervisors: [{ workEmail: '  ' }, { workEmail: 'boss@acme.test' }, { workEmail: 'other@acme.test' }],
-                    }),
-                ],
-            }),
+    it('resolves the manager by supervisor empNumber — the entry carries NO email', async () => {
+        // A live 5.9 returns {empNumber, firstName, lastName, middleName} for a
+        // supervisor and nothing more, so reading `s.workEmail` here yielded
+        // null for every employee who had a manager (#2587). Verified by
+        // assigning a real supervisor on a real instance.
+        const fetchImpl = rosterFetch([row(1, { supervisors: [{ empNumber: 9 }] })], (n) =>
+            n === 9 ? 'boss@acme.test' : `p${n}@acme.test`,
         );
         const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
         expect(employees[0].managerEmail).toBe('boss@acme.test');
     });
 
+    it('takes the FIRST supervisor when an employee has several', async () => {
+        const fetchImpl = rosterFetch([row(1, { supervisors: [{ empNumber: 9 }, { empNumber: 8 }] })], (n) =>
+            n === 9 ? 'first@acme.test' : n === 8 ? 'second@acme.test' : `p${n}@acme.test`,
+        );
+        const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
+        expect(employees[0].managerEmail).toBe('first@acme.test');
+    });
+
+    it('a manager shared by many reports is fetched ONCE, not once per report', async () => {
+        // The cache is the whole reason the manager graph does not multiply the
+        // request count. Without it this is 30 extra calls, and the enrichment
+        // phase is already the expensive half of the run.
+        const rows = Array.from({ length: 30 }, (_, k) => row(k + 10, { supervisors: [{ empNumber: 9 }] }));
+        const fetchImpl = rosterFetch(rows, (n) => (n === 9 ? 'boss@acme.test' : `p${n}@acme.test`));
+        const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
+        expect(employees).toHaveLength(30);
+        expect(employees.every((e) => e.managerEmail === 'boss@acme.test')).toBe(true);
+        const bossCalls = fetchImpl.mock.calls.filter((c) => /\/employee\/9\/contact-details/.test(String(c[0])));
+        expect(bossCalls).toHaveLength(1);
+    });
+
+    it('no supervisor means no manager, not a dropped employee', async () => {
+        const fetchImpl = rosterFetch([row(1, { supervisors: [] })], () => 'p1@acme.test');
+        const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
+        expect(employees[0].managerEmail).toBeNull();
+    });
+
     it('drops a row with no work email rather than inventing a key', async () => {
-        const fetchImpl = mockFetch(async () => json({ data: [row(1), row(2, { workEmail: null })] }));
+        const fetchImpl = rosterFetch([row(1), row(2)], (n) => (n === 2 ? null : `p${n}@acme.test`));
         const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
         expect(employees).toHaveLength(1);
         expect(employees[0].workEmail).toBe('p1@acme.test');
@@ -339,9 +431,7 @@ describe('an all-dropped roster is refused, not reported complete', () => {
         // complete:true with an empty roster is the mass-terminate path: on any
         // run after the first of a pass the departure reconcile fires and marks
         // everyone it has not touched TERMINATED.
-        const fetchImpl = jest.fn(async () =>
-            json({ data: [row(1, { workEmail: null }), row(2, { workEmail: null })] }),
-        );
+        const fetchImpl = rosterFetch([row(1), row(2)], () => null);
         await expect(readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl })).rejects.toThrow(
             /none carried a work email/,
         );
@@ -360,7 +450,7 @@ describe('an all-dropped roster is refused, not reported complete', () => {
     it('POSITIVE CONTROL — one surviving row is enough to keep the read', async () => {
         // A page of contractors with no work email beside one real employee is
         // an ordinary roster, not a mapping failure.
-        const fetchImpl = mockFetch(async () => json({ data: [row(1, { workEmail: null }), row(2)] }));
+        const fetchImpl = rosterFetch([row(1), row(2)], (n) => (n === 1 ? null : `p${n}@acme.test`));
         const r = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
         expect(r.employees).toHaveLength(1);
         expect(r.complete).toBe(true);
@@ -377,7 +467,7 @@ describe('pagination and the completeness claim', () => {
         expect(r.employees).toHaveLength(total);
         expect(r.complete).toBe(true);
         expect(r.resumeToken).toBeNull();
-        expect(fetchImpl).toHaveBeenCalledTimes(2);
+        expect(pageCalls(fetchImpl)).toBe(2);
     });
 
     it('a full final page is NOT the end — it reads one more', async () => {
@@ -385,7 +475,7 @@ describe('pagination and the completeness claim', () => {
         // whose size is a multiple of the page size, and call it complete.
         const fetchImpl = pagedFetch(ORANGEHRM_PAGE_SIZE);
         const r = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
-        expect(fetchImpl).toHaveBeenCalledTimes(2);
+        expect(pageCalls(fetchImpl)).toBe(2);
         expect(r.complete).toBe(true);
     });
 
@@ -393,14 +483,18 @@ describe('pagination and the completeness claim', () => {
         // Counting normalised rows here would make a full page of email-less
         // rows look like the end of the roster and truncate the pass silently.
         const emailless = mockFetch(async (url) => {
+            const contact = /\/pim\/employee\/(\d+)\/contact-details/.exec(url);
+            // Only employee 999 has an email; the first full page has none.
+            if (contact) return json({ data: { workEmail: contact[1] === '999' ? 'p999@acme.test' : null } });
+            if (/\/job-details/.test(url)) return json({ data: { joinedDate: null, employeeTerminationRecord: { id: null, date: null } } });
             const offset = Number(new URL(url).searchParams.get('offset') ?? '0');
             if (offset === 0) {
-                return json({ data: Array.from({ length: ORANGEHRM_PAGE_SIZE }, (_, k) => row(k, { workEmail: null })) });
+                return json({ data: Array.from({ length: ORANGEHRM_PAGE_SIZE }, (_, k) => row(k)) });
             }
             return json({ data: [row(999)] });
         });
         const r = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl: emailless });
-        expect(emailless).toHaveBeenCalledTimes(2);
+        expect(pageCalls(emailless)).toBe(2);
         expect(r.employees).toHaveLength(1);
         expect(r.complete).toBe(true);
     });
@@ -411,7 +505,7 @@ describe('pagination and the completeness claim', () => {
         expect(r.employees).toHaveLength(ORANGEHRM_MAX_PER_RUN);
         expect(r.complete).toBe(false);
         expect(r.resumeToken).toBe(String(ORANGEHRM_MAX_PER_RUN));
-        expect(fetchImpl).toHaveBeenCalledTimes(ORANGEHRM_MAX_PAGES_PER_RUN);
+        expect(pageCalls(fetchImpl)).toBe(ORANGEHRM_MAX_PAGES_PER_RUN);
     });
 
     it('resumes from the cursor instead of re-reading the pass from zero', async () => {
@@ -464,7 +558,7 @@ describe('the read deadline keeps the roster read inside the lock lease', () => 
             now,
             readDeadlineAt: 1_000_000 + 30_000,
         });
-        expect(fetchImpl).toHaveBeenCalledTimes(1);
+        expect(pageCalls(fetchImpl)).toBe(1);
         expect(r.complete).toBe(false);
         expect(r.resumeToken).toBe(String(ORANGEHRM_PAGE_SIZE));
     });
