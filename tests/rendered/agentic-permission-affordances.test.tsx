@@ -59,6 +59,28 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 }));
 
 import { AgentRunsClient, type RunRow } from '@/app/t/[tenantSlug]/(app)/agents/runs/AgentRunsClient';
+import {
+    AgentProposalsClient,
+    type ProposalRow,
+} from '@/app/t/[tenantSlug]/(app)/agents/proposals/AgentProposalsClient';
+import { computeProposalDiff } from '@/lib/agentic/proposal-diff';
+
+/**
+ * The copy, read from the SAME dictionary the component resolves through, so
+ * the label assertion below pins the WIRING (does the reason reach the
+ * wrapper?) and not the wording. A literal here would redden on a copy edit,
+ * which is a different claim than the one this file makes.
+ */
+const EN = jest.requireActual('../../messages/en.json') as {
+    admin: { permissionGated: { ariaLabel: string } };
+    agents: { runs: { needsWrite: string; resume: string } };
+};
+
+/** What `PermissionGated` announces on the wrapper span for a reader. */
+const GATE_LABEL = EN.admin.permissionGated.ariaLabel.replace(
+    '{reason}',
+    EN.agents.runs.needsWrite,
+);
 
 const RUN: RunRow = {
     id: 'run-1',
@@ -71,14 +93,60 @@ const RUN: RunRow = {
     summary: null,
 };
 
+/**
+ * A run stopped for a human decision. The docstring above names five controls
+ * and Resume is the fifth: `AgentRunsClient` mounts it only for
+ * `status === 'AWAITING_APPROVAL'`, so against a RUNNING fixture alone that
+ * branch never rendered and nothing here could have caught it enabled.
+ */
+const AWAITING_RUN: RunRow = { ...RUN, id: 'run-2', status: 'AWAITING_APPROVAL' };
+
 const WORKFLOWS = [{ key: 'nightly-review', name: 'Nightly review', description: 'Runs nightly' }];
 
-function renderRuns(canOperate: boolean) {
+function renderRuns(canOperate: boolean, runs: RunRow[] = [RUN]) {
     return render(
         <AgentRunsClient
             tenantSlug="acme"
-            initialRuns={[RUN]}
+            initialRuns={runs}
             workflows={WORKFLOWS}
+            canOperate={canOperate}
+        />,
+    );
+}
+
+/**
+ * A proposal whose diff COMPUTED, and that is load-bearing rather than
+ * incidental. `tests/rendered/proposal-diff.test.tsx` pins that an
+ * uncomputable diff WITHDRAWS the approve control entirely — so an
+ * unreviewable fixture would make the Approve case below fail for the wrong
+ * reason: absent because unreadable, read as absent because hidden from a
+ * reader. Shape copied from that file's `CREATE_ROW`.
+ */
+const PROPOSAL: ProposalRow = {
+    id: 'p-1',
+    kind: 'RISK',
+    operation: 'CREATE',
+    status: 'PENDING',
+    targetEntityId: null,
+    rationale: 'Observed three failed backups in the last quarter.',
+    proposedViaKeyId: 'key-abcdef12',
+    createdAt: '2026-09-01T10:00:00.000Z',
+    // Scanned and clean: a null digest would read as pre-guard and put an
+    // extra notice on the card, which is a claim this file does not make.
+    guardVerdict: 'CLEAN',
+    guardRuleIds: [],
+    guardInputDigest: 'sha256:0123456789abcdef0123456789abcdef',
+    diff: computeProposalDiff({
+        operation: 'CREATE',
+        payloadJson: JSON.stringify({ title: 'Backup failure risk', impact: 8 }),
+    }),
+};
+
+function renderProposals(canOperate: boolean) {
+    return render(
+        <AgentProposalsClient
+            tenantSlug="acme"
+            initialProposals={[PROPOSAL]}
             canOperate={canOperate}
         />,
     );
@@ -110,6 +178,16 @@ describe('a reader sees the controls, disabled', () => {
         expect(start).toBeInTheDocument();
         expect(start).toBeDisabled();
     });
+
+    it('Resume is present and disabled on a run awaiting a decision', () => {
+        // The fixture, not the assertion, is the work here: Resume mounts only
+        // under AWAITING_APPROVAL, so the RUNNING row every other case uses
+        // leaves this branch unrendered and unguarded.
+        renderRuns(false, [AWAITING_RUN]);
+        const resume = screen.getByRole('button', { name: EN.agents.runs.resume });
+        expect(resume).toBeInTheDocument();
+        expect(resume).toBeDisabled();
+    });
 });
 
 describe('an operator who may act sees them enabled and unwrapped', () => {
@@ -118,11 +196,78 @@ describe('an operator who may act sees them enabled and unwrapped', () => {
         expect(screen.getByTestId('agent-run-abort-run-1')).not.toBeDisabled();
     });
 
+    it('Resume is enabled', () => {
+        renderRuns(true, [AWAITING_RUN]);
+        expect(screen.getByRole('button', { name: EN.agents.runs.resume })).not.toBeDisabled();
+    });
+
     it('adds no tooltip wrapper when the control IS allowed', () => {
         // The paired positive, and it is also a real property: every row carries
         // two or three of these, and a Radix subtree that can never fire is
         // still a Radix subtree.
         renderRuns(true);
+        expect(screen.queryAllByTestId('permission-gated')).toHaveLength(0);
+    });
+});
+
+/**
+ * ── THE PROPOSAL QUEUE, WHICH IS THE OTHER HALF OF THE SAME BULLET ──
+ *
+ * The acceptance bullet this file was written for names Approve, Reject AND
+ * Abort. Only the runs page was ever rendered here, so Approve and Reject —
+ * the two controls that commit an agent's write to a real record, and the two
+ * that most need an honest refusal — were asserted by nothing (#2567). Every
+ * other suite that renders this client passes `canOperate` true, which makes
+ * `!canOperate` constant-false in every existing render: deleting the guard
+ * changed no output any of them observed.
+ */
+describe('a reader sees the proposal controls, disabled', () => {
+    it('Approve is present and disabled', () => {
+        renderProposals(false);
+        const approve = screen.getByTestId(`proposal-approve-${PROPOSAL.id}`);
+        // BOTH claims, and the PRESENT one is the harder of the two: hiding
+        // Approve from a reader would also stop the 403, and would tell them
+        // the product has no review queue.
+        expect(approve).toBeInTheDocument();
+        expect(approve).toBeDisabled();
+    });
+
+    it('Reject is present and disabled', () => {
+        renderProposals(false);
+        const reject = screen.getByTestId(`proposal-reject-${PROPOSAL.id}`);
+        expect(reject).toBeInTheDocument();
+        expect(reject).toBeDisabled();
+    });
+
+    it('each of them carries its own reachable, named explanation', () => {
+        renderProposals(false);
+        const gates = screen.getAllByTestId('permission-gated');
+        // TWO, one per control: Reject on the card header and Approve inside
+        // the diff panel are wrapped separately, so a single surviving wrapper
+        // must not be able to satisfy this for both.
+        expect(gates).toHaveLength(2);
+        const [rejectGate, approveGate] = gates;
+
+        expect(within(rejectGate).getByTestId(`proposal-reject-${PROPOSAL.id}`)).toBeDisabled();
+        expect(within(approveGate).getByTestId(`proposal-approve-${PROPOSAL.id}`)).toBeDisabled();
+
+        // A LABEL, not only a hover tooltip. The people who cannot use the
+        // control are exactly the people a pointer-only explanation fails:
+        // a disabled button fires no pointer events at all.
+        expect(rejectGate).toHaveAttribute('aria-label', GATE_LABEL);
+        expect(approveGate).toHaveAttribute('aria-label', GATE_LABEL);
+    });
+});
+
+describe('an operator sees the proposal controls enabled and unwrapped', () => {
+    it('Approve and Reject are both live', () => {
+        renderProposals(true);
+        expect(screen.getByTestId(`proposal-approve-${PROPOSAL.id}`)).not.toBeDisabled();
+        expect(screen.getByTestId(`proposal-reject-${PROPOSAL.id}`)).not.toBeDisabled();
+    });
+
+    it('adds no tooltip wrapper to the queue when the controls ARE allowed', () => {
+        renderProposals(true);
         expect(screen.queryAllByTestId('permission-gated')).toHaveLength(0);
     });
 });
