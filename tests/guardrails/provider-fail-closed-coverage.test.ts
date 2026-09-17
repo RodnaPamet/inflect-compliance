@@ -55,7 +55,7 @@ const FAIL_CLOSED_COVERAGE: Readonly<Record<string, { test: string; needle: stri
     // still refuses to manufacture one.
     workday: { test: 'tests/unit/workday-provider.test.ts', needle: 'runCheck' },
     // OrangeHRM is sync-only too, and it is the provider the widened union
-    // above was written for. Being an internal test fixture (#2548) buys it no
+    // above was written for. Having arrived as an internal fixture (#2548) buys it no
     // exemption — it feeds the same `Employee` roster the personnel checks read
     // and the leaver pass acts on, so a fixture that manufactured a green
     // signal would be exactly as harmful as a product integration doing it.

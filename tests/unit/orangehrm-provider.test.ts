@@ -180,13 +180,34 @@ describe('the fixture is inside the HRIS allowlist, not beside it', () => {
         expect(new OrangeHrmProvider().supportedChecks).toEqual([]);
     });
 
-    it('says in its own description that it is not a supported integration', () => {
+    it('tells an operator the three things without which it cannot be configured', () => {
         // The disclaimer is load-bearing: there is no "internal" flag on
         // IntegrationProvider, so these strings are the only place an operator
         // reading the connector list is told what this is.
         const p = new OrangeHrmProvider();
-        expect(p.description).toMatch(/not a supported integration/i);
-        expect(p.setupGuide).toMatch(/not a supported customer integration/i);
+        // The disclaimer these two strings used to carry came off deliberately
+        // when a real instance confirmed the field mapping (#2548). What
+        // replaces it is not "nothing" — an operator still has to be told the
+        // three things without which the connector cannot be configured at all,
+        // and those are the same three the setup guide has always named.
+        expect(p.setupGuide).toMatch(/ORANGEHRM_HOSTS/);
+        expect(p.setupGuide).toMatch(/client-credentials/i);
+        expect(p.setupGuide).toMatch(/client id and secret/i);
+        // And it must not have regrown a disclaimer by accident, in EITHER of
+        // the two phrasings that were used — checked case-insensitively,
+        // because the original miss here was a case-sensitive grep against a
+        // string that began a sentence.
+        // Joined rather than looped, and that is not style. A `for...of`
+        // binding cannot be resolved by the Class D analyser in
+        // assertion-needle-uniqueness-ratchet, so each `expect(s)` lands in its
+        // un-analysable set — measured: this exact loop took
+        // UNANALYSABLE_READ_BASELINE from 1448 to 1450. A call expression is
+        // excluded from that population, and `.not.toMatch` over the joined
+        // string asserts the same thing: none of the three carries either
+        // phrasing.
+        const operatorFacing = [p.displayName, p.description, p.setupGuide].join('\n');
+        expect(operatorFacing).not.toMatch(/internal test fixture/i);
+        expect(operatorFacing).not.toMatch(/not a supported/i);
     });
 });
 

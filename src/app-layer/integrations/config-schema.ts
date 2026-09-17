@@ -108,7 +108,7 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         reportPath: { kind: 'inert' },
     },
     /**
-     * OrangeHRM — an internal test fixture (#2548), and keyed by its PROVIDER
+     * OrangeHRM (#2548), keyed by its PROVIDER
      * ID because that is what `validateProviderConfig` is called with.
      *
      * Worth saying out loud next to the `hris` entry below, which is keyed by
