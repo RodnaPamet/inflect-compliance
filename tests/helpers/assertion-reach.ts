@@ -1441,19 +1441,20 @@ function resolveSubjectCore(
     subject: ts.Expression,
     sf: ts.SourceFile,
     depth = 0,
+    trace?: MaskTrace,
 ): SubjectResult {
     if (depth > 4) return { kind: 'skipped', reason: 'not-a-file-read' };
     const scope = scopeOf(sf);
 
     if (ts.isParenthesizedExpression(subject)) {
-        return resolveSubjectCore(subject.expression, sf, depth + 1);
+        return resolveSubjectCore(subject.expression, sf, depth + 1, trace);
     }
 
     if (ts.isIdentifier(subject)) {
         const init = resolveBinding(subject.text, subject);
         if (init === undefined) return { kind: 'skipped', reason: 'not-a-file-read' };
         if (init === null) return { kind: 'skipped', reason: 'binding-not-resolvable' };
-        return resolveSubjectCore(init, sf, depth + 1);
+        return resolveSubjectCore(init, sf, depth + 1, trace);
     }
 
     if (ts.isCallExpression(subject)) {
@@ -1483,8 +1484,14 @@ function resolveSubjectCore(
         if (ts.isIdentifier(callee) && subject.arguments.length === 1) {
             const mask = scope.maskers.get(callee.text);
             if (mask !== undefined && mask !== null) {
-                const inner = resolveSubjectCore(subject.arguments[0], sf, depth + 1);
+                const inner = resolveSubjectCore(
+                    subject.arguments[0],
+                    sf,
+                    depth + 1,
+                    trace,
+                );
                 if (inner.kind !== 'content') return inner;
+                if (trace !== undefined) trace.masked = true;
                 return { kind: 'content', label: inner.label, text: mask(inner.text) };
             }
         }
@@ -1521,6 +1528,7 @@ function resolveSubjectCore(
                 if (p === null) return { kind: 'skipped', reason: 'path-not-constant' };
                 const read = contentAt(p);
                 if (read.kind !== 'content' || reader.mask === null) return read;
+                if (trace !== undefined) trace.masked = true;
                 return { kind: 'content', label: read.label, text: reader.mask(read.text) };
             }
         }
@@ -1630,14 +1638,58 @@ export function resolveSubject(
     subject: ts.Expression,
     sf: ts.SourceFile,
     depth = 0,
+    trace?: MaskTrace,
 ): SubjectResult {
-    const core = resolveSubjectCore(subject, sf, depth);
+    const core = resolveSubjectCore(subject, sf, depth, trace);
     if (core.kind === 'skipped' && core.reason === 'not-a-file-read') {
         if (derivesFromRead(subject, sf, 0)) {
             return { kind: 'skipped', reason: 'content-transformed' };
         }
     }
     return core;
+}
+
+/**
+ * Did a comment mask run between the disk and the assertion?
+ *
+ * WHY THIS IS AN OUT-PARAMETER AND NOT A SECOND RESOLVER. Class A — "the
+ * assertion matched RAW TEXT, so a comment satisfied it" — needs one bit
+ * that `SubjectResult` deliberately does not carry: Class D wants the text
+ * the assertion saw and does not care how it got that way. A second
+ * traversal written alongside this one would be a second opinion about
+ * which masks count, and the two would drift the first time somebody taught
+ * one of them a new shape. So the single traversal above records the bit as
+ * it goes, and both classes read the same answer.
+ *
+ * `masked` is true when ANY followable comment mask was applied on the path:
+ * `codeOf(...)` around the subject, a local `.replace()`-chain stripper this
+ * analyser rebuilt, or either of those at the READ SEAM
+ * (`const read = (p) => codeOf(readFileSync(p, 'utf8'))`). It is the same
+ * mask set `resolveSubjectCore` already follows — nothing new is trusted.
+ *
+ * It is false, rather than unknown, only where the result is `content`: a
+ * resolved whole-file read that no mask touched. Every other result kind
+ * says why the analyser could not tell, and a caller that treats an
+ * unresolved subject as "not masked" would be counting its own blind spot
+ * as a finding.
+ */
+export interface MaskTrace {
+    masked: boolean;
+}
+
+export interface MaskedSubjectResult {
+    readonly result: SubjectResult;
+    readonly masked: boolean;
+}
+
+/** {@link resolveSubject}, plus the mask bit — see {@link MaskTrace}. */
+export function resolveSubjectMasked(
+    subject: ts.Expression,
+    sf: ts.SourceFile,
+): MaskedSubjectResult {
+    const trace: MaskTrace = { masked: false };
+    const result = resolveSubject(subject, sf, 0, trace);
+    return { result, masked: trace.masked };
 }
 
 function contentAt(p: string): SubjectResult {

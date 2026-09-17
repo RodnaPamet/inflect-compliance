@@ -244,13 +244,28 @@ describe('AwsPostureProvider.runCheck — fail-closed contracts (H2)', () => {
     it('ERRORs on an exit outside {0,1,2} rather than scoring the stdout that survived', async () => {
         // Valid all-ok JSON is supplied on purpose: if the refusal ever leaked,
         // this would surface as PASSED rather than as a different error string.
-        cliResult({ err: exitCode(137), stdout: benchmarkJson([control('c1', 'ok')]), stderr: 'ExpiredToken' });
+        // The stderr sample is ARBITRARY and MUST STAY MEANINGLESS. This case sits
+        // on the did-not-complete gate — `!powerpipeRunCompleted(outcome)` in
+        // aws-posture-provider.ts — which is the exact branch a credential
+        // classifier would hook if one is ever built (#2413, prior art from the
+        // deleted fix/posture-auth-failure-unreachable). Put a real auth-failure
+        // code in this sample (the literal 'ExpiredToken' stood here) and the
+        // fixture silently stops being the plain undocumented-exit case and
+        // becomes the credential case, while every assertion below still passes:
+        // a green test no longer covering what its name claims, and a fixture
+        // shape that hands a credential verdict to anyone who copies it. Any
+        // string that could pass for a provider error code is barred here.
+        cliResult({
+            err: exitCode(137),
+            stdout: benchmarkJson([control('c1', 'ok')]),
+            stderr: 'arbitrary-stderr-sample',
+        });
 
         const res = await provider().runCheck(input() as never);
 
         expect(res.status).toBe('ERROR');
         expect(res.summary).toBe('Powerpipe collector did not complete the run.');
-        expect(res.errorMessage).toContain('ExpiredToken');
+        expect(res.errorMessage).toContain('arbitrary-stderr-sample');
         expect(res.details).toEqual({ benchmark: 'aws_compliance.benchmark.soc_2', collectorExitCode: 137 });
     });
 
