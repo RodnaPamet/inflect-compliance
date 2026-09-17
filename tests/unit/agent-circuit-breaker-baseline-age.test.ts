@@ -144,10 +144,28 @@ describe('the edges', () => {
         expect(v.baseline.spanHours).toBe(12);
     });
 
-    it('the span is UTC, not the reader local time', () => {
-        // `windowKeyFor` is `toISOString().slice(0, 13)`, so the key is always
-        // UTC. Parsing the bare key would be read as LOCAL time and shift the
-        // span by the reader's offset — invisible in UTC CI, wrong everywhere else.
+    it('the oldest key keeps the detector bucket shape, `YYYY-MM-DDTHH`', () => {
+        // THIS TEST WAS CALLED "the span is UTC, not the reader local time" and
+        // it could not prove that. Recorded rather than quietly renamed, because
+        // the reasoning is the reusable part.
+        //
+        // `spanHours` is a DIFFERENCE between two instants that BOTH come out of
+        // `windowStartFromKey`. Parse the keys as local time instead of UTC and
+        // each moves by the reader's offset, so the offset cancels and the span
+        // is unchanged. Rebuilding the implementation without its `Z` — the real
+        // bug the old name named — left this file 8/8 GREEN under TZ=UTC and
+        // under TZ=Asia/Kolkata alike. Only a pair straddling a DST transition
+        // would discriminate, and only in a DST-observing zone, which CI is not.
+        //
+        // So the honest claim is the one left: the key's SHAPE. That half IS
+        // live — rebuilding `windowKeyFor` as `slice(0, 16)` reddens this and
+        // six of its siblings — and it is worth pinning, because the key is what
+        // `windowStartFromKey` appends `:00:00.000Z` to. A key carrying minutes
+        // would make that string unparseable rather than merely wrong.
+        //
+        // What guards the UTC-ness itself is `windowKeyFor` being built from
+        // `toISOString()`, one assertion away in this same file, plus the
+        // docstring on `windowStartFromKey`. Not this test.
         const v = evaluateCircuitBreaker(input(CONSECUTIVE));
         expect(v.baseline.oldestWindowKey).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}$/);
         expect(v.baseline.spanHours).toBe(12);

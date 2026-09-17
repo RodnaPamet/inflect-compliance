@@ -627,9 +627,18 @@ function readBaseline(input: BreakerInput): BaselineReading {
  * `YYYY-MM-DDTHH` back to the instant that window opens.
  *
  * The inverse of `windowKeyFor`, which is `toISOString().slice(0, 13)` — so the
- * key is always UTC and appending `:00:00.000Z` reconstructs it exactly. Parsing
- * the bare key would be interpreted in LOCAL time by `Date`, which would make
- * the span wrong by the reader's offset.
+ * key is always UTC and appending `:00:00.000Z` reconstructs it exactly.
+ *
+ * THE `Z` IS LOAD-BEARING AND NO TEST CAN PROVE IT. Drop it and
+ * `2026-09-01T00:00:00.000` is read as LOCAL time, moving the instant by the
+ * reader's offset. `spanHours` will not notice, because it subtracts two values
+ * that both came through here and a constant offset cancels — measured, under
+ * two zones, both green. Anything that reads a single `windowStartFromKey`
+ * result as an absolute instant WOULD notice. Keep the `Z`.
+ *
+ * (The bare key is not a local-time reading, which an earlier version of this
+ * comment claimed: `new Date('2026-09-01T00')` is an Invalid Date. Only the
+ * seconds-bearing form without a `Z` parses as local.)
  */
 function windowStartFromKey(key: string): Date {
     return new Date(`${key}:00:00.000Z`);
