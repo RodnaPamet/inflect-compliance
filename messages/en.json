@@ -8089,6 +8089,7 @@
     "dashboardWidget": {
       "title": "Agentic governance",
       "viewRegister": "Agent register",
+      "standing": "Registered: {total} — {breakdown}",
       "killInForceTenant": "A TENANT-WIDE kill switch is in force. Every agent in this workspace is stopped at the tool boundary, including runs already in flight.",
       "killInForceAgents": "{count, plural, one {# agent is stopped} other {# agents are stopped}} by a kill switch at the tool boundary, including runs already in flight.",
       "unscoredActive": "{count, plural, one {# ACTIVE agent has no assessed authority tier} other {# ACTIVE agents have no assessed authority tier}}. An unscored agent reaches nothing — its credential resolves to a deny ceiling.",

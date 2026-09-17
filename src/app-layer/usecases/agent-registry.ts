@@ -498,6 +498,33 @@ export async function getAgenticAssuranceSignals(ctx: RequestContext): Promise<{
  *   • `enforcing` — whether any of the above decides anything.
  *   • `proposalsAwaitingReview` — a queue with a human at the end of it.
  *
+ * ── THE CENSUS: `totalRegistered` + `byStanding` (#2560) ────────────────────
+ *
+ * The four facts above all answer "is anything WRONG". None of them answers
+ * "what is here", and a card that can only raise alarms reads identically over
+ * a workspace with twelve SUSPENDED agents and one with a single ACTIVE one.
+ * `activeUnscored` is not a substitute: it is a RISK-TIER fact that happens to
+ * be restricted to one standing, not a census of standings.
+ *
+ * `totalRegistered` is also the number that decides whether the dashboard card
+ * appears at all — the widget was asked for "when any agent is registered",
+ * and without a count there was nothing to ask.
+ *
+ * Two rails, both borrowed from the `activeUnscored` count this runs beside,
+ * and both of which produce a PLAUSIBLE wrong number rather than a crash when
+ * they are missing:
+ *
+ *   • `deletedAt: null`. A census without it counts soft-deleted rows, so a
+ *     register that has been tidied reports agents nobody can open.
+ *   • ZERO-FILL. `groupBy` returns no row for a standing with no agents, so
+ *     every member of `AgentStatus` is seeded at 0 before the rows are folded
+ *     in. Without it `byStanding.SUSPENDED` is `undefined`, and a consumer
+ *     that formats it renders a blank or `NaN` rather than "0".
+ *
+ * `totalRegistered` is the sum of the four buckets, never a second query: two
+ * statements that could disagree about the same population is a bug waiting
+ * for a concurrent write.
+ *
  * The DRILL CANARY is filtered out, for the reason the detail page's own
  * filter records: the nightly drill engages and lifts a kill against an id
  * that resolves to no registered agent, so an unfiltered count reports one per
@@ -511,13 +538,15 @@ export async function getAgenticDashboardSummary(ctx: RequestContext): Promise<{
     agentsKilled: number;
     activeUnscored: number;
     proposalsAwaitingReview: number;
+    totalRegistered: number;
+    byStanding: Record<AgentStatus, number>;
 }> {
     assertCanReadAgentRegister(ctx);
     const [enforcing, kills, counts] = await Promise.all([
         isAgentRegistrationEnforced(ctx.tenantId),
         listKillSwitches(ctx, { inForceOnly: true, take: 200 }),
         runInTenantContext(ctx, async (db) => {
-            const [activeUnscored, proposalsAwaitingReview] = await Promise.all([
+            const [activeUnscored, proposalsAwaitingReview, standingRows] = await Promise.all([
                 db.registeredAgent.count({
                     where: {
                         tenantId: ctx.tenantId,
@@ -529,8 +558,18 @@ export async function getAgenticDashboardSummary(ctx: RequestContext): Promise<{
                 db.agentProposal.count({
                     where: { tenantId: ctx.tenantId, status: SuggestionItemStatus.PENDING },
                 }),
+                db.registeredAgent.groupBy({
+                    by: ['status'],
+                    where: { tenantId: ctx.tenantId, deletedAt: null },
+                    _count: { _all: true },
+                }),
             ]);
-            return { activeUnscored, proposalsAwaitingReview };
+            const byStanding = Object.fromEntries(
+                Object.values(AgentStatus).map((standing) => [standing, 0]),
+            ) as Record<AgentStatus, number>;
+            for (const row of standingRows) byStanding[row.status] = row._count._all;
+            const totalRegistered = Object.values(byStanding).reduce((a, b) => a + b, 0);
+            return { activeUnscored, proposalsAwaitingReview, byStanding, totalRegistered };
         }),
     ]);
 
