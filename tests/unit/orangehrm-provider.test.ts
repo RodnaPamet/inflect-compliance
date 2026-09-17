@@ -30,9 +30,16 @@ import {
     ORANGEHRM_PAGE_SIZE,
     ORANGEHRM_MAX_PER_RUN,
     ORANGEHRM_MAX_PAGES_PER_RUN,
+    ORANGEHRM_ENRICH_CONCURRENCY,
+    formatResumeCursor,
+    parseResumeCursor,
     type OrangeHrmEmployeeRow,
     type OrangeHrmEnrichment,
 } from '@/app-layer/integrations/providers/orangehrm/roster';
+import {
+    IntegrationAuthError,
+    IntegrationTerminalError,
+} from '@/app-layer/integrations/http-resilience';
 import { fetchOrangeHrmAccessToken } from '@/app-layer/integrations/providers/orangehrm/token';
 import { HRIS_PROVIDERS, isHrisProviderId, isHrisSyncProvider } from '@/app-layer/integrations/providers/hris';
 
@@ -431,10 +438,171 @@ describe('normalisation', () => {
         expect(bossCalls).toHaveLength(1);
     });
 
+    // ═══ THE PRODUCTION ERROR PATH, WHICH IS NOT THE TEST ERROR PATH ═══
+    //
+    // Every test above injects a fetchImpl that RETURNS a response, so a 404
+    // arrives as `res.status === 404`. Production injects nothing and gets
+    // `resilientFetch`, which classifies 404 as terminal and THROWS. The two
+    // tests below are the only ones that exercise the shape production sees;
+    // without them the 404 tolerance was dead code under a docblock promising
+    // it worked, which is the same defect class as #2587 itself.
+
+    it('a supervisor deleted mid-run costs one manager, not the whole run — via the THROWN 404', async () => {
+        const fetchImpl = jest.fn(async (url: string) => {
+            if (/\/employee\/9\/contact-details/.test(url)) {
+                // What resilientFetch actually does with a 404.
+                throw new IntegrationTerminalError(404, 'acme.orangehrmlive.com/…');
+            }
+            if (/\/employee\/\d+\/contact-details/.test(url)) return json({ data: { workEmail: 'p1@acme.test' } });
+            if (/\/job-details/.test(url)) {
+                return json({ data: { joinedDate: null, employeeTerminationRecord: { id: null, date: null } } });
+            }
+            const offset = Number(new URL(url).searchParams.get('offset') ?? '0');
+            return json({ data: offset === 0 ? [row(1, { supervisors: [{ empNumber: 9 }] })] : [] });
+        }) as unknown as typeof fetch;
+
+        const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
+        expect(employees).toHaveLength(1);
+        expect(employees[0].managerEmail).toBeNull();
+    });
+
+    it('a REVOKED CREDENTIAL is not a missing manager — 401 still fails the run', async () => {
+        // IntegrationAuthError extends IntegrationTerminalError, so catching the
+        // base class without testing the status would turn "our credential was
+        // revoked" into "nobody has a manager" for the entire roster — silently,
+        // and on the pass whose output feeds the departure reconcile.
+        const fetchImpl = jest.fn(async (url: string) => {
+            if (/\/employee\/9\/contact-details/.test(url)) {
+                throw new IntegrationAuthError(401, 'acme.orangehrmlive.com/…');
+            }
+            if (/\/employee\/\d+\/contact-details/.test(url)) return json({ data: { workEmail: 'p1@acme.test' } });
+            if (/\/job-details/.test(url)) {
+                return json({ data: { joinedDate: null, employeeTerminationRecord: { id: null, date: null } } });
+            }
+            const offset = Number(new URL(url).searchParams.get('offset') ?? '0');
+            return json({ data: offset === 0 ? [row(1, { supervisors: [{ empNumber: 9 }] })] : [] });
+        }) as unknown as typeof fetch;
+
+        await expect(readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl })).rejects.toThrow(
+            IntegrationAuthError,
+        );
+    });
+
     it('no supervisor means no manager, not a dropped employee', async () => {
         const fetchImpl = rosterFetch([row(1, { supervisors: [] })], () => 'p1@acme.test');
         const { employees } = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
         expect(employees[0].managerEmail).toBeNull();
+    });
+
+    // ═══ THE BUDGET MUST BOUND A PAGE, NOT JUST THE GAP BETWEEN PAGES ═══
+
+    it('a page cut short by the read budget is NEVER reported complete', async () => {
+        // THE failure this guards: `complete: true` releases the departure
+        // reconcile, which marks every employee it did not touch TERMINATED.
+        // A page truncated mid-enrichment has unread rows, so reporting it
+        // complete would mass-terminate the tail of the roster. Truncation must
+        // outrank the short-page verdict, which otherwise means "roster ended".
+        let calls = 0;
+        const fetchImpl = mockFetch(async (url) => {
+            calls += 1;
+            const contact = /\/pim\/employee\/(\d+)\/contact-details/.exec(url);
+            if (contact) return json({ data: { workEmail: `p${contact[1]}@acme.test` } });
+            if (/\/job-details/.test(url)) {
+                return json({ data: { joinedDate: null, employeeTerminationRecord: { id: null, date: null } } });
+            }
+            // A SHORT page — which on its own would mean "the roster ended".
+            return json({ data: Array.from({ length: 10 }, (_, k) => row(k + 1)) });
+        });
+
+        // The clock passes the deadline once enrichment has started, so the
+        // fan-out stops handing out work mid-page.
+        let t = 1_000_000;
+        const r = await readOrangeHrmRoster({ host: HOST }, 'tok', null, {
+            fetchImpl,
+            now: () => new Date((t += calls > 1 ? 60_000 : 0)),
+            readDeadlineAt: 1_000_000 + 30_000,
+        });
+
+        expect(r.complete).toBe(false);
+        expect(r.resumeToken).not.toBeNull();
+        expect(r.employees.length).toBeLessThan(10);
+    });
+
+    it('stops STARTING enrichment once the budget is spent, so overshoot stays one request', async () => {
+        // The budget in sync-transaction.ts allows the deadline plus ONE
+        // in-flight request. Enrichment is parallel, so a batch costs one
+        // request-time -- but only if no NEW batch starts after the deadline.
+        let contactCalls = 0;
+        let t = 1_000_000;
+        const fetchImpl = mockFetch(async (url) => {
+            const contact = /\/pim\/employee\/(\d+)\/contact-details/.exec(url);
+            if (contact) {
+                contactCalls += 1;
+                t += 20_000; // each enrichment pushes the clock past the deadline
+                return json({ data: { workEmail: `p${contact[1]}@acme.test` } });
+            }
+            if (/\/job-details/.test(url)) {
+                return json({ data: { joinedDate: null, employeeTerminationRecord: { id: null, date: null } } });
+            }
+            return json({ data: Array.from({ length: ORANGEHRM_PAGE_SIZE }, (_, k) => row(k + 1)) });
+        });
+
+        await readOrangeHrmRoster({ host: HOST }, 'tok', null, {
+            fetchImpl,
+            now: () => new Date(t),
+            readDeadlineAt: 1_000_000 + 30_000,
+        });
+
+        // Far fewer than the 50 rows the page carried: the pool stopped
+        // claiming new work instead of draining the whole page.
+        expect(contactCalls).toBeLessThan(ORANGEHRM_PAGE_SIZE);
+    });
+
+    // ═══ THE RESUME CURSOR CARRIES A HIGH-WATER MARK ═══
+
+    it('round-trips a cursor, and still accepts the LEGACY bare-offset form', async () => {
+        // Legacy acceptance is not politeness: a bare offset is what is stored
+        // for every connection mid-pass when this ships, and rejecting it would
+        // restart those passes from zero.
+        expect(parseResumeCursor('50')).toEqual({ offset: 50, lastEmpNumber: null });
+        expect(parseResumeCursor('50@1234')).toEqual({ offset: 50, lastEmpNumber: 1234 });
+        expect(parseResumeCursor(null)).toEqual({ offset: 0, lastEmpNumber: null });
+        expect(formatResumeCursor(50, null)).toBe('50');
+        expect(formatResumeCursor(50, 1234)).toBe('50@1234');
+        for (const bad of ['abc', '-1', '50@abc', '50@-1', '1@2@3']) {
+            expect(() => parseResumeCursor(bad)).toThrow(/Invalid OrangeHRM resume cursor/);
+        }
+    });
+
+    it('a row deleted ahead of the cursor does not skip the employee after it', async () => {
+        // The whole point. Resuming at a raw offset after a deletion lands PAST
+        // the next unread employee; that employee is never stamped this pass,
+        // and the departure reconcile reads "not stamped" as "left".
+        const seen: number[] = [];
+        const fetchImpl = mockFetch(async (url) => {
+            const contact = /\/pim\/employee\/(\d+)\/contact-details/.exec(url);
+            if (contact) {
+                seen.push(Number(contact[1]));
+                return json({ data: { workEmail: `p${contact[1]}@acme.test` } });
+            }
+            if (/\/job-details/.test(url)) {
+                return json({ data: { joinedDate: null, employeeTerminationRecord: { id: null, date: null } } });
+            }
+            // empNumber 3 was deleted since the previous run, so everyone after
+            // it has shifted one position LEFT.
+            const remaining = [1, 2, 4, 5, 6];
+            const offset = Number(new URL(url).searchParams.get('offset') ?? '0');
+            return json({ data: remaining.slice(offset).map((n) => row(n)) });
+        });
+
+        // The previous run consumed through empNumber 2, at what was then
+        // offset 2. After the deletion, offset 2 now points at empNumber 5.
+        const r = await readOrangeHrmRoster({ host: HOST }, 'tok', '2@2', { fetchImpl });
+
+        // 4 must not be skipped, and 1-2 must not be re-emitted.
+        expect(r.employees.map((e) => e.hrisRecordId)).toEqual(['4', '5', '6']);
+        expect(seen).not.toContain(1);
+        expect(seen).not.toContain(2);
     });
 
     it('drops a row with no work email rather than inventing a key', async () => {
@@ -525,7 +693,9 @@ describe('pagination and the completeness claim', () => {
         const r = await readOrangeHrmRoster({ host: HOST }, 'tok', null, { fetchImpl });
         expect(r.employees).toHaveLength(ORANGEHRM_MAX_PER_RUN);
         expect(r.complete).toBe(false);
-        expect(r.resumeToken).toBe(String(ORANGEHRM_MAX_PER_RUN));
+        // `<offset>@<highWater>`: the mark is the largest empNumber consumed,
+        // and rows are seeded with empNumber === their index.
+        expect(r.resumeToken).toBe(`${ORANGEHRM_MAX_PER_RUN}@${ORANGEHRM_MAX_PER_RUN - 1}`);
         expect(pageCalls(fetchImpl)).toBe(ORANGEHRM_MAX_PAGES_PER_RUN);
     });
 
@@ -581,7 +751,12 @@ describe('the read deadline keeps the roster read inside the lock lease', () => 
         });
         expect(pageCalls(fetchImpl)).toBe(1);
         expect(r.complete).toBe(false);
-        expect(r.resumeToken).toBe(String(ORANGEHRM_PAGE_SIZE));
+        // ONE BATCH of the page, not the whole page. The budget allows the
+        // deadline plus one in-flight request; a 50-row page is seven
+        // sequential batches, so finishing it would overrun the lock lease by
+        // six request-times. The first batch runs unconditionally so the run
+        // still makes progress, and the cursor resumes at the batch boundary.
+        expect(r.resumeToken).toBe(`${ORANGEHRM_ENRICH_CONCURRENCY}@${ORANGEHRM_ENRICH_CONCURRENCY - 1}`);
     });
 
     it('a short page outranks the deadline — a finished roster is not reported partial', async () => {

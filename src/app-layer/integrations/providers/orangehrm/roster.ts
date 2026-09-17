@@ -82,7 +82,7 @@
  * @module integrations/providers/orangehrm/roster
  */
 import { logger } from '@/lib/observability/logger';
-import { resilientFetch } from '../../http-resilience';
+import { IntegrationTerminalError, resilientFetch } from '../../http-resilience';
 import type { NormalizedEmployee, ListEmployeesResult } from '../hris';
 import { deriveEmploymentStatus } from '../hris/employment-status';
 import { assertOrangeHrmHost } from './host';
@@ -357,12 +357,32 @@ async function fetchEnrichment(
 /**
  * One employee's work email, from the SINGULAR contact-details path.
  *
- * A 404 is the one non-OK that returns null rather than throwing, and only
- * because of who calls it: supervisor resolution passes an `empNumber` read
- * from a list page fetched moments earlier, so a 404 means the record was
- * deleted in between. Failing a 5,000-employee run over that race would be a
- * worse answer than recording no manager for one person. Every other status
- * still throws — see the note on `fetchEnrichment`.
+ * ═══ 404 IS TOLERATED, AND IT ARRIVES TWO DIFFERENT WAYS ═══
+ *
+ * Why tolerate it at all: supervisor resolution passes an `empNumber` read from
+ * a list page fetched moments earlier, so a 404 means the record was deleted in
+ * between. Failing a 5,000-employee run over that race would be a worse answer
+ * than recording no manager for one person. Every other status still throws —
+ * see the note on `fetchEnrichment`.
+ *
+ * Why there are TWO branches for one condition: the production `doFetch` is
+ * `resilientFetch`, which classifies 404 as TERMINAL and THROWS
+ * `IntegrationTerminalError` rather than handing back a response
+ * (`http-resilience.ts`, `TERMINAL_STATUS` / the `kind === 'terminal'` arm). A
+ * status check alone is therefore dead code under the real wiring — it only
+ * ever fires for an injected `fetchImpl` that returns the response verbatim,
+ * which is what the tests do. This function had exactly that defect when it was
+ * written: a docblock promising a tolerance the deployed connector did not have.
+ *
+ * The `status` check is NOT redundant, so do not "simplify" it away — drop it
+ * and every test double has to start throwing vendor-specific error types to
+ * exercise a branch the vendor reaches by status.
+ *
+ * The catch matches 404 ALONE and rethrows everything else. That is load
+ * bearing: `IntegrationAuthError extends IntegrationTerminalError`, so a
+ * `instanceof` check without the status test would swallow a 401/403 — turning
+ * a revoked credential into "this employee has no manager", silently, for the
+ * whole roster.
  */
 async function fetchWorkEmail(
     host: string,
@@ -370,10 +390,18 @@ async function fetchWorkEmail(
     empNumber: string,
     doFetch: typeof fetch,
 ): Promise<string> {
-    const res = await doFetch(
-        `https://${host}${ORANGEHRM_WEB_ROOT}/api/v2/pim/employee/${encodeURIComponent(empNumber)}/contact-details`,
-        { headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' } },
-    );
+    let res: Response;
+    try {
+        res = await doFetch(
+            `https://${host}${ORANGEHRM_WEB_ROOT}/api/v2/pim/employee/${encodeURIComponent(empNumber)}/contact-details`,
+            { headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' } },
+        );
+    } catch (e) {
+        // 404 only. `IntegrationAuthError` is a subclass, so the status test is
+        // what keeps a revoked credential from reading as "no manager".
+        if (e instanceof IntegrationTerminalError && e.status === 404) return '';
+        throw e;
+    }
     if (res.status === 404) return '';
     if (!res.ok) {
         throw new Error(`OrangeHRM contact-details fetch failed for employee ${empNumber} (HTTP ${res.status})`);
@@ -382,24 +410,101 @@ async function fetchWorkEmail(
     return (contact.workEmail ?? '').trim();
 }
 
-/** Map with a fixed number of in-flight promises, preserving input order. */
+/**
+ * Map with a fixed number of in-flight promises, preserving input order, and
+ * STOPPING when told to.
+ *
+ * ═══ WHY THE STOP CHECK IS WHAT KEEPS THE LOCK LEASE HONEST ═══
+ *
+ * `sync-transaction.ts` derives the read-phase budget as the deadline plus
+ * exactly ONE `MAX_HTTP_REQUEST_MS` — "the one request that may still be in
+ * flight when it passes" — and that derivation assumed a page IS one request.
+ * Enrichment broke the assumption: a 50-row page issues up to 100 enrichment
+ * requests and up to 50 supervisor lookups, so a page entered one millisecond
+ * before the deadline could run fourteen further request-times past it and
+ * overrun the 30-minute lock lease.
+ *
+ * The fix restores the original invariant rather than renegotiating the budget,
+ * and it works because the fan-out is PARALLEL: a batch of `limit` requests
+ * costs ONE request-time in wall clock, not `limit` of them. Checking
+ * `shouldStop` before claiming each new item means that once the deadline
+ * passes, no new work starts and the pool drains — so the overshoot is again
+ * the single longest in-flight request, which is precisely what the budget
+ * already allows for.
+ *
+ * Indices are claimed in ascending order, so everything completed forms a
+ * PREFIX of `items`. That is load-bearing for the caller: a positional resume
+ * cursor is only meaningful if the rows consumed are a prefix.
+ */
 async function mapWithConcurrency<T, R>(
     items: readonly T[],
     limit: number,
     fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-    const out: R[] = new Array(items.length);
+    shouldStop: () => boolean = () => false,
+): Promise<{ results: R[]; processed: number }> {
+    const results: R[] = new Array(items.length);
     let next = 0;
     const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
         for (;;) {
             const i = next;
+            // THE FIRST BATCH ALWAYS RUNS, and that exception is what keeps the
+            // pass finite. Consulting the clock before any work would let a run
+            // that entered already past its deadline claim nothing, finish with
+            // `keep === 0`, and hand back the cursor it was given — a run that
+            // makes no progress, forever, every time. The original code had this
+            // property for free (the deadline was checked between PAGES, so a
+            // page that started always completed); it has to be stated once the
+            // check moves inside.
+            //
+            // It costs nothing in overshoot: the batch is issued in parallel, so
+            // `limit` requests cost ONE request-time — exactly the single
+            // in-flight request the budget in `sync-transaction.ts` already
+            // allows for.
+            if (i >= limit && shouldStop()) return;
             next += 1;
             if (i >= items.length) return;
-            out[i] = await fn(items[i]);
+            results[i] = await fn(items[i]);
         }
     });
     await Promise.all(workers);
-    return out;
+    // The dense prefix. `fn` may legitimately resolve to null, which is not
+    // `undefined`, so a hole here means "never claimed" and nothing else.
+    let processed = 0;
+    while (processed < items.length && results[processed] !== undefined) processed += 1;
+    return { results, processed };
+}
+
+/**
+ * The resume cursor, which has TWO shapes and must keep accepting both.
+ *
+ * `<offset>` is the legacy form and is what is sitting in
+ * `IntegrationConnection.syncCursor` for every connection mid-pass at the
+ * moment this ships. Rejecting it would turn a routine deploy into a pass that
+ * restarts from zero — re-upserting the whole roster and, worse, making a pass
+ * that never completes look like one making progress.
+ *
+ * `<offset>@<highWater>` is the current form. See `readOrangeHrmRoster` for
+ * what the high-water mark buys.
+ *
+ * A malformed cursor THROWS rather than defaulting to zero, which is the same
+ * reasoning as before: silently restarting is indistinguishable from progress.
+ */
+export function parseResumeCursor(raw?: string | null): { offset: number; lastEmpNumber: number | null } {
+    if (raw == null || raw === '') return { offset: 0, lastEmpNumber: null };
+    const [offsetPart, markPart, ...rest] = raw.split('@');
+    const offset = Number.parseInt(offsetPart, 10);
+    if (rest.length || Number.isNaN(offset) || offset < 0) {
+        throw new Error(`Invalid OrangeHRM resume cursor: ${raw}`);
+    }
+    if (markPart === undefined) return { offset, lastEmpNumber: null };
+    const mark = Number.parseInt(markPart, 10);
+    if (Number.isNaN(mark) || mark < 0) throw new Error(`Invalid OrangeHRM resume cursor: ${raw}`);
+    return { offset, lastEmpNumber: mark };
+}
+
+/** Inverse of {@link parseResumeCursor}; omits the mark when there is none. */
+export function formatResumeCursor(offset: number, lastEmpNumber: number | null): string {
+    return lastEmpNumber === null ? String(offset) : `${offset}@${lastEmpNumber}`;
 }
 
 export interface OrangeHrmRosterConfig {
@@ -443,15 +548,42 @@ export async function readOrangeHrmRoster(
     // TOKEN, so an attacker-controlled host is a token handover.
     const host = assertOrangeHrmHost(cfg.host);
 
-    const startOffset = Number.parseInt(resumeFrom ?? '0', 10);
-    // A malformed cursor must not silently restart the pass from zero: that
-    // would re-upsert everything and, worse, make a pass that never completes
-    // look like one that keeps making progress.
-    if (Number.isNaN(startOffset) || startOffset < 0) {
-        throw new Error(`Invalid OrangeHRM resume cursor: ${resumeFrom}`);
-    }
+    const cursor = parseResumeCursor(resumeFrom);
+    /**
+     * Where to re-enter the list, and it is deliberately BEHIND where the last
+     * run stopped.
+     *
+     * An offset is a position in a list that can change under us. If rows are
+     * deleted from PIM between two runs of one pass, the tail shifts LEFT and
+     * re-entering at the same offset lands PAST the next unread employee —
+     * skipping them silently. A skipped employee is never stamped this pass,
+     * and when the pass finally completes the departure reconcile reads
+     * "not stamped" as "left the company" and marks them TERMINATED, which is
+     * what makes them a candidate for a real directory disable.
+     *
+     * OrangeHRM offers no keyset pagination to fix this properly — measured,
+     * not assumed: `empNumber=N` is an EQUALITY filter and there is no range
+     * operator, so "give me everyone after N" cannot be expressed.
+     *
+     * So the cursor carries a HIGH-WATER MARK alongside the offset, and resume
+     * backs off one whole page and re-reads it. Rows at or below the mark are
+     * discarded as already-consumed, which makes the re-read free of
+     * duplicates; and the backed-off page is what covers the shift. The
+     * guarantee this buys is bounded and worth stating exactly: no employee is
+     * skipped unless MORE THAN ORANGEHRM_PAGE_SIZE rows were deleted ahead of
+     * the cursor between two runs of the same pass. Today's guarantee is that
+     * ONE deletion is enough to lose someone.
+     */
+    const startOffset = cursor.lastEmpNumber === null
+        ? cursor.offset
+        : Math.max(0, cursor.offset - ORANGEHRM_PAGE_SIZE);
 
     const employees: NormalizedEmployee[] = [];
+    /**
+     * The largest `empNumber` this pass has finished with, carried in the
+     * cursor. Rows at or below it have been consumed and are skipped on resume.
+     */
+    let highWater = cursor.lastEmpNumber;
     /**
      * empNumber -> work email, for the WHOLE run rather than one page.
      *
@@ -466,6 +598,18 @@ export async function readOrangeHrmRoster(
     const emailByEmpNumber = new Map<string, string>();
     let offset = startOffset;
     let sawFullPage = true;
+    /**
+     * Did the read budget cut a page short mid-way?
+     *
+     * Tracked separately from `sawFullPage` because the two mean opposite
+     * things to the caller and one of them is destructive. A short PAGE means
+     * the roster ended — `complete: true`, which releases the departure
+     * reconcile. A TRUNCATED page means the opposite: there is more roster and
+     * we ran out of time. Routing truncation through `sawFullPage` would
+     * report a partially-read roster as a finished one and mark every
+     * unreached employee TERMINATED.
+     */
+    let truncatedMidPage = false;
     /** Rows the API returned this run, before normalisation dropped any. */
     let rowsSeen = 0;
 
@@ -503,48 +647,111 @@ export async function readOrangeHrmRoster(
 
         const body = (await res.json()) as { data?: OrangeHrmEmployeeRow[] };
         const rows = body.data ?? [];
-        rowsSeen += rows.length;
+
+        // Already consumed by an earlier run of this pass. Safe to compare by
+        // `empNumber` ONLY because the request pins
+        // `sortField=employee.empNumber&sortOrder=ASC`, which a live 5.9
+        // honours — without a stable total order this test would discard rows
+        // that had simply been reordered.
+        const consumedThrough = highWater;
+        const fresh =
+            consumedThrough === null
+                ? rows
+                : rows.filter((r) => {
+                      const n = Number(r.empNumber);
+                      // A row with no usable empNumber cannot be compared, so it
+                      // is NOT discarded — enrichment drops it a few lines down
+                      // for its own reason, and silently eating it here would
+                      // hide that.
+                      return !Number.isFinite(n) || n > consumedThrough;
+                  });
+        const skipped = rows.length - fresh.length;
 
         // ENRICHMENT, per employee, because the list response carries neither
         // the work email nor the dates. Bounded concurrency; a row with no
         // usable empNumber cannot be enriched and is dropped here rather than
         // sent to a URL with an empty path segment.
-        const enriched = await mapWithConcurrency(rows, ORANGEHRM_ENRICH_CONCURRENCY, async (row) => {
-            const empNumber = row.empNumber == null ? '' : String(row.empNumber).trim();
-            if (!empNumber) return null;
-            const enrichment = await fetchEnrichment(host, accessToken, empNumber, doFetch);
-            emailByEmpNumber.set(empNumber, enrichment.workEmail);
-            return { row, enrichment };
-        });
+        const { results: enriched, processed } = await mapWithConcurrency(
+            fresh,
+            ORANGEHRM_ENRICH_CONCURRENCY,
+            async (row) => {
+                const empNumber = row.empNumber == null ? '' : String(row.empNumber).trim();
+                if (!empNumber) return null;
+                const enrichment = await fetchEnrichment(host, accessToken, empNumber, doFetch);
+                emailByEmpNumber.set(empNumber, enrichment.workEmail);
+                return { row, enrichment };
+            },
+            readBudgetSpent,
+        );
 
         // MANAGERS, second — after the loop above has filled the cache with
         // this page's own emails, so a supervisor who is also on this page
-        // costs nothing. Only the supervisors still unknown are fetched.
+        // costs nothing. Only the supervisors still unknown are fetched, and
+        // only for the rows enrichment actually reached.
         const supervisorOf = (row: OrangeHrmEmployeeRow): string =>
             (row.supervisors ?? [])
                 .map((sup) => (sup?.empNumber == null ? '' : String(sup.empNumber).trim()))
                 .find(Boolean) ?? '';
+        const reached = enriched.slice(0, processed);
         const unknown = [
             ...new Set(
-                enriched
+                reached
                     .filter((item) => item !== null)
                     .map((item) => supervisorOf(item.row))
                     .filter((id) => id && !emailByEmpNumber.has(id)),
             ),
         ];
-        const fetchedEmails = await mapWithConcurrency(unknown, ORANGEHRM_ENRICH_CONCURRENCY, (id) =>
-            fetchWorkEmail(host, accessToken, id, doFetch),
+        const { results: fetchedEmails } = await mapWithConcurrency(
+            unknown,
+            ORANGEHRM_ENRICH_CONCURRENCY,
+            (id) => fetchWorkEmail(host, accessToken, id, doFetch),
+            readBudgetSpent,
         );
-        unknown.forEach((id, i) => emailByEmpNumber.set(id, fetchedEmails[i]));
+        unknown.forEach((id, i) => {
+            if (fetchedEmails[i] !== undefined) emailByEmpNumber.set(id, fetchedEmails[i]);
+        });
 
-        for (const item of enriched) {
+        // How far this page is USABLE. A row whose supervisor lookup the budget
+        // cut short is not "an employee with no manager" — it is an employee we
+        // did not finish reading, and emitting it with a null manager would
+        // write a wrong fact rather than an incomplete one. So the prefix stops
+        // at the first such row and the cursor resumes there.
+        let keep = 0;
+        while (keep < processed) {
+            const item = reached[keep];
+            const supervisor = item ? supervisorOf(item.row) : '';
+            if (supervisor && !emailByEmpNumber.has(supervisor)) break;
+            keep += 1;
+        }
+
+        for (let i = 0; i < keep; i += 1) {
+            const item = reached[i];
             if (!item) continue;
             const supervisor = supervisorOf(item.row);
             const managerEmail = (supervisor && emailByEmpNumber.get(supervisor)) || null;
             const e = normalise(item.row, { ...item.enrichment, managerEmail });
             if (e) employees.push(e);
         }
-        offset += rows.length;
+        // The high-water mark advances over everything CONSUMED, which is not
+        // the same as everything emitted: a row dropped for having no work
+        // email was still read, and re-reading it next run would not change
+        // that. Taken before the offset arithmetic so an early `continue` can
+        // never leave the two disagreeing.
+        for (let i = 0; i < keep; i += 1) {
+            const n = Number(reached[i]?.row.empNumber);
+            if (Number.isFinite(n) && (highWater === null || n > highWater)) highWater = n;
+        }
+        // Only what was consumed. `rows.length` here would skip every row the
+        // budget cut short, and the departure reconcile reads a skipped
+        // employee as a departed one. `skipped` counts toward it because those
+        // rows WERE consumed — by an earlier run.
+        offset += skipped + keep;
+        // Counted over CONSUMED rows, for the same reason: the closing refusal
+        // compares this against `employees.length`, and counting rows the
+        // budget never enriched would make a truncated page look like a page
+        // of employees with no work email.
+        rowsSeen += keep;
+        if (keep < fresh.length) truncatedMidPage = true;
         // A short page means the roster is exhausted. Comparing against the
         // requested limit rather than counting NORMALISED rows matters: rows
         // dropped for a missing work email would otherwise look like the end of
@@ -594,6 +801,11 @@ export async function readOrangeHrmRoster(
         });
     }
 
+    // TRUNCATION OUTRANKS EVERYTHING. A page the budget cut short leaves rows
+    // unread at a known offset; it is the one state that must never be
+    // reported complete, because `complete: true` is what releases the
+    // departure reconcile over everyone this run did not touch.
+    if (truncatedMidPage) return { employees, complete: false, resumeToken: formatResumeCursor(offset, highWater) };
     // A short page means the roster ended, and THAT VERDICT OUTRANKS THE
     // DEADLINE. Checking the clock first would report a finished roster as
     // partial, store a cursor past the end of it, and defer the departure
@@ -601,5 +813,5 @@ export async function readOrangeHrmRoster(
     if (!sawFullPage) return { employees, complete: true, resumeToken: null };
     // Stopped with the roster still going: either the per-run row cap or the
     // read deadline. Both are progress and both resume from the same offset.
-    return { employees, complete: false, resumeToken: String(offset) };
+    return { employees, complete: false, resumeToken: formatResumeCursor(offset, highWater) };
 }
