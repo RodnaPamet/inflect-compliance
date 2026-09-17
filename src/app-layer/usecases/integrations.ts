@@ -1120,7 +1120,7 @@ const PROVIDER_CATEGORY: Record<string, string> = {
     github: 'scm',
     bamboohr: 'hris',
     workday: 'hris',
-    // Internal test fixture (#2548). Categorised rather than left to fall to
+    // #2548. Categorised rather than left to fall to
     // `other`: the hub groups by category, and an HRIS connector sitting in the
     // catch-all bucket is harder to recognise as one, not easier to ignore.
     orangehrm: 'hris',
