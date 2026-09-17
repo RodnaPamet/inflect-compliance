@@ -16,9 +16,21 @@
 -- `IF NOT EXISTS` matches every prior NotificationType migration in this
 -- folder, so a re-run is a no-op rather than a failed deploy.
 --
--- ORDINAL. `ADD VALUE` appends this LAST in an already-migrated database while
--- prisma/schema/enums.prisma places it before `GENERAL` — the same divergence
--- the two members added in 20260911140000 already carry. Nothing in this
--- codebase matches `NotificationType` by ordinal; #2475 is the open issue
--- covering that gap, and this change neither creates nor widens it.
-ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'AGENT_CIRCUIT_BREAKER_TRIPPED';
+-- ORDINAL. `BEFORE 'GENERAL'` places this member where prisma/schema/enums.prisma
+-- declares it, so schema order and migration order agree on it and this change
+-- adds NO new divergence. Plain `ADD VALUE` would have appended it LAST while the
+-- schema declares it before `GENERAL`, which is exactly the mismatch
+-- tests/guardrails/enum-member-order-matches-migrations.test.ts now catches --
+-- measured: it went red on the appending form, green on this one.
+--
+-- `BEFORE`/`AFTER` keeps the rolling-deploy property plain `ADD VALUE` has --
+-- nothing renamed, nothing dropped, old containers keep reading every value they
+-- know. Three migrations in this folder already use it (20260424203836,
+-- 20260524100000, 20260717140000).
+--
+-- The PRE-EXISTING divergence from the two members added in 20260911140000 is
+-- untouched and remains signed off in that guard's SIGNED_OFF registry. Extending
+-- the registry for THIS member would have been the wrong fix -- the guard's own
+-- docblock says so in terms: "Adding your enum to `SIGNED_OFF` is NOT the fix."
+-- #2475, which tracked the missing guard, was delivered by #2554.
+ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'AGENT_CIRCUIT_BREAKER_TRIPPED' BEFORE 'GENERAL';
