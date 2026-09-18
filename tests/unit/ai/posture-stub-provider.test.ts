@@ -40,12 +40,19 @@ function makeInput(over: Partial<PostureSummaryInput> = {}): PostureSummaryInput
     };
 }
 
-const fw = (name: string, coveragePercent: number, total = 100) => ({
+/**
+ * `implementedPercent` defaults to 0, which is the state that matters: a framework
+ * fully MAPPED and not yet implemented is what installing a pack produces, and it
+ * used to read as 100% coverage.
+ */
+const fw = (name: string, requirementsMappedPercent: number, total = 100, implementedPercent = 0) => ({
     key: name,
     name,
-    mapped: Math.round((coveragePercent / 100) * total),
+    mapped: Math.round((requirementsMappedPercent / 100) * total),
     total,
-    coveragePercent,
+    requirementsMappedPercent,
+    implemented: Math.round((implementedPercent / 100) * total),
+    requirementsImplementedPercent: implementedPercent,
 });
 
 describe('derivePostureScore', () => {
@@ -253,22 +260,48 @@ describe('buildAdvice', () => {
             makeInput({ frameworks: [fw('Strong', 90), fw('Weak', 20)] }),
         );
         const item = advice.find((a) => a.title.includes('Weak'))!;
-        expect(item.title).toBe('Raise Weak coverage (20%)');
+        // "Map … to controls", not "Raise … coverage". The number is a MAPPING
+        // ratio and the old title asserted implementation it never measured.
+        expect(item.title).toBe('Map Weak requirements to controls (20% mapped)');
         expect(item.priority).toBe('high');
-        expect(item.detail).toContain('80 of 100 Weak requirements are unmapped');
+        expect(item.detail).toContain('80 of 100 Weak requirements have no control mapped');
+        expect(item.detail).toContain('does not by itself mean the requirement is met');
     });
 
-    it('ignores frameworks with no requirements, and fully-covered ones', () => {
+    it('ignores frameworks with no requirements', () => {
         expect(
             buildAdvice(makeInput({ frameworks: [fw('Empty', 0, 0)] })).some((a) =>
                 a.title.includes('Empty'),
             ),
         ).toBe(false);
+    });
+
+    it('says nothing about a framework that is fully mapped AND fully implemented', () => {
+        // makeInput's default is implemented === applicable, so there is
+        // genuinely no outstanding work to name.
         expect(
             buildAdvice(makeInput({ frameworks: [fw('Done', 100)] })).some((a) =>
                 a.title.includes('Done'),
             ),
         ).toBe(false);
+    });
+
+    it('a FULLY MAPPED framework with unimplemented controls still gets advice', () => {
+        // THE REGRESSION THIS PINS. The gate was `mappedPercent < 100` with no
+        // counterpart, and installing a framework pack maps every requirement at
+        // once — so the tenant with the most work ahead was the one the advice
+        // list fell silent about. A test asserted that silence as correct.
+        const advice = buildAdvice(
+            makeInput({
+                frameworks: [fw('Mapped', 100)],
+                controls: { applicable: 100, implemented: 10, inProgress: 0, notStarted: 90, coveragePercent: 10 },
+            }),
+        );
+        const item = advice.find((a) => a.title.includes('Mapped'))!;
+        expect(item).toBeDefined();
+        expect(item.title).toBe('Implement the controls behind Mapped');
+        expect(item.detail).toContain('90 applicable controls are still not implemented');
+        expect(item.detail).toContain('mapping result rather than an implementation one');
     });
 
     it('advises installing a framework on a brand-new tenant', () => {

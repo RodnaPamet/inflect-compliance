@@ -1364,8 +1364,8 @@
   ],
   "templates": [
     {
-      "code": "AISVS-C1",
-      "title": "C1 Training Data Integrity & Traceability",
+      "code": "AISVS-C1.1",
+      "title": "Training Data Origin & Data Security",
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "requirementCodes": [
@@ -1373,10 +1373,28 @@
         "C1.1.2",
         "C1.1.3",
         "C1.1.4",
-        "C1.1.5",
+        "C1.1.5"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C1.2",
+      "title": "Data Labeling & Annotation Security",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
         "C1.2.1",
         "C1.2.2",
-        "C1.2.3",
+        "C1.2.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C1.3",
+      "title": "Training Data Quality & Security Assurance",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
         "C1.3.1",
         "C1.3.2",
         "C1.3.3",
@@ -1444,28 +1462,64 @@
       "tasks": []
     },
     {
-      "code": "AISVS-C12",
-      "title": "C12 Monitoring, Logging & Anomaly Detection",
+      "code": "AISVS-C12.1",
+      "title": "Request & Response Logging",
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "requirementCodes": [
         "C12.1.1",
         "C12.1.2",
         "C12.1.3",
-        "C12.1.4",
+        "C12.1.4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C12.2",
+      "title": "Detection & Alerting",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
         "C12.2.1",
         "C12.2.2",
         "C12.2.3",
         "C12.2.4",
         "C12.2.5",
-        "C12.2.6",
+        "C12.2.6"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C12.3",
+      "title": "Model, Data & Performance Drift Detection",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
         "C12.3.1",
         "C12.3.2",
         "C12.3.3",
-        "C12.3.4",
+        "C12.3.4"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C12.4",
+      "title": "Proactive Security Behavior Monitoring",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
         "C12.4.1",
         "C12.4.2",
-        "C12.4.3",
+        "C12.4.3"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AISVS-C12.5",
+      "title": "Training Data & Model Lifecycle Audit",
+      "category": "OWASP AISVS",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
         "C12.5.1",
         "C12.5.2",
         "C12.5.3",
@@ -1669,10 +1723,16 @@
     "version": "1.0",
     "description": "OWASP AISVS v1.0 AI-security controls across all 12 chapters.",
     "templateCodes": [
-      "AISVS-C1",
+      "AISVS-C1.1",
+      "AISVS-C1.2",
+      "AISVS-C1.3",
       "AISVS-C10",
       "AISVS-C11",
-      "AISVS-C12",
+      "AISVS-C12.1",
+      "AISVS-C12.2",
+      "AISVS-C12.3",
+      "AISVS-C12.4",
+      "AISVS-C12.5",
       "AISVS-C2",
       "AISVS-C3",
       "AISVS-C4",

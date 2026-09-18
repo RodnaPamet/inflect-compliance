@@ -2,9 +2,9 @@
   "_meta": {
     "purpose": "ISO 39001 in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
     "why": "Built inline in prisma/seed.ts, which is not run on production deploys. Extracted from a database seeded by that block, so the shape is carried over exactly rather than re-derived from grouping logic that ran at seed time.",
-    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here \u2014 every template carries the generic five, as it did inline.",
+    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here — every template carries the generic five, as it did inline.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts",
-    "replaces": "This file WAS a bare array of 17 templates that only prisma/seed.ts read. It is now the CatalogFile a production seeder applies, carrying the same codes, titles and requirement refs \u2014 verified template-for-template against the array it replaces."
+    "replaces": "This file WAS a bare array of 17 templates that only prisma/seed.ts read. It is now the CatalogFile a production seeder applies, carrying the same codes, titles and requirement refs — verified template-for-template against the array it replaces."
   },
   "framework": {
     "key": "ISO39001",
@@ -311,12 +311,21 @@
       "tasks": []
     },
     {
-      "code": "RTS-RES",
-      "title": "Resource and competence management",
+      "code": "RTS-RESA",
+      "title": "Resource provision for RTS",
       "category": "ISO39001",
       "defaultFrequency": "QUARTERLY",
       "requirementCodes": [
-        "7.1",
+        "7.1"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "RTS-RESB",
+      "title": "Competence and awareness",
+      "category": "ISO39001",
+      "defaultFrequency": "QUARTERLY",
+      "requirementCodes": [
         "7.2",
         "7.3"
       ],
@@ -373,7 +382,8 @@
       "RTS-MON",
       "RTS-OBJ",
       "RTS-OPC",
-      "RTS-RES",
+      "RTS-RESA",
+      "RTS-RESB",
       "RTS-ROL",
       "RTS-RSK",
       "RTS-SCP"

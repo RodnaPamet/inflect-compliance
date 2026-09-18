@@ -44,11 +44,17 @@ export function buildPosturePrompt(input: PostureSummaryInput): PromptPair {
         controlsApplicable: input.controls.applicable,
         controlsInProgress: input.controls.inProgress,
         controlsNotStarted: input.controls.notStarted,
+        // `requirementsMappedPercent`, NOT `coveragePercent`. The key beside it
+        // — `controlCoveragePercent` — is implementation, and when both were
+        // called coverage the model had no way to tell a link count from an
+        // implemented control.
         frameworks: input.frameworks.map((f) => ({
             name: f.name,
-            coveragePercent: f.coveragePercent,
-            mapped: f.mapped,
-            total: f.total,
+            requirementsMappedPercent: f.requirementsMappedPercent,
+            requirementsImplementedPercent: f.requirementsImplementedPercent,
+            requirementsMapped: f.mapped,
+            requirementsImplemented: f.implemented,
+            requirementsTotal: f.total,
         })),
         openRisks: input.risks,
         evidence: input.evidence,

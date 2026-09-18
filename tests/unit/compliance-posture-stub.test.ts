@@ -21,8 +21,16 @@ function baseSignals(overrides: Partial<PostureSummaryInput> = {}): PostureSumma
     return {
         controls: { applicable: 40, implemented: 30, inProgress: 5, notStarted: 5, coveragePercent: 75 },
         frameworks: [
-            { key: 'ISO27001', name: 'ISO/IEC 27001', mapped: 80, total: 93, coveragePercent: 86 },
-            { key: 'SOC2', name: 'SOC 2', mapped: 20, total: 60, coveragePercent: 33 },
+            // mapped >> implemented on purpose: that gap is the state installing a
+            // framework pack produces, and it used to be reported as coverage.
+            {
+                key: 'ISO27001', name: 'ISO/IEC 27001', mapped: 80, total: 93,
+                requirementsMappedPercent: 86, implemented: 28, requirementsImplementedPercent: 30,
+            },
+            {
+                key: 'SOC2', name: 'SOC 2', mapped: 20, total: 60,
+                requirementsMappedPercent: 33, implemented: 6, requirementsImplementedPercent: 10,
+            },
         ],
         risks: { total: 10, critical: 0, high: 2, medium: 5, low: 3 },
         evidence: { overdue: 3, dueSoon: 4, current: 100 },
