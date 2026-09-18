@@ -16,6 +16,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { resolveBackDestination } from '@/lib/nav/back-destination';
 import { resolveCanonicalParent } from '@/lib/nav/canonical-parents';
 import {
     REFERRER_ONLY_BACK_MAIN_PAGES,
@@ -45,23 +46,56 @@ describe('rq4 back-link fixes', () => {
         expect(en.common.sections.audits).toBe('Internal Audit');
     });
 
-    it('BackAffordance exposes a `noFallback` prop that skips canonical resolution', () => {
-        const source = fs.readFileSync(BACK_AFFORDANCE_PATH, 'utf-8');
-        expect(source).toMatch(/noFallback\?:\s*boolean/);
-        // The implementation must gate canonical-parent resolution behind
-        // noFallback (with no referrer + noFallback the component returns
-        // null). The sibling-detail guard expresses this as
-        // `noFallback ? null : resolveCanonicalParent(...)`.
-        expect(source).toMatch(/noFallback\s*\?\s*null/);
+    it('noFallback yields NO link rather than a canonical parent', () => {
+        // Was a source grep for /noFallback\s*\?\s*null/, which asserts that a
+        // STRING APPEARS IN A FILE and passes whatever the code does. Driven
+        // through the real resolver instead.
+        expect(
+            resolveBackDestination({
+                pathname: '/t/acme/clauses',
+                referrer: null,
+                tenantSlug: 'acme',
+                noFallback: true,
+                labelFor: (x) => x,
+            }),
+        ).toBeNull();
+        // …while the same page WITH a referrer still offers it.
+        expect(
+            resolveBackDestination({
+                pathname: '/t/acme/clauses',
+                referrer: '/t/acme/audits',
+                tenantSlug: 'acme',
+                noFallback: true,
+                labelFor: (x) => x,
+            })?.href,
+        ).toBe('/t/acme/audits');
     });
 
-    it('BackAffordance skips a sibling-detail referrer → canonical parent (no circular back)', () => {
-        // Stepping /assets/A → /assets/B via prev/next must not make "Back"
-        // return to /assets/B; siblings (same canonical parent) route to the
-        // shared parent (the list) instead.
-        const source = fs.readFileSync(BACK_AFFORDANCE_PATH, 'utf-8');
-        expect(source).toMatch(/referrerIsSibling/);
-        expect(source).toMatch(/resolveCanonicalParent\(referrer, tenantSlug\)/);
+    it('a sibling referrer routes to the shared parent, not back to the sibling', () => {
+        // Was `expect(source).toMatch(/referrerIsSibling/)` — an identifier
+        // check that could not fail when the behaviour was wrong, and did not
+        // fail while a whole class of circular back links shipped. Now driven.
+        const dest = resolveBackDestination({
+            pathname: '/t/acme/assets/a2',
+            referrer: '/t/acme/assets/a1',
+            tenantSlug: 'acme',
+            labelFor: (x) => x,
+        });
+        expect(dest?.href).not.toBe('/t/acme/assets/a1');
+        expect(dest?.href).toBe('/t/acme/assets');
+    });
+
+    it('a DESCENDANT referrer routes up, never down (the reported cycle)', () => {
+        const dest = resolveBackDestination({
+            pathname: '/t/acme/frameworks/nis2',
+            referrer: '/t/acme/frameworks/nis2/install',
+            tenantSlug: 'acme',
+            labelFor: (x) => x,
+        });
+        expect(dest?.href).not.toBe('/t/acme/frameworks/nis2/install');
+        expect(dest?.href).toBe('/t/acme/frameworks');
+        // Exhaustive coverage of this class lives in
+        // tests/guards/back-affordance-no-cycles.test.ts.
     });
 
     it('canonical parent for /controls/[controlId]/tests/[planId] is /tests with label "Tests"', () => {
