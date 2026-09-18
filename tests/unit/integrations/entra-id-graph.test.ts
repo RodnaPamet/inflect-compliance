@@ -14,6 +14,7 @@ jest.mock('@/lib/observability/logger', () => ({
 }));
 
 import {
+    MAX_ADMIN_PAGES,
     EntraIdProvider,
     getEntraAccessToken,
 } from '@/app-layer/integrations/providers/entra-id';
@@ -32,6 +33,7 @@ const graphUser = (over: Record<string, unknown> = {}) => ({
 function routedFetch(routes: {
     users?: unknown[];
     roles?: unknown[];
+    members?: unknown[];
     mfa?: unknown[];
     domains?: unknown[] | 'fail';
 }) {
@@ -44,6 +46,12 @@ function routedFetch(routes: {
     };
     return jest.fn(async (url: string) => {
         if (url.includes('/users')) return take('users', routes.users, { value: [] });
+        // Two distinct reads now, and they must be separable: the role LIST,
+        // and each role's MEMBERSHIP. The old router collapsed both into one
+        // key, so no test could express a membership page that continues —
+        // which is the one input the truncation rule exists to handle.
+        if (url.includes('/members'))
+            return take('members', routes.members, { value: [] });
         if (url.includes('directoryRoles')) return take('roles', routes.roles, { value: [] });
         if (url.includes('userRegistrationDetails'))
             return take('mfa', routes.mfa, { value: [] });
@@ -157,18 +165,58 @@ describe('Entra admin-role enrichment', () => {
         ],
     });
 
-    it('marks role members as admins and everyone else as definitively not', async () => {
+    it('marks role members admins, and non-members false ONLY on a complete read', async () => {
         const res = await listWith({
             users: [{ value: [graphUser({ id: 'admin-1' }), graphUser({ id: 'plain-1' })] }],
-            roles: [userRole(['admin-1'])],
+            roles: [{ value: [{ id: 'role-1' }] }],
+            members: [{ value: [{ id: 'admin-1', '@odata.type': '#microsoft.graph.user' }] }],
         });
 
         const byId = Object.fromEntries(
             res.accounts.map((a) => [a.externalUserId, a.isAdmin]),
         );
         expect(byId['admin-1']).toBe(true);
-        // Authoritative false, not unknown — the roles read succeeded.
+        // False is only sound because the membership read FINISHED. The
+        // previous version of this test asserted the same `false` with the
+        // comment "authoritative false, not unknown — the roles read
+        // succeeded", which is what made the defect look like intent: the read
+        // succeeded at returning one capped page, and a capped page cannot
+        // establish that someone holds no role.
         expect(byId['plain-1']).toBe(false);
+        expect(res.adminComplete).not.toBe(false);
+    });
+
+    it('the per-role page cap is a real bound, not a formality', () => {
+        // Added because a mutation exposed that nothing asserted the VALUE.
+        // Raising it to 100_000 left every other test green — the truncation
+        // case still passes, it just issues 100_000 requests first. The cap
+        // mechanism was covered; the cap being small enough to matter was not.
+        expect(MAX_ADMIN_PAGES).toBeGreaterThan(1);
+        expect(MAX_ADMIN_PAGES).toBeLessThanOrEqual(200);
+    });
+
+    it('a TRUNCATED membership read leaves non-members unknown, not non-admin', async () => {
+        // The failing input the old harness could not produce: a membership
+        // page that continues. Every page carries a nextLink, so the per-role
+        // cap is reached and the read is known-partial.
+        const endless = Array.from({ length: 60 }, () => ({
+            value: [{ id: 'admin-1', '@odata.type': '#microsoft.graph.user' }],
+            '@odata.nextLink': 'https://graph.microsoft.com/v1.0/directoryRoles/role-1/members?p=n',
+        }));
+        const res = await listWith({
+            users: [{ value: [graphUser({ id: 'admin-1' }), graphUser({ id: 'plain-1' })] }],
+            roles: [{ value: [{ id: 'role-1' }] }],
+            members: endless,
+        });
+
+        const byId = Object.fromEntries(
+            res.accounts.map((a) => [a.externalUserId, a.isAdmin]),
+        );
+        // Seeing someone in a role is sound on a partial read.
+        expect(byId['admin-1']).toBe(true);
+        // NOT seeing them is not. This is the defect: it used to be `false`.
+        expect(byId['plain-1']).toBeNull();
+        expect(res.adminComplete).toBe(false);
     });
 
     it('ignores non-user role members (groups, service principals)', async () => {
@@ -198,18 +246,25 @@ describe('Entra admin-role enrichment', () => {
         expect(res.accounts[0].isAdmin).toBe(false);
     });
 
-    it('follows pagination across role pages', async () => {
+    it('follows pagination across role LIST pages, then reads each role', async () => {
+        // The outer paging is over the role list now, not over expanded
+        // members. Two role pages, one role each, one member each.
         const res = await listWith({
             users: [{ value: [graphUser({ id: 'a' }), graphUser({ id: 'b' })] }],
             roles: [
                 {
-                    ...userRole(['a']),
+                    value: [{ id: 'role-1' }],
                     '@odata.nextLink': 'https://graph.microsoft.com/v1.0/directoryRoles?p=2',
                 },
-                userRole(['b']),
+                { value: [{ id: 'role-2' }] },
+            ],
+            members: [
+                { value: [{ id: 'a', '@odata.type': '#microsoft.graph.user' }] },
+                { value: [{ id: 'b', '@odata.type': '#microsoft.graph.user' }] },
             ],
         });
         expect(res.accounts.every((a) => a.isAdmin)).toBe(true);
+        expect(res.adminComplete).not.toBe(false);
     });
 });
 

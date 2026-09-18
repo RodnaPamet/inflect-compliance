@@ -80,6 +80,7 @@ import { buildSystemContext } from '@/app-layer/context-system';
 import type { Prisma } from '@prisma/client';
 import type { RequestContext } from '../types';
 import { resolveDirectoryWriter, type WriterRefusal } from '../integrations/identity-writer-factory';
+import type { WriteReadinessReport } from '../integrations/identity-write-readiness';
 import { getIdentityWritePolicy, type IdentityWriteMode } from './identity-write-policy';
 import { listUnsettledWrites } from './identity-write-journal';
 import {
@@ -617,6 +618,14 @@ export interface LeaverPassResult {
     readonly population: number;
     readonly batchRefused?: string;
     readonly errorMessage?: string;
+    /**
+     * Whether the connection this pass resolved could WRITE if asked (#2604).
+     *
+     * Optional because the refusal and error returns never reach a writer, so
+     * there is nothing to report — absent means "no writer was resolved", which
+     * is a different fact from READ_BIND_ONLY and must not be collapsed into it.
+     */
+    readonly writeReadiness?: WriteReadinessReport;
 }
 
 /**
@@ -1156,6 +1165,12 @@ export async function runIdentityLeaverPass(input: {
                 candidates: candidates.length,
                 population,
                 batchRefused: outcome.refused,
+                // #2604 — surfaced on the rung that runs BEFORE anything is
+                // written. A dry run cannot verify the bind works (it opens no
+                // socket, deliberately), but it can say whether one is
+                // configured, which is the difference between a live pass that
+                // disables people and one refused 50 for every account.
+                writeReadiness: resolution.readiness,
             };
         } finally {
             // Unconditional because `close` is in the type on every arm — a
