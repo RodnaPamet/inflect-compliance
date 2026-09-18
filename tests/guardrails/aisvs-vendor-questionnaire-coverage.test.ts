@@ -19,6 +19,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { functionBodyOf } from '../helpers/source-blocks';
 
 import {
     computeAisvsCoverage,
@@ -86,13 +87,52 @@ describe('AISVS vendor questionnaire — fixture', () => {
 });
 
 describe('AISVS vendor questionnaire — seed wiring', () => {
-    const seed = read('prisma/seed.ts');
+    // READ THE FILE THAT HOLDS THE BUILDER, NOT THE ONE THAT USED TO.
+    //
+    // #2622 extracted this builder out of `prisma/seed.ts` into its own
+    // module, and this guard kept reading `seed.ts` — where THREE of its four
+    // needles were still satisfied, by the unrelated Supplier questionnaire
+    // block ~45 lines below (`vendorAssessmentTemplate.create` at :1773,
+    // `isPublished: true` at :1779, `isGlobal: true` at :1780). So setting
+    // `isPublished: false` in the extracted builder, or deleting its `create`
+    // outright, would have shipped every tenant an AISVS template that can
+    // never be sent to a vendor — with this guard green throughout. Found in
+    // pre-merge review of the extraction that caused it.
+    //
+    // The needles are now bound to the builder's own function body, so a
+    // second `create` elsewhere in the repo cannot satisfy them.
+    const builder = read('prisma/aisvs-vendor-questionnaire.ts');
+    const body = functionBodyOf(builder, 'seedAisvsVendorQuestionnaire');
 
-    it('seeds a global, published VendorAssessmentTemplate from the fixture', () => {
-        expect(seed).toContain('aisvs-vendor-questionnaire.json');
-        expect(seed).toMatch(/vendorAssessmentTemplate\.create/);
-        expect(seed).toMatch(/isGlobal:\s*true/);
-        expect(seed).toMatch(/isPublished:\s*true/);
+    it('the builder function is actually found (positive control)', () => {
+        // Without this, a rename would empty `body` and pass every assertion
+        // below by vacuity — which is the same failure being fixed.
+        expect(body.length).toBeGreaterThan(200);
+        expect(body).toContain('vendorAssessmentTemplate');
+    });
+
+    it('creates a global, published VendorAssessmentTemplate', () => {
+        expect(body).toMatch(/vendorAssessmentTemplate\.create/);
+        expect(body).toMatch(/isGlobal:\s*true/);
+        expect(body).toMatch(/isPublished:\s*true/);
+    });
+
+    it('both seeders reach the builder, and both name the fixture', () => {
+        // The template is delivered by TWO callers now: prisma/seed.ts (dev)
+        // and scripts/seed-vendor-questionnaires.ts (which the entrypoint
+        // runs). Losing either is a delivery regression the old single-file
+        // read could not express at all.
+        for (const caller of ['prisma/seed.ts', 'scripts/seed-vendor-questionnaires.ts']) {
+            const src = read(caller);
+            expect({ caller, imports: /aisvs-vendor-questionnaire'/.test(src) })
+                .toEqual({ caller, imports: true });
+            expect({ caller, calls: /seedAisvsVendorQuestionnaire/.test(src) })
+                .toEqual({ caller, calls: true });
+        }
+    });
+
+    it('the fixture the builder loads is the AISVS one', () => {
+        expect(builder + read('prisma/seed.ts')).toContain('aisvs-vendor-questionnaire');
     });
 });
 
