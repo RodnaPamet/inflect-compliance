@@ -83,7 +83,14 @@ export default async function AdminPage({
                 // page that was not a `t()` key, so the one pill whose label
                 // could not be translated was also the one whose label was an
                 // acronym. Both halves fixed here.
-                { href: '/admin/mcp', id: 'mcp-pill-btn', icon: <Robot className={iconCls} />, label: t('nav.mcp') },
+                //
+                // …except the key it moved to was `nav.mcp` = "MCP credentials"
+                // (#2566): the literal became translatable and stayed an
+                // acronym. The key and the value now both name the panel. The
+                // ROUTE and the element id keep `mcp` deliberately — a redirect
+                // table, `agentic-route-inbound-links` and the e2e specs pin
+                // them, and they are engineer-facing rather than read.
+                { href: '/admin/mcp', id: 'mcp-pill-btn', icon: <Robot className={iconCls} />, label: t('nav.agentCredentials') },
             ],
         },
         {
