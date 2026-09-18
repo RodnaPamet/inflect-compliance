@@ -650,6 +650,28 @@ enum NotificationType {
   // row refuses it — a notification is another place the injected instructions
   // would be delivered, and every reader of it is a person or a model.
   AGENT_TOOL_MANIFEST_PIN_CHANGED
+  // AGENTIC UI 1/4 (#2563) — a completed risk assessment was overtaken by the
+  // agent it was scored against.
+  //
+  // The transition already had a durable record — `AGENT_ASSESSMENT_STALE` in
+  // the audit log — and no audience. Staleness is discovered by opening the
+  // agent's Risk tab, which is the one place the notice renders, and the whole
+  // premise of warning rather than blocking is that somebody goes and
+  // re-answers the questionnaire.
+  //
+  // What the bell reports is NARROW, and deliberately so: the tier is
+  // re-scored in the SAME transaction that widened the agent, so the ceiling
+  // has already narrowed and nothing is running at an authority a fresh score
+  // would refuse. What may no longer hold are the twenty QUESTIONNAIRE
+  // ANSWERS — a judgement a human made about a narrower agent than the one
+  // now registered. So this WARNS; it never denies.
+  //
+  // Fired ONLY on the TRANSITION into staleness, which the emitter inherits
+  // from the audit row's own `!alreadyStale` guard: a standing staleness is
+  // re-evaluated on every amendment to the agent, and a bell per evaluation
+  // would be a bell per edit. Routed to the agent's accountable owner and
+  // deduped per (agent, recipient, day) like the breaker bell.
+  AGENT_RISK_ASSESSMENT_STALE
   GENERAL
 }
 

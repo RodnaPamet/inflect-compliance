@@ -1,12 +1,12 @@
 /**
- * AGENTIC UI 1/4 (#2441, #2562, #2561) — in-app notifications for the agentic
- * events a human has to know about without going and looking.
+ * AGENTIC UI 1/4 (#2441, #2562, #2561, #2563) — in-app notifications for the
+ * agentic events a human has to know about without going and looking.
  *
- * ── WHY THESE FOUR, OUT OF EVERYTHING THE SUBSYSTEM DOES ────────────────────
+ * ── WHY THESE FIVE, OUT OF EVERYTHING THE SUBSYSTEM DOES ────────────────────
  *
  * None of the twenty existing `NotificationType` members is agentic, so the
  * whole subsystem was silent: every fact it produced lived on a page somebody
- * had to already be on. Four of those facts are about a PERSON rather than a
+ * had to already be on. Five of those facts are about a PERSON rather than a
  * page:
  *
  *   • `AGENT_KILL_SWITCH_ENGAGED` — an agent, or every agent in the workspace,
@@ -42,15 +42,25 @@
  *     actually MOVED; a re-approval matching the hash on file writes nothing
  *     and says nothing.
  *
+ *   • `AGENT_RISK_ASSESSMENT_STALE` (#2563) — the agent has been widened past
+ *     the basis its completed assessment was scored against. The quietest of
+ *     the five, and the one whose remedy takes the longest: the answer is to
+ *     re-answer a twenty-question assessment, which nobody does unprompted.
+ *     The transition was already AUDITED and still announced to nobody, and
+ *     the only surface that renders the notice is the Risk tab of that one
+ *     agent's detail page. It is a WARNING, not a stop — the tier is re-scored
+ *     in the same transaction, so the ceiling is already correct and what is
+ *     in doubt is the human judgement behind it.
+ *
  * Deliberately NOT notified: proposal CREATED. That is the ordinary case — the
  * propose-not-commit queue exists to accumulate them — and one bell per
- * proposal would train the recipient to ignore the bell, taking the two above
+ * proposal would train the recipient to ignore the bell, taking the four above
  * with it. The waiting count is surfaced instead, where it costs nothing to
  * ignore: a badge on the register's ViewsMenu and a line on the dashboard card.
  *
  * ── THE EXISTING CATALOGUE, NOT A SECOND CHANNEL ────────────────────────────
  *
- * All four go through `db.notification.createMany({ skipDuplicates: true })` plus
+ * All five go through `db.notification.createMany({ skipDuplicates: true })` plus
  * `publishNotificationEvent`, which is the bell + SSE path every other in-app
  * notification uses, with the same `{tenantId}:{TYPE}:{entityId}:{userId}:{day}`
  * dedupe key shape. `createMany` rather than `create`: a duplicate key returns
@@ -88,16 +98,18 @@ export type AgenticNotificationKind =
     | 'AGENT_KILL_SWITCH_ENGAGED'
     | 'AGENT_PROPOSAL_QUARANTINED'
     | 'AGENT_CIRCUIT_BREAKER_TRIPPED'
-    | 'AGENT_TOOL_MANIFEST_PIN_CHANGED';
+    | 'AGENT_TOOL_MANIFEST_PIN_CHANGED'
+    | 'AGENT_RISK_ASSESSMENT_STALE';
 
 interface AgenticCopy {
     title: string;
     /**
      * `detail` is the type-specific fact the sentence needs and the subject
-     * cannot carry — the firing signals for a breaker trip, and whether a
-     * manifest pin is a first approval or a replacement. `null` for the two
-     * types whose body is complete without one, which is why the parameter is
-     * read by two entries and ignored by the other two.
+     * cannot carry — the firing signals for a breaker trip, whether a manifest
+     * pin is a first approval or a replacement, and which axes a stale
+     * assessment was overtaken on. `null` for the two types whose body is
+     * complete without one, which is why the parameter is read by three
+     * entries and ignored by the other two.
      */
     body: (subject: string, detail: string | null) => string;
     /**
@@ -105,7 +117,9 @@ interface AgenticCopy {
      * breaker trip is about one agent and the only surface that shows breaker
      * state is that agent's own detail page, so a link to the register would
      * land the recipient on a page that says nothing about what happened. The
-     * three entries that link to a surface rather than a row ignore it.
+     * three entries that link to a surface rather than a row ignore it; the
+     * breaker and staleness entries, both of which are about ONE agent, read
+     * it.
      */
     linkPath: (tenantSlug: string, entityId: string) => string;
 }
@@ -123,7 +137,9 @@ interface AgenticCopy {
  * detail page, because the breaker tab there is the only surface in the product
  * that renders breaker state or offers the close. For a manifest pin it is the
  * register again — pin state is tenant-wide data with no tenant-level page and
- * no per-row URL, so the register is the nearest thing to where you act.
+ * no per-row URL, so the register is the nearest thing to where you act. For a
+ * stale assessment it is that agent's detail page too: the stale notice, the
+ * triggers that caused it and the re-assess action are all on its Risk tab.
  */
 const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
     AGENT_KILL_SWITCH_ENGAGED: {
@@ -172,6 +188,18 @@ const COPY: Record<AgenticNotificationKind, AgenticCopy> = {
         // `useState` — so there is no tenant-level manifest surface and no
         // row-level URL to deep-link. Same answer the kill switch gives.
         linkPath: (slug) => `/t/${slug}/agents`,
+    },
+    AGENT_RISK_ASSESSMENT_STALE: {
+        title: "An agent's risk assessment is out of date",
+        body: (subject, detail) =>
+            `${subject} has been widened since its risk assessment was completed` +
+            `${detail === null ? '' : ` — ${detail}`}. ` +
+            `Its tier has already been re-scored from the answers on file, so the ceiling ` +
+            `is current; what may no longer hold are the answers themselves. Re-assess it.`,
+        // The AGENT's page, like the breaker bell and for the same reason: the
+        // stale notice, the triggers and the "Re-assess" action all live on
+        // that page's Risk tab, and the register carries no staleness column.
+        linkPath: (slug, agentId) => `/t/${slug}/agents/${agentId}`,
     },
 };
 
