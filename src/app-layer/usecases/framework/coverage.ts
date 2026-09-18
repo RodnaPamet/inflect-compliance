@@ -532,8 +532,8 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
     //
     //   evidence  missingEvidence / applicable controls   — same population,
     //             both exclude N/A controls
-    //   overdue   overdueTasks / all tasks on those controls — same population,
-    //             both count every control's tasks
+    //   overdue   overdueTasks / overdue-ELIGIBLE tasks — same population,
+    //             both require a due date and a live status
     //
     // Matched numerator/denominator is the point. Dividing overdue TASKS by
     // CONTROLS would be the original bug in a new unit (a control holds up to
@@ -556,11 +556,31 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
     const MAX_OVERDUE_PENALTY = 25;
 
     const applicableControls = controls.filter((c) => !isNotApplicable(c)).length;
-    const totalTasks = controls.reduce((n, c) => n + (c.tasks?.length ?? 0), 0);
+    // OVERDUE-ELIGIBLE tasks, not every task row. The numerator above counts
+    // only tasks with a past `dueAt` in a live status, so a denominator of all
+    // tasks is a different population — and the score would then RISE when
+    // work is ADDED. Concretely: a control whose single task is overdue scores
+    // 1/1 → the full 25-point penalty; create three undated placeholder tasks
+    // and the share falls to 1/4, handing back 18 points for doing nothing.
+    // A task with no due date, or already RESOLVED/CLOSED/CANCELED, can never
+    // reach the numerator, so it must not sit in the denominator either
+    // (#2618, found in pre-merge review).
+    const overdueEligibleTasks = controls.reduce(
+        (n, c) =>
+            n +
+            (c.tasks || []).filter(
+                (task) =>
+                    task.dueAt &&
+                    task.status !== TaskStatus.RESOLVED &&
+                    task.status !== TaskStatus.CLOSED &&
+                    task.status !== TaskStatus.CANCELED,
+            ).length,
+        0,
+    );
 
     const evidenceGapShare =
         applicableControls > 0 ? missingEvidence.length / applicableControls : 0;
-    const overdueShare = totalTasks > 0 ? overdueTasks.length / totalTasks : 0;
+    const overdueShare = overdueEligibleTasks > 0 ? overdueTasks.length / overdueEligibleTasks : 0;
 
     const readinessScore = Math.max(
         0,

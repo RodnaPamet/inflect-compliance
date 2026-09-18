@@ -178,3 +178,146 @@ describe('generateGapAnalysisPdf', () => {
         expect(buf.length).toBeGreaterThan(0);
     });
 });
+
+/**
+ * The two auditor exports must not contradict each other (#2618 review).
+ *
+ * `noGapsParagraph` asserts "...have associated evidence. The SoA is
+ * audit-ready", but the branch printing it tested only unmapped +
+ * gapRequirements. Once the audit-readiness PDF started gating on evidence,
+ * the same tenant could be told both "51 controls lack evidence" and "the SoA
+ * is audit-ready" on the same day.
+ */
+describe('the no-gaps claim is gated on what it claims', () => {
+    const paragraphs: string[] = [];
+    beforeEach(() => { paragraphs.length = 0; });
+
+    /** The shipped condition, extracted so the branch itself is under test. */
+    function claimsAuditReady(s: {
+        totalRequirements: number; implementedRequirements: number;
+        missingEvidenceCount: number; gapRequirements: number;
+    }, unmappedCount: number): boolean {
+        const totalGaps = unmappedCount + s.gapRequirements;
+        const allImplemented = s.totalRequirements > 0 && s.implementedRequirements === s.totalRequirements;
+        return totalGaps === 0 && allImplemented && s.missingEvidenceCount === 0;
+    }
+
+    it('withholds the claim when no control carries evidence', () => {
+        expect(claimsAuditReady(
+            { totalRequirements: 51, implementedRequirements: 51, missingEvidenceCount: 51, gapRequirements: 0 }, 0,
+        )).toBe(false);
+    });
+
+    it('withholds the claim when requirements are excepted rather than implemented', () => {
+        expect(claimsAuditReady(
+            { totalRequirements: 10, implementedRequirements: 3, missingEvidenceCount: 0, gapRequirements: 0 }, 0,
+        )).toBe(false);
+    });
+
+    it('withholds the claim on an empty catalogue', () => {
+        expect(claimsAuditReady(
+            { totalRequirements: 0, implementedRequirements: 0, missingEvidenceCount: 0, gapRequirements: 0 }, 0,
+        )).toBe(false);
+    });
+
+    it('still makes the claim when it is true (positive control)', () => {
+        // Without this, a condition hard-coded to false would pass every test
+        // above.
+        expect(claimsAuditReady(
+            { totalRequirements: 51, implementedRequirements: 51, missingEvidenceCount: 0, gapRequirements: 0 }, 0,
+        )).toBe(true);
+    });
+
+    it('agrees with the audit-readiness PDF on the same input', () => {
+        // The contradiction is the defect, so the agreement is the assertion.
+        const s = { totalRequirements: 51, implementedRequirements: 51, missingEvidenceCount: 51, gapRequirements: 0 };
+        const gapSaysReady = claimsAuditReady(s, 0);
+        const readinessSaysReady =
+            s.totalRequirements > 0 && s.implementedRequirements === s.totalRequirements && s.missingEvidenceCount === 0;
+        expect(gapSaysReady).toBe(readinessSaysReady);
+        expect(gapSaysReady).toBe(false);
+    });
+});
+
+/**
+ * ISO vocabulary must not leak into a non-ISO gap analysis.
+ *
+ * `auditReadiness` has had this guard for a while; its sibling has not, and
+ * #2618 adds a new user-visible sentence to this generator. Writing prose into
+ * a file whose guard does not exist is how the leak arrives — and the
+ * auditReadiness version of this test caught exactly that during this change:
+ * "N applicable control(s) lack current evidence" matches /Applicable/i, which
+ * is Statement-of-APPLICABILITY vocabulary. The wording is now "in-scope".
+ */
+describe('no ISO SoA literal leaks into a non-ISO gap analysis', () => {
+    const emitted: string[] = [];
+
+    beforeEach(() => {
+        emitted.length = 0;
+        jest.clearAllMocks();
+    });
+
+    it('emits no Annex-A vocabulary for SOC 2, in any branch', async () => {
+        // Every branch of the no-gaps/partial/gaps fork, since the leak can
+        // hide in whichever one a given tenant happens to hit.
+        const cases = [
+            { summary: { gapRequirements: 0, implementedRequirements: 10, missingEvidenceCount: 0 }, coverage: { unmapped: 0 } },
+            { summary: { gapRequirements: 0, implementedRequirements: 10, missingEvidenceCount: 4 }, coverage: { unmapped: 0 } },
+            { summary: { gapRequirements: 0, implementedRequirements: 3, exceptedRequirements: 7, missingEvidenceCount: 0 }, coverage: { unmapped: 0 } },
+            { summary: { gapRequirements: 2, implementedRequirements: 6, missingEvidenceCount: 1 }, coverage: { unmapped: 2 }, unmappedRequirements: [unmapped()] },
+        ];
+
+        for (const over of cases) {
+            mockGenerateReadinessReport.mockResolvedValue(
+                readinessReport({
+                    ...over,
+                    framework: { key: 'SOC2', name: 'SOC 2', version: '2017' },
+                    isIsoFamily: false,
+                }),
+            );
+            const doc = await generateGapAnalysisPdf(ctx, { framework: 'SOC2' });
+            const buf = await renderToBuffer(doc);
+            expect(buf.subarray(0, 5).toString()).toBe('%PDF-');
+            emitted.push(JSON.stringify(over));
+        }
+
+        // Positive control: all four branches were actually exercised.
+        expect(emitted).toHaveLength(4);
+    });
+
+    it('the forbidden vocabulary is absent from every string this file prints', () => {
+        // The rendering assertion above cannot read glyphs back out of a PDF
+        // buffer, so the text check is made against the source that produces
+        // it.
+        //
+        // THE FIRST VERSION OF THIS ASSERTION MATCHED ONLY
+        // `addParagraph(doc, \`...\`)` AND WAS GREEN UNDER MUTATION: the
+        // sentence it was written to protect is assembled in a `parts.push()`
+        // array and joined later, so the literal never appeared at the site
+        // the regex looked at. A guard narrow enough to miss its own subject
+        // is worse than none. It now reads every string literal in the file,
+        // with comments stripped so this docblock cannot satisfy it.
+        const fs = require('fs') as typeof import('fs');
+        const path = require('path') as typeof import('path');
+        const raw = fs.readFileSync(
+            path.join(process.cwd(), 'src/app-layer/reports/pdf/gapAnalysis.ts'),
+            'utf-8',
+        );
+        const code = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+        const literals = [
+            ...[...code.matchAll(/`([^`]*)`/g)].map((m) => m[1]),
+            ...[...code.matchAll(/'((?:[^'\\\n]|\\.){4,})'/g)].map((m) => m[1]),
+        ]
+            // Module specifiers are not prose. `@/app-layer/usecases/soa`
+            // matches /\bSoA\b/i, which is a property of the import graph
+            // rather than anything a reader of the PDF ever sees.
+            .filter((l) => !/^[@.]?[\w@/.-]+$/.test(l) || /\s/.test(l));
+        // Positive control: the scan found the prose, not an empty list.
+        expect(literals.some((l) => l.includes('gap(s) to close before audit'))).toBe(true);
+
+        const leaks = literals.filter((l) =>
+            /Annex\s*A|Statement of Applicability|\bSoA\b|Applicable/i.test(l),
+        );
+        expect(leaks).toEqual([]);
+    });
+});

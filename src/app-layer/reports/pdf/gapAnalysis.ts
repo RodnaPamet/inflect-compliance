@@ -73,7 +73,7 @@ export async function generateGapAnalysisPdf(
     const dataSources: DataSourceNote[] = [
         { source: 'Coverage & Readiness', description: `Requirement mapping + implementation verdict against ${requirementsPhrase}.` },
         { source: 'Control Mappings', description: 'Requirement-to-control mappings driving the mapped / unmapped split.' },
-        { source: 'Implementation Status', description: 'Per-requirement implemented / gap rollup across its applicable controls.' },
+        { source: 'Implementation Status', description: 'Per-requirement implemented / gap rollup across its in-scope controls.' },
     ];
 
     // ─── Build PDF ───
@@ -94,8 +94,33 @@ export async function generateGapAnalysisPdf(
 
     addSpacer(doc);
 
-    if (totalGaps === 0) {
+    // THE SAME CLAIM AS THE AUDIT-READINESS PDF, AND IT MUST BE GATED THE SAME
+    // WAY. `labels.noGapsParagraph` reads "...are fully mapped, justified, and
+    // have associated evidence. The SoA is audit-ready." — an assertion about
+    // EVIDENCE — while this branch tested only `totalGaps === 0`
+    // (unmapped + gapRequirements). A tenant with every requirement mapped and
+    // implemented and not one approved piece of evidence got it.
+    //
+    // Left unfixed, the two auditor-facing exports would have contradicted
+    // each other for the same tenant on the same day, now that #2618 gates the
+    // readiness PDF on evidence: one saying 51 controls lack evidence, the
+    // other saying the SoA is audit-ready. `allImplemented` mirrors that PDF
+    // exactly, including why gapRequirements === 0 is not enough — excepted
+    // and not-applicable requirements increment neither counter.
+    const allImplemented =
+        s.totalRequirements > 0 && s.implementedRequirements === s.totalRequirements;
+    if (totalGaps === 0 && allImplemented && s.missingEvidenceCount === 0) {
         addParagraph(doc, labels.noGapsParagraph);
+    } else if (totalGaps === 0) {
+        // No unmapped and nothing awaiting implementation, but the claim above
+        // would still be false. Say which half is missing.
+        const parts: string[] = [];
+        if (!allImplemented) {
+            parts.push(`${s.implementedRequirements} of ${s.totalRequirements} requirement(s) implemented`);
+            if (s.exceptedRequirements > 0) parts.push(`${s.exceptedRequirements} risk-accepted under an exception`);
+        }
+        if (s.missingEvidenceCount > 0) parts.push(`${s.missingEvidenceCount} in-scope control(s) lack current evidence`);
+        addParagraph(doc, `No unmapped or unimplemented requirements remain, but this is not yet audit-ready: ${parts.join('; ')}.`);
     } else {
         addParagraph(doc, `${totalGaps} gap(s) to close before audit: ${unmappedCount} requirement(s) with no mapping, and ${s.gapRequirements} mapped but not yet implemented.`);
     }

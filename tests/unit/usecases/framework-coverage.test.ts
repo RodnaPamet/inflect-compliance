@@ -563,6 +563,41 @@ describe('generateReadinessReport', () => {
         expect(result.summary.readinessScore).not.toBe(0);
     });
 
+    it('#2618 — adding tasks that can never be overdue does not raise the score', async () => {
+        // THE HOLE. The overdue numerator counts only tasks with a past due
+        // date in a live status; the denominator used to count every task row.
+        // So creating undated placeholders diluted the share and handed points
+        // back for doing nothing.
+        const past = new Date('2020-01-01');
+        const approved = { id: 'e-1', status: 'APPROVED', expiredAt: null, isArchived: false, deletedAt: null, title: 'E' };
+
+        const run = async (tasks: unknown[]) => {
+            mockPrisma.framework.findFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'ISO', version: '2022' });
+            mockPrisma.frameworkRequirement.findMany.mockResolvedValueOnce([
+                { id: 'r-1', code: 'A', title: 'X', section: 'Org', sortOrder: 1 },
+            ]);
+            tenantDb.controlRequirementLink.findMany.mockResolvedValueOnce([
+                { requirementId: 'r-1', control: { id: 'c-1', code: 'CC1', name: 'X', status: 'IMPLEMENTED', applicability: 'APPLICABLE', description: '',
+                  evidenceControlLinks: [{ evidenceId: 'e-1', evidence: approved }], tasks } },
+            ]);
+            return (await generateReadinessReport(ctx, 'iso')).summary.readinessScore;
+        };
+
+        const overdueOnly = [{ id: 't-1', status: 'OPEN', dueAt: past, title: 'Overdue' }];
+        const withPlaceholders = [
+            ...overdueOnly,
+            { id: 't-2', status: 'OPEN', dueAt: null, title: 'No due date' },
+            { id: 't-3', status: 'RESOLVED', dueAt: past, title: 'Already resolved' },
+            { id: 't-4', status: 'CANCELED', dueAt: past, title: 'Canceled' },
+        ];
+
+        // 1 of 1 overdue-eligible task is overdue → the full 25-point penalty.
+        expect(await run(overdueOnly)).toBe(75);
+        // Three tasks that CANNOT be overdue change nothing. Under the old
+        // denominator this scored 94 (share 1/4), a free 19 points.
+        expect(await run(withPlaceholders)).toBe(75);
+    });
+
     it('#2618 — readinessScore stays within [0, 100] across the input range', async () => {
         // A property check over the corners rather than one worked example:
         // every combination of implemented/unevidenced/overdue must land in

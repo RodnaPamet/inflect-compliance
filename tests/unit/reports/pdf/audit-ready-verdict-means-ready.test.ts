@@ -92,7 +92,7 @@ describe('the Audit-ready verdict (#2618)', () => {
         await generateAuditReadinessPdf(ctx, { framework: 'ISO27001' });
         expect(verdict()).toBe(
             'Audit-ready — readiness score 100/100. Every requirement is mapped and implemented, ' +
-                'and every applicable control carries current evidence.',
+                'and every in-scope control carries current evidence.',
         );
     });
 
@@ -156,10 +156,72 @@ describe('the Audit-ready verdict (#2618)', () => {
     });
 
     it('still reports the requirement gap when requirements are incomplete', async () => {
-        mockGenerateReadinessReport.mockResolvedValue(report({ gapRequirements: 3, readinessScore: 55 }, 2));
+        mockGenerateReadinessReport.mockResolvedValue(
+            report({ implementedRequirements: 7, gapRequirements: 3, readinessScore: 55 }, 2),
+        );
         await generateAuditReadinessPdf(ctx, { framework: 'ISO27001' });
         expect(verdict()).toBe(
-            'Readiness score 55/100. 3 mapped requirement(s) not yet implemented; 2 unmapped.',
+            'Readiness score 55/100. 7 of 10 requirement(s) implemented; 3 not yet implemented; 2 unmapped.',
         );
+    });
+
+    // ─── Gated on implementation, not on the absence of gaps ────────────
+
+    it('excepted requirements do not make a framework Audit-ready', async () => {
+        // THE HOLE. Three implemented, seven risk-accepted under in-force
+        // exceptions: `excepted` increments neither implementedRequirements
+        // nor gapRequirements, so gaps=0 and unmapped=0 while only 30% is
+        // actually implemented. The old gate printed "Audit-ready" over it.
+        mockGenerateReadinessReport.mockResolvedValue(
+            report({
+                implementedRequirements: 3,
+                exceptedRequirements: 7,
+                gapRequirements: 0,
+                readinessScore: 30,
+            }),
+        );
+        await generateAuditReadinessPdf(ctx, { framework: 'ISO27001' });
+
+        const line = verdict();
+        expect(line).not.toContain('Audit-ready');
+        // …and the seven are reported as DECIDED, not as outstanding work.
+        expect(line).toBe(
+            'Readiness score 30/100. 3 of 10 requirement(s) implemented; ' +
+                '7 risk-accepted under an exception.',
+        );
+    });
+
+    it('a framework with zero requirements is not Audit-ready', async () => {
+        // The other route to the original sentence: total=0 makes every
+        // counter 0, so gaps=0 and unmapped=0 and the score is 0.
+        // "Audit-ready — readiness score 0/100" verbatim, on an empty
+        // catalogue, is what #2618 exists to remove.
+        mockGenerateReadinessReport.mockResolvedValue(
+            report({
+                totalRequirements: 0, mappedRequirements: 0, implementedRequirements: 0,
+                gapRequirements: 0, readinessScore: 0,
+            }),
+        );
+        await generateAuditReadinessPdf(ctx, { framework: 'ISO27001' });
+
+        const line = verdict();
+        expect(line).not.toContain('Audit-ready');
+        expect(line).toContain('0 of 0 requirement(s) implemented');
+    });
+
+    it('the unevidenced and incomplete branches both state overdue work', async () => {
+        // Finding from review: overdue was appended only in the ready branch,
+        // so the 25 points it removed were unexplained everywhere else.
+        for (const [over, mustContain] of [
+            [{ missingEvidenceCount: 3, overdueTaskCount: 40, readinessScore: 50 }, 'but 3 in-scope control(s) lack current evidence.'],
+            [{ implementedRequirements: 7, gapRequirements: 3, overdueTaskCount: 40, readinessScore: 45 }, '3 not yet implemented'],
+        ] as Array<[Record<string, unknown>, string]>) {
+            paragraphs.length = 0;
+            mockGenerateReadinessReport.mockResolvedValue(report(over));
+            await generateAuditReadinessPdf(ctx, { framework: 'ISO27001' });
+            const line = verdict();
+            expect(line).toContain(mustContain);
+            expect(line).toContain('40 task(s) are overdue.');
+        }
     });
 });
