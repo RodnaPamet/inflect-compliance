@@ -10,25 +10,25 @@ import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 import { StartTourButton } from '@/components/ui/OnboardingTour';
 import { useCommandPalette } from '@/components/command-palette/command-palette-provider';
 import {
-    X,
-    LayoutDashboard,
-    Building2,
-    AlertTriangle,
+    BadgeCheck,
+    BulletList,
+    CalendarIcon,
+    FileContent,
+    Flask,
+    FolderBookmark,
+    Gear,
+    GridIcon,
+    Menu3,
+    OfficeBuilding,
+    Robot,
     ShieldCheck,
-    Paperclip,
-    FileText,
-    ClipboardList,
-    ClipboardCheck,
-    FlaskConical,
-    Truck,
-    BarChart3,
-    Settings,
-    LogOut,
-    Calendar as CalendarIcon,
+    Shop,
+    SquareChart,
+    TriangleWarning,
+    UserArrowRight,
     Workflow,
-    Menu,
-} from 'lucide-react';
-import { Robot } from '@/components/ui/icons/nucleo';
+    Xmark,
+} from '@/components/ui/icons/nucleo';
 import { cn } from '@/lib/cn';
 import { useCalendarBadge } from './use-calendar-badge';
 import { NavItem } from './nav-item';
@@ -94,7 +94,7 @@ export function useNavSections(): NavSectionDef[] {
             // "home" item pattern in Linear / Stripe / Vercel
             // sidebars.
             items: [
-                { href: tenantHref('/dashboard'), label: t('dashboard'), icon: LayoutDashboard },
+                { href: tenantHref('/dashboard'), label: t('dashboard'), icon: GridIcon },
             ],
         },
         {
@@ -105,8 +105,8 @@ export function useNavSections(): NavSectionDef[] {
             // work that sits under "Comply".
             title: t('govern'),
             items: [
-                { href: tenantHref('/assets'), label: t('assets'), icon: Building2 },
-                { href: tenantHref('/risks'), label: t('risks'), icon: AlertTriangle },
+                { href: tenantHref('/assets'), label: t('assets'), icon: OfficeBuilding },
+                { href: tenantHref('/risks'), label: t('risks'), icon: TriangleWarning },
                 { href: tenantHref('/controls'), label: t('controls'), icon: ShieldCheck },
             ],
         },
@@ -117,8 +117,8 @@ export function useNavSections(): NavSectionDef[] {
                 // "Comply" because audits are a daily-cadence
                 // workflow (Plan / Schedule / Review / Docs), not
                 // ongoing governance configuration.
-                { href: tenantHref('/audits'), label: t('audits'), icon: ClipboardCheck },
-                { href: tenantHref('/tasks'), label: t('tasks'), icon: ClipboardList },
+                { href: tenantHref('/audits'), label: t('audits'), icon: BadgeCheck },
+                { href: tenantHref('/tasks'), label: t('tasks'), icon: BulletList },
                 {
                     href: tenantHref('/calendar'),
                     label: t('calendar'),
@@ -130,8 +130,8 @@ export function useNavSections(): NavSectionDef[] {
                     // a small number read as "the tenant is fine".
                     badgeLabel: t('calendarBadgeLabel'),
                 },
-                { href: tenantHref('/tests'), label: t('tests'), icon: FlaskConical },
-                { href: tenantHref('/evidence'), label: t('evidence'), icon: Paperclip },
+                { href: tenantHref('/tests'), label: t('tests'), icon: Flask },
+                { href: tenantHref('/evidence'), label: t('evidence'), icon: FolderBookmark },
             ],
         },
         {
@@ -142,8 +142,8 @@ export function useNavSections(): NavSectionDef[] {
                 // the Audits page header (R13-PR9) and via the command
                 // palette (⌘K → "Frameworks").
                 // R13-PR16 — Audit moved up to Comply (see above).
-                { href: tenantHref('/policies'), label: t('policies'), icon: FileText },
-                { href: tenantHref('/vendors'), label: t('vendors'), icon: Truck },
+                { href: tenantHref('/policies'), label: t('policies'), icon: FileContent },
+                { href: tenantHref('/vendors'), label: t('vendors'), icon: Shop },
                 // AGENTIC UI 1/4 (#2423) — the agent register. Same
                 // governance-tool tier as Policy and Vendor: a register of
                 // what may act inside the tenant, with an owner per row.
@@ -155,11 +155,10 @@ export function useNavSections(): NavSectionDef[] {
                 // bag missing the key) silently disappears with no error, so
                 // the expression is coerced rather than passed through.
                 //
-                // Nucleo `Robot`, not lucide `Bot`: it is already the glyph on
-                // both existing agent surfaces (the admin pill and the
-                // register's own header), and Nucleo is the canonical family
-                // — this file's lucide imports are the migration TODO, not the
-                // target. See `NavGlyph`.
+                // Nucleo `Robot`: already the glyph on both existing agent
+                // surfaces (the admin pill and the register's own header).
+                // The rest of this file followed it — every icon here is now
+                // Nucleo and the file is off `LEGACY_LUCIDE_USERS`.
                 {
                     href: tenantHref('/agents'),
                     label: t('agents'),
@@ -172,7 +171,7 @@ export function useNavSections(): NavSectionDef[] {
                 // alongside Policy + Vendor — same governance-tool
                 // tier.
                 { href: tenantHref('/processes'), label: t('processes'), icon: Workflow },
-                { href: tenantHref('/reports'), label: t('reports'), icon: BarChart3, visible: perms.reports.view },
+                { href: tenantHref('/reports'), label: t('reports'), icon: SquareChart, visible: perms.reports.view },
             ].filter(item => {
                 // DEFENSE-IN-DEPTH (Layer 2 of 2):
                 // Layer 1: Server layout uses noStore() to ensure fresh permissions per request.
@@ -227,7 +226,7 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
                             collapsed ? 'justify-center' : 'gap-tight',
                         )}
                     >
-                        <Menu className="h-5 w-5 shrink-0" aria-hidden="true" />
+                        <Menu3 className="h-5 w-5 shrink-0" aria-hidden="true" />
                         {!collapsed && (
                             <span className="text-sm font-semibold text-content-emphasis truncate">
                                 {tc('appName')}
@@ -363,7 +362,7 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
                                     data-testid="nav-admin-icon"
                                     className="icon-btn icon-btn-sm"
                                 >
-                                    <Settings className="size-4" aria-hidden="true" />
+                                    <Gear className="size-4" aria-hidden="true" />
                                 </Link>
                             </Tooltip>
                         )}
@@ -375,7 +374,7 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
                                 data-testid="nav-logout"
                                 className="icon-btn icon-btn-sm"
                             >
-                                <LogOut className="size-4" aria-hidden="true" />
+                                <UserArrowRight className="size-4" aria-hidden="true" />
                             </button>
                         </Tooltip>
                     </div>
@@ -546,7 +545,7 @@ export function MobileDrawer({ open, onClose, children }: MobileDrawerProps) {
                     aria-label={tn('closeNavigation')}
                     data-testid="nav-drawer-close"
                 >
-                    <X className="w-5 h-5" />
+                    <Xmark className="w-5 h-5" />
                 </button>
 
                 {children}
