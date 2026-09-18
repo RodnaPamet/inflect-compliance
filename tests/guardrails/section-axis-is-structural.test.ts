@@ -1,29 +1,43 @@
 /**
- * "Coverage by Section" must break a framework down by its STRUCTURE.
+ * "Coverage by Section" must break a framework down by its STRUCTURE — in the
+ * data a tenant actually has, not only in the YAML libraries.
  *
  * #2619 — OWASP ASVS and CIS v8 shipped assessable requirements with no
  * `section`, so `r.section || r.category || 'Other'` fell through to
- * `category`, which for those two holds the VERIFICATION TIER (`L1`/`L2`/`L3`)
- * and the IMPLEMENTATION GROUP (`IG1`/`IG2`/`IG3`). The breakdown rendered
- * three rows named after tiers on all three surfaces that show it — framework
- * detail, readiness hub, and the audit-readiness PDF.
+ * `category`, which for those two holds the VERIFICATION TIER (L1/L2/L3) and
+ * the IMPLEMENTATION GROUP (IG1/IG2/IG3). The breakdown was named after tiers
+ * on all three surfaces that show it — framework detail, readiness hub, and
+ * the audit-readiness PDF.
  *
- * (The issue said it collapsed to ONE row duplicating the headline total. It
- * did not: ASVS split L1:128 / L2:119 / L3:12 and CIS split IG2:74 / IG1:56 /
- * IG3:23. Three rows on the wrong axis, not one row on none.)
+ * ═══ THE ISSUE WAS RIGHT AND THE FIRST FIX WAS MEASURED IN THE WRONG PLACE ═══
  *
- * The chapter axis was present the whole time, as the non-assessable parent
- * nodes — 14 ASVS chapters and 18 CIS controls, reachable from 100% of
- * assessable nodes. The fix is in the library data: those nodes now carry an
- * explicit `section`, and `category` still carries the tier, so nothing is
- * lost. No importer or coverage code changed, so no other framework moved.
+ * The first version of this change said the issue was wrong to call it a
+ * single row — that ASVS split L1:128 / L2:119 / L3:12. Those are the LIBRARY
+ * YAML's 259 assessable nodes. What production applies is
+ * `prisma/fixtures/asvs-l1-control-templates.json` via
+ * `scripts/seed-framework-catalogs.ts`, which `scripts/entrypoint.sh:95` runs
+ * on every container start, and that is 128 requirements in ONE bucket:
  *
- * This guard asserts the axis is structural, per framework, for all of them —
- * a new library whose only grouping is a tier fails here.
+ *     OWASP-ASVS   128 requirements, sections = {'L1'}
+ *     CIS-V8        56 requirements, sections = {'IG1'}
+ *
+ * One row, duplicating the headline total. Exactly as reported. The "three
+ * tier rows" correction described a file no tenant reads, and editing only
+ * that file would have closed the issue while changing nothing anyone sees.
+ *
+ * BOTH representations are live, so both are fixed and both are asserted here.
+ * `usecases/framework/coverage.ts:18-22` records why: one framework can exist
+ * TWICE in `Framework` under different keys, and a tenant's links hang off
+ * whichever its database got.
+ *
+ * The chapter axis was present all along as the non-assessable parent nodes,
+ * so the section values are the chapters those nodes already name; `category`
+ * still carries the tier, and nothing is lost.
  */
 import fs from 'fs';
 import path from 'path';
 import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries/library-loader';
+import { appliedCatalogFor } from '../helpers/applied-catalogue';
 
 const LIB_DIR = path.join(process.cwd(), 'src/data/libraries');
 
@@ -128,5 +142,56 @@ describe('the section axis is structural, not a tier (#2619)', () => {
             'SOC2-2017': 5,
         });
         expect(Object.values(counts).every((c) => c >= 2)).toBe(true);
+    });
+
+    // ─── The data production actually applies ───────────────────────────
+    //
+    // Everything above reads src/data/libraries. These read the CatalogFiles
+    // that scripts/entrypoint.sh applies on every container start. The first
+    // version of this guard had only the first half, and was green while the
+    // two catalogues that ship violated its own tier assertion.
+
+    it.each([
+        ['OWASP-ASVS', 128, 13],
+        ['CIS-V8', 56, 15],
+    ])('%s, as production applies it, breaks down by chapter', (key, reqCount, sections) => {
+        const applied = appliedCatalogFor(key as string);
+        // Not a soft skip: if this framework stops being applied, that is a
+        // fact this guard must report, not route around.
+        expect(applied).not.toBeNull();
+        const reqs = applied!.requirements;
+        expect(reqs).toHaveLength(reqCount as number);
+
+        const secs = new Set(reqs.map((r) => (r.section ?? r.category ?? 'Other') as string));
+        expect(secs.size).toBe(sections as number);
+        expect([...secs].filter((s) => TIER_LABEL.test(s))).toEqual([]);
+    });
+
+    it('no applied catalogue anywhere groups its requirements by a tier', () => {
+        // The general form, over every framework production applies — so a
+        // third catalogue with the same defect cannot ship unnoticed.
+        const keys = [
+            'OWASP-ASVS', 'CIS-V8', 'SOC2', 'NIST-SSDF', 'ISO27701', 'DORA', 'NIS2',
+            'ISO27001', 'OWASP-ASI', 'IMDA-MGF', 'NIST-PRIVACY', 'ISO9001',
+            'ISO28000', 'ISO39001', 'ISO42001', 'OWASP-AISVS', 'EU-AI-ACT',
+        ];
+        const offenders = keys
+            .map((k) => ({ key: k, applied: appliedCatalogFor(k) }))
+            .filter((x) => x.applied)
+            .map((x) => ({
+                key: x.key,
+                tierSections: [
+                    ...new Set(x.applied!.requirements.map((r) => (r.section ?? r.category ?? 'Other') as string)),
+                ].filter((s) => TIER_LABEL.test(s)),
+            }))
+            .filter((x) => x.tierSections.length > 0);
+        expect(offenders).toEqual([]);
+    });
+
+    it('surveyed the applied catalogues at all (positive control)', () => {
+        // Without this, appliedCatalogFor returning null everywhere would make
+        // both assertions above pass by filtering their population to empty.
+        const found = ['OWASP-ASVS', 'CIS-V8', 'ISO27001'].filter((k) => appliedCatalogFor(k));
+        expect(found).toEqual(['OWASP-ASVS', 'CIS-V8', 'ISO27001']);
     });
 });

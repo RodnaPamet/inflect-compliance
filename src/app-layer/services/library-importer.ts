@@ -496,7 +496,28 @@ async function updateRequirements(
         contentHash: library.contentHash,
         durationMs: Math.round(performance.now() - startTime),
         addedCodes: resolvedDiff.added.map(r => r.code),
-        changedCodes: resolvedDiff.changed.map(c => c.code),
+        // SUBSTANTIVE changes only — the ones that alter the obligation.
+        //
+        // `changedCodes` does not merely report; it DRIVES. A code listed here
+        // makes `propagateDelta` fan a per-tenant delta out, and
+        // `usecases/framework-delta.ts:163` sets every linked control to
+        // NEEDS_REVIEW on the grounds that it "may no longer satisfy the
+        // changed obligation". That is right for a reworded requirement and
+        // wrong for a relabelled one: `computeRequirementDiff` also flags
+        // `category` and `section`, which are GROUPING labels — they change
+        // which heading a requirement appears under and nothing about what it
+        // asks for.
+        //
+        // Found by pre-merge review of #2619, which gives 412 library
+        // requirement nodes a real `section` (their chapter, instead of the
+        // verification tier). Under the old rule the next `syncAllLibraries`
+        // would have demoted every mapped, implemented ASVS and CIS v8 control
+        // in every tenant to NEEDS_REVIEW, and notified them, for a heading
+        // change. The new section is still WRITTEN (see the update above) —
+        // it is only the re-review fan-out that a relabel no longer triggers.
+        changedCodes: resolvedDiff.changed
+            .filter(c => c.fields.some(f => f === 'title' || f === 'description'))
+            .map(c => c.code),
         // Only codes actually deprecated (gated by deprecateMissing) count as removed.
         removedCodes: opts.deprecateMissing ? resolvedDiff.removed.map(r => r.code) : [],
     };
