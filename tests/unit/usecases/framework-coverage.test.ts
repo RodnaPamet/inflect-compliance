@@ -273,6 +273,42 @@ describe('exportCoverageData', () => {
         expect(result.filename).toBe('iso-coverage.csv');
     });
 
+    it('#2620 — the Section column is filled on Mapped rows, not only Unmapped', async () => {
+        // The defect: `controlMappings` dropped `requirement.section`, so every
+        // Mapped row emitted '' into a column the header declares. The existing
+        // assertions checked only the first two fields of each row, which is
+        // why a blank fourth column shipped — so this asserts the WHOLE row.
+        stubCoverage();
+        const result = (await exportCoverageData(ctx, 'iso', 'csv')) as { csv: string };
+
+        const rows = result.csv.split('\n').map((r) => r.trim());
+        expect(rows).toContain('"Mapped","A.5.1","Control X","Org","CC1","My Ctrl","ACTIVE"');
+        expect(rows).toContain('"Unmapped","A.5.2","Unmapped Y","Org","","",""');
+
+        // Every row has as many fields as the header declares.
+        const header = rows[0].split('","').length;
+        for (const r of rows.filter(Boolean)) expect(r.split('","').length).toBe(header);
+    });
+
+    it('#2620 — Mapped rows fall back to category, exactly as Unmapped rows do', async () => {
+        // One Section column, one derivation. A requirement with no `section`
+        // must render its `category` on both row kinds or the export disagrees
+        // with itself about what Section means.
+        mockPrisma.framework.findFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'ISO', version: '2022' });
+        mockPrisma.frameworkRequirement.findMany.mockResolvedValueOnce([
+            { id: 'r-1', code: 'V1.1.1', title: 'Mapped one', section: null, category: 'Architecture', sortOrder: 1 },
+            { id: 'r-2', code: 'V1.1.2', title: 'Unmapped one', section: null, category: 'Architecture', sortOrder: 2 },
+        ]);
+        tenantDb.controlRequirementLink.findMany.mockResolvedValueOnce([
+            { requirementId: 'r-1', requirement: { code: 'V1.1.1', title: 'Mapped one' }, control: { code: 'CC1', name: 'Ctrl', status: 'ACTIVE' } },
+        ]);
+
+        const result = (await exportCoverageData(ctx, 'iso', 'csv')) as { csv: string };
+        const rows = result.csv.split('\n').map((r) => r.trim());
+        expect(rows).toContain('"Mapped","V1.1.1","Mapped one","Architecture","CC1","Ctrl","ACTIVE"');
+        expect(rows).toContain('"Unmapped","V1.1.2","Unmapped one","Architecture","","",""');
+    });
+
     it('CSV escapes embedded double-quotes', async () => {
         mockPrisma.framework.findFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'ISO', version: '2022' });
         mockPrisma.frameworkRequirement.findMany.mockResolvedValueOnce([

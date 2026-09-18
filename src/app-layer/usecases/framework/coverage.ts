@@ -139,6 +139,13 @@ export async function computeCoverage(ctx: RequestContext, frameworkKey: string,
         controlMappings: links.map((l) => ({
             requirementCode: l.requirement.code,
             requirementTitle: l.requirement.title,
+            // #2620 — the CSV declares a Section column and the Mapped rows
+            // left it blank, because this projection dropped the field even
+            // though `l.requirement` is the framework's own requirement row and
+            // has carried it all along. Same `section || category` fallback as
+            // `bySection` and `unmappedRequirements` above: one Section column
+            // in the export, one derivation behind it.
+            section: l.requirement.section || l.requirement.category,
             controlCode: l.control.code,
             controlName: l.control.name,
             controlStatus: l.control.status,
@@ -238,7 +245,7 @@ export async function exportCoverageData(
     ];
 
     for (const m of coverage.controlMappings) {
-        rows.push(['Mapped', m.requirementCode, m.requirementTitle, '', m.controlCode || '', m.controlName, m.controlStatus]);
+        rows.push(['Mapped', m.requirementCode, m.requirementTitle, m.section || '', m.controlCode || '', m.controlName, m.controlStatus]);
     }
     for (const r of coverage.unmappedRequirements) {
         rows.push(['Unmapped', r.code, r.title, r.section || '', '', '', '']);
