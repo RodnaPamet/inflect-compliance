@@ -152,6 +152,64 @@ describe('a refusal always carries a readable reason, even for a non-Error throw
         expect(r.writer.selfAccountIds).toEqual(['CN=svc-write,DC=corp', 'CN=svc-read,DC=corp']);
     });
 
+    it('the dry run REPORTS a dedicated write bind when one is configured', async () => {
+        // #2604 — the rung that runs before anything is written is where an
+        // operator can still act on this.
+        mockDb.integrationConnection.findMany.mockResolvedValue([
+            {
+                id: 'c1',
+                configJson: { bindDN: 'CN=svc-read,DC=corp' },
+                secretEncrypted: JSON.stringify({ writeBindDN: 'CN=svc-write,DC=corp' }),
+            },
+        ]);
+
+        const r = await resolveDirectoryWriter({ ctx, provider: 'active-directory', mode: 'DRY_RUN' });
+
+        expect(r.kind).toBe('snapshot');
+        if (r.kind !== 'snapshot') return;
+        expect(r.readiness.readiness).toBe('DEDICATED_WRITE_BIND');
+    });
+
+    it('the dry run reports READ_BIND_ONLY when no write bind exists', async () => {
+        mockDb.integrationConnection.findMany.mockResolvedValue([
+            { id: 'c1', configJson: { bindDN: 'CN=svc-read,DC=corp' }, secretEncrypted: null },
+        ]);
+
+        const r = await resolveDirectoryWriter({ ctx, provider: 'active-directory', mode: 'DRY_RUN' });
+
+        expect(r.kind).toBe('snapshot');
+        if (r.kind !== 'snapshot') return;
+        expect(r.readiness.readiness).toBe('READ_BIND_ONLY');
+        // The sentence has to name the consequence, not just the state.
+        expect(r.readiness.detail).toMatch(/result 50/);
+    });
+
+    it('UNDECRYPTABLE SECRETS REPORT UNKNOWN, NOT read-bind-only', async () => {
+        // The load-bearing case, and the reason readiness needs its own merge
+        // rather than reusing the self-account fallback: that one degrades to
+        // config SILENTLY, and a connection with an unreadable secret bag then
+        // looks identical to one that genuinely has no write bind.
+        //
+        // Reporting READ_BIND_ONLY here would be a failed read recorded as a
+        // positive negative — the exact defect this subsystem already shipped
+        // once, where an admin the enumeration did not return became an
+        // authoritative non-admin (#2589).
+        mockDb.integrationConnection.findMany.mockResolvedValue([
+            { id: 'c1', configJson: { bindDN: 'CN=svc-read,DC=corp' }, secretEncrypted: 'BAD' },
+        ]);
+        decrypt.mockImplementation(() => { throw new Error('auth tag mismatch'); });
+
+        const r = await resolveDirectoryWriter({ ctx, provider: 'active-directory', mode: 'DRY_RUN' });
+
+        expect(r.kind).toBe('snapshot');
+        if (r.kind !== 'snapshot') return;
+        expect(r.readiness.readiness).toBe('UNKNOWN');
+        expect(r.readiness.detail).toMatch(/not a report that none exists/);
+        // And the self-account fallback still degrades as before — the two
+        // behaviours are deliberately different and both must hold.
+        expect(r.writer.selfAccountIds).toEqual(['CN=svc-read,DC=corp']);
+    });
+
     it('a connection with no secret column at all merges to config alone', async () => {
         mockDb.integrationConnection.findMany.mockResolvedValue([
             { id: 'c1', configJson: null, secretEncrypted: null },
