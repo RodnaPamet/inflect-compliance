@@ -4,6 +4,20 @@
 # This file is standalone — it does NOT live inside a framework library's
 # objects.mappings block. Instead it uses the dedicated mapping-set schema
 # and is ingested by the mapping-set importer.
+#
+# TARGETS ARE ADAPTED TO THE NEAREST AVAILABLE CSF NODE. IC's CSF library is a
+# condensed representative subset — eleven outcomes, with only GV.OC and GV.RM
+# modelled under GOVERN — so a mapping cannot name a CSF outcome the library
+# does not carry. `ssdf-to-nist-csf.yaml` and
+# `nist-privacy-framework-to-nist-csf.yaml` both state this convention; THIS
+# FILE DID NOT, and that omission is how `GV.RR-01` was written here as a
+# target (#2621). It was the only reference in the whole 976-entry mapping
+# corpus naming a node absent from its target library, and the importer
+# records it as an error and skips it — so the entry did nothing, silently,
+# for its whole life.
+#
+# When the nearest node is a genuine adaptation rather than a match, say so in
+# the rationale and do not claim INTERSECT for it.
 
 urn: urn:inflect:mappingset:iso27001-to-nist-csf
 name: "ISO 27001:2022 → NIST CSF 2.0"
@@ -29,9 +43,15 @@ mapping_entries:
 
   # ─── A.5.2 Information Security Roles ────────────────────────────
   - source_ref: A.5.2
-    target_ref: GV.RR-01
-    strength: INTERSECT
-    rationale: Role assignments directly overlap with NIST roles & responsibilities.
+    target_ref: GV.OC-02
+    strength: RELATED
+    rationale: >
+      Adapted target. CSF 2.0's roles-and-responsibilities outcome (GV.RR-01) is
+      not modelled in IC's condensed CSF library, so this maps to the nearest
+      available GOVERN node — stakeholders and their cybersecurity expectations.
+      RELATED rather than INTERSECT precisely because it is an adaptation: the
+      original INTERSECT claimed a direct overlap with an outcome this library
+      does not carry.
 
   # ─── A.5.3 Segregation of Duties ─────────────────────────────────
   - source_ref: A.5.3

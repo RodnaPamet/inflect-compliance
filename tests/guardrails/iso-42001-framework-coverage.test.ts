@@ -93,7 +93,25 @@ describe('ISO 42001 library — iso-42001.yaml', () => {
 
     it('assessable ref_ids follow the clause / Annex-control numbering', () => {
         const assessable = iso.framework.nodes.filter((n) => n.assessable);
-        expect(assessable.length).toBeGreaterThanOrEqual(50);
+        /**
+ * EXACT, NOT A FLOOR — and the difference is the whole point (#2626).
+ *
+ * This assertion used to read `toBeGreaterThanOrEqual`, which cannot fail for
+ * the thing it exists to catch: a library going SHORT of the standard it
+ * claims to represent. The headroom was not theoretical — AISVS could lose 41
+ * of its 191 requirements and stay green, ISO 42001 twelve, NIST Privacy ten;
+ * 71 requirements across six frameworks could have silently vanished.
+ *
+ * A count that only ever grows is a count nobody is checking. Pinned exactly,
+ * so ADDING a requirement is a deliberate one-line edit here and REMOVING one
+ * is a red build.
+ *
+ * Template/control counts are deliberately still floors: they change for
+ * reasons unrelated to fidelity (a control split into per-obligation controls
+ * carries the same requirements), and pinning them would make a granularity
+ * change look like a content loss.
+ */
+        expect(assessable.length).toBe(62);
         for (const n of assessable) {
             // Clause sub-requirements (e.g. 4.1, 6.2) OR Annex controls (A.6.2.4).
             expect(n.refId).toMatch(/^(\d+\.\d+|A\.\d+(\.\d+){1,2})$/);
@@ -134,7 +152,7 @@ describe('ISO 42001 seed fixture', () => {
     }>;
 
     it('every fixture entry has the required shape + clause/control key', () => {
-        expect(fixture.length).toBeGreaterThanOrEqual(50);
+        expect(fixture.length).toBe(62);
         for (const r of fixture) {
             expect(r.key).toMatch(/^(\d+\.\d+|A\.\d+(\.\d+){1,2})$/);
             expect(r.section).toBeTruthy();
@@ -176,7 +194,7 @@ describe('ISO 42001 delivery', () => {
         if (catalog !== null) {
             expect(catalog.framework.key).toBe('ISO42001');
             expect(catalog.framework.kind).toBe('ISO_STANDARD');
-            expect(catalog.requirements.length).toBeGreaterThanOrEqual(50);
+            expect(catalog.requirements.length).toBe(62);
         } else {
             expect(declaringSources('ISO42001_BASELINE')).toContain('prisma/seed.ts');
             // The pack seed.ts builds reaches no production database. Stated
@@ -252,7 +270,7 @@ describe('ISO 42001 delivery', () => {
     it('a production seeder applies a ISO 42001 catalogue at all', () => {
         // DENOMINATOR: every case below is vacuous on null.
         expect(catalog).not.toBeNull();
-        expect(catalog?.requirements.length).toBeGreaterThanOrEqual(60);
+        expect(catalog?.requirements.length).toBe(62);
         expect(catalog?.templates.length).toBeGreaterThanOrEqual(15);
     });
 

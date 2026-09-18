@@ -28,10 +28,19 @@
  *   behaviour there.
  */
 import * as fs from 'fs';
+import { codeOf } from '../helpers/source-blocks';
 import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+// #2629 — every read below goes through `codeOf`, which masks comments.
+// Without it a guard can be satisfied by the COMMENT that records a
+// component's removal: this file asserted `/OrgIdentityPill/` while that
+// name survived in TopChrome only at two comments, one reading "retired in
+// favour of OrgWorkspaceSwitcher". It was green BECAUSE its subject was
+// gone. Anchoring on `<Name` is NOT sufficient on its own — comments here
+// routinely write JSX inline ("now mounts <OrgWorkspaceSwitcher>"), which a
+// mutation proved still satisfies the stricter pattern.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
 describe('Top-chrome discipline (Roadmap-2 PR-2)', () => {
     it('AppShell mounts <TopChrome> and wraps children in <BreadcrumbsProvider>', () => {
@@ -51,14 +60,12 @@ describe('Top-chrome discipline (Roadmap-2 PR-2)', () => {
         expect(src).toMatch(/<Breadcrumbs\b/);
         // R14-PR4 evolved the tenant variant from the passive
         // `TenantIdentityPill` (R2) to the popover-driven
-        // `TenantSwitcher`. Org variant continues to mount the
-        // passive pill until a future PR extends. Either name
-        // satisfies the tenant side of the contract; OrgIdentityPill
-        // is still required for the org side.
+        // `TenantSwitcher`; either MOUNT satisfies the tenant side.
         const hasTenantAffordance =
-            /TenantIdentityPill/.test(src) || /TenantSwitcher/.test(src);
+            /<TenantIdentityPill\b/.test(src) || /<TenantSwitcher\b/.test(src);
         expect(hasTenantAffordance).toBe(true);
-        expect(src).toMatch(/OrgIdentityPill/);
+        // PR-2 retired OrgIdentityPill; the org variant mounts this instead.
+        expect(src).toMatch(/<OrgWorkspaceSwitcher\b/);
     });
 
     it('TopChrome does not import the retired R2 SearchAnchor module', () => {
