@@ -27,70 +27,80 @@
       "title": "Agent Goal Hijack",
       "section": "ASI01 Agent Goal Hijack",
       "category": "OWASP Agentic AI Top 10",
-      "sortOrder": 0
+      "sortOrder": 0,
+      "summary": "An adversary redirects the agent's objective through instructions injected into prompts, retrieved documents, tool output or delegated sub-goals, so the agent pursues attacker intent while appearing to operate normally."
     },
     {
       "code": "ASI02",
       "title": "Tool Misuse and Exploitation",
       "section": "ASI02 Tool Misuse and Exploitation",
       "category": "OWASP Agentic AI Top 10",
-      "sortOrder": 1
+      "sortOrder": 1,
+      "summary": "The agent invokes its authorised tools and APIs in unintended, unsafe or excessive ways — chained calls, injected parameters, destructive operations beyond what the task required."
     },
     {
       "code": "ASI03",
       "title": "Identity and Privilege Abuse",
       "section": "ASI03 Identity and Privilege Abuse",
       "category": "OWASP Agentic AI Top 10",
-      "sortOrder": 2
+      "sortOrder": 2,
+      "summary": "Agent identities, delegated credentials and impersonated user sessions accumulate or exceed the privilege the task requires, and actions cannot be attributed back to an accountable principal."
     },
     {
       "code": "ASI04",
       "title": "Agentic Supply Chain Vulnerabilities",
       "section": "ASI04 Agentic Supply Chain Vulnerabilities",
       "category": "OWASP Agentic AI Top 10",
-      "sortOrder": 3
+      "sortOrder": 3,
+      "summary": "Compromise reaches the agent through its supply chain: base models, prompt and skill packs, tool and plugin registries, MCP servers, third-party agents, and the update channels for all of them."
     },
     {
       "code": "ASI05",
       "title": "Unexpected Code Execution",
       "section": "ASI05 Unexpected Code Execution",
       "category": "OWASP Agentic AI Top 10",
-      "sortOrder": 4
+      "sortOrder": 4,
+      "summary": "Agent-generated or agent-retrieved code, expressions or shell commands execute outside a controlled sandbox, giving an adversary execution on the host or in downstream systems the agent can reach."
     },
     {
       "code": "ASI06",
       "title": "Memory and Context Poisoning",
       "section": "ASI06 Memory and Context Poisoning",
       "category": "OWASP Agentic AI Top 10",
-      "sortOrder": 5
+      "sortOrder": 5,
+      "summary": "Persistent memory, vector stores, scratchpads and shared context are written with adversarial content that steers later, otherwise unrelated sessions long after the injecting interaction ended."
     },
     {
       "code": "ASI07",
       "title": "Insecure Inter-Agent Communication",
       "section": "ASI07 Insecure Inter-Agent Communication",
       "category": "OWASP Agentic AI Top 10",
-      "sortOrder": 6
+      "sortOrder": 6,
+      "summary": "Messages, delegations and results exchanged between agents are unauthenticated, unauthorised, unbounded or unlogged, allowing spoofing, replay and privilege transfer across the agent fleet."
     },
     {
       "code": "ASI08",
       "title": "Cascading Failures",
       "section": "ASI08 Cascading Failures",
       "category": "OWASP Agentic AI Top 10",
-      "sortOrder": 7
+      "sortOrder": 7,
+      "summary": "A single faulty output, tool error or compromised agent propagates through chained agents and automated actions, amplifying damage faster than human oversight can intervene."
     },
     {
       "code": "ASI09",
       "title": "Human-Agent Trust Exploitation",
       "section": "ASI09 Human-Agent Trust Exploitation",
       "category": "OWASP Agentic AI Top 10",
-      "sortOrder": 8
+      "sortOrder": 8,
+      "summary": "The agent's fluency, persona or apparent authority is used to manipulate people into approving actions, disclosing secrets or lowering scrutiny — including automation bias in approval workflows."
     },
     {
       "code": "ASI10",
       "title": "Rogue Agents",
       "section": "ASI10 Rogue Agents",
       "category": "OWASP Agentic AI Top 10",
-      "sortOrder": 9
+      "sortOrder": 9,
+      "summary": "Agents operate outside the sanctioned inventory or beyond their authorised scope, schedule or lifecycle — unregistered, orphaned after an owner leaves, or never decommissioned."
     }
   ],
   "templates": [

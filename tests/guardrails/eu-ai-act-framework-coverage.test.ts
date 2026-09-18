@@ -70,7 +70,25 @@ describe('EU AI Act library — eu-ai-act.yaml', () => {
         ]) {
             expect(act.framework.nodesByRefId.get(ref)).toBeDefined();
         }
-        expect(act.framework.nodes.filter((n) => n.assessable).length).toBeGreaterThanOrEqual(14);
+        /**
+ * EXACT, NOT A FLOOR — and the difference is the whole point (#2626).
+ *
+ * This assertion used to read `toBeGreaterThanOrEqual`, which cannot fail for
+ * the thing it exists to catch: a library going SHORT of the standard it
+ * claims to represent. The headroom was not theoretical — AISVS could lose 41
+ * of its 191 requirements and stay green, ISO 42001 twelve, NIST Privacy ten;
+ * 71 requirements across six frameworks could have silently vanished.
+ *
+ * A count that only ever grows is a count nobody is checking. Pinned exactly,
+ * so ADDING a requirement is a deliberate one-line edit here and REMOVING one
+ * is a red build.
+ *
+ * Template/control counts are deliberately still floors: they change for
+ * reasons unrelated to fidelity (a control split into per-obligation controls
+ * carries the same requirements), and pinning them would make a granularity
+ * change look like a content loss.
+ */
+        expect(act.framework.nodes.filter((n) => n.assessable).length).toBe(16);
     });
 
     it('marks the public-domain license + EUR-Lex source (article text permitted)', () => {
@@ -93,7 +111,7 @@ describe('EU AI Act seed fixture', () => {
     }>;
 
     it('every fixture entry has the required shape + article key', () => {
-        expect(fixture.length).toBeGreaterThanOrEqual(14);
+        expect(fixture.length).toBe(16);
         for (const r of fixture) {
             expect(r.key).toMatch(/^Art\.\d+$/);
             expect(r.section).toBeTruthy();
@@ -132,7 +150,7 @@ describe('EU AI Act delivery', () => {
     it('a production seeder applies a EU AI Act catalogue at all', () => {
         // DENOMINATOR: every case below is vacuous on null.
         expect(catalog).not.toBeNull();
-        expect(catalog?.requirements.length).toBeGreaterThanOrEqual(15);
+        expect(catalog?.requirements.length).toBe(16);
         expect(catalog?.templates.length).toBeGreaterThanOrEqual(5);
     });
 

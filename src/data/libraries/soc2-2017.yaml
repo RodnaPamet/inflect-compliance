@@ -1,6 +1,37 @@
 # SOC 2 Trust Services Criteria (2017 with 2022 Revision) — Framework Library
 # Based on the AICPA Trust Services Criteria framework structure.
 # Descriptions paraphrased — NOT verbatim AICPA text.
+#
+# ═══ SCOPE OF AUTHORED CONTENT — READ BEFORE ASSUMING THIS IS THE WHOLE TSC ═══
+#
+# The 2017 TSC runs to roughly 33 points of focus across the nine Common
+# Criteria series — CC6 alone is CC6.1 through CC6.8. THIS LIBRARY AUTHORS ONE
+# REPRESENTATIVE CRITERION PER SERIES (two for CC1), giving 10 CC leaves, plus
+# one node for each of the four non-security categories: A1, C1, PI1, P1.
+# Fourteen assessable nodes in total.
+#
+# That is a DELIBERATE DEPTH DECISION and it was undocumented until #2625 found
+# it by audit. Recording it now rather than authoring the missing ~23 criteria,
+# for the reason docs/control-task-authoring.md gives about exactly this
+# situation: "Say so in the PR rather than synthesising from knowledge of the
+# standard." The AICPA criteria are licensed; the full points of focus are not
+# reproduced here, and inventing paraphrases of 23 criteria nobody has read
+# against the source would manufacture the appearance of coverage rather than
+# the substance of it.
+#
+# WHAT A READER SHOULD TAKE FROM THAT: a tenant tracking SOC 2 here is tracking
+# one criterion per series, not the full TSC. The series are all represented, so
+# nothing is invisible at the series level — but "CC6.1 Access Security" stands
+# in for eight points of focus and a SOC 2 auditor will ask about all eight.
+#
+# ALSO WORTH KNOWING, because the two do not match: the DELIVERED catalogue
+# (prisma/fixtures/soc2-control-templates.json) carries the 10 Common Criteria
+# ONLY. A1 / C1 / PI1 / P1 exist in this library and are not in the seeded
+# fixture, so an installed SOC 2 pack is Security-scoped even though this file
+# models all five categories.
+#
+# The counts are pinned in tests/guardrails/soc2-starter-pack-coverage.test.ts,
+# so growing the authored set is a deliberate edit rather than a drift.
 
 urn: urn:inflect:library:soc2-2017
 locale: en

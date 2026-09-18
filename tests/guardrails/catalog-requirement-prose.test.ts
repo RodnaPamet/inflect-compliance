@@ -99,6 +99,44 @@ describe('catalogue requirements carry prose', () => {
         expect(leaking).toEqual([]);
     });
 
+    /**
+     * HOW MANY REQUIREMENTS HAVE NO SUMMARY AT ALL — a downward ratchet.
+     *
+     * ═══ WHY THIS WAS MISSING (#2615) ═══
+     *
+     * Every assertion in this file filters `typeof r.summary === 'string'`
+     * BEFORE it checks anything, so a requirement with no summary is removed
+     * from the population before any rule is applied. The guard could not fail
+     * for an ABSENT summary — only for a bad one. That is the same shape as a
+     * coverage floor that cannot fail for a library going short (#2626): a
+     * check whose population excludes the defect it is named for.
+     *
+     * The file's fourth assertion states the intent — "stripping it down to
+     * nothing ... would satisfy the rule above while destroying the content it
+     * exists to protect" — but deleting the key outright is a destruction path
+     * that assertion does not cover, because a deleted key is filtered out
+     * rather than found hollow. Nothing would have reddened if the 93 authored
+     * ISO 27001 summaries were removed tomorrow.
+     *
+     * Pinned rather than driven to zero. 485 requirements still carry no
+     * summary, and most of them cannot be fixed by copying: the remaining
+     * populations are frameworks whose prose is licensed and not in this repo,
+     * or whose `title` already carries the full sentence (SSDF, NIST Privacy).
+     * A ceiling records where the work stands and guarantees it does not go
+     * backwards; a `toEqual([])` here would be a red build with no available
+     * repair.
+     */
+    const REQUIREMENTS_WITHOUT_SUMMARY_CEILING = 485;
+
+    it('requirements with no summary at all stay at or below the ceiling', () => {
+        const absent = all.filter(({ r }) => typeof r.summary !== 'string' || !r.summary.trim());
+        // Reported with its denominator: a bare count invites lowering the
+        // ceiling without knowing whether the population moved under it.
+        expect(`${absent.length} of ${all.length}`).toBe(
+            `${REQUIREMENTS_WITHOUT_SUMMARY_CEILING} of ${all.length}`,
+        );
+    });
+
     it('summaries are prose, not empty and not a bare restatement of the title', () => {
         // The repair strips a suffix. Stripping it down to nothing, or leaving
         // a summary that only repeats the title, would satisfy the rule above

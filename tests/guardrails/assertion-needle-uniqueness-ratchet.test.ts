@@ -190,8 +190,23 @@ const HIGH_MULTIPLICITY = 5;
 //   needles described in the HIGHLY_AMBIGUOUS history above, bound to their
 //   import line. All three were already ambiguous here before that diff, so
 //   this end moves by the full three rather than by the net one.
-const AMBIGUOUS_NEEDLE_BASELINE = 1425;
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 238;
+// • 1420 (2026-09-18, #2622): −2, the two whole-file reads in
+//   `catalogue-reaches-production` rewritten as `.includes(...)` call
+//   expressions so `assertion-reach.ts` can see their subject.
+//
+//   MEASURED ON THE MERGE, NOT CARRIED OVER. This branch and main each lowered
+//   this baseline independently — 1427→1425 here, 1427→1422 there — and the
+//   merge conflicted on the line. Neither number is right for the union and
+//   picking a side would have been wrong in both directions: the union's live
+//   count is 1420. A zero-headroom ratchet is shared state between every open
+//   PR, so the value is re-measured on the merged tree rather than resolved by
+//   preferring one branch's figure.
+const AMBIGUOUS_NEEDLE_BASELINE = 1420;
+// 237 (2026-09-18, #2622): −1 on the merge, for the same reason and by the same
+// method as the 1420 above — re-measured on the merged tree, not carried over
+// from either branch. It surfaced only after the other end was re-seated,
+// because the drift sentinel reports one end at a time.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 237;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
