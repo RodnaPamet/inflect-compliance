@@ -118,7 +118,7 @@ import { analyseClassA, type ClassAReport } from '../helpers/raw-source-assertio
  *     So a file's presence in this list is NOT an accusation, and this ratchet
  *     is a cap rather than a work queue: it says the population may not grow.
  */
-const RAW_ASSERTING_FILE_BASELINE = 379;
+const RAW_ASSERTING_FILE_BASELINE = 376;
 
 /**
  * The 379 files themselves, sorted, in a sibling JSON.
