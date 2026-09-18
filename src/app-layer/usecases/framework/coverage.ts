@@ -517,6 +517,55 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
     const implementedPercent =
         total > 0 ? Math.round((implementedRequirements / total) * 100) : 0;
 
+    // ─── readinessScore: a 0-100 quantity, which it previously was not (#2618)
+    //
+    // It used to be `implementedPercent - missingEvidence*2 - overdueTasks*3`:
+    // a percentage minus an UNBOUNDED COUNT. The two terms had different units,
+    // so the score had no fixed dynamic range and its meaning varied with
+    // catalogue size. On a large catalogue it saturated: 50 applicable controls
+    // without evidence pinned it at 0 no matter the posture, and the
+    // audit-readiness PDF then printed "Audit-ready — readiness score 0/100.
+    // Every requirement is mapped and implemented."
+    //
+    // Both penalties are now SHARES of their own population, so each is a real
+    // 0..1 rate and the score cannot leave [0, 100]:
+    //
+    //   evidence  missingEvidence / applicable controls   — same population,
+    //             both exclude N/A controls
+    //   overdue   overdueTasks / all tasks on those controls — same population,
+    //             both count every control's tasks
+    //
+    // Matched numerator/denominator is the point. Dividing overdue TASKS by
+    // CONTROLS would be the original bug in a new unit (a control holds up to
+    // seven tasks, so the ratio can exceed 1).
+    //
+    // THE WEIGHTS ARE A NEW CHOICE, NOT THE OLD ONES RESCALED. The old 2-and-3
+    // were points-per-item on a quantity with no maximum; there is no ratio to
+    // carry over, so the ceilings below are a judgement: evidence weighs more
+    // because it is the artifact an audit actually consumes, while an overdue
+    // task is a leading indicator of a gap rather than the gap itself.
+    const MAX_EVIDENCE_PENALTY = 40;
+    const MAX_OVERDUE_PENALTY = 20;
+
+    const applicableControls = controls.filter((c) => !isNotApplicable(c)).length;
+    const totalTasks = controls.reduce((n, c) => n + (c.tasks?.length ?? 0), 0);
+
+    const evidenceGapShare =
+        applicableControls > 0 ? missingEvidence.length / applicableControls : 0;
+    const overdueShare = totalTasks > 0 ? overdueTasks.length / totalTasks : 0;
+
+    const readinessScore = Math.max(
+        0,
+        Math.min(
+            100,
+            Math.round(
+                implementedPercent -
+                    MAX_EVIDENCE_PENALTY * evidenceGapShare -
+                    MAX_OVERDUE_PENALTY * overdueShare,
+            ),
+        ),
+    );
+
     return {
         framework: { key: fw.key, name: fw.name, version: fw.version },
         // PR-U — ISO-family flag so the report EXPORTS (audit-readiness / gap PDFs)
@@ -547,7 +596,7 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
             notApplicableCount: notApplicable.length,
             missingEvidenceCount: missingEvidence.length,
             overdueTaskCount: overdueTasks.length,
-            readinessScore: Math.max(0, implementedPercent - (missingEvidence.length * 2) - (overdueTasks.length * 3)),
+            readinessScore,
         },
     };
 }

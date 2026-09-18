@@ -456,10 +456,14 @@ describe('generateReadinessReport', () => {
         expect(titles).toEqual(['In-Progress Overdue', 'Open Overdue']);
     });
 
-    it('readinessScore formula: implementedPercent - missing×2 - overdue×3 (floored at 0)', async () => {
-        // PR-I — the score is now IMPLEMENTATION-based. 1 of 1 requirement
-        // implemented → implementedPercent = 100. 1 missing-evidence, 2 overdue
-        // → score = 100 - 2 - 6 = 92.
+    it('readinessScore formula: implementedPercent minus SHARE-weighted penalties', async () => {
+        // PR-I — the score is IMPLEMENTATION-based. 1 of 1 requirement
+        // implemented → implementedPercent = 100.
+        //
+        // #2618 — the penalties are shares of their own population, not counts.
+        // The single applicable control is missing evidence (1/1 → the full 40)
+        // and both of its two tasks are overdue (2/2 → the full 20), so this is
+        // the worst case for a one-control framework: 100 - 40 - 20 = 40.
         const past = new Date('2020-01-01');
         mockPrisma.framework.findFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'ISO', version: '2022' });
         mockPrisma.frameworkRequirement.findMany.mockResolvedValueOnce([
@@ -475,8 +479,8 @@ describe('generateReadinessReport', () => {
 
         const result = await generateReadinessReport(ctx, 'iso');
 
-        // 100 (implemented) - 2 (1 missing × 2) - 6 (2 overdue × 3) = 92
-        expect(result.summary.readinessScore).toBe(92);
+        // 100 (implemented) - 40 (1/1 controls unevidenced) - 20 (2/2 tasks overdue)
+        expect(result.summary.readinessScore).toBe(40);
     });
 
     it('PR-I — readiness rewards implementation, not mapping density', async () => {
@@ -520,28 +524,83 @@ describe('generateReadinessReport', () => {
         ]);
     });
 
-    it('readinessScore floors at 0 (Math.max guard)', async () => {
-        // High failure surface → would compute negative without floor.
+    it('#2618 — a large catalogue does not saturate the score at 0', async () => {
+        // THE REGRESSION. Under the old `implementedPercent - missing*2 -
+        // overdue*3`, this input scored -300 and floored to 0 — and because
+        // every requirement was mapped and implemented, the audit-readiness PDF
+        // printed "Audit-ready — readiness score 0/100. Every requirement is
+        // mapped and implemented." to an auditor.
+        //
+        // The penalties are now shares, so the same input is the genuine worst
+        // case for a fully-implemented framework and says so: 100 - 40 - 20 = 40.
         const past = new Date('2020-01-01');
         mockPrisma.framework.findFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'ISO', version: '2022' });
         mockPrisma.frameworkRequirement.findMany.mockResolvedValueOnce([
             { id: 'r-1', code: 'A', title: 'X', section: 'Org', sortOrder: 1 },
         ]);
-        // 50 missing-evidence + 50 overdue = -150 -50 -150 = -300 raw
+        // 51 applicable controls, none evidenced; 50 overdue tasks. Every link
+        // points at r-1 — the original fixture pointed 50 of them at a
+        // requirement this framework does not have, so they never reached the
+        // missing-evidence tally and the catalogue was large in name only.
         const tasks = Array.from({ length: 50 }, (_, i) => ({
             id: `t-${i}`, status: 'OPEN', dueAt: past, title: `T${i}`,
         }));
         const evidenceMissing = Array.from({ length: 50 }, (_, i) => ({
-            id: `c-${i}`, code: `C${i}`, name: `Ctrl${i}`, status: 'IMPLEMENTED', description: '', evidenceControlLinks: [], tasks: [],
+            id: `c-${i}`, code: `C${i}`, name: `Ctrl${i}`, status: 'IMPLEMENTED', applicability: 'APPLICABLE', description: '', evidenceControlLinks: [], tasks: [],
         }));
         tenantDb.controlRequirementLink.findMany.mockResolvedValueOnce([
-            { requirementId: 'r-1', control: { id: 'c-with-tasks', code: 'C', name: 'C', status: 'IMPLEMENTED', description: '', evidenceControlLinks: [], tasks } },
-            ...evidenceMissing.map((c) => ({ requirementId: 'r-X', control: c })),
+            { requirementId: 'r-1', control: { id: 'c-with-tasks', code: 'C', name: 'C', status: 'IMPLEMENTED', applicability: 'APPLICABLE', description: '', evidenceControlLinks: [], tasks } },
+            ...evidenceMissing.map((c) => ({ requirementId: 'r-1', control: c })),
         ]);
 
         const result = await generateReadinessReport(ctx, 'iso');
 
-        expect(result.summary.readinessScore).toBe(0);
+        // 51 of 51 applicable controls unevidenced, 50 of 50 tasks overdue.
+        expect(result.summary.missingEvidenceCount).toBe(51);
+        expect(result.summary.overdueTaskCount).toBe(50);
+        expect(result.summary.readinessScore).toBe(40);
+        // The old formula's answer, stated so a revert is unambiguous.
+        expect(result.summary.readinessScore).not.toBe(0);
+    });
+
+    it('#2618 — readinessScore stays within [0, 100] across the input range', async () => {
+        // A property check over the corners rather than one worked example:
+        // every combination of implemented/unevidenced/overdue must land in
+        // range. The old formula left it at 100 - 2m - 3o, unbounded below.
+        const past = new Date('2020-01-01');
+        const approved = { id: 'e-1', status: 'APPROVED', expiredAt: null, isArchived: false, deletedAt: null, title: 'E' };
+
+        for (const controlCount of [1, 8, 60]) {
+            for (const evidenced of [true, false]) {
+                for (const taskCount of [0, 40]) {
+                    mockPrisma.framework.findFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'ISO', version: '2022' });
+                    mockPrisma.frameworkRequirement.findMany.mockResolvedValueOnce([
+                        { id: 'r-1', code: 'A', title: 'X', section: 'Org', sortOrder: 1 },
+                    ]);
+                    tenantDb.controlRequirementLink.findMany.mockResolvedValueOnce(
+                        Array.from({ length: controlCount }, (_, i) => ({
+                            requirementId: 'r-1',
+                            control: {
+                                id: `c-${i}`, code: `C${i}`, name: `Ctrl${i}`, status: 'IMPLEMENTED',
+                                applicability: 'APPLICABLE', description: '',
+                                evidenceControlLinks: evidenced ? [{ evidenceId: 'e-1', evidence: approved }] : [],
+                                tasks: Array.from({ length: taskCount }, (_, j) => ({
+                                    id: `t-${i}-${j}`, status: 'OPEN', dueAt: past, title: `T${j}`,
+                                })),
+                            },
+                        })),
+                    );
+
+                    const r = await generateReadinessReport(ctx, 'iso');
+                    const score = r.summary.readinessScore;
+                    expect({ controlCount, evidenced, taskCount, inRange: score >= 0 && score <= 100, score })
+                        .toEqual({ controlCount, evidenced, taskCount, inRange: true, score });
+                    // Size must not change the answer: the three control counts
+                    // are the same posture and must score identically.
+                    expect(score).toBe(evidenced ? (taskCount ? 80 : 100) : (taskCount ? 40 : 60));
+                }
+            }
+        }
     });
 
     it('deduplicates controls by id when the same control maps to multiple requirements', async () => {

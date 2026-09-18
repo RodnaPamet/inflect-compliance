@@ -96,8 +96,18 @@ export async function generateAuditReadinessPdf(
 
     // Readiness status — a readiness verdict, NOT an ISO "SoA is audit-ready" line.
     addSectionTitle(doc, 'Readiness Status');
-    if (s.gapRequirements === 0 && report.coverage.unmapped === 0) {
-        addParagraph(doc, `Audit-ready — readiness score ${s.readinessScore}/100. Every requirement is mapped and implemented.`);
+    // "Audit-ready" must mean audit-ready. Requirement coverage alone does not
+    // establish it: this branch used to fire on gaps=0 and unmapped=0 whatever
+    // the evidence position, which on a large catalogue produced "Audit-ready —
+    // readiness score 0/100. Every requirement is mapped and implemented." in
+    // an auditor-facing document (#2618). Evidence and overdue work now gate
+    // the verdict, and the middle branch reports the requirement position
+    // honestly without claiming readiness on top of it.
+    const requirementsComplete = s.gapRequirements === 0 && report.coverage.unmapped === 0;
+    if (requirementsComplete && s.missingEvidenceCount === 0 && s.overdueTaskCount === 0) {
+        addParagraph(doc, `Audit-ready — readiness score ${s.readinessScore}/100. Every requirement is mapped and implemented, every applicable control carries current evidence, and no task is overdue.`);
+    } else if (requirementsComplete) {
+        addParagraph(doc, `Readiness score ${s.readinessScore}/100. Every requirement is mapped and implemented, but ${s.missingEvidenceCount} applicable control(s) lack current evidence and ${s.overdueTaskCount} task(s) are overdue.`);
     } else {
         addParagraph(doc, `Readiness score ${s.readinessScore}/100. ${s.gapRequirements} mapped requirement(s) not yet implemented; ${report.coverage.unmapped} unmapped.`);
     }
