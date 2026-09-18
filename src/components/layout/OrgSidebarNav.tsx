@@ -3,18 +3,16 @@
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
-    LayoutDashboard,
-    Building2,
+    FileContent,
+    FolderBookmark,
+    GridIcon,
+    Menu3,
+    OfficeBuilding,
     ShieldCheck,
-    AlertTriangle,
-    Paperclip,
+    TriangleWarning,
+    UserArrowRight,
     Users,
-    ScrollText,
-    LogOut,
-    PanelLeftClose,
-    PanelLeftOpen,
-    type LucideIcon,
-} from 'lucide-react';
+} from '@/components/ui/icons/nucleo';
 import { useOrgContext, useOrgHref, useOrgPermissions } from '@/lib/org-context-provider';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -26,7 +24,7 @@ import { useSidebarCollapsed } from './sidebar-collapse-context';
 // `nav-link` CSS approach (an `<a>` + class string) loses the
 // active-state band, hover gloss, and keyboard-focus polish the
 // shared <NavItem> bakes in.
-import { NavItem } from './nav-item';
+import { NavItem, type NavGlyph } from './nav-item';
 import { NavSection } from './nav-section';
 
 // ─── Nav configuration ───────────────────────────────────────────────
@@ -50,7 +48,8 @@ import { NavSection } from './nav-section';
 interface OrgNavItemDef {
     href: string;
     label: string;
-    icon: LucideIcon;
+    /** Lucide OR Nucleo — see the `NavGlyph` note on `NavItemProps.icon`. */
+    icon: NavGlyph;
     requiresDrillDown?: boolean;
     requiresManageMembers?: boolean;
 }
@@ -73,8 +72,8 @@ export function useOrgNavSections(): OrgNavSectionDef[] {
             // visual hierarchy the tenant sidebar carries.
             title: t('nav.portfolio'),
             items: [
-                { href: orgHref('/'), label: t('nav.portfolioOverview'), icon: LayoutDashboard },
-                { href: orgHref('/tenants'), label: t('nav.allTenants'), icon: Building2 },
+                { href: orgHref('/'), label: t('nav.portfolioOverview'), icon: GridIcon },
+                { href: orgHref('/tenants'), label: t('nav.allTenants'), icon: OfficeBuilding },
                 {
                     href: orgHref('/controls'),
                     label: t('nav.nonPerformingControls'),
@@ -84,13 +83,13 @@ export function useOrgNavSections(): OrgNavSectionDef[] {
                 {
                     href: orgHref('/risks'),
                     label: t('nav.criticalRisks'),
-                    icon: AlertTriangle,
+                    icon: TriangleWarning,
                     requiresDrillDown: true,
                 },
                 {
                     href: orgHref('/evidence'),
                     label: t('nav.overdueEvidence'),
-                    icon: Paperclip,
+                    icon: FolderBookmark,
                     requiresDrillDown: true,
                 },
             ],
@@ -107,7 +106,7 @@ export function useOrgNavSections(): OrgNavSectionDef[] {
                 {
                     href: orgHref('/audit'),
                     label: t('nav.auditLog'),
-                    icon: ScrollText,
+                    icon: FileContent,
                     // Epic B — immutable per-org privilege ledger.
                     // Same gate as Members: ORG_ADMIN can review who
                     // was added/removed/role-changed and when.
@@ -219,11 +218,14 @@ export function OrgSidebarContent({ user, onLogout, onNavClick, onToggleCollapse
                             collapsed ? 'justify-center' : 'gap-tight',
                         )}
                     >
-                        {collapsed ? (
-                            <PanelLeftOpen className="h-4 w-4 shrink-0" aria-hidden="true" />
-                        ) : (
-                            <PanelLeftClose className="h-4 w-4 shrink-0" aria-hidden="true" />
-                        )}
+                        {/* ONE glyph for both states, matching the tenant sidebar.
+                            Direction is not carried by the icon — it is
+                            `aria-hidden`; the button's `aria-label`
+                            (expand/collapse) and `aria-pressed` carry the state
+                            for assistive tech. Nucleo ships no matched
+                            close/open pair, and inventing a mirrored one would
+                            diverge from the sibling surface for no gain. */}
+                        <Menu3 className="h-4 w-4 shrink-0" aria-hidden="true" />
                         {!collapsed && <span className="flex-1 text-left">{t('nav.collapse')}</span>}
                     </button>
                 </div>
@@ -253,7 +255,7 @@ export function OrgSidebarContent({ user, onLogout, onNavClick, onToggleCollapse
                             data-testid="org-nav-logout"
                             className="icon-btn icon-btn-sm mx-auto flex"
                         >
-                            <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
+                            <UserArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
                         </button>
                     </Tooltip>
                 ) : (
@@ -264,7 +266,7 @@ export function OrgSidebarContent({ user, onLogout, onNavClick, onToggleCollapse
                         className="w-full text-xs"
                         data-testid="org-nav-logout"
                     >
-                        <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
+                        <UserArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
                         {t('common.signOut')}
                     </Button>
                 )}

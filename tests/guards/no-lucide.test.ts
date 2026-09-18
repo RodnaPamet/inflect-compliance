@@ -137,7 +137,6 @@ const LEGACY_LUCIDE_USERS = new Set<string>([
     'src/components/ForbiddenPage.tsx',
     'src/components/frameworks/FrameworkExplorer.tsx',
     'src/components/icons/iconMap.ts',
-    'src/components/layout/OrgSidebarNav.tsx',
     // Roadmap-14 (top-bar chrome) — the NavBar primitive + its
     // slot family (notifications bell, tenant switcher, user
     // menu) all import lucide icons directly. Same rationale as
