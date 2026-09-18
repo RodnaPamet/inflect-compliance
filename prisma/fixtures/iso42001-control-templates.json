@@ -486,12 +486,21 @@
       "tasks": []
     },
     {
-      "code": "AIMS-02",
-      "title": "Clause 6 Planning",
+      "code": "AIMS-02A",
+      "title": "AI risk and impact assessment framework",
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "6.1",
+        "6.1"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-02B",
+      "title": "AI objectives and planning of AIMS changes",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
         "6.2",
         "6.3"
       ],
@@ -525,13 +534,31 @@
       "tasks": []
     },
     {
-      "code": "AIMS-05",
-      "title": "Clause 9 Performance evaluation",
+      "code": "AIMS-05A",
+      "title": "AIMS monitoring, measurement and evaluation",
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "9.1",
-        "9.2",
+        "9.1"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-05B",
+      "title": "AIMS internal audit programme",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "9.2"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "AIMS-05C",
+      "title": "AIMS management review",
+      "category": "ISO 42001",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
         "9.3"
       ],
       "tasks": []
@@ -675,10 +702,13 @@
     "templateCodes": [
       "AIMS-00",
       "AIMS-01",
-      "AIMS-02",
+      "AIMS-02A",
+      "AIMS-02B",
       "AIMS-03",
       "AIMS-04",
-      "AIMS-05",
+      "AIMS-05A",
+      "AIMS-05B",
+      "AIMS-05C",
       "AIMS-06",
       "AIMS-07",
       "AIMS-08",

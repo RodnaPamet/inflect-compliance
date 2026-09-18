@@ -149,21 +149,111 @@
       "tasks": []
     },
     {
-      "code": "EUAIA-01",
-      "title": "High-risk AI systems",
+      "code": "EUAIA-01A",
+      "title": "Risk management system for high-risk AI",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "Art.9",
-        "Art.10",
-        "Art.11",
-        "Art.12",
-        "Art.13",
-        "Art.14",
-        "Art.15",
-        "Art.16",
-        "Art.17",
-        "Art.26",
+        "Art.9"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "EUAIA-01B",
+      "title": "Training, validation and testing data governance",
+      "category": "EU AI Act",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "Art.10"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "EUAIA-01C",
+      "title": "Annex IV technical documentation",
+      "category": "EU AI Act",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "Art.11"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "EUAIA-01D",
+      "title": "Automatic event logging and record-keeping",
+      "category": "EU AI Act",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "Art.12"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "EUAIA-01E",
+      "title": "Transparency and instructions for use",
+      "category": "EU AI Act",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "Art.13"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "EUAIA-01F",
+      "title": "Human oversight design and operator competence",
+      "category": "EU AI Act",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "Art.14"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "EUAIA-01G",
+      "title": "Accuracy, robustness and cybersecurity",
+      "category": "EU AI Act",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "Art.15"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "EUAIA-01H",
+      "title": "Provider conformity: assessment, CE marking, declaration and registration",
+      "category": "EU AI Act",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "Art.16"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "EUAIA-01I",
+      "title": "Quality management system",
+      "category": "EU AI Act",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "Art.17"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "EUAIA-01J",
+      "title": "Deployer operating obligations",
+      "category": "EU AI Act",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "Art.26"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "EUAIA-01K",
+      "title": "Fundamental rights impact assessment",
+      "category": "EU AI Act",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
         "Art.27"
       ],
       "tasks": []
@@ -179,12 +269,21 @@
       "tasks": []
     },
     {
-      "code": "EUAIA-03",
-      "title": "General-purpose AI models",
+      "code": "EUAIA-03A",
+      "title": "GPAI provider obligations: documentation, downstream information and copyright",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "Art.53",
+        "Art.53"
+      ],
+      "tasks": []
+    },
+    {
+      "code": "EUAIA-03B",
+      "title": "Systemic-risk GPAI: evaluation, adversarial testing, incident reporting and model security",
+      "category": "EU AI Act",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
         "Art.55"
       ],
       "tasks": []
@@ -207,9 +306,20 @@
     "description": "EU AI Act (2024/1689) obligations across the five risk tiers.",
     "templateCodes": [
       "EUAIA-00",
-      "EUAIA-01",
+      "EUAIA-01A",
+      "EUAIA-01B",
+      "EUAIA-01C",
+      "EUAIA-01D",
+      "EUAIA-01E",
+      "EUAIA-01F",
+      "EUAIA-01G",
+      "EUAIA-01H",
+      "EUAIA-01I",
+      "EUAIA-01J",
+      "EUAIA-01K",
       "EUAIA-02",
-      "EUAIA-03",
+      "EUAIA-03A",
+      "EUAIA-03B",
       "EUAIA-04"
     ]
   }
