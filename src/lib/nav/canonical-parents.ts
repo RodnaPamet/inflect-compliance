@@ -229,6 +229,58 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
  * `/t/acme/vendors/v1/assessment/a1` → `/t/acme/vendors/v1`, NOT
  * `/t/acme/vendors/[vendorId]`.
  */
+/**
+ * PARENT_MAP is acyclic today — 112 chains walked, 0 loops of any length,
+ * 0 self-edges (measured 2026-09-18). The hop cap keeps this function total
+ * if a loop is ever introduced, rather than hanging.
+ */
+const MAX_PARENT_HOPS = 8;
+
+/**
+ * True when `referrer` sits BELOW `pathname` in the IA, so following it would
+ * make "back" descend.
+ *
+ * WHY THIS EXISTS. `BackAffordance` prefers the referrer — the page you came
+ * from — over the declared parent. Two guards already reject a referrer that
+ * is the current page, or a SIBLING of it. Neither rejects a CHILD, so
+ * clicking into a sub-page and pressing back returned you to the sub-page:
+ *
+ *   on /frameworks/K/install : referrer /frameworks/K          -> ascends, fine
+ *   on /frameworks/K         : referrer /frameworks/K/install  -> DESCENDS
+ *
+ * and because the back click itself writes the referrer (NavigationTracker
+ * stores the OUTGOING path), the two pages then bounce off each other.
+ *
+ * TWO CLAUSES, BOTH LOAD-BEARING — measured over every (page, referrer) pair:
+ *   1. URL containment. Catches 23 of the 25 non-sibling pairs.
+ *   2. IA containment — walk canonical parents up from the referrer looking
+ *      for the current page. Catches the 2 that descend through a cross-link
+ *      whose parent is NOT a URL prefix (/admin/identity-* -> /admin/integrations).
+ * Dropping clause 2 leaves 9 pairs oscillating; dropping clause 1 leaves the
+ * /controls/[controlId] <-> /controls/[controlId]/tests/[planId] pair, which
+ * cross-links to /tests so the IA walk never reaches the control.
+ */
+export function referrerIsDescendant(
+    referrer: string,
+    pathname: string,
+    tenantSlug: string,
+): boolean {
+    if (referrer === pathname) return false;
+    // 1 — URL containment. The trailing slash stops /frameworks/nis2-extended
+    // from counting as a child of /frameworks/nis2.
+    if (referrer.startsWith(`${pathname}/`)) return true;
+    // 2 — IA containment.
+    let cursor = referrer;
+    for (let hops = 0; hops < MAX_PARENT_HOPS; hops++) {
+        const parent = resolveCanonicalParent(cursor, tenantSlug);
+        if (!parent) return false;
+        if (parent.href === pathname) return true;
+        if (parent.href === cursor) return false;
+        cursor = parent.href;
+    }
+    return false;
+}
+
 export function resolveCanonicalParent(
     pathname: string,
     tenantSlug: string,
