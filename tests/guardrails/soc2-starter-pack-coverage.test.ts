@@ -119,7 +119,22 @@ describe('SOC 2 delivery', () => {
         // loop below iterates nothing and each `toEqual([])` passes.
         expect(applied).not.toBeNull();
         expect(applied?.file).toBe('prisma/fixtures/soc2-control-templates.json');
-        expect(applied?.requirements.length).toBeGreaterThanOrEqual(10);
+        /**
+         * EXACT, and the number is a RECORDED DECISION rather than a measurement
+         * of the standard (#2625).
+         *
+         * The 2017 TSC runs to ~33 points of focus across the nine Common
+         * Criteria series; this catalogue authors ONE representative criterion
+         * per series (two for CC1) = 10. The reasoning, and why the missing ~23
+         * were not synthesised, is in the header of
+         * src/data/libraries/soc2-2017.yaml.
+         *
+         * Pinned rather than floored because a floor cannot fail for a catalogue
+         * going SHORT — the defect #2626 fixed across six other frameworks. If
+         * somebody authors the full point list, this number moves in the same
+         * diff and the scope note moves with it.
+         */
+        expect(applied?.requirements.length).toBe(10);
         expect(applied?.templates.length).toBeGreaterThanOrEqual(20);
     });
 
@@ -127,6 +142,30 @@ describe('SOC 2 delivery', () => {
         expect(applied?.framework.key).toBe('SOC2');
         expect(applied?.framework.version).toBe('2017');
         expect(applied?.framework.kind).toBe('SOC_CRITERIA');
+    });
+
+    /**
+     * The LIBRARY models more than the delivered catalogue, and that divergence
+     * is a fact a reader needs rather than a bug to fix.
+     *
+     * 14 assessable nodes: the 10 Common Criteria above plus A1 / C1 / PI1 / P1,
+     * one per non-security trust category. The seeded fixture carries the 10
+     * Common Criteria only, so an INSTALLED SOC 2 pack is Security-scoped while
+     * this library describes all five categories.
+     *
+     * Pinned so that closing the gap — delivering the four category nodes — is a
+     * deliberate change that updates this number, and so that losing one is red.
+     */
+    it('the library models all five trust categories, though the fixture delivers only Security', () => {
+        const lib = loadLibrary(parseLibraryFile(path.join(ROOT, 'src/data/libraries/soc2-2017.yaml')), 'soc2-2017.yaml');
+        const assessable = lib.framework.nodes.filter((n) => n.assessable);
+        expect(assessable.length).toBe(14);
+        for (const ref of ['A1', 'C1', 'PI1', 'P1']) {
+            expect(lib.framework.nodesByRefId.get(ref)).toBeDefined();
+        }
+        // The delivered catalogue does NOT carry them — stated here so the two
+        // numbers are read together rather than one being mistaken for the other.
+        expect(appliedCatalogFor('SOC2')?.requirements.map((r) => r.code)).not.toContain('A1');
     });
 
     it('declares the pack production actually has', () => {
