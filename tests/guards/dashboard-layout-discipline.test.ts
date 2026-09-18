@@ -19,15 +19,16 @@
  *   - tests/guards/page-header-discipline.test.ts
  */
 import * as fs from "fs";
+import { codeOf } from "../helpers/source-blocks";
 import * as path from "path";
 
 const ROOT = path.resolve(__dirname, "../..");
 
 describe("v2-PR-6 DashboardLayout primitive contract", () => {
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.join(ROOT, "src/components/layout/DashboardLayout.tsx"),
         "utf8",
-    );
+    ));
 
     it("exports the DashboardLayout component + props interface", () => {
         expect(src).toMatch(/export\s+function\s+DashboardLayout/);
@@ -45,12 +46,15 @@ describe("v2-PR-6 DashboardLayout primitive contract", () => {
         expect(src).toMatch(/header:\s*PageHeaderProps/);
     });
 
-    it("wraps in `space-y-section animate-fadeIn`", () => {
-        // The shared dashboard rhythm — vertical sections + fade on
-        // first paint. Asserting both classes appear on the wrapper
-        // keeps the rhythm constant across consumers.
+    it("wraps in `space-y-section animate-dashboard-rise-in`", () => {
+        // The shared dashboard rhythm — vertical sections + the entrance
+        // animation. R17-PR12 swapped `animate-fadeIn` (150ms bare fade) for
+        // `animate-dashboard-rise-in` (600ms ease-out + 8px rise); this
+        // assertion, and this test's NAME, kept asserting the old class and
+        // passed anyway because the comment recording the swap still spells
+        // it. #2629 — assert the class the wrapper actually carries.
         expect(src).toMatch(/space-y-section/);
-        expect(src).toMatch(/animate-fadeIn/);
+        expect(src).toMatch(/animate-dashboard-rise-in/);
     });
 
     it("carries the data-dashboard-layout marker for E2E selectors", () => {
@@ -59,13 +63,13 @@ describe("v2-PR-6 DashboardLayout primitive contract", () => {
 });
 
 describe("v2-PR-6 executive dashboard adoption", () => {
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.join(
             ROOT,
             "src/app/t/[tenantSlug]/(app)/dashboard/DashboardClient.tsx",
         ),
         "utf8",
-    );
+    ));
 
     it("imports + renders <DashboardLayout>", () => {
         expect(src).toMatch(
