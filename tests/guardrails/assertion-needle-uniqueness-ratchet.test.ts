@@ -215,7 +215,22 @@ const HIGH_MULTIPLICITY = 5;
 //   count is 1420. A zero-headroom ratchet is shared state between every open
 //   PR, so the value is re-measured on the merged tree rather than resolved by
 //   preferring one branch's figure.
-const AMBIGUOUS_NEEDLE_BASELINE = 1420;
+//   RE-SEATED 1420 -> 1419 IN THIS SAME PR, for a change made LATER in it.
+//   Repointing the AISVS seed-wiring guard at the builder's own function body
+//   replaced four whole-file `expect(seed).toContain(...)` reads with
+//   `functionBodyOf(...)` ones — and a construct-bound subject leaves the
+//   Class D population entirely, so fixing that guard removed a needle from
+//   this count. Measured per-branch rather than assumed:
+//
+//       main alone    1422      main + #2634  1422
+//       main + #2632  1419      main + #2635  1422
+//                               main + #2636  1422
+//
+//   Worth recording because it means this baseline is NOT shared state with
+//   the four sibling PRs open beside it: none of them moves the count, so the
+//   merge order does not matter for this ratchet. The union was measured too,
+//   and agrees at 1419.
+const AMBIGUOUS_NEEDLE_BASELINE = 1419;
 // 237 (2026-09-18, #2622): −1 on the merge, for the same reason and by the same
 // method as the 1420 above — re-measured on the merged tree, not carried over
 // from either branch. It surfaced only after the other end was re-seated,
