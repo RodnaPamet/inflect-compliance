@@ -206,6 +206,42 @@ export const MIN_BASELINE_OBSERVATIONS = 30;
 export const BASELINE_WINDOW_LIMIT = 168;
 
 /**
+ * The oldest a baseline window may be and still be judged against, in hours.
+ *
+ * ═══ WHY AN AGE CAP AT ALL, WHEN #2539 ARGUED AGAINST ONE ═══
+ *
+ * {@link BASELINE_WINDOW_LIMIT} is a COUNT cap and says nothing about age: a
+ * row exists only for an hour the agent was ACTIVE, so 168 windows is seven
+ * days for an agent that calls every hour and roughly 84 days for one that
+ * calls twice a day. A verdict could therefore read "STEADY against 168
+ * windows" while the history it compared against began a quarter earlier.
+ *
+ * The issue's own objection to capping is correct and is NOT dismissed here:
+ * capping stands the breaker down for exactly the quietest agents, whose
+ * behaviour is hardest to read. An agent active two hours a day needs about
+ * six days to reach {@link MIN_BASELINE_WINDOWS}, and a cap can push it back
+ * under permanently.
+ *
+ * What makes the cap defensible is not the number — it is that the cap is
+ * VISIBLE IN THE READING. `windowsDiscardedByAge` and `discardedReachedBackTo`
+ * are properties of the row the evaluator sees, so a refusal caused by the cap
+ * reports `BASELINE_CAPPED_BY_AGE` and never the same code as an agent that
+ * genuinely never had enough history. Those are different facts and they need
+ * different operator responses: one is "your data is stale, re-baseline or
+ * widen the cap", the other is "wait". Collapsing them into TOO_FEW_WINDOWS
+ * would be the silent stand-down the issue warns about; distinguishing them is
+ * what converts it into a legible one.
+ *
+ * 90 days, chosen to bound the stale-verdict case the issue names ("a baseline
+ * that began three months ago") while leaving the intermittent agent the ~84
+ * days its 168 windows can span. It is deliberately NOT tight: the numbers that
+ * would justify a tighter cap — rows per agent per month, and the population
+ * sitting between MIN_BASELINE_WINDOWS and twice it — do not exist yet, and
+ * #2539 is explicit that they are what makes a tighter value decidable.
+ */
+export const BASELINE_MAX_AGE_HOURS = 90 * 24;
+
+/**
  * Consecutive windows sharing a signal before the breaker trips.
  *
  * Two, and the streak counts ACTIVE windows, not wall-clock hours: for a
@@ -381,6 +417,24 @@ export interface BaselineReading {
      * thousands for an intermittent one.
      */
     readonly spanHours: number | null;
+    /**
+     * How many windows {@link BASELINE_MAX_AGE_HOURS} removed from the judgement.
+     *
+     * The whole point of the age cap being a property of this row rather than a
+     * silent filter in the query. A baseline that fell under
+     * {@link MIN_BASELINE_WINDOWS} BECAUSE the cap discarded rows is a different
+     * fact from one that never had enough, and an operator's response differs:
+     * re-baseline or widen the cap, versus wait.
+     */
+    readonly windowsDiscardedByAge: number;
+    /**
+     * The oldest DISCARDED window's key — how far back the evidence the cap
+     * threw away reached. `null` when the cap discarded nothing.
+     *
+     * Paired with the count because "12 windows discarded" is not actionable
+     * until you know whether they reached back a week or a quarter.
+     */
+    readonly discardedReachedBackTo: string | null;
 }
 
 export interface BreakerVerdict {
@@ -580,23 +634,57 @@ function readToolMix(input: BreakerInput): SignalReading {
 // ─── The verdict ────────────────────────────────────────────────────
 
 function readBaseline(input: BreakerInput): BaselineReading {
-    const windows = input.baseline.length;
-    const observations = input.baseline.reduce((t, w) => t + totalCalls(w), 0);
-    // Windows first, so a short history reports the reason an operator can act
-    // on: "wait" rather than "wait, and also there is a second thing".
-    const shortfall =
-        windows < MIN_BASELINE_WINDOWS
-            ? 'TOO_FEW_WINDOWS'
-            : observations < MIN_BASELINE_OBSERVATIONS
-              ? 'TOO_FEW_OBSERVATIONS'
-              : null;
+    /**
+     * THE AGE CAP, APPLIED HERE AND NOT IN THE QUERY.
+     *
+     * A store-level `where` would make the discarded rows invisible — the
+     * reading would show a short baseline with no way to tell a capped agent
+     * from a new one, which is the silent stand-down #2539 warns about.
+     * Partitioning here keeps both halves countable.
+     */
+    const judgedAt = windowStartFromKey(input.current.windowKey).getTime();
+    const tooOld = (w: { windowKey: string }) =>
+        (judgedAt - windowStartFromKey(w.windowKey).getTime()) / WINDOW_MS > BASELINE_MAX_AGE_HOURS;
+
+    const accepted = input.baseline.filter((w) => !tooOld(w));
+    const discarded = input.baseline.filter(tooOld);
+
+    let discardedReachedBackTo: string | null = null;
+    for (const w of discarded) {
+        if (discardedReachedBackTo === null || w.windowKey < discardedReachedBackTo) {
+            discardedReachedBackTo = w.windowKey;
+        }
+    }
+
+    const windows = accepted.length;
+    const observations = accepted.reduce((t, w) => t + totalCalls(w), 0);
+    /**
+     * Windows first, so a short history reports the reason an operator can act
+     * on: "wait" rather than "wait, and also there is a second thing".
+     *
+     * BASELINE_CAPPED_BY_AGE OUTRANKS TOO_FEW_WINDOWS, and that ordering is the
+     * whole design. Both mean "not enough windows to judge", but only one is
+     * fixed by waiting — an agent whose history the cap removed will not
+     * accumulate its way out, because the rows exist and are simply too old.
+     * Reporting TOO_FEW_WINDOWS there would send an operator to wait for data
+     * they already have.
+     */
+    const cappedBelowThreshold =
+        windows < MIN_BASELINE_WINDOWS && input.baseline.length >= MIN_BASELINE_WINDOWS;
+    const shortfall = cappedBelowThreshold
+        ? 'BASELINE_CAPPED_BY_AGE'
+        : windows < MIN_BASELINE_WINDOWS
+          ? 'TOO_FEW_WINDOWS'
+          : observations < MIN_BASELINE_OBSERVATIONS
+            ? 'TOO_FEW_OBSERVATIONS'
+            : null;
 
     // The caller hands `baseline` newest-first (`orderBy windowStart desc` in
     // circuit-breaker-store). Taking the MINIMUM rather than the last element
     // so the reading survives a caller that sorts differently — an ordering
     // assumption is exactly the kind of thing that holds until it does not.
     let oldestWindowKey: string | null = null;
-    for (const w of input.baseline) {
+    for (const w of accepted) {
         if (oldestWindowKey === null || w.windowKey < oldestWindowKey) {
             oldestWindowKey = w.windowKey;
         }
@@ -620,6 +708,8 @@ function readBaseline(input: BreakerInput): BaselineReading {
         shortfall,
         oldestWindowKey,
         spanHours,
+        windowsDiscardedByAge: discarded.length,
+        discardedReachedBackTo,
     };
 }
 
