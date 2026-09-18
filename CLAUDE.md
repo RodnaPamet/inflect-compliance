@@ -1059,6 +1059,20 @@ permanently inert without AD Connect. The migration deliberately did not
 backfill, so every pre-existing row refuses `NEVER_OBSERVED` until its next sync
 stamps it — that window is the rail working, not a broken sync.
 
+**New HRIS behaviour is PROVEN against OrangeHRM, not BambooHR** (2026-09-18). Not a
+preference — BambooHR is customer-owned, this repo has no tenant, and open question 1 of
+the write-back design ("does BambooHR expose an employee-update API?") is *unanswerable
+from here* rather than merely unanswered. OrangeHRM is self-hostable and writable, which
+is what #2548 built it for and what #2587 demonstrated: running the finished connector
+against a live 5.9 disproved its field mapping in five places that fifty green tests had
+not noticed. So when new HRIS behaviour must be shown to WORK rather than to typecheck,
+point it at the OrangeHRM instance and record what came back. This is a rule about
+evidence, not about tests: BambooHR keeps every test it has, and the structural guards
+that enumerate providers must keep naming `bamboohr`. See the "New HRIS work is proven
+against OrangeHRM" section of `docs/jml-hris-write-back-design.md` for what this does and
+does not license — in particular it does NOT answer open question 1, because a different
+vendor's API is not evidence about this one.
+
 **Adding to this subsystem:** a new writable provider goes in
 `WRITABLE_IDENTITY_PROVIDERS` and needs a writer plus its own branch in
 `resolveDirectoryWriter`'s construction block — the last arm there falls through
