@@ -72,7 +72,25 @@ describe('AISVS library — owasp-aisvs-1.0.yaml', () => {
 
     it('assessable requirement ref_ids follow the AISVS C<ch>.<sec>.<req> format', () => {
         const assessable = aisvs.framework.nodes.filter((n) => n.assessable);
-        expect(assessable.length).toBeGreaterThanOrEqual(150);
+        /**
+ * EXACT, NOT A FLOOR — and the difference is the whole point (#2626).
+ *
+ * This assertion used to read `toBeGreaterThanOrEqual`, which cannot fail for
+ * the thing it exists to catch: a library going SHORT of the standard it
+ * claims to represent. The headroom was not theoretical — AISVS could lose 41
+ * of its 191 requirements and stay green, ISO 42001 twelve, NIST Privacy ten;
+ * 71 requirements across six frameworks could have silently vanished.
+ *
+ * A count that only ever grows is a count nobody is checking. Pinned exactly,
+ * so ADDING a requirement is a deliberate one-line edit here and REMOVING one
+ * is a red build.
+ *
+ * Template/control counts are deliberately still floors: they change for
+ * reasons unrelated to fidelity (a control split into per-obligation controls
+ * carries the same requirements), and pinning them would make a granularity
+ * change look like a content loss.
+ */
+        expect(assessable.length).toBe(191);
         for (const n of assessable) {
             expect(n.refId).toMatch(/^C\d+\.\d+\.\d+$/);
             expect(n.parentUrn).toBeDefined();
@@ -136,7 +154,7 @@ describe('AISVS seed fixture', () => {
     ) as Array<{ key: string; section: string; level: string; sortOrder: number; title: string }>;
 
     it('every fixture entry has the required shape + AISVS-structured key + level', () => {
-        expect(fixture.length).toBeGreaterThanOrEqual(150);
+        expect(fixture.length).toBe(191);
         for (const r of fixture) {
             expect(r.key).toMatch(/^C\d+\.\d+\.\d+$/);
             expect(r.section).toBeTruthy();
@@ -174,7 +192,7 @@ describe('OWASP AISVS delivery', () => {
     it('a production seeder applies an AISVS catalogue at all', () => {
         // DENOMINATOR: every case below is vacuous on null.
         expect(catalog).not.toBeNull();
-        expect(catalog?.requirements.length).toBeGreaterThanOrEqual(180);
+        expect(catalog?.requirements.length).toBe(191);
         expect(catalog?.templates.length).toBeGreaterThanOrEqual(12);
     });
 
