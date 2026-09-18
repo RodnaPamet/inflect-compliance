@@ -100,14 +100,23 @@ export async function generateAuditReadinessPdf(
     // establish it: this branch used to fire on gaps=0 and unmapped=0 whatever
     // the evidence position, which on a large catalogue produced "Audit-ready —
     // readiness score 0/100. Every requirement is mapped and implemented." in
-    // an auditor-facing document (#2618). Evidence and overdue work now gate
-    // the verdict, and the middle branch reports the requirement position
-    // honestly without claiming readiness on top of it.
+    // an auditor-facing document (#2618).
+    //
+    // EVIDENCE GATES THE WORD; OVERDUE WORK DOES NOT. Decided by the product
+    // owner on 2026-09-19: a missing audit artifact is the thing an auditor
+    // cannot proceed without, whereas an overdue task is a process signal about
+    // work already identified. So an overdue task still costs readiness points
+    // (see MAX_OVERDUE_PENALTY in framework/coverage.ts) and is still reported
+    // in the sentence — it just does not withhold the verdict.
     const requirementsComplete = s.gapRequirements === 0 && report.coverage.unmapped === 0;
-    if (requirementsComplete && s.missingEvidenceCount === 0 && s.overdueTaskCount === 0) {
-        addParagraph(doc, `Audit-ready — readiness score ${s.readinessScore}/100. Every requirement is mapped and implemented, every applicable control carries current evidence, and no task is overdue.`);
+    if (requirementsComplete && s.missingEvidenceCount === 0) {
+        // Named separately so the ready sentence never silently omits overdue
+        // work: it is appended, not dropped.
+        const overdueNote =
+            s.overdueTaskCount > 0 ? ` ${s.overdueTaskCount} task(s) are overdue.` : '';
+        addParagraph(doc, `Audit-ready — readiness score ${s.readinessScore}/100. Every requirement is mapped and implemented, and every applicable control carries current evidence.${overdueNote}`);
     } else if (requirementsComplete) {
-        addParagraph(doc, `Readiness score ${s.readinessScore}/100. Every requirement is mapped and implemented, but ${s.missingEvidenceCount} applicable control(s) lack current evidence and ${s.overdueTaskCount} task(s) are overdue.`);
+        addParagraph(doc, `Readiness score ${s.readinessScore}/100. Every requirement is mapped and implemented, but ${s.missingEvidenceCount} applicable control(s) lack current evidence.`);
     } else {
         addParagraph(doc, `Readiness score ${s.readinessScore}/100. ${s.gapRequirements} mapped requirement(s) not yet implemented; ${report.coverage.unmapped} unmapped.`);
     }

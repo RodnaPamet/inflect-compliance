@@ -541,11 +541,19 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
     //
     // THE WEIGHTS ARE A NEW CHOICE, NOT THE OLD ONES RESCALED. The old 2-and-3
     // were points-per-item on a quantity with no maximum; there is no ratio to
-    // carry over, so the ceilings below are a judgement: evidence weighs more
-    // because it is the artifact an audit actually consumes, while an overdue
-    // task is a leading indicator of a gap rather than the gap itself.
-    const MAX_EVIDENCE_PENALTY = 40;
-    const MAX_OVERDUE_PENALTY = 20;
+    // carry over, so the ceilings below had to be picked rather than derived.
+    // Evidence weighs twice overdue because it is the artifact an audit
+    // actually consumes, while an overdue task is a leading indicator of a gap
+    // rather than the gap itself.
+    //
+    // Set by the product owner on 2026-09-19 (#2618), choosing the steeper of
+    // the options put to them: a fully-implemented framework with nothing
+    // evidenced and everything overdue floors at 25, not 40. The reading is
+    // that an unevidenced catalogue is close to unready rather than merely
+    // weakened. Change these two numbers to re-tune; nothing else depends on
+    // their magnitude.
+    const MAX_EVIDENCE_PENALTY = 50;
+    const MAX_OVERDUE_PENALTY = 25;
 
     const applicableControls = controls.filter((c) => !isNotApplicable(c)).length;
     const totalTasks = controls.reduce((n, c) => n + (c.tasks?.length ?? 0), 0);

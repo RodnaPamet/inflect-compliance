@@ -461,9 +461,9 @@ describe('generateReadinessReport', () => {
         // implemented → implementedPercent = 100.
         //
         // #2618 — the penalties are shares of their own population, not counts.
-        // The single applicable control is missing evidence (1/1 → the full 40)
-        // and both of its two tasks are overdue (2/2 → the full 20), so this is
-        // the worst case for a one-control framework: 100 - 40 - 20 = 40.
+        // The single applicable control is missing evidence (1/1 → the full 50)
+        // and both of its two tasks are overdue (2/2 → the full 25), so this is
+        // the worst case for a one-control framework: 100 - 50 - 25 = 25.
         const past = new Date('2020-01-01');
         mockPrisma.framework.findFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'ISO', version: '2022' });
         mockPrisma.frameworkRequirement.findMany.mockResolvedValueOnce([
@@ -479,8 +479,8 @@ describe('generateReadinessReport', () => {
 
         const result = await generateReadinessReport(ctx, 'iso');
 
-        // 100 (implemented) - 40 (1/1 controls unevidenced) - 20 (2/2 tasks overdue)
-        expect(result.summary.readinessScore).toBe(40);
+        // 100 (implemented) - 50 (1/1 controls unevidenced) - 25 (2/2 tasks overdue)
+        expect(result.summary.readinessScore).toBe(25);
     });
 
     it('PR-I — readiness rewards implementation, not mapping density', async () => {
@@ -532,7 +532,7 @@ describe('generateReadinessReport', () => {
         // mapped and implemented." to an auditor.
         //
         // The penalties are now shares, so the same input is the genuine worst
-        // case for a fully-implemented framework and says so: 100 - 40 - 20 = 40.
+        // case for a fully-implemented framework and says so: 100 - 50 - 25 = 25.
         const past = new Date('2020-01-01');
         mockPrisma.framework.findFirst.mockResolvedValueOnce({ id: 'fw-1', key: 'iso', name: 'ISO', version: '2022' });
         mockPrisma.frameworkRequirement.findMany.mockResolvedValueOnce([
@@ -558,7 +558,7 @@ describe('generateReadinessReport', () => {
         // 51 of 51 applicable controls unevidenced, 50 of 50 tasks overdue.
         expect(result.summary.missingEvidenceCount).toBe(51);
         expect(result.summary.overdueTaskCount).toBe(50);
-        expect(result.summary.readinessScore).toBe(40);
+        expect(result.summary.readinessScore).toBe(25);
         // The old formula's answer, stated so a revert is unambiguous.
         expect(result.summary.readinessScore).not.toBe(0);
     });
@@ -597,7 +597,7 @@ describe('generateReadinessReport', () => {
                         .toEqual({ controlCount, evidenced, taskCount, inRange: true, score });
                     // Size must not change the answer: the three control counts
                     // are the same posture and must score identically.
-                    expect(score).toBe(evidenced ? (taskCount ? 80 : 100) : (taskCount ? 40 : 60));
+                    expect(score).toBe(evidenced ? (taskCount ? 75 : 100) : (taskCount ? 25 : 50));
                 }
             }
         }

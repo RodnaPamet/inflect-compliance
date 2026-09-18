@@ -87,19 +87,18 @@ describe('the Audit-ready verdict (#2618)', () => {
         expect(verdict()).toContain('Audit-ready');
     });
 
-    it('says Audit-ready only when requirements, evidence AND tasks are clear', async () => {
+    it('says Audit-ready only when requirements and evidence are clear', async () => {
         mockGenerateReadinessReport.mockResolvedValue(report({}));
         await generateAuditReadinessPdf(ctx, { framework: 'ISO27001' });
         expect(verdict()).toBe(
             'Audit-ready — readiness score 100/100. Every requirement is mapped and implemented, ' +
-                'every applicable control carries current evidence, and no task is overdue.',
+                'and every applicable control carries current evidence.',
         );
     });
 
     it.each([
-        ['unevidenced controls', { missingEvidenceCount: 7, readinessScore: 60 }],
-        ['overdue tasks', { overdueTaskCount: 4, readinessScore: 80 }],
-        ['both', { missingEvidenceCount: 7, overdueTaskCount: 4, readinessScore: 40 }],
+        ['unevidenced controls', { missingEvidenceCount: 7, readinessScore: 50 }],
+        ['unevidenced controls and overdue tasks', { missingEvidenceCount: 7, overdueTaskCount: 4, readinessScore: 30 }],
     ])('withholds Audit-ready when requirements are complete but there are %s', async (_label, over) => {
         mockGenerateReadinessReport.mockResolvedValue(report(over));
         await generateAuditReadinessPdf(ctx, { framework: 'ISO27001' });
@@ -110,22 +109,49 @@ describe('the Audit-ready verdict (#2618)', () => {
         expect(line).toContain('Every requirement is mapped and implemented, but');
     });
 
+    it('overdue work does NOT withhold the verdict, but is still stated', async () => {
+        // The owner's call (2026-09-19): a missing audit artifact blocks the
+        // word, a process signal about already-identified work does not. The
+        // second assertion is the one that matters — "does not withhold" must
+        // not quietly become "does not mention".
+        mockGenerateReadinessReport.mockResolvedValue(report({ overdueTaskCount: 4, readinessScore: 75 }));
+        await generateAuditReadinessPdf(ctx, { framework: 'ISO27001' });
+
+        const line = verdict();
+        expect(line).toContain('Audit-ready');
+        expect(line).toContain('4 task(s) are overdue.');
+    });
+
+    it('omits the overdue clause entirely when there is none', async () => {
+        mockGenerateReadinessReport.mockResolvedValue(report({}));
+        await generateAuditReadinessPdf(ctx, { framework: 'ISO27001' });
+        expect(verdict()).not.toContain('overdue');
+    });
+
     it('never pairs the Audit-ready claim with a contradicting score', async () => {
         // The exact shape of the original defect: a saturated score beside a
-        // claim of readiness. Both halves are now impossible — the score cannot
-        // reach 0 from a fully-implemented posture, and the claim needs a clean
-        // evidence position — so this asserts the pairing, not either half.
+        // claim of readiness.
+        //
+        // With evidence-only gating there is a floor to prove rather than a
+        // vague "not low": requirements-complete means implementedPercent is
+        // 100, evidence-clean means that penalty is 0, and the overdue penalty
+        // caps at 25 — so ANY sentence carrying "Audit-ready" must carry a
+        // score of at least 75. That is a sharper claim than "never 0", and it
+        // is the one the two decisions of 2026-09-19 jointly imply.
+        const AUDIT_READY_FLOOR = 100 - 25; // 100 - MAX_OVERDUE_PENALTY
         for (const over of [
-            { missingEvidenceCount: 50, readinessScore: 40 },
-            { missingEvidenceCount: 0, overdueTaskCount: 30, readinessScore: 80 },
-            { missingEvidenceCount: 93, overdueTaskCount: 93, readinessScore: 40 },
+            { missingEvidenceCount: 50, readinessScore: 50 },
+            { missingEvidenceCount: 0, overdueTaskCount: 30, readinessScore: 75 },
+            { missingEvidenceCount: 93, overdueTaskCount: 93, readinessScore: 25 },
+            { missingEvidenceCount: 0, overdueTaskCount: 0, readinessScore: 100 },
         ]) {
             paragraphs.length = 0;
             mockGenerateReadinessReport.mockResolvedValue(report(over));
             await generateAuditReadinessPdf(ctx, { framework: 'ISO27001' });
             const line = verdict();
-            expect({ over, contradiction: line.includes('Audit-ready') && /score (0|[1-4]?\d)\/100/.test(line) })
-                .toEqual({ over, contradiction: false });
+            const score = Number(line.match(/score (\d+)\/100/)![1]);
+            expect({ over, readyBelowFloor: line.includes('Audit-ready') && score < AUDIT_READY_FLOOR })
+                .toEqual({ over, readyBelowFloor: false });
         }
     });
 
