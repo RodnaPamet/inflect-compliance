@@ -36,7 +36,21 @@ sentence truncated without an ellipsis — were corrected rather than re-labelle
 
 ---
 
-## Current state (true today)
+## Current state (as of writing — PARTLY SUPERSEDED)
+
+> **Phase 0 shipped on 2026-09-17 (#2549) and this section predates it.** Everything below
+> describing `r.id` as unrequested, `externalId` as a three-step fallback, and the row id as
+> "missing" was true when written and is not true now: `id` is requested explicitly, the middle
+> term is deleted, and the handle persists to `Employee.hrisRecordId`.
+>
+> The `hris/index.ts:259` / `:267` citations throughout this section point at lines the change
+> itself moved. They are left in place rather than silently re-pointed, because this section is a
+> record of the reasoning at a moment — re-deriving them would make it look like the analysis was
+> done against today's code, which it was not. Read them as historical.
+>
+> What is NOT superseded: the argument. Why a payroll number and an email are both unusable as an
+> update subject, and why the handle needed its own column rather than repointing `externalId`, is
+> the reasoning Phase 0 acted on.
 
 ### The two outbound POSTs in the HRIS providers, re-derived
 
@@ -571,10 +585,14 @@ reader scans for.
 
 ### Phasing
 
-**Phase 0 — make the handle exist. No writes.** Add BambooHR's row `id` to the report field list
-(`hris/index.ts:259`) and stop depending on `r.id` arriving unrequested (`:267`); persist it.
-Independently useful, and **everything else is blocked on it** — there is no addressable target
-without it.
+**Phase 0 — make the handle exist. No writes. SHIPPED 2026-09-17 (#2549).** BambooHR's row `id` is
+requested explicitly, `r.id` is out of `externalId`'s fallback chain, and the value persists to
+`Employee.hrisRecordId`. Nothing reads that column yet — it is provenance until Phase 2 gives it a
+consumer.
+
+The line references this phase used to carry are deliberately gone. They pointed at
+`hris/index.ts:259` and `:267`, which the change itself moved; a citation that survives the work it
+describes is a citation nobody re-derived.
 
 **Phase 1 — credential and vocabulary. No writes.** `writeBackEnabled` on the connection; the live
 preflight; the enum member, TS union and metric label; the DRY_RUN report of Decision 1's narrow
@@ -589,10 +607,22 @@ Phase 2 must not ship before the joiner settles what a pre-hire is. It has no su
 
 1. **Does BambooHR expose an employee-update API at the same gateway base, with the same Basic auth?**
    Not verifiable from this repo; there is no call site to show. Decision 1 rests entirely on it.
-2. **Is `r.id` (`hris/index.ts:267`) ever populated today?** The field list at `:259` does not request
-   it. If BambooHR never returns it unrequested, then every existing BambooHR-sourced `externalId` is
-   an `employeeNumber` or an email, and **neither addresses an update API**. Check against a real
-   tenant before estimating.
+2. **Is `r.id` ever populated today — i.e. does BambooHR return it unrequested?** STILL OPEN, and
+   narrower than it was. Phase 0 now requests `id` explicitly and routes it to `hrisRecordId`, so the
+   question no longer governs whether `externalId` is safe; it governs only how to describe what
+   earlier syncs wrote into that column. There is still no BambooHR tenant to check against.
+
+   **What an OrangeHRM instance did and did not settle.** #2548 built a connector against an HRIS
+   whose HR side we control, and it was pointed at a live `orangehrm/orangehrm:5.9` on 2026-09-17.
+   That answers nothing about BambooHR's API — a different vendor's payload is not evidence about
+   this one, and it would be the same assertion-in-place-of-measurement this section exists to refuse.
+
+   What it *does* establish is that the shape this design assumed is not universal. On OrangeHRM the
+   list response carries the write-back handle (`empNumber`) and **does not carry the work email at
+   all**, at any `model` — proved by A/B, since the same employee's `/pim/employee/{id}/contact-details`
+   returns an address the list row omits. So "handle present, identity field absent" is a real shape,
+   and a design that assumes one roster read yields both is assuming something at least one vendor
+   does not do. See #2587.
 3. **Can the write be made conditional server-side?** If there is an `If-Match` or version token, the
    TOCTOU window in Decision 3 closes. If not, it only narrows.
 4. **Does a BambooHR 200 mean the field landed, when the customer has restricted that field?** The
