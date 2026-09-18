@@ -56,11 +56,28 @@
  * The frameworks whose standards mandate a Statement of Applicability against a
  * control annex.
  *
- * Keyed by `Framework.key`, which has TWO authoring paths and therefore two
- * spellings for ISO 27001: `prisma/seed-catalog.ts` upserts `ISO27001`, while
- * `library-importer.ts` uses the library's `ref_id` (`ISO27001-2022`). Both are
- * listed on purpose — dropping either silently disables the SoA for every
- * tenant seeded by that path.
+ * Keyed by `Framework.key`, and the key has THREE authoring paths that do not
+ * agree on spelling. Every affected framework is listed under every spelling
+ * that reaches a database, on purpose: dropping one silently disables the SoA
+ * for every tenant seeded by that path.
+ *
+ *   prisma/fixtures/*-control-templates.json   ISO27001  ISO27701  ISO42001
+ *     via `catalog-applier.ts`, listed in `scripts/seed-framework-catalogs.ts`
+ *     and run by `scripts/entrypoint.sh:95` on EVERY container start. This is
+ *     the path production actually uses.
+ *   prisma/seed-catalog.ts                      ISO27001
+ *     dev only (`npm run db:seed`); reaches no production database.
+ *   src/data/libraries/*.yaml                   ISO27001-2022  ISO27701-2019
+ *                                               ISO42001-2023
+ *     via `library-importer.ts`, keyed on the library's `ref_id`.
+ *
+ * THE BARE SPELLINGS WERE MISSING FROM THE FIRST VERSION OF THIS FILE, and the
+ * effect was the opposite of the fix: `ISO27701` and `ISO42001` — the keys
+ * production creates — fell through to `false` and LOST an SoA they had under
+ * the old `kind` gate. The list was written from the two paths that are easy
+ * to grep, and the one that ships was not among them. `tests/helpers/
+ * applied-catalogue.ts` exists for exactly this error; the guard beside this
+ * module now uses it.
  */
 const SOA_FRAMEWORK_KEYS: ReadonlySet<string> = new Set([
     // ISO/IEC 27001 — Annex A (93 controls); SoA mandated by clause 6.1.3 d).
@@ -68,8 +85,10 @@ const SOA_FRAMEWORK_KEYS: ReadonlySet<string> = new Set([
     'ISO27001-2022',
     // ISO/IEC 27701 — extends the ISMS SoA with the PIMS controls of its
     // Annexes A and B. Carries no `A.`-prefixed codes in this repo's library.
+    'ISO27701',
     'ISO27701-2019',
     // ISO/IEC 42001 — Annex A (AI management controls); SoA mandated by 6.1.3.
+    'ISO42001',
     'ISO42001-2023',
 ]);
 

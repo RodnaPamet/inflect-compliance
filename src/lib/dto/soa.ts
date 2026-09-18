@@ -66,12 +66,20 @@ export interface SoAReportDTO {
      *  report header isn't hard-coded to ISO 27001. */
     frameworkName: string;
     /**
-     * R2-P3 — whether the resolved framework is ISO-family (kind ===
-     * ISO_STANDARD). The Statement of Applicability is an ISO-27001-Annex-A
-     * artifact (ISO 27001/27701/42001 have applicability statements; SOC 2,
-     * NIST, PCI, CIS, DORA, NIS2, GDPR do NOT). When false, the SoA view
-     * points the user at that framework's coverage/readiness instead of
-     * rendering a mislabeled "SoA".
+     * Whether the resolved framework mandates a Statement of Applicability —
+     * a per-control record of applicability against a control ANNEX. ISO
+     * 27001, ISO 27701 and ISO 42001 do; everything else this repo ships does
+     * not. When false, the SoA view points the user at that framework's
+     * coverage/readiness instead of rendering a mislabeled "SoA".
+     *
+     * NOT DERIVED FROM `Framework.kind` — that was the #2617 defect, and this
+     * docblock described it for one revision after the code stopped doing it.
+     * `kind` is wrong in both directions: ISO 9001/28000/39001 are
+     * `ISO_STANDARD` with no control annex, and the value is the SCHEMA
+     * DEFAULT, so an unclassified framework (SOC 2 via `seed-catalog.ts`, for
+     * one) inherits it. The answer is declared per framework key in
+     * {@link frameworkHasStatementOfApplicability}
+     * (`lib/compliance/statement-of-applicability.ts`) and fails closed.
      */
     hasStatementOfApplicability: boolean;
     generatedAt: string;             // ISO 8601
