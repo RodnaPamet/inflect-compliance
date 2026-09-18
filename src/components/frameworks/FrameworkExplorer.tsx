@@ -239,7 +239,7 @@ export function FrameworkExplorer({
 
     return (
         <div
-            className="grid grid-cols-1 lg:grid-cols-[minmax(0,380px),12rem,1fr] gap-default"
+            className="grid grid-cols-1 lg:grid-cols-[minmax(0,380px)_12rem_1fr] gap-default"
             id="framework-explorer"
         >
             {/* ── Tree pane ── */}

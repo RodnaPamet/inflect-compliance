@@ -59,6 +59,10 @@ import {
 import { createEntraIdWriter } from './providers/entra-id/writer';
 import { createActiveDirectoryWriter } from './providers/active-directory/writer';
 import {
+    describeWriteReadiness,
+    type WriteReadinessReport,
+} from './identity-write-readiness';
+import {
     WRITABLE_IDENTITY_PROVIDERS,
     isWritableIdentityProvider,
 } from './identity-writable-providers';
@@ -130,8 +134,19 @@ export type WriterRefusal =
  * holds an LDAP socket, and a leaked bind outlives the process that made it.
  */
 export type WriterResolution =
-    | { kind: 'snapshot'; writer: DirectoryWriter; close: () => Promise<void> }
-    | { kind: 'live'; writer: DirectoryWriter; close: () => Promise<void> }
+    | {
+          kind: 'snapshot';
+          writer: DirectoryWriter;
+          close: () => Promise<void>;
+          /** Whether this connection could write if asked. See #2604. */
+          readiness: WriteReadinessReport;
+      }
+    | {
+          kind: 'live';
+          writer: DirectoryWriter;
+          close: () => Promise<void>;
+          readiness: WriteReadinessReport;
+      }
     | { kind: 'none'; refusal: WriterRefusal; detail: string };
 
 const NOOP_CLOSE = async (): Promise<void> => {};
@@ -273,6 +288,27 @@ function mergeConnection(conn: {
  * path still refuses SECRETS_UNREADABLE by name — that judgement is unchanged
  * and is made below, where a real write is at stake.
  */
+/**
+ * Merge, and say whether it worked.
+ *
+ * `selfAccountIdsFromConnection` degrades silently by design — a dry run that
+ * protects one bind beats one that protects neither. But write READINESS has to
+ * distinguish "no write bind configured" from "could not tell", so it needs the
+ * failure itself, not the degraded result. Same merge, one caller keeps the
+ * outcome.
+ */
+function mergedOrNull(conn: {
+    configJson: unknown;
+    secretEncrypted: string | null;
+}): { merged: Record<string, unknown> | null; config: Record<string, unknown> } {
+    const config = (conn.configJson ?? {}) as Record<string, unknown>;
+    try {
+        return { merged: mergeConnection(conn), config };
+    } catch {
+        return { merged: null, config };
+    }
+}
+
 function selfAccountIdsFromConnection(conn: {
     configJson: unknown;
     secretEncrypted: string | null;
@@ -396,10 +432,16 @@ export async function resolveDirectoryWriter(
     // that actually opens the connection.
     if (mode !== 'AUTOMATIC') {
         const selfIds = selfAccountIdsFromConnection(conns[0]);
+        // THE DRY RUN IS WHERE THIS BELONGS. The rung deliberately opens no
+        // socket, so it cannot verify the bind works — but it can report
+        // whether one is configured at all, which is the difference between
+        // "your next live pass will disable people" and "your next live pass
+        // will be refused 50 for every one of them".
         return {
             kind: 'snapshot',
             writer: createSnapshotWriter(ctx, provider, conns[0].id, selfIds),
             close: NOOP_CLOSE,
+            readiness: describeWriteReadiness(mergedOrNull(conns[0])),
         };
     }
 
@@ -417,7 +459,12 @@ export async function resolveDirectoryWriter(
     try {
         if (provider === 'entra-id') {
             const writer = createEntraIdWriter(connection);
-            return { kind: 'live', writer, close: NOOP_CLOSE };
+            return {
+                kind: 'live',
+                writer,
+                close: NOOP_CLOSE,
+                readiness: describeWriteReadiness({ merged: connection, config: connection }),
+            };
         }
         const writer = createActiveDirectoryWriter({ connection });
         return {
@@ -427,6 +474,10 @@ export async function resolveDirectoryWriter(
             // to throw, and the caller's finally is unconditional, so a leaked
             // bind needs both of those to fail at once.
             close: () => writer.close(),
+            // Past the SECRETS_UNREADABLE guard, so `connection` is the merged
+            // bag — no second decrypt, and UNKNOWN is unreachable here by
+            // construction rather than by assumption.
+            readiness: describeWriteReadiness({ merged: connection, config: connection }),
         };
     } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);

@@ -360,7 +360,15 @@ describe('EntraIdProvider — directory enumeration', () => {
     it('tolerates a page with no value array', async () => {
         const fetchImpl = graphFetch({ users: [{}] });
         const res = await provider(withToken({ fetchImpl })).listAccounts(CONFIG);
-        expect(res).toEqual({ accounts: [], complete: true, resumeToken: null });
+        // `adminComplete` is asserted explicitly rather than by loosening the
+        // matcher: an exact shape is what caught this field being added, and
+        // that is the property worth keeping.
+        expect(res).toEqual({
+            accounts: [],
+            complete: true,
+            resumeToken: null,
+            adminComplete: true,
+        });
     });
 });
 

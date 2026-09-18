@@ -62,6 +62,12 @@ import { resilientFetch, IntegrationTerminalError } from '../../http-resilience'
 
 /** Max users pulled per sync — bounds a runaway directory. */
 const MAX_USERS = 5000;
+/**
+ * Page cap for one role's membership. A bound is needed so a pathological
+ * directory cannot spin, but unlike the old `$expand` slice, hitting it is
+ * REPORTED rather than silently treated as the whole membership.
+ */
+export const MAX_ADMIN_PAGES = 50;
 /** Graph caps `$top` at 999 for the users collection. */
 const PAGE_SIZE = 999;
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
@@ -331,13 +337,30 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
         //    signal at null → NOT_APPLICABLE, never fails the whole sync). ──
         const byId = new Map(out.map((a) => [a.externalUserId, a]));
 
-        // Admin membership — authoritative for the whole population when it
-        // succeeds (every account is set true/false), so the admin checks run.
+        // Admin membership. NOT authoritative unless the read was complete —
+        // see the call site below. A failed read leaves every isAdmin null and
+        // the admin checks report NOT_APPLICABLE; a TRUNCATED read leaves the
+        // unseen ones null AND marks the scope incomplete, so a control cannot
+        // report PASSED over membership it never finished reading.
+        let adminComplete = true;
         try {
-            const adminIds = await fetchAdminUserIds(token, doFetch);
-            for (const a of out) a.isAdmin = adminIds.has(a.externalUserId);
+            const admin = await fetchAdminUserIds(token, doFetch);
+            for (const a of out) {
+                // `true` is sound on a partial read — seeing an id in a role
+                // proves that account IS an admin. `false` is NOT: it would
+                // claim the account holds no role, which a truncated read
+                // cannot establish. So on an incomplete read, non-members stay
+                // null (= unknown) rather than becoming an authoritative
+                // non-admin, and the scope carries the truncation to the verdict.
+                const seen = admin.ids.has(a.externalUserId);
+                a.isAdmin = seen ? true : admin.complete ? false : null;
+            }
+            adminComplete = admin.complete;
         } catch {
             // Leave isAdmin null — admin checks report NOT_APPLICABLE.
+            // A hard failure is already visible as "unknown"; it does not need
+            // the truncation signal, which exists for a read that SUCCEEDED
+            // while being partial.
         }
 
         if (truthy(config.enrichMfa, true)) {
@@ -371,7 +394,12 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
         // A still-present nextLink means we stopped at MAX_USERS mid-directory:
         // the enumeration is KNOWN-PARTIAL and must not drive deprovisioning.
         // H3-2 — carry it out so the next run continues from here.
-        return { accounts: out, complete: url === null, resumeToken: url };
+        return {
+            accounts: out,
+            complete: url === null && adminComplete,
+            resumeToken: url,
+            adminComplete,
+        };
     }
 
     async runCheck(input: CheckInput): Promise<CheckResult> {
@@ -383,10 +411,13 @@ export class EntraIdProvider implements ScheduledCheckProvider, IdentitySyncProv
             // never read. `runIdentityCheck` turns a truncated PASS into an
             // ERROR and leaves a truncated FAIL standing, because a violation
             // found in a subset is still a violation.
-            const { accounts, complete } = await this.listAccounts(input.connectionConfig);
+            const { accounts, complete, adminComplete } = await this.listAccounts(
+                input.connectionConfig,
+            );
             const result = runIdentityCheck(input.parsed.checkType, accounts, input.connectionConfig, new Date(), {
                 complete,
                 accountsRead: accounts.length,
+                adminComplete,
             });
             return { ...result, durationMs: Date.now() - start };
         } catch (err) {
@@ -479,23 +510,63 @@ interface GraphDirectoryRole { members?: GraphDirectoryObject[] }
  * members is one that is actually in use. Members can be users, groups, or
  * service principals — only `#microsoft.graph.user` members are admins here.
  */
-async function fetchAdminUserIds(token: string, doFetch: typeof fetch): Promise<Set<string>> {
+async function fetchAdminUserIds(
+    token: string,
+    doFetch: typeof fetch,
+): Promise<{ ids: Set<string>; complete: boolean }> {
     const authHeaders = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
     const ids = new Set<string>();
-    let url: string | null = `${GRAPH_BASE}/directoryRoles?$expand=members`;
+    let complete = true;
+
+    // Roles first. `$select=id` only — the members come from a per-role read
+    // below, because `$expand=members` returns a CAPPED slice and Graph sends
+    // no nested continuation for it. Measured against a live tenant: no
+    // `members@odata.nextLink` is present, so there is no cursor to follow and
+    // the expansion cannot be made complete by asking again.
+    const roleIds: string[] = [];
+    let url: string | null = `${GRAPH_BASE}/directoryRoles?$select=id`;
     while (url) {
         const res: Response = await doFetch(url, { headers: authHeaders });
         if (!res.ok) throw new Error(`Entra directoryRoles fetch failed (HTTP ${res.status})`);
-        const body = (await res.json()) as { value?: GraphDirectoryRole[]; '@odata.nextLink'?: string };
-        for (const role of body.value ?? []) {
-            for (const m of role.members ?? []) {
-                if (m.id && m['@odata.type'] === '#microsoft.graph.user') ids.add(m.id);
-            }
-        }
+        const body = (await res.json()) as {
+            value?: { id?: string }[];
+            '@odata.nextLink'?: string;
+        };
+        for (const role of body.value ?? []) if (role.id) roleIds.push(role.id);
         url = body['@odata.nextLink'] ?? null;
     }
-    return ids;
+
+    // Then each role's membership, PAGED. `/directoryRoles/{id}/members` does
+    // carry `@odata.nextLink` — verified against a live tenant.
+    for (const roleId of roleIds) {
+        let mUrl: string | null = `${GRAPH_BASE}/directoryRoles/${roleId}/members?$select=id`;
+        let pages = 0;
+        while (mUrl) {
+            if (pages >= MAX_ADMIN_PAGES) {
+                // Stop, and SAY SO. Silence here is what made an unread admin
+                // indistinguishable from a confirmed non-admin.
+                complete = false;
+                break;
+            }
+            const res: Response = await doFetch(mUrl, { headers: authHeaders });
+            if (!res.ok) {
+                throw new Error(`Entra role members fetch failed (HTTP ${res.status})`);
+            }
+            const body = (await res.json()) as {
+                value?: GraphDirectoryObject[];
+                '@odata.nextLink'?: string;
+            };
+            for (const m of body.value ?? []) {
+                if (m.id && m['@odata.type'] === '#microsoft.graph.user') ids.add(m.id);
+            }
+            mUrl = body['@odata.nextLink'] ?? null;
+            pages += 1;
+        }
+    }
+
+    return { ids, complete };
 }
+
 
 interface RegistrationDetail { id?: string; isMfaRegistered?: boolean }
 

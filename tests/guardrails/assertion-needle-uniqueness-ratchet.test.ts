@@ -190,7 +190,7 @@ const HIGH_MULTIPLICITY = 5;
 //   needles described in the HIGHLY_AMBIGUOUS history above, bound to their
 //   import line. All three were already ambiguous here before that diff, so
 //   this end moves by the full three rather than by the net one.
-const AMBIGUOUS_NEEDLE_BASELINE = 1428;
+const AMBIGUOUS_NEEDLE_BASELINE = 1427;
 const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 239;
 
 /**
