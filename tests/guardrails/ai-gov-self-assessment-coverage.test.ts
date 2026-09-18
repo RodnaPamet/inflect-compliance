@@ -115,16 +115,31 @@ describe('AI-governance self-assessment fixture', () => {
             'Annex.III': 'The high-risk USE-CASE list. The library models the high-risk TIER and the obligations under it, not the Annex that decides membership of it — the same reason Art.6 is absent.',
         };
 
-        const unexplained: string[] = [];
-        for (const q of fixture.questions) {
-            for (const art of q.mappings.euAiAct) {
-                // `Annex.III` is a legitimate shape beside `Art.N` — the Act's
-                // high-risk list is an Annex, not an Article. Discovered by this
-                // guard on its first run, which is the guard earning itself.
-                expect(art).toMatch(/^(Art\.\d+|Annex\.[IVX]+)$/);
-                if (!modelled.has(art) && !(art in NOT_MODELLED)) unexplained.push(`${q.id} -> ${art}`);
-            }
-        }
+        const refs = fixture.questions.flatMap((q) =>
+            q.mappings.euAiAct.map((art) => ({ id: q.id, art })),
+        );
+
+        /**
+         * Asserted over a FILTERED COLLECTION rather than inside the loop, and
+         * that is not a style preference.
+         *
+         * `expect(loopVariable).toMatch(...)` is `binding-not-resolvable` to
+         * `tests/helpers/assertion-reach.ts`, so every such assertion lands in
+         * the Class D un-analysable bucket and pushes
+         * `UNANALYSABLE_READ_BASELINE` up by one — a zero-headroom ratchet, so
+         * that is a red build. Naming the subject as a call expression keeps the
+         * assertion inside what the analyser can read.
+         *
+         * `Annex.III` is a legitimate shape beside `Art.N`: the Act's high-risk
+         * list is an Annex, not an Article. This guard found that on its first
+         * run, before it was committed.
+         */
+        const badShape = refs.filter(({ art }) => !/^(Art\.\d+|Annex\.[IVX]+)$/.test(art));
+        expect(badShape).toEqual([]);
+
+        const unexplained = refs
+            .filter(({ art }) => !modelled.has(art) && !(art in NOT_MODELLED))
+            .map(({ id, art }) => `${id} -> ${art}`);
         expect(unexplained).toEqual([]);
     });
 
