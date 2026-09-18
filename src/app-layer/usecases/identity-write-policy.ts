@@ -142,18 +142,24 @@ export function describeRefusal(
     // and nothing on the write path consulted it, so the ladder happily climbed
     // a direction the warning underneath it called nonexistent.
     //
-    // The harm is state accumulation, not a live write: nothing acts on
-    // `identityJoinerMode` today, so a tenant that reached AUTOMATIC would simply
-    // BE at AUTOMATIC on the day a joiner runtime, or a future JOINER_MAX_MODE
-    // clamp, first looked — with the ladder's whole point already spent. The
-    // seven days bought nothing, because the dwell below fires only when LEAVING
-    // DRY_RUN, so once past that rung there is no further delay at all.
+    // The harm is state accumulation, not a live write: nothing DISPATCHES a
+    // joiner pass today, so a tenant that reached AUTOMATIC would simply BE at
+    // AUTOMATIC on the day a joiner trigger first looked — with the ladder's
+    // whole point already spent. The seven days bought nothing, because the dwell
+    // below fires only when LEAVING DRY_RUN, so once past that rung there is no
+    // further delay at all.
+    //
+    // The clamp that rung would meet now EXISTS — `JOINER_MAX_MODE` (DRY_RUN) in
+    // `identity-joiner-pass`, which the admin route reports verbatim (#2638). So
+    // the ceiling half of the old trap is closed and only the runtime half is
+    // open, which is precisely what `DIRECTION_IMPLEMENTED.joiner` still being
+    // false says.
     //
     // Placed BELOW the narrowing check on purpose. A tenant already sitting above
     // DISABLED — set before this gate existed, or after the joiner ships and is
     // later withdrawn — must still be able to come back down.
     if (!DIRECTION_IMPLEMENTED[direction]) {
-        return `The ${direction} direction has no implementation behind it — no job or directory writer reads this setting — so a rung above DISABLED would be recorded and would do nothing. It cannot be widened until the ${direction} runtime ships.`;
+        return `The ${direction} direction has no implementation behind it — nothing schedules or triggers a ${direction} pass, so a rung above DISABLED would be recorded and would do nothing. It cannot be widened until the ${direction} runtime ships.`;
     }
 
     // Widening by more than one rung skips the step whose entire purpose is to

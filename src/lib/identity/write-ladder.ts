@@ -157,20 +157,40 @@ export type IdentityDirection = 'leaver' | 'joiner';
  * accepted a joiner climb all the way to AUTOMATIC — a PUT per rung, and seven
  * days — while the warning underneath it said the subsystem does not exist.
  *
- * `joiner` is false because nothing reads `identityJoinerMode`: there is no
- * joiner job, no directory writer with a create verb, and no consumer of the
- * value other than the policy usecase that stores and reports it.
+ * ═══ THE MAXMODE HALF OF THE TRAP IS CLOSED (#2638). THE FLAG IS NOT. ═══
  *
- * When the joiner ships, flipping this to `true` moves the refusal in
- * `describeRefusal` and the `honoured.<dir>.implemented` flag together — but
- * NOT `honoured.joiner.maxMode`, which is a hardcoded `'DISABLED' as const` in
- * `identity-write-policy/route.ts`. Flip the flag alone and the gate stops
- * refusing while the route still reports a DISABLED ceiling, so `isAboveClamp`
- * is true for every rung above off and the client shows the aboveClamp banner
- * while nothing clamps anything — back to settable-and-inert with a differently
- * worded notice. Give the joiner a real `JOINER_MAX_MODE` beside
- * `LEAVER_MAX_MODE` at that point; it is deliberately not created now, because
- * a clamp constant with no pass reading it is a fourth thing to keep in sync.
+ * This docblock used to end by saying `honoured.joiner.maxMode` was a hardcoded
+ * `'DISABLED' as const` in `identity-write-policy/route.ts`, so flipping the flag
+ * alone would leave the gate refusing nothing while the route still reported a
+ * DISABLED ceiling — `isAboveClamp` true for every rung above off, the client
+ * rendering the aboveClamp banner, and nothing clamping anything. That literal is
+ * GONE: the route imports `JOINER_MAX_MODE` from `usecases/identity-joiner-pass`,
+ * exactly as it imports `LEAVER_MAX_MODE`, so the reported ceiling and the
+ * enforced ceiling are one value and cannot drift. Whoever flips the flag no
+ * longer has to remember a second edit.
+ *
+ * `joiner` is nevertheless still FALSE, and the reason changed with it. It is no
+ * longer "nothing reads `identityJoinerMode`" — `planJoinerPass` reads it at its
+ * own gate 1. It is that nothing DISPATCHES that planner, and that a plan it
+ * produced could not be acted on yet:
+ *
+ *   • NO TRIGGER. There is no joiner job, no schedule and no run route, so a
+ *     tenant moved to DRY_RUN would get no artefact and no report. Owner
+ *     decision 9 of 2026-09-19 says dispatch fires on the tenant's own timezone,
+ *     and nothing stores one — `dispatchJobId` floors on UTC buckets and
+ *     `schedules.ts` records why a zoned cron breaks that. So the trigger is a
+ *     capability gap, not an oversight to paper over with a UTC fan-out.
+ *   • NO ENTITLEMENT MAP. Owner decision 10 puts the department→security-group
+ *     map on `TenantSecuritySettings`, so it inherits the OWNER gate. That column
+ *     does not exist, so every plan refuses `NO_DEPARTMENT_MAP` — a refusal an
+ *     operator cannot clear, because there is nowhere to put the map.
+ *
+ * Flipping `joiner` to `true` before those exist would reproduce the very thing
+ * this comment was written about, one layer along: the widen control would
+ * enable, the ladder would accept the climb, and the tenant would sit at DRY_RUN
+ * watching nothing happen. `implemented` means a RUNTIME reads this setting AND
+ * an operator can see what it did. When the trigger lands, this flips in the same
+ * diff and nothing else has to move.
  */
 export const DIRECTION_IMPLEMENTED: Readonly<Record<IdentityDirection, boolean>> = {
     leaver: true,
