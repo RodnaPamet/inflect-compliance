@@ -15,6 +15,7 @@
 import { Prisma, type CompliancePostureSummary } from '@prisma/client';
 import { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
+import { rollUpRequirementVerdict, type RollupControl } from '@/lib/compliance/requirement-status-rollup';
 import { assertCanRead } from '../policies/common';
 import { getExecutiveDashboard } from './dashboard';
 import { listFrameworks } from './framework';
@@ -102,16 +103,56 @@ export async function gatherPostureSignals(ctx: RequestContext): Promise<Posture
         frameworks.map((f) => [f.id, { key: f.key, name: f.name, total: f._count.requirements }]),
     );
 
+    const now = new Date();
     const links = await runInTenantContext(ctx, (tdb) =>
         tdb.controlRequirementLink.findMany({
-            where: { tenantId: ctx.tenantId },
-            select: { requirementId: true, requirement: { select: { frameworkId: true } } },
+            // `deprecatedAt: null` — and this is the THIRD time this exact
+            // divergence has been fixed in this codebase. `framework/coverage.ts`
+            // records the other two in its own comments: the same field name, the
+            // same formula, computed over a LARGER denominator than the reports
+            // beside it, because a requirement dropped from a re-imported library
+            // stays in the count forever and can never be mapped.
+            // `generateReadinessReport` and `getSoA` both exclude it; this did not.
+            where: { tenantId: ctx.tenantId, requirement: { deprecatedAt: null } },
+            select: {
+                requirementId: true,
+                // EFFECTIVE applicability is the link override ?? the control's own.
+                applicability: true,
+                requirement: { select: { frameworkId: true } },
+                control: {
+                    select: {
+                        status: true,
+                        applicability: true,
+                        // In-force exceptions: APPROVED and not yet expired. Only
+                        // `.length > 0` is read, so one row settles it.
+                        exceptions: {
+                            where: { status: 'APPROVED', expiresAt: { gt: now } },
+                            select: { id: true },
+                            take: 1,
+                        },
+                    },
+                },
+            },
             take: 50000,
         }),
     );
 
-    // Distinct mapped requirements per framework.
+    /**
+     * Per framework: which requirements are MAPPED, and which are IMPLEMENTED.
+     *
+     * These are different questions and the summary used to answer only the
+     * first while calling it coverage. Installing a framework pack creates every
+     * link at once (`usecases/framework/install.ts`), so mapping reaches 100%
+     * before any work is done — which is exactly when an operator most needs to
+     * be told the difference.
+     *
+     * The implemented verdict comes from `rollUpRequirementVerdict`, the ONE
+     * canonical rollup, rather than being re-derived here. That is the whole
+     * point of that module: the SoA and the readiness report already disagreed
+     * once by each having their own.
+     */
     const mappedByFramework = new Map<string, Set<string>>();
+    const rollupByRequirement = new Map<string, RollupControl[]>();
     for (const link of links) {
         const fwId = link.requirement?.frameworkId;
         if (!fwId) continue;
@@ -121,6 +162,14 @@ export async function gatherPostureSignals(ctx: RequestContext): Promise<Posture
             mappedByFramework.set(fwId, set);
         }
         set.add(link.requirementId);
+
+        const arr = rollupByRequirement.get(link.requirementId) ?? [];
+        arr.push({
+            status: link.control.status,
+            applicability: link.applicability ?? link.control.applicability,
+            hasInForceException: (link.control.exceptions ?? []).length > 0,
+        });
+        rollupByRequirement.set(link.requirementId, arr);
     }
 
     const frameworkSignals: FrameworkCoverageSignal[] = [];
@@ -128,16 +177,26 @@ export async function gatherPostureSignals(ctx: RequestContext): Promise<Posture
         const meta = frameworkById.get(fwId);
         if (!meta || meta.total === 0) continue;
         const mapped = mappedSet.size;
+        let implemented = 0;
+        for (const reqId of mappedSet) {
+            const { verdict } = rollUpRequirementVerdict(rollupByRequirement.get(reqId) ?? []);
+            // 'excepted' is a risk-accepted gap and 'not-applicable' is neither a
+            // gap nor an achievement — only 'implemented' counts as done.
+            if (verdict === 'implemented') implemented += 1;
+        }
         frameworkSignals.push({
             key: meta.key,
             name: meta.name,
             mapped,
             total: meta.total,
-            coveragePercent: Math.round((mapped / meta.total) * 100),
+            requirementsMappedPercent: Math.round((mapped / meta.total) * 100),
+            implemented,
+            requirementsImplementedPercent: Math.round((implemented / meta.total) * 100),
         });
     }
-    // Weakest coverage first — the narrative + advice lead with the gaps.
-    frameworkSignals.sort((a, b) => a.coveragePercent - b.coveragePercent);
+    // Least-mapped first — the narrative + advice lead with the gaps. This
+    // orders by MAPPING, not by implementation; see FrameworkCoverageSignal.
+    frameworkSignals.sort((a, b) => a.requirementsMappedPercent - b.requirementsMappedPercent);
 
     const sev = exec.riskBySeverity;
     return {

@@ -45,7 +45,7 @@ function makeInput(over: Partial<PostureSummaryInput> = {}): PostureSummaryInput
             coveragePercent: 70,
         },
         frameworks: [
-            { key: 'ISO27001', name: 'ISO/IEC 27001', mapped: 80, total: 100, coveragePercent: 80 },
+            { key: 'ISO27001', name: 'ISO/IEC 27001', mapped: 80, total: 100, requirementsMappedPercent: 80, implemented: 30, requirementsImplementedPercent: 30 },
         ],
         risks: { total: 4, critical: 1, high: 1, medium: 1, low: 1 },
         evidence: { overdue: 2, dueSoon: 1, current: 9 },

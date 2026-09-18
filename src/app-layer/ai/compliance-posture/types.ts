@@ -27,7 +27,27 @@ export type AdvicePriority = 'high' | 'medium' | 'low';
 
 // ─── Provider Input (sanitized aggregate signals) ───
 
-/** Per-framework coverage snapshot — aggregate counts only. */
+/**
+ * Per-framework MAPPING snapshot — aggregate counts only.
+ *
+ * ═══ THIS IS NOT IMPLEMENTATION COVERAGE, AND THE NAME USED TO SAY IT WAS ═══
+ *
+ * The field below was called `coveragePercent`, and it travelled to the summary
+ * generator beside `controlCoveragePercent` — which IS implementation, derived
+ * from control status. Two numbers, near-identical names, opposite meanings,
+ * and nothing telling the model which was which.
+ *
+ * This one counts requirements that have a `ControlRequirementLink` and nothing
+ * else: not the control's status, not whether any evidence exists. Installing a
+ * framework pack creates every link at once (`usecases/framework/install.ts`),
+ * so a tenant who installs a pack and does no work at all scores 100 here. A
+ * narrative generator handed "OWASP AISVS: 100" will report full coverage of a
+ * framework nobody has started.
+ *
+ * `soa.ts` computes the honest version — it rolls up per-requirement verdicts
+ * through `isImplemented(control.status)`. When implementation coverage is
+ * wanted here, take it from there rather than re-deriving it from links.
+ */
 export interface FrameworkCoverageSignal {
     /** Framework key (e.g. "ISO27001"). Catalog-derived, not tenant free text. */
     key: string;
@@ -37,8 +57,21 @@ export interface FrameworkCoverageSignal {
     mapped: number;
     /** Total requirements in the framework. */
     total: number;
-    /** mapped / total × 100, rounded. */
-    coveragePercent: number;
+    /**
+     * mapped / total × 100, rounded. A MAPPING ratio — see the interface note.
+     * Deliberately not called `coveragePercent`: that name is what let a
+     * link count be read as an implementation claim.
+     */
+    requirementsMappedPercent: number;
+    /**
+     * Requirements whose mapped controls roll up to `implemented`, via the one
+     * canonical `rollUpRequirementVerdict`. This is the honest compliance
+     * number — 'excepted' is a risk-accepted gap and 'not-applicable' is
+     * neither a gap nor an achievement, so neither counts here.
+     */
+    implemented: number;
+    /** implemented / total × 100, rounded. The number "coverage" should have meant. */
+    requirementsImplementedPercent: number;
 }
 
 /**

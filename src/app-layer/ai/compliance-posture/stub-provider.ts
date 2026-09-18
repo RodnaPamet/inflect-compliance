@@ -136,15 +136,30 @@ export function buildAdvice(input: PostureSummaryInput): PostureAdviceItem[] {
         });
     }
 
-    // 3. Lowest-coverage mapped framework.
-    const weakest = frameworks
+    // 3. Least-MAPPED framework — and, when everything is mapped, the fact that
+    //    mapping is not implementation.
+    //
+    //    The second arm is the one that was missing. The condition here used to
+    //    be `coveragePercent < 100` with no counterpart, so a framework whose
+    //    requirements were all linked produced NO advice at all — and every
+    //    framework reaches 100 the moment its pack is installed, because
+    //    `framework/install.ts` creates every link up front. The tenant with the
+    //    most work ahead of them was the one the advice list fell silent about.
+    const leastMapped = frameworks
         .filter((f) => f.total > 0)
-        .sort((a, b) => a.coveragePercent - b.coveragePercent)[0];
-    if (weakest && weakest.coveragePercent < 100) {
+        .sort((a, b) => a.requirementsMappedPercent - b.requirementsMappedPercent)[0];
+    const notImplemented = controls.applicable - controls.implemented;
+    if (leastMapped && leastMapped.requirementsMappedPercent < 100) {
         advice.push({
-            title: `Raise ${weakest.name} coverage (${pct(weakest.coveragePercent)})`,
-            detail: `${weakest.total - weakest.mapped} of ${weakest.total} ${weakest.name} requirements are unmapped. Map controls to close the gap.`,
-            priority: weakest.coveragePercent < 50 ? 'high' : 'medium',
+            title: `Map ${leastMapped.name} requirements to controls (${pct(leastMapped.requirementsMappedPercent)} mapped)`,
+            detail: `${leastMapped.total - leastMapped.mapped} of ${leastMapped.total} ${leastMapped.name} requirements have no control mapped to them. Mapping is the first step; it does not by itself mean the requirement is met.`,
+            priority: leastMapped.requirementsMappedPercent < 50 ? 'high' : 'medium',
+        });
+    } else if (leastMapped && notImplemented > 0) {
+        advice.push({
+            title: `Implement the controls behind ${leastMapped.name}`,
+            detail: `Every ${leastMapped.name} requirement has a control mapped to it, which is a mapping result rather than an implementation one. ${notImplemented} applicable control${notImplemented === 1 ? ' is' : 's are'} still not implemented, so requirements can read as covered while the work behind them is outstanding.`,
+            priority: 'medium',
         });
     } else if (frameworks.length === 0 && controls.applicable === 0) {
         advice.push({
