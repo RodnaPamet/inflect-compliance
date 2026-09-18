@@ -261,8 +261,15 @@ describe('EntraIdProvider', () => {
                     ],
                 });
             }
+            // Two reads now, and they must be routed separately: the role LIST,
+            // then each role's MEMBERSHIP. `$expand=members` returned a capped
+            // slice with no continuation, so an unread admin was recorded as a
+            // non-admin — hence the per-role paged read this fake now serves.
+            if (u.includes('/members')) {
+                return json({ value: [{ id: 'u1', '@odata.type': '#microsoft.graph.user' }] });
+            }
             if (u.includes('/directoryRoles')) {
-                return json({ value: [{ members: [{ id: 'u1', '@odata.type': '#microsoft.graph.user' }] }] });
+                return json({ value: [{ id: 'role-1' }] });
             }
             if (u.includes('userRegistrationDetails')) {
                 return json({ value: [{ id: 'u1', isMfaRegistered: true }, { id: 'u2', isMfaRegistered: false }] });
@@ -281,7 +288,7 @@ describe('EntraIdProvider', () => {
         expect(u1.status).toBe('ACTIVE');
         expect(u2.status).toBe('SUSPENDED'); // accountEnabled: false
         expect(u1.isAdmin).toBe(true);
-        expect(u2.isAdmin).toBe(false); // authoritative role membership → not null
+        expect(u2.isAdmin).toBe(false); // sound only because the membership read FINISHED
         expect(u1.mfaEnrolled).toBe(true);
         expect(u2.mfaEnrolled).toBe(false);
         expect(u1.ssoEnrolled).toBe(true); // acme.com is Federated
