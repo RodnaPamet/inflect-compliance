@@ -70,18 +70,48 @@ describe('catalog-check compares the repo against a real database', () => {
         expect(out).toMatch(/Database has \d+ templates/);
     }, 180_000);
 
+    /** The template-shortfall figure the script prints, or 0 when it prints none. */
+    function missingTemplateCount(out: string): number {
+        // The TEMPLATE line specifically. `frameworks declared but absent` and
+        // `packs declared but absent` are different lines with their own
+        // counts, and conflating them is what made the first version of this
+        // test unable to fail.
+        const m = out.match(/(\d+) template\(s\) declared but ABSENT/);
+        return m ? Number(m[1]) : 0;
+    }
+
     it('REPORTS A SHORTFALL when the database is missing declared templates', async () => {
-        // The direction that proves the comparison has teeth. Every SOC 2
-        // template is declared by the fixture; deleting some must be noticed.
+        // The direction that proves the comparison has teeth — asserted as a
+        // DELTA, not as a state.
+        //
+        // THE FIRST VERSION OF THIS TEST COULD NOT FAIL. It asserted only
+        // `code === 1` and `/declared but absent|missing/i`, and this database
+        // holds ONE framework (the SOC 2 fixture the beforeAll applies) while
+        // the repo declares 18 — so 17 frameworks and 17 packs are already
+        // absent before the deletion, and both assertions were satisfied
+        // before the test did anything. Neutering the template comparison in
+        // `scripts/catalog-check.ts` to `const missing: string[] = []` left it
+        // green. Found in pre-merge review.
+        //
+        // Measuring the template count before and against after removes the
+        // dependency on the rest of the catalogue entirely: whatever else is
+        // absent is absent in both readings and cancels.
+        const baseline = missingTemplateCount(runCatalogCheck().out);
+
         const before = await prisma.controlTemplate.count();
         expect(before).toBeGreaterThan(0);
 
         const doomed = await prisma.controlTemplate.findMany({ take: 3, select: { id: true } });
+        expect(doomed).toHaveLength(3);
         await prisma.controlTemplate.deleteMany({ where: { id: { in: doomed.map((d) => d.id) } } });
 
         const { code, out } = runCatalogCheck();
         expect(code).toBe(1);
-        expect(out).toMatch(/declared but absent|missing/i);
+        // THE ASSERTION. Exactly three more templates are reported missing
+        // than before — so the script noticed these three, not the 17 absent
+        // frameworks it was already complaining about.
+        expect(missingTemplateCount(out)).toBe(baseline + 3);
+        expect(out).toMatch(/template\(s\) declared but ABSENT/);
 
         // Re-apply so a later test in this file sees a declared catalogue.
         //
