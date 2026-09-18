@@ -21,11 +21,13 @@
  *
  * ## Nothing here writes a description anywhere
  *
- * Not to the audit row, not to a log line, not to the response beyond what the
- * caller already sent. The row carries hashes, the tool name, the revision and
- * the approver. An audit trail that quoted the text would make the ledger — and
- * the SIEM it streams to — another place the injected instructions are
- * delivered, and every one of those readers is a model or a person.
+ * Not to the audit row, not to a log line, not to the in-app notification, not
+ * to the response beyond what the caller already sent. The row carries hashes,
+ * the tool name, the revision and the approver. An audit trail that quoted the
+ * text would make the ledger — and the SIEM it streams to — another place the
+ * injected instructions are delivered, and every one of those readers is a
+ * model or a person. The bell added by #2561 is one more such reader and obeys
+ * the same rule: it names the tool and never the definition.
  */
 import { z } from 'zod';
 
@@ -33,9 +35,14 @@ import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { allToolDefinitions, toolDefinitionByName } from '@/lib/mcp/tool-definitions';
 import { hashToolManifest, verifyToolManifest, type ToolManifestStatus } from '@/lib/mcp/tool-manifest';
+import { logger } from '@/lib/observability/logger';
 
 import { assertCanAdmin, assertCanRead } from '../policies/common';
 import { logEvent } from '../events/audit';
+import {
+    createAgenticNotification,
+    resolveAgenticRecipients,
+} from '../notifications/agentic';
 import type { RequestContext } from '../types';
 
 // ── Read ────────────────────────────────────────────────────────────────────
@@ -265,6 +272,62 @@ export async function approveToolManifest(
                 approvedByUserId,
             },
         });
+
+        // ─── The bell (#2561) ───────────────────────────────────────────
+        //
+        // ONLY ON THIS PATH, which is the guard. The `changed: false` return
+        // above leaves before any of this, so a re-approval that matches the
+        // hash already on file writes no pin, no audit row and no bell. A
+        // notification for a call that changed nothing is the fastest way to
+        // teach somebody to ignore this particular bell, and this is the one
+        // bell in the agentic set that announces a supply-chain accept.
+        //
+        // AFTER the audit row, and best-effort — the same shape and the same
+        // reasoning as the kill switch (`agent-kill-switch.ts`). The audit
+        // entry is the durable record; an approval that failed because the
+        // bell was down would leave the boundary refusing a tool a human has
+        // accepted, which is the wrong failure mode for a clearing action.
+        //
+        // INSIDE the tenant transaction: `Notification` is tenant-scoped under
+        // RLS, so the write needs the bound client. `createMany({
+        // skipDuplicates: true })` cannot throw P2002 and poison the
+        // transaction, which is why the emitter uses it.
+        try {
+            // `null` agent — the accept is TENANT-WIDE. There is no single
+            // agent to route to, so this resolves the workspace's ACTIVE
+            // OWNERs, which is exactly the audience for a decision that binds
+            // every agent at once. No new recipient logic.
+            const { recipientUserIds } = await resolveAgenticRecipients(db, ctx.tenantId, null);
+            await createAgenticNotification(db, 'AGENT_TOOL_MANIFEST_PIN_CHANGED', {
+                tenantId: ctx.tenantId,
+                tenantSlug: ctx.tenantSlug ?? null,
+                // The TOOL NAME is the entity: there is no per-pin surface to
+                // link to, and it is the right thing for the day-granular
+                // dedupe key to collapse on.
+                entityId: toolName,
+                // The name, and nothing else from the definition. The header
+                // of this module explains why the description reaches no
+                // audit row, no log line and no response — a bell row is one
+                // more reader, and it is read by people.
+                subject: `The tool "${toolName}"`,
+                detail:
+                    previousManifestHash === null
+                        ? 'first approval for this tool'
+                        : `revision ${revision}, replacing the definition previously on file`,
+                recipientUserIds,
+                actorUserId: approvedByUserId,
+            });
+        } catch (err) {
+            logger.warn('notification: failed to record tool-manifest pin bell', {
+                requestId: ctx.requestId,
+                tenantId: ctx.tenantId,
+                tool: toolName,
+                // Never `String(err)` — a thrown Prisma error can carry the
+                // row it was writing, and this row's `message` names the tool
+                // this workspace just accepted.
+                error: err instanceof Error ? err.message : 'non-Error thrown',
+            });
+        }
 
         return { manifestHash: live.manifestHash, previousManifestHash, revision, changed: true };
     });

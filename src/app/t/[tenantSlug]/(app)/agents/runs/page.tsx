@@ -29,7 +29,7 @@ export default async function AgentRunsPage({
         const t = await getTranslations('agents');
         return (
             <ForbiddenPage
-                title={t('mcpAccessRequired')}
+                title={t('runs.accessTitle')}
                 message={t('runs.accessMessage')}
             />
         );

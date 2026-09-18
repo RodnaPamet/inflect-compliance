@@ -75,7 +75,7 @@ export default async function McpAdminPage({
                 breadcrumbs={[
                     { label: t('crumb.dashboard'), href: tenantHref('/dashboard') },
                     { label: t('crumb.admin'), href: tenantHref('/admin') },
-                    { label: t('crumb.mcp') },
+                    { label: t('crumb.agentCredentials') },
                 ]}
                 title={t('mcp.title')}
                 description={t('mcp.description')}

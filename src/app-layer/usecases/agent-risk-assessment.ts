@@ -68,6 +68,11 @@ import {
     buildAgentAssessmentEvidence,
     unemittedAgentAssessmentEvidence,
 } from '@/lib/agentic/agent-assessment-evidence';
+import {
+    createAgenticNotification,
+    resolveAgenticRecipients,
+} from '../notifications/agentic';
+import { logger } from '@/lib/observability/logger';
 import { SaveAgentAssessmentAnswerSchema } from '../schemas/agent-assessment.schemas';
 import type { RequestContext } from '../types';
 
@@ -687,6 +692,62 @@ export async function reassessAgentAfterChangeInTx(
                 rescoredFrom: rescored?.from ?? null,
             },
         });
+
+        // ─── The bell (#2563) ───────────────────────────────────────────
+        //
+        // INSIDE the transition branch, so it inherits the `!alreadyStale`
+        // discriminator the audit row already uses. `reassessAgentAfterChangeInTx`
+        // runs on EVERY amendment and every tool grant, and a standing staleness
+        // is re-evaluated each time — an emit outside this branch would be a bell
+        // per edit for as long as the assessment stayed stale.
+        //
+        // AFTER the audit row and best-effort, the same shape and the same
+        // reasoning as `agent-kill-switch.ts` and `mcp-tool-manifest.ts`. The
+        // audit entry is the durable record; an amendment that failed because
+        // the bell was down would leave the agent un-widened and the operator
+        // with an error about a notification, which is the wrong failure mode
+        // for a warning.
+        //
+        // INSIDE the tenant transaction: `Notification` is tenant-scoped under
+        // RLS, so the write needs the bound client — and this seam is ALREADY
+        // inside one, which is the reason `…InTx` exists. `createMany({
+        // skipDuplicates: true })` cannot throw P2002 and poison it.
+        try {
+            const { recipientUserIds, agentName } = await resolveAgenticRecipients(
+                db,
+                ctx.tenantId,
+                agentId,
+            );
+            await createAgenticNotification(db, 'AGENT_RISK_ASSESSMENT_STALE', {
+                tenantId: ctx.tenantId,
+                tenantSlug: ctx.tenantSlug ?? null,
+                // The AGENT, not the assessment run: it is what the link
+                // resolves to, and it is the right thing for the day-granular
+                // dedupe key to collapse on. An operator who widens the same
+                // agent three times before lunch — each time re-assessing in
+                // between — is working on it, and is told once.
+                entityId: agentId,
+                subject: agentName ?? `Agent ${agentId}`,
+                // The axes that moved, in the words the audit row and the Risk
+                // tab already use. A bell that said only "out of date" would
+                // send the reader to the page to find out which of six things
+                // changed, which is the trip this exists to save.
+                detail: verdict.detail.join('; '),
+                recipientUserIds,
+                actorUserId: ctx.userId,
+            });
+        } catch (err) {
+            logger.warn('notification: failed to record agent assessment-stale bell', {
+                requestId: ctx.requestId,
+                tenantId: ctx.tenantId,
+                assessmentId: standing.id,
+                // Never `String(err)` — a thrown Prisma error can carry the row
+                // it was writing, and this row's `message` names the agent and
+                // the axes it was widened on. Same reasoning as the other three
+                // agentic bells.
+                error: err instanceof Error ? err.message : 'non-Error thrown',
+            });
+        }
     }
 
     return {

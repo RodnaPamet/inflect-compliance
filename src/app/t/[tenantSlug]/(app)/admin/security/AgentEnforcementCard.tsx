@@ -53,6 +53,39 @@ interface Preflight {
     breaking: BreakingCredential[];
 }
 
+/**
+ * The unbound credentials, NAMED — one row each, name plus key prefix.
+ *
+ * Extracted because both branches of `enforcing` need it and for a while only
+ * one had it (#2565): the ENFORCING branch fell back to a count while
+ * `breaking` — the named array — sat in the same destructuring two lines
+ * above. "3 credentials are being refused" tells an operator that something
+ * stopped and not which integration, so the next move is to open
+ * `/admin/api-keys` and compare rows by hand. One component, two call sites,
+ * so the two cannot drift apart into a list and a number again.
+ *
+ * The prefix is not decoration: two integrations are allowed to share a label,
+ * and the prefix is what the row in `/admin/api-keys` is matched on.
+ */
+function BreakingCredentialList({
+    rows,
+    testId,
+}: {
+    rows: BreakingCredential[];
+    testId: string;
+}) {
+    return (
+        <ul className="list-disc pl-5" data-testid={testId}>
+            {rows.map((c) => (
+                <li key={c.id}>
+                    <span className="font-medium">{c.name}</span>{' '}
+                    <code className="text-content-muted">{c.keyPrefix}…</code>
+                </li>
+            ))}
+        </ul>
+    );
+}
+
 export function AgentEnforcementCard({ tenantSlug }: { tenantSlug: string }) {
     const t = useTranslations('admin');
     // `common` is a SEPARATE namespace, opened explicitly. Calling the cancel
@@ -155,6 +188,23 @@ export function AgentEnforcementCard({ tenantSlug }: { tenantSlug: string }) {
                     : t('security.agentEnforcement.notEnforcing')}
             </p>
 
+            {/* ALREADY ENFORCING, and something is unbound — these are being
+                refused RIGHT NOW, so the list is not a forecast. Same rows, same
+                markup, present tense; `wouldBreak` above is future tense and
+                would be a false sentence here. Without this the card said "3
+                credentials are not bound" while holding their names. */}
+            {enforcing && breaking.length > 0 && (
+                <InlineNotice variant="warning" className="mb-3">
+                    <div className="space-y-1">
+                        <p>{t('security.agentEnforcement.breakingNow', { count: breaking.length })}</p>
+                        <BreakingCredentialList
+                            rows={breaking}
+                            testId="agent-enforcement-refused-now"
+                        />
+                    </div>
+                </InlineNotice>
+            )}
+
             {/* The pre-flight, shown BEFORE anyone asks for it when enforcement
                 is off — the list is the reason the switch is hard, so hiding it
                 behind the button would put the work after the decision. */}
@@ -162,14 +212,10 @@ export function AgentEnforcementCard({ tenantSlug }: { tenantSlug: string }) {
                 <InlineNotice variant="warning" className="mb-3">
                     <div className="space-y-1">
                         <p>{t('security.agentEnforcement.wouldBreak', { count: breaking.length })}</p>
-                        <ul className="list-disc pl-5" data-testid="agent-enforcement-breaking">
-                            {breaking.map((c) => (
-                                <li key={c.id}>
-                                    <span className="font-medium">{c.name}</span>{' '}
-                                    <code className="text-content-muted">{c.keyPrefix}…</code>
-                                </li>
-                            ))}
-                        </ul>
+                        <BreakingCredentialList
+                            rows={breaking}
+                            testId="agent-enforcement-breaking"
+                        />
                     </div>
                 </InlineNotice>
             )}

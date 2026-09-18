@@ -1,0 +1,40 @@
+-- AGENTIC UI 1/4 (#2563) — the agentic notification type for a COMPLETED risk
+-- assessment that the agent has overtaken.
+--
+-- The fifth agentic member, and the last of the five the prompt named. The
+-- transition into staleness already wrote an audit row
+-- (`AGENT_ASSESSMENT_STALE`) and told nobody: the stale notice renders on one
+-- tab of one agent's detail page, and warning rather than blocking only works
+-- if somebody learns there is a questionnaire to re-answer. The reasoning
+-- lives beside the member in prisma/schema/enums.prisma.
+--
+-- ROLLING-DEPLOY SAFETY. `ADD VALUE` only — nothing is renamed and nothing is
+-- dropped, so an old container that has never heard of this value keeps
+-- reading and writing every value it knows. (Postgres cannot drop an enum
+-- value without recreating the type, and an `ALTER TYPE … RENAME` mid-deploy
+-- makes still-running containers fail with SQLSTATE 42704 — the lesson the
+-- `@@map("WorkItem*")` pins record.)
+--
+-- `IF NOT EXISTS` matches every prior NotificationType migration in this
+-- folder, so a re-run is a no-op rather than a failed deploy.
+--
+-- ORDINAL. `BEFORE 'GENERAL'` places this member where prisma/schema/enums.prisma
+-- declares it, so schema order and migration order agree on it and this change
+-- adds NO new divergence. Plain `ADD VALUE` would have appended it LAST while the
+-- schema declares it before `GENERAL`, which is exactly the mismatch
+-- tests/guardrails/enum-member-order-matches-migrations.test.ts catches --
+-- measured: it went red on the appending form, green on this one.
+--
+-- `BEFORE`/`AFTER` keeps the rolling-deploy property plain `ADD VALUE` has --
+-- nothing renamed, nothing dropped, old containers keep reading every value they
+-- know. Five migrations in this folder already use it (20260424203836,
+-- 20260524100000, 20260717140000, 20260917150000, 20260917160000).
+--
+-- The PRE-EXISTING divergence from the two members added in 20260911140000 is
+-- untouched and remains signed off in that guard's SIGNED_OFF registry. Extending
+-- the registry for THIS member would have been the wrong fix -- the guard's own
+-- docblock says so in terms: "Adding your enum to `SIGNED_OFF` is NOT the fix."
+-- What this migration does do is EXTEND the existing NotificationType entry's two
+-- pinned sequences, which are verbatim snapshots: a legitimately placed member has
+-- to appear in both, in the slot this statement gives it.
+ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'AGENT_RISK_ASSESSMENT_STALE' BEFORE 'GENERAL';

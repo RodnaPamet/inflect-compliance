@@ -252,6 +252,22 @@ export async function listAgentKpiCounts(
     );
 }
 
+/** One unbound credential, named — see `getAgentGovernanceStatus` below. */
+export interface UnboundCredentialSample {
+    id: string;
+    name: string;
+    keyPrefix: string;
+}
+
+/**
+ * How many unbound credentials the banner names before it stops naming them.
+ *
+ * Five, because the banner is one sentence plus a list an operator reads in
+ * passing. The REMAINDER is never dropped — it is `unboundCredentials` minus
+ * this list's length, which the surface renders as an overflow line.
+ */
+const UNBOUND_CREDENTIAL_SAMPLE_LIMIT = 5;
+
 /**
  * Is the register load-bearing in this tenant, and if so, is anything about to
  * be refused by it?
@@ -283,14 +299,26 @@ export async function listAgentKpiCounts(
  * tenant: an ordinary integration key that cannot talk to `/api/mcp` at all is
  * not something the agent register is about to refuse, and counting it would
  * put a warning in front of an operator with no action behind it.
+ *
+ * ── WHY THE UNBOUND STATE IS NAMED AND NOT MERELY COUNTED (#2565) ────────────
+ *
+ * "3 live MCP credentials are bound to no agent" tells an operator that
+ * something is being refused and not WHICH integration stopped working, so the
+ * next move is to open `/admin/api-keys` and compare rows by hand. The rows are
+ * already in memory here; reducing them to a `.length` before anything can name
+ * them is what turned an actionable warning into a number. So the read carries
+ * the three identifying columns and the return carries a bounded HEAD of them
+ * — `unboundCredentials` still carries the total, so a tenant with 500 unbound
+ * keys gets a banner it can read rather than a wall.
  */
 export async function getAgentGovernanceStatus(ctx: RequestContext): Promise<{
     enforcing: boolean;
     unboundCredentials: number;
+    unboundCredentialSamples: UnboundCredentialSample[];
 }> {
     assertCanReadAgentRegister(ctx);
     const now = new Date();
-    const [enforcing, unboundCredentials] = await Promise.all([
+    const [enforcing, unbound] = await Promise.all([
         isAgentRegistrationEnforced(ctx.tenantId),
         runInTenantContext(ctx, async (db) => {
             const rows = await db.tenantApiKey.findMany({
@@ -303,14 +331,28 @@ export async function getAgentGovernanceStatus(ctx: RequestContext): Promise<{
                     OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
                 },
                 // The scope test cannot be expressed as a Prisma filter: the
-                // column is a Json array. Bounded read, scopes only.
-                select: { scopes: true },
+                // column is a Json array. Bounded read; the three identifying
+                // columns are here so the banner can NAME what is refused,
+                // and no secret material is among them — `keyHash` stays out.
+                select: { id: true, name: true, keyPrefix: true, scopes: true },
+                // Stable, so the five that get named are the same five on every
+                // reload. An unordered head would make the banner's list churn
+                // under an operator who is working through it.
+                orderBy: [{ name: 'asc' }, { id: 'asc' }],
                 take: 500,
             });
-            return rows.filter((r) => hasMcpCapability(r.scopes)).length;
+            // The population is UNCHANGED by the widened select: the same
+            // `where`, the same capability filter, the same bound.
+            return rows.filter((r) => hasMcpCapability(r.scopes));
         }),
     ]);
-    return { enforcing, unboundCredentials };
+    return {
+        enforcing,
+        unboundCredentials: unbound.length,
+        unboundCredentialSamples: unbound
+            .slice(0, UNBOUND_CREDENTIAL_SAMPLE_LIMIT)
+            .map((r) => ({ id: r.id, name: r.name, keyPrefix: r.keyPrefix })),
+    };
 }
 
 /**
@@ -456,6 +498,33 @@ export async function getAgenticAssuranceSignals(ctx: RequestContext): Promise<{
  *   • `enforcing` — whether any of the above decides anything.
  *   • `proposalsAwaitingReview` — a queue with a human at the end of it.
  *
+ * ── THE CENSUS: `totalRegistered` + `byStanding` (#2560) ────────────────────
+ *
+ * The four facts above all answer "is anything WRONG". None of them answers
+ * "what is here", and a card that can only raise alarms reads identically over
+ * a workspace with twelve SUSPENDED agents and one with a single ACTIVE one.
+ * `activeUnscored` is not a substitute: it is a RISK-TIER fact that happens to
+ * be restricted to one standing, not a census of standings.
+ *
+ * `totalRegistered` is also the number that decides whether the dashboard card
+ * appears at all — the widget was asked for "when any agent is registered",
+ * and without a count there was nothing to ask.
+ *
+ * Two rails, both borrowed from the `activeUnscored` count this runs beside,
+ * and both of which produce a PLAUSIBLE wrong number rather than a crash when
+ * they are missing:
+ *
+ *   • `deletedAt: null`. A census without it counts soft-deleted rows, so a
+ *     register that has been tidied reports agents nobody can open.
+ *   • ZERO-FILL. `groupBy` returns no row for a standing with no agents, so
+ *     every member of `AgentStatus` is seeded at 0 before the rows are folded
+ *     in. Without it `byStanding.SUSPENDED` is `undefined`, and a consumer
+ *     that formats it renders a blank or `NaN` rather than "0".
+ *
+ * `totalRegistered` is the sum of the four buckets, never a second query: two
+ * statements that could disagree about the same population is a bug waiting
+ * for a concurrent write.
+ *
  * The DRILL CANARY is filtered out, for the reason the detail page's own
  * filter records: the nightly drill engages and lifts a kill against an id
  * that resolves to no registered agent, so an unfiltered count reports one per
@@ -469,13 +538,15 @@ export async function getAgenticDashboardSummary(ctx: RequestContext): Promise<{
     agentsKilled: number;
     activeUnscored: number;
     proposalsAwaitingReview: number;
+    totalRegistered: number;
+    byStanding: Record<AgentStatus, number>;
 }> {
     assertCanReadAgentRegister(ctx);
     const [enforcing, kills, counts] = await Promise.all([
         isAgentRegistrationEnforced(ctx.tenantId),
         listKillSwitches(ctx, { inForceOnly: true, take: 200 }),
         runInTenantContext(ctx, async (db) => {
-            const [activeUnscored, proposalsAwaitingReview] = await Promise.all([
+            const [activeUnscored, proposalsAwaitingReview, standingRows] = await Promise.all([
                 db.registeredAgent.count({
                     where: {
                         tenantId: ctx.tenantId,
@@ -487,8 +558,18 @@ export async function getAgenticDashboardSummary(ctx: RequestContext): Promise<{
                 db.agentProposal.count({
                     where: { tenantId: ctx.tenantId, status: SuggestionItemStatus.PENDING },
                 }),
+                db.registeredAgent.groupBy({
+                    by: ['status'],
+                    where: { tenantId: ctx.tenantId, deletedAt: null },
+                    _count: { _all: true },
+                }),
             ]);
-            return { activeUnscored, proposalsAwaitingReview };
+            const byStanding = Object.fromEntries(
+                Object.values(AgentStatus).map((standing) => [standing, 0]),
+            ) as Record<AgentStatus, number>;
+            for (const row of standingRows) byStanding[row.status] = row._count._all;
+            const totalRegistered = Object.values(byStanding).reduce((a, b) => a + b, 0);
+            return { activeUnscored, proposalsAwaitingReview, byStanding, totalRegistered };
         }),
     ]);
 

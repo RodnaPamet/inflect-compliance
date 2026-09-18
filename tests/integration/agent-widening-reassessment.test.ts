@@ -70,6 +70,22 @@ jest.setTimeout(60_000);
 const SUITE = `awide-${randomUUID().slice(0, 8)}`;
 const TENANT = `t-${SUITE}`;
 const USER = `u-${SUITE}`;
+/**
+ * A SECOND person, and the bell cases below are unprovable without them.
+ *
+ * `USER` is the actor on every call in this file (`ctx()`), and the agentic
+ * emitter filters the actor out of its own recipients. It is also this
+ * workspace's only ACTIVE OWNER, which is the fallback recipient arm. So an
+ * agent owned by `USER` makes BOTH arms resolve to `[USER]`, both arms then
+ * resolve to the empty list, and every assertion about who was told passes
+ * with the emitter present AND with the emitter deleted.
+ *
+ * This user is an EDITOR — active, because `createRegisteredAgent` refuses an
+ * owner who is not an active member, but deliberately not an OWNER, because
+ * the fallback arm selects those. A bell addressed here could only have come
+ * from the accountable-owner arm.
+ */
+const AGENT_OWNER = `u2-${SUITE}`;
 const VENDOR = `v-${SUITE}`;
 
 const SCOPES = ['mcp:read', 'mcp:propose', 'risks:read', 'audits:read', 'findings:write'];
@@ -90,6 +106,14 @@ interface AgentSpec {
     dataAccessScope?: Scope;
     reversibility?: Reversibility;
     modelRef?: string | null;
+    /**
+     * Whom the register records as ACCOUNTABLE. Defaults to `USER` — the
+     * actor — which is the right default for the tier and boundary cases
+     * because they never read it. It is a parameter at all because the bell
+     * cases DO read it, and a hardcoded owner is exactly the field that makes
+     * a recipient assertion unable to fail (see `AGENT_OWNER`).
+     */
+    ownerUserId?: string;
 }
 
 /**
@@ -109,7 +133,7 @@ async function createAgent(name: string, spec: AgentSpec = {}): Promise<string> 
         dataAccessScope: spec.dataAccessScope ?? 'READ_TENANT_DATA',
         reversibility: spec.reversibility ?? 'REVERSIBLE',
         provenance: 'FIRST_PARTY',
-        ownerUserId: USER,
+        ownerUserId: spec.ownerUserId ?? USER,
         ...(spec.modelRef !== undefined ? { modelRef: spec.modelRef } : {}),
     });
     return created.id;
@@ -229,6 +253,21 @@ describeFn('a widening re-scores the agent', () => {
             update: { role: 'OWNER', status: 'ACTIVE' },
             create: { tenantId: TENANT, userId: USER, role: 'OWNER', status: 'ACTIVE' },
         });
+        const agentOwnerEmail = `${TENANT}-agent-owner@example.test`;
+        await prisma.user.upsert({
+            where: { id: AGENT_OWNER },
+            update: {},
+            create: {
+                id: AGENT_OWNER,
+                email: agentOwnerEmail,
+                emailHash: hashForLookup(agentOwnerEmail),
+            },
+        });
+        await prisma.tenantMembership.upsert({
+            where: { tenantId_userId: { tenantId: TENANT, userId: AGENT_OWNER } },
+            update: { role: 'EDITOR', status: 'ACTIVE' },
+            create: { tenantId: TENANT, userId: AGENT_OWNER, role: 'EDITOR', status: 'ACTIVE' },
+        });
         await prisma.vendor.upsert({
             where: { id: VENDOR },
             update: {},
@@ -261,7 +300,13 @@ describeFn('a widening re-scores the agent', () => {
         await prisma.aiSystem.deleteMany({ where: { tenantId: TENANT } });
         await prisma.vendor.deleteMany({ where: { tenantId: TENANT } });
         await prisma.tenantSecuritySettings.deleteMany({ where: { tenantId: TENANT } });
-        await prisma.user.deleteMany({ where: { id: USER } });
+        // `Notification` and `TenantNotificationSettings` hold RESTRICT-by-default
+        // FKs to `Tenant`, and `Notification` one to `User` as well, so both come
+        // out ahead of the rows they point at or the teardown fails on a foreign
+        // key and every re-run starts on the previous run's bells.
+        await prisma.notification.deleteMany({ where: { tenantId: TENANT } });
+        await prisma.tenantNotificationSettings.deleteMany({ where: { tenantId: TENANT } });
+        await prisma.user.deleteMany({ where: { id: { in: [USER, AGENT_OWNER] } } });
         await prisma.tenant.deleteMany({ where: { id: TENANT } });
         await prisma.$disconnect();
     });
@@ -471,6 +516,208 @@ describeFn('a widening re-scores the agent', () => {
             const rescored = await completeAgentRiskAssessment(ctx(), agentId);
             expect(rescored.tier).toBe('MODERATE');
             expect((await row(agentId)).riskTier).toBe('MODERATE');
+        });
+    });
+
+    // ─────────────────────────────────────────────────────────────────
+    // 2b. …and somebody is TOLD (#2563).
+    //
+    // The transition into staleness wrote an audit row and stopped. The
+    // remedy for a stale assessment is to re-answer twenty questions, which
+    // nobody does unprompted, and the only surface that says an assessment is
+    // stale is the Risk tab of that one agent's detail page.
+    //
+    // These cases go through the real emitter against the real database
+    // rather than a fake, because the properties worth pinning are which ROW
+    // gets written and when: that a transition writes exactly one, addressed
+    // to the agent's accountable owner; that a STANDING staleness re-evaluated
+    // on a later day writes none; that the operator who caused it is not told
+    // about their own click; and that a muted workspace writes none at all.
+    // ─────────────────────────────────────────────────────────────────
+    describe('a transition into staleness rings the accountable owner', () => {
+        const STALE_BELL = 'AGENT_RISK_ASSESSMENT_STALE' as const;
+
+        /**
+         * The same MODERATE base as section 2, owned by somebody OTHER than
+         * the actor. Scoring is asserted rather than assumed: if the base
+         * stopped scoring MODERATE the widening below might not stale at all,
+         * and every "no bell" assertion here would be green for the wrong
+         * reason.
+         */
+        async function moderateBaseOwnedByEditor(name: string): Promise<string> {
+            const agentId = await createAgent(name, {
+                autonomyLevel: 0,
+                dataAccessScope: 'READ_TENANT_DATA',
+                reversibility: 'REVERSIBLE',
+                ownerUserId: AGENT_OWNER,
+            });
+            const scored = await completeAgentRiskAssessment(ctx(), agentId);
+            expect(scored.tier).toBe('MODERATE');
+            return agentId;
+        }
+
+        /** Every staleness bell about ONE agent, oldest first. */
+        async function bellsFor(agentId: string) {
+            return prisma.notification.findMany({
+                where: { tenantId: TENANT, type: STALE_BELL, dedupeKey: { contains: agentId } },
+                orderBy: { createdAt: 'asc' },
+                select: {
+                    id: true,
+                    userId: true,
+                    title: true,
+                    message: true,
+                    linkUrl: true,
+                    dedupeKey: true,
+                    createdAt: true,
+                },
+            });
+        }
+
+        it('writes exactly one bell, to the agent owner, linking that agent page', async () => {
+            const agentId = await moderateBaseOwnedByEditor('stale-bell-owner');
+
+            const widened = await updateRegisteredAgent(ctx(), agentId, {
+                dataAccessScope: 'EXTERNAL_EGRESS',
+            });
+            // The transition actually happened — otherwise a count of one
+            // would be about some other call's row.
+            expect(widened.staleness.stale).toBe(true);
+            expect(widened.staleness.triggers).toContain('DATA_SCOPE_WIDENED');
+
+            const bells = await bellsFor(agentId);
+            expect(bells).toHaveLength(1);
+            const [bell] = bells;
+
+            // The AGENT's owner, an EDITOR — and NOT the actor, who is also
+            // this workspace's only ACTIVE OWNER. Both halves are asserted:
+            // the equality alone would hold if one person held both roles,
+            // which is the shape that makes this assertion unable to fail.
+            expect(bell.userId).toBe(AGENT_OWNER);
+            expect(bell.userId).not.toBe(USER);
+
+            // The axes that moved are IN the row. A bell that said only "out
+            // of date" would send the reader to the page to find out which of
+            // six things changed, which is the trip this exists to save.
+            expect(bell.message).toContain('READ_TENANT_DATA');
+            expect(bell.message).toContain('EXTERNAL_EGRESS');
+
+            // That agent's own page: the stale notice, the triggers and the
+            // re-assess action are all on its Risk tab, and the register
+            // carries no staleness column.
+            expect(bell.linkUrl).toBe(`/t/${TENANT}/agents/${agentId}`);
+
+            // Keyed on the AGENT and the recipient, at day granularity —
+            // the belt that sits behind the transition guard proved below.
+            // The day is read off the row's own `createdAt` rather than a
+            // second clock, so a run that straddles midnight cannot flake.
+            const [keyTenant, keyType, keyEntity, keyUser, keyDay] = (
+                bell.dedupeKey ?? ''
+            ).split(':');
+            expect(keyTenant).toBe(TENANT);
+            expect(keyType).toBe(STALE_BELL);
+            expect(keyEntity).toBe(agentId);
+            expect(keyUser).toBe(AGENT_OWNER);
+            expect(keyDay).toBe(bell.createdAt.toISOString().slice(0, 10));
+        });
+
+        it('a STANDING staleness re-evaluated on a later day rings nothing more', async () => {
+            const agentId = await moderateBaseOwnedByEditor('stale-bell-transition-only');
+            await updateRegisteredAgent(ctx(), agentId, { dataAccessScope: 'EXTERNAL_EGRESS' });
+            const first = await bellsFor(agentId);
+            expect(first).toHaveLength(1);
+
+            // THE DAY IS AGED DELIBERATELY, and this is the whole point of the
+            // case. `reassessAgentAfterChangeInTx` runs on every amendment, so
+            // without the `!alreadyStale` guard a long-standing staleness would
+            // ring on every edit for as long as it stood. Within ONE UTC day the
+            // dedupe key would collapse that anyway — belt as well as braces —
+            // so a second widening asserted here unaged passes whether the guard
+            // is present or not, and proves nothing about it. Ageing the stored
+            // key reproduces exactly the state the database is in after midnight:
+            // the row is still there, and its key no longer protects tomorrow.
+            await prisma.notification.update({
+                where: { id: first[0].id },
+                data: { dedupeKey: `${first[0].dedupeKey}-aged` },
+            });
+
+            const again = await updateRegisteredAgent(ctx(), agentId, {
+                reversibility: 'TERMINAL',
+            });
+            // A SECOND axis really did move and the run really is still stale —
+            // so the emitter was reached and declined, rather than never
+            // reaching the branch at all.
+            expect(again.staleness.stale).toBe(true);
+            expect(again.staleness.triggers).toContain('REVERSIBILITY_WORSENED');
+
+            // Still the ORIGINAL row, named by id rather than counted: a
+            // broken query returning nothing would satisfy a bare length check.
+            const after = await bellsFor(agentId);
+            expect(after.map((b) => b.id)).toEqual([first[0].id]);
+        });
+
+        it('the operator who widened an agent they own themselves is not told', async () => {
+            // `createAgent`'s default owner is the actor. The emitter filters
+            // the actor out of its own recipients, and the OWNER fallback is
+            // this workspace's only ACTIVE OWNER — who is that same person —
+            // so nobody is left to tell. That is the correct outcome: the
+            // person who needs to know already knows.
+            const agentId = await createAgent('stale-bell-self', {
+                autonomyLevel: 0,
+                dataAccessScope: 'READ_TENANT_DATA',
+                reversibility: 'REVERSIBLE',
+            });
+            expect((await completeAgentRiskAssessment(ctx(), agentId)).tier).toBe('MODERATE');
+
+            const widened = await updateRegisteredAgent(ctx(), agentId, {
+                dataAccessScope: 'EXTERNAL_EGRESS',
+            });
+            expect(widened.staleness.stale).toBe(true);
+
+            expect(await bellsFor(agentId)).toEqual([]);
+        });
+
+        it('a workspace that muted the type gets no row — and unmuting restores it', async () => {
+            // Asserted THROUGH the preference the /admin/notifications page
+            // writes, not around it: the toggle that page offers means nothing
+            // unless muting stops the WRITE, and a row written then hidden
+            // still lands in the bell list, still counts toward the unread
+            // badge and still fans out over SSE.
+            await prisma.tenantNotificationSettings.upsert({
+                where: { tenantId: TENANT },
+                update: { mutedInAppTypes: [STALE_BELL] },
+                // `defaultFromEmail` has no column default, deliberately — see
+                // the note on the model. The value is irrelevant here; the row
+                // exists only to carry the mute list.
+                create: {
+                    tenantId: TENANT,
+                    defaultFromEmail: 'noreply@example.test',
+                    mutedInAppTypes: [STALE_BELL],
+                },
+            });
+
+            const muted = await moderateBaseOwnedByEditor('stale-bell-muted');
+            const mutedWiden = await updateRegisteredAgent(ctx(), muted, {
+                dataAccessScope: 'EXTERNAL_EGRESS',
+            });
+            expect(mutedWiden.staleness.stale).toBe(true);
+            expect(await bellsFor(muted)).toEqual([]);
+
+            // The paired positive, in the same case and on the same fixture
+            // shape. Without it the zero above is satisfied by an emitter that
+            // never fires, a recipient list that is always empty, or a query
+            // that matches nothing — three ways to be green while the mute
+            // does no work at all.
+            await prisma.tenantNotificationSettings.update({
+                where: { tenantId: TENANT },
+                data: { mutedInAppTypes: [] },
+            });
+            const heard = await moderateBaseOwnedByEditor('stale-bell-unmuted');
+            await updateRegisteredAgent(ctx(), heard, {
+                dataAccessScope: 'EXTERNAL_EGRESS',
+            });
+            const bells = await bellsFor(heard);
+            expect(bells).toHaveLength(1);
+            expect(bells[0].userId).toBe(AGENT_OWNER);
         });
     });
 

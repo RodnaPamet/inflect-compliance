@@ -615,6 +615,63 @@ enum NotificationType {
   // proposal would train the recipient to ignore the bell, taking these two
   // with it. The waiting count is surfaced on the register instead.
   AGENT_PROPOSAL_QUARANTINED
+  // AGENTIC UI 1/4 (#2562) — the behavioural circuit breaker LATCHED OPEN.
+  //
+  // The one agentic event with NO HUMAN ACTOR: the anomaly detector stopped the
+  // agent at the tool boundary by itself, and nothing but a human close with a
+  // reason moves it back. Nothing else says so either — the register carries no
+  // breaker column and the breaker tab is local state on one agent's detail
+  // page, so a latched agent is visible only to somebody who already opened
+  // that agent and clicked to that tab.
+  //
+  // Routed to the agent's accountable owner, and deduped per (agent, day) like
+  // the quarantine bell. The latch makes that at most one bell per trip cycle
+  // anyway: an OPEN breaker is never re-judged, so the next trip can only
+  // follow a human close.
+  AGENT_CIRCUIT_BREAKER_TRIPPED
+  // AGENTIC UI 1/4 (#2561) — a tool-manifest PIN was approved.
+  //
+  // The WIDEST agentic act in the product: approving a manifest accepts a new
+  // tool DEFINITION for the whole tenant and clears the MCP boundary's refusal
+  // for EVERY agent at once. A tool definition is three fields the model reads
+  // — name, DESCRIPTION and parameter schema — and the description is
+  // instruction text delivered straight into an agent's context, which makes
+  // this the tool-poisoning surface (OWASP ASI04). The button sits on one
+  // agent's Tools tab, so anybody holding `admin.agent_registry` can take a
+  // tenant-wide decision from a per-agent page and nobody else was told.
+  //
+  // Routed to the workspace's ACTIVE OWNERs — the accept is tenant-wide, so
+  // there is no narrower answer to "who answers for this" — minus the approver,
+  // who does not need a bell for their own click. Deduped per (tool, recipient,
+  // day). Fired ONLY when the pin actually moved: a re-approval that matches
+  // the hash on file writes no pin and no audit row, and must ring no bell.
+  //
+  // The bell NEVER carries the description text, for the same reason the audit
+  // row refuses it — a notification is another place the injected instructions
+  // would be delivered, and every reader of it is a person or a model.
+  AGENT_TOOL_MANIFEST_PIN_CHANGED
+  // AGENTIC UI 1/4 (#2563) — a completed risk assessment was overtaken by the
+  // agent it was scored against.
+  //
+  // The transition already had a durable record — `AGENT_ASSESSMENT_STALE` in
+  // the audit log — and no audience. Staleness is discovered by opening the
+  // agent's Risk tab, which is the one place the notice renders, and the whole
+  // premise of warning rather than blocking is that somebody goes and
+  // re-answers the questionnaire.
+  //
+  // What the bell reports is NARROW, and deliberately so: the tier is
+  // re-scored in the SAME transaction that widened the agent, so the ceiling
+  // has already narrowed and nothing is running at an authority a fresh score
+  // would refuse. What may no longer hold are the twenty QUESTIONNAIRE
+  // ANSWERS — a judgement a human made about a narrower agent than the one
+  // now registered. So this WARNS; it never denies.
+  //
+  // Fired ONLY on the TRANSITION into staleness, which the emitter inherits
+  // from the audit row's own `!alreadyStale` guard: a standing staleness is
+  // re-evaluated on every amendment to the agent, and a bell per evaluation
+  // would be a bell per edit. Routed to the agent's accountable owner and
+  // deduped per (agent, recipient, day) like the breaker bell.
+  AGENT_RISK_ASSESSMENT_STALE
   GENERAL
 }
 

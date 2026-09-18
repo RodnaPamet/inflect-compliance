@@ -35,7 +35,7 @@ export default async function AgentProposalsPage({
         const t = await getTranslations('agents');
         return (
             <ForbiddenPage
-                title={t('mcpAccessRequired')}
+                title={t('proposals.accessTitle')}
                 message={t('proposals.accessMessage')}
             />
         );

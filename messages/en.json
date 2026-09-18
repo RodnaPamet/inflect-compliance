@@ -4117,7 +4117,7 @@
       "dashboard": "Dashboard",
       "admin": "Admin",
       "integrations": "Integrations",
-      "mcp": "MCP",
+      "agentCredentials": "Agent credentials",
       "agentReceipts": "Agent Receipts",
       "agents": "Agents",
       "sharepointHealth": "SharePoint health",
@@ -4477,6 +4477,7 @@
         "notEnforcing": "Agent registration is not being enforced. Any credential can act at the tool boundary, registered or not — the agent register is a catalogue, and the tool allowlist, autonomy limits, policy card, circuit breaker and kill switch refuse nothing.",
         "enforcingClean": "Agent registration is enforced. Only credentials bound to a registered agent can act, and every credential is bound.",
         "enforcingWithUnbound": "Agent registration is enforced, but {count} credential(s) are not bound to an agent. Those are being refused at the tool boundary right now.",
+        "breakingNow": "{count} credential(s) are being refused at the tool boundary right now:",
         "wouldBreak": "{count} credential(s) would stop working the moment enforcement is switched on:",
         "enableAction": "Enforce registration",
         "disableAction": "Stop enforcing",
@@ -4825,7 +4826,7 @@
         "revokeScheduled": "Tool access revoked for {toolName}",
         "revokeUndo": "Undo",
         "heading": "Granted tools",
-        "intro": "This agent can call only the tools listed here. Anything absent is refused at the MCP boundary, however widely its credential is scoped.",
+        "intro": "This agent can call only the tools listed here. Anything absent is refused at the tool boundary, however widely its credential is scoped.",
         "grantCount": "{granted} of {total} granted",
         "retry": "Try again",
         "forbiddenTitle": "Tool exposure access required",
@@ -4867,7 +4868,7 @@
           "loadFailedTitle": "Tool definitions could not be loaded",
           "loadFailedBody": "The pin states did not load. Nothing here is a claim about whether a definition changed.",
           "noDefinitions": "No tools in this build",
-          "noDefinitionsDescription": "This deployment defines no MCP tools, so there is nothing to pin.",
+          "noDefinitionsDescription": "This deployment defines no tools, so there is nothing to pin.",
           "blockedBadge": "Refused at the boundary",
           "status": {
             "APPROVED": "Approved",
@@ -4920,7 +4921,7 @@
           "liveSchemaLabel": "Parameter schema you are accepting"
         },
         "refusedTitle": "The register would not list these tools",
-        "blockedHint": "The MCP boundary is refusing this tool for every agent in this workspace, because its definition no longer matches the one approved here. The grant stands; the call does not get through until the definition is reviewed again below.",
+        "blockedHint": "The tool boundary is refusing this tool for every agent in this workspace, because its definition no longer matches the one approved here. The grant stands; the call does not get through until the definition is reviewed again below.",
         "blockedUnknown": "Whether any of these tools is currently refused at the boundary could not be checked — the definition pins below did not load.",
         "stalenessCauseTool": "This agent can now reach {toolName}, which it could not when it was last scored.",
         "stalenessCauseOther": "This grant is not what made the assessment stale. Something else about this agent moved after it was scored, and the register found it while reconciling this change.",
@@ -5123,16 +5124,15 @@
       }
     },
     "mcp": {
-      "title": "MCP credentials",
+      "title": "Agent credentials",
       "description": "Every API key bound to a registered agent, and how far up the autonomy ladder it can actually drive that agent.",
       "proposalsTitle": "Agent Proposals",
-      "proposalsDesc": "Review the propose-not-commit queue. Approve or reject the writes external agents submit via the MCP propose tools — nothing is created until a human approves.",
       "runsTitle": "Agent Runs",
       "runsDesc": "Observe the orchestrator. Start a workflow, watch its step timeline and cost, resume a paused run after acting on its proposals, or abort a runaway run.",
       "receiptsTitle": "Agent Receipts",
       "receiptsDesc": "Externally-verifiable, mediator-signed (pipelock) evidence of agent tool actions. Each verified Ed25519 receipt links to the hash-chained audit trail; export any receipt for independent verification.",
       "receiptsPageDesc": "Externally-verifiable, mediator-signed evidence of agent tool actions (pipelock). Verified receipts link to the hash-chained audit trail.",
-      "receiptsEmpty": "No agent-action receipts yet. Once the pipelock mediator is in front of the MCP surface, each mediated tool decision posts a signed receipt here.",
+      "receiptsEmpty": "No agent-action receipts yet. Once the pipelock mediator is in front of the agent surface, each mediated tool decision posts a signed receipt here.",
       "policyLabel": "Policy: {policy} · ",
       "agentLabel": "Agent: {agent} · ",
       "signatureVerified": "Signature verified",
@@ -5661,7 +5661,7 @@
       "theme": "Theme",
       "privacy": "Privacy & data protection",
       "dsarRequests": "Data subject requests",
-      "mcp": "MCP credentials"
+      "agentCredentials": "Agent credentials"
     },
     "resourceLabels": {
       "controls": "Controls",
@@ -7950,8 +7950,6 @@
     },
     "crumbDashboard": "Dashboard",
     "crumbAdmin": "Admin",
-    "crumbMcp": "MCP",
-    "mcpAccessRequired": "MCP Access Required",
     "register": {
       "linkLabel": "Agent register",
       "breadcrumb": "Agents",
@@ -8056,7 +8054,8 @@
       },
       "governance": {
         "notEnforcing": "This workspace does not require agents to be registered. Every row below is a record and nothing more — suspending an agent here does not stop it, and a credential bound to no agent still reaches the agent surface. Turn on \"Require registered agent\" in Security settings to make this register binding.",
-        "enforcingUnbound": "Registration is enforced, and {count, plural, one {# live MCP credential is bound to no agent} other {# live MCP credentials are bound to no agent}} — each is refused at the agent surface until you bind it to a registered agent.",
+        "enforcingUnbound": "Registration is enforced, and {count, plural, one {# live credential is bound to no agent} other {# live credentials are bound to no agent}} — each is refused at the agent surface until you bind it to a registered agent.",
+        "unboundMore": "+{count} more…",
         "enforcing": "Registration is enforced: a credential must name an ACTIVE agent below before it reaches the agent surface."
       },
       "assurance": {
@@ -8087,6 +8086,7 @@
     "dashboardWidget": {
       "title": "Agentic governance",
       "viewRegister": "Agent register",
+      "standing": "Registered: {total} — {breakdown}",
       "killInForceTenant": "A TENANT-WIDE kill switch is in force. Every agent in this workspace is stopped at the tool boundary, including runs already in flight.",
       "killInForceAgents": "{count, plural, one {# agent is stopped} other {# agents are stopped}} by a kill switch at the tool boundary, including runs already in flight.",
       "unscoredActive": "{count, plural, one {# ACTIVE agent has no assessed authority tier} other {# ACTIVE agents have no assessed authority tier}}. An unscored agent reaches nothing — its credential resolves to a deny ceiling.",
@@ -8095,10 +8095,11 @@
       "proposalsWaiting": "{count, plural, one {# agent proposal is waiting} other {# agent proposals are waiting}} for a human decision."
     },
     "proposals": {
+      "accessTitle": "Agent proposals access required",
       "accessMessage": "You do not have permission to review agent proposals. Contact your workspace administrator to request access.",
       "crumb": "Agent proposals",
       "title": "Agent proposals",
-      "description": "Pending proposals from an external agent (MCP). Approve to create the real record; reject to discard. An agent never creates a record directly.",
+      "description": "Pending proposals from an external agent. Approve to create the real record; reject to discard. An agent never creates a record directly.",
       "approveFailed": "Failed to approve",
       "rejectFailed": "Failed to reject",
       "emptyTitle": "No pending proposals",
@@ -8144,6 +8145,7 @@
       }
     },
     "runs": {
+      "accessTitle": "Agent runs access required",
       "accessMessage": "You do not have permission to view agent runs. Contact your workspace administrator to request access.",
       "crumb": "Agent runs",
       "title": "Agent runs",

@@ -31,6 +31,15 @@
  * Asserted on the LIST, the KPI COUNTS and the GOVERNANCE STATUS — all three,
  * because each is a separate query and the counts are aggregates that would
  * leak a shape rather than a row.
+ *
+ * ── AND THE GOVERNANCE STATUS NOW CARRIES NAMES (#2565) ──────────────────────
+ *
+ * The banner's unbound state must say WHICH credentials are being refused, not
+ * only how many, so `getAgentGovernanceStatus` returns named rows. That raises
+ * the stakes of the isolation claim above: the status used to be able to leak
+ * at most a number, and can now leak a label an operator chose. The last
+ * describe in this file drives that read with real keys in both tenants — and
+ * with the two exclusions the widened `select` must not have disturbed.
  */
 import { PrismaClient, MembershipStatus, Role } from '@prisma/client';
 
@@ -86,6 +95,11 @@ const adminWithoutRegisterCtx = (tenantId: string) => {
 
 async function clearOwnRows(): Promise<void> {
     const t = { tenantId: { in: [T1, T2] } };
+    // BEFORE the agents. The FK from a credential to its agent is
+    // `onDelete: Restrict`, so an agent with a live key cannot be deleted out
+    // from under it — the keys seeded for the governance-status block have to
+    // go first even though they are all unbound.
+    await prisma.tenantApiKey.deleteMany({ where: t });
     await prisma.agentProposal.deleteMany({ where: t });
     await prisma.registeredAgent.deleteMany({ where: t });
     await prisma.aiSystem.deleteMany({ where: t });
@@ -235,6 +249,11 @@ describe('two-tenant isolation on every read the register page makes', () => {
         expect(two.enforcing).toBe(true);
         expect(one.unboundCredentials).toBe(0);
         expect(two.unboundCredentials).toBe(0);
+        // Nothing unbound means nothing NAMED. An implementation that fell back
+        // to naming every key when the count was zero would still satisfy the
+        // two count assertions above.
+        expect(one.unboundCredentialSamples).toEqual([]);
+        expect(two.unboundCredentialSamples).toEqual([]);
     });
 
     it('a tenant-A read cannot be widened by naming tenant B in a filter', async () => {
@@ -246,5 +265,143 @@ describe('two-tenant isolation on every read the register page makes', () => {
             take: 500,
         });
         expect(rows.map((r) => r.tenantId)).toEqual([T1]);
+    });
+});
+
+/**
+ * NAMED UNBOUND CREDENTIALS (#2565).
+ *
+ * Seeded HERE rather than in the file-wide `beforeAll` on purpose: the block
+ * above asserts the clean state (`unboundCredentials === 0`, no names), and
+ * seeding keys for the whole file would have made that assertion vacuous. The
+ * keys arrive after it and are removed by `clearOwnRows` in `afterAll`.
+ */
+describe('the governance status NAMES the unbound credentials it counts', () => {
+    /** Prefixes are asserted, so they are fixed here rather than derived. */
+    const NIGHTLY = { name: 'Nightly sync', keyPrefix: 'ik_live_ab12' };
+    const ZAPIER = { name: 'Zapier relay', keyPrefix: 'ik_live_cd34' };
+    const TWO = { name: 'Tenant two loader', keyPrefix: 'ik_live_zz99' };
+
+    async function seedKey(
+        tenantId: string,
+        opts: {
+            name: string;
+            keyPrefix: string;
+            scopes: string[];
+            revokedAt?: Date | null;
+            expiresAt?: Date | null;
+            agentId?: string | null;
+        },
+    ): Promise<void> {
+        await prisma.tenantApiKey.create({
+            data: {
+                tenantId,
+                name: opts.name,
+                keyPrefix: opts.keyPrefix,
+                keyHash: `hash-${tenantId}-${opts.keyPrefix}`,
+                scopes: opts.scopes,
+                revokedAt: opts.revokedAt ?? null,
+                expiresAt: opts.expiresAt ?? null,
+                agentId: opts.agentId ?? null,
+                createdById: seeded[tenantId].ownerUserId,
+            },
+        });
+    }
+
+    beforeAll(async () => {
+        // ── T1: the two that MUST be named ──
+        await seedKey(T1, { ...NIGHTLY, scopes: ['mcp:read'] });
+        await seedKey(T1, { ...ZAPIER, scopes: ['mcp:propose', 'controls:read'] });
+
+        // ── T1: the four that MUST NOT be, one per exclusion the read defends ──
+        //
+        // Each is a live row in the same table that differs from the two above
+        // in exactly one clause, so an implementation that dropped that clause
+        // fails on this one row rather than on the shape of the answer.
+        await seedKey(T1, {
+            name: 'Evidence exporter',
+            keyPrefix: 'ik_live_ee01',
+            // No MCP capability: it cannot talk to `/api/mcp` at all, so
+            // enforcement is not about to refuse it and warning about it would
+            // put a line in front of an operator with no action behind it.
+            scopes: ['evidence:read'],
+        });
+        await seedKey(T1, {
+            name: 'Retired sweeper',
+            keyPrefix: 'ik_live_rr02',
+            scopes: ['mcp:read'],
+            // Revoked: being refused is the system working.
+            revokedAt: new Date('2020-01-01T00:00:00Z'),
+        });
+        await seedKey(T1, {
+            name: 'Lapsed importer',
+            keyPrefix: 'ik_live_ll03',
+            scopes: ['mcp:*'],
+            expiresAt: new Date('2020-01-01T00:00:00Z'),
+        });
+        await seedKey(T1, {
+            name: 'Bound to the ops agent',
+            keyPrefix: 'ik_live_bb04',
+            scopes: ['mcp:read'],
+            // Bound — the whole point of the register. Naming this one would
+            // tell an operator to do work that is already done.
+            agentId: seeded[T1].agentId,
+        });
+
+        // ── T2: one live unbound MCP key, so isolation has something to leak ──
+        await seedKey(T2, { ...TWO, scopes: ['mcp:read'] });
+    });
+
+    it('returns the NAMES and prefixes of the unbound MCP credentials', async () => {
+        const one = await getAgentGovernanceStatus(ownerCtx(T1));
+        // Exact, and in the read's declared `name asc` order. A count assertion
+        // stays green when the identifiers are dropped on the way out, which is
+        // the defect this replaces.
+        expect(one.unboundCredentialSamples.map((c) => c.name)).toEqual([
+            NIGHTLY.name,
+            ZAPIER.name,
+        ]);
+        // The prefix is the half an operator matches against `/admin/api-keys`;
+        // two integrations are allowed to share a label.
+        expect(one.unboundCredentialSamples.map((c) => c.keyPrefix)).toEqual([
+            NIGHTLY.keyPrefix,
+            ZAPIER.keyPrefix,
+        ]);
+        // Every sample carries an id, so the surface has a stable React key and
+        // a handle to link to. Asserted as a set of KEYS, because an `id` that
+        // came back `undefined` would still satisfy a length check.
+        expect(one.unboundCredentialSamples.every((c) => typeof c.id === 'string')).toBe(
+            true,
+        );
+    });
+
+    it('the widened select did not widen the POPULATION', async () => {
+        const one = await getAgentGovernanceStatus(ownerCtx(T1));
+        // Six live rows in the table for T1, two of which the register is about
+        // to refuse. The count is exact, so a filter that stopped excluding
+        // fails here rather than merely looking larger.
+        expect(one.unboundCredentials).toBe(2);
+        const named = one.unboundCredentialSamples.map((c) => c.name);
+        // Named one at a time rather than as `not.toContain(anything)`: a read
+        // that returned nothing at all would pass a bare absence check.
+        expect(named).not.toContain('Evidence exporter');
+        expect(named).not.toContain('Retired sweeper');
+        expect(named).not.toContain('Lapsed importer');
+        expect(named).not.toContain('Bound to the ops agent');
+    });
+
+    it('a tenant never sees the OTHER tenant’s credential by name', async () => {
+        const one = await getAgentGovernanceStatus(ownerCtx(T1));
+        const two = await getAgentGovernanceStatus(ownerCtx(T2));
+        // Both directions, and both EXACT. This is the assertion the widening
+        // made expensive to get wrong: the status could previously leak at most
+        // a number, and now carries a label a customer chose.
+        expect(one.unboundCredentialSamples.map((c) => c.name)).toEqual([
+            NIGHTLY.name,
+            ZAPIER.name,
+        ]);
+        expect(two.unboundCredentialSamples.map((c) => c.name)).toEqual([TWO.name]);
+        expect(one.unboundCredentials).toBe(2);
+        expect(two.unboundCredentials).toBe(1);
     });
 });

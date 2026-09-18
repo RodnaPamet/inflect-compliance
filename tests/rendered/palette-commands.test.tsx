@@ -303,8 +303,16 @@ describe('Command Palette — operator vocabulary', () => {
         'nav:agent-quarantine',
     ];
 
-    it('"agent" reaches all three agentic destinations', () => {
-        expect(idsMatching('agent')).toEqual(ALL_THREE);
+    it('"agent" reaches every agentic row — the three destinations and both verbs', () => {
+        // Widened by #2558: `Suspend an agent` carries the word in its
+        // label, `Kill switch` carries it as a keyword because its label
+        // deliberately does not. Stated as the exact ordered set, so a row
+        // silently dropping out of the agentic vocabulary reddens here.
+        expect(idsMatching('agent')).toEqual([
+            ...ALL_THREE,
+            'nav:agent-suspend',
+            'nav:agent-kill-switch',
+        ]);
     });
 
     it('"AI" reaches all three agentic destinations', () => {
@@ -319,8 +327,14 @@ describe('Command Palette — operator vocabulary', () => {
         expect(idsMatching('autonomy')).toEqual(['nav:agents']);
     });
 
-    it('"kill" reaches the agent register', () => {
-        expect(idsMatching('kill')).toEqual(['nav:agents']);
+    it('"kill" reaches the agent register AND the kill-switch verb', () => {
+        // The register keeps the keyword: it is still a truthful answer to
+        // "kill" (that is where you pick the agent you are killing), and
+        // the verb row added by #2558 sits after it.
+        expect(idsMatching('kill')).toEqual([
+            'nav:agents',
+            'nav:agent-kill-switch',
+        ]);
     });
 
     it('a query matching nothing still returns nothing', () => {
@@ -363,6 +377,116 @@ describe('Command Palette — operator vocabulary', () => {
                 '[data-testid="command-palette-nav-nav:controls"]',
             ),
         ).toBeNull();
+    });
+});
+
+// ─── Agentic verbs (#2558) ────────────────────────────────────────────
+
+/**
+ * The prompt behind the agentic palette entries asked for two VERBS
+ * alongside the destinations — "Suspend an agent" and "Kill switch" —
+ * and only the destinations shipped. #2559 later put `kill` and
+ * `suspend` into the register's keyword channel, so the words stopped
+ * reaching the empty state; what stayed missing is a row that NAMES the
+ * thing the operator is trying to do.
+ *
+ * Both assertions below are stated as the EXACT ordered set of rendered
+ * navigation rows, not as "the row is present". Presence alone is the
+ * weaker claim: it survives renaming `Kill switch` to `Stop agent`,
+ * which is precisely the change that would put the word back out of
+ * reach. The set form reddens for that rename, and the keywords on
+ * these two rows deliberately carry no copy of their own label so it
+ * stays that way.
+ */
+describe('Command Palette — agentic verbs', () => {
+    /** Rendered Navigation rows, in DOM order, as command ids. */
+    function renderedNavIds(): string[] {
+        const rows = document.querySelectorAll(
+            '[data-testid^="command-palette-nav-nav:"]',
+        );
+        return Array.from(rows).map((row) =>
+            (row.getAttribute('data-testid') ?? '').replace(
+                'command-palette-nav-',
+                '',
+            ),
+        );
+    }
+
+    function typeIntoPalette(query: string): void {
+        const input = document.querySelector(
+            '[data-testid="command-palette-input"]',
+        ) as HTMLInputElement;
+        fireEvent.change(input, { target: { value: query } });
+    }
+
+    it('both verb rows render, each labelled by the verb', () => {
+        render(<Shell />);
+        const suspend = document.querySelector(
+            '[data-testid="command-palette-nav-nav:agent-suspend"]',
+        );
+        const kill = document.querySelector(
+            '[data-testid="command-palette-nav-nav:agent-kill-switch"]',
+        );
+        expect(suspend).not.toBeNull();
+        expect(kill).not.toBeNull();
+        expect(suspend?.textContent).toContain('Suspend an agent');
+        expect(kill?.textContent).toContain('Kill switch');
+    });
+
+    it('"Suspend an agent" deep-links the register to the suspendable set', () => {
+        // ACTIVE is exactly the set `canSuspend` admits on the detail tab,
+        // and `parseAgentListFilters` already parses `?status=` server-side.
+        render(<Shell />);
+        const suspend = document.querySelector(
+            '[data-testid="command-palette-nav-nav:agent-suspend"]',
+        );
+        expect(suspend?.getAttribute('data-href')).toBe(
+            '/t/acme-corp/agents?status=ACTIVE',
+        );
+    });
+
+    it('"Kill switch" lands on the register, where the agent is picked', () => {
+        render(<Shell />);
+        const kill = document.querySelector(
+            '[data-testid="command-palette-nav-nav:agent-kill-switch"]',
+        );
+        expect(kill?.getAttribute('data-href')).toBe('/t/acme-corp/agents');
+    });
+
+    it('typing "kill" leaves the kill-switch row and nothing unrelated', async () => {
+        render(<Shell />);
+        typeIntoPalette('kill');
+
+        await waitFor(() => {
+            expect(renderedNavIds()).toEqual([
+                'nav:agents',
+                'nav:agent-kill-switch',
+            ]);
+        });
+    });
+
+    it('typing "suspend" leaves the suspend row and nothing unrelated', async () => {
+        render(<Shell />);
+        typeIntoPalette('suspend');
+
+        await waitFor(() => {
+            expect(renderedNavIds()).toEqual([
+                'nav:agents',
+                'nav:agent-suspend',
+            ]);
+        });
+    });
+
+    it('a verb that is in no label and no keyword still reaches nothing', async () => {
+        // Load-bearing negative control for the two assertions above: a
+        // filter mutated to a pass-through renders every row for every
+        // query, and would satisfy any "the row is still there" phrasing.
+        render(<Shell />);
+        typeIntoPalette('defenestrate');
+
+        await waitFor(() => {
+            expect(renderedNavIds()).toEqual([]);
+        });
     });
 });
 
