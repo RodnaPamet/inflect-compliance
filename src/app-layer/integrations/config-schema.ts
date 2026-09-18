@@ -122,6 +122,14 @@ export const CONFIG_FIELD_RULES: Record<string, Record<string, ConfigFieldRule>>
         baseUrl: { kind: 'vendorOrigin', allow: ORANGEHRM_HOSTS },
         clientId: { kind: 'inert' },
         clientSecret: { kind: 'inert' },
+        // Inert as a STRING — it reaches no host and carries no query — and the
+        // same caveat the Entra `writesEnabled` entry carries applies: inert is
+        // a statement about the value's REACH, not about its consequence. This
+        // is the per-connection statement that a human asserts this credential
+        // may write into their HR system of record, and it is the only thing
+        // between a stored OAuth client and the JML write-back preflight
+        // touching it at all. `providers/hris/write-back.ts` holds the rest.
+        writeBackEnabled: { kind: 'inert' },
     },
     servicenow: {
         instance: { kind: 'vendorOrigin', allow: SERVICENOW_HOSTS },
