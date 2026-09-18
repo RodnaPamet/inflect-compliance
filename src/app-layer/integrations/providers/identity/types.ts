@@ -93,6 +93,14 @@ export interface ListAccountsResult {
      * keep the old behaviour: partial, no reconcile, and loud.
      */
     resumeToken?: string | null;
+    /**
+     * False when ROLE MEMBERSHIP was read only partially, even though the
+     * account enumeration itself finished. Separate from `complete` because
+     * the two truncations mislead differently: a capped account list omits
+     * people, while a capped role read turns an unread admin into an
+     * apparent non-admin. Absent means "not stated", i.e. complete.
+     */
+    adminComplete?: boolean;
 }
 
 export interface IdentitySyncProvider {
@@ -177,6 +185,13 @@ export interface IdentityCheckScope {
     complete?: boolean;
     /** How many accounts were actually judged, for the evidence payload. */
     accountsRead?: number;
+    /**
+     * False when role membership was truncated. Degrades a PASS exactly as
+     * `complete: false` does, but the summary must name the RIGHT read — a
+     * message about an account cap is a false statement when the accounts
+     * were all read and the roles were not.
+     */
+    adminComplete?: boolean;
 }
 
 /**
@@ -208,7 +223,22 @@ export interface IdentityCheckScope {
  * make a provider that simply exposes no admin signal look broken.
  */
 function applyScopeToVerdict(result: CheckResult, scope: IdentityCheckScope): CheckResult {
-    if (scope.complete !== false) return result;
+    if (scope.complete !== false && scope.adminComplete !== false) return result;
+    if (scope.complete !== false && scope.adminComplete === false) {
+        // Accounts were all read; ROLE MEMBERSHIP was not. Saying "only N
+        // accounts were read" here would be false — every account was read.
+        const details = { ...result.details, truncated: true, adminTruncated: true };
+        if (result.status !== 'PASSED') return { ...result, details };
+        return {
+            status: 'ERROR',
+            summary:
+                'Cannot certify this control: directory role membership was read only in part, ' +
+                'so an administrator the read did not return would be indistinguishable from an ' +
+                'account that holds no role.',
+            details,
+            errorMessage: 'role membership enumeration truncated',
+        };
+    }
     const details = { ...result.details, truncated: true, accountsRead: scope.accountsRead ?? null };
     if (result.status !== 'PASSED') return { ...result, details };
     return {
