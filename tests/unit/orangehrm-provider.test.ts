@@ -1,5 +1,5 @@
 /**
- * OrangeHRM — the fixture provider (#2548), over a faked fetch.
+ * OrangeHRM — the HRIS roster connector (#2548, #2587), over a faked fetch.
  *
  * No live credentials and no network: every test here drives `fetchImpl` or an
  * injected module double, so the whole suite runs from a clean checkout.
