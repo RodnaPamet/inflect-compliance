@@ -19,168 +19,192 @@
       "title": "Governance and organisation",
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
-      "sortOrder": 1
+      "sortOrder": 1,
+      "summary": "The management body defines, approves, oversees and is accountable for the ICT risk management framework, allocating clear roles and responsibilities for all ICT-related functions. (Paraphrase — Art. 5)"
     },
     {
       "code": "DORA.Art.6",
       "title": "ICT risk management framework",
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
-      "sortOrder": 2
+      "sortOrder": 2,
+      "summary": "Maintain a sound, comprehensive and well-documented ICT risk management framework as part of the overall risk management system, reviewed at least annually. (Paraphrase — Art. 6)"
     },
     {
       "code": "DORA.Art.7",
       "title": "ICT systems, protocols and tools",
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
-      "sortOrder": 3
+      "sortOrder": 3,
+      "summary": "Use and maintain ICT systems, protocols and tools that are reliable, have sufficient capacity, and are technologically resilient. (Paraphrase — Art. 7)"
     },
     {
       "code": "DORA.Art.8",
       "title": "Identification",
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
-      "sortOrder": 4
+      "sortOrder": 4,
+      "summary": "Identify, classify and document all ICT-supported business functions, information assets and ICT assets, and map dependencies. (Paraphrase — Art. 8)"
     },
     {
       "code": "DORA.Art.9",
       "title": "Protection and prevention",
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
-      "sortOrder": 5
+      "sortOrder": 5,
+      "summary": "Continuously monitor and control ICT systems, and implement policies, procedures and tools (access control, encryption, network security) to protect against ICT risk. (Paraphrase — Art. 9)"
     },
     {
       "code": "DORA.Art.10",
       "title": "Detection",
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
-      "sortOrder": 6
+      "sortOrder": 6,
+      "summary": "Have mechanisms to promptly detect anomalous activities, including ICT network performance issues and ICT-related incidents, with multiple layers of control and defined alert thresholds. (Paraphrase — Art. 10)"
     },
     {
       "code": "DORA.Art.11",
       "title": "Response and recovery",
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
-      "sortOrder": 7
+      "sortOrder": 7,
+      "summary": "Put in place a comprehensive ICT business continuity policy and response-and-recovery plans to ensure continuity of critical functions and limit damage. (Paraphrase — Art. 11)"
     },
     {
       "code": "DORA.Art.12",
       "title": "Backup policies, restoration and recovery procedures",
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
-      "sortOrder": 8
+      "sortOrder": 8,
+      "summary": "Develop and document backup policies and restoration/recovery procedures, with backups stored securely and recovery tested periodically. (Paraphrase — Art. 12)"
     },
     {
       "code": "DORA.Art.13",
       "title": "Learning and evolving",
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
-      "sortOrder": 9
+      "sortOrder": 9,
+      "summary": "Gather information on vulnerabilities, ICT-related incidents and cyber threats, conduct post-incident reviews, and feed lessons learned back into the framework. (Paraphrase — Art. 13)"
     },
     {
       "code": "DORA.Art.14",
       "title": "Communication",
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
-      "sortOrder": 10
+      "sortOrder": 10,
+      "summary": "Have crisis communication plans enabling responsible disclosure of major ICT-related incidents to clients, counterparts and the public as appropriate. (Paraphrase — Art. 14)"
     },
     {
       "code": "DORA.Art.16",
       "title": "Simplified ICT risk management framework",
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
-      "sortOrder": 11
+      "sortOrder": 11,
+      "summary": "Certain smaller and non-interconnected entities apply a simplified but still sound ICT risk management framework proportionate to their risk profile. (Paraphrase — Art. 16)"
     },
     {
       "code": "DORA.Art.17",
       "title": "ICT-related incident management process",
       "section": "ICT Incident Management & Reporting (Art 17-23)",
       "category": "ICT Incident Management & Reporting (Art 17-23)",
-      "sortOrder": 12
+      "sortOrder": 12,
+      "summary": "Define, establish and implement an ICT-related incident management process to detect, manage, log and resolve ICT-related incidents. (Paraphrase — Art. 17)"
     },
     {
       "code": "DORA.Art.18",
       "title": "Classification of ICT-related incidents and cyber threats",
       "section": "ICT Incident Management & Reporting (Art 17-23)",
       "category": "ICT Incident Management & Reporting (Art 17-23)",
-      "sortOrder": 13
+      "sortOrder": 13,
+      "summary": "Classify ICT-related incidents and determine their impact using the criteria set out in DORA and the related RTS (clients affected, duration, geographical spread, data losses, criticality, economic impact). (Paraphrase — Art. 18)"
     },
     {
       "code": "DORA.Art.19",
       "title": "Reporting of major ICT-related incidents and voluntary notification of significant cyber threats",
       "section": "ICT Incident Management & Reporting (Art 17-23)",
       "category": "ICT Incident Management & Reporting (Art 17-23)",
-      "sortOrder": 14
+      "sortOrder": 14,
+      "summary": "Report major ICT-related incidents to the relevant competent authority through an initial notification, an intermediate report and a final report within the deadlines set by DORA and its RTS/ITS. (Paraphrase — Art. 19)"
     },
     {
       "code": "DORA.Art.23",
       "title": "Operational or security payment-related incidents",
       "section": "ICT Incident Management & Reporting (Art 17-23)",
       "category": "ICT Incident Management & Reporting (Art 17-23)",
-      "sortOrder": 15
+      "sortOrder": 15,
+      "summary": "Credit institutions, payment institutions, account information service providers and electronic money institutions apply the incident provisions to operational or security payment-related incidents. (Paraphrase — Art. 23)"
     },
     {
       "code": "DORA.Art.24",
       "title": "General requirements for the performance of digital operational resilience testing",
       "section": "Digital Operational Resilience Testing (Art 24-27)",
       "category": "Digital Operational Resilience Testing (Art 24-27)",
-      "sortOrder": 16
+      "sortOrder": 16,
+      "summary": "Establish a risk-based digital operational resilience testing programme as an integral part of the ICT risk management framework. (Paraphrase — Art. 24)"
     },
     {
       "code": "DORA.Art.25",
       "title": "Testing of ICT tools and systems",
       "section": "Digital Operational Resilience Testing (Art 24-27)",
       "category": "Digital Operational Resilience Testing (Art 24-27)",
-      "sortOrder": 17
+      "sortOrder": 17,
+      "summary": "Perform an appropriate range of tests on ICT systems and tools — including vulnerability assessments, scans, gap analyses, penetration testing and scenario-based tests — at least yearly on critical systems. (Paraphrase — Art. 25)"
     },
     {
       "code": "DORA.Art.26",
       "title": "Advanced testing of ICT tools, systems and processes based on TLPT",
       "section": "Digital Operational Resilience Testing (Art 24-27)",
       "category": "Digital Operational Resilience Testing (Art 24-27)",
-      "sortOrder": 18
+      "sortOrder": 18,
+      "summary": "Identified financial entities carry out threat-led penetration testing (TLPT) on live production systems covering critical functions at least every three years. (Paraphrase — Art. 26)"
     },
     {
       "code": "DORA.Art.27",
       "title": "Requirements for testers for the carrying out of TLPT",
       "section": "Digital Operational Resilience Testing (Art 24-27)",
       "category": "Digital Operational Resilience Testing (Art 24-27)",
-      "sortOrder": 19
+      "sortOrder": 19,
+      "summary": "Use testers for TLPT that meet suitability, independence and professional-ethics requirements, with appropriate certification or accreditation. (Paraphrase — Art. 27)"
     },
     {
       "code": "DORA.Art.28",
       "title": "General principles (incl. Register of Information)",
       "section": "ICT Third-Party Risk Management (Art 28-44)",
       "category": "ICT Third-Party Risk Management (Art 28-44)",
-      "sortOrder": 20
+      "sortOrder": 20,
+      "summary": "Manage ICT third-party risk as part of the ICT risk framework, adopt a strategy on ICT third-party risk, and maintain a Register of Information on all contractual arrangements for the use of ICT services. (Paraphrase — Art. 28)"
     },
     {
       "code": "DORA.Art.29",
       "title": "Preliminary assessment of ICT concentration risk at entity level",
       "section": "ICT Third-Party Risk Management (Art 28-44)",
       "category": "ICT Third-Party Risk Management (Art 28-44)",
-      "sortOrder": 21
+      "sortOrder": 21,
+      "summary": "Assess ICT concentration risk when entering contractual arrangements for critical or important functions, including risks from sub-outsourcing and hard-to-substitute providers. (Paraphrase — Art. 29)"
     },
     {
       "code": "DORA.Art.30",
       "title": "Key contractual provisions",
       "section": "ICT Third-Party Risk Management (Art 28-44)",
       "category": "ICT Third-Party Risk Management (Art 28-44)",
-      "sortOrder": 22
+      "sortOrder": 22,
+      "summary": "Ensure ICT service contracts contain the mandatory key contractual provisions (service descriptions, locations, data protection, access and audit rights, termination, exit support, incident assistance). (Paraphrase — Art. 30)"
     },
     {
       "code": "DORA.Art.31",
       "title": "Designation of critical ICT third-party service providers",
       "section": "ICT Third-Party Risk Management (Art 28-44)",
       "category": "ICT Third-Party Risk Management (Art 28-44)",
-      "sortOrder": 23
+      "sortOrder": 23,
+      "summary": "Recognise that certain ICT third-party providers are designated as critical by the ESAs and become subject to the Union Oversight Framework; account for this in third-party risk management. (Paraphrase — Art. 31)"
     },
     {
       "code": "DORA.Art.45",
       "title": "Information-sharing arrangements on cyber threat information and intelligence",
       "section": "Information Sharing (Art 45)",
       "category": "Information Sharing (Art 45)",
-      "sortOrder": 24
+      "sortOrder": 24,
+      "summary": "Financial entities may exchange cyber threat information and intelligence within trusted communities under arrangements that protect confidentiality, personal data and competition-sensitive information. (Paraphrase — Art. 45)"
     }
   ],
   "templates": [
