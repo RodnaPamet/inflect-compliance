@@ -34,151 +34,176 @@
       "code": "7.2.1",
       "title": "Identify and document purpose",
       "category": "PII Controller",
-      "sortOrder": 2
+      "sortOrder": 2,
+      "summary": "Document the specific purposes for which each category of PII is processed. (Paraphrase)"
     },
     {
       "code": "7.2.2",
       "title": "Identify lawful basis",
       "category": "PII Controller",
-      "sortOrder": 3
+      "sortOrder": 3,
+      "summary": "Determine, document and keep current the lawful basis for each processing purpose. (Paraphrase)"
     },
     {
       "code": "7.2.3",
       "title": "Determine when and how to obtain consent",
       "category": "PII Controller",
-      "sortOrder": 4
+      "sortOrder": 4,
+      "summary": "Define the process for deciding when consent is required and how it will be obtained and evidenced. (Paraphrase)"
     },
     {
       "code": "7.2.4",
       "title": "Obtain and record consent",
       "category": "PII Controller",
-      "sortOrder": 5
+      "sortOrder": 5,
+      "summary": "Obtain consent in line with defined process and retain records demonstrating it was given. (Paraphrase)"
     },
     {
       "code": "7.2.5",
       "title": "Privacy impact assessment",
       "category": "PII Controller",
-      "sortOrder": 6
+      "sortOrder": 6,
+      "summary": "Assess the privacy impact of processing likely to be high risk before it begins. (Paraphrase)"
     },
     {
       "code": "7.2.6",
       "title": "Contracts with PII processors",
       "category": "PII Controller",
-      "sortOrder": 7
+      "sortOrder": 7,
+      "summary": "Put written agreements in place with processors that bind them to the controller's privacy obligations. (Paraphrase)"
     },
     {
       "code": "7.2.8",
       "title": "Records related to processing PII",
       "category": "PII Controller",
-      "sortOrder": 8
+      "sortOrder": 8,
+      "summary": "Maintain records of the processing activities carried out as a controller. (Paraphrase)"
     },
     {
       "code": "7.3.2",
       "title": "Determining information for PII principals",
       "category": "PII Controller",
-      "sortOrder": 9
+      "sortOrder": 9,
+      "summary": "Decide what privacy information individuals should receive about the processing. (Paraphrase)"
     },
     {
       "code": "7.3.3",
       "title": "Providing information to PII principals",
       "category": "PII Controller",
-      "sortOrder": 10
+      "sortOrder": 10,
+      "summary": "Give individuals clear, accessible privacy information at the appropriate time. (Paraphrase)"
     },
     {
       "code": "7.3.4",
       "title": "Mechanism to modify or withdraw consent",
       "category": "PII Controller",
-      "sortOrder": 11
+      "sortOrder": 11,
+      "summary": "Offer individuals a means to change or withdraw their consent. (Paraphrase)"
     },
     {
       "code": "7.3.5",
       "title": "Mechanism to object to processing",
       "category": "PII Controller",
-      "sortOrder": 12
+      "sortOrder": 12,
+      "summary": "Provide a way for individuals to object to the processing of their PII. (Paraphrase)"
     },
     {
       "code": "7.3.6",
       "title": "Access, correction and erasure",
       "category": "PII Controller",
-      "sortOrder": 13
+      "sortOrder": 13,
+      "summary": "Enable individuals to access, correct and erase their PII where applicable. (Paraphrase)"
     },
     {
       "code": "7.3.8",
       "title": "Provide a copy of PII processed",
       "category": "PII Controller",
-      "sortOrder": 14
+      "sortOrder": 14,
+      "summary": "On request, give the individual a copy of the PII being processed about them. (Paraphrase)"
     },
     {
       "code": "7.3.9",
       "title": "Handle requests",
       "category": "PII Controller",
-      "sortOrder": 15
+      "sortOrder": 15,
+      "summary": "Operate a process to receive, verify and respond to PII-principal requests within required timescales. (Paraphrase)"
     },
     {
       "code": "7.4.1",
       "title": "Limit collection",
       "category": "PII Controller",
-      "sortOrder": 16
+      "sortOrder": 16,
+      "summary": "Collect only the PII that is adequate, relevant and necessary for the identified purposes. (Paraphrase)"
     },
     {
       "code": "7.4.4",
       "title": "PII minimization objectives",
       "category": "PII Controller",
-      "sortOrder": 17
+      "sortOrder": 17,
+      "summary": "Set and pursue objectives to minimize the PII processed. (Paraphrase)"
     },
     {
       "code": "7.4.5",
       "title": "De-identification and deletion at end of processing",
       "category": "PII Controller",
-      "sortOrder": 18
+      "sortOrder": 18,
+      "summary": "De-identify or delete PII when the processing purpose ends. (Paraphrase)"
     },
     {
       "code": "7.4.7",
       "title": "Retention",
       "category": "PII Controller",
-      "sortOrder": 19
+      "sortOrder": 19,
+      "summary": "Retain PII no longer than necessary and enforce defined retention periods. (Paraphrase)"
     },
     {
       "code": "7.5.1",
       "title": "Identify basis for cross-border transfer",
       "category": "PII Controller",
-      "sortOrder": 20
+      "sortOrder": 20,
+      "summary": "Establish and document a lawful basis before transferring PII between jurisdictions. (Paraphrase)"
     },
     {
       "code": "7.5.2",
       "title": "Countries and organizations PII may be transferred to",
       "category": "PII Controller",
-      "sortOrder": 21
+      "sortOrder": 21,
+      "summary": "Document the jurisdictions and organizations to which PII may be transferred. (Paraphrase)"
     },
     {
       "code": "8.2.6",
       "title": "Records related to processing PII",
       "category": "PII Processor",
-      "sortOrder": 22
+      "sortOrder": 22,
+      "summary": "Maintain records of processing carried out on behalf of customers. (Paraphrase)"
     },
     {
       "code": "8.5.1",
       "title": "Basis for transfer between jurisdictions",
       "category": "PII Processor",
-      "sortOrder": 23
+      "sortOrder": 23,
+      "summary": "Only transfer PII across jurisdictions on a basis agreed with the customer. (Paraphrase)"
     },
     {
       "code": "8.5.6",
       "title": "Disclosure of subcontractors",
       "category": "PII Processor",
-      "sortOrder": 24
+      "sortOrder": 24,
+      "summary": "Disclose the use of subcontractors that process PII to the customer. (Paraphrase)"
     },
     {
       "code": "8.5.7",
       "title": "Engagement of a subcontractor",
       "category": "PII Processor",
-      "sortOrder": 25
+      "sortOrder": 25,
+      "summary": "Only engage subcontractors under contract terms consistent with the customer agreement. (Paraphrase)"
     },
     {
       "code": "8.5.8",
       "title": "Change of subcontractor",
       "category": "PII Processor",
-      "sortOrder": 26
+      "sortOrder": 26,
+      "summary": "Inform the customer of intended changes to subcontractors so they can object. (Paraphrase)"
     }
   ],
   "templates": [

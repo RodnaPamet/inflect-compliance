@@ -29,112 +29,128 @@
       "title": "Prohibited AI practices",
       "section": "Prohibited AI practices",
       "category": "Prohibited AI practices",
-      "sortOrder": 0
+      "sortOrder": 0,
+      "summary": "Do not place on the market, put into service, or use the AI practices banned by Article 5 (e.g. social scoring, untargeted facial-image scraping, manipulative or exploitative systems, certain biometric categorisation and real-time remote biometric identification)."
     },
     {
       "code": "Art.9",
       "title": "Risk management system",
       "section": "High-risk AI systems",
       "category": "High-risk AI systems",
-      "sortOrder": 1
+      "sortOrder": 1,
+      "summary": "Establish, implement, document and maintain a risk management system across the high-risk AI system life cycle (Article 9)."
     },
     {
       "code": "Art.10",
       "title": "Data and data governance",
       "section": "High-risk AI systems",
       "category": "High-risk AI systems",
-      "sortOrder": 2
+      "sortOrder": 2,
+      "summary": "Use training, validation and testing data sets that meet quality and governance criteria (Article 10)."
     },
     {
       "code": "Art.11",
       "title": "Technical documentation",
       "section": "High-risk AI systems",
       "category": "High-risk AI systems",
-      "sortOrder": 3
+      "sortOrder": 3,
+      "summary": "Draw up and keep up to date the technical documentation demonstrating conformity (Article 11, Annex IV)."
     },
     {
       "code": "Art.12",
       "title": "Record-keeping",
       "section": "High-risk AI systems",
       "category": "High-risk AI systems",
-      "sortOrder": 4
+      "sortOrder": 4,
+      "summary": "Design the system for automatic logging of events over its lifetime (Article 12)."
     },
     {
       "code": "Art.13",
       "title": "Transparency and information to deployers",
       "section": "High-risk AI systems",
       "category": "High-risk AI systems",
-      "sortOrder": 5
+      "sortOrder": 5,
+      "summary": "Ensure operation is transparent enough for deployers to interpret output, with instructions for use (Article 13)."
     },
     {
       "code": "Art.14",
       "title": "Human oversight",
       "section": "High-risk AI systems",
       "category": "High-risk AI systems",
-      "sortOrder": 6
+      "sortOrder": 6,
+      "summary": "Design the system so it can be effectively overseen by natural persons (Article 14)."
     },
     {
       "code": "Art.15",
       "title": "Accuracy, robustness and cybersecurity",
       "section": "High-risk AI systems",
       "category": "High-risk AI systems",
-      "sortOrder": 7
+      "sortOrder": 7,
+      "summary": "Achieve appropriate accuracy, robustness and cybersecurity, and perform consistently (Article 15)."
     },
     {
       "code": "Art.16",
       "title": "Obligations of providers",
       "section": "High-risk AI systems",
       "category": "High-risk AI systems",
-      "sortOrder": 8
+      "sortOrder": 8,
+      "summary": "Meet the provider obligations for high-risk AI systems, including conformity assessment and CE marking (Article 16)."
     },
     {
       "code": "Art.17",
       "title": "Quality management system",
       "section": "High-risk AI systems",
       "category": "High-risk AI systems",
-      "sortOrder": 9
+      "sortOrder": 9,
+      "summary": "Put a quality management system in place ensuring compliance (Article 17)."
     },
     {
       "code": "Art.26",
       "title": "Obligations of deployers",
       "section": "High-risk AI systems",
       "category": "High-risk AI systems",
-      "sortOrder": 10
+      "sortOrder": 10,
+      "summary": "Meet deployer obligations: use per instructions, ensure human oversight, monitor operation (Article 26)."
     },
     {
       "code": "Art.27",
       "title": "Fundamental rights impact assessment",
       "section": "High-risk AI systems",
       "category": "High-risk AI systems",
-      "sortOrder": 11
+      "sortOrder": 11,
+      "summary": "Perform a fundamental-rights impact assessment where required before deployment (Article 27)."
     },
     {
       "code": "Art.50",
       "title": "Transparency obligations for certain AI systems",
       "section": "Limited-risk (transparency obligations)",
       "category": "Limited-risk (transparency obligations)",
-      "sortOrder": 12
+      "sortOrder": 12,
+      "summary": "Inform people they interact with an AI system, and label AI-generated or manipulated content (e.g. deepfakes) (Article 50)."
     },
     {
       "code": "Art.53",
       "title": "Obligations for providers of GPAI models",
       "section": "General-purpose AI models",
       "category": "General-purpose AI models",
-      "sortOrder": 13
+      "sortOrder": 13,
+      "summary": "Maintain technical documentation, provide information to downstream providers, comply with copyright, and publish a training-content summary (Article 53)."
     },
     {
       "code": "Art.55",
       "title": "Obligations for GPAI models with systemic risk",
       "section": "General-purpose AI models",
       "category": "General-purpose AI models",
-      "sortOrder": 14
+      "sortOrder": 14,
+      "summary": "For systemic-risk GPAI: model evaluation, adversarial testing, serious-incident tracking and reporting, and cybersecurity protection (Article 55)."
     },
     {
       "code": "Art.95",
       "title": "Codes of conduct (voluntary)",
       "section": "Minimal-risk AI systems",
       "category": "Minimal-risk AI systems",
-      "sortOrder": 15
+      "sortOrder": 15,
+      "summary": "Minimal-risk systems carry no mandatory obligations; providers may adopt voluntary codes of conduct (Article 95)."
     }
   ],
   "templates": [

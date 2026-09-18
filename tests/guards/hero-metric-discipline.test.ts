@@ -19,15 +19,16 @@
  *     (canonical adoption — first dashboard with a hero metric)
  */
 import * as fs from "fs";
+import { codeOf } from "../helpers/source-blocks";
 import * as path from "path";
 
 const ROOT = path.resolve(__dirname, "../..");
 
 describe("v2-PR-10 HeroMetric primitive contract", () => {
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.join(ROOT, "src/components/ui/HeroMetric.tsx"),
         "utf8",
-    );
+    ));
 
     it("exports the HeroMetric component + props interface", () => {
         expect(src).toMatch(/export\s+function\s+HeroMetric/);
@@ -102,13 +103,13 @@ describe("v2-PR-10 HeroMetric primitive contract", () => {
 });
 
 describe("v2-PR-10 executive dashboard adoption", () => {
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.join(
             ROOT,
             "src/app/t/[tenantSlug]/(app)/dashboard/DashboardClient.tsx",
         ),
         "utf8",
-    );
+    ));
 
     it("imports + renders <HeroMetric>", () => {
         expect(src).toMatch(
@@ -119,7 +120,10 @@ describe("v2-PR-10 executive dashboard adoption", () => {
 
     it("places the hero ABOVE the KPI grid", () => {
         const heroIdx = src.search(/<HeroMetric/);
-        const kpiGridIdx = src.search(/KPI Grid/);
+        // #2629 — was /KPI Grid/, which is a JSX COMMENT above the mount, not
+        // code. Order against the MOUNT so moving the component is what
+        // moves this index.
+        const kpiGridIdx = src.search(/<InteractiveKpiGrid\b/);
         expect(heroIdx).toBeGreaterThan(0);
         expect(kpiGridIdx).toBeGreaterThan(0);
         expect(heroIdx).toBeLessThan(kpiGridIdx);

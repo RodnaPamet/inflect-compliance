@@ -29,133 +29,152 @@
       "title": "Risk taxonomy and tolerances defined before deployment",
       "section": "D1 Bound risks upfront",
       "category": "D1 Bound risks upfront",
-      "sortOrder": 0
+      "sortOrder": 0,
+      "summary": "Maintain a documented taxonomy of the harms the AI system could cause, with the tolerance the organisation accepts for each, agreed before the system is put into service rather than after an incident."
     },
     {
       "code": "MGF-1.2",
       "title": "Internal governance structure with named accountable owners",
       "section": "D1 Bound risks upfront",
       "category": "D1 Bound risks upfront",
-      "sortOrder": 1
+      "sortOrder": 1,
+      "summary": "Assign AI governance to identified roles with decision rights, reporting lines and a standing forum, so that every deployed system has a named owner accountable for it."
     },
     {
       "code": "MGF-1.3",
       "title": "Agent scope and authority limits are declared and enforced",
       "section": "D1 Bound risks upfront",
       "category": "D1 Bound risks upfront",
-      "sortOrder": 2
+      "sortOrder": 2,
+      "summary": "Declare for each agent what it may act on, which tools and data it may reach, what it may spend or change, and enforce those limits in the runtime rather than in documentation alone."
     },
     {
       "code": "MGF-1.4",
       "title": "Multi-agent system risk assessment",
       "section": "D1 Bound risks upfront",
       "category": "D1 Bound risks upfront",
-      "sortOrder": 3
+      "sortOrder": 3,
+      "summary": "Assess risk at the level of the agent SYSTEM, not only the individual agent: emergent behaviour, delegation chains, shared memory, and the failure modes that only appear when agents compose. (May 2026 revision.)"
     },
     {
       "code": "MGF-1.5",
       "title": "Third-party agent due diligence before adoption",
       "section": "D1 Bound risks upfront",
       "category": "D1 Bound risks upfront",
-      "sortOrder": 4
+      "sortOrder": 4,
+      "summary": "Evaluate externally supplied agents, tool servers and agent marketplaces before adoption — provenance, update channel, data handling, and the authority the third party gains inside your environment. (May 2026 revision.)"
     },
     {
       "code": "MGF-2.1",
       "title": "Human involvement model chosen per decision class",
       "section": "D2 Meaningful human accountability",
       "category": "D2 Meaningful human accountability",
-      "sortOrder": 5
+      "sortOrder": 5,
+      "summary": "Decide and record, for each class of decision the system makes, whether a human is in the loop, over the loop, or out of the loop, and justify the choice against the assessed harm."
     },
     {
       "code": "MGF-2.2",
       "title": "Every deployed agent has an accountable human owner",
       "section": "D2 Meaningful human accountability",
       "category": "D2 Meaningful human accountability",
-      "sortOrder": 6
+      "sortOrder": 6,
+      "summary": "Each agent in the inventory carries a named owner who remains accountable for its actions, and ownership is reassigned — not left orphaned — when that person changes role or leaves."
     },
     {
       "code": "MGF-2.3",
       "title": "Intervention, escalation and stop authority",
       "section": "D2 Meaningful human accountability",
       "category": "D2 Meaningful human accountability",
-      "sortOrder": 7
+      "sortOrder": 7,
+      "summary": "Provide a tested way to pause, constrain or stop an agent mid-task, state who holds that authority, and ensure it can be exercised faster than the agent can act."
     },
     {
       "code": "MGF-2.4",
       "title": "Automation bias mitigated in human review",
       "section": "D2 Meaningful human accountability",
       "category": "D2 Meaningful human accountability",
-      "sortOrder": 8
+      "sortOrder": 8,
+      "summary": "Design approval steps so the reviewer can actually dissent: surface the evidence and the uncertainty, avoid pre-ticked defaults, and monitor approval rates for rubber-stamping. (May 2026 revision.)"
     },
     {
       "code": "MGF-3.1",
       "title": "Data governance and provenance for inputs and memory",
       "section": "D3 Technical controls and processes",
       "category": "D3 Technical controls and processes",
-      "sortOrder": 9
+      "sortOrder": 9,
+      "summary": "Know where the agent's inputs, retrieved context and persistent memory come from, control what may be written to them, and be able to expire or quarantine poisoned content."
     },
     {
       "code": "MGF-3.2",
       "title": "Pre-release and ongoing testing, evaluation and red-teaming",
       "section": "D3 Technical controls and processes",
       "category": "D3 Technical controls and processes",
-      "sortOrder": 10
+      "sortOrder": 10,
+      "summary": "Test the system against its declared boundaries before release and on a recurring basis after it, including adversarial testing of prompt injection, tool misuse and goal drift."
     },
     {
       "code": "MGF-3.3",
       "title": "Traceability of decisions, tool calls and actions",
       "section": "D3 Technical controls and processes",
       "category": "D3 Technical controls and processes",
-      "sortOrder": 11
+      "sortOrder": 11,
+      "summary": "Log what the agent decided, which tools it called with which parameters, and what changed as a result, in a form that supports after-the-fact reconstruction by someone who was not present."
     },
     {
       "code": "MGF-3.4",
       "title": "Least-privilege identity and credential handling for agents",
       "section": "D3 Technical controls and processes",
       "category": "D3 Technical controls and processes",
-      "sortOrder": 12
+      "sortOrder": 12,
+      "summary": "Give each agent its own identity scoped to the task, hold its credentials in a managed store, rotate them, and remove the standing privilege it does not need between tasks."
     },
     {
       "code": "MGF-3.5",
       "title": "Incident detection, response and post-incident review",
       "section": "D3 Technical controls and processes",
       "category": "D3 Technical controls and processes",
-      "sortOrder": 13
+      "sortOrder": 13,
+      "summary": "Detect agent misbehaviour in operation, respond under a defined procedure that includes containment of an autonomous actor, and feed the review back into the risk boundaries of D1."
     },
     {
       "code": "MGF-3.6",
       "title": "Controls on inter-agent communication and delegation",
       "section": "D3 Technical controls and processes",
       "category": "D3 Technical controls and processes",
-      "sortOrder": 14
+      "sortOrder": 14,
+      "summary": "Authenticate and authorise agent-to-agent messages, bound how far authority may be delegated down a chain, and log the delegation so a transferred privilege is visible. (May 2026 revision.)"
     },
     {
       "code": "MGF-4.1",
       "title": "Disclosure that an AI agent is in use",
       "section": "D4 End-user responsibility",
       "category": "D4 End-user responsibility",
-      "sortOrder": 15
+      "sortOrder": 15,
+      "summary": "Tell the people interacting with the system that they are dealing with an AI agent, and say on whose behalf it is acting."
     },
     {
       "code": "MGF-4.2",
       "title": "Capabilities, limits and failure modes explained",
       "section": "D4 End-user responsibility",
       "category": "D4 End-user responsibility",
-      "sortOrder": 16
+      "sortOrder": 16,
+      "summary": "Describe in user-facing terms what the agent can and cannot do, how it fails, and which of its outputs should not be relied on without independent checking."
     },
     {
       "code": "MGF-4.3",
       "title": "User control, consent and redress channels",
       "section": "D4 End-user responsibility",
       "category": "D4 End-user responsibility",
-      "sortOrder": 17
+      "sortOrder": 17,
+      "summary": "Give affected people a way to decline agentic handling where that is meaningful, to reach a human, and to contest or seek correction of an outcome."
     },
     {
       "code": "MGF-4.4",
       "title": "Guidance for safe operation and against over-reliance",
       "section": "D4 End-user responsibility",
       "category": "D4 End-user responsibility",
-      "sortOrder": 18
+      "sortOrder": 18,
+      "summary": "Publish operating guidance for the people who direct the agent, including where independent verification is expected, so that end-user trust is calibrated rather than assumed."
     }
   ],
   "templates": [
