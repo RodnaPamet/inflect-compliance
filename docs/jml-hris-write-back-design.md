@@ -583,6 +583,67 @@ reader scans for.
 | A separate seven-day dwell | **Not needed.** It rides the joiner's, per Decision 2. |
 | `DirectoryWriter` as the seam (`identity-disable-account.ts:235`) | **Not reused.** That interface is `readState` / `disable` / `preflight` over a *directory* account. The write-back needs `readField` / `writeField` / `preflight` over an HRIS record. Same shape, different contract; forcing it into `DirectoryWriter` would put a non-directory verb into `WRITABLE_IDENTITY_PROVIDERS` and into the leaver's writer factory. |
 
+### New HRIS work is proven against OrangeHRM, not BambooHR
+
+**Settled 2026-09-18. This does not revisit Decision 1 — BambooHR is still the first
+CUSTOMER target. It settles a different question: where the EVIDENCE comes from while
+that target is built.**
+
+BambooHR cannot supply evidence, and the reason is structural rather than a matter of
+effort. It is customer-owned. This repo has no BambooHR tenant, cannot create an
+employee in one, cannot blank an `Employee #`, and cannot observe what the API returns
+for a field it did not request. Open question 1 below — *does BambooHR expose an
+employee-update API at the same gateway base, with the same Basic auth?* — is not
+"unanswered", it is **unanswerable from here**, and Decision 1 rests entirely on it.
+
+OrangeHRM is self-hostable, so its HR side is writable. That is the whole of what #2548
+built it for, and #2587 is what proved the arrangement works: pointing the finished
+connector at a live `orangehrm/orangehrm:5.9` disproved its field mapping in five
+places, including a dead manager graph that fifty green tests had not noticed. Writing
+the connector proved nothing. Running it against the instance is what produced knowledge.
+
+**What has already been established against the live instance, and is therefore usable
+as a premise rather than an assumption:**
+
+| | |
+| --- | --- |
+| `POST /pim/employees/{id}/terminations` | **succeeds** — a write lands |
+| `GET` on the same path | returns 501, which is the vendor's own gap, not ours |
+| `PUT /pim/employee/{id}/contact-details` | accepts `{"workEmail": …}`; rejects an empty-string `countryCode` with 422 |
+| the read-back after a write | works — the roster read reflects it |
+
+So the Phase 2 mechanism — conditional write, read-back, journal capture-before-write,
+hash-chained audit, the breaker with its complete-roster denominator — can be built and
+exercised end to end against an HR system we control, before any customer's BambooHR is
+involved.
+
+**What this explicitly does NOT do, stated because the temptation runs the other way.**
+
+It does not answer open question 1. A different vendor's API is not evidence about
+BambooHR's, and treating it as such would be the same assertion-in-place-of-measurement
+this document exists to refuse. It does not make BambooHR's mapping verified — that
+mapping is still asserted from documentation and will stay asserted until a real tenant
+exists. And it does not make OrangeHRM a rehearsal for BambooHR's *credential* story:
+Decision 5's account of what a read-shaped API key permits is a BambooHR question and
+OrangeHRM cannot speak to it.
+
+What it de-risks is the MECHANISM, which is the larger half of Phase 2 and the half that
+can be got wrong silently.
+
+**This is a policy about proof, not about tests.** BambooHR keeps every test it has.
+`tests/unit/integrations/hris-provider.test.ts` is its only coverage — the status mapping
+and the `complete` flag that gates the departed-employee reconcile — and retargeting it
+would leave a shipped, customer-facing integration both unverified AND untested, which is
+strictly worse than unverified. Likewise the structural guards that enumerate providers
+(`provider-metric-label-coverage`, `provider-fail-closed-coverage`,
+`integration-bootstrap-runtime-wiring`) must keep naming `bamboohr`, because their whole
+job is to notice a registered provider that has fallen out of a list.
+
+**The rule for a contributor.** When new HRIS behaviour needs to be shown to work —
+rather than shown to typecheck — point it at the OrangeHRM instance and record what came
+back. When it needs to be shown to work *for BambooHR specifically*, it cannot be, and
+that limitation belongs in the PR body rather than in a fixture that implies otherwise.
+
 ### Phasing
 
 **Phase 0 — make the handle exist. No writes. SHIPPED 2026-09-17 (#2549).** BambooHR's row `id` is
