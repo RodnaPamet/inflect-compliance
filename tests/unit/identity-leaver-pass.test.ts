@@ -1180,3 +1180,64 @@ describe('a candidate whose connection was soft-disabled (#2419)', () => {
         expect(args.take).toBe(2);
     });
 });
+
+describe('the readiness the dry run resolved reaches the pass result', () => {
+    // #2604 option C exists so an operator learns BEFORE a real leaver that a
+    // connection cannot write. `resolveDirectoryWriter` computes that, and the
+    // factory's own suite proves it computes it correctly — but the value is
+    // only worth anything if the pass SURFACES it, and nothing asserted that
+    // it did. Commenting out the single `writeReadiness:` line in
+    // `identity-leaver-pass.ts` left 76 tests green: the field was carried by
+    // no anchor at all. These mutate at the CALL SITE for that reason; a test
+    // one layer down cannot see a wrapper that stops calling.
+
+    it('carries a READ_BIND_ONLY verdict through to the result', async () => {
+        const readiness = {
+            readiness: 'READ_BIND_ONLY' as const,
+            detail:
+                'No dedicated write credential is configured, so writes run as the read bind. ' +
+                'If it lacks the delegation, every disable is refused with LDAP result 50 and ' +
+                'the leaver is not offboarded.',
+        };
+        resolveWriter.mockResolvedValue({
+            kind: 'snapshot',
+            writer: { provider: 'entra-id' },
+            close,
+            readiness,
+        });
+
+        const r = await run();
+
+        expect(r.status).toBe('PASSED');
+        // The whole report, not just the enum — the detail sentence is what an
+        // operator actually reads, and a pass that forwarded only the verdict
+        // would strip the one part that says what to do about it.
+        expect(r.writeReadiness).toEqual(readiness);
+        expect(r.writeReadiness?.detail).toMatch(/result 50/);
+    });
+
+    it('carries UNKNOWN through UNCHANGED, rather than collapsing it to a negative', async () => {
+        // The distinction this subsystem was bitten by in #2589: a read that
+        // failed must not be recorded as an authoritative negative. If the pass
+        // ever mapped UNKNOWN onto READ_BIND_ONLY "to be safe", an operator
+        // would be told no write credential exists when in fact nobody could
+        // look.
+        const readiness = {
+            readiness: 'UNKNOWN' as const,
+            detail:
+                "This connection's secrets could not be read, so whether a dedicated write " +
+                'credential is configured is unknown. It is not a report that none exists.',
+        };
+        resolveWriter.mockResolvedValue({
+            kind: 'snapshot',
+            writer: { provider: 'entra-id' },
+            close,
+            readiness,
+        });
+
+        const r = await run();
+
+        expect(r.writeReadiness?.readiness).toBe('UNKNOWN');
+        expect(r.writeReadiness?.readiness).not.toBe('READ_BIND_ONLY');
+    });
+});
