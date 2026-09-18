@@ -71,11 +71,11 @@ registry.register(new BambooHrProvider());
 // Workday — HRIS roster sync into the personnel hub (OAuth2 + paginated RaaS).
 registry.register(new WorkdayProvider());
 
-// OrangeHRM — INTERNAL TEST FIXTURE, not a supported customer integration
+// OrangeHRM — HRIS roster connector (#2548)
 // (#2548). Registered because the HRIS sync resolves providers through this
-// registry, so an unregistered one cannot be exercised end to end — which is
-// the only thing this provider is for. See providers/orangehrm for the full
-// note, including why it is in HRIS_PROVIDERS and what that costs a tenant.
+// registry, so an unregistered one cannot be exercised end to end. See
+// providers/orangehrm for the full note, including why it is in HRIS_PROVIDERS
+// and what that costs a tenant.
 registry.register(new OrangeHrmProvider());
 
 // Personnel — internal checks (offboarded access, onboarding SLA, manager coverage).

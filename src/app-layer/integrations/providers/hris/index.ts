@@ -181,13 +181,14 @@ export interface HrisSyncProvider {
  * It lives here rather than in either consumer so neither owns it, and so
  * adding a provider is one edit in the same directory as the provider.
  *
- * `orangehrm` is in it DELIBERATELY, and the consequence is the point. It is an
- * internal test fixture rather than a customer integration (#2548), so leaving
- * it out would have been the tempting way to keep it out of everyone's way. It
- * would also have taken it outside `assertSoleEnabledHrisConnection`, whose
- * refusal reads this same list — buying an enabled fixture alongside an enabled
- * real HRIS, and with it the nightly roster flip-flop that ends in a directory
- * disable. Membership here is what makes the fixture safe to enable at all.
+ * `orangehrm` is in it DELIBERATELY, and the consequence is the point. When it
+ * shipped as an internal fixture (#2548) leaving it out would have been the
+ * tempting way to keep it out of everyone's way. It would also have taken it
+ * outside `assertSoleEnabledHrisConnection`, whose refusal reads this same list
+ * — buying a second enabled HRIS alongside a real one, and with it the nightly
+ * roster flip-flop that ends in a directory disable. Membership here is what
+ * made it safe to enable at all, and is why the rule still holds now that it is
+ * a supported connector.
  */
 export const HRIS_PROVIDERS = ['bamboohr', 'workday', 'orangehrm'] as const;
 
@@ -203,7 +204,18 @@ export function isHrisSyncProvider(p: unknown): p is HrisSyncProvider {
 const MAX_EMPLOYEES = 10000;
 
 interface BambooDeps {
-    listEmployees?: (config: Record<string, unknown>) => Promise<NormalizedEmployee[]>;
+    /**
+     * Injected roster for tests. Returns EITHER a bare array (complete) or a
+     * full `ListEmployeesResult`.
+     *
+     * The union matters because the real path VARIES what this seam pinned:
+     * `fetchBambooRoster` sets `complete = rows.length <= MAX_EMPLOYEES`, so a
+     * roster over the cap returns `complete: false`. While this seam hardcoded
+     * `true`, that branch was inexpressible through it — and `complete` is the
+     * flag that releases the departure reconcile, i.e. the one that decides
+     * whether everyone unseen is marked TERMINATED.
+     */
+    listEmployees?: (config: Record<string, unknown>) => Promise<NormalizedEmployee[] | ListEmployeesResult>;
     fetchImpl?: typeof fetch;
 }
 
@@ -275,7 +287,10 @@ export class BambooHrProvider implements ScheduledCheckProvider, HrisSyncProvide
     }
 
     async listEmployees(config: Record<string, unknown>): Promise<ListEmployeesResult> {
-        if (this.deps.listEmployees) return { employees: await this.deps.listEmployees(config), complete: true };
+        if (this.deps.listEmployees) {
+            const injected = await this.deps.listEmployees(config);
+            return Array.isArray(injected) ? { employees: injected, complete: true } : injected;
+        }
         return this.fetchBambooRoster(config);
     }
 

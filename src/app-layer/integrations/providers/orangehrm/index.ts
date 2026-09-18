@@ -1,8 +1,7 @@
 /**
- * OrangeHRM — AN INTERNAL TEST FIXTURE WITH A REAL API. NOT A SUPPORTED
- * INTEGRATION.
+ * OrangeHRM — HRIS roster connector.
  *
- * ═══ READ THIS BEFORE TREATING IT AS A PRODUCT SURFACE ═══
+ * ═══ WHY IT EXISTS, WHICH IS NOT WHY YOU WOULD GUESS ═══
  *
  * This provider is not here because a customer asked for OrangeHRM. It is here
  * because the JML HRIS write-back is blocked on questions this repo cannot
@@ -26,14 +25,31 @@
  * It is registered, so it appears in the connector list and can hold a
  * connection, because the sync path resolves providers through the registry
  * (`usecases/hris-sync.ts` → `registry.getProvider(conn.provider)`) and an
- * unregistered provider cannot be exercised end to end at all — which would
- * defeat the purpose. WHETHER IT SHOULD BE VISIBLE TO CUSTOMERS IS NOT THIS
- * MODULE'S DECISION. There is no "internal" flag on `IntegrationProvider`
- * today, so `displayName`, `description` and `setupGuide` carry the disclaimer
- * in the only places an operator will actually read it. Someone deciding this
- * is a real integration should remove those words deliberately; someone
- * deciding it must be hidden should add the flag and the filter, which is a
- * product-surface change rather than a provider change.
+ * unregistered provider cannot be exercised end to end at all.
+ *
+ * IT SHIPPED FIRST AS AN EXPLICITLY-LABELLED INTERNAL FIXTURE (#2548), because
+ * its field mapping was written from OrangeHRM 5.x's published v2 PIM payload
+ * and had never met a live instance. The label came off when that finally
+ * happened — and the run did not confirm the mapping, it DISPROVED it, in five
+ * separate places (#2587). The list row carries neither the work email nor any
+ * date; a supervisor entry carries no email either; `terminationId` names a
+ * reason rather than a date; and the two per-employee paths disagree about
+ * plurality. `roster.ts` carries the full inventory and how each was
+ * established.
+ *
+ * So what the label change rests on is not "somebody looked and it was fine".
+ * It is that the connector now reads the payload a live 5.9 actually returns,
+ * field by field, with the mapping checked in both directions — an employee
+ * with an email resolves it, one without is dropped, a terminated employee
+ * comes back TERMINATED with the right date, and a supervisor resolves to a
+ * manager. That is the standard the two customer-owned HRIS providers in this
+ * repo have never been held to, because neither can be.
+ *
+ * The connector still REFUSES a page of rows none of which carry a work email
+ * (see `roster.ts`), and that refusal did not become vestigial when the
+ * mapping became measured: the measurement is of ONE instance at ONE version.
+ * A silently wrong field name reads as an empty roster, and an empty roster
+ * reads as everyone having left.
  *
  * ═══ ONE ENABLED HRIS CONNECTION PER TENANT APPLIES TO IT (#2500) ═══
  *
@@ -110,10 +126,10 @@ function readConfig(merged: Record<string, unknown>): {
 
 export class OrangeHrmProvider implements ScheduledCheckProvider, HrisSyncProvider {
     readonly id = 'orangehrm';
-    readonly displayName = 'OrangeHRM (internal test fixture)';
+    readonly displayName = 'OrangeHRM';
     readonly description =
-        'Internal test fixture, not a supported integration: an OrangeHRM directory this team controls, ' +
-        'used to verify HRIS roster behaviour from the HR side.';
+        'An OrangeHRM directory, read for the HRIS roster. Supports the OAuth2 client-credentials grant ' +
+        'against an instance on a host covered by ORANGEHRM_HOSTS.';
     readonly supportedChecks: string[] = [];
 
     /**
@@ -131,7 +147,7 @@ export class OrangeHrmProvider implements ScheduledCheckProvider, HrisSyncProvid
     readonly liveValidation = true;
 
     readonly setupGuide =
-        'Internal test fixture — not a supported customer integration. Stand up an OrangeHRM instance on a ' +
+        'Stand up an OrangeHRM instance on a ' +
         'host covered by ORANGEHRM_HOSTS, register an API client for the OAuth2 client-credentials grant, ' +
         'and provide the instance URL with the client id and secret. Test connection performs a real token ' +
         'exchange against the instance.';

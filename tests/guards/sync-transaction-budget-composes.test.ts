@@ -99,6 +99,9 @@ import {
     WORKDAY_MAX_PER_RUN,
     WORKDAY_PAGE_SIZE,
 } from '@/app-layer/integrations/providers/workday/roster';
+import * as fs from 'fs';
+import * as path from 'path';
+import { functionBodyOf } from '../helpers/source-blocks';
 
 /**
  * Prisma 7.10.0's interactive-transaction default, restated here as the number
@@ -209,6 +212,41 @@ describe('the READ phase fits inside the lease too (#2508)', () => {
         // attempts at least one page" true.
         expect(MAX_HTTP_REQUEST_MS + SYNC_BOOKKEEPING_TX_TIMEOUT_MS)
             .toBeLessThan(ROSTER_READ_DEADLINE_MS);
+    });
+
+    /**
+     * ═══ THE OVERSHOOT TERM IS A CLAIM ABOUT PROVIDER CODE, SO CHECK IT ═══
+     *
+     * Every assertion above is arithmetic over constants, and arithmetic cannot
+     * notice when a provider stops honouring the shape the arithmetic assumes.
+     * The budget adds ONE `MAX_HTTP_REQUEST_MS` because "a page is one request,
+     * and the deadline is checked between pages". OrangeHRM broke that premise
+     * (#2587): its page issues a list request plus two bounded-concurrency
+     * fan-outs, up to 150 requests, and a page entered one millisecond before
+     * the deadline would have run fourteen further request-times past it.
+     *
+     * The fix restored the premise rather than renegotiating the budget — the
+     * fan-outs are parallel, so a batch costs one request-time, and each
+     * consults the read budget before claiming more work. THAT is the property
+     * this guard has to hold, because it is the one keeping the number above
+     * honest, and it lives in provider source rather than in a constant.
+     *
+     * Bounded read: `functionBodyOf`, not the whole file — a needle satisfied
+     * anywhere in a 700-line module would let the checked call be deleted while
+     * a sibling kept this green.
+     */
+    it('every OrangeHRM fan-out inside the page loop yields to the read deadline', () => {
+        const src = fs.readFileSync(
+            path.resolve(__dirname, '../../src/app-layer/integrations/providers/orangehrm/roster.ts'),
+            'utf-8',
+        );
+        const body = functionBodyOf(src, 'readOrangeHrmRoster');
+        const fanOuts = body.match(/mapWithConcurrency\(/g) ?? [];
+        // The page loop has exactly two: enrichment, then supervisor
+        // resolution. A third that does not yield would reopen the overshoot.
+        expect(fanOuts.length).toBeGreaterThan(0);
+        const yields = body.match(/readBudgetSpent,/g) ?? [];
+        expect(yields.length).toBe(fanOuts.length);
     });
 
     it('the deadline is not vacuous — the unbounded read really did overrun', () => {

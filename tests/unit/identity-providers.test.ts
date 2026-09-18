@@ -415,3 +415,51 @@ describe('ActiveDirectoryProvider', () => {
         expect(ev?.category).toBe('active-directory:no_dormant_admins');
     });
 });
+
+/**
+ * ═══ THE TRUNCATION FLAG REACHES THE VERDICT, IN EVERY PROVIDER ═══
+ *
+ * `listAccounts` has always returned `complete`, and all four providers'
+ * `runCheck` destructured `{ accounts }` and dropped it — so on a directory
+ * past the enumeration cap, a compliance control reported PASSED over a slice.
+ *
+ * These tests exist at the PROVIDER level rather than only on
+ * `runIdentityCheck`, because the bug was never in the check: it was in the
+ * five-line body that called it. A unit test of the rule alone stays green
+ * while every caller ignores it.
+ *
+ * They are only possible because the injectable seam now accepts a full
+ * result. It used to hardcode `complete: true`, which made a truncated read
+ * INEXPRESSIBLE through the test double — so reverting the wiring would have
+ * reddened nothing anywhere.
+ */
+describe('a truncated enumeration cannot certify a control (every identity provider)', () => {
+    const clean = [acct({ mfaEnrolled: true })];
+    const check = { parsed: { checkType: 'mfa_enforced' }, connectionConfig: {} } as never;
+
+    const providers: Array<[string, (l: () => Promise<unknown>) => { runCheck: (i: never) => Promise<{ status: string }> }]> = [
+        ['okta', (l) => new OktaProvider({ listAccounts: l } as never)],
+        ['google-workspace', (l) => new GoogleWorkspaceProvider({ listAccounts: l } as never)],
+        ['entra-id', (l) => new EntraIdProvider({ listAccounts: l } as never)],
+        ['active-directory', (l) => new ActiveDirectoryProvider({ listAccounts: l } as never)],
+    ];
+
+    for (const [name, make] of providers) {
+        it(`${name}: a COMPLETE read of a clean directory passes`, async () => {
+            // The positive control. Without it the assertion below would also
+            // hold for a provider whose check can never pass at all.
+            const p = make(async () => ({ accounts: clean, complete: true, resumeToken: null }));
+            expect((await p.runCheck(check)).status).toBe('PASSED');
+        });
+
+        it(`${name}: the SAME directory read short returns ERROR, not PASSED`, async () => {
+            const p = make(async () => ({ accounts: clean, complete: false, resumeToken: 'more' }));
+            expect((await p.runCheck(check)).status).toBe('ERROR');
+        });
+
+        it(`${name}: a bare array still means complete, so existing doubles are unchanged`, async () => {
+            const p = make(async () => clean);
+            expect((await p.runCheck(check)).status).toBe('PASSED');
+        });
+    }
+});

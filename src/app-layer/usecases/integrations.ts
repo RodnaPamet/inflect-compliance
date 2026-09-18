@@ -22,11 +22,11 @@ import '../integrations/bootstrap';
 import { registry } from '../integrations/registry';
 import { isScheduledCheckProvider } from '../integrations/types';
 import { isPostureProvider } from '../integrations/posture-providers';
-import type { CheckResult, EvidencePayload } from '../integrations/types';
+import type { CheckResult, EvidencePayload, ConnectionValidationResult } from '../integrations/types';
 import { encryptField, decryptField } from '@/lib/security/encryption';
 import { logEvent } from '../events/audit';
 import { notFound, badRequest, forbidden, conflict } from '@/lib/errors/types';
-import { validateProviderConfig } from '../integrations/config-schema';
+import { validateProviderConfig, redirectsStoredCredential } from '../integrations/config-schema';
 // The ONE list of HRIS provider ids, imported rather than restated — see the
 // note on its declaration for why a second copy is the specific defect that
 // module exists to prevent.
@@ -35,6 +35,7 @@ import { LEAVER_PASS_AUTOMATION_SUFFIX } from './identity-leaver-pass';
 import { logger } from '@/lib/observability/logger';
 import { CONNECTION_STALE_AFTER_SECONDS } from '@/lib/observability/connection-freshness';
 import { runIdentitySync } from './identity-sync';
+import { runHrisSyncJob } from '@/app-layer/jobs/hris-sync';
 import { IDENTITY_ROSTER_PAGE_SIZE, IDENTITY_ROSTER_SEARCH_MAX_LENGTH } from '@/lib/identity-roster';
 
 /** Providers whose connection-level sync runs a directory/account sync. */
@@ -281,6 +282,39 @@ export async function upsertIntegrationConnection(
                 selfId: existing.id,
             });
 
+            /**
+             * A HOST CHANGE MAY NOT INHERIT THE OLD CREDENTIAL.
+             *
+             * `secretEncrypted` is preserved when the caller sends no secrets —
+             * necessary, because the admin UI never gets the stored secret back
+             * and so cannot resend it. But `configJson` is replaced on the same
+             * request, so without this check an `admin.manage` holder could
+             * move ONLY the destination host and keep the credential, and the
+             * scheduled runner would then post the tenant's real integration
+             * password to a host of their choosing. The allowlist does not stop
+             * it: it answers "is this the vendor?", never "is this YOUR tenant
+             * of the vendor?" — and a free personal developer instance passes.
+             *
+             * Refused rather than silently cleared. Clearing would leave a
+             * connection that looks configured and fails at the next scheduled
+             * run, and the operator would be debugging a credential they did
+             * not knowingly drop. Re-entering it is one field, and it makes the
+             * redirect an act somebody performed on purpose.
+             */
+            if (input.configJson != null && !secretEncrypted && existing.secretEncrypted) {
+                const redirected = redirectsStoredCredential(
+                    existing.provider,
+                    (existing.configJson as Record<string, unknown>) ?? {},
+                    validatedConfig,
+                );
+                if (redirected) {
+                    throw badRequest(
+                        `Changing "${redirected}" points this connection at a different host, so the stored ` +
+                            'credential cannot be carried over. Re-enter the credential with this change.',
+                    );
+                }
+            }
+
             const updated = await db.integrationConnection.update({
                 where: { id: input.id },
                 data: {
@@ -387,6 +421,64 @@ export async function removeIntegrationConnection(ctx: RequestContext, connectio
 }
 
 // ─── Automation Execution ────────────────────────────────────────────
+
+/**
+ * Test a connection's credentials, using the STORED secrets when the caller
+ * did not resend them.
+ *
+ * ═══ WHY THIS EXISTS: THE TEST BUTTON USED TO BREAK HEALTHY CONNECTIONS ═══
+ *
+ * The route called `validateConnection(body.configJson ?? {}, body.secrets ?? {})`
+ * — the secrets from the REQUEST, never the ones on the row. Secrets are
+ * deliberately never rendered back to the client (that is the whole point of
+ * `secretFields`), so the admin UI cannot resend them and `body.secrets` is
+ * empty for every saved connection. Every provider with `liveValidation: true`
+ * and a required secret therefore reported "invalid" for a connection that was
+ * working perfectly — and the route then PERSISTED that verdict as
+ * `lastTestStatus: 'error'`, so a healthy connection was marked broken by the
+ * act of testing it.
+ *
+ * That is worse than a cosmetic wrong answer: `lastTestStatus` is what an
+ * operator reads when a sync looks wrong, so it pointed at the credential
+ * every time the real cause was elsewhere.
+ *
+ * REQUEST SECRETS WIN over stored ones, because both cases are real: testing a
+ * saved connection sends none (use what is stored), and rotating a credential
+ * sends the new value before saving it (test what was typed). Merging per-key
+ * rather than choosing one side means a provider with two secrets can have one
+ * rotated and the other left alone.
+ */
+export async function testConnectionCredentials(
+    ctx: RequestContext,
+    input: { connectionId?: string; provider: string; configJson?: Record<string, unknown>; secrets?: Record<string, unknown> },
+): Promise<ConnectionValidationResult> {
+    const providerImpl = registry.getProvider(input.provider);
+    if (!providerImpl) throw badRequest(`Unknown provider: ${input.provider}`);
+
+    let storedConfig: Record<string, unknown> = {};
+    let storedSecrets: Record<string, unknown> = {};
+    if (input.connectionId) {
+        const connection = await runInTenantContext(ctx, (db) =>
+            db.integrationConnection.findFirst({
+                where: { id: input.connectionId, tenantId: ctx.tenantId },
+                select: { configJson: true, secretEncrypted: true },
+            }),
+        );
+        if (!connection) throw notFound('Connection not found');
+        storedConfig = (connection.configJson as Record<string, unknown>) ?? {};
+        storedSecrets = decryptConnectionSecrets(connection.secretEncrypted);
+    }
+
+    const result = await providerImpl.validateConnection(
+        { ...storedConfig, ...(input.configJson ?? {}) },
+        { ...storedSecrets, ...(input.secrets ?? {}) },
+    );
+
+    if (input.connectionId) {
+        await updateConnectionTestStatus(ctx, input.connectionId, result.valid ? 'ok' : 'error');
+    }
+    return result;
+}
 
 /**
  * Decrypt the secrets for a connection. Used internally by execution logic.
@@ -608,6 +700,41 @@ export async function syncConnection(
         identity = { status: res.status, upserted: res.upserted, deprovisioned: res.deprovisioned };
     }
 
+    /**
+     * HRIS providers: run the roster sync (populates `Employee`).
+     *
+     * ═══ WHY THIS ARM HAD TO EXIST ═══
+     *
+     * Without it an HRIS connection matched NEITHER arm of this function — not
+     * the identity branch above (`IDENTITY_SYNC_PROVIDERS` is directory
+     * providers only) and not the control loop below (an HRIS provider wires no
+     * `automationKey`, and OrangeHRM's `supportedChecks` is empty). So "Sync
+     * now" returned `{identity: null, checks: [], counts: {total: 0}}` — a
+     * SUCCESS response for a run that did nothing at all. A customer who had
+     * just connected their HRIS saw a green result and an empty roster, and had
+     * no way to tell that from a sync that ran and found nobody, until the next
+     * 04:00 UTC pass.
+     *
+     * ═══ THROUGH THE JOB, NOT THE USECASE, AND THAT IS NOT A STYLE CHOICE ═══
+     *
+     * `runHrisSyncJob` takes the per-connection sync lock; `runHrisSync` does
+     * not — the lock lives in the job (`jobs/hris-sync.ts`). Calling the usecase
+     * directly from here would let a manual click run CONCURRENTLY with the
+     * scheduled pass, and the two share `syncCursor` and `syncPassStartedAt`:
+     * whichever completes first clears both and runs the departure reconcile
+     * against its own `passStartedAt`, marking TERMINATED every employee the
+     * other run has not reached yet. That is the wrongful-mass-termination
+     * hazard, and the job's own docblock names a manual re-run as the way in.
+     *
+     * A contended click therefore returns SKIPPED rather than queueing or
+     * racing, which is the honest answer: another run is already doing this.
+     */
+    let hris: { status: string; upserted: number; managersLinked: number } | null = null;
+    if (isHrisProviderId(connection.provider)) {
+        const res = await runHrisSyncJob({ tenantId: ctx.tenantId, connectionId: connection.id });
+        hris = { status: res.status, upserted: res.upserted, managersLinked: res.managersLinked };
+    }
+
     // Run every control wired to this provider's automation keys (`provider.check`).
     const controls = await runInTenantContext(ctx, (db) =>
         db.control.findMany({
@@ -632,6 +759,7 @@ export async function syncConnection(
         connectionId: connection.id,
         provider: connection.provider,
         identity,
+        hris,
         checks,
         counts: {
             total: checks.length,
@@ -1120,7 +1248,7 @@ const PROVIDER_CATEGORY: Record<string, string> = {
     github: 'scm',
     bamboohr: 'hris',
     workday: 'hris',
-    // Internal test fixture (#2548). Categorised rather than left to fall to
+    // #2548. Categorised rather than left to fall to
     // `other`: the hub groups by category, and an HRIS connector sitting in the
     // catch-all bucket is harder to recognise as one, not easier to ignore.
     orangehrm: 'hris',
