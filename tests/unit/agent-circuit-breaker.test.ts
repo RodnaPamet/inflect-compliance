@@ -27,6 +27,7 @@ import {
     totalVariationDistance,
     windowKeyFor,
     windowStartFor,
+    BASELINE_MAX_AGE_HOURS,
     type BreakerInput,
     type BreakerObservation,
     type BreakerSignal,
@@ -478,5 +479,93 @@ describe('the module is a pure function of its argument', () => {
         // match — it is a distance nobody can compute. Reported as 0 so the
         // threshold below cannot be crossed by an absence.
         expect(totalVariationDistance([], [1, 2, 3])).toBe(0);
+    });
+});
+
+describe('the baseline age cap (#2539)', () => {
+    /**
+     * #2539's own interim position was DO NOTHING, and its argument is sound:
+     * capping stands the breaker down for exactly the quietest agents, whose
+     * behaviour is hardest to read. What makes the cap defensible is not the
+     * number but that it is VISIBLE — a refusal caused by the cap must be
+     * distinguishable from an agent that never had enough history, because the
+     * operator responses differ ("re-baseline or widen the cap" vs "wait").
+     *
+     * Every test below exists to hold that distinction, not the number.
+     */
+    const ancient = (n: number) =>
+        Array.from({ length: n }, (_unused, i) =>
+            observation({ hour: -(BASELINE_MAX_AGE_HOURS + 1 + i), read: 5, propose: 20 }),
+        );
+
+    it('leaves a normal agent completely unaffected', () => {
+        // THE POSITIVE CONTROL, and it comes first deliberately: if the cap
+        // discarded ordinary windows, every assertion below would still pass
+        // while the breaker had been silently stood down for everyone.
+        const verdict = evaluateCircuitBreaker(input({ current: observation({ hour: 0, read: 5, propose: 20 }) }));
+        expect(verdict.baseline.windowsDiscardedByAge).toBe(0);
+        expect(verdict.baseline.discardedReachedBackTo).toBeNull();
+        expect(verdict.baseline.shortfall).toBeNull();
+        expect(verdict.code).not.toBe('NO_BASELINE');
+    });
+
+    it('discards windows past the cap and SAYS how many, and how far back they reached', () => {
+        const stale = ancient(14);
+        const verdict = evaluateCircuitBreaker(
+            input({ baseline: stale, current: observation({ hour: 0, read: 5, propose: 20 }) }),
+        );
+        expect(verdict.baseline.windowsDiscardedByAge).toBe(14);
+        // The count alone is not actionable — "14 discarded" means nothing until
+        // you know whether they reached back a week or a quarter.
+        expect(verdict.baseline.discardedReachedBackTo).toBe(
+            windowKeyFor(at(-(BASELINE_MAX_AGE_HOURS + 14))),
+        );
+    });
+
+    it('reports BASELINE_CAPPED_BY_AGE, not TOO_FEW_WINDOWS, when the cap is what emptied it', () => {
+        // The agent HAS 14 windows. Waiting will not help — the rows exist and
+        // are simply too old. Telling the operator TOO_FEW_WINDOWS would send
+        // them to wait for data they already have.
+        const verdict = evaluateCircuitBreaker(
+            input({ baseline: ancient(14), current: observation({ hour: 0, read: 5, propose: 20 }) }),
+        );
+        expect(verdict.code).toBe('NO_BASELINE');
+        expect(verdict.baseline.shortfall).toBe('BASELINE_CAPPED_BY_AGE');
+    });
+
+    it('still reports TOO_FEW_WINDOWS for an agent that genuinely never had enough', () => {
+        // THE DISCRIMINATOR. Without this the assertion above would pass for an
+        // implementation that returned CAPPED for every short baseline, which
+        // would destroy the very distinction the cap exists to create.
+        const verdict = evaluateCircuitBreaker(
+            input({
+                baseline: Array.from({ length: 3 }, (_unused, i) =>
+                    observation({ hour: -1 - i, read: 5, propose: 20 }),
+                ),
+                current: observation({ hour: 0, read: 5, propose: 20 }),
+            }),
+        );
+        expect(verdict.code).toBe('NO_BASELINE');
+        expect(verdict.baseline.shortfall).toBe('TOO_FEW_WINDOWS');
+        expect(verdict.baseline.windowsDiscardedByAge).toBe(0);
+    });
+
+    it('spanHours measures the ACCEPTED evidence, not the discarded evidence', () => {
+        // If the span still counted capped-out windows, the cap would be
+        // cosmetic: the verdict would go on claiming a reach it no longer judges
+        // against, which is the exact staleness #2461 made legible.
+        const mixed = [
+            ...Array.from({ length: 12 }, (_unused, i) =>
+                observation({ hour: -1 - i, read: 5, propose: 20 }),
+            ),
+            ...ancient(6),
+        ];
+        const verdict = evaluateCircuitBreaker(
+            input({ baseline: mixed, current: observation({ hour: 0, read: 5, propose: 20 }) }),
+        );
+        expect(verdict.baseline.windows).toBe(12);
+        expect(verdict.baseline.windowsDiscardedByAge).toBe(6);
+        expect(verdict.baseline.oldestWindowKey).toBe(windowKeyFor(at(-12)));
+        expect(verdict.baseline.spanHours).toBe(12);
     });
 });
