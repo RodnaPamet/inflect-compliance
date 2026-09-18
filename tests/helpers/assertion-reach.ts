@@ -56,7 +56,7 @@ import * as path from 'node:path';
 import * as ts from 'typescript';
 
 import { REPO_ROOT, repoFiles, repoRelative } from './repo-files';
-import { codeOf } from './source-blocks';
+import { codeOf, sqlCodeOf } from './source-blocks';
 
 // ───────────────────────────── parsing ──────────────────────────────────
 
@@ -963,8 +963,19 @@ type MaskFn = (text: string) => string;
  * you take its advice is one people route around. `maskNonCode` is not
  * exported and would not qualify anyway — it blanks string literals, and a
  * string literal is code to a guard.
+ *
+ * `sqlCodeOf` is the same contract for `.sql`, and it is listed for the same
+ * reason rather than as an afterthought: a guard that takes the advice above
+ * for a migration file must not be punished for it. Without an entry here,
+ * `sqlCodeOf(readFileSync(m))` resolves as `content-transformed` — a CAPPED
+ * skip — so masking a SQL read at the seam would move a site into a
+ * zero-headroom ceiling. Listed, the site stays analysed and the occurrence
+ * count is taken against the masked text the assertion actually matched.
  */
-const SOURCE_BLOCKS_MASKERS: ReadonlyMap<string, MaskFn> = new Map([['codeOf', codeOf]]);
+const SOURCE_BLOCKS_MASKERS: ReadonlyMap<string, MaskFn> = new Map<string, MaskFn>([
+    ['codeOf', codeOf],
+    ['sqlCodeOf', sqlCodeOf],
+]);
 
 /** Is this module specifier `tests/helpers/source-blocks`, however spelled? */
 function isSourceBlocksSpecifier(spec: string): boolean {
