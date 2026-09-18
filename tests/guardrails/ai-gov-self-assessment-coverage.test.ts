@@ -68,6 +68,80 @@ describe('AI-governance self-assessment fixture', () => {
         }
     });
 
+    /**
+     * EVERY euAiAct MAPPING MUST NAME AN ARTICLE THE LIBRARY ACTUALLY MODELS.
+     *
+     * Nothing checked this, and the divergence it hid is the finding of #2626:
+     * the self-assessment claims coverage of six articles the EU AI Act library
+     * has no node for. The `iso42001` mappings beside it are format-checked
+     * (digits and dots) and the `aisvs` ones resolve against the AISVS library,
+     * so `euAiAct` was the one arm of the three that asserted something about a
+     * catalogue without ever consulting it.
+     *
+     * A mapping to an article we do not model is not harmless. The
+     * self-assessment is what a tenant answers to find out where they stand
+     * against the Act; a question that claims to cover Art.72 contributes to a
+     * readout in which Art.72 does not exist, so the coverage it reports cannot
+     * be traced to a requirement anybody can open.
+     *
+     * The absent six are allow-listed BY NAME with the reason, rather than the
+     * assertion being softened. Adding an article to the library is a content
+     * decision about what the framework models — it is not this guard's to
+     * make — but the list only ever shrinks, and a SEVENTH unmodelled article
+     * fails here rather than arriving silently.
+     */
+    it('every euAiAct mapping resolves to an article the library models', () => {
+        const libYaml = read('src/data/libraries/eu-ai-act.yaml');
+        const modelled = new Set(
+            [...libYaml.matchAll(/ref_id:\s*"?(Art\.\d+)"?/g)].map((m) => m[1]),
+        );
+        // Sanity floor on the PARSE, not on the library: if this regex stopped
+        // matching, every assertion below would pass vacuously.
+        expect(modelled.size).toBeGreaterThan(10);
+
+        /**
+         * Articles the self-assessment maps to that the library does not model.
+         * Each is a real obligation of the Act; none is a typo. They are absent
+         * because the library models the five RISK TIERS and the obligations
+         * hanging off them, and these six sit outside that shape:
+         */
+        const NOT_MODELLED: Record<string, string> = {
+            'Art.4': 'AI literacy — binds providers AND deployers of any system, so it hangs off no single risk tier.',
+            'Art.6': 'Classification rules for high-risk systems — a test for which tier applies, not an obligation within one.',
+            'Art.25': 'Responsibilities along the AI value chain — reassigns who owes the other obligations.',
+            'Art.49': 'Registration in the EU database — a procedural duty tied to conformity assessment.',
+            'Art.72': 'Post-market monitoring — named by ai-system-conformity.ts as a document section but modelled nowhere.',
+            'Art.73': 'Serious incident reporting — same shape as Art.72.',
+            'Annex.III': 'The high-risk USE-CASE list. The library models the high-risk TIER and the obligations under it, not the Annex that decides membership of it — the same reason Art.6 is absent.',
+        };
+
+        const unexplained: string[] = [];
+        for (const q of fixture.questions) {
+            for (const art of q.mappings.euAiAct) {
+                // `Annex.III` is a legitimate shape beside `Art.N` — the Act's
+                // high-risk list is an Annex, not an Article. Discovered by this
+                // guard on its first run, which is the guard earning itself.
+                expect(art).toMatch(/^(Art\.\d+|Annex\.[IVX]+)$/);
+                if (!modelled.has(art) && !(art in NOT_MODELLED)) unexplained.push(`${q.id} -> ${art}`);
+            }
+        }
+        expect(unexplained).toEqual([]);
+    });
+
+    it('the not-modelled list carries no stale entries', () => {
+        // When an article IS added to the library, its allow-list entry must go
+        // in the same change — otherwise the list outlives the gap and the next
+        // reader believes a hole that has been filled.
+        const libYaml = read('src/data/libraries/eu-ai-act.yaml');
+        const modelled = new Set(
+            [...libYaml.matchAll(/ref_id:\s*"?(Art\.\d+|Annex\.[IVX]+)"?/g)].map((m) => m[1]),
+        );
+        const stale = ['Art.4', 'Art.6', 'Art.25', 'Art.49', 'Art.72', 'Art.73', 'Annex.III'].filter(
+            (a) => modelled.has(a),
+        );
+        expect(stale).toEqual([]);
+    });
+
     it('carries the OWASP CC-BY-SA-4.0 attribution + the not-legal-advice disclaimer', () => {
         expect(fixture.attribution).toMatch(/CC-BY-SA-4\.0/);
         expect(fixture.attribution).toMatch(/OWASP/);

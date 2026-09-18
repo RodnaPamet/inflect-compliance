@@ -77,7 +77,25 @@ describe('NIST SSDF library — nist-ssdf-800-218.yaml', () => {
 
     it('assessable ref_ids follow the SSDF task numbering', () => {
         const assessable = ssdf.framework.nodes.filter((n) => n.assessable);
-        expect(assessable.length).toBeGreaterThanOrEqual(40);
+        /**
+ * EXACT, NOT A FLOOR — and the difference is the whole point (#2626).
+ *
+ * This assertion used to read `toBeGreaterThanOrEqual`, which cannot fail for
+ * the thing it exists to catch: a library going SHORT of the standard it
+ * claims to represent. The headroom was not theoretical — AISVS could lose 41
+ * of its 191 requirements and stay green, ISO 42001 twelve, NIST Privacy ten;
+ * 71 requirements across six frameworks could have silently vanished.
+ *
+ * A count that only ever grows is a count nobody is checking. Pinned exactly,
+ * so ADDING a requirement is a deliberate one-line edit here and REMOVING one
+ * is a red build.
+ *
+ * Template/control counts are deliberately still floors: they change for
+ * reasons unrelated to fidelity (a control split into per-obligation controls
+ * carries the same requirements), and pinning them would make a granularity
+ * change look like a content loss.
+ */
+        expect(assessable.length).toBe(42);
         for (const n of assessable) {
             // e.g. PO.1.1, PS.3.2, PW.8.2, RV.3.4
             expect(n.refId).toMatch(/^(PO|PS|PW|RV)\.\d+\.\d+$/);
@@ -103,7 +121,7 @@ describe('NIST SSDF seed fixture', () => {
     }>;
 
     it('every fixture entry has the required shape + task key', () => {
-        expect(fixture.length).toBeGreaterThanOrEqual(40);
+        expect(fixture.length).toBe(42);
         for (const r of fixture) {
             expect(r.key).toMatch(/^(PO|PS|PW|RV)\.\d+\.\d+$/);
             expect(r.section).toBeTruthy();
@@ -146,7 +164,7 @@ describe('NIST SSDF delivery', () => {
         // SSDF ever leaves CATALOG_FIXTURES, that is a delivery regression and
         // must fail here rather than quietly skip.
         expect(catalog).not.toBeNull();
-        expect(catalog?.requirements.length).toBeGreaterThanOrEqual(40);
+        expect(catalog?.requirements.length).toBe(42);
         expect(catalog?.templates.length).toBeGreaterThanOrEqual(15);
     });
 
