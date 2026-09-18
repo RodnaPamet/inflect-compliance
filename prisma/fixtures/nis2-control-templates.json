@@ -20,70 +20,80 @@
       "title": "Policies on risk analysis and information system security",
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
-      "sortOrder": 1
+      "sortOrder": 1,
+      "summary": "Entities must take appropriate technical, operational, and organizational measures to manage cybersecurity risks to network and information systems. This includes policies on risk analysis and information system security. (Paraphrase — Art. 21(2)(a))"
     },
     {
       "code": "Art.21(2)(b)",
       "title": "Incident handling",
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
-      "sortOrder": 2
+      "sortOrder": 2,
+      "summary": "Establish processes to prevent, detect, and respond to cybersecurity incidents, including clear escalation and notification procedures. (Paraphrase — Art. 21(2)(b))"
     },
     {
       "code": "Art.21(2)(c)",
       "title": "Business continuity and crisis management",
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
-      "sortOrder": 3
+      "sortOrder": 3,
+      "summary": "Ensure continuity of essential services including backup management, disaster recovery, and crisis management. (Paraphrase — Art. 21(2)(c))"
     },
     {
       "code": "Art.21(2)(d)",
       "title": "Supply chain security",
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
-      "sortOrder": 4
+      "sortOrder": 4,
+      "summary": "Address security aspects of relationships with direct suppliers and service providers, including supply chain risk assessments. (Paraphrase — Art. 21(2)(d))"
     },
     {
       "code": "Art.21(2)(e)",
       "title": "Security in network and information systems acquisition, development and maintenance",
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
-      "sortOrder": 5
+      "sortOrder": 5,
+      "summary": "Apply security in the acquisition, development, and maintenance of network and information systems, including vulnerability handling and disclosure. (Paraphrase — Art. 21(2)(e))"
     },
     {
       "code": "Art.21(2)(f)",
       "title": "Policies and procedures to assess effectiveness of cybersecurity risk-management measures",
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
-      "sortOrder": 6
+      "sortOrder": 6,
+      "summary": "Implement policies and procedures to assess the effectiveness of cybersecurity risk management measures. (Paraphrase — Art. 21(2)(f))"
     },
     {
       "code": "Art.21(2)(g)",
       "title": "Basic cyber hygiene practices and cybersecurity training",
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
-      "sortOrder": 7
+      "sortOrder": 7,
+      "summary": "Establish basic cyber hygiene practices and security awareness training for all personnel. (Paraphrase — Art. 21(2)(g))"
     },
     {
       "code": "Art.21(2)(h)",
       "title": "Policies and procedures regarding use of cryptography and encryption",
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
-      "sortOrder": 8
+      "sortOrder": 8,
+      "summary": "Apply policies and procedures for the use of cryptography and, where appropriate, encryption to protect information. (Paraphrase — Art. 21(2)(h))"
     },
     {
       "code": "Art.21(2)(i)",
       "title": "Human resources security, access control policies and asset management",
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
-      "sortOrder": 9
+      "sortOrder": 9,
+      "summary": "Apply appropriate security measures for human resources including access control policies and asset management. (Paraphrase — Art. 21(2)(i))"
     },
     {
       "code": "Art.21(2)(j)",
       "title": "Multi-factor authentication, secured communications and emergency communication systems",
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
-      "sortOrder": 10
+      "sortOrder": 10,
+      "summary": "Use multi-factor authentication, secure communication, and identity management solutions as appropriate. (Paraphrase — Art. 21(2)(j))"
     },
     {
       "code": "Art.23(1)",
