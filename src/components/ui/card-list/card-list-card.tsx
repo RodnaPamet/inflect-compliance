@@ -305,7 +305,7 @@ export function CardListCardContent({
             {kv && kv.length > 0 && (
                 <dl
                     data-card-kv
-                    className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1.5 text-xs"
+                    className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs"
                 >
                     {kv.map((row, i) => (
                         <React.Fragment key={i}>
