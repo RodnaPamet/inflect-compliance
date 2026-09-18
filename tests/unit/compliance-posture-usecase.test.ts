@@ -60,16 +60,34 @@ beforeEach(() => {
         { id: 'fw-iso', key: 'ISO27001', name: 'ISO/IEC 27001', _count: { requirements: 93 } },
         { id: 'fw-soc', key: 'SOC2', name: 'SOC 2', _count: { requirements: 60 } },
     ]);
+    /**
+     * Each link now carries its CONTROL, because the signal reports two different
+     * things about a framework and only one of them is a link count:
+     * `requirementsMappedPercent` (a link exists) and
+     * `requirementsImplementedPercent` (the mapped controls roll up to
+     * implemented). A double that returns only `requirementId` can express the
+     * first and not the second — which is exactly the state that let a tenant
+     * who had installed a pack and done no work read 100% coverage.
+     *
+     * So the ISO rows are deliberately SPLIT: 20 implemented and 30 not, against
+     * 50 mapped. A fixture where every control were implemented would make the
+     * two percentages identical and the distinction untestable.
+     */
+    const link = (reqId: string, frameworkId: string, status: string) => ({
+        requirementId: reqId,
+        applicability: null, // inherit the control's own — the common case
+        requirement: { frameworkId },
+        control: { status, applicability: 'APPLICABLE', exceptions: [] },
+    });
     mockLinkFindMany.mockResolvedValue([
-        // ISO — 50 distinct mapped of 93 (~54%), plus a duplicate to prove
-        // distinct counting.
-        ...Array.from({ length: 50 }, (_, i) => ({
-            requirementId: `iso-${i}`,
-            requirement: { frameworkId: 'fw-iso' },
-        })),
-        { requirementId: 'iso-0', requirement: { frameworkId: 'fw-iso' } }, // duplicate → distinct
-        // SOC2 — 1 distinct mapped of 60 (~2%), the clear weakest.
-        { requirementId: 'soc-1', requirement: { frameworkId: 'fw-soc' } },
+        // ISO — 50 distinct mapped of 93 (~54%), of which 20 implemented (~22%),
+        // plus a duplicate to prove distinct counting.
+        ...Array.from({ length: 50 }, (_, i) =>
+            link(`iso-${i}`, 'fw-iso', i < 20 ? 'IMPLEMENTED' : 'IN_PROGRESS'),
+        ),
+        link('iso-0', 'fw-iso', 'IMPLEMENTED'), // duplicate → distinct
+        // SOC2 — 1 distinct mapped of 60 (~2%), the clear weakest, not implemented.
+        link('soc-1', 'fw-soc', 'NOT_STARTED'),
     ]);
     mockProviderGenerate.mockResolvedValue({
         postureLabel: 'ESTABLISHED',
@@ -107,6 +125,21 @@ describe('gatherPostureSignals', () => {
         const iso = signals.frameworks.find((f) => f.key === 'ISO27001');
         expect(iso?.mapped).toBe(50);
         expect(iso?.total).toBe(93);
+
+        // MAPPED AND IMPLEMENTED MUST DIFFER, and this is the assertion the
+        // whole change exists for. 50 of ISO's 93 requirements have a control
+        // linked (54%); only 20 of those controls are IMPLEMENTED (22%).
+        // Reporting the first as "coverage" is what let a tenant who installed a
+        // pack and did no work read 100%.
+        expect(iso?.requirementsMappedPercent).toBe(54);
+        expect(iso?.implemented).toBe(20);
+        expect(iso?.requirementsImplementedPercent).toBe(22);
+
+        // SOC2's single mapped control is NOT_STARTED: mapped but zero
+        // implemented, the exact shape a freshly-installed pack produces.
+        expect(signals.frameworks[0].requirementsMappedPercent).toBe(2);
+        expect(signals.frameworks[0].implemented).toBe(0);
+        expect(signals.frameworks[0].requirementsImplementedPercent).toBe(0);
     });
 });
 
