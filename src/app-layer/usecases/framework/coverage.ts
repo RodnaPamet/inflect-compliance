@@ -1,4 +1,5 @@
 ﻿import { Prisma, TaskStatus } from '@prisma/client';
+import { frameworkHasStatementOfApplicability } from '@/lib/compliance/statement-of-applicability';
 import { RequestContext } from '../../types';
 import { assertCanViewFrameworks } from '../../policies/framework.policies';
 import { runInTenantContext } from '@/lib/db-context';
@@ -519,11 +520,13 @@ export async function generateReadinessReport(ctx: RequestContext, frameworkKey:
 
     return {
         framework: { key: fw.key, name: fw.name, version: fw.version },
-        // PR-U — ISO-family flag so the report EXPORTS (audit-readiness / gap PDFs)
-        // that now compute off THIS payload can gate residual SoA/Annex-A wording
-        // exactly as the SoA CSV route does, keeping non-ISO exports free of ISO
-        // constructs. Same derivation as the SoA DTO (`fw.kind === 'ISO_STANDARD'`).
-        isIsoFamily: fw.kind === 'ISO_STANDARD',
+        // PR-U — the SoA flag, so the report EXPORTS (audit-readiness / gap PDFs)
+        // that compute off THIS payload gate Annex-A wording exactly as the SoA
+        // CSV route does, keeping exports free of an annex the standard lacks.
+        // Same derivation as the SoA DTO — which is a DECLARED per-framework
+        // fact, not `kind`: ISO 9001/28000/39001 are `ISO_STANDARD` and have no
+        // Annex A, ISO 42001 is one and has one (#2617).
+        hasStatementOfApplicability: frameworkHasStatementOfApplicability(fw.key),
         generatedAt: now.toISOString(),
         coverage: { total, mapped: mapped.length, unmapped: unmapped.length, coveragePercent },
         bySection,

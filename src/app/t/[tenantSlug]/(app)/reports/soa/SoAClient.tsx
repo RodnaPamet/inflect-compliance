@@ -232,7 +232,7 @@ export function SoAClient({ report, controls, tenantSlug, canEdit }: SoAClientPr
                 a native SoA. */}
             {/* The non-ISO notice that used to live here was UNREACHABLE:
                 both soa/page.tsx and soa/print/page.tsx redirect when
-                `!report.isIsoFamily`, so this component only ever renders for an
+                `!report.hasStatementOfApplicability`, so this component only ever renders for an
                 ISO-family framework. It and its two i18n strings are gone rather
                 than kept "just in case" — dead UI that looks live is how a
                 reviewer concludes a case is handled when it is not. If non-ISO

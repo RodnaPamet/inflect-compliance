@@ -73,7 +73,7 @@ export interface SoAReportDTO {
      * points the user at that framework's coverage/readiness instead of
      * rendering a mislabeled "SoA".
      */
-    isIsoFamily: boolean;
+    hasStatementOfApplicability: boolean;
     generatedAt: string;             // ISO 8601
     entries: SoAEntryDTO[];
     summary: SoASummaryDTO;

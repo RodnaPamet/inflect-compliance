@@ -53,7 +53,7 @@ export async function generateAuditReadinessPdf(
     // the ISO family, so a SOC 2 / NIS2 report never leaks an ISO literal. ───
     const labels = auditReadinessLabels({
         frameworkName,
-        isIsoFamily: report.isIsoFamily,
+        hasStatementOfApplicability: report.hasStatementOfApplicability,
         requirementCount: s.totalRequirements,
     });
 

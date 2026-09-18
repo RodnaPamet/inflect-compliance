@@ -30,7 +30,7 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 interface InstalledFramework {
     key: string;
     name: string;
-    isIsoFamily: boolean;
+    hasStatementOfApplicability: boolean;
 }
 interface ReadinessReport {
     framework: { key: string; name: string; version: string | null };
@@ -106,7 +106,7 @@ export function ReportsClient({
 
     const selectedFw =
         installedFrameworks.find((f) => f.key === selectedKey) ?? null;
-    const isIso = selectedFw?.isIsoFamily ?? false;
+    const isIso = selectedFw?.hasStatementOfApplicability ?? false;
     const frameworkLabel = selectedFw?.name ?? readiness.framework.name;
 
     const switchFramework = useCallback(
