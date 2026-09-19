@@ -126,8 +126,6 @@ const DELIVERED_WITHOUT_AUTHORED_TASKS: Record<string, string> = {
         'ISO 28000 — 15 templates. Frozen for content, as ISO 9001.',
     'iso39001-control-templates.json':
         'ISO 39001 — 18 templates. Frozen for content, as ISO 9001.',
-    'owasp-aisvs-control-templates.json':
-        'OWASP AISVS — 18 templates over 191 requirements, the richest grounding of any unauthored fixture. Queued.',
 };
 
 /** Every fixture that carries at least one authored task. */
@@ -264,15 +262,22 @@ describe('authored tasks have a delivery path', () => {
     });
 
     it('the delivered-without-authored-tasks list is not growing', () => {
-        // FOUR. It was nine, then six, then five. OWASP ASI, IMDA MGF and NIST
-        // Privacy left in the first round; the EU AI Act and ISO/IEC 42001 have
-        // now removed their own entries too. The mechanism works each time.
+        // THREE, and the QUEUE IS NOW EMPTY. It was nine, then six, five, four.
+        // OWASP ASI, IMDA MGF and NIST Privacy left in the first round; the EU
+        // AI Act, ISO/IEC 42001 and OWASP AISVS have removed their own entries
+        // since. Every fixture that COULD be authored has been.
         //
-        // Of the four left, ISO 9001 / 28000 / 39001 are FROZEN for content and
-        // may never leave: no library grounds them, so the precondition in
-        // FROZEN_UNGROUNDED_POPULATIONS has to be met before anyone authors
-        // there. That leaves exactly ONE queued and groundable entry — OWASP
-        // AISVS. Each authoring PR removes its own.
-        expect(Object.keys(DELIVERED_WITHOUT_AUTHORED_TASKS)).toHaveLength(4);
+        // The three that remain — ISO 9001, ISO 28000, ISO 39001 — are not a
+        // backlog. They are FROZEN for content because no library under
+        // src/data/libraries grounds them, so authoring would mean writing from
+        // knowledge of the standard rather than from any source this repo
+        // holds. FROZEN_UNGROUNDED_POPULATIONS names the precondition, and its
+        // libraryPattern is checked: the moment a matching library lands, that
+        // assertion goes red and tells whoever added it what to do.
+        //
+        // So this number should now move only ONE way — down, and only after a
+        // library arrives. If it drops without one, someone has authored
+        // ungrounded content and the freeze was the thing standing in the way.
+        expect(Object.keys(DELIVERED_WITHOUT_AUTHORED_TASKS)).toHaveLength(3);
     });
 });
