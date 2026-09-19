@@ -119,15 +119,21 @@ describe('catalogue requirements carry prose', () => {
      * rather than found hollow. Nothing would have reddened if the 93 authored
      * ISO 27001 summaries were removed tomorrow.
      *
-     * Pinned rather than driven to zero. 485 requirements still carry no
-     * summary, and most of them cannot be fixed by copying: the remaining
-     * populations are frameworks whose prose is licensed and not in this repo,
-     * or whose `title` already carries the full sentence (SSDF, NIST Privacy).
-     * A ceiling records where the work stands and guarantees it does not go
-     * backwards; a `toEqual([])` here would be a red build with no available
-     * repair.
+     * Pinned rather than driven to zero. 405 requirements carry no summary, and
+     * none of them can be fixed by copying: their `title` already carries the
+     * full sentence, so the grounding library's own text adds nothing (SSDF,
+     * NIST Privacy, OWASP AISVS, ISO 42001). A ceiling records where the work
+     * stands and guarantees it does not go backwards; a `toEqual([])` here would
+     * be a red build with no available repair.
+     *
+     * It was 485. The 80 that left belonged to ISO 9001, ISO 39001 and ISO
+     * 28000, and they left by RETIREMENT rather than authoring — no library
+     * grounds those three, so the product stopped offering them. A ceiling
+     * falling because a population was removed is a different event from one
+     * falling because work was done, and saying which is the point of writing
+     * it down.
      */
-    const REQUIREMENTS_WITHOUT_SUMMARY_CEILING = 485;
+    const REQUIREMENTS_WITHOUT_SUMMARY_CEILING = 405;
 
     /**
      * WHY 485 IS THE RIGHT NUMBER, AND NOT A BACKLOG.

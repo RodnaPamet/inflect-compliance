@@ -49,61 +49,28 @@ describe('every shipped catalogue fixture parses under the loader', () => {
     });
 
     /**
-     * A shipped template must carry a `description`, unless its catalogue is one
-     * of the three FROZEN for want of a grounding library.
+     * Every shipped template carries a `description`. No exemptions.
      *
-     * #2614 found 163 of 342 templates with no description, across eleven whole
-     * catalogues. It is now 59 of 473, and the 59 are exactly ISO 9001, ISO
-     * 39001 and ISO 28000 — the three that `FROZEN_UNGROUNDED_POPULATIONS` in
-     * control-task-actionability.test.ts refuses on a named precondition, because
-     * no library under src/data/libraries grounds them.
+     * #2614 found 163 of 342 templates without one, across eleven whole
+     * catalogues. It fell to 59, all of them ISO 9001 / 39001 / 28000 — and
+     * those three are now retired rather than authored, so the exemption this
+     * assertion used to carry has no subject left and is gone.
      *
-     * WHERE THIS FIELD ACTUALLY SHOWS. `Control` has no `description` column and
-     * `ControlTemplateProjectionSource` (usecases/control/template-projection.ts)
-     * declares none, so this never reaches an installed control and is not
-     * supposed to. It is a PRE-INSTALL BROWSE field — the templates DataTable
-     * column and the per-framework template list — which is where an operator
-     * decides whether to install a framework at all. That is the whole of its
-     * job, and the reason a half-empty column there is worth closing.
+     * WHERE THIS FIELD SHOWS. `Control` has no `description` column and
+     * `ControlTemplateProjectionSource` declares none, so it never reaches an
+     * installed control and is not supposed to. It is a PRE-INSTALL BROWSE
+     * field — the templates DataTable column and the per-framework template
+     * list — which is where an operator decides whether to install a framework
+     * at all.
      */
-    const DESCRIPTION_EXEMPT = ['iso9001', 'iso39001', 'iso28000'];
-
-    it.each(shippedFixtures())('%s carries a description on every template, or is frozen', (file) => {
-        const name = file.replace('-control-templates.json', '');
+    it.each(shippedFixtures())('%s carries a description on every template', (file) => {
         const templates = (JSON.parse(
             fs.readFileSync(path.join(FIXTURE_DIR, file), 'utf-8'),
         ) as { templates?: Array<{ code: string; description?: unknown }> }).templates ?? [];
         const blank = templates
             .filter((t) => typeof t.description !== 'string' || t.description.trim() === '')
             .map((t) => t.code);
-
-        if (DESCRIPTION_EXEMPT.includes(name)) {
-            // The exemption is falsifiable in BOTH directions: a frozen catalogue
-            // that has gained descriptions is no longer frozen, and leaving it
-            // listed here would hide the next regression behind a stale carve-out.
-            expect(blank.length).toBeGreaterThan(0);
-            return;
-        }
         expect(blank).toEqual([]);
-    });
-
-    it('the description exemption names the same catalogues the content freeze does', () => {
-        // The freeze lives in control-task-actionability.test.ts and cannot be
-        // imported — importing a test file runs its suite a second time — so it is
-        // read as source. Comments are stripped first: this repo has been caught
-        // four separate times by a needle that matched PROSE ABOUT a constant
-        // rather than the constant, and prose here would name all three anyway.
-        const src = fs.readFileSync(
-            path.join(__dirname, 'control-task-actionability.test.ts'),
-            'utf-8',
-        );
-        const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-        const frozen = [...code.matchAll(/libraryPattern:\s*\/(\d+)\//g)].map((m) => m[1]).sort();
-
-        // Positive control: if the parse returns nothing, the comparison below
-        // would pass by vacuity against an empty set.
-        expect(frozen.length).toBeGreaterThanOrEqual(3);
-        expect(frozen).toEqual(DESCRIPTION_EXEMPT.map((n) => n.replace('iso', '')).sort());
     });
 
     /**

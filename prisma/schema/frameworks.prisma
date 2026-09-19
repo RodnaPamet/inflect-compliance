@@ -87,6 +87,17 @@ model Framework {
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @default(now()) @updatedAt
   kind                FrameworkKind           @default(ISO_STANDARD)
+  /// Set when the product stops OFFERING a framework, which is a different
+  /// thing from `FrameworkRequirement.deprecatedAt`: that one means the
+  /// grounding library dropped a requirement, this one means we chose not to
+  /// ship the standard at all. A retired framework is filtered out of the
+  /// catalogue a tenant can install from, and its row is kept rather than
+  /// deleted so that any tenant who installed it before keeps working links.
+  ///
+  /// `applyCatalogFile` has no delete arm, so removing a fixture from the
+  /// seeder does NOT remove its rows from a database that already has them —
+  /// which is why a flag exists at all rather than a deletion.
+  retiredAt           DateTime?
   packs               FrameworkPack[]
   requirements        FrameworkRequirement[]
   mappingSetsAsSource RequirementMappingSet[] @relation("MappingSetSource")

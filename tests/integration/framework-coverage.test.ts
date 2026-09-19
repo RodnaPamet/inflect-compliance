@@ -243,7 +243,10 @@ describe('Framework Coverage & Templates', () => {
     });
 
     // ─── The five frameworks are declared somewhere that gets applied ───
-    describe('the catalogue declares all 5 frameworks', () => {
+    describe('the catalogue declares the frameworks it still ships', () => {
+        // Was "all 5". ISO 9001, ISO 39001 and ISO 28000 were retired rather
+        // than authored — no library grounds them — so their packs and their
+        // QMS-/RTS-/SCS- template prefixes are gone with their fixtures.
         /**
          * This read `prisma/seed.ts` alone until 2026-09-06, and that made it a
          * claim about the IMPLEMENTATION rather than the catalogue: seed.ts is
@@ -280,11 +283,11 @@ describe('Framework Coverage & Templates', () => {
             expect(applied).toContain(key);
         });
 
-        it.each(['ISO27001_2022_BASE', 'NIS2_BASELINE', 'ISO9001_CORE', 'ISO28000_CORE', 'ISO39001_CORE'])('catalogue declares pack %s', (packKey) => {
+        it.each(['ISO27001_2022_BASE', 'NIS2_BASELINE'])('catalogue declares pack %s', (packKey) => {
             expect(applied).toContain(packKey);
         });
 
-        it.each(['NIS2-', 'QMS-', 'SCS-', 'RTS-'])('the catalogue carries templates with prefix %s', (prefix) => {
+        it.each(['NIS2-'])('the catalogue carries templates with prefix %s', (prefix) => {
             expect(templateCountByPrefix(prefix)).toBeGreaterThan(0);
         });
     });
@@ -336,18 +339,6 @@ function templateCountByPrefix(prefix: string): number {
 
         it('NIS2 has >= 15 templates', () => {
             expect(templateCountByPrefix('NIS2-')).toBeGreaterThanOrEqual(15);
-        });
-
-        it('ISO 9001 has >= 15 templates', () => {
-            expect(templateCountByPrefix('QMS-')).toBeGreaterThanOrEqual(15);
-        });
-
-        it('ISO 28000 has >= 10 templates', () => {
-            expect(templateCountByPrefix('SCS-')).toBeGreaterThanOrEqual(10);
-        });
-
-        it('ISO 39001 has >= 10 templates', () => {
-            expect(templateCountByPrefix('RTS-')).toBeGreaterThanOrEqual(10);
         });
     });
 

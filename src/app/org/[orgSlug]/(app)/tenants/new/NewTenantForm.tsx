@@ -56,9 +56,6 @@ function buildFrameworkOptions(t: OrgTranslate): FrameworkOption[] {
         { key: 'later', label: t('newTenant.fwChooseLater'), description: t('newTenant.fwChooseLaterDesc') },
         { key: 'ISO27001', label: 'ISO/IEC 27001', description: t('newTenant.fwIso27001Desc') },
         { key: 'NIS2', label: 'NIS2', description: t('newTenant.fwNis2Desc') },
-        { key: 'ISO9001', label: 'ISO 9001', description: t('newTenant.fwIso9001Desc') },
-        { key: 'ISO28000', label: 'ISO 28000', description: t('newTenant.fwIso28000Desc') },
-        { key: 'ISO39001', label: 'ISO 39001', description: t('newTenant.fwIso39001Desc') },
     ];
 }
 

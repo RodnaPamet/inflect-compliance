@@ -2,7 +2,10 @@ import { PrismaTx } from '@/lib/db-context';
 
 export class FrameworkRepository {
     static async listFrameworks(db: PrismaTx) {
+        // Feeds the control-to-framework mapping picker, so it is an OFFER
+        // surface. See the note in usecases/framework/catalog.ts.
         return db.framework.findMany({
+            where: { retiredAt: null },
             orderBy: { key: 'asc' },
             include: {
                 _count: { select: { requirements: true } },

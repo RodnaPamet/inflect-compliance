@@ -326,6 +326,9 @@ export async function getUnifiedSearch(
     if (canSearch('framework')) {
         const frameworks = await prisma.framework.findMany({
             where: {
+                // A retired framework is not offered, so it is not navigable
+                // either. See usecases/framework/catalog.ts.
+                retiredAt: null,
                 OR: [
                     { key: { contains, mode: 'insensitive' } },
                     { name: { contains, mode: 'insensitive' } },
