@@ -166,7 +166,7 @@ export async function reconcileTemplateTasks(
 export interface ApplyCatalogResult {
     framework: { id: string; key: string; created: boolean };
     requirements: { upserted: number };
-    templates: { created: number; existing: number; ownerHintsFilled: number };
+    templates: { created: number; existing: number; templateFieldsFilled: number };
     /**
      * Authored tasks reconciled by this apply.
      *
@@ -303,7 +303,7 @@ export async function applyCatalogFile(
     let templatesCreated = 0;
     let templatesExisting = 0;
     let tasksReconciled: TaskReconcileResult = { created: 0, updated: 0, deprecated: 0, unchanged: 0 };
-    let ownerHintsFilled = 0;
+    let templateFieldsFilled = 0;
     const templateMap: Record<string, string> = {};
 
     /**
@@ -353,12 +353,24 @@ export async function applyCatalogFile(
             // it is finishing a row. The `?? undefined` guard keeps it a
             // one-way fill: an operator's own value is never overwritten, and
             // a fixture that drops the key does not blank an existing hint.
-            if (existing.defaultOwnerHint == null && t.defaultOwnerHint) {
+            // The same one-way fill now covers objective / successCriteria /
+            // testingMethodology, for the same reason and with the same rule.
+            // Those three are the ONLY prose that projects onto an installed
+            // Control, the CatalogFile schema did not declare them until now,
+            // and they read NULL on all 654 production template rows. Filling
+            // them is finishing a row; an operator's own value is never
+            // overwritten and a fixture dropping a key never blanks one.
+            const fill: Record<string, string> = {};
+            if (existing.defaultOwnerHint == null && t.defaultOwnerHint) fill.defaultOwnerHint = t.defaultOwnerHint;
+            if (existing.objective == null && t.objective) fill.objective = t.objective;
+            if (existing.successCriteria == null && t.successCriteria) fill.successCriteria = t.successCriteria;
+            if (existing.testingMethodology == null && t.testingMethodology) fill.testingMethodology = t.testingMethodology;
+            if (Object.keys(fill).length > 0) {
                 await prisma.controlTemplate.update({
                     where: { id: existing.id },
-                    data: { defaultOwnerHint: t.defaultOwnerHint },
+                    data: fill,
                 });
-                ownerHintsFilled++;
+                templateFieldsFilled++;
             }
             tasksReconciled = addReconcile(
                 tasksReconciled,
@@ -375,6 +387,9 @@ export async function applyCatalogFile(
                 category: t.category,
                 defaultFrequency: t.defaultFrequency,
                 defaultOwnerHint: t.defaultOwnerHint ?? null,
+                objective: t.objective ?? null,
+                successCriteria: t.successCriteria ?? null,
+                testingMethodology: t.testingMethodology ?? null,
             },
         });
         templateMap[t.code] = tmpl.id;
@@ -458,7 +473,7 @@ export async function applyCatalogFile(
         templates: {
             created: templatesCreated,
             existing: templatesExisting,
-            ownerHintsFilled,
+            templateFieldsFilled,
         },
         tasks: tasksReconciled,
         pack: packResult,

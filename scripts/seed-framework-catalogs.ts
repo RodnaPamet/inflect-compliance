@@ -112,8 +112,8 @@ async function main(): Promise<void> {
             `  ✓ ${rel}: framework ${r.framework.key} (${r.framework.created ? 'created' : 'existing'}), ` +
                 `${r.requirements.upserted} requirements, ` +
                 `${r.templates.created} templates created / ${r.templates.existing} existing` +
-                (r.templates.ownerHintsFilled > 0
-                    ? `, ${r.templates.ownerHintsFilled} owner hints filled`
+                (r.templates.templateFieldsFilled > 0
+                    ? `, ${r.templates.templateFieldsFilled} template row(s) had empty fields filled`
                     : '') +
                 // Printed unconditionally. A run that reconciles nothing is a
                 // fact worth seeing: this seeder applied hundreds of authored
