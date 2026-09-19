@@ -80,3 +80,46 @@ ALTER TABLE "AuditOutbox" ADD CONSTRAINT "AuditOutbox_tenantId_fkey" FOREIGN KEY
 -- record one is worse than recording both. A unique key here would silently
 -- drop the second — the exact defect this migration exists to remove,
 -- reintroduced as a constraint.
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Row-Level Security — the canonical trio
+-- ═══════════════════════════════════════════════════════════════════
+--
+-- This table holds tenant-scoped audit payloads, so it needs the same
+-- isolation every other tenant table has. Without it `app_user` could
+-- read another tenant's QUEUED denials — entries that have not reached
+-- the hash chain yet and are therefore not protected by anything else.
+--
+-- Shape copied from prisma/migrations/20260422180000_enable_rls_coverage,
+-- and it is the same posture "NotificationOutbox" carries.
+--
+-- WHY THE PLATFORM-WIDE DRAIN STILL WORKS. `audit-outbox-flush` reads
+-- across every tenant, with no `app.tenant_id` set. That is fine, and
+-- for a reason worth stating rather than discovering: the drain runs on
+-- the plain prisma client, whose connection never becomes `app_user`
+-- (see src/lib/db-context.ts — only runInTenantContext does
+-- `SET LOCAL ROLE app_user`), so `superuser_bypass` is true and the rows
+-- are visible. `processOutbox` drains "NotificationOutbox" the same way
+-- against the same policy set, so this is an established path and not a
+-- new assumption.
+--
+-- If the drain were ever moved under `runInTenantContext`, it would
+-- silently drain NOTHING — RLS would hide every row and the pass would
+-- report zero applied with no error. That is exactly the silence #2657
+-- exists to remove, so it is called out here at the policy that would
+-- cause it.
+
+ALTER TABLE "AuditOutbox" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "AuditOutbox" FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS tenant_isolation ON "AuditOutbox";
+CREATE POLICY tenant_isolation ON "AuditOutbox"
+    USING ("tenantId" = current_setting('app.tenant_id', true)::text);
+
+DROP POLICY IF EXISTS tenant_isolation_insert ON "AuditOutbox";
+CREATE POLICY tenant_isolation_insert ON "AuditOutbox"
+    FOR INSERT WITH CHECK ("tenantId" = current_setting('app.tenant_id', true)::text);
+
+DROP POLICY IF EXISTS superuser_bypass ON "AuditOutbox";
+CREATE POLICY superuser_bypass ON "AuditOutbox"
+    USING (current_setting('role') != 'app_user');
