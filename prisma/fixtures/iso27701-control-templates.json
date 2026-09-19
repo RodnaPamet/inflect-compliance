@@ -991,17 +991,13 @@
       ]
     },
     {
-      "code": "PIMS-07",
-      "title": "Data Minimization and Retention",
-      "description": "Collect and process only necessary PII, set minimization objectives, and delete or de-identify PII at the end of its retention.",
+      "code": "PIMS-07.1",
+      "title": "Limit collection",
+      "description": "Implements 7.4.1: only PII that is adequate, relevant and necessary for an identified purpose is collected, and fields no purpose needs are removed from the collection surface.",
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
-      "defaultOwnerHint": "Data Owner",
       "requirementCodes": [
-        "7.4.1",
-        "7.4.4",
-        "7.4.5",
-        "7.4.7"
+        "7.4.1"
       ],
       "tasks": [
         {
@@ -1042,53 +1038,58 @@
         },
         {
           "title": {
-            "en": "Record a retention period for every data category in the retention schedule"
-          },
-          "description": {
-            "en": "Set, for each category of PII, how long it is held and from what event the clock runs — last activity, contract end, collection date — because a period without a trigger cannot be applied by anyone. Where a period is set by a legal or contractual obligation, cite it against the row so the number can be defended rather than re-argued. Attach the retention schedule covering every category in the inventory."
-          },
-          "phase": "IMPLEMENT",
-          "sortOrder": 1,
-          "evidenceHint": {
-            "en": "Retention schedule giving the retention period and the event the clock runs from for every PII category"
-          },
-          "suggestedRole": "Legal/DPO",
-          "steps": [
-            {
-              "text": {
-                "en": "List the PII categories the schedule must cover."
-              }
-            },
-            {
-              "text": {
-                "en": "Set the retention period for each category."
-              }
-            },
-            {
-              "text": {
-                "en": "State the event from which each period is counted."
-              }
-            },
-            {
-              "text": {
-                "en": "Cite the obligation behind any period that is externally set."
-              }
-            }
-          ]
-        },
-        {
-          "title": {
             "en": "Remove the fields no purpose needs from the collection forms and stored payloads"
           },
           "description": {
             "en": "Act on the flagged fields: stop capturing them at the collection point, and clear what was already stored, including the copies that sit in logs, analytics events and exports. Record each field removed, the systems it was cleared from, and any field kept despite the flag with the purpose that justified keeping it. Attach the change record with the before-and-after field list."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 2,
+          "sortOrder": 1,
           "evidenceHint": {
             "en": "Change record listing every field removed, the systems cleared, and any flagged field retained with its justification"
           },
           "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Re-check each collection point after a release and list any field added without a stated purpose"
+          },
+          "description": {
+            "en": "Collection creeps back. A form gains a field, an event payload gains an attribute, and neither passed through the review that removed the last batch. After each release touching a collection surface, compare what it now captures against the purpose register and list anything new that no purpose accounts for. This is the task that keeps 7.4.1 from being a one-off cleanup."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Post-release comparison of each collection point's captured fields against the purpose register, listing fields added without a stated purpose"
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 2
+        }
+      ],
+      "defaultOwnerHint": "Data Owner"
+    },
+    {
+      "code": "PIMS-07.2",
+      "title": "PII minimization objectives",
+      "description": "Implements 7.4.4: measurable objectives for reducing the PII processed are set, tracked and reported against.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "7.4.4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Measure how much PII each category holds today, so a reduction target means something"
+          },
+          "description": {
+            "en": "An objective to reduce PII is unfalsifiable without a starting number. Record, per category, the volume held and where — record counts, field counts, the systems and copies involved. Do this before setting targets: a target written first tends to be written to what sounds reasonable rather than to what is reducible, and nothing can later show whether it was met."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Baseline measurement of PII held per category, giving volumes and the systems holding them, dated"
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
         },
         {
           "title": {
@@ -1098,11 +1099,66 @@
             "en": "State what the organisation is trying to reduce and how it will know — fields captured per collection point, systems holding a given category, copies of a production dataset, records held past their purpose. Give each objective a starting figure taken now, so movement is readable later; an objective with no baseline can be reported as met in either direction. Attach the objectives with their measures and baseline figures."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 3,
+          "sortOrder": 1,
           "evidenceHint": {
             "en": "Minimization objectives with the measure and the baseline figure recorded for each"
           },
           "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Report each minimization measure against its target and explain any that moved the wrong way"
+          },
+          "description": {
+            "en": "Report the period's figure for every measure set above, beside its target and the baseline. The explanations matter more than the numbers: a measure that rose usually did so for a reason — a new product, a retained dataset, an acquisition — and recording the cause is what distinguishes a programme that is failing from one whose scope changed."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Period report of each minimization measure against baseline and target, with a recorded cause for every adverse movement"
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 2
+        }
+      ],
+      "defaultOwnerHint": "Data Owner"
+    },
+    {
+      "code": "PIMS-07.3",
+      "title": "De-identification and deletion at end of processing",
+      "description": "Implements 7.4.5: when the purpose a set of PII was collected for ends, that PII is de-identified or deleted — driven by the purpose ending, not by a clock.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "7.4.5"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Name the observable event that ends processing, and where a system can read it"
+          },
+          "description": {
+            "en": "De-identification at end of processing needs a trigger a machine can see — a closed account, a completed contract, a withdrawn consent, a finished case. For each purpose, write down which event ends it and which field or signal records that event happening. Where no such field exists, that is the finding: the obligation cannot be automated until something marks the end, and it will otherwise be met only by whoever remembers."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Per-purpose list of end-of-processing events with the system field or signal that records each, flagging purposes with no readable trigger"
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Wire the purpose-end signal into the de-identification job for every system holding that PII"
+          },
+          "description": {
+            "en": "The event identified above has to reach every store holding the PII, not just the system of record. Connect it to each — the primary database, the warehouse, the search index, the export bucket — and record which are wired and which are not. A purpose that ends in one system while the data survives in three others satisfies nothing, and the gap is invisible from the system that did delete."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Mapping of each purpose-end signal to the systems it triggers de-identification in, naming any holding system not yet connected"
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 1
         },
         {
           "title": {
@@ -1112,7 +1168,7 @@
             "en": "Work the schedule against the live data: select the records whose retention has expired or whose purpose has ended, delete or de-identify them, and record per run the category, the volume acted on, the systems covered and the date. Where a record could not be removed — a legal hold, a system with no delete path — record it as an exception with the reason rather than letting the run report success. Attach the deletion run log for the period."
           },
           "phase": "OPERATE",
-          "sortOrder": 4,
+          "sortOrder": 2,
           "evidenceHint": {
             "en": "Deletion and de-identification run log for the period: category, volume, systems covered, date and every exception with its reason"
           },
@@ -1144,6 +1200,69 @@
               }
             }
           ]
+        }
+      ],
+      "defaultOwnerHint": "Data Owner"
+    },
+    {
+      "code": "PIMS-07.4",
+      "title": "Retention",
+      "description": "Implements 7.4.7: each category of PII carries a defined retention period, and records past it are removed everywhere they are held.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "7.4.7"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Record a retention period for every data category in the retention schedule"
+          },
+          "description": {
+            "en": "Set, for each category of PII, how long it is held and from what event the clock runs — last activity, contract end, collection date — because a period without a trigger cannot be applied by anyone. Where a period is set by a legal or contractual obligation, cite it against the row so the number can be defended rather than re-argued. Attach the retention schedule covering every category in the inventory."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Retention schedule giving the retention period and the event the clock runs from for every PII category"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the PII categories the schedule must cover."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the retention period for each category."
+              }
+            },
+            {
+              "text": {
+                "en": "State the event from which each period is counted."
+              }
+            },
+            {
+              "text": {
+                "en": "Cite the obligation behind any period that is externally set."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Log the categories that fell due this period and whether backups and replicas were reached"
+          },
+          "description": {
+            "en": "Retention is enforced against live data and quietly not against everything else. For each category reaching its period, record what was removed and, specifically, whether the removal reached backups, replicas, analytics copies and archives — or whether those hold the data until their own cycle expires. Stating the lag is acceptable; not knowing it is not, because a subject access request will find the copy."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "Per-period deletion log by category, recording live-store removal and the state of backups, replicas, analytics copies and archives"
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 1
         },
         {
           "title": {
@@ -1153,13 +1272,14 @@
             "en": "Query each system for records that should no longer exist under the schedule and read what comes back, rather than reading the deletion job's own report — a job that silently skipped a table reports success. Cover the places deletion routinely misses: backups, replicas, search indexes, data warehouses and third-party copies. Record every survivor with the system it was found in and how it was dealt with. Attach the sample test with its findings."
           },
           "phase": "REVIEW",
-          "sortOrder": 5,
+          "sortOrder": 2,
           "evidenceHint": {
             "en": "Retention sample test showing the systems queried, the records found past retention and how each was resolved"
           },
           "suggestedRole": "Engineering lead"
         }
-      ]
+      ],
+      "defaultOwnerHint": "Data Owner"
     },
     {
       "code": "PIMS-08",
@@ -1606,7 +1726,10 @@
       "PIMS-04",
       "PIMS-05",
       "PIMS-06",
-      "PIMS-07",
+      "PIMS-07.1",
+      "PIMS-07.2",
+      "PIMS-07.3",
+      "PIMS-07.4",
       "PIMS-08",
       "PIMS-09",
       "PIMS-10"
