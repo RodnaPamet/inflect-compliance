@@ -19,6 +19,8 @@ import {
     perWorkerDbName,
     acquireTestDbRunLock,
     rememberTestDbRunLock,
+    releaseTestDbRunLock,
+    checkTestDbMigrationDrift,
     PER_WORKER_MARKER,
 } from '../helpers/db';
 import type { PerWorkerInfo } from '../helpers/db';
@@ -82,6 +84,44 @@ export default async function globalSetup(globalConfig?: GlobalConfig) {
         } catch (err) {
             console.warn(`[test-setup] Migration skipped: ${err}`);
         }
+    }
+
+    // ── Is the database actually at this branch's schema? (#2640) ──
+    //
+    // The CI=1 branch above deliberately applies nothing, and every local run
+    // sets CI=1, so the shared database drifts behind main by design and
+    // nobody owns catching it up. The first symptom is not "stale database" —
+    // it is a suite failing on a column or enum value the migration would
+    // have added, which reads exactly like a product defect and once cost
+    // hours to diagnose as one.
+    //
+    // So: REFUSE. A printed warning here is scrolled past and the failure it
+    // predicted still lands later under someone else's name; throwing exits
+    // the run non-zero with the cause named, at the point it is cheapest to
+    // fix. `unknown` (unreachable / unreadable / no history) is NOT that —
+    // it is the check not having run, and it must never block an offline run
+    // or the DB-free CI job, so it warns loudly and continues.
+    //
+    // This runs AFTER the migrate branch on purpose: a non-CI run that just
+    // migrated successfully is, by construction, current.
+    const drift = await checkTestDbMigrationDrift();
+    if (drift.status === 'unknown') {
+        console.warn(
+            `[test-setup] Migration-drift check DID NOT RUN: ${drift.reason}.\n` +
+                `[test-setup] Treat this as UNKNOWN, not "schema up to date".`,
+        );
+    } else if (drift.status === 'behind') {
+        // Hand the lock back first: this throw skips globalTeardown, and a
+        // second run should be refused by a live run, never by our corpse.
+        await releaseTestDbRunLock();
+        throw new Error(drift.message);
+    } else {
+        const ahead = drift.report.ahead.length;
+        console.log(
+            `[test-setup] Schema check: ${drift.report.applied} migrations applied, ` +
+                `all ${drift.report.onDisk} on this branch present` +
+                (ahead > 0 ? ` (plus ${ahead} from other branches)` : ''),
+        );
     }
 
     const maxWorkers = globalConfig?.maxWorkers ?? 1;
