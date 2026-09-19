@@ -1,8 +1,8 @@
 {
   "_meta": {
     "purpose": "OWASP Agentic AI Top 10 in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
-    "why": "Built inline in prisma/seed.ts, which is not run on production deploys. Production has never held this framework — not the framework row, not the templates, not the pack. Extracted from a database seeded by the inline block, so the shape is carried over exactly rather than re-derived from the grouping logic.",
-    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here — every template carries the generic five, as it did inline.",
+    "why": "Built inline in prisma/seed.ts, which is not run on production deploys. Production has never held this framework \u2014 not the framework row, not the templates, not the pack. Extracted from a database seeded by the inline block, so the shape is carried over exactly rather than re-derived from the grouping logic.",
+    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here \u2014 every template carries the generic five, as it did inline.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts"
   },
   "framework": {
@@ -10,7 +10,7 @@
     "name": "OWASP Agentic AI Top 10",
     "version": "1.0",
     "kind": "INDUSTRY_STANDARD",
-    "description": "The ten most critical security risks specific to AI systems that act — agents that plan, call tools, hold delegated identity and carry memory.",
+    "description": "The ten most critical security risks specific to AI systems that act \u2014 agents that plan, call tools, hold delegated identity and carry memory.",
     "sourceUrn": "urn:inflect:library:owasp-agentic-top10",
     "metadata": {
       "locale": "en",
@@ -18,7 +18,7 @@
       "packager": "inflect",
       "license": "CC-BY-SA-4.0",
       "sourceUrl": "https://genai.owasp.org/",
-      "copyright": "OWASP Agentic AI Top 10 © OWASP Foundation / OWASP GenAI Security Project, licensed CC-BY-SA-4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Source: https://genai.owasp.org/. Inflect stores a reference index (canonical ASI identifiers + short risk titles) with its own governance summaries, not the verbatim OWASP risk prose."
+      "copyright": "OWASP Agentic AI Top 10 \u00a9 OWASP Foundation / OWASP GenAI Security Project, licensed CC-BY-SA-4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Source: https://genai.owasp.org/. Inflect stores a reference index (canonical ASI identifiers + short risk titles) with its own governance summaries, not the verbatim OWASP risk prose."
     }
   },
   "requirements": [
@@ -36,7 +36,7 @@
       "section": "ASI02 Tool Misuse and Exploitation",
       "category": "OWASP Agentic AI Top 10",
       "sortOrder": 1,
-      "summary": "The agent invokes its authorised tools and APIs in unintended, unsafe or excessive ways — chained calls, injected parameters, destructive operations beyond what the task required."
+      "summary": "The agent invokes its authorised tools and APIs in unintended, unsafe or excessive ways \u2014 chained calls, injected parameters, destructive operations beyond what the task required."
     },
     {
       "code": "ASI03",
@@ -92,7 +92,7 @@
       "section": "ASI09 Human-Agent Trust Exploitation",
       "category": "OWASP Agentic AI Top 10",
       "sortOrder": 8,
-      "summary": "The agent's fluency, persona or apparent authority is used to manipulate people into approving actions, disclosing secrets or lowering scrutiny — including automation bias in approval workflows."
+      "summary": "The agent's fluency, persona or apparent authority is used to manipulate people into approving actions, disclosing secrets or lowering scrutiny \u2014 including automation bias in approval workflows."
     },
     {
       "code": "ASI10",
@@ -100,13 +100,14 @@
       "section": "ASI10 Rogue Agents",
       "category": "OWASP Agentic AI Top 10",
       "sortOrder": 9,
-      "summary": "Agents operate outside the sanctioned inventory or beyond their authorised scope, schedule or lifecycle — unregistered, orphaned after an owner leaves, or never decommissioned."
+      "summary": "Agents operate outside the sanctioned inventory or beyond their authorised scope, schedule or lifecycle \u2014 unregistered, orphaned after an owner leaves, or never decommissioned."
     }
   ],
   "templates": [
     {
       "code": "ASI-01",
       "title": "Agent Goal Hijack",
+      "description": "Record the authorised objective of each deployed agent, establish which sources can reach its instruction channel, and treat untrusted content so that reaching the agent is not the same as instructing it.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
       "requirementCodes": [
@@ -129,7 +130,7 @@
             "en": "List the sources whose content reaches each agent's instruction channel"
           },
           "description": {
-            "en": "For each agent, enumerate everything that ends up in what the agent reads as direction — the requester's own words, retrieved documents, results returned by tools, file and message contents — and mark which of those sources the organisation does not control. Attach the per-agent list of sources with the untrusted ones identified."
+            "en": "For each agent, enumerate everything that ends up in what the agent reads as direction \u2014 the requester's own words, retrieved documents, results returned by tools, file and message contents \u2014 and mark which of those sources the organisation does not control. Attach the per-agent list of sources with the untrusted ones identified."
           },
           "phase": "SCOPE",
           "sortOrder": 1,
@@ -176,6 +177,7 @@
     {
       "code": "ASI-02",
       "title": "Tool Misuse and Exploitation",
+      "description": "List the tools each agent may invoke and what each one can actually do, bound every invocation, and withdraw the tools an agent's work does not require \u2014 so a compromised agent is limited by what it holds rather than by what it intends.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
       "requirementCodes": [
@@ -198,7 +200,7 @@
             "en": "Record the limits placed on each tool an agent may invoke"
           },
           "description": {
-            "en": "For every entry on the tool list, write down what constrains a call — which arguments are permitted, which targets are in range, what size, value or count a call may not exceed — and what happens to a call that falls outside those limits. Attach the limits record against each tool."
+            "en": "For every entry on the tool list, write down what constrains a call \u2014 which arguments are permitted, which targets are in range, what size, value or count a call may not exceed \u2014 and what happens to a call that falls outside those limits. Attach the limits record against each tool."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -220,12 +222,12 @@
             "en": "Examine the tool invocations recorded in the period against the agreed limits"
           },
           "description": {
-            "en": "Go through the invocations agents made during the period and pick out calls that breached a recorded limit, targeted a system not on the tool list, or were refused. For each such call record what was decided about it and, where the call indicates a real attempt at misuse, the follow-up raised — wherever the organisation records follow-up. Where the period's invocations produced nothing outside the limits, record the invocations examined and that none breached a recorded limit."
+            "en": "Go through the invocations agents made during the period and pick out calls that breached a recorded limit, targeted a system not on the tool list, or were refused. For each such call record what was decided about it and, where the call indicates a real attempt at misuse, the follow-up raised \u2014 wherever the organisation records follow-up. Where the period's invocations produced nothing outside the limits, record the invocations examined and that none breached a recorded limit."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
           "evidenceHint": {
-            "en": "The invocation records examined for the period, the calls flagged with the disposition reached and the follow-up raised for each — or, where nothing was flagged, the records examined and the statement that no call fell outside the recorded limits."
+            "en": "The invocation records examined for the period, the calls flagged with the disposition reached and the follow-up raised for each \u2014 or, where nothing was flagged, the records examined and the statement that no call fell outside the recorded limits."
           },
           "suggestedRole": "Security engineering"
         },
@@ -234,7 +236,7 @@
             "en": "Reassess the tool limits against the calls that were refused or flagged"
           },
           "description": {
-            "en": "Using the flagged and refused calls, judge for each limit whether it sits where it should — too tight and it is blocking legitimate work, too loose and it caught nothing it should have. Record the limits changed, the reasoning, and who approved each change."
+            "en": "Using the flagged and refused calls, judge for each limit whether it sits where it should \u2014 too tight and it is blocking legitimate work, too loose and it caught nothing it should have. Record the limits changed, the reasoning, and who approved each change."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -245,6 +247,7 @@
     {
       "code": "ASI-03",
       "title": "Identity and Privilege Abuse",
+      "description": "Give each agent an identity of its own carrying its own rights, record how an action taken on a person's behalf is attributed to both, and control how agent credentials are issued, held and withdrawn.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
       "requirementCodes": [
@@ -314,6 +317,7 @@
     {
       "code": "ASI-04",
       "title": "Agentic Supply Chain Vulnerabilities",
+      "description": "Inventory the externally supplied components each agent depends on, record what was established about each before it was adopted, and know by what route a change to one reaches the organisation.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
       "requirementCodes": [
@@ -336,7 +340,7 @@
             "en": "Record what was established about each component before it was adopted"
           },
           "description": {
-            "en": "For every entry on the component list, write down what the organisation determined about its origin and fitness before putting it into service — where it came from, how it was obtained, what was examined — and who accepted it on that basis. Attach the acceptance record; components already in use with no such record are listed for retrospective assessment."
+            "en": "For every entry on the component list, write down what the organisation determined about its origin and fitness before putting it into service \u2014 where it came from, how it was obtained, what was examined \u2014 and who accepted it on that basis. Attach the acceptance record; components already in use with no such record are listed for retrospective assessment."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -358,7 +362,7 @@
             "en": "Assess each component change received before it is taken into service"
           },
           "description": {
-            "en": "For every new version, defect notice or withdrawal received during the period, record what was assessed about it and the decision reached — adopt, defer, or refuse and replace. Record the person who decided and the date the decision took effect."
+            "en": "For every new version, defect notice or withdrawal received during the period, record what was assessed about it and the decision reached \u2014 adopt, defer, or refuse and replace. Record the person who decided and the date the decision took effect."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -372,7 +376,7 @@
             "en": "Reconcile the component list against what the agents are running"
           },
           "description": {
-            "en": "Compare the suppliers and versions recorded on the list with the components the agents in service are actually using. Record every discrepancy — a version in use that was never assessed, a listed component no longer present, an agent depending on something absent from the list — and raise the correction for each."
+            "en": "Compare the suppliers and versions recorded on the list with the components the agents in service are actually using. Record every discrepancy \u2014 a version in use that was never assessed, a listed component no longer present, an agent depending on something absent from the list \u2014 and raise the correction for each."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -383,6 +387,7 @@
     {
       "code": "ASI-05",
       "title": "Unexpected Code Execution",
+      "description": "Identify where an agent's output is executed rather than read, establish what each executing environment can reach, and reduce that reach to what the work requires.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
       "requirementCodes": [
@@ -394,7 +399,7 @@
             "en": "Identify where an agent's output is executed rather than read"
           },
           "description": {
-            "en": "Go through each agent and record every point at which what it produces is run rather than presented to a person — code, queries, commands, or configuration applied to a system — naming the system that executes it and the person who owns that system. Attach the list of execution points per agent."
+            "en": "Go through each agent and record every point at which what it produces is run rather than presented to a person \u2014 code, queries, commands, or configuration applied to a system \u2014 naming the system that executes it and the person who owns that system. Attach the list of execution points per agent."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -452,6 +457,7 @@
     {
       "code": "ASI-06",
       "title": "Memory and Context Poisoning",
+      "description": "Catalogue what each agent retains between runs, control who or what may write to those stores, hold the origin alongside every entry, and purge what cannot be accounted for.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
       "requirementCodes": [
@@ -463,7 +469,7 @@
             "en": "Catalogue what each agent retains between runs"
           },
           "description": {
-            "en": "For every agent, record each store whose contents are read back into a later run — prior conversations, notes the agent wrote for itself, indexed documents, cached results — with where it is held and how long entries persist. Attach the catalogue of stores per agent."
+            "en": "For every agent, record each store whose contents are read back into a later run \u2014 prior conversations, notes the agent wrote for itself, indexed documents, cached results \u2014 with where it is held and how long entries persist. Attach the catalogue of stores per agent."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -496,12 +502,12 @@
             "en": "Purge the retained entries identified in the period as wrong or untrusted"
           },
           "description": {
-            "en": "At least once in the period, assemble the entries identified as having come from an untrusted source or as being incorrect — those raised by the origin review, by reports of an agent returning wrong content, and by any incident touching a store — then remove each from its store and from anything derived from it, and confirm the agent no longer returns it. Record what was removed, from which store and on whose authority. Where the period identified no such entry, record the stores checked, the routes of identification consulted, and that nothing required removal."
+            "en": "At least once in the period, assemble the entries identified as having come from an untrusted source or as being incorrect \u2014 those raised by the origin review, by reports of an agent returning wrong content, and by any incident touching a store \u2014 then remove each from its store and from anything derived from it, and confirm the agent no longer returns it. Record what was removed, from which store and on whose authority. Where the period identified no such entry, record the stores checked, the routes of identification consulted, and that nothing required removal."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
           "evidenceHint": {
-            "en": "For the period, the removals made — the entry, the store, the person who authorised it and confirmation the agent no longer returns the content — or, where nothing was identified, the dated record of the stores checked, the routes consulted and the statement that no entry required removal."
+            "en": "For the period, the removals made \u2014 the entry, the store, the person who authorised it and confirmation the agent no longer returns the content \u2014 or, where nothing was identified, the dated record of the stores checked, the routes consulted and the statement that no entry required removal."
           },
           "suggestedRole": "IT Operations"
         },
@@ -521,6 +527,7 @@
     {
       "code": "ASI-07",
       "title": "Insecure Inter-Agent Communication",
+      "description": "Map the exchanges between agents and the parties at each end, establish how each end proves who it is exchanging with, and protect the exchange in transit between them.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
       "requirementCodes": [
@@ -590,6 +597,7 @@
     {
       "code": "ASI-08",
       "title": "Cascading Failures",
+      "description": "Trace the chains in which one agent's output drives a further action, bound how far each may run before it halts, and record who can halt it and when they are available to.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
       "requirementCodes": [
@@ -601,7 +609,7 @@
             "en": "Trace the chains in which one agent's output drives a further action"
           },
           "description": {
-            "en": "For each agent, record what consumes its output — another agent, a change to a system, a message sent onward — and how far a single input can travel before a person sees it. Attach the chain descriptions with the longest unattended stretch marked on each."
+            "en": "For each agent, record what consumes its output \u2014 another agent, a change to a system, a message sent onward \u2014 and how far a single input can travel before a person sees it. Attach the chain descriptions with the longest unattended stretch marked on each."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -612,7 +620,7 @@
             "en": "Set a bound on how far each chain may run before it halts"
           },
           "description": {
-            "en": "For each chain, agree and record the ceiling past which it stops rather than continues — a count of actions, a volume changed, an amount spent, an elapsed duration, or a combination. Record who set each bound and on what basis, and attach it against the chain."
+            "en": "For each chain, agree and record the ceiling past which it stops rather than continues \u2014 a count of actions, a volume changed, an amount spent, an elapsed duration, or a combination. Record who set each bound and on what basis, and attach it against the chain."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -623,7 +631,7 @@
             "en": "Record how each chain is halted, who may halt it and when they are available"
           },
           "description": {
-            "en": "For each chain on the map, state the means by which it is stopped mid-flight, name the people able to invoke that means, and record the hours during which each of them is available. Where nobody is available at some hours, record that plainly and state what holds the chain in the meantime — the bound recorded for it, or a rule that the chain does not run unattended at those hours. Describe as well the state left behind when a chain stops part-way. Attach the record against each chain so the means, the named people, their availability and the residue are all known in advance."
+            "en": "For each chain on the map, state the means by which it is stopped mid-flight, name the people able to invoke that means, and record the hours during which each of them is available. Where nobody is available at some hours, record that plainly and state what holds the chain in the meantime \u2014 the bound recorded for it, or a rule that the chain does not run unattended at those hours. Describe as well the state left behind when a chain stops part-way. Attach the record against each chain so the means, the named people, their availability and the residue are all known in advance."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -659,6 +667,7 @@
     {
       "code": "ASI-09",
       "title": "Human-Agent Trust Exploitation",
+      "description": "Identify the points at which an agent addresses a person, disclose on each channel that the counterparty is an agent, and record which decisions may not rest on an agent's output alone.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
       "requirementCodes": [
@@ -670,7 +679,7 @@
             "en": "List the points at which an agent addresses a person"
           },
           "description": {
-            "en": "For each agent, record every audience it communicates with — staff, customers, suppliers — the channel used, and whether the person on the other end can currently tell they are dealing with an agent. Attach the list with the channels lacking that disclosure marked."
+            "en": "For each agent, record every audience it communicates with \u2014 staff, customers, suppliers \u2014 the channel used, and whether the person on the other end can currently tell they are dealing with an agent. Attach the list with the channels lacking that disclosure marked."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -728,6 +737,7 @@
     {
       "code": "ASI-10",
       "title": "Rogue Agents",
+      "description": "Register every agent approved to operate with its owner and its approver, require that approval before one starts, and search for agents running without an entry on the register.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
       "requirementCodes": [
@@ -775,7 +785,7 @@
             "en": "Decommission the agents found operating without approval"
           },
           "description": {
-            "en": "Stop each unapproved agent identified, remove the access and credentials it held, and confirm it is no longer running. Record the removal, or — where the agent is judged legitimate — the approval granted retrospectively and by whom."
+            "en": "Stop each unapproved agent identified, remove the access and credentials it held, and confirm it is no longer running. Record the removal, or \u2014 where the agent is judged legitimate \u2014 the approval granted retrospectively and by whom."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -789,7 +799,7 @@
             "en": "Reassess the approval route against the agents found unregistered"
           },
           "description": {
-            "en": "Using the period's findings, establish why each unregistered agent escaped the register — a gap in the approval route, an owner who left, a path into production that bypasses approval — and record the changes agreed to close each gap."
+            "en": "Using the period's findings, establish why each unregistered agent escaped the register \u2014 a gap in the approval route, an owner who left, a path into production that bypasses approval \u2014 and record the changes agreed to close each gap."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
