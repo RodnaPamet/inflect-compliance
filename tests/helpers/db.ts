@@ -552,6 +552,244 @@ export function migrateTestDb(): void {
     }
 }
 
+// ─── "The shared DB is N migrations behind this branch" (#2640) ────────
+//
+// `globalSetup` skips `prisma migrate deploy` whenever CI=1, and the repo
+// convention is that EVERY local run sets CI=1 — because a migrate from a
+// worktree lands on a database several parallel sessions share. That guard
+// is correct and stays.
+//
+// Its consequence is structural: the only code path that advances the
+// shared test database is the `else` branch nobody is supposed to take, so
+// the database falls behind `main` and NOTHING owns catching it up. It did,
+// for two days, by one migration — and the symptom was not "your database
+// is stale". It was
+//
+//     invalid input value for enum "NotificationType": "AGENT_RISK_ASSESSMENT_STALE"
+//
+// in four tests of a feature that was fine. One session diagnosed it as a
+// product defect. The cost was hours and a cross-session exchange.
+//
+// So this is the alarm that guard needs. Three properties matter, and they
+// are why the shape below is an OUTCOME rather than a boolean:
+//
+//  1. BEHIND FAILS THE RUN. A warning printed into Jest's startup noise is
+//     only marginally better than silence — it scrolls past, and the failure
+//     it predicted still arrives later wearing a product defect's clothes.
+//     globalSetup throws on `behind`, so the run exits non-zero naming the
+//     real cause at the moment it is cheapest to fix.
+//  2. UNKNOWN IS NOT "UP TO DATE". An unreachable database, a database with
+//     no migration history (one built by `prisma db push` keeps none), a
+//     query that threw: each means the check DID NOT RUN. Calling any of
+//     them "behind" would break the DB-free CI job and every offline run;
+//     folding them into "current" would let the alarm go quiet, which is the
+//     defect itself. They get their own status and say so out loud.
+//  3. AHEAD IS NOT BEHIND. A database holding a migration this branch does
+//     not carry is the normal state of a machine running several branches,
+//     and that class is already owned by `npm run db:check-migration-drift`.
+//     It is reported, never refused.
+//
+// Cost, since this runs on EVERY Jest boot: one short-lived connection and
+// one read of ~300 rows. No transaction, no lock, no write.
+
+/** Where `prisma migrate` writes `<name>/migration.sql`. */
+export const MIGRATIONS_DIR = path.resolve(__dirname, '../../prisma/migrations');
+
+export interface MigrationDriftReport {
+    /** Migration directories on this branch. */
+    onDisk: number;
+    /** Rows in `_prisma_migrations` describing a migration actually run. */
+    applied: number;
+    /** On disk, never applied to this database — it is BEHIND by these. */
+    behind: string[];
+    /** Applied to this database, absent from this branch — informational. */
+    ahead: string[];
+}
+
+export type TestDbMigrationDriftOutcome =
+    | { status: 'current'; report: MigrationDriftReport; database: string }
+    | { status: 'behind'; report: MigrationDriftReport; database: string; message: string }
+    | { status: 'unknown'; reason: string };
+
+/**
+ * The comparison, as a pure function of two name lists — so the decision can
+ * be exercised without a Postgres, and so the live path below is nothing but
+ * I/O around it.
+ */
+export function compareMigrations(
+    onDisk: readonly string[],
+    applied: readonly string[],
+): MigrationDriftReport {
+    const appliedSet = new Set(applied);
+    const diskSet = new Set(onDisk);
+    return {
+        onDisk: diskSet.size,
+        applied: appliedSet.size,
+        // Prisma's directory names are timestamp-prefixed, so lexicographic
+        // order is chronological: the first name printed is the oldest one
+        // this database is missing.
+        behind: [...diskSet].filter((m) => !appliedSet.has(m)).sort(),
+        ahead: [...appliedSet].filter((m) => !diskSet.has(m)).sort(),
+    };
+}
+
+/** Migration directory names on this branch, oldest first. */
+export function migrationsOnDisk(dir: string = MIGRATIONS_DIR): string[] {
+    return fs
+        .readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort();
+}
+
+/** Password out, everything else intact — this string gets printed. */
+function redactDbUrl(url: string): string {
+    return url.replace(/:[^:@/]*@/, ':***@');
+}
+
+/**
+ * The refusal. It has to survive being read in a scroll of Jest output by
+ * somebody who believes they are looking at a product failure, so it names
+ * the database, the exact missing migrations, and the one command that fixes
+ * it.
+ */
+export function migrationDriftRefusal(report: MigrationDriftReport, database: string): string {
+    const n = report.behind.length;
+    return [
+        `[test-setup] REFUSING TO RUN: the shared test database is ${n} migration${n === 1 ? '' : 's'} behind this branch.`,
+        '',
+        `[test-setup]   database: ${database}`,
+        `[test-setup]   applied there: ${report.applied} of the ${report.onDisk} migrations on this branch`,
+        '',
+        '[test-setup]   Missing, oldest first:',
+        ...report.behind.map((m) => `[test-setup]     - ${m}`),
+        '',
+        '[test-setup]   Catch it up — forward-only, applies exactly the migrations above:',
+        '[test-setup]',
+        '[test-setup]       npm run db:test:catchup',
+        '[test-setup]',
+        '[test-setup]   Why this REFUSES rather than warns: the schema this run would test',
+        '[test-setup]   against is not the schema on this branch. Carrying on fails later, in',
+        '[test-setup]   whichever suite first touches the new column or enum, as something that',
+        '[test-setup]   reads like a product defect — `invalid input value for enum ...` is the',
+        '[test-setup]   one that cost hours (#2640). CI=1 correctly skips migrate on a shared',
+        '[test-setup]   database; this is the alarm that guard needs.',
+    ].join('\n');
+}
+
+/**
+ * Is the database this run is about to test against missing any migration on
+ * this branch?
+ *
+ * Never throws for an expected condition: an unreachable database, one with
+ * no migration history, or a query that failed are all `unknown` — a result
+ * rather than a crash, and explicitly NOT "up to date".
+ */
+export async function checkTestDbMigrationDrift(
+    opts: { url?: string; migrationsDir?: string } = {},
+): Promise<TestDbMigrationDriftOutcome> {
+    let url: string;
+    try {
+        url = opts.url ?? getBaseTestDatabaseUrl();
+    } catch (err) {
+        return { status: 'unknown', reason: `test database URL is unusable: ${describeError(err)}` };
+    }
+
+    let onDisk: string[];
+    try {
+        onDisk = migrationsOnDisk(opts.migrationsDir ?? MIGRATIONS_DIR);
+    } catch (err) {
+        return {
+            status: 'unknown',
+            reason: `cannot read prisma/migrations (${describeError(err)})`,
+        };
+    }
+    if (onDisk.length === 0) {
+        return { status: 'unknown', reason: 'prisma/migrations holds no migrations to compare' };
+    }
+
+    // Prisma-only query parameters (`?schema=`) are not `pg` connection
+    // parameters; `adminConnectionString()` drops them for the same reason.
+    let connectionString: string;
+    try {
+        const u = new URL(url);
+        u.search = '';
+        connectionString = u.toString();
+    } catch (err) {
+        return {
+            status: 'unknown',
+            reason: `test database URL is unparseable (${describeError(err)})`,
+        };
+    }
+
+    // Lazy require, mirroring acquireTestDbRunLock above: this module is
+    // imported by every integration suite and `pg` is only needed here.
+    const { Client }: typeof import('pg') = require('pg');
+    const client = new Client({
+        connectionString,
+        application_name: 'inflect-jest-drift-check',
+        // Bounded on both sides: this runs before every suite, including the
+        // DB-free CI job where nothing is listening.
+        connectionTimeoutMillis: 5_000,
+        query_timeout: 5_000,
+    });
+
+    try {
+        await client.connect();
+    } catch (err) {
+        await client.end().catch(() => {});
+        return {
+            status: 'unknown',
+            reason: `cannot reach the test database (${describeError(err)})`,
+        };
+    }
+
+    const database = redactDbUrl(connectionString);
+    try {
+        // Only rows describing a migration this database actually RAN.
+        // Rolled-back and unfinished rows describe an attempt; counting them
+        // as applied would hide a real gap.
+        const res = await client.query<{ migration_name: string }>(
+            `SELECT migration_name
+               FROM _prisma_migrations
+              WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL`,
+        );
+        const report = compareMigrations(
+            onDisk,
+            res.rows.map((r) => r.migration_name),
+        );
+        if (report.applied === 0) {
+            // An empty history is not "behind by everything": a database built
+            // with `prisma db push` keeps no history at all, and refusing it
+            // would block a setup that works.
+            return {
+                status: 'unknown',
+                reason:
+                    `${database} has an empty migration history — nothing to compare ` +
+                    `(a \`prisma db push\` database keeps none)`,
+            };
+        }
+        if (report.behind.length > 0) {
+            return {
+                status: 'behind',
+                report,
+                database,
+                message: migrationDriftRefusal(report, database),
+            };
+        }
+        return { status: 'current', report, database };
+    } catch (err) {
+        return {
+            status: 'unknown',
+            reason:
+                `could not read _prisma_migrations on ${database} (${describeError(err)}) — ` +
+                `that is "NOT CHECKED", not "no drift"`,
+        };
+    } finally {
+        await client.end().catch(() => {});
+    }
+}
+
 /**
  * Create and return a PrismaClient connected to the test database.
  *
