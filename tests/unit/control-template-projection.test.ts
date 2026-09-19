@@ -43,6 +43,43 @@ describe('controlDataFromTemplate', () => {
         expect(data.testingMethodology).toBe(TEMPLATE.testingMethodology);
     });
 
+    it('falls back to the template description when there is no objective', () => {
+        // #2664. The three internal-controls import fields arrived with that
+        // import and the framework catalogues never adopted them: all 473
+        // framework templates carry no objective, so 473 of 893 production
+        // controls rendered "No objective." while the template's `description`
+        // — written as exactly such a statement — sat unused, unable to project
+        // because `Control` has no description column.
+        const data = controlDataFromTemplate(
+            { ...TEMPLATE, objective: null, description: 'Keep one register of every ICT asset.' },
+            CTX,
+        );
+        expect(data.objective).toBe('Keep one register of every ICT asset.');
+    });
+
+    it('does not let a description displace a real objective', () => {
+        // The direction matters. A template that states an objective keeps it;
+        // only one with none borrows its description. Reversing the `??` would
+        // silently overwrite 151 internal-controls objectives with nothing,
+        // because that catalogue carries no descriptions at all.
+        const data = controlDataFromTemplate(
+            { ...TEMPLATE, description: 'A browse summary that is not the objective.' },
+            CTX,
+        );
+        expect(data.objective).toBe(TEMPLATE.objective);
+    });
+
+    it('is null, not undefined, when a template has neither', () => {
+        // Prisma treats undefined as "leave unset" and null as "write NULL".
+        // A control created with `objective: undefined` would differ from one
+        // created with an explicit null in ways no assertion here would see.
+        const data = controlDataFromTemplate(
+            { ...TEMPLATE, objective: null, description: null },
+            CTX,
+        );
+        expect(data.objective).toBeNull();
+    });
+
     it('carries identity, category, frequency and provenance', () => {
         const data = controlDataFromTemplate(TEMPLATE, CTX);
         expect(data.code).toBe('AC-1');
