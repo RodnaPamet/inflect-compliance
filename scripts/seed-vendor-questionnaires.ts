@@ -1,7 +1,7 @@
 /**
  * Standalone, idempotent seeder for the built-in VENDOR-ASSESSMENT
- * questionnaire templates — the Supplier Due Diligence Questionnaire and the
- * Supplier Security Assessment.
+ * questionnaire templates — the Supplier Due Diligence Questionnaire, the
+ * Supplier Security Assessment, and the OWASP AISVS vendor questionnaire.
  *
  * Why this exists as its own script (not just `prisma/seed.ts`):
  * `VendorAssessmentTemplate` is RLS-tenant-scoped, so the "global" baseline
@@ -11,7 +11,11 @@
  * production. When these questionnaires are added after a prod DB is already
  * seeded, existing tenants would otherwise never receive them.
  *
- * This script seeds ONLY the two questionnaire templates, into EVERY tenant,
+ * It no longer seeds only those two. Since #2632 it also seeds the OWASP AISVS
+ * vendor questionnaire, built by the shared builder in
+ * `prisma/aisvs-vendor-questionnaire.ts` that `prisma/seed.ts` calls too.
+ *
+ * This script seeds those questionnaire templates, into EVERY tenant,
  * via a (tenantId, key, version) existence check, so it is safe to run on any
  * environment (including production) and safe to re-run. Run with:
  *   tsx scripts/seed-vendor-questionnaires.ts   (npm run db:seed-vendor-questionnaires)
