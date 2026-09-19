@@ -100,9 +100,23 @@ describe('SSDF Starter Pack — delivery', () => {
 });
 
 describe('SSDF Starter Pack — curated control templates', () => {
-    it('ships 15–20 curated controls with unique SDLC- codes', () => {
+    it('ships 15–22 curated controls with unique SDLC- codes', () => {
+        // UPPER BOUND RAISED 20 -> 22 when SDLC-PO1 was split into three
+        // (#2621 work): PO.1.1, PO.1.2 and PO.1.3 are separate obligations —
+        // requirements for the development infrastructure, for the software
+        // being built, and issued to component suppliers — and one control
+        // covering all three cannot be marked implemented for one of them.
+        //
+        // The band is a DRIFT backstop, not the curation rule. What actually
+        // keeps this pack curated is the assertions beside it: every code
+        // carries the SDLC- prefix and none carries SSDF-NN, which is what
+        // stops the hand-picked pack merging into the auto-generated
+        // per-requirement baseline. SSDF has 42 assessable requirements; 21
+        // controls is still half of it, so the pack remains a selection. Two
+        // points of headroom rather than none, because a deliberate split
+        // should not have to touch this line twice.
         expect(controls.length).toBeGreaterThanOrEqual(15);
-        expect(controls.length).toBeLessThanOrEqual(20);
+        expect(controls.length).toBeLessThanOrEqual(22);
         const codes = controls.map((c) => c.code);
         expect(new Set(codes).size).toBe(codes.length);
         for (const c of controls) {
