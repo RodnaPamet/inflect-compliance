@@ -172,6 +172,17 @@ export function callSitesIn(rel: string, masked: string): CallSite[] {
  * stand in for the row cap the model's own read needs.
  */
 export function topLevelTake(arg: string): string | null {
+    return topLevelValue(arg, 'take');
+}
+
+/**
+ * The source text of a top-level key's value in a Prisma query object.
+ *
+ * Generalised out of `topLevelTake` when #2539's guard grew a second key to
+ * check. The `take` wrapper above is kept so its own unit tests keep naming
+ * the thing they test.
+ */
+export function topLevelValue(arg: string, wanted: string): string | null {
     // `arg` opens with `(` and the object literal's `{` follows; depth 1 inside
     // that brace is the argument object's own key level.
     let depth = 0;
@@ -191,7 +202,7 @@ export function topLevelTake(arg: string): string | null {
         // something else stands in for this query's.
         if (i > 0 && /[\w$]/.test(arg[i - 1])) continue;
         const rest = arg.slice(i);
-        const key = /^take\s*:/.exec(rest);
+        const key = new RegExp(`^${wanted}\\s*:`).exec(rest);
         if (key === null) continue;
         const valueStart = i + key[0].length;
         let j = valueStart;
@@ -343,6 +354,61 @@ describe('AgentBehaviourWindow — the reads that make unbounded growth safe', (
                     '',
                     'Either restore the `take:` or reopen the ADR — do not raise the cap',
                     'to fit a new reader without saying what now sweeps the table.',
+                ].join('\n'),
+            );
+        }
+        expect(offenders).toEqual([]);
+    });
+
+    it('every row-multiplying read filters on the index prefix, not just a take', () => {
+        // WHY THIS EXISTS SEPARATELY FROM THE TAKE CHECK.
+        //
+        // The ADR's claim is not merely "reads are row-capped" — it is that
+        // read cost is INDEPENDENT OF HOW MANY ROWS THE TABLE HOLDS. A `take`
+        // alone does not buy that: `findMany({ orderBy: { windowStart: 'desc' },
+        // take: 169 })` with no tenant/agent filter returns 169 rows and reads
+        // the whole table to find them. It would satisfy the check above and
+        // leave the decision's actual premise unprotected.
+        //
+        // The table's only index is @@unique([tenantId, agentId, windowStart]),
+        // so "on a prefix of it" means the filter names tenantId AND agentId.
+        // Adversarial review of this guard found that gap: the guard pinned
+        // half of what its own docblock and the ADR claim it pins.
+        const reads = ALL_SITES.filter((s) => ROW_MULTIPLYING.has(s.method));
+        const offenders: string[] = [];
+
+        for (const read of reads) {
+            const where = topLevelValue(read.arg, 'where');
+            if (where === null) {
+                offenders.push(
+                    `${read.file}:${read.line}  ${read.method}(…) has NO top-level where: — ` +
+                        `it reads every tenant's rows`,
+                );
+                continue;
+            }
+            const missing = ['tenantId', 'agentId'].filter(
+                (k) => !new RegExp(`\\b${k}\\b`).test(where),
+            );
+            if (missing.length > 0) {
+                offenders.push(
+                    `${read.file}:${read.line}  where: does not name ${missing.join(' or ')} — ` +
+                        `so it is not a prefix of @@unique([tenantId, agentId, windowStart]) ` +
+                        `and its cost grows with the table`,
+                );
+            }
+        }
+
+        if (offenders.length > 0) {
+            throw new Error(
+                [
+                    `${offenders.length} of ${reads.length} AgentBehaviourWindow read(s) ` +
+                        `are not anchored on the index prefix:`,
+                    '',
+                    ...offenders.map((o) => `  ${o}`),
+                    '',
+                    'A take bounds the ROWS RETURNED. This bounds the ROWS EXAMINED, and',
+                    'it is the half docs/adr/0002 actually rests on when it says growth',
+                    'costs storage only — never latency.',
                 ].join('\n'),
             );
         }
