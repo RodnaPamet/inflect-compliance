@@ -322,8 +322,12 @@ describe('runPowerpipeBenchmark — default runner (no injected exec)', () => {
         // The stderr sample is ARBITRARY and MUST STAY MEANINGLESS. Exit 3 lands on
         // the did-not-complete gate — `!powerpipeRunCompleted(outcome)` in this
         // module — which is the exact branch a credential classifier would hook if
-        // one is ever built (#2413, prior art from the deleted
-        // fix/posture-auth-failure-unreachable). Put a real auth-failure code in
+        // one is ever built (#2413; the prior art from the deleted
+        // fix/posture-auth-failure-unreachable, and the three refutations that
+        // killed it, are recorded in
+        // docs/implementation-notes/2026-09-19-posture-credential-trigger-research-record.md
+        // and exercised by tests/unit/posture-credential-classifier-refutation.test.ts).
+        // Put a real auth-failure code in
         // this sample (the literal 'ExpiredToken' stood here) and the fixture
         // silently stops being the undocumented-exit case and becomes the
         // credential case, while every assertion below still passes: a green test
