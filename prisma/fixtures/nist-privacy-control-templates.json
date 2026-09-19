@@ -1650,13 +1650,13 @@
       ]
     },
     {
-      "code": "PRIV-11",
-      "title": "Communication Policies, Processes, and Procedures",
+      "code": "PRIV-11.1",
+      "title": "Transparency policies and procedures",
+      "description": "Implements CM.PO-P1: Transparency policies, processes, and procedures for communicating data processing purposes, practices, associated privacy risks, and options for enabling individuals' data processing preferences and requests are established and in place.",
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "CM.PO-P1",
-        "CM.PO-P2"
+        "CM.PO-P1"
       ],
       "tasks": [
         {
@@ -1672,14 +1672,17 @@
         },
         {
           "title": {
-            "en": "Assign the roles that draft, approve and issue privacy communications"
+            "en": "Trigger the transparency step from the approval of a processing change"
           },
           "description": {
-            "en": "Name the role that drafts a privacy communication, the role that approves its content, and the role that speaks when a privacy matter reaches the public, and record where the boundary between them sits and who acts when one is unavailable. Record the assignment against the named roles rather than against individuals who may move."
+            "en": "Tie the transparency step to the approval that lets processing change — a new purpose, a new recipient, a shortened retention — so it opens before the change reaches individuals rather than when somebody remembers the policy exists. Fix how long a communication may lag the change it describes, name who hears about it when that period is running out, and have the functions granting those approvals acknowledge the step binds them. A procedure driven instead from the communications side always describes last quarter's processing, and the gap surfaces only when an individual compares what they were told against what is actually done."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 1,
-          "suggestedRole": "Management"
+          "evidenceHint": {
+            "en": "The issued procedure naming which approval opens the step, the period allowed before individuals hear of the change, and one recent change walked through it."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 1
         },
         {
           "title": {
@@ -1698,19 +1701,64 @@
       ]
     },
     {
-      "code": "PRIV-12",
-      "title": "Data Processing Awareness",
+      "code": "PRIV-11.2",
+      "title": "Roles for communicating data processing",
+      "description": "Implements CM.PO-P2: Roles and responsibilities (e.g., public relations) for communicating data processing purposes, practices, and associated privacy risks are established.",
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "CM.AW-P1",
-        "CM.AW-P2",
-        "CM.AW-P3",
-        "CM.AW-P4",
-        "CM.AW-P5",
-        "CM.AW-P6",
-        "CM.AW-P7",
-        "CM.AW-P8"
+        "CM.PO-P2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Assign the roles that draft, approve and issue privacy communications"
+          },
+          "description": {
+            "en": "Name the role that drafts a privacy communication, the role that approves its content, and the role that speaks when a privacy matter reaches the public, and record where the boundary between them sits and who acts when one is unavailable. Record the assignment against the named roles rather than against individuals who may move."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 0,
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Maintain a current holder and a stand-in for every communication role"
+          },
+          "description": {
+            "en": "An assignment names roles, but a role with no occupant behind it cannot approve or speak, so carry each named communication role through to a person today and an identified cover, and update it as people join, change job or leave. Put the list where anyone fielding a question about the organisation's data processing can see who holds the role now, instead of routing it to whoever answered last time. Keep the dated history alongside the current state: a communication issued three months ago has to be attributable to whoever held the approval then, not to whoever holds it today."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The standing list of who holds each communication role and who covers for them, showing where it is published and the dated reassignments made since the previous update."
+          },
+          "suggestedRole": "HR",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Trace each privacy communication back to the person who approved it"
+          },
+          "description": {
+            "en": "Take the privacy communications and public statements made since the last review and name, for each, who drafted it, who signed it off and who delivered it, then set that against the roles the assignment gives those jobs to; whether the content itself was adequate is a separate check. The failures worth finding are the item that went out with no sign-off at all, and the one approved by whichever senior person happened to be reachable — both mean the organisation is running on something other than the assignment it wrote down. Where a named holder repeatedly did not perform their part, decide whether the assignment moves or the behaviour does, and record which was chosen."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Attribution table covering the period's communications with drafter, approver and speaker set against the assigned roles, listing every unapproved or misrouted item and the decision taken on it."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-12.1",
+      "title": "Mechanisms for communicating data processing",
+      "description": "Implements CM.AW-P1: Mechanisms (e.g., notices, internal or public reports) for communicating data processing purposes, practices, associated privacy risks, and options for enabling individuals' preferences and requests are established and in place.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CM.AW-P1"
       ],
       "tasks": [
         {
@@ -1726,53 +1774,57 @@
         },
         {
           "title": {
-            "en": "Record what each system shows an individual about the processing of their data"
+            "en": "Build the notice and the report that each named channel will carry"
           },
           "description": {
-            "en": "For every system with which individuals interact directly, record what they can see about what is being done with their data and what options they can exercise there. Where a system shows nothing, record that and name the owner of the decision to leave it so."
+            "en": "Turn each entry on the channel list into an artefact that actually exists: the notice a person meets at the point of collection, the internal report that reaches management, the public report if one has been promised. Each has to carry the purposes, the practices and the privacy risks in language its audience can act on, and — the part most often left out — what the individual may ask for and where to ask for it. A notice that explains the processing but names no route for a preference or a request is only half a mechanism, and the symptom is requests arriving at whatever address people can find. Where the channel list showed a communication that is owed but has no artefact behind it, this is where that gap closes."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 1,
-          "suggestedRole": "Engineering lead"
+          "evidenceHint": {
+            "en": "The artefacts as issued — the notice as an individual sees it and the report as it was circulated — each carrying a version marker, an issue date, and the channel from the scoping list it was placed in."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 1
         },
         {
           "title": {
-            "en": "Record what impacted individuals are told and offered after a privacy event"
+            "en": "Send out each periodic report and reissue the notice when processing changes"
           },
           "description": {
-            "en": "State what a notification to an affected individual must contain, who issues it, and which mitigation options the organisation is prepared to offer — a correction, a deletion, a withdrawal of an authorisation, or another remedy. Attach the notification content and the list of remedies so neither has to be invented under pressure."
+            "en": "A mechanism counts as in place only while it is being worked: the periodic report has to go out on the cadence it claims, and the notice has to be replaced once the processing it describes has moved on. The failure here is quiet — a new purpose, a new recipient or a longer retention goes live while the published notice still describes last year's arrangement, leaving the organisation on record saying something that is no longer true. Treat any change that would alter a sentence of the notice as the trigger to reissue, rather than waiting for an annual refresh. Keep the superseded version instead of overwriting it, because a later question about what someone was told will be about the wording live on the day they were told it."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "Issue log for the period: each report despatched with its date and who received it, each notice version superseded, and the processing change that forced the replacement."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-12.2",
+      "title": "Mechanisms for obtaining individual feedback",
+      "description": "Implements CM.AW-P2: Mechanisms for obtaining feedback from individuals (e.g., surveys or focus groups) about data processing and associated privacy risks are established and in place.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CM.AW-P2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Fit feedback instruments to the populations whose data is processed"
+          },
+          "description": {
+            "en": "Take the categories of individuals the processing touches and decide, for each, the means by which the organisation will ask them what they make of it — a questionnaire, a moderated session, a standing panel, an open form — then stand that means up so it is capable of receiving an answer today rather than in principle. One instrument rarely covers everyone: people who never sign in cannot see an in-product prompt, former customers no longer receive the mailing, and a group whose data arrived through an employer, a school or a broker has no direct line at all. Give each instrument a named owner and a destination the responses actually land in, because a route nobody empties has not been established, only announced."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 2,
-          "suggestedRole": "Legal/DPO"
-        },
-        {
-          "title": {
-            "en": "Record disclosures, sharing and provenance so an individual account can be produced"
-          },
-          "description": {
-            "en": "Capture, for each disclosure or sharing of data, what was disclosed, to whom and when, and capture for received data where it came from and through whom, in a form that can be retrieved and released on request. Test the retrieval by producing one account end to end."
-          },
-          "phase": "OPERATE",
-          "sortOrder": 3,
           "evidenceHint": {
-            "en": "An extract produced from the disclosure and provenance records for one named individual or data set, with the date it was produced."
+            "en": "The instruments as they currently stand — question wording, session plan, form — listed against the category of individuals each is meant to reach and the owner who empties it."
           },
-          "suggestedRole": "IT Operations"
-        },
-        {
-          "title": {
-            "en": "Notify the ecosystem parties holding data when it is corrected or deleted"
-          },
-          "description": {
-            "en": "When a correction or deletion is made, tell the parties that previously received the data or supplied it, and record who was told, what they were told and when. Record the parties that could not be told and what stands in the way."
-          },
-          "phase": "OPERATE",
-          "sortOrder": 4,
-          "evidenceHint": {
-            "en": "Notification record naming the change made, the parties told, the date, and any party that could not be reached."
-          },
-          "suggestedRole": "Legal/DPO"
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
         },
         {
           "title": {
@@ -1782,11 +1834,343 @@
             "en": "Ask individuals directly what they make of the processing and the risks it carries, by whatever means suits the population, and record the responses received and what was done with them. This is the organisation going to individuals; complaints arriving unprompted are handled through the monitoring intake instead."
           },
           "phase": "OPERATE",
-          "sortOrder": 5,
+          "sortOrder": 1,
           "evidenceHint": {
             "en": "Record of the solicitation showing who was asked, when, what came back, and the changes considered or made as a result."
           },
           "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Judge each feedback route by who actually answered it"
+          },
+          "description": {
+            "en": "Set the responses arriving since the last check against the categories of individuals the processing covers, and note for each route how many people it was capable of reaching as well as how many replied. A route that returns nothing is ambiguous — it can mean contentment, or that it reached no one — so state which of the two the evidence supports instead of letting an empty inbox pass as approval. Where a category has stayed silent across two checks running, name the instrument that will be changed for it and the person changing it."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Reach and response counts per category of individuals for the period, with a stated reason for every silent category and the instrument change agreed against it."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-12.3",
+      "title": "In-product data processing visibility",
+      "description": "Implements CM.AW-P3: System/product/service design enables data processing visibility.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CM.AW-P3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Record what each system shows an individual about the processing of their data"
+          },
+          "description": {
+            "en": "For every system with which individuals interact directly, record what they can see about what is being done with their data and what options they can exercise there. Where a system shows nothing, record that and name the owner of the decision to leave it so."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 0,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Drive the product as an individual and compare its view to what ran"
+          },
+          "description": {
+            "en": "An in-product view built from a hand-written summary drifts the moment a feature starts reading a new element, and nobody notices because the screen still renders. Sign in to a genuine account that has real activity behind it, visit every place the product claims to tell the person what is happening to their data, and set the elements, purposes and recipients named on screen against those the system actually touched for that account. Anything the processing did that no screen accounts for is the finding, not the pass."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "Dated walkthrough per system naming the test account, the screens visited, and every element, purpose or recipient the processing touched that the interface never named."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Challenge designs that leave a data action invisible inside the product"
+          },
+          "description": {
+            "en": "Visibility is decided at design time, so the gap appears in a specification rather than in a test run: a feature is built with no screen, indicator or setting through which the person would ever learn it ran. Take the data actions added or altered since the last cycle and, for each one with nowhere in the interface an individual could see it, force a ruling — the design gains a surface, or a named owner accepts the blind spot and states why. A published notice is not an answer here, because what is under examination is what the product itself reveals to the person using it."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Design review minutes listing each data action added or altered in the period, whether the interface exposes it, and the owner and reasoning behind every accepted blind spot."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-12.4",
+      "title": "Records of data disclosures and sharing",
+      "description": "Implements CM.AW-P4: Records of data disclosures and sharing are maintained and can be accessed for review or transmission/disclosure.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CM.AW-P4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Attach a ledger entry to each outbound sharing path"
+          },
+          "description": {
+            "en": "Walk the paths by which data actually leaves — scheduled feeds to processors, partner APIs, bulk exports, files a support or sales person sends, answers given to a law-enforcement or regulator request — and bind each one to an entry carrying the recipient, the date, the data elements, the individuals covered and the authorisation relied on. Say for every path whether the entry is written by the system performing the transfer or by a person, because the paths with no system behind them are exactly where the ledger quietly stops being complete. Index entries by individual and by recipient at the point they are written; a ledger that can only be read chronologically cannot answer 'who received this person's data' without a full scan."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "The path list with each outbound path marked system-written or person-written, plus one populated entry per path type showing every required field filled."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Record disclosures, sharing and provenance so an individual account can be produced"
+          },
+          "description": {
+            "en": "Capture, for each disclosure or sharing of data, what was disclosed, to whom and when, and capture for received data where it came from and through whom, in a form that can be retrieved and released on request. Test the retrieval by producing one account end to end."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "An extract produced from the disclosure and provenance records for one named individual or data set, with the date it was produced."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Find the disclosures that happened but never reached the ledger"
+          },
+          "description": {
+            "en": "Start from evidence that data went out which the ledger did not produce — processor and partner contracts, egress and API logs, the legal-request file, invoices from data recipients — and look for a matching entry for each transfer those sources show. This failure is silent in the other direction: a ledger holding nothing reads exactly like a quarter in which nothing was shared, so only an outside source can tell the two apart. Count entries that exist but cannot be used as misses too — a recipient recorded as a team name, a missing date, a referenced export that has since been deleted — and check the surviving entries still cover the period a review or an individual's request may reach back into."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Reconciliation worksheet naming each independent source consulted, the transfers it showed, which had a usable entry, and every gap with the path that produced it."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-12.5",
+      "title": "Communicating corrections and deletions",
+      "description": "Implements CM.AW-P5: Data corrections or deletions can be communicated to individuals or organizations (e.g., data sources) in the data processing ecosystem.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CM.AW-P5"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Establish the route by which a correction or erasure reaches each prior recipient"
+          },
+          "description": {
+            "en": "For every organisation that has received personal data — processor, partner, onward recipient, or the source it came from — settle who receives the notice, in what form, within what window, and whether they must confirm back or pass it further down their own chain. Contracts routinely promise deletion on instruction while naming nobody to instruct, so the route does not exist until a live contact and an agreed message shape sit on both sides of it. Build the return leg at the same time: the individual who asked for the change needs to be told it was made and how far it travelled, rather than left to infer it from a screen that now looks different."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "The routing list — each recipient organisation with its named contact, the agreed message form, the sending window, and whether onward relay is required — alongside the standing wording used to confirm a change back to the individual."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Notify the ecosystem parties holding data when it is corrected or deleted"
+          },
+          "description": {
+            "en": "When a correction or deletion is made, tell the parties that previously received the data or supplied it, and record who was told, what they were told and when. Record the parties that could not be told and what stands in the way."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Notification record naming the change made, the parties told, the date, and any party that could not be reached."
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Trace a completed correction and deletion outward to the parties that received the data"
+          },
+          "description": {
+            "en": "Take one correction and one deletion that were actually carried out, and follow each outward: who was sent notice, who confirmed they applied it, and what the individual was told. The gap that keeps appearing is a party that received the data before the route was set up; the second is a party that acknowledged the notice without acting on it, since an acknowledgement proves receipt and never that the record changed at their end. Where someone was missed, separate a miss caused by an incomplete recipient list from one caused by a notice that was never sent, because those two failures are fixed in different places."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "The two walked-through cases, each showing the change made, who was contacted, the confirmations returned, what the individual received, and any party found untold with the reason it happened."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-12.6",
+      "title": "Data provenance and lineage",
+      "description": "Implements CM.AW-P6: Data provenance and lineage are maintained and can be accessed for review or transmission/disclosure.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CM.AW-P6"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Capture where each data element originated and what it was derived from"
+          },
+          "description": {
+            "en": "Against every element already inventoried, note how the organisation came to hold it: supplied by the individual, observed by a device or service, bought or received from a named party, or computed from other elements. Elements the organisation works out for itself need the inputs that fed them named, or a later question about an attribute the individual never gave has no answer. A value copied between stores keeps the origin of the place it was first collected — recording the nearest upstream table instead is the common way provenance quietly becomes useless."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Element-level origin register listing source type, the named supplier or the computation inputs, the first system to hold the value, and the date it entered."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Extend the lineage whenever a new feed, copy or derived set is built"
+          },
+          "description": {
+            "en": "Every new extract, vendor feed, replica or derived table has its inputs and transformation added to the lineage before anything consumes it, and a rewired pipeline has its existing entry corrected rather than left standing. Lineage decays silently: nothing fails when a job changes its source, so the recorded path stays plausible while being wrong. The usual offender is a set built for a one-off analysis that becomes a standing input to something else without ever being registered."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "Dated lineage additions and amendments for the period, each naming the flow, its inputs, the transformation applied, and who entered it."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Reconstruct a derived attribute's ancestry without help from its builders"
+          },
+          "description": {
+            "en": "Choose a value the organisation produced rather than collected and have someone outside the team that built it trace it back through every hop to the point of collection, using only the maintained lineage. Note how long the trace took and where it needed a person who simply remembered; ancestry only its authors can rebuild is not accessible in the sense this outcome requires. Name every hop that could not be established and the owner who will restore it."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Trace walkthrough naming the value chosen, the reviewer, each hop confirmed or unestablished, the elapsed time, and the owners assigned to the gaps."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-12.7",
+      "title": "Notifying those impacted by a privacy event",
+      "description": "Implements CM.AW-P7: Impacted individuals and organizations are notified about a privacy breach or event.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CM.AW-P7"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Record what impacted individuals are told and offered after a privacy event"
+          },
+          "description": {
+            "en": "State what a notification to an affected individual must contain, who issues it, and which mitigation options the organisation is prepared to offer — a correction, a deletion, a withdrawal of an authorisation, or another remedy. Attach the notification content and the list of remedies so neither has to be invented under pressure."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 0,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Dispatch the breach notice to each impacted individual and affected organisation"
+          },
+          "description": {
+            "en": "Once an event is confirmed, put the notice out on the routes actually held for both audiences — the individuals whose data was involved, and the organisations caught in the same event, including any that received the affected data from us. The impacted list is usually still growing while the first wave goes out, so state the cut-off the list was drawn at and treat anyone added afterwards as a second wave rather than quietly extending the first. Contact details held for a closed account are routinely stale, so capture the bounces and say which substitute route carried the notice to the people direct contact could not reach."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "Per-event dispatch record: the list cut-off timestamp, recipient counts broken out by audience and route, which version of the notice went, and the bounce and substitute-notice tally."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Prove that every party found impacted received a notification"
+          },
+          "description": {
+            "en": "After the event is closed, take the impacted set the investigation finally settled on and check each entry in it against a delivery outcome — not the send list against itself, which will confirm itself and silently omit everyone added when the scope widened. Measure when notification landed against the deadline that applied, counted from discovery rather than from when the notice was drafted. Flag any organisation reached only through a commercial or account contact instead of a named privacy contact; that is the case most likely to have gone nowhere."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "The closed event's impacted set with a delivery outcome beside every entry, the discovery-to-delivery interval per party, and any entry still unresolved carried forward with a named owner."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-12.8",
+      "title": "Mitigation offered after a privacy event",
+      "description": "Implements CM.AW-P8: Individuals are provided with mitigation mechanisms (e.g., credit monitoring, consent withdrawal, data alteration or deletion) to address impacts of problematic data actions.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CM.AW-P8"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Stand up the enrolment route for every remedy on offer"
+          },
+          "description": {
+            "en": "A remedy named in an incident plan is worthless if nothing behind it can be activated on the day: a monitoring subscription with no contract means haggling over price while the take-up window closes, and a refund with no approved funding source stalls at the first approval. For each remedy the organisation is willing to put in front of an individual, settle the supplier agreement or internal funding decision in advance, and establish how an individual reaches it — the code, the claim form, the case line, the switch that actually withdraws an authorisation or erases a record. Give each one an eligibility test and a take-up deadline now, because both will otherwise be improvised by whoever answers the phone."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Signed supplier agreements or funding approvals per remedy, together with the activation path an individual would follow, dated ahead of any event."
+          },
+          "suggestedRole": "Procurement",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Follow each offered remedy through to take-up or refusal"
+          },
+          "description": {
+            "en": "Counting a remedy as delivered the moment the offer leaves the building hides the individual who never redeemed the code, whose refund was returned, or whose restoration case was opened and never worked. Carry a per-individual state from offer made to remedy in hand, and close each one with an outcome — used, declined, expired, or blocked with the obstacle named. Expiry is the common silent failure: offers lapse quietly and the organisation reads the resulting inaction as satisfaction."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "Per-individual tracking extract for the period showing the outcome reached against every offer, including those that lapsed unused and why."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Weigh each remedy against the harm it was meant to undo"
+          },
+          "description": {
+            "en": "Credit monitoring is the reflex offer and it addresses only a narrow band of harm — it does nothing about a health detail already published, a wrongful denial of service, or money already taken. Set the remedies actually available beside the problematic data actions the risk assessment identifies, and name every harm with no usable remedy behind it. Low take-up and complaints raised after a remedy was accepted are the signal that what was offered did not fit; judge adequacy on those, not on how many offers went out."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "The period's comparison of harm types against available remedies and their observed uptake, with each unmatched gap carrying a named owner and a decision."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 2
         }
       ]
     },
@@ -2217,8 +2601,16 @@
       "PRIV-08",
       "PRIV-09",
       "PRIV-10",
-      "PRIV-11",
-      "PRIV-12",
+      "PRIV-11.1",
+      "PRIV-11.2",
+      "PRIV-12.1",
+      "PRIV-12.2",
+      "PRIV-12.3",
+      "PRIV-12.4",
+      "PRIV-12.5",
+      "PRIV-12.6",
+      "PRIV-12.7",
+      "PRIV-12.8",
       "PRIV-13",
       "PRIV-14",
       "PRIV-15",
