@@ -67,12 +67,19 @@ describe('every shipped catalogue fixture parses under the loader', () => {
         // path, so there is no reason for a guard to mutate a tracked file —
         // a run killed between the write and the restore would leave a live
         // mutation staged by the next `git add -A`.
-        const scratch = path.join(os.tmpdir(), `catalog-mutation-${process.pid}.json`);
+        //
+        // `mkdtempSync` rather than a name built from the pid: the temp dir is
+        // world-writable, so a predictable path is a symlink-swap target
+        // (js/insecure-temporary-file, which CodeQL raised on exactly that
+        // first version of this line). mkdtemp creates the directory itself,
+        // 0700 and randomly suffixed, so the file inside it is unreachable.
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'catalog-mutation-'));
         try {
+            const scratch = path.join(dir, 'fixture.json');
             fs.writeFileSync(scratch, JSON.stringify(parsed, null, 2));
             expect(() => loadCatalogFile(scratch)).toThrow(/templates\.0\.description/);
         } finally {
-            fs.rmSync(scratch, { force: true });
+            fs.rmSync(dir, { recursive: true, force: true });
         }
     });
 });
