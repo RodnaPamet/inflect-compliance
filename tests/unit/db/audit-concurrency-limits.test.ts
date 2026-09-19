@@ -21,12 +21,29 @@
  *                                       options argument
  *
  * Deleting `max`, `connectionTimeoutMillis`, or the options argument to
- * `$transaction` turns this suite red. Changing a number does NOT —
- * deliberately. The numbers are derived from a lower bound, not a
- * measured p99 (see `src/lib/db/concurrency-limits.ts`), so a future PR
- * that re-derives them from real telemetry is the expected outcome and
- * should not have to edit a test to do it. What it may not do is go
- * back to inheriting.
+ * `$transaction` turns this suite red.
+ *
+ * WHAT CHANGING A NUMBER DOES, precisely — an earlier draft of this
+ * docblock said "changing a number does NOT" redden, and that is false in
+ * two ways worth stating, because a future re-derivation PR reads this
+ * paragraph to know what it is allowed to do:
+ *
+ *   • Re-deriving a limit to another DECLARED value is free. That is the
+ *     expected outcome — the numbers come from a lower bound, not a
+ *     measured p99 (see `src/lib/db/concurrency-limits.ts`) — and no test
+ *     should have to be edited to do it.
+ *   • Setting one back to its INHERITED DEFAULT reddens (`max` 10,
+ *     `connectionTimeoutMillis` undefined, `maxWait` 2000, `timeout`
+ *     5000). That is not an exception to the rule above, it IS the rule:
+ *     reverting to the default is going back to inheriting by another
+ *     route, and inheriting is the defect #2653 exists to close.
+ *   • Breaking a RELATION reddens too — `connectionTimeoutMillis` must
+ *     stay >= the largest `maxWait` or it silently becomes the real
+ *     limit, and `timeout` must cover the design-point lock queue. Those
+ *     assertions constrain the numbers jointly, not individually.
+ *
+ * So: re-derive freely, but the result must still be declared and still
+ * satisfy the relations.
  *
  * The doubles are at the library boundary; the code under test — the
  * two call sites and the constants they pass — is real, and the double
