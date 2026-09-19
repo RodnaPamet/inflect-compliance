@@ -42,6 +42,14 @@ function runCatalogCheck(): { code: number; out: string } {
         const out = execFileSync('npx', ['tsx', 'scripts/catalog-check.ts'], {
             cwd: REPO_ROOT,
             encoding: 'utf8',
+            // THIS HANDS THE CHILD THE BASE TEST DATABASE, and the assertions
+            // below only hold because CI runs these suites `--runInBand`,
+            // which gates OFF globalSetup's per-worker cloning — so the script
+            // and this test see the same database. Under a local PARALLEL run
+            // the test writes to a worker clone the script cannot see, and the
+            // differential assertion reads a delta of 0 and fails LOUDLY
+            // rather than passing wrongly. Naming the dependency because it is
+            // invisible from here (#2645).
             env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL_TEST ?? process.env.DATABASE_URL },
             timeout: 120_000,
         });
@@ -101,7 +109,17 @@ describe('catalog-check compares the repo against a real database', () => {
         const before = await prisma.controlTemplate.count();
         expect(before).toBeGreaterThan(0);
 
-        const doomed = await prisma.controlTemplate.findMany({ take: 3, select: { id: true } });
+        // `orderBy` because an unordered `take` gives Postgres a free choice,
+        // so a failure here would delete a different three rows on the re-run
+        // that was meant to reproduce it. The rows are deliberately NOT scoped
+        // to a framework: `ControlTemplate` is a global catalog table that
+        // `resetDatabase` does not clear, and the assertion is a DELTA, so
+        // whichever three go, the shortfall moves by three (#2645).
+        const doomed = await prisma.controlTemplate.findMany({
+            take: 3,
+            orderBy: { id: 'asc' },
+            select: { id: true },
+        });
         expect(doomed).toHaveLength(3);
         await prisma.controlTemplate.deleteMany({ where: { id: { in: doomed.map((d) => d.id) } } });
 
