@@ -29,6 +29,7 @@
       "title": "Establish and Maintain Detailed Enterprise Asset Inventory",
       "summary": "Keep an accurate, regularly refreshed record of every enterprise asset with enough detail to identify and locate it.",
       "category": "IG1",
+      "section": "Inventory and Control of Enterprise Assets",
       "sortOrder": 1
     },
     {
@@ -36,6 +37,7 @@
       "title": "Address Unauthorized Assets",
       "summary": "Define and follow a process to investigate and handle any asset discovered on the network that is not on the approved inventory.",
       "category": "IG1",
+      "section": "Inventory and Control of Enterprise Assets",
       "sortOrder": 2
     },
     {
@@ -43,6 +45,7 @@
       "title": "Establish and Maintain a Software Inventory",
       "summary": "Maintain a current, detailed list of all software titles authorized to run on enterprise assets.",
       "category": "IG1",
+      "section": "Inventory and Control of Software Assets",
       "sortOrder": 3
     },
     {
@@ -50,6 +53,7 @@
       "title": "Ensure Authorized Software is Currently Supported",
       "summary": "Confirm that software in use is still supported by its vendor and remove or plan for anything past end of life.",
       "category": "IG1",
+      "section": "Inventory and Control of Software Assets",
       "sortOrder": 4
     },
     {
@@ -57,6 +61,7 @@
       "title": "Address Unauthorized Software",
       "summary": "Establish a process to detect software that is not authorized and remove or formally approve it.",
       "category": "IG1",
+      "section": "Inventory and Control of Software Assets",
       "sortOrder": 5
     },
     {
@@ -64,6 +69,7 @@
       "title": "Establish and Maintain a Data Management Process",
       "summary": "Document how the enterprise handles data across its life cycle, covering sensitivity, ownership, retention, and disposal.",
       "category": "IG1",
+      "section": "Data Protection",
       "sortOrder": 6
     },
     {
@@ -71,6 +77,7 @@
       "title": "Establish and Maintain a Data Inventory",
       "summary": "Keep a record of the sensitive data the enterprise holds, including where it lives and who owns it.",
       "category": "IG1",
+      "section": "Data Protection",
       "sortOrder": 7
     },
     {
@@ -78,6 +85,7 @@
       "title": "Configure Data Access Control Lists",
       "summary": "Apply access controls so that only authorized users and services can reach specific data stores.",
       "category": "IG1",
+      "section": "Data Protection",
       "sortOrder": 8
     },
     {
@@ -85,6 +93,7 @@
       "title": "Enforce Data Retention",
       "summary": "Retain data only for the period defined by policy and remove it once that period ends.",
       "category": "IG1",
+      "section": "Data Protection",
       "sortOrder": 9
     },
     {
@@ -92,6 +101,7 @@
       "title": "Securely Dispose of Data",
       "summary": "Destroy or sanitize data and media so that discarded information cannot be recovered.",
       "category": "IG1",
+      "section": "Data Protection",
       "sortOrder": 10
     },
     {
@@ -99,6 +109,7 @@
       "title": "Encrypt Data on End-User Devices",
       "summary": "Apply encryption to information stored on laptops, phones, and other end-user devices.",
       "category": "IG1",
+      "section": "Data Protection",
       "sortOrder": 11
     },
     {
@@ -106,6 +117,7 @@
       "title": "Establish and Maintain a Secure Configuration Process",
       "summary": "Document and keep current a process for applying secure baseline settings to assets and software.",
       "category": "IG1",
+      "section": "Secure Configuration of Enterprise Assets and Software",
       "sortOrder": 12
     },
     {
@@ -113,6 +125,7 @@
       "title": "Establish and Maintain a Secure Configuration Process for Network Infrastructure",
       "summary": "Maintain a defined process for securely configuring routers, switches, firewalls, and similar devices.",
       "category": "IG1",
+      "section": "Secure Configuration of Enterprise Assets and Software",
       "sortOrder": 13
     },
     {
@@ -120,6 +133,7 @@
       "title": "Configure Automatic Session Locking on Enterprise Assets",
       "summary": "Set devices to lock automatically after a period of inactivity to limit unattended access.",
       "category": "IG1",
+      "section": "Secure Configuration of Enterprise Assets and Software",
       "sortOrder": 14
     },
     {
@@ -127,6 +141,7 @@
       "title": "Implement and Manage a Firewall on Servers",
       "summary": "Run and maintain host-based or network firewalls that protect server assets.",
       "category": "IG1",
+      "section": "Secure Configuration of Enterprise Assets and Software",
       "sortOrder": 15
     },
     {
@@ -134,6 +149,7 @@
       "title": "Implement and Manage a Firewall on End-User Devices",
       "summary": "Enable and manage a firewall on laptops, desktops, and similar end-user devices.",
       "category": "IG1",
+      "section": "Secure Configuration of Enterprise Assets and Software",
       "sortOrder": 16
     },
     {
@@ -141,6 +157,7 @@
       "title": "Securely Manage Enterprise Assets and Software",
       "summary": "Administer assets and software through secure channels and vetted management tooling.",
       "category": "IG1",
+      "section": "Secure Configuration of Enterprise Assets and Software",
       "sortOrder": 17
     },
     {
@@ -148,6 +165,7 @@
       "title": "Manage Default Accounts on Enterprise Assets and Software",
       "summary": "Disable or change built-in default accounts and credentials before assets enter use.",
       "category": "IG1",
+      "section": "Secure Configuration of Enterprise Assets and Software",
       "sortOrder": 18
     },
     {
@@ -155,6 +173,7 @@
       "title": "Establish and Maintain an Inventory of Accounts",
       "summary": "Maintain a record of all user and administrator accounts, including owner and status.",
       "category": "IG1",
+      "section": "Account Management",
       "sortOrder": 19
     },
     {
@@ -162,6 +181,7 @@
       "title": "Use Unique Passwords",
       "summary": "Require a distinct, sufficiently strong password for every account.",
       "category": "IG1",
+      "section": "Account Management",
       "sortOrder": 20
     },
     {
@@ -169,6 +189,7 @@
       "title": "Disable Dormant Accounts",
       "summary": "Identify and disable accounts that have gone unused beyond a defined period.",
       "category": "IG1",
+      "section": "Account Management",
       "sortOrder": 21
     },
     {
@@ -176,6 +197,7 @@
       "title": "Restrict Administrator Privileges to Dedicated Administrator Accounts",
       "summary": "Perform privileged work only with separate administrator accounts, not everyday user accounts.",
       "category": "IG1",
+      "section": "Account Management",
       "sortOrder": 22
     },
     {
@@ -183,6 +205,7 @@
       "title": "Establish an Access Granting Process",
       "summary": "Follow a defined procedure to provision access rights when someone joins or changes role.",
       "category": "IG1",
+      "section": "Access Control Management",
       "sortOrder": 23
     },
     {
@@ -190,6 +213,7 @@
       "title": "Establish an Access Revoking Process",
       "summary": "Follow a defined procedure to remove access promptly when it is no longer needed.",
       "category": "IG1",
+      "section": "Access Control Management",
       "sortOrder": 24
     },
     {
@@ -197,6 +221,7 @@
       "title": "Require MFA for Externally-Exposed Applications",
       "summary": "Require multi-factor authentication for applications reachable from outside the enterprise.",
       "category": "IG1",
+      "section": "Access Control Management",
       "sortOrder": 25
     },
     {
@@ -204,6 +229,7 @@
       "title": "Require MFA for Remote Network Access",
       "summary": "Require multi-factor authentication for connections into the network from remote locations.",
       "category": "IG1",
+      "section": "Access Control Management",
       "sortOrder": 26
     },
     {
@@ -211,6 +237,7 @@
       "title": "Require MFA for Administrative Access",
       "summary": "Require multi-factor authentication whenever administrative privileges are used.",
       "category": "IG1",
+      "section": "Access Control Management",
       "sortOrder": 27
     },
     {
@@ -218,6 +245,7 @@
       "title": "Establish and Maintain a Vulnerability Management Process",
       "summary": "Document a repeatable process for finding and tracking vulnerabilities in enterprise assets.",
       "category": "IG1",
+      "section": "Continuous Vulnerability Management",
       "sortOrder": 28
     },
     {
@@ -225,6 +253,7 @@
       "title": "Establish and Maintain a Remediation Process",
       "summary": "Define how identified vulnerabilities are prioritized and driven to closure.",
       "category": "IG1",
+      "section": "Continuous Vulnerability Management",
       "sortOrder": 29
     },
     {
@@ -232,6 +261,7 @@
       "title": "Perform Automated Operating System Patch Management",
       "summary": "Automate the delivery of operating-system security updates on a regular cadence.",
       "category": "IG1",
+      "section": "Continuous Vulnerability Management",
       "sortOrder": 30
     },
     {
@@ -239,6 +269,7 @@
       "title": "Perform Automated Application Patch Management",
       "summary": "Automate the delivery of application security updates on a regular cadence.",
       "category": "IG1",
+      "section": "Continuous Vulnerability Management",
       "sortOrder": 31
     },
     {
@@ -246,6 +277,7 @@
       "title": "Establish and Maintain an Audit Log Management Process",
       "summary": "Document what events are logged, how logs are handled, and how long they are kept.",
       "category": "IG1",
+      "section": "Audit Log Management",
       "sortOrder": 32
     },
     {
@@ -253,6 +285,7 @@
       "title": "Collect Audit Logs",
       "summary": "Ensure logging is enabled and events are collected across enterprise assets.",
       "category": "IG1",
+      "section": "Audit Log Management",
       "sortOrder": 33
     },
     {
@@ -260,6 +293,7 @@
       "title": "Ensure Adequate Audit Log Storage",
       "summary": "Provide enough storage so that logs are retained for the period the process requires.",
       "category": "IG1",
+      "section": "Audit Log Management",
       "sortOrder": 34
     },
     {
@@ -267,6 +301,7 @@
       "title": "Ensure Use of Only Fully Supported Browsers and Email Clients",
       "summary": "Permit only vendor-supported, up-to-date browsers and email clients on enterprise assets.",
       "category": "IG1",
+      "section": "Email and Web Browser Protections",
       "sortOrder": 35
     },
     {
@@ -274,6 +309,7 @@
       "title": "Use DNS Filtering Services",
       "summary": "Use DNS filtering to block resolution of known malicious domains.",
       "category": "IG1",
+      "section": "Email and Web Browser Protections",
       "sortOrder": 36
     },
     {
@@ -281,6 +317,7 @@
       "title": "Deploy and Maintain Anti-Malware Software",
       "summary": "Install and keep running anti-malware protection on enterprise assets.",
       "category": "IG1",
+      "section": "Malware Defenses",
       "sortOrder": 37
     },
     {
@@ -288,6 +325,7 @@
       "title": "Configure Automatic Anti-Malware Signature Updates",
       "summary": "Configure anti-malware tools to update their detection data automatically.",
       "category": "IG1",
+      "section": "Malware Defenses",
       "sortOrder": 38
     },
     {
@@ -295,6 +333,7 @@
       "title": "Disable Autorun and Autoplay for Removable Media",
       "summary": "Turn off automatic execution of content from removable media.",
       "category": "IG1",
+      "section": "Malware Defenses",
       "sortOrder": 39
     },
     {
@@ -302,6 +341,7 @@
       "title": "Establish and Maintain a Data Recovery Process",
       "summary": "Document how the enterprise backs up and restores data after loss or compromise.",
       "category": "IG1",
+      "section": "Data Recovery",
       "sortOrder": 40
     },
     {
@@ -309,6 +349,7 @@
       "title": "Perform Automated Backups",
       "summary": "Run backups automatically on a defined schedule for in-scope assets.",
       "category": "IG1",
+      "section": "Data Recovery",
       "sortOrder": 41
     },
     {
@@ -316,6 +357,7 @@
       "title": "Protect Recovery Data",
       "summary": "Secure backup data against unauthorized access and tampering, including via encryption.",
       "category": "IG1",
+      "section": "Data Recovery",
       "sortOrder": 42
     },
     {
@@ -323,6 +365,7 @@
       "title": "Establish and Maintain an Isolated Instance of Recovery Data",
       "summary": "Keep at least one backup copy isolated so it survives an attack on production systems.",
       "category": "IG1",
+      "section": "Data Recovery",
       "sortOrder": 43
     },
     {
@@ -330,6 +373,7 @@
       "title": "Ensure Network Infrastructure is Up-to-Date",
       "summary": "Keep networking equipment firmware and software current with security updates.",
       "category": "IG1",
+      "section": "Network Infrastructure Management",
       "sortOrder": 44
     },
     {
@@ -337,6 +381,7 @@
       "title": "Establish and Maintain a Security Awareness Program",
       "summary": "Run an ongoing program that keeps the workforce aware of security responsibilities.",
       "category": "IG1",
+      "section": "Security Awareness and Skills Training",
       "sortOrder": 45
     },
     {
@@ -344,6 +389,7 @@
       "title": "Train Workforce Members to Recognize Social Engineering Attacks",
       "summary": "Teach staff to spot phishing and other social-engineering attempts.",
       "category": "IG1",
+      "section": "Security Awareness and Skills Training",
       "sortOrder": 46
     },
     {
@@ -351,6 +397,7 @@
       "title": "Train Workforce Members on Authentication Best Practices",
       "summary": "Train staff on strong password use and multi-factor authentication.",
       "category": "IG1",
+      "section": "Security Awareness and Skills Training",
       "sortOrder": 47
     },
     {
@@ -358,6 +405,7 @@
       "title": "Train Workforce on Data Handling Best Practices",
       "summary": "Train staff to store, share, and dispose of data according to its sensitivity.",
       "category": "IG1",
+      "section": "Security Awareness and Skills Training",
       "sortOrder": 48
     },
     {
@@ -365,6 +413,7 @@
       "title": "Train Workforce Members on Causes of Unintentional Data Exposure",
       "summary": "Help staff understand common mistakes that lead to accidental data exposure.",
       "category": "IG1",
+      "section": "Security Awareness and Skills Training",
       "sortOrder": 49
     },
     {
@@ -372,6 +421,7 @@
       "title": "Train Workforce Members on Recognizing and Reporting Security Incidents",
       "summary": "Teach staff how to recognize and promptly report potential incidents.",
       "category": "IG1",
+      "section": "Security Awareness and Skills Training",
       "sortOrder": 50
     },
     {
@@ -379,6 +429,7 @@
       "title": "Train Workforce on How to Identify and Report if Their Enterprise Assets are Missing Security Updates",
       "summary": "Show staff how to notice and report devices that are missing security updates.",
       "category": "IG1",
+      "section": "Security Awareness and Skills Training",
       "sortOrder": 51
     },
     {
@@ -386,6 +437,7 @@
       "title": "Train Workforce on the Dangers of Connecting to and Transmitting Enterprise Data Over Insecure Networks",
       "summary": "Warn staff about the risks of untrusted networks and how to use enterprise data safely on them.",
       "category": "IG1",
+      "section": "Security Awareness and Skills Training",
       "sortOrder": 52
     },
     {
@@ -393,6 +445,7 @@
       "title": "Establish and Maintain an Inventory of Service Providers",
       "summary": "Maintain a record of third parties that hold enterprise data or run critical processes.",
       "category": "IG1",
+      "section": "Service Provider Management",
       "sortOrder": 53
     },
     {
@@ -400,6 +453,7 @@
       "title": "Designate Personnel to Manage Incident Handling",
       "summary": "Assign responsibility for coordinating incident handling.",
       "category": "IG1",
+      "section": "Incident Response Management",
       "sortOrder": 54
     },
     {
@@ -407,6 +461,7 @@
       "title": "Establish and Maintain Contact Information for Reporting Security Incidents",
       "summary": "Maintain current contacts, internal and external, for reporting incidents.",
       "category": "IG1",
+      "section": "Incident Response Management",
       "sortOrder": 55
     },
     {
@@ -414,6 +469,7 @@
       "title": "Establish and Maintain an Enterprise Process for Reporting Incidents",
       "summary": "Provide staff with a clear process for reporting suspected incidents.",
       "category": "IG1",
+      "section": "Incident Response Management",
       "sortOrder": 56
     }
   ],
