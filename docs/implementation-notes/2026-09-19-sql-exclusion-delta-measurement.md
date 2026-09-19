@@ -236,6 +236,19 @@ the standing this ratchet exists to measure (`raw-source-assertions.ts`: "the as
 one comment away from being satisfied by prose, and nothing tells anyone when that day
 comes").
 
+**Scope of that zero, stated so nobody widens it by accident.** §6 assesses the 46
+**masked** sites only, because the finding it supports is about the word *masked* being
+wrong for them. The 76 **unmasked** `.sql` sites of §5a were **not** assessed for current
+vacuity at all. A review of this measurement suggested two of them are already satisfied by
+a comment today; re-checking the one it named —
+`tests/guards/p5a-snapshots-table-sidebar.test.ts:101`, asserting
+`/FORCE ROW LEVEL SECURITY/` — the phrase occurs **twice** in the migration it reads: once
+in a `--` comment at line 14 and once as real DDL at line 53
+(`ALTER TABLE "ProcessMapSnapshot" FORCE ROW LEVEL SECURITY;`). So it is latent in exactly
+the sense above, not live. That is the distinction worth preserving: *satisfied by prose
+today* and *one deletion away from being satisfied by prose* are different states, and only
+the first is a defect you can ship. Assessing the 76 is real work and is not done here.
+
 ## 7. What each constant would move by, and in which direction
 
 | constant / artefact | today | state 2 | state 3 |
