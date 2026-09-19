@@ -123,6 +123,141 @@ update `auth-stack-pinning.test.ts` and this section in the same PR.
 Until then, a slip back to a beta build fails CI. The v4 pin is
 correct; the guardrail keeps it from eroding by accident.
 
+## react-window — stay on v1 until something forces v2
+
+`react-window` is `^1.8.11` (`package.json:173`) with the v1-era
+`@types/react-window` `^1.8.8` (`package.json:212`). Dependabot
+proposed `1.8.11 → 2.3.1` (with `@types/react-window 1.8.8 → 2.0.0`)
+in PR #2543; it was closed deliberately on 2026-09-17, and this
+section is the record so the next bump re-argues the decision instead
+of rediscovering it. Issue #2552 tracks the same reasoning.
+
+**v2 is an API rewrite, not a version bump.** Every v1 export this
+repo imports is gone. Checked against the published
+`react-window@2.3.1` type definitions (`dist/react-window.d.ts`):
+`FixedSizeList`, `VariableSizeList` and `ListChildComponentProps`
+appear zero times in it. What v2 exports instead is a single `List`
+(plus `Grid`), driven by differently-named props:
+
+| v1, as used here | v2 equivalent |
+|---|---|
+| `FixedSizeList` + `VariableSizeList` | one `List`, with `rowHeight: number \| string \| (index) => number \| DynamicRowHeight` |
+| `ListChildComponentProps` | `RowComponentProps` |
+| children-as-component | `rowComponent` prop |
+| `itemCount` / `itemSize` / `itemData` | `rowCount` / `rowHeight` / `rowProps` |
+| `onItemsRendered({ visibleStopIndex, … })` | `onRowsRendered({ startIndex, stopIndex }, allRows)` |
+| ref `.scrollToItem(index, align)` | `listRef.scrollToRow({ index, align, behavior })` |
+| `outerElementType` / `innerElementType` | **no equivalent** — v2 has `tagName` (a tag NAME, not a component) plus `children` rendered above the rows |
+
+That last row is the load-bearing one.
+`src/components/ui/table/virtual-table-body.tsx:505` passes a
+memoised `OuterElement` component as `outerElementType` precisely to
+host the sticky header *inside* react-window's own scroll container.
+A v2 port has to rebuild that from a different primitive, which is
+design work rather than a rename.
+
+### The blast radius — two seams, deliberately independent
+
+Exactly two files import `react-window`, and neither is built on the
+other:
+
+- `src/components/ui/virtualized-list.tsx:50-54` — imports
+  `FixedSizeList`, `VariableSizeList` and `type ListChildComponentProps`.
+  One direct importer downstream:
+  `src/components/ui/combobox/virtualized-options.tsx:52-54`.
+- `src/components/ui/table/virtual-table-body.tsx:58` — imports
+  `FixedSizeList` directly, NOT `<VirtualizedList>`. Two direct
+  importers downstream: the barrel `src/components/ui/table/index.ts:24`
+  and `src/components/ui/table/data-table.tsx:35`.
+
+The independence is a decision, not an oversight: the header comment
+at `virtual-table-body.tsx:12-26` records that a `<tbody>` cannot nest
+the primitive's own scroll container, so `<VirtualTable>` reproduces
+the table contract with `display: grid` div semantics instead. Both
+seams therefore have to be ported, and they cannot be ported as one.
+
+`tests/unit/react-window-v1-hold.test.ts` pins both halves — the v1
+major in `package.json` plus the lockfile, and the seam set with the
+v1 identifiers each seam depends on. A third importer, or a bump to
+v2, turns it red, which is the signal that this section needs
+re-arguing in the same PR.
+
+### What the migration would buy
+
+- **Two dependencies disappear.** `@types/react-window@2.0.0` is a
+  published stub — its own npm metadata reads *"This is a stub types
+  definition. react-window provides its own type definitions, so you
+  do not need this installed."* And `react-virtualized-auto-sizer`
+  (`^2.0.3`, `package.json:172`, imported at
+  `virtualized-list.tsx:55` and `virtual-table-body.tsx:59`, with no
+  other import site in `src/`) becomes redundant: a v2 `List` sizes
+  itself from its parent via `defaultHeight` + `onResize`. This is
+  the largest concrete win.
+- **Fewer transitive deps.** v1.8.11 depends on `@babel/runtime` and
+  `memoize-one`; v2.3.1 declares no runtime dependencies at all.
+- **Less hand-memoisation.** v2 memoises row renderers and props
+  itself. Today that is done by hand at six call sites in
+  `virtual-table-body.tsx` (`React.useMemo` at 352, 364, 378, 382,
+  435; `React.useCallback` at 485) and one in
+  `virtualized-list.tsx:160`.
+- **A smaller package.** v1 ships an 83,002-byte `dist/index.cjs.js`
+  (25,049 bytes for its production UMD build); v2 ships a single
+  13,149-byte `dist/react-window.cjs`. Those are on-disk package
+  bytes, **not** measured application bundle weight — the honest
+  number needs a before/after bundle analysis, and nobody has run one.
+
+### What it would not buy — every forcing function, checked and absent
+
+Re-checked 2026-09-19:
+
+- **No security fix.** `npm audit --omit=dev --audit-level=moderate`
+  over this lockfile reports `react-window` at no severity at all —
+  run 2026-09-19, and the run is only evidence because it reached the
+  registry and came back with findings: the two it does report are the
+  `image-size` / `pptxgenjs` pair already carried in
+  `security/audit-allowlist.json`, which holds no `react-window` entry.
+  `dependency-review-action` on #2543 reported no vulnerability for
+  `2.3.1` either — so the advisory ledger is empty on *both* sides of
+  the bump.
+- **No compatibility need.** `react-window@1.8.11` declares peers
+  `react` / `react-dom` `^15 || ^16 || ^17 || ^18 || ^19`, and the
+  lockfile resolves `react` at `19.3.0`. The React 19 bump did not
+  strand us. (v2 narrows its peers to `^18 || ^19`, which is a
+  tightening, not a fix for anything we hit.)
+- **No end of life.** `react-window@1.8.11` carries no `deprecated`
+  field in its published `package.json`. npm's `latest` dist-tag
+  points at `2.3.1`, which makes v1 *not the newest* — a different
+  claim from *unmaintained*.
+
+### What it would cost
+
+991 lines of wrapper (`virtualized-list.tsx` 313,
+`virtual-table-body.tsx` 678) rewritten across two shared primitives
+that `<DataTable>`, `<VirtualTable>` and `<Combobox>` all sit on, plus
+the call sites above. The wrappers exist exactly so this stays
+swappable — `virtualized-list.tsx:10` states the intent ("consumers
+never import react-window directly") — so the blast radius is
+contained. Contained is not free.
+
+### When to revisit
+
+Any one of these flips the answer, and each is a condition someone
+can check rather than a matter of taste:
+
+- an advisory lands against `react-window` v1 (the `npm audit` gate
+  makes this loud, and `security/audit-allowlist.json` is the wrong
+  answer for an advisory with a fixed version available);
+- v1 is marked `deprecated` upstream, or drops a `react` major we run;
+- a measured bundle problem lands in which the react-window payload is
+  a material part — measured, per the caveat above;
+- either wrapper needs substantial work anyway, which makes the
+  rewrite marginal rather than additional.
+
+Absent one of those this is housekeeping with no deadline. When it is
+done, it gets done deliberately, with a before/after bundle
+measurement and both seams ported in one change — not merged because a
+dependabot PR went green.
+
 ## The CI surface
 
 The `Security` job in `.github/workflows/ci.yml` is the runtime
