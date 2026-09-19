@@ -90,15 +90,26 @@ import type {
     EvidencePayload,
 } from '../../types';
 import type { HrisSyncProvider, HrisSyncDeps, ListEmployeesResult } from '../hris';
+import {
+    gateWriteBackPreflight,
+    writeBackPreflightResult,
+    WRITE_BACK_ENABLED_FIELD,
+    type HrisWriteBackPreflightProvider,
+    type HrisWriteBackPreflightResult,
+} from '../hris/write-back';
+import type { IdentityWriteMode } from '@/lib/identity/write-ladder';
 import { assertOrangeHrmHost } from './host';
 import { readOrangeHrmRoster } from './roster';
 import { fetchOrangeHrmAccessToken, type OrangeHrmOAuthClient } from './token';
+import { preflightOrangeHrmWriteBack } from './write-back-preflight';
 
 interface OrangeHrmDeps {
     /** Injected in tests so the roster read needs no live instance. */
     readRoster?: typeof readOrangeHrmRoster;
     fetchToken?: typeof fetchOrangeHrmAccessToken;
     fetchImpl?: typeof fetch;
+    /** Injected in tests so the write-back preflight needs no live instance. */
+    preflightWriteBack?: typeof preflightOrangeHrmWriteBack;
 }
 
 /**
@@ -124,7 +135,9 @@ function readConfig(merged: Record<string, unknown>): {
     };
 }
 
-export class OrangeHrmProvider implements ScheduledCheckProvider, HrisSyncProvider {
+export class OrangeHrmProvider
+    implements ScheduledCheckProvider, HrisSyncProvider, HrisWriteBackPreflightProvider
+{
     readonly id = 'orangehrm';
     readonly displayName = 'OrangeHRM';
     readonly description =
@@ -162,6 +175,36 @@ export class OrangeHrmProvider implements ScheduledCheckProvider, HrisSyncProvid
                 placeholder: 'acme.orangehrmlive.com',
             },
             { key: 'clientId', label: 'API client id', type: 'string', required: true },
+            /**
+             * The HRIS write-back opt-in. OFF unless it is the boolean `true`.
+             *
+             * ITS OWN FLAG, not Entra's `writesEnabled` — owner decision
+             * 2026-09-19. That one is consent to disable accounts in a
+             * DIRECTORY; this is consent for a different vendor's credential to
+             * put a value into the customer's HR system of record, where a
+             * mistake is corrected by hand by somebody who does not know we did
+             * it. Letting the write-back ride on a flag approved for directory
+             * writes would be consent by accident.
+             *
+             * `required: false` plus the strict `=== true` in
+             * `readWriteBackEnabled` is what keeps it an opt-in rather than a
+             * side effect, exactly as `writesEnabled` does for Entra.
+             *
+             * It changes nothing today beyond letting the preflight run: there
+             * is no write, and `HRIS_WRITEBACK_MAX_MODE` refuses every rung
+             * above DRY_RUN besides.
+             */
+            {
+                key: WRITE_BACK_ENABLED_FIELD,
+                label: 'Allow HRIS write-back',
+                type: 'boolean',
+                required: false,
+                description:
+                    'Let the JML write-back preflight use this connection. Off by default, and separate ' +
+                    'from directory write consent. No HRIS write exists yet — turning this on permits a ' +
+                    'read-only check that the stored credential can reach the record and the field a ' +
+                    'future write would target.',
+            },
         ],
         secretFields: [
             // A SECRET FIELD, not a config field. `configJson` is stored as
@@ -239,6 +282,57 @@ export class OrangeHrmProvider implements ScheduledCheckProvider, HrisSyncProvid
             fetchImpl: this.deps.fetchImpl,
             readDeadlineAt: deps.readDeadlineAt,
         });
+    }
+
+    /**
+     * Establish what the stored credential could reach IF a write existed.
+     * Performs two reads. Writes nothing.
+     *
+     * ═══ THE GATE IS FIRST, AND IT IS NOT AN OPTIMISATION ═══
+     *
+     * `gateWriteBackPreflight` settles the rung and the per-connection opt-in
+     * before a single byte leaves this process. Skipping it would send a
+     * credential to a customer's instance on behalf of a tenant that has
+     * switched identity writes off, or on a connection nobody opted in — which
+     * is the consent question this whole phase exists to answer, not a
+     * round-trip worth saving.
+     *
+     * A refusal from the gate returns AS THE RESULT rather than throwing: it is
+     * an answer about this connection, and it is the answer an operator needs
+     * to see next to the others.
+     *
+     * ═══ AN INCOMPLETE CONNECTION IS A PROVEN REFUSAL ═══
+     *
+     * `REFUSED_CREDENTIAL`, not indeterminate. A missing client id cannot be
+     * blamed on a network we never touched; there is nothing to be unsure
+     * about, and it is settled once for the connection like every other member
+     * of that outcome.
+     *
+     * @param config merged connection config + decrypted secrets, the same
+     *   shape `listEmployees` is handed.
+     * @param mode the tenant's JOINER rung — the write-back inherits it rather
+     *   than getting a third `IdentityDirection` (design, Decision 2). Already
+     *   coerced by `getIdentityWritePolicy`; see `gateWriteBackPreflight` for
+     *   why handing it a raw column value would be unsafe.
+     */
+    async writeBackPreflight(
+        config: Record<string, unknown>,
+        mode: IdentityWriteMode,
+    ): Promise<HrisWriteBackPreflightResult> {
+        const refused = gateWriteBackPreflight({ provider: this.id, config, mode });
+        if (refused) return refused;
+
+        const { client, missing } = readConfig(config);
+        if (missing.length) {
+            return writeBackPreflightResult({
+                outcome: 'REFUSED_CREDENTIAL',
+                provider: this.id,
+                detail: `This OrangeHRM connection is incomplete: ${missing.join(', ')}.`,
+            });
+        }
+
+        const preflight = this.deps.preflightWriteBack ?? preflightOrangeHrmWriteBack;
+        return preflight(client, { fetchImpl: this.deps.fetchImpl, fetchToken: this.deps.fetchToken });
     }
 
     /**

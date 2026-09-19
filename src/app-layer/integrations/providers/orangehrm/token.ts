@@ -51,6 +51,40 @@ export const ORANGEHRM_WEB_ROOT = '/web/index.php';
  */
 export const ORANGEHRM_SCOPES: readonly string[] = [];
 
+/**
+ * A token exchange that came back with a status, CARRYING the status.
+ *
+ * ═══ WHY A CLASS AND NOT THE STRING IT REPLACES ═══
+ *
+ * The message is byte-identical to the plain `Error` this replaced, so nothing
+ * reading it changes. What changes is that a caller can now ASK for the status
+ * instead of parsing it back out of prose — and one caller has to:
+ * `write-back-preflight.ts` classifies a credential failure by
+ * `docs/jml-hris-write-back-design.md` Decision 4's rule (a 400/401/403/404 is
+ * PROVEN, a 5xx or a lost response is not), and a refusal decided once for a
+ * whole batch is sound only when it is proven. Recovering the number from a
+ * message is the shape that silently starts answering "unknown" the day
+ * somebody rewords the sentence.
+ *
+ * ═══ WHAT IT STILL DOES NOT DO ═══
+ *
+ * Classify the OAuth error BODY. OAuth2 signals a revoked or invalid client
+ * with HTTP 400 and an `error` body (RFC 6749 §5.2 — `invalid_client`), and
+ * this class carries only the 400. That remains the same known, shared gap the
+ * Workday, Google DWD and Entra token exchanges have, and closing it still
+ * belongs solved once for every provider rather than a fourth time here. A 400
+ * is enough for the preflight, which needs "proven, and it is a property of the
+ * credential" rather than which OAuth error name the vendor chose.
+ */
+export class OrangeHrmTokenError extends Error {
+    readonly status: number;
+    constructor(status: number) {
+        super(`OrangeHRM token request failed: ${status}`);
+        this.name = 'OrangeHrmTokenError';
+        this.status = status;
+    }
+}
+
 /** Per-connection OAuth2 client identity. Neither field has an env default. */
 export interface OrangeHrmOAuthClient {
     /** Instance host — bare hostname or full URL; validated against the allowlist. */
@@ -103,7 +137,7 @@ export async function fetchOrangeHrmAccessToken(
         },
         body: new URLSearchParams(body),
     });
-    if (!res.ok) throw new Error(`OrangeHRM token request failed: ${res.status}`);
+    if (!res.ok) throw new OrangeHrmTokenError(res.status);
 
     const data = (await res.json()) as { access_token?: string };
     // An empty-but-200 response must not become an empty Bearer header: that
