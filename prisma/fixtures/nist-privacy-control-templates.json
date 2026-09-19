@@ -726,19 +726,13 @@
   ],
   "templates": [
     {
-      "code": "PRIV-00",
-      "title": "Inventory and Mapping",
+      "code": "PRIV-00.1",
+      "title": "Systems, products and services inventory",
+      "description": "Implements ID.IM-P1: Systems, products, and services that process data are inventoried.",
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "ID.IM-P1",
-        "ID.IM-P2",
-        "ID.IM-P3",
-        "ID.IM-P4",
-        "ID.IM-P5",
-        "ID.IM-P6",
-        "ID.IM-P7",
-        "ID.IM-P8"
+        "ID.IM-P1"
       ],
       "tasks": [
         {
@@ -765,14 +759,378 @@
         },
         {
           "title": {
+            "en": "Reconcile the inventory against an independent source"
+          },
+          "description": {
+            "en": "Compare the inventory against at least one source not derived from it — procurement records, expenditure records, or owners' own declarations — and record every entity that appears in one and not the other. Record how each discrepancy was resolved and which side was wrong."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Dated reconciliation worksheet naming the independent source used, each discrepancy found, and its resolution."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Test the inventory against the systems retired or acquired since the last pass"
+          },
+          "description": {
+            "en": "An inventory decays at its edges, not in the middle: the long-standing systems stay right while a decommissioned service lingers as an entry and a newly bought or inherited one never appears. Take the period's joiners and leavers from the sources that know — procurement, cloud billing, the change log, any acquisition — and check each against the inventory, rather than re-reading the inventory to see whether it looks complete. A retired system still listed is as much a defect as a missing one, because every later assessment treats it as live."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Period comparison naming each system acquired, inherited or retired, the source it was drawn from, and the inventory entry added, closed or found already correct."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 3
+        }
+      ]
+    },
+    {
+      "code": "PRIV-00.2",
+      "title": "Owners, operators and processing roles",
+      "description": "Implements ID.IM-P2: Owners or operators and roles for data processing are inventoried.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.IM-P2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Set the test that separates an accountable owner from a day-to-day operator"
+          },
+          "description": {
+            "en": "Without a stated test the register fills with whoever answered first, and the same activity acquires an owner on one line and an operator on another. Write the test down: accountability sits with whoever can stop, change or approve the processing and must answer for it, while operating means running it under that authority; administrators, reviewers and approvers are recorded but carry no accountability. State how many holders an activity may have, and name who decides when two people claim one activity or nobody does. This is about who inside the organisation answers for the processing, not the organisation's own standing toward other parties."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Role definition note stating which holder types may appear, how answering for processing is distinguished from running it, the limit on holders per activity, and who arbitrates a contested entry."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Name the person accountable for each processing activity and the party that operates it"
+          },
+          "description": {
+            "en": "A team label is not an accountability holder: when the entry reads \"Platform\" there is nobody to answer for a decision about the data. Capture a named holder for each activity, and separately the party that actually runs it day to day, which is often a different team or an outside supplier. Where no one will accept an entry, leave it marked unheld rather than blank, so the gap is countable instead of invisible."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Register of processing activities with, for each, a named accountability holder, the team or supplier running it, the date the name was accepted, and the entries still unheld."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Ask each named owner to state what they are accountable for"
+          },
+          "description": {
+            "en": "An owner entered without the holder's knowledge looks like a filled field and behaves like an empty one. Put the question to the holder rather than to their manager, and compare the answer with the register: where someone describes a narrower remit than the register gives them, the remainder is unheld and needs reassigning. Refusals and disputes go to whoever can actually move the accountability, not back into the register unchanged."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Confirmation record showing who was asked, what each said they hold, the mismatches against the register, and where every disputed or refused entry was escalated."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-00.3",
+      "title": "Categories of individuals whose data is processed",
+      "description": "Implements ID.IM-P3: Categories of individuals whose data are processed are inventoried.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.IM-P3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Settle which categories of individuals the organisation will distinguish, and why"
+          },
+          "description": {
+            "en": "Agree the label set before anyone starts tagging entries, with a definition and an example for each, or one team writes customers, another users and a third data subjects for the same people and the inventory can never be totalled or searched by population. The set must carry explicit labels for the groups that change what is owed — minors, patients, employees, job applicants, and people who have never dealt with the organisation — since a generic label hides exactly the populations a later assessment needs to find. Also state the rule for someone who meets two definitions at once, such as an employee who is also a customer, so an entry records both rather than whichever the tagger thought of first."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Approved label set with a definition and worked example for each, the treatment of a person meeting two definitions, and dated sign-off from the owner who settled it."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Name every category of individual whose data each system holds"
+          },
+          "description": {
+            "en": "Against each inventory entry, list the kinds of people whose data actually ends up in it rather than the kinds the system was built to serve — the two diverge wherever a record describes someone who never dealt with the organisation, such as an emergency contact, a referred friend, a dependant on a policy, a person named in a free-text support note, or an address book uploaded by a user. Categories that attract extra obligations — children, patients, employees, job applicants — have to be named in their own right, because the duty follows the category and disappears the moment it is folded into a general bucket labelled users or contacts. Where a category appears only occasionally, list it anyway and note the route by which those people arrive."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Per-entry register naming each population present, the route by which it enters, whether those people transacted with the organisation at all, and the owner who confirmed the entry."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Sample live records to find people no declared category accounts for"
+          },
+          "description": {
+            "en": "A category list assembled from design documents describes the intended population, not the one in the tables, so check it against real rows: pull a sample from each store and work out who each row is about, including people mentioned inside another person's record. Absence needs evidence as much as presence — a system listed as holding no children's data usually earns that listing by never asking for age, which is not the same as the population being absent, so look for the attributes that would betray them (date of birth, school, guardian, relationship-to-account-holder) before accepting the claim. Anyone found who fits none of the declared categories is the finding, and each one gets a correction to the entry and a named owner."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Sampling note per store recording what was examined, each person encountered who matched no listed population, the sensitive populations tested for and the basis for every claimed absence, and the corrections raised."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-00.4",
+      "title": "Data actions inventory",
+      "description": "Implements ID.IM-P4: Data actions of the systems, products, and services are inventoried.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.IM-P4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Settle which operations count as a data action and when one splits in two"
+          },
+          "description": {
+            "en": "Collection, use, sharing, storage and disposal read as five clean categories until two teams describe the same nightly export as one operation and as four. Fix the list of operation types an entry may draw on, and the rule that decides when a single step is written as one line or several — for instance whether a read followed by a transformation into a second store counts once or twice. Without that rule entries cannot be compared across teams, and counting how many data actions are inventoried tells nobody anything."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Agreed definition sheet naming each permitted operation type, with worked examples of a step kept whole and a step written as several."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
             "en": "Describe the data actions, purposes, elements and individuals for each entry"
           },
           "description": {
             "en": "Against each inventory entry, record what is done with the data, why each of those actions is performed, which data elements each touches, and which categories of individuals the data relates to. Where one entry serves several purposes, record them separately rather than collapsing them into one line."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 2,
+          "sortOrder": 1,
           "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Check whether any system performs a data action absent from its entry"
+          },
+          "description": {
+            "en": "A list of operations decays quietly: a new export job appears, a copy is written to a second store, or the script that was deleting old records stops running, and none of that changes what is written down. Sit with the people who run each system and walk its scheduled jobs, integrations and deletion routines, marking every operation with no matching line in the entry. Record both directions of the gap — operations performed but never listed, and listed operations the system no longer carries out."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Walkthrough notes for each system listing every operation found with no matching line, and the lines closed off as no longer carried out."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-00.5",
+      "title": "Purposes for each data action",
+      "description": "Implements ID.IM-P5: The purposes for the data actions are inventoried.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.IM-P5"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Set how specific a purpose must be before it counts as stated"
+          },
+          "description": {
+            "en": "Left to each author, entries settle on wording like \"business operations\" or \"improving the service\" that fits every action and therefore excludes none, and the inventory loses the ability to say whether a proposed new use is already covered. Decide the level of detail required — a reason an individual would recognise as distinct from the next one — name the wording entries must draw from so one reason is not written three ways, and say who rules on a disputed entry. Settle this before entries are written: re-wording several hundred of them later is how the rule quietly stops being applied."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "The agreed wording rule with worked examples of an acceptable and an unacceptable entry, and the named arbiter."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Pin each purpose to the data action it justifies, not to the system"
+          },
+          "description": {
+            "en": "A reason written against a whole system — \"CRM: managing customers\" — cannot answer whether a particular collection or onward disclosure was warranted, because one system carries several actions performed for different reasons. Against every action already listed, write the reason it is carried out, and where one action serves several reasons list them separately rather than joining them with \"and\". Mark which reason prompted the data to be obtained in the first place and which were added afterwards, with the date each later one began, so a use bolted on after the fact is visible as such."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Inventory export listing, against every action, the reasons held for it and when each was added."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Retire each recorded purpose the organisation has stopped pursuing"
+          },
+          "description": {
+            "en": "Reasons accumulate and are almost never withdrawn: a feature is switched off, the collection that fed it keeps running, and a purpose nobody pursues goes on justifying it. Walk the list with the people who own each activity and mark it still pursued or not; for every one that is not, record whether the action stopped too, or now runs for some other reason that must itself be written down. Where an action continues and nobody can name a live reason for it, raise that as a finding instead of fitting a plausible reason to it."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Marked-up list from the sweep showing which activities were confirmed live, and the disposition of the rest."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-00.6",
+      "title": "Data elements within each data action",
+      "description": "Implements ID.IM-P6: Data elements within the data actions are inventoried.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.IM-P6"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Set the granularity at which a field counts as one data element"
+          },
+          "description": {
+            "en": "Without a stated counting rule one team writes down contact details and another writes down eleven columns, and the two lists can be neither compared nor totalled. Decide whether a structured blob, a free-text note and an attached document are each one element or many, how a repeating group is counted, and whether a derived score sits beside the inputs it was calculated from. State which source of truth a name is taken from, so the same attribute is not entered twice under a column name and a form label."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "The written counting rule with worked examples covering a nested object, a repeating group, an uploaded document and a calculated value."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Enumerate the fields and attributes each data action touches"
+          },
+          "description": {
+            "en": "Work from the schemas, request payloads and form definitions rather than from a system's documentation, and name the individual fields each action reads and each one it writes. Derived and inferred attributes are elements too, and they are the ones most often missed because no interface ever asked for them. Free-text notes and uploaded files count as well, since whatever a person typed into them is held all the same. Where an action touches an entire table, list its columns instead of the table name."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "The per-action field list with each entry traced to the schema column, API contract or capture form it came from, and derived values marked as such."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Pull a live record and check each field on it was inventoried"
+          },
+          "description": {
+            "en": "An element list assembled from documentation drifts the moment a release adds a column or a vendor response grows a new key. Take a real record out of each significant store, list every populated attribute on it, and mark those no inventory entry accounts for. The opposite drift matters as much: elements still listed for fields the system stopped populating make the inventory read as more complete than it is."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "The extracted record's attribute list matched line by line against entries, with unmatched names in both directions called out and dated."
+          },
+          "suggestedRole": "Security engineering",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-00.7",
+      "title": "The data processing environment",
+      "description": "Implements ID.IM-P7: The data processing environment is identified (e.g., geographic location, internal, cloud, third parties).",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.IM-P7"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Settle the environment facts every entry must carry, and what counts as a jurisdiction"
+          },
+          "description": {
+            "en": "Without an agreed vocabulary one team writes \"EU\", another writes a region code and a third writes the vendor's name, and none of the three answers whether data left a jurisdiction. Fix up front the location granularity required, the internal-versus-external distinction, the cloud, on-premise and hybrid distinction, and which legal regimes this organisation treats as separate. Name who rules on an entry that spans several of them, such as a replicated database or a support desk that follows the sun."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "The agreed attribute definitions and permitted values, with a worked example for a multi-region system and the named arbiter"
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Pin every system to its hosting country, facility and provider"
+          },
+          "description": {
+            "en": "An entry reading \"the cloud\" or just the provider's brand name cannot answer a transfer question. For each inventoried system capture the provider's own region and zone identifiers, the physical site for anything on-premise, whether the organisation or an outside party runs that hosting, and the legal regime the site sits under. A system that fails over or replicates into a second region has two environments, and both belong on the entry."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Inventory export showing region, site, internal-or-external and jurisdiction values for each entry, with the provider documentation the region names were taken from"
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Derive each system's hosting location from the provider console, not the inventory"
+          },
+          "description": {
+            "en": "Regions get enabled, workloads get migrated and backups get replicated into new countries without anyone opening the inventory, so an entry that was correct when written drifts in silence. Pull the live region, zone and account list from each provider's console or API and set it against what the entry claims, one entry at a time. Where the two disagree, note which side changed and when, so the next pass can tell a stale record from an unannounced migration."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Console or API output listing live regions and accounts alongside the matching entries, with every difference and the date it was traced to"
+          },
+          "suggestedRole": "Security engineering",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-00.8",
+      "title": "The data processing map",
+      "description": "Implements ID.IM-P8: Data processing is mapped, illustrating the data actions and associated data elements for systems, products, and services.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.IM-P8"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Settle the notation and granularity of the data-flow map"
+          },
+          "description": {
+            "en": "Before anyone draws, fix what a box on the map stands for — one system, one service, or one data action — and how a data element is attached to a line between them. Two people mapping at different levels produce pictures that cannot be joined: one draws a single CRM box where the other draws six actions, and neither version can be reconciled against the inventory entries. Decide the notation to be used and the minimum every line must carry — source, destination, what happens to the data there, and which elements travel — so each drawer produces the same kind of picture."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Convention note stating the chosen notation, what a box and a line each represent, and the minimum detail every flow must carry."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 0
         },
         {
           "title": {
@@ -782,22 +1140,8 @@
             "en": "Produce a representation — in whatever form the organisation already uses to describe its systems — showing how data moves between inventoried entries, which action occurs at each point, and which data elements are involved. Attach the map and name which inventory entries it covers and which it does not."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 3,
+          "sortOrder": 1,
           "suggestedRole": "Engineering lead"
-        },
-        {
-          "title": {
-            "en": "Reconcile the inventory against an independent source"
-          },
-          "description": {
-            "en": "Compare the inventory against at least one source not derived from it — procurement records, expenditure records, or owners' own declarations — and record every entity that appears in one and not the other. Record how each discrepancy was resolved and which side was wrong."
-          },
-          "phase": "OPERATE",
-          "sortOrder": 4,
-          "evidenceHint": {
-            "en": "Dated reconciliation worksheet naming the independent source used, each discrepancy found, and its resolution."
-          },
-          "suggestedRole": "IT Operations"
         },
         {
           "title": {
@@ -807,7 +1151,7 @@
             "en": "Confirm that every entity inside the stated boundary carries an owner, purposes, data elements, categories of individuals and an environment, and appears on the map. Record each gap found together with the person who will close it."
           },
           "phase": "REVIEW",
-          "sortOrder": 5,
+          "sortOrder": 2,
           "evidenceHint": {
             "en": "Review record naming the reviewer, the entries checked, and the gaps raised with an owner against each."
           },
@@ -816,14 +1160,13 @@
       ]
     },
     {
-      "code": "PRIV-01",
-      "title": "Business Environment",
+      "code": "PRIV-01.1",
+      "title": "The organisation's role in the ecosystem",
+      "description": "Implements ID.BE-P1: The organization's role(s) in the data processing ecosystem are identified and communicated.",
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "ID.BE-P1",
-        "ID.BE-P2",
-        "ID.BE-P3"
+        "ID.BE-P1"
       ],
       "tasks": [
         {
@@ -839,17 +1182,71 @@
         },
         {
           "title": {
+            "en": "Split any relationship in which the organisation acts as both processor and controller"
+          },
+          "description": {
+            "en": "One counterparty usually sits on both sides at once: a vendor handles customer records strictly on instruction, and under the same agreement collects usage telemetry it decides to analyse for its own product work — processor for the first, controller in its own right for the second. Carrying one role per counterparty hides the second half, and the hidden half is what produces a subject request the organisation wrongly sends elsewhere, or terms drafted for the side it is not on. Give each flow its own entry, with the answer to who chose the purpose and who chose the means, and reserve joint controller for flows where both genuinely chose together instead of pushing the call onto one party."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Register extract showing each counterparty split into its own entries, with the purpose-and-means answer recorded beside each."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 1
+        },
+        {
+          "title": {
             "en": "Communicate the role statement to the parties it names"
           },
           "description": {
             "en": "Make the statement available to each party it describes, through whatever channel that relationship already uses, and record which party received which version and when. Where a party disputes the role attributed to it, record the dispute and how it was settled."
           },
           "phase": "OPERATE",
-          "sortOrder": 1,
+          "sortOrder": 2,
           "evidenceHint": {
             "en": "Distribution record showing each party, the version issued, the date, and any dispute raised and its outcome."
           },
           "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Re-test each controller or processor designation against the year's actual use"
+          },
+          "description": {
+            "en": "Compare the designation on file with what was actually done with the data over the period: a purpose added to a flow the organisation previously only hosted, telemetry turned to the organisation's own analysis, a sub-provider engaged on the organisation's own initiative rather than on a client's instruction. Each of those flips the answer to who chose the purpose and the means, while the designation set at onboarding sits untouched because no contract was reopened and nothing in the relationship looked like it moved. List every designation re-tested, which ones changed and why, and which flows are now held pending a decision on the role."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Dated note naming the flows re-examined, the label each now carries, and what moved it."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 3
+        }
+      ]
+    },
+    {
+      "code": "PRIV-01.2",
+      "title": "Organisational priorities for data processing",
+      "description": "Implements ID.BE-P2: Priorities for organizational mission, objectives, and activities are established and communicated.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.BE-P2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Name the body that ranks mission objectives and the audiences it must reach"
+          },
+          "description": {
+            "en": "Without one body owning the ranking, two committees publish competing orders and a team facing a privacy trade-off cites whichever order suits it. Name the forum that settles the order, the person who breaks a tie when two objectives conflict, and the standing recipients — processing owners, engineering leads, and the parties acting on the organisation's behalf — who must be sent the ranking rather than left to find it. Fix the channel for each recipient at this point, so the later communication step works from a distribution list it did not have to invent."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Scoping note naming the deciding forum, the tie-breaker for conflicting objectives, and each standing recipient with the channel used."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 0
         },
         {
           "title": {
@@ -859,19 +1256,8 @@
             "en": "List the mission and business objectives the organisation is pursuing that rely on processing data, in priority order, with the reason each sits where it does. This is the list a later privacy trade-off is argued against, so it must be specific enough for an argument to be lost against it."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 2,
+          "sortOrder": 1,
           "suggestedRole": "Management"
-        },
-        {
-          "title": {
-            "en": "Link each priority to the systems it depends on and state their key requirements"
-          },
-          "description": {
-            "en": "For every priority, name the systems, products or services it could not survive without, and record what each must deliver for the priority to hold — availability, accuracy, confidentiality, or something else. Record who those requirements have been communicated to and when."
-          },
-          "phase": "IMPLEMENT",
-          "sortOrder": 3,
-          "suggestedRole": "Engineering lead"
         },
         {
           "title": {
@@ -881,7 +1267,7 @@
             "en": "Compare both documents against the relationships and services the organisation actually runs today, record every change since the last review, and update them. Name anything found running that appears on neither list, and who will decide where it belongs."
           },
           "phase": "REVIEW",
-          "sortOrder": 4,
+          "sortOrder": 2,
           "evidenceHint": {
             "en": "Dated review note listing the relationships and priorities checked and each change made or ruled unnecessary."
           },
@@ -890,16 +1276,64 @@
       ]
     },
     {
-      "code": "PRIV-02",
-      "title": "Risk Assessment",
+      "code": "PRIV-01.3",
+      "title": "Systems supporting organisational priorities",
+      "description": "Implements ID.BE-P3: Systems/products/services that support organizational priorities are identified and key requirements communicated.",
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "ID.RA-P1",
-        "ID.RA-P2",
-        "ID.RA-P3",
-        "ID.RA-P4",
-        "ID.RA-P5"
+        "ID.BE-P3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Set the dependency test each priority's supporting systems must pass"
+          },
+          "description": {
+            "en": "State what a system must do for a priority to fail without it, and how far down the stack that judgement is carried — the database beneath an application and the identity provider it authenticates against either count or they do not, and the answer has to be the same for every priority. Without that rule one priority names three systems and the next names the whole estate, and the two lists can be neither compared nor resourced. Name who settles a contested case and where the agreed test is written down."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Scoping note stating the criterion, the depth it is applied to, the decision-maker for contested cases, and the date it was agreed."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Link each priority to the systems it depends on and state their key requirements"
+          },
+          "description": {
+            "en": "For every priority, name the systems, products or services it could not survive without, and record what each must deliver for the priority to hold — availability, accuracy, confidentiality, or something else. Record who those requirements have been communicated to and when."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Confirm the supporting systems and their key requirements still match today's priorities"
+          },
+          "description": {
+            "en": "Set the priority list beside the dependency record and mark every pairing that has stopped being true: a priority now carried by a different service, a system retired or folded into another, a stated requirement that no longer describes what the priority needs from it. The break that survives longest is a change of operator — after a migration or a supplier switch the requirement is still held against people who no longer run the system, so check each requirement against whoever operates it today. Note every correction made and who made it, and name any priority left resting on nothing."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Dated review note pairing every priority with the services now carrying it, each pairing corrected, and the current operator holding each stated requirement."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-02.1",
+      "title": "Contextual factors around data actions",
+      "description": "Implements ID.RA-P1: Contextual factors related to the systems/products/services and the data actions are identified (e.g., individuals' demographics, visibility into processing, data sensitivity).",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.RA-P1"
       ],
       "tasks": [
         {
@@ -915,6 +1349,111 @@
         },
         {
           "title": {
+            "en": "Grade sensitivity, visibility and individuals' ability to decline on defined scales"
+          },
+          "description": {
+            "en": "A data element is not equally sensitive everywhere: a home address is unremarkable for a delivery and dangerous when the person is hiding from someone, so the grade belongs to the data action in its circumstances, not to the field. Write down what each level means — including what makes processing imperceptible to the person and what makes declining it impractical — so a second assessor lands on the same level without asking the author. Where each assessor invents a private meaning for 'sensitive', two assessments of the same system cannot be compared or escalated on the same footing."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "The definition sheet for each factor scale, together with the graded entries: the level assigned to every data action, the wording it was matched against, and the person who assigned it."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Re-test the recorded context where the population changed but the system did not"
+          },
+          "description": {
+            "en": "Context goes stale with no code changing: a product taken up by a much younger population, a reseller placing it in schools, a press cycle that makes the processing common knowledge, sign-ups arriving from a country nobody considered. A re-assessment trigger keyed to system change fires for none of these, so this pass runs on its own schedule and reads sources outside the assessment — who holds accounts now, what the support and complaint intake shows, how the product is being sold today. List every factor still resting on the assumption first written down, naming the person who will re-establish it or retire it."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Dated pass naming each factor entry, the outside source consulted against it, whether the entry still holds, and every assumption carried forward with an owner."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-02.2",
+      "title": "Bias in analytic inputs and outputs",
+      "description": "Implements ID.RA-P2: Data analytic inputs and outputs are identified and evaluated for bias.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.RA-P2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Settle which analytic outputs are tested for skew and across which groups"
+          },
+          "description": {
+            "en": "Name the scores, rankings, matches, thresholds and eligibility rules that produce a result about a person, and say for each whether it is in scope. A boundary drawn around machine learning leaves the hand-written rule table and the vendor-supplied score unexamined, which is where the longest-standing disparities usually sit. Record against each in-scope output the data feeding it, since skew is inherited from training sets, reference tables and derived features far more often than it is written into the logic. Name the attributes the comparison will run across and who settles an argument about an exclusion."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Scope list naming each output in scope, the data sets feeding it, the attributes comparison will use, and each exclusion with the reason and who agreed it."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Evaluate analytic inputs and outputs for bias"
+          },
+          "description": {
+            "en": "Where processing derives inferences, scores or decisions, record what goes in, what comes out, and the checks made for skew against the categories of individuals recorded in the inventory. Record the result of each check, including the checks that found nothing and the ones that could not be run, with the reason."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Check how many individuals sat behind each bias result reported clean"
+          },
+          "description": {
+            "en": "A disparity test returns the same clean verdict whether the outputs really are even across groups or the group that would have failed it is too thin in the sample to shift the figure at all. Take every result recorded as showing no skew, put the number of individuals in each compared group beside it, and mark the ones below the count the method needs before it can detect anything. Re-measure those on a sample drawn to cover the thin groups, and where that cannot be done, move the entry from no skew found to not tested. A result whose model or rule set has since been rebuilt is stale however healthy its group counts were."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Per-result table giving the population count of every compared group, the minimum the method needs to detect a gap, and the re-measurements ordered where that floor was not met."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-02.3",
+      "title": "Problematic data actions and their problems",
+      "description": "Implements ID.RA-P3: Potential problematic data actions and associated problems for individuals are identified.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.RA-P3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Agree the catalogue of harms an individual can suffer from processing"
+          },
+          "description": {
+            "en": "Write down the kinds of harm the assessment will look for — surveillance, exclusion from a service, unwanted revelation to family or employer, discrimination, financial loss, loss of control over one's own account of oneself — each with a one-line test for recognising it. Without a fixed set, every assessor names only the harms that happen to occur to them, and two systems examined months apart cannot be compared. Keep the catalogue open: an assessor meeting a harm it does not hold adds an entry rather than forcing the nearest fit."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Approved harm catalogue with a recognition test against each entry and the date any entry was added or amended."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
             "en": "Identify the problems each data action could create for individuals"
           },
           "description": {
@@ -926,14 +1465,43 @@
         },
         {
           "title": {
-            "en": "Evaluate analytic inputs and outputs for bias"
+            "en": "Mine complaints and incidents for problematic actions nobody flagged"
           },
           "description": {
-            "en": "Where processing derives inferences, scores or decisions, record what goes in, what comes out, and the checks made for skew against the categories of individuals recorded in the inventory. Record the result of each check, including the checks that found nothing and the ones that could not be run, with the reason."
+            "en": "Individuals describe what processing did to them through channels never built for privacy work: support tickets, cancellation and refund reasons, sudden account deletions, and letters from a regulator. Read a period's worth, trace each grievance back to the operation on data that produced it, and add any problem the earlier identification never named. A problem people are already reporting that the assessment does not hold is the plainest proof the identification was incomplete."
           },
-          "phase": "IMPLEMENT",
-          "sortOrder": 2,
-          "suggestedRole": "Engineering lead"
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Dated sweep note naming the channels read, the period covered, and each newly named problem traced to its originating action."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-02.4",
+      "title": "Determining and prioritising privacy risk",
+      "description": "Implements ID.RA-P4: Problematic data actions, likelihoods, and impacts are used to determine and prioritize privacy risk.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.RA-P4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Agree the scoring scales and where the priority line falls"
+          },
+          "description": {
+            "en": "State what each likelihood and impact band means before any problem is scored — a frequency or plausibility test for likelihood, and an effect on the person rather than a cost to the organisation for impact — and state the score at or above which a problem is treated as a priority. Without those anchors two assessors rate the same data action differently and the two lists cannot be merged into one order. Naming the cut-off first also stops it being shifted afterwards to fit whatever capacity happens to be left, and whoever approves the scales should be told that changing them re-orders every assessment already made."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Approved scoring definitions naming each band, its anchor, the point at which a problem counts as a priority, and the approver."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 0
         },
         {
           "title": {
@@ -943,8 +1511,48 @@
             "en": "Apply the organisation's own likelihood and impact scales to each problem identified and produce a single ordered list. Record the reasoning wherever the ranking runs against expectation, so a reader can see why a severe-sounding problem sits low or a mild one sits high."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 3,
+          "sortOrder": 1,
           "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Calibrate the likelihood bands against events that actually occurred"
+          },
+          "description": {
+            "en": "Take the incidents, complaints and near-misses logged since the last assessment and compare each with the likelihood band the matching problem had been given. A problem rated remote that has now happened twice is evidence about the scale itself, not just about that one entry, so correct the band definitions rather than quietly re-scoring the single line. Check the impact side the same way: an impact judged mild because the organisation absorbed the cost may have been severe for the person it landed on."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Calibration note pairing each observed event with the band it was assigned beforehand, and the definition changes that followed."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-02.5",
+      "title": "Identifying and implementing risk responses",
+      "description": "Implements ID.RA-P5: Risk responses are identified, prioritized, and implemented.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.RA-P5"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Turn each chosen response into scheduled work with a named delivery date"
+          },
+          "description": {
+            "en": "For every response on the register, name the concrete change that delivers it — the configuration change, the process step, the contract amendment, the code change — and the date it is due, so a later check has something specific to look at. Where two responses compete for the same team, sequence them by the rank of the problem they answer rather than by whichever finishes soonest. A response left as an intention with nothing attached to it is the usual reason a problem survives the mitigation that was supposed to remove it."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Plan of agreed mitigations naming, for each, the specific change that carries it out, the team holding it, and the due date set."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 0
         },
         {
           "title": {
@@ -954,7 +1562,7 @@
             "en": "For each problem on the ranked list, state whether it is being reduced, transferred, avoided or accepted, name the person accountable for the response, and record the date the choice was made. Where a problem is accepted, record what is being accepted on the individual's behalf."
           },
           "phase": "OPERATE",
-          "sortOrder": 4,
+          "sortOrder": 1,
           "evidenceHint": {
             "en": "Risk response register showing each prioritised problem, the response chosen, its owner and the decision date."
           },
@@ -968,7 +1576,7 @@
             "en": "Take the responses recorded since the last pass and check whether each reached the state it claims, following the pointer to whatever the owner offers as proof. List every response marked done that has nothing behind it, and every one still open past its own stated intent, with what happens next."
           },
           "phase": "REVIEW",
-          "sortOrder": 5,
+          "sortOrder": 2,
           "evidenceHint": {
             "en": "Review record listing each response, its current state, what was offered as proof, and the responses found unsupported."
           },
@@ -977,16 +1585,64 @@
       ]
     },
     {
-      "code": "PRIV-03",
-      "title": "Data Processing Ecosystem Risk Management",
+      "code": "PRIV-03.1",
+      "title": "Ecosystem risk management procedures",
+      "description": "Implements ID.DE-P1: Data processing ecosystem risk management policies, processes, and procedures are identified, established, assessed, managed, and agreed to by stakeholders.",
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "ID.DE-P1",
-        "ID.DE-P2",
-        "ID.DE-P3",
-        "ID.DE-P4",
-        "ID.DE-P5"
+        "ID.DE-P1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Settle which relationships the ecosystem privacy policy binds and who may authorise a departure"
+          },
+          "description": {
+            "en": "Name the relationship types the policy covers — processors, sub-processors, resellers, joint ventures, intra-group transfers, research collaborators — and the ones deliberately left out, with the reason for each exclusion. Without that line drawn, the first arrangement nobody thought of as a supplier is the one that reaches data with no rule attached. State who holds the authority to let an engagement proceed outside the policy, because an exception granted by nobody in particular is indistinguishable from the policy being ignored."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Signed scoping note listing the relationship types inside and outside the policy's reach, the reason for each exclusion, and the named exception authority."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Agree the ecosystem privacy assessment procedure with the functions that must apply it"
+          },
+          "description": {
+            "en": "Write down how a party is assessed before an engagement begins and while it runs, who performs the assessment, who may accept a finding, and what stops an engagement. Circulate it to the functions bound by it and record each one's agreement or objection."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Find the engagements that began without the ecosystem privacy rules being applied"
+          },
+          "description": {
+            "en": "List the supplier, partner and customer engagements opened since the last review and mark, for each, whether the agreed assessment and approval steps were actually run. For every miss, separate the rule that was skipped from the rule that could not be worked as written — the second is a defect in the procedure, not in the person who bypassed it. Amend the unworkable ones and put each amendment back to the functions that agreed the original, so the version in force stays the version people consented to."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Dated review sheet naming every new arrangement of the period, whether it followed the agreed steps, and the amendments raised as a result."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-03.2",
+      "title": "Identifying and prioritising ecosystem parties",
+      "description": "Implements ID.DE-P2: Data processing ecosystem parties (e.g., service providers, customers, partners, product/service developers) are identified, prioritized, and assessed using a privacy risk assessment process.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.DE-P2"
       ],
       "tasks": [
         {
@@ -1002,25 +1658,57 @@
         },
         {
           "title": {
-            "en": "Agree the ecosystem privacy assessment procedure with the functions that must apply it"
+            "en": "Extend the party list to whoever each provider passes data on to"
           },
           "description": {
-            "en": "Write down how a party is assessed before an engagement begins and while it runs, who performs the assessment, who may accept a finding, and what stops an engagement. Circulate it to the functions bound by it and record each one's agreement or objection."
+            "en": "A list built from signed agreements stops at the parties the organisation contracted with, while the data keeps travelling — a hosting provider's own hosting provider, a support tool's offshore desk, an analytics vendor's enrichment source. Ask every ranked party to name who else receives or can reach the data, then place those recipients into the same ranking and assessment queue, attributed to the party that introduced them. Where a party will not name them, record the refusal against that party instead of leaving its entry looking complete."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 1,
-          "suggestedRole": "Legal/DPO"
+          "evidenceHint": {
+            "en": "Register entry per newly named recipient recording who disclosed it, what reaches it, and the date it was added; refusals to disclose logged against the party asked."
+          },
+          "suggestedRole": "Procurement",
+          "sortOrder": 1
         },
         {
           "title": {
-            "en": "Assess each prioritised party against the agreed procedure"
+            "en": "Check that each party onboarded since the last review was assessed first"
           },
           "description": {
-            "en": "Run the assessment on the parties in priority order, record what was examined and what was found, and note any condition placed on the engagement as a result. Where a party could not be assessed, record why and who accepted proceeding without it."
+            "en": "Take the parties that entered the ecosystem since the last review and compare two dates for each: when its privacy assessment was completed, and when data first reached it. An engagement opened under deadline pressure inverts them, and the assessment then documents an arrangement nobody can still refuse. Record every inversion with the person who authorised the early flow, and state how many new parties were examined so a clean result can be told apart from an empty one."
           },
-          "phase": "IMPLEMENT",
-          "sortOrder": 2,
-          "suggestedRole": "Procurement"
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Dated comparison sheet listing each new party, its assessment completion date, the date data first flowed, and the count of parties examined."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-03.3",
+      "title": "Contracts implementing privacy measures",
+      "description": "Implements ID.DE-P3: Contracts with ecosystem parties are used to implement appropriate measures designed to meet the objectives of the organization's privacy program.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.DE-P3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Set out the privacy terms each class of engagement must carry"
+          },
+          "description": {
+            "en": "Work out, from the privacy objectives the organisation has set, which measures have to be binding rather than merely requested — return or deletion at exit, limits on onward disclosure and sub-processors, breach notification timing, where processing may happen, a right to evidence — and state which class of engagement each one applies to. Say who may approve a departure and how it is recorded, because pressure to drop a clause arrives at signature rather than at drafting. Cover the case where the organisation signs the counterparty's standard terms and cannot edit them: name which measures an addendum has to carry instead, and which absences make the engagement unacceptable."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Approved schedule of required clauses banded by engagement type, naming the approver and the route for an agreed departure."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
         },
         {
           "title": {
@@ -1030,8 +1718,99 @@
             "en": "Per party, capture the obligations that have actually been agreed with them and where those obligations are written down, including any shared or multi-party arrangement the organisation has joined that carries obligations of its own. Where an assessment identified a needed obligation that was not agreed, record that gap against the party."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 3,
+          "sortOrder": 1,
           "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Match the signed terms against the processing each party performs today"
+          },
+          "description": {
+            "en": "Take each party in the ecosystem ranking, pull the agreement actually in force — base contract plus every amendment, order form and renewal that varies it — and compare the privacy measures it binds the party to with what that party now does with data. Long-standing suppliers commonly run on paper signed before the current clause set existed, and an auto-renewal moves the end date without touching a single term. List every party whose terms are absent, lapsed, or narrower than its processing, and name who will renegotiate, cut back what the party receives, or accept the position."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Coverage sweep naming every party checked, the agreement version relied on, and each gap raised with an owner and a date."
+          },
+          "suggestedRole": "Procurement",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-03.4",
+      "title": "Interoperability and multi-party approaches",
+      "description": "Implements ID.DE-P4: Interoperability frameworks or similar multi-party approaches are used to manage data processing ecosystem privacy risks.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.DE-P4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Decide which shared processing arrangements will run under a multi-party framework"
+          },
+          "description": {
+            "en": "Where three or more parties handle the same data, pairwise agreements leave the seams unowned: every pair is covered and the end-to-end outcome is nobody's. List the arrangements of that shape and name, for each, the framework, code of conduct, certification scheme or consortium rulebook it will run under. Where no suitable instrument exists, say so, name what carries the exposure instead, and who accepted that position."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Schedule of multi-party arrangements with the chosen instrument beside each, and the accepted exceptions named."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Implement the interoperability framework's privacy provisions in each system exchanging data under it"
+          },
+          "description": {
+            "en": "Joining a framework changes nothing until the systems actually emit and honour what it specifies — purpose codes, consent or preference signals, retention markers, and the agreed way parties refer to the same individual. Work through every exchange the framework covers and set down, provision by provision, what is implemented, what a local equivalent stands in for, and what the organisation does not do at all. An unimplemented provision is a divergence to carry openly, with the person who accepted it, rather than an intention."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Conformance profile per covered exchange, provision by provision, with the accepted divergence list and its approver."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Re-examine each multi-party arrangement against the framework version now in force"
+          },
+          "description": {
+            "en": "Frameworks are revised, participants join and leave, and a profile that conformed at signature quietly stops conforming without anyone being told. For each arrangement, compare what the organisation operates today against the published version currently in force, and check whether the parties named at the outset are still the parties involved. Record a decision for every divergence found — adopt the change, seek an exception, or withdraw from the arrangement — with the date it takes effect."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Dated comparison note per arrangement listing the version reviewed, divergences found and the decision recorded for each."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-03.5",
+      "title": "Routine assessment of ecosystem parties",
+      "description": "Implements ID.DE-P5: Ecosystem parties are routinely assessed using audits, test results, or other evaluations to confirm they are meeting their contractual, interoperability-framework, and other obligations.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "ID.DE-P5"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Assess each prioritised party against the agreed procedure"
+          },
+          "description": {
+            "en": "Run the assessment on the parties in priority order, record what was examined and what was found, and note any condition placed on the engagement as a result. Where a party could not be assessed, record why and who accepted proceeding without it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 0,
+          "suggestedRole": "Procurement"
         },
         {
           "title": {
@@ -1041,7 +1820,7 @@
             "en": "Ask each high-priority party for whatever evidence of its conduct exists — an audit result, a test result, a certification, or another party's evaluation — and record what it showed measured against the obligations recorded for that party. Record refusals and non-responses as outcomes rather than leaving the entry blank."
           },
           "phase": "OPERATE",
-          "sortOrder": 4,
+          "sortOrder": 1,
           "evidenceHint": {
             "en": "Per-party file holding the evaluation received, its date and source, and the assessor's note of which recorded obligations it did and did not address."
           },
@@ -1055,7 +1834,7 @@
             "en": "List the parties with no current evaluation and, for each, record the decision taken — chase, restrict what they receive, accept the gap, or end the engagement — with the person who took it. A party left undecided is the outcome this task exists to prevent."
           },
           "phase": "REVIEW",
-          "sortOrder": 5,
+          "sortOrder": 2,
           "evidenceHint": {
             "en": "Decision list naming each party without a current evaluation, the decision taken, the decision-maker and the date."
           },
@@ -2590,10 +3369,27 @@
     "version": "1.0",
     "description": "One control per privacy Category, covering the Framework five Functions.",
     "templateCodes": [
-      "PRIV-00",
-      "PRIV-01",
-      "PRIV-02",
-      "PRIV-03",
+      "PRIV-00.1",
+      "PRIV-00.2",
+      "PRIV-00.3",
+      "PRIV-00.4",
+      "PRIV-00.5",
+      "PRIV-00.6",
+      "PRIV-00.7",
+      "PRIV-00.8",
+      "PRIV-01.1",
+      "PRIV-01.2",
+      "PRIV-01.3",
+      "PRIV-02.1",
+      "PRIV-02.2",
+      "PRIV-02.3",
+      "PRIV-02.4",
+      "PRIV-02.5",
+      "PRIV-03.1",
+      "PRIV-03.2",
+      "PRIV-03.3",
+      "PRIV-03.4",
+      "PRIV-03.5",
       "PRIV-04",
       "PRIV-05",
       "PRIV-06",
