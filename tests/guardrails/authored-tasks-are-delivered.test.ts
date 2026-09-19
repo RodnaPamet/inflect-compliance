@@ -120,14 +120,15 @@ const TASKS_AUTHORED_IN_SIBLING_FIXTURE: Record<string, string> = {
 };
 
 const DELIVERED_WITHOUT_AUTHORED_TASKS: Record<string, string> = {
-    'iso9001-control-templates.json':
-        'ISO 9001 — 26 templates. FROZEN for content in control-task-actionability: no source library exists to author from. Delivery and content are separate axes, and this entry records only the second.',
-    'iso28000-control-templates.json':
-        'ISO 28000 — 15 templates. Frozen for content, as ISO 9001.',
-    'iso39001-control-templates.json':
-        'ISO 39001 — 18 templates. Frozen for content, as ISO 9001.',
+    // EMPTY. Every fixture this repo delivers now carries authored tasks.
+    //
+    // It held nine, then six, five, four, three. OWASP ASI, IMDA MGF and NIST
+    // Privacy authored themselves out of it first; the EU AI Act, ISO/IEC 42001
+    // and OWASP AISVS followed. The last three — ISO 9001, ISO 39001, ISO 28000
+    // — never could: no library grounds them. They left by being RETIRED
+    // instead, via `Framework.retiredAt`, which is the honest resolution for a
+    // catalogue nobody can author.
 };
-
 /** Every fixture that carries at least one authored task. */
 function fixturesWithAuthoredTasks(): Array<{ file: string; tasks: number }> {
     return fs
@@ -262,22 +263,17 @@ describe('authored tasks have a delivery path', () => {
     });
 
     it('the delivered-without-authored-tasks list is not growing', () => {
-        // THREE, and the QUEUE IS NOW EMPTY. It was nine, then six, five, four.
-        // OWASP ASI, IMDA MGF and NIST Privacy left in the first round; the EU
-        // AI Act, ISO/IEC 42001 and OWASP AISVS have removed their own entries
-        // since. Every fixture that COULD be authored has been.
+        // ZERO, and the list is closed rather than merely empty.
         //
-        // The three that remain — ISO 9001, ISO 28000, ISO 39001 — are not a
-        // backlog. They are FROZEN for content because no library under
-        // src/data/libraries grounds them, so authoring would mean writing from
-        // knowledge of the standard rather than from any source this repo
-        // holds. FROZEN_UNGROUNDED_POPULATIONS names the precondition, and its
-        // libraryPattern is checked: the moment a matching library lands, that
-        // assertion goes red and tells whoever added it what to do.
+        // Nine -> six -> five -> four -> three -> none. The first six authored
+        // themselves out; the last three were RETIRED, because no library
+        // grounds ISO 9001, ISO 39001 or ISO 28000 and a catalogue that cannot
+        // be authored should not ship.
         //
-        // So this number should now move only ONE way — down, and only after a
-        // library arrives. If it drops without one, someone has authored
-        // ungrounded content and the freeze was the thing standing in the way.
-        expect(Object.keys(DELIVERED_WITHOUT_AUTHORED_TASKS)).toHaveLength(3);
+        // An entry appearing here again means a fixture is delivered with no
+        // authored tasks, which now has exactly two honest resolutions: author
+        // it, or retire it. Adding an entry to wait is the third, and it is the
+        // one this zero exists to make visible.
+        expect(Object.keys(DELIVERED_WITHOUT_AUTHORED_TASKS)).toHaveLength(0);
     });
 });

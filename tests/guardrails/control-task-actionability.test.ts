@@ -79,24 +79,24 @@ const FROZEN_UNGROUNDED_POPULATIONS: Record<
     string,
     { standard: string; libraryPattern: RegExp; reason: string }
 > = {
-    'QMS-': {
-        standard: 'ISO 9001',
-        libraryPattern: /9001/,
-        reason:
-            'ISO 9001 (26). No library under src/data/libraries, and the templates carry a title plus a requirement reference and nothing else — no objective, successCriteria or testingMethodology. Authoring here would mean writing from knowledge of the standard rather than from any source this repo holds.',
-    },
-    'RTS-': {
-        standard: 'ISO 39001',
-        libraryPattern: /39001/,
-        reason: 'ISO 39001 road-traffic safety (18). Same absence of a library, same title-only metadata.',
-    },
-    'SCS-': {
-        standard: 'ISO 28000',
-        libraryPattern: /28000/,
-        reason: 'ISO 28000 supply-chain security (15). Same absence of a library, same title-only metadata.',
-    },
+    // EMPTY, AND THAT IS THE END STATE RATHER THAN A DELETION.
+    //
+    // This held ISO 9001 (QMS-), ISO 39001 (RTS-) and ISO 28000 (SCS-) — 59
+    // templates refused for content because no library under src/data/libraries
+    // grounds them, so authoring would have meant writing from knowledge of the
+    // standard rather than from a source this repo holds.
+    //
+    // The freeze was honest and it held for months. What resolved it was not a
+    // library arriving but the decision to stop offering the three at all: they
+    // are retired via `Framework.retiredAt`, their fixtures are gone, and the
+    // production seeder no longer names them. A catalogue we cannot author is
+    // one we do not ship.
+    //
+    // Kept as an empty record rather than deleted, for the same reason
+    // LEGACY_GENERIC_ALLOWLIST is: the assertions below are what stop a new
+    // frozen population appearing silently, and an entry here would be the only
+    // thing saying one had.
 };
-
 /**
  * There are none left, and that is what the fixture-extraction PR was for.
  *
@@ -421,10 +421,15 @@ describe('the allowlist is honest', () => {
     });
 
     it('the frozen list only shrinks', () => {
-        // Three today. It goes down when a library lands, never up: a NEW
-        // population that cannot be grounded should not exist, because nothing
-        // should ship templates for a standard the repo holds no source for.
-        expect(Object.keys(FROZEN_UNGROUNDED_POPULATIONS)).toHaveLength(3);
+        // ZERO. It held three — ISO 9001, ISO 39001, ISO 28000 — and none of
+        // them left by acquiring a library. They left by being RETIRED: a
+        // catalogue the repo holds no source for is one the product should not
+        // offer, so `Framework.retiredAt` is set and the fixtures are gone.
+        //
+        // It still only shrinks. A new entry means someone is shipping
+        // templates for a standard with no source, and the two honest answers
+        // are to find the source or not ship it.
+        expect(Object.keys(FROZEN_UNGROUNDED_POPULATIONS)).toHaveLength(0);
     });
 
     it('no framework is seeded from an inline array any more', () => {

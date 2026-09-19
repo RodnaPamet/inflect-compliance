@@ -68,7 +68,11 @@ describe('every shipped template is installed by a pack', () => {
     it('sees the population it claims to guard (positive control)', () => {
         // Without this, a glob that matched nothing would make every
         // assertion below pass by operating on an empty list.
-        expect(all.length).toBeGreaterThanOrEqual(17);
+        // 14, down from 17: ISO 9001, ISO 39001 and ISO 28000 were retired
+        // rather than authored, and their fixtures deleted. A floor moves for a
+        // deliberate removal and says so; if it fails and nothing was removed on
+        // purpose, the scan broke — do not lower the number to make it pass.
+        expect(all.length).toBeGreaterThanOrEqual(14);
         expect(all.reduce((n, c) => n + c.templates.length, 0)).toBeGreaterThanOrEqual(300);
         expect(all.every((c) => c.packKey)).toBe(true);
     });

@@ -9,7 +9,15 @@ import { prisma } from '@/lib/prisma';
 export async function listFrameworks(ctx: RequestContext) {
     assertCanViewFrameworks(ctx);
     const db = prisma;
+    // RETIRED FRAMEWORKS ARE FILTERED FROM THE OFFER, NOT FROM THE RECORD.
+    // `Framework.retiredAt` means the product no longer ships a standard. A
+    // tenant that installed one before keeps every control, link and report it
+    // had — which is why the row is retired rather than deleted — so only the
+    // surfaces that OFFER a framework filter on it. Reads about what a tenant
+    // already HAS (soa, gap-analysis, agent-coverage, policy-template-mapping,
+    // test-readiness) deliberately do not.
     return db.framework.findMany({
+        where: { retiredAt: null },
         include: { _count: { select: { requirements: true, packs: true } } },
         orderBy: { key: 'asc' },
     });
@@ -32,7 +40,7 @@ export async function listInstallableFrameworks(ctx: RequestContext) {
     assertCanViewFrameworks(ctx);
     const db = prisma;
     const frameworks = await db.framework.findMany({
-        where: { packs: { some: {} } },
+        where: { packs: { some: {} }, retiredAt: null },
         include: {
             _count: { select: { requirements: true } },
             packs: { select: { _count: { select: { templateLinks: true } } } },

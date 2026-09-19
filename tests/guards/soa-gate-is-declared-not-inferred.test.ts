@@ -107,15 +107,25 @@ describe('SoA gate is declared, not inferred (#2617)', () => {
     it('surveyed a plausible framework universe (positive control)', () => {
         // Guards against an empty survey passing everything below by vacuity.
         expect(libKeys.length).toBeGreaterThanOrEqual(16);
-        expect(seeded.length).toBeGreaterThanOrEqual(6);
+        // Three: ISO 27001, SOC 2 and NIS2. It was six until ISO 9001, ISO
+        // 39001 and ISO 28000 were retired and removed from seed-catalog.ts.
+        // Three is still enough for the survey to mean something, because SOC 2
+        // — the ISO_STANDARD-by-default witness this guard turns on — is one of
+        // them.
+        expect(seeded.length).toBeGreaterThanOrEqual(3);
         // The path that reaches production. Asserted separately and by NAME,
         // because its absence is what made the first version of this guard
         // green while the gate was wrong.
-        expect(applied.length).toBeGreaterThanOrEqual(17);
+        // 15, and that is the measured figure rather than a margin below it.
+        // It was 18 with a floor of 17; deleting the ISO 9001 / 39001 / 28000
+        // fixtures on retirement took three away. Set to the population itself
+        // so a fixture silently dropping out of the production seeder reddens
+        // here instead of being absorbed by slack.
+        expect(applied.length).toBeGreaterThanOrEqual(15);
         expect(applied.map((a) => a.key)).toEqual(
-            expect.arrayContaining(['ISO27701', 'ISO42001', 'ISO27001', 'ISO9001']),
+            expect.arrayContaining(['ISO27701', 'ISO42001', 'ISO27001', 'SOC2']),
         );
-        expect(allKeys).toEqual(expect.arrayContaining(['ISO27001-2022', 'ISO9001', 'SOC2']));
+        expect(allKeys).toEqual(expect.arrayContaining(['ISO27001-2022', 'NIS2', 'SOC2']));
     });
 
     it('every ISO_STANDARD framework production creates is classified either way', () => {
@@ -129,9 +139,6 @@ describe('SoA gate is declared, not inferred (#2617)', () => {
             ISO27001: true,
             ISO27701: true,
             ISO42001: true,
-            ISO9001: false,
-            ISO28000: false,
-            ISO39001: false,
             // NOT a typo. `prisma/seed-catalog.ts` creates SOC2 with no `kind`
             // at all, so it took the schema default — which is ISO_STANDARD.
             // The old gate therefore offered SOC 2, a Trust Services Criteria
@@ -170,11 +177,8 @@ describe('SoA gate is declared, not inferred (#2617)', () => {
             'ISO27001-2022',
             'ISO27701',
             'ISO27701-2019',
-            'ISO28000',
-            'ISO39001',
             'ISO42001',
             'ISO42001-2023',
-            'ISO9001',
             'NIS2',
             'NIS2-2022',
             'NIST-CSF-2.0',
@@ -206,11 +210,18 @@ describe('SoA gate is declared, not inferred (#2617)', () => {
         }
     });
 
-    it.each(['ISO9001', 'ISO28000', 'ISO39001'])(
+    it.each(['SOC2'])(
         '%s is kind ISO_STANDARD and still gets no SoA — the exact regression',
         (key) => {
             // Both halves matter. The first is what made the old gate fire; the
             // second is the fix. Reverting the gate to `kind` turns this red.
+            //
+            // This used to name ISO 9001 / 39001 / 28000 as well. Those three
+            // were retired, and SOC 2 is the better witness anyway: it is a
+            // Trust Services framework with no Annex A that takes the
+            // ISO_STANDARD schema default because `prisma/seed-catalog.ts`
+            // creates it with no `kind` at all. The regression this guard exists
+            // for is exactly that — a gate inferring an SoA from `kind`.
             const row = seeded.find((s) => s.key === key);
             expect(row?.kind).toBe('ISO_STANDARD');
             expect(frameworkHasStatementOfApplicability(key)).toBe(false);

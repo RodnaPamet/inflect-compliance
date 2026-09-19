@@ -1101,64 +1101,10 @@ Reviewed at least annually.` },
     console.log(`✅ Agent risk assessment v${agentRisk.questionSetVersion} — ${agentRisk.domains.length} domains + ${agentRisk.questions.length} questions seeded`);
 
     // ISO 9001
-    // ─── ISO9001 — one writer, shared with production ───
-    //
-    // Framework, requirements, templates and pack were THREE separate spans
-    // here, scattered across 600 lines, and prisma/seed.ts is not run on
-    // production deploys — so a fresh database or a restore got none of it.
-    // The fixture was a bare array only this file read; it is now the
-    // CatalogFile a production seeder applies, carrying the same codes,
-    // titles and requirement refs, verified template-for-template.
-    const iso9001Result = await applyCatalogFile(
-        prisma,
-        loadCatalogFile('prisma/fixtures/iso9001-control-templates.json'),
-        'prisma/fixtures/iso9001-control-templates.json',
-    );
-    console.log(
-        `✅ ISO9001: ${iso9001Result.requirements.upserted} requirements, ` +
-            `${iso9001Result.templates.created} templates, ` +
-            `pack ${iso9001Result.pack?.key ?? '-'}`,
-    );
 
     // ISO 28000
-    // ─── ISO28000 — one writer, shared with production ───
-    //
-    // Framework, requirements, templates and pack were THREE separate spans
-    // here, scattered across 600 lines, and prisma/seed.ts is not run on
-    // production deploys — so a fresh database or a restore got none of it.
-    // The fixture was a bare array only this file read; it is now the
-    // CatalogFile a production seeder applies, carrying the same codes,
-    // titles and requirement refs, verified template-for-template.
-    const iso28000Result = await applyCatalogFile(
-        prisma,
-        loadCatalogFile('prisma/fixtures/iso28000-control-templates.json'),
-        'prisma/fixtures/iso28000-control-templates.json',
-    );
-    console.log(
-        `✅ ISO28000: ${iso28000Result.requirements.upserted} requirements, ` +
-            `${iso28000Result.templates.created} templates, ` +
-            `pack ${iso28000Result.pack?.key ?? '-'}`,
-    );
 
     // ISO 39001
-    // ─── ISO39001 — one writer, shared with production ───
-    //
-    // Framework, requirements, templates and pack were THREE separate spans
-    // here, scattered across 600 lines, and prisma/seed.ts is not run on
-    // production deploys — so a fresh database or a restore got none of it.
-    // The fixture was a bare array only this file read; it is now the
-    // CatalogFile a production seeder applies, carrying the same codes,
-    // titles and requirement refs, verified template-for-template.
-    const iso39001Result = await applyCatalogFile(
-        prisma,
-        loadCatalogFile('prisma/fixtures/iso39001-control-templates.json'),
-        'prisma/fixtures/iso39001-control-templates.json',
-    );
-    console.log(
-        `✅ ISO39001: ${iso39001Result.requirements.upserted} requirements, ` +
-            `${iso39001Result.templates.created} templates, ` +
-            `pack ${iso39001Result.pack?.key ?? '-'}`,
-    );
 
     console.log('✅ SOC2 + NIS2 + ISO9001 + ISO28000 + ISO39001 frameworks seeded');
 
