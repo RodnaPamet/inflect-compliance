@@ -7,9 +7,10 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
 describe('SP-4 SharePoint policy sync', () => {
@@ -44,7 +45,7 @@ describe('SP-4 SharePoint policy sync', () => {
     });
 
     it('Policy has the SharePoint link columns + migration', () => {
-        const schema = readPrismaSchema();
+        const schema = codeOf(readPrismaSchema());
         for (const col of ['spDriveId', 'spItemId', 'spItemETag', 'spWebUrl', 'spSubscriptionId']) {
             expect(schema).toMatch(new RegExp(`${col}\\s+String\\?`));
         }

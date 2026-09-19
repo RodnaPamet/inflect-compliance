@@ -35,9 +35,26 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
+/**
+ * TypeScript reads, comments blanked at the seam (#2246 Class A). Every
+ * needle below — `REDIS_URL`, `process.exit(1)`, `redis` — also appears in
+ * the prose of the file being read, so a raw read is one deletion away from
+ * being satisfied by the comment that explains the code.
+ */
 function readRepoFile(rel: string): string {
+    return codeOf(fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8'));
+}
+
+/**
+ * Markdown / YAML / dotenv are not TypeScript: `#` is their comment marker
+ * and `//` appears inside URLs, so codeOf would blank live content while
+ * READING as masked. Those three assertions keep a raw reader, named so.
+ */
+function readNonSourceFile(rel: string): string {
     return fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
 }
 
@@ -133,7 +150,7 @@ describe('GAP-13 ratchet — health endpoints', () => {
 
 describe('GAP-13 ratchet — env templates + docs', () => {
     it('.env.production.example sets REDIS_URL (uncommented, REQUIRED)', () => {
-        const src = readRepoFile('.env.production.example');
+        const src = readNonSourceFile('.env.production.example');
         // Regression: an empty production template (the pre-GAP-13
         // state — REDIS_URL was a commented "optional" line) gives
         // operators no signal that this var is required. Uncommented
@@ -145,7 +162,7 @@ describe('GAP-13 ratchet — env templates + docs', () => {
     });
 
     it('docs/deployment.md flags REDIS_URL as REQUIRED in production in the env table', () => {
-        const src = readRepoFile('docs/deployment.md');
+        const src = readNonSourceFile('docs/deployment.md');
         // Regression: doc rot — operators reading the deployment
         // guide must see REDIS_URL marked the same way as
         // DATA_ENCRYPTION_KEY (the GAP-03 precedent). A future
@@ -159,7 +176,7 @@ describe('GAP-13 ratchet — env templates + docs', () => {
 
 describe('GAP-13 ratchet — CI workflow', () => {
     it('CI Test + Coverage + E2E jobs do not depend on REDIS_URL being unset', () => {
-        const src = readRepoFile('.github/workflows/ci.yml');
+        const src = readNonSourceFile('.github/workflows/ci.yml');
         // Regression: a CI workflow setting NODE_ENV=production (e.g.
         // a smoke job, deployment-style integration test) without
         // also setting REDIS_URL would fail the new env-schema check.

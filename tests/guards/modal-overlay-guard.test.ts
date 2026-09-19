@@ -24,6 +24,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const APP_PAGES_ROOT = path.resolve(__dirname, '../../src/app/t');
 
@@ -36,9 +37,13 @@ function walk(dir: string, out: string[]): string[] {
     return out;
 }
 
+// #2246 Class A, both directions. Masking at the read stops a COMMENT
+// describing the banned backdrop (`fixed inset-0 bg-black/60`) from being
+// reported as an offender, and stops a comment naming `Modal.Header` from
+// standing in for the slot itself in the baseline block below.
 const SOURCES = walk(APP_PAGES_ROOT, []).map((p) => ({
     file: path.relative(APP_PAGES_ROOT, p),
-    src: fs.readFileSync(p, 'utf-8'),
+    src: codeOf(fs.readFileSync(p, 'utf-8')),
 }));
 
 describe('Epic 54 — no hand-rolled modal overlays in app pages', () => {
@@ -83,7 +88,7 @@ describe('Epic 54 — baseline: the canonical primitives exist', () => {
             __dirname,
             '../../src/components/ui/modal.tsx',
         );
-        const src = fs.readFileSync(modalPath, 'utf-8');
+        const src = codeOf(fs.readFileSync(modalPath, 'utf-8'));
         expect(src).toMatch(/Modal\.Header|Header,/);
         expect(src).toMatch(/Modal\.Body|Body,/);
         expect(src).toMatch(/Modal\.Form|Form,/);
@@ -95,7 +100,7 @@ describe('Epic 54 — baseline: the canonical primitives exist', () => {
             __dirname,
             '../../src/components/ui/sheet.tsx',
         );
-        const src = fs.readFileSync(sheetPath, 'utf-8');
+        const src = codeOf(fs.readFileSync(sheetPath, 'utf-8'));
         expect(src).toMatch(/Header,/);
         expect(src).toMatch(/Body,/);
         expect(src).toMatch(/Actions,/);

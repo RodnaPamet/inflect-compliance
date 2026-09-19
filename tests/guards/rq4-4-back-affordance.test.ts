@@ -13,6 +13,8 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+
+import { codeOf } from '../helpers/source-blocks';
 import {
     MAIN_PAGES,
     SUBPAGES,
@@ -30,6 +32,12 @@ const PAGE_HEADER_PATH = path.resolve(
     __dirname,
     '../../src/components/layout/PageHeader.tsx',
 );
+
+// #2246 Class A — comments blanked at the read, string literals kept, so
+// `<BackAffordance`, `smart: true` and `print:hidden` must be CODE in the
+// component rather than a line of the docblock describing it. `messages/
+// en.json` is read separately below and stays raw (JSON, and it is parsed).
+const readSource = (abs: string) => codeOf(fs.readFileSync(abs, 'utf-8'));
 
 describe('rq4-4 back affordance', () => {
     it('every SUBPAGE has a canonical parent', () => {
@@ -80,18 +88,18 @@ describe('rq4-4 back affordance', () => {
     });
 
     it('BackAffordance is a client component', () => {
-        const source = fs.readFileSync(BACK_AFFORDANCE_PATH, 'utf-8');
+        const source = readSource(BACK_AFFORDANCE_PATH);
         expect(source.startsWith("'use client';")).toBe(true);
     });
 
     it('BackAffordance has BOTH referrer + canonical-parent branches', () => {
-        const source = fs.readFileSync(BACK_AFFORDANCE_PATH, 'utf-8');
+        const source = readSource(BACK_AFFORDANCE_PATH);
         expect(source).toMatch(/usePreviousPath/);
         expect(source).toMatch(/resolveCanonicalParent/);
     });
 
     it('BackAffordance renders the ArrowLeft icon, not the unicode glyph in JSX', () => {
-        const source = fs.readFileSync(BACK_AFFORDANCE_PATH, 'utf-8');
+        const source = readSource(BACK_AFFORDANCE_PATH);
         expect(source).toMatch(/<ArrowLeft\b/);
         expect(source).not.toMatch(/>\s*← /);
         expect(source).not.toMatch(/\{['"]← /);
@@ -102,7 +110,7 @@ describe('rq4-4 back affordance', () => {
         // `common.ui.backTo` message ("Back to {label}") rather than an
         // inline template literal. Assert the component references that
         // key AND the English catalog still starts with "Back to ".
-        const source = fs.readFileSync(BACK_AFFORDANCE_PATH, 'utf-8');
+        const source = readSource(BACK_AFFORDANCE_PATH);
         expect(source).toMatch(/aria-label=\{t\(['"]ui\.backTo['"]/);
         const en = JSON.parse(
             fs.readFileSync(
@@ -114,23 +122,23 @@ describe('rq4-4 back affordance', () => {
     });
 
     it('BackAffordance hides under @media print (OB-I)', () => {
-        const source = fs.readFileSync(BACK_AFFORDANCE_PATH, 'utf-8');
+        const source = readSource(BACK_AFFORDANCE_PATH);
         expect(source).toMatch(/print:hidden/);
     });
 
     it('BackAffordance respects prefers-reduced-motion (OB-G)', () => {
-        const source = fs.readFileSync(BACK_AFFORDANCE_PATH, 'utf-8');
+        const source = readSource(BACK_AFFORDANCE_PATH);
         expect(source).toMatch(/motion-safe:/);
     });
 
     it('PageHeader.back accepts the { smart: true } form', () => {
-        const source = fs.readFileSync(PAGE_HEADER_PATH, 'utf-8');
+        const source = readSource(PAGE_HEADER_PATH);
         expect(source).toMatch(/smart:\s*true/);
         expect(source).toMatch(/<BackAffordance\b/);
     });
 
     it('PageHeader preserves the legacy { href, label } static form', () => {
-        const source = fs.readFileSync(PAGE_HEADER_PATH, 'utf-8');
+        const source = readSource(PAGE_HEADER_PATH);
         expect(source).toMatch(/PageHeaderBackLink/);
         expect(source).toMatch(/href:\s*string/);
         expect(source).toMatch(/label:\s*string/);
