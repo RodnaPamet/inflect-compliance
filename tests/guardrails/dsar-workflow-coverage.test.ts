@@ -18,15 +18,18 @@
  * `erasure pseudonymizes the audit trail` block below RUNS `eraseUser` against
  * an instrumented in-memory client and asserts on what it did. No assertion in
  * that block reads the source of `dsar-erasure.ts`, because the pair it
- * replaced was satisfied by that file's JSDoc. What it can and cannot prove
- * while erasure is a Stage-1 stub is spelled out above the block and in
- * tests/helpers/dsar-erasure-probe.ts — read that before adding to it.
+ * replaced was satisfied by that file's JSDoc.
+ *
+ * As of Stage 3 that grading is LIVE rather than pinned: `eraseUser` executes,
+ * so the `B.` block below grades a real erasure instead of an empty list. Read
+ * tests/helpers/dsar-erasure-probe.ts before adding to it.
  */
 import fs from 'fs';
 import path from 'path';
 import { codeOf } from '../helpers/source-blocks';
 import { eraseUser } from '@/app-layer/jobs/dsar-erasure';
 import {
+    BYSTANDER_ID,
     codesOf,
     driveErasure,
     erasureViolations,
@@ -36,9 +39,11 @@ import {
 } from '../helpers/dsar-erasure-probe';
 
 // The probe injects through two seams (see its header): the injectable-`db`
-// option, and this mock of the `@/lib/prisma` singleton. `eraseUser` imports
-// no client today, so the mock is inert until Stage 3 — at which point it is
-// already in the path rather than something someone has to remember.
+// option, and this mock of the `@/lib/prisma` singleton. Stage 3's `eraseUser`
+// takes the injectable-`db` option, so that is the seam actually exercised
+// here; the mock stays because the module's DEFAULT path resolves a client
+// through `@/lib/db-context` -> `@/lib/prisma`, and without it an
+// implementation that stopped honouring `options.db` would build a real one.
 jest.mock('@/lib/prisma', () => ({
     get prisma() {
         return require('../helpers/dsar-erasure-probe').activeErasureClient();
@@ -94,21 +99,28 @@ describe('erasure safety invariants', () => {
 // removed + a CORRECT pseudonymizing body → RED on exactly that assertion.
 // The needle tracked the paragraph. #2246 replaced it with a source-text
 // tripwire on the stub's shape (`Promise<never>` + the unconditional throw);
-// this replaces THAT with the behavioural form, and the tripwire is gone —
-// A1/A2 below cover the same "it goes red when erasure starts working" duty
-// by running the function instead of reading it.
+// #2417 replaced THAT with the behavioural form, and the tripwire is gone.
 //
-// WHAT IS PROVEN, AND WHAT IS NOT. Erasure is a Stage-1 stub. There is no
-// erasure behaviour in this repo to verify and nothing here claims there is:
+// WHAT IS PROVEN. Stage 3 landed and `eraseUser` executes, so the grading is
+// live. Two blocks, and the distinction between them is the whole point:
 //
-//   A — true TODAY, observed by running the real `eraseUser`.
-//   B — the invariant, wired to the real `eraseUser` but grading nothing yet,
-//       because A is what the real function does. Marked vacuous where it is.
+//   B — THE REAL `eraseUser`, driven through the probe and graded. This is
+//       the invariant, on the shipped function. It used to be vacuous (the
+//       stub refused, so there was nothing to grade); it is not any more.
 //   C — the oracle's own discrimination, proved by driving deliberately
-//       broken implementations through the SAME harness. These are the only
-//       assertions here that see an executed erasure, and the implementations
-//       they grade are synthetic. C2 is the exact mutation that the pre-#2246
-//       guard passed.
+//       broken implementations through the SAME harness. These grade
+//       SYNTHETIC code, and they are what makes B's green mean something:
+//       an oracle that cannot fail would report B green whatever `eraseUser`
+//       did. C2 is the exact mutation that the pre-#2246 guard passed.
+//
+// A1/A2 USED TO LIVE HERE AND ARE DELETED (Stage 3). They asserted the stub
+// was still a stub — that `eraseUser` refused at runtime and touched nothing
+// — precisely so they would go RED the day somebody implemented it. They went
+// red. That failure was the handshake, and deleting them is the other half of
+// it: leaving them is how a half-done erasure looks finished. Their duty did
+// not vanish with them, it INVERTED — B1 now requires the outcome to be
+// EXECUTED, so reverting `eraseUser` to a refusing stub reddens here instead
+// of passing quietly.
 // ─────────────────────────────────────────────────────────────────────────
 
 /** Narrow view of the probe client the synthetic implementations use. */
@@ -124,32 +136,66 @@ const dbOf = (options?: { db?: unknown }) =>
     };
 
 describe('erasure pseudonymizes the audit trail, it does not delete it', () => {
-    // ── A. WHAT IS TRUE TODAY ─────────────────────────────────────────
-    it('A1 — the real eraseUser refuses at runtime (Stage-1 stub)', async () => {
-        await expect(eraseUser(SUBJECT_ID)).rejects.toThrow(/execution is not enabled/i);
-    });
-
-    it('A2 — the refusal is total: no table touched, no row changed', async () => {
+    // ── B. THE REAL ERASURE, GRADED ───────────────────────────────────
+    it('B1 — the real eraseUser executes and satisfies the invariant', async () => {
         const run = await driveErasure();
-        expect(run.outcome).toBe('REFUSED');
-        expect(run.ops).toEqual([]);
-        expect(run.after).toEqual(run.before);
-    });
-
-    // ── B. THE INVARIANT, PINNED ──────────────────────────────────────
-    it('B1 — the real eraseUser either refuses or satisfies the invariant', async () => {
-        const run = await driveErasure();
-        // VACUOUS TODAY, AND SAID OUT LOUD: `run.outcome` is REFUSED (A2), so
-        // there is no executed erasure to grade — this asserts the empty list
-        // against an empty list. It stops being vacuous the moment A1/A2 go
-        // red, which is the moment somebody implements Stage 3; the C block
-        // below is what proves it discriminates when that happens. Asserted
-        // FIRST because its violation detail carries the instruction a reader
-        // needs when the run turns out not to be gradeable at all.
+        // Violations FIRST: their detail carries the instruction a reader
+        // needs when the run turns out not to be gradeable at all. UNOBSERVED
+        // (returned without touching the probe — it reached a database this
+        // harness is not wired to) and ERRORED are reported as violations,
+        // never as a pass.
         expect(erasureViolations(run)).toEqual([]);
-        // UNOBSERVED (reached a database the probe is not wired to) and
-        // ERRORED are failures, not passes.
-        expect(['REFUSED', 'EXECUTED']).toContain(run.outcome);
+        // NOT `['REFUSED', 'EXECUTED']`, which is what this line said while
+        // erasure was a stub. REFUSED is no longer an acceptable answer from
+        // this function, and an oracle that still accepted it would grade a
+        // reverted stub as compliant.
+        expect(run.outcome).toBe('EXECUTED');
+    });
+
+    it('B2 — the audit rows survive it: de-attributed, otherwise intact', async () => {
+        const run = await driveErasure();
+        const before = run.before.auditLog as unknown as ProbeAuditRow[];
+        const after = run.after.auditLog as unknown as ProbeAuditRow[];
+
+        // SURVIVE — every row still there, by id.
+        expect(after.map((r) => r.id)).toEqual(before.map((r) => r.id));
+        // DE-ATTRIBUTED — the subject is gone from all of them...
+        expect(after.filter((r) => r.userId === SUBJECT_ID)).toEqual([]);
+        // ...and ONLY the subject. The bystander is the blast-radius control:
+        // an erasure that nulls every `userId` in the table satisfies the line
+        // above while destroying everyone else's attribution.
+        expect(after.filter((r) => r.userId === BYSTANDER_ID).map((r) => r.id)).toEqual(
+            before.filter((r) => r.userId === BYSTANDER_ID).map((r) => r.id),
+        );
+        // INTACT — the hash chain is the thing deletion would break, so it is
+        // asserted column by column rather than left to the generic diff.
+        expect(after.map((r) => r.entryHash)).toEqual(before.map((r) => r.entryHash));
+        expect(after.map((r) => r.previousHash)).toEqual(before.map((r) => r.previousHash));
+    });
+
+    it('B3 — it never ISSUES a delete or raw SQL against the audit trail', async () => {
+        const run = await driveErasure();
+        // INTENT, not outcome, and that is the point of reading `ops`. The
+        // before/after diff reports AUDIT_ROW_DELETED only for rows that were
+        // actually removed — so an implementation whose delete matched nothing
+        // on this fixture would pass it. "An empty selection is a PASS" is the
+        // exact shape that let 21 audit-deleting teardowns survive (#2510).
+        const auditOps = run.ops.filter((op) => op.table === 'auditLog');
+        expect(auditOps.map((op) => op.method)).toEqual(['updateMany']);
+        expect(run.ops.filter((op) => op.table === '$raw')).toEqual([]);
+        // Non-vacuous: `auditOps` being empty would satisfy neither line
+        // above, and the run really did reach more than the audit table.
+        expect(run.ops.length).toBeGreaterThan(auditOps.length);
+    });
+
+    it('B4 — a subject it cannot see is refused, and nothing is written', async () => {
+        // The blindness case, and the reason `eraseUser` opens with a read it
+        // does not otherwise need: a wrong column or a mistyped id makes an
+        // erasure that touched nothing look exactly like one that had nothing
+        // to touch — and the second reports success.
+        const run = await driveErasure(eraseUser as unknown as ErasureImpl, 'user-absent-2287');
+        expect(run.error?.message).toMatch(/not visible to this connection/i);
+        expect(run.after).toEqual(run.before);
     });
 
     // ── C. THE ORACLE DISCRIMINATES (synthetic implementations) ───────

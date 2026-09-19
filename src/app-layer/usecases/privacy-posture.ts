@@ -19,9 +19,14 @@
  *     per-record Evidence retention is user-controlled.
  *   • `dsar.intakeEnabled: true` / `automatedFulfilment: false` — rights
  *     requests can be RECORDED and tracked in the admin register, but nothing
- *     exports or erases: `jobs/dsar-export.ts` / `dsar-erasure.ts` still throw
- *     unconditionally and are unregistered. The two flags are deliberately
- *     separate. Collapsing them into one "DSAR works" boolean is exactly the
+ *     exports or erases. `jobs/dsar-export.ts` still throws unconditionally.
+ *     `dsar-erasure.ts::eraseUser` no longer does — Stage 3 implemented the
+ *     cascade (#2287) — but it is still absent from `register-schedules` and
+ *     `executor-registry` and NOTHING IN `src/` CALLS IT, which is what this
+ *     flag is about: fulfilment is not AUTOMATED, and an implemented function
+ *     with no caller automates nothing. Flip this only when something in the
+ *     product can actually reach it. The two flags are deliberately separate.
+ *     Collapsing them into one "DSAR works" boolean is exactly the
  *     overstatement this module exists to prevent.
  *
  * @module app-layer/usecases/privacy-posture

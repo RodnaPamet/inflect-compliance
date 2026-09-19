@@ -5,21 +5,35 @@
 > (what we keep) — it is how a data subject exercises GDPR Art. 15 (access/export)
 > and Art. 17 (erasure).
 
-## Scope of this document — Stage 1 (foundation)
+## Scope of this document — what is built, and what can run
 
-This ships the **foundation**, not the full feature. DSAR is a multi-PR sequence
-(each PR carries the `dsar` prefix):
+DSAR is a multi-PR sequence (each PR carries the `dsar` prefix). Read the
+right-hand column as two separate questions: does the code exist, and can
+anything reach it.
 
 | Stage | Scope | Status |
 |-------|-------|--------|
-| **1 — Foundation** | `DataSubjectRequest` model + migration, the workflow state machine, rejection criteria, cooling-off + verification constants, the export/erasure job skeletons (NOT executing), this doc, the ratchet. | **this PR** |
-| 2 — Export pipeline | Produce the bundle (decrypt authored content, write to S3, 7-day signed URL, email). Reversible → sequenced first. | follow-up |
-| 3 — Erasure pipeline | The irreversible cascade + the `IMMUTABLE_AUDIT_LOG` trigger change to permit pseudonymization. Validated in staging behind a flag. | follow-up |
-| 4 — Admin UI + rollout | `/admin/dsar-requests` (`admin.compliance_dsar`), monitoring, production flag flip. | follow-up |
+| **1 — Foundation** | `DataSubjectRequest` model + migration, the workflow state machine, rejection criteria, cooling-off + verification constants, the export/erasure job skeletons, this doc, the ratchet. | shipped |
+| 2 — Export pipeline | Produce the bundle (decrypt authored content, write to S3, 7-day signed URL, email). Reversible → sequenced first. | open |
+| 3 — Erasure pipeline | The irreversible cascade, plus the `IMMUTABLE_AUDIT_LOG` trigger narrowing that permits pseudonymization. | **cascade + trigger shipped, unmounted** |
+| 4 — Admin UI + rollout | `/admin/dsar-requests` (`admin.compliance_dsar`), monitoring, production rollout. | open |
 
-The export + erasure jobs (`src/app-layer/jobs/dsar-export.ts`,
-`dsar-erasure.ts`) exist with their contracts + safety guards but **throw if
-called** and are **not registered** with the scheduler — execution is off.
+**Stage 3's `eraseUser` EXECUTES — and nothing calls it.** The distinction is
+the whole safety posture, so it is worth stating both halves plainly. The
+function in `src/app-layer/jobs/dsar-erasure.ts` performs the real cascade
+against the client it is given: it is no longer a stub that throws. It is also
+absent from `register-schedules` and `executor-registry`, and no route, usecase
+or job in `src/` calls it — so no scheduler fires it and no request reaches it.
+Giving it an operator entry point (who may run it, for which subject, with what
+audit record) is a separate decision that has not been taken.
+
+`dsar-export.ts` is unchanged: it still throws if called and is still
+unregistered.
+
+Its sibling `planErasure`, in the same module, is the **dry run** — it reports
+which references would refuse the Stage 2 hard delete for a given subject, and
+writes nothing (`writes: 0`, asserted by capturing every statement it issues).
+It is likewise unmounted.
 
 Two deviations from the original brief, both flagged: (a) `DataSubjectRequest`
 carries **no `tenantId`** — a DSAR is user-scoped/cross-tenant, and a `tenantId`
@@ -74,9 +88,26 @@ the user's rows — rather than deleting them. Rationale:
   obligation — the audit trail *is* that obligation. The lawful basis to retain
   the *record of the action* survives the erasure of the *actor's identity*.
 
-So the action is retained; the identifying `userId` is removed. The Stage 3 PR
-adds the narrow trigger condition that permits this one UPDATE path while still
-refusing every other `AuditLog` UPDATE.
+So the action is retained; the identifying `userId` is removed.
+
+**Two gates, one of them narrowed.** Migration
+`20260917130000_audit_log_immutable_permit_pseudonymization` narrowed
+`audit_log_immutable_guard()` to permit exactly one UPDATE shape —
+`OLD."userId" IS NOT NULL`, `NEW."userId" IS NULL`, and
+`to_jsonb(NEW) - 'userId' = to_jsonb(OLD) - 'userId'`, which covers every other
+column including `entryHash` / `previousHash`. DELETE stays unconditionally
+refused. The PRIVILEGE gate was deliberately left alone: `app_user` still has
+UPDATE and DELETE on `AuditLog` revoked outright, so tenant-path code cannot
+attempt the write at all, permitted shape or not. Erasure therefore runs via
+`runInGlobalContext`, which never drops to `app_user` — granting UPDATE back to
+`app_user` would widen this to every tenant request in the product and is not
+how erasure is to be made to work.
+
+The trigger grades ONE ROW at a time against a SHAPE. It cannot know whose
+erasure is running, so a statement that nulled `userId` on every row in the
+table would satisfy it row by row. Not over-anonymizing is an APPLICATION
+obligation — it lives in the `where` clause of the single `updateMany` inside
+`eraseUser`.
 
 **How this is enforced.** Behaviourally, in the `erasure pseudonymizes the audit
 trail` block of `tests/guardrails/dsar-workflow-coverage.test.ts`: it RUNS
@@ -84,15 +115,30 @@ trail` block of `tests/guardrails/dsar-workflow-coverage.test.ts`: it RUNS
 and grades the operations it issued and the rows it left behind. It does not read
 this document, and it does not read the source of `dsar-erasure.ts` — the
 assertion it replaced (#2287) was satisfied by a JSDoc paragraph saying the right
-words while the code did nothing of the kind. Today the run reports `REFUSED`
-(the Stage-1 stub), so the grading is *pinned, not exercised*; the oracle's
-ability to discriminate is proved separately against synthetic implementations.
-The day erasure starts doing work, `A1`/`A2` go red — that failure is the
-handshake for the Stage 3 author: replace those two, do not relax them, and the
-grading becomes live. The DB-level half of the invariant (the
-`IMMUTABLE_AUDIT_LOG` trigger refusing both UPDATE and DELETE on `AuditLog`,
-which Stage 3 must narrow rather than drop) is covered by
-`tests/integration/audit-immutability.test.ts`.
+words while the code did nothing of the kind. Since Stage 3 the grading is LIVE
+rather than pinned: the run reports `EXECUTED` and the `B.` cases assert the rows
+survived, carry a NULL `userId` for the subject only, and kept their hash chain.
+The `A1`/`A2` tripwire that asserted the stub was still a stub is gone — its
+failure was the handshake, and it was deleted in the same commit that
+implemented the function. The oracle's own ability to discriminate is proved
+separately, by driving deliberately broken synthetic implementations through the
+same harness (`C1`–`C9`).
+
+Order and atomicity are covered by `tests/unit/dsar-erasure-execute.test.ts`,
+which the probe cannot reach: its client never fails, so it cannot see that the
+pseudonymization must precede the hard delete (`AuditLog.userId` is ON DELETE SET
+NULL, so deleting first would let the FK action do it and leave the receipt
+reporting zero), nor that a hard delete refused by an ON DELETE RESTRICT
+reference must roll the pseudonymization back with it — the trigger permits
+value → NULL and nothing else, so a half-run erasure cannot be undone.
+
+The DB-level half of the invariant (the `IMMUTABLE_AUDIT_LOG` trigger and the
+`REVOKE`) is covered by `tests/integration/audit-immutability.test.ts` and
+`tests/guards/audit-immutability-guardrails.test.ts`. That second file's Prisma
+UPDATE scan carries exactly one exemption — this erasure module — and the test
+beside it asserts the exemption is load-bearing and narrow: UPDATE verbs only,
+one call, inside the erasure transaction, writing the one column the trigger
+permits.
 
 ## Export bundle contents
 
