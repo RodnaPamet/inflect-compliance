@@ -79,6 +79,7 @@ const ISOLATION_BASELINE: readonly string[] = [
     "AuditChecklistItem",
     "AuditCycle",
     "AuditLog",
+    "AuditOutbox",
     "AuditPack",
     "AuditPackItem",
     "AuditPackShare",

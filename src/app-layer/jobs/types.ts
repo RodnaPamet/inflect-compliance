@@ -314,6 +314,13 @@ export interface NotificationOutboxFlushPayload {
     limit?: number;
 }
 
+/** #2657 — drain queued audit entries onto the hash chain. */
+export interface AuditOutboxFlushPayload {
+    tenantId?: string;
+    limit?: number;
+    maxAttempts?: number;
+}
+
 /** Daily compliance snapshot — KPI trend storage */
 export interface ComplianceSnapshotPayload {
     tenantId?: string;
@@ -702,6 +709,7 @@ export interface JobPayloadMap {
     'evidence-stale-review-sweep': EvidenceStaleReviewSweepPayload;
     'notification-dispatch': NotificationDispatchPayload;
     'notification-outbox-flush': NotificationOutboxFlushPayload;
+    'audit-outbox-flush': AuditOutboxFlushPayload;
     'sync-pull': SyncPullPayload;
     'compliance-snapshot': ComplianceSnapshotPayload;
     'sla-monitor': SlaMonitorPayload;
@@ -1250,6 +1258,23 @@ export const JOB_DEFAULTS: Record<JobName, {
         // applies: `processOutbox` gives each row three attempts before it goes
         // permanently FAILED, and those are spread across ticks rather than
         // burned inside one.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 50,
+        removeOnFail: 200,
+    },
+    'audit-outbox-flush': {
+        // ONE attempt, for the same reason as `notification-outbox-flush`:
+        // this runs every five minutes, so "retry" already has a name — the
+        // next tick. A BullMQ retry seconds after a failure re-enters the same
+        // unreachable database.
+        //
+        // Nothing is lost by declining it. Each row is claimed atomically
+        // before its replay and `attempts` is the optimistic-concurrency
+        // token, so a pass that dies mid-batch leaves unclaimed rows PENDING
+        // for the next pass. Per-ROW retry is the separate mechanism that
+        // still applies: five attempts with backoff before a row is parked
+        // FAILED, and a parked row is never deleted.
         attempts: 1,
         backoff: { type: 'fixed', delay: 0 },
         removeOnComplete: 50,

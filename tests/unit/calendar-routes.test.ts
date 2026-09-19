@@ -38,6 +38,12 @@ jest.mock('@/app-layer/usecases/compliance-calendar', () => {
 // the gate.
 jest.mock('@/lib/audit', () => ({
     __esModule: true,
+    // #2657 — `permission-middleware` now records AUTHZ_DENIED through
+    // `appendAuditEntryOrQueue`, which falls back to a durable AuditOutbox
+    // row instead of swallowing a failed write. Routed to the SAME spy as
+    // `appendAuditEntry` on purpose: these tests assert that a denial IS
+    // recorded, which the change does not alter.
+    appendAuditEntryOrQueue: (...a: unknown[]) => auditDeniedMock(...a),
     appendAuditEntry: (...a: unknown[]) => auditDeniedMock(...a),
 }));
 

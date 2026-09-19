@@ -743,6 +743,19 @@ enum EmailOutboxStatus {
   FAILED
 }
 
+/// Lifecycle of a queued audit entry (#2657).
+///
+/// APPLIED rather than SENT: the terminal success state is that the entry
+/// reached the hash chain, not that it left this process. FAILED means the
+/// retry budget is spent and a human must look — it is deliberately NOT a
+/// state the drain can reach quietly, because silence is the defect this
+/// whole mechanism exists to remove.
+enum AuditOutboxStatus {
+  PENDING
+  APPLIED
+  FAILED
+}
+
 enum NotificationDelivery {
   IMMEDIATE
   DAILY_DIGEST

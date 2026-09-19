@@ -68,6 +68,7 @@ a `userId` but stores no contact PII).
 | `AuditChecklistItem` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `AuditCycle` | Business record | No | Soft-delete (`deletedAt`); 90-day purge via `data-lifecycle` | Active: indefinite. Soft-deleted: 90-day purge |
 | `AuditLog` | Regulatory artefact | ind. | Immutable + hash-chained (never deleted) | Regulatory min/max — **needs legal/auditor input** |
+| `AuditOutbox` | Operational queue | No | Drained by `audit-outbox-flush`; APPLIED rows are the durable record's receipt, FAILED rows are kept for a human | Transient by design — a row exists only until its entry reaches the hash chain. FAILED rows are **never** auto-deleted (#2657): the terminal bad state must stay queryable, because an absence is the defect this table exists to remove. |
 | `AuditPack` | Business record | No | Soft-delete (`deletedAt`); 90-day purge via `data-lifecycle` | Active: indefinite. Soft-deleted: 90-day purge |
 | `AuditPackItem` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `AuditPackShare` | Security ephemeral | No | `expiresAt` expiry (security) | DEFINED — expiry-driven |

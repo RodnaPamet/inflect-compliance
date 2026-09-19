@@ -9,6 +9,7 @@
  *   - automation-runner:       every 15 min (control check scheduling)
  *   - daily-evidence-expiry:   daily at 06:00 UTC (sweep + outbox)
  *   - notification-outbox-flush: every 10 min (drain the email outbox)
+ *   - audit-outbox-flush:      every 5 min (replay queued audit entries)
  *   - data-lifecycle:          daily at 03:00 UTC (purge + retention)
  *   - policy-review-reminder:  daily at 08:00 UTC (overdue review audit)
  *   - task-due-notification:   daily at 08:00 local (NOTIFICATIONS_TZ) (in-app task deadline reminders)
@@ -228,6 +229,33 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         name: 'daily-evidence-expiry',
         pattern: '0 6 * * *',     // daily at 06:00 UTC
         description: 'Sweep expiring evidence at 30/7/1 day thresholds + flush outbox',
+        defaultPayload: {},
+    },
+    {
+        name: 'audit-outbox-flush',
+        pattern: '*/5 * * * *',   // every 5 minutes
+        // #2657 — the audit trail's own drain, and why it exists at all.
+        //
+        // An AUTHZ_DENIED write that cannot reach the hash chain now goes to
+        // `AuditOutbox` instead of being swallowed, so the record is durable
+        // before the response. That makes the entry SAFE; it does not yet make
+        // it EVIDENCE. Without this schedule the outbox is a table that only
+        // grows and the denial still never appears in the trail — the original
+        // defect, moved one table over.
+        //
+        // FIVE minutes rather than the notification drain's ten. The failure
+        // being backed up is per-tenant advisory-lock contention (#2653),
+        // which clears in seconds, so the queue should be short-lived. And the
+        // cost profile is different: a pass is one indexed query when empty,
+        // and each non-empty row is a local database append rather than an
+        // SMTP round trip to a third party, so a shorter cadence does not risk
+        // the retry storm that argument was about.
+        //
+        // Not one minute: a security entry arriving up to five minutes after
+        // the denial is a bound an operator can state plainly, and polling the
+        // table twelve times an hour for a queue that is empty almost always
+        // is the right trade against a worker slot.
+        description: 'Replay queued audit entries onto the hash chain (#2657)',
         defaultPayload: {},
     },
     {
