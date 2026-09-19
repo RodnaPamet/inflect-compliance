@@ -410,11 +410,21 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 230;
 // that is actually running" and is not smuggled in here.
 // 1454 (2026-09-19): −1, and the one site is nameable. The #2246 Class A
 // batch retargeted `ai-aisvs-hardening-coverage`'s AISVS C5.2.1 assertion
-// from `expect(gate).toMatch(/default-deny/i)` — a whole-file read whose
-// needle carries a flag, so `needle-not-literal`, so one of the skips summed
-// here — onto `functionBodyOf(gate, 'checkFeatureGate')`, which is a narrowed
-// subject and leaves the whole-file population altogether. Taking the
-// ratchet's own advice lowers this ceiling by exactly the site it removed.
+// from `expect(gate).toMatch(/default-deny/i)` onto
+// `functionBodyOf(gate, 'checkFeatureGate')`, a narrowed subject that leaves
+// the whole-file population altogether.
+//
+// The bucket it left is `path-not-constant` (918 → 917), NOT
+// `needle-not-literal`. An earlier version of this note said the flag on
+// `/default-deny/i` made the needle unrecoverable; that is wrong and worth
+// correcting in place, because this comment is what the next person
+// re-derives the ceiling from. `recoverNeedle` builds
+// `new RegExp(pattern, flags.replace(/[gy]/g, '') + 'g')`
+// (tests/helpers/assertion-reach.ts:1778) — it strips only the positional
+// flags and KEEPS `i`, so a flagged regex is a perfectly recoverable
+// literal. What made the site unanalysable was its READ PATH:
+// `read(`${AI}/feature-gate.ts`)` is a template literal, so the subject
+// could not be resolved to a constant path.
 const UNANALYSABLE_READ_BASELINE = 1454;
 
 /**
