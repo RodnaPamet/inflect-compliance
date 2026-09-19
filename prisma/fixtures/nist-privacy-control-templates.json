@@ -1672,6 +1672,17 @@
         },
         {
           "title": {
+            "en": "Assess each prioritised party against the agreed procedure"
+          },
+          "description": {
+            "en": "Run the assessment on the parties in priority order, record what was examined and what was found, and note any condition placed on the engagement as a result. Where a party could not be assessed, record why and who accepted proceeding without it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "suggestedRole": "Procurement"
+        },
+        {
+          "title": {
             "en": "Check that each party onboarded since the last review was assessed first"
           },
           "description": {
@@ -1682,7 +1693,7 @@
             "en": "Dated comparison sheet listing each new party, its assessment completion date, the date data first flowed, and the count of parties examined."
           },
           "suggestedRole": "Management",
-          "sortOrder": 2
+          "sortOrder": 3
         }
       ]
     },
@@ -1803,14 +1814,17 @@
       "tasks": [
         {
           "title": {
-            "en": "Assess each prioritised party against the agreed procedure"
+            "en": "Fix what counts as an acceptable evaluation, and how often each tier owes one"
           },
           "description": {
-            "en": "Run the assessment on the parties in priority order, record what was examined and what was found, and note any condition placed on the engagement as a result. Where a party could not be assessed, record why and who accepted proceeding without it."
+            "en": "Routine re-assessment collapses without a stated bar: one party sends a current audit report, another a two-year-old certificate, a third a completed questionnaire it filled in itself, and all three are filed as evidence. Say which forms are acceptable — independent audit, penetration test result, certification against a named scheme, a supervised control test — and set the interval each exposure tier owes, so a lapsed evaluation is a date arithmetic rather than a judgement call. Name what happens when a party supplies nothing, because an interval with no consequence behind it is a reminder, not a control."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 0,
-          "suggestedRole": "Procurement"
+          "evidenceHint": {
+            "en": "The standard as issued: acceptable evaluation forms, the interval per exposure tier, and the stated consequence for a party that supplies none."
+          },
+          "suggestedRole": "Procurement",
+          "sortOrder": 0
         },
         {
           "title": {
@@ -1843,17 +1857,13 @@
       ]
     },
     {
-      "code": "PRIV-04",
-      "title": "Governance Policies, Processes, and Procedures",
+      "code": "PRIV-04.1",
+      "title": "Privacy values and the conditions they set",
+      "description": "Implements GV.PO-P1: Organizational privacy values and policies (e.g., conditions on data processing such as data uses or retention periods, individuals' prerogatives with respect to data processing) are established and communicated.",
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "GV.PO-P1",
-        "GV.PO-P2",
-        "GV.PO-P3",
-        "GV.PO-P4",
-        "GV.PO-P5",
-        "GV.PO-P6"
+        "GV.PO-P1"
       ],
       "tasks": [
         {
@@ -1869,14 +1879,57 @@
         },
         {
           "title": {
-            "en": "Record the privacy responsibilities of each role and where they end"
+            "en": "Set the retention period and permitted uses for each category of data held"
           },
           "description": {
-            "en": "For every workforce role that touches data, state what it is responsible for doing and deciding, and state which of the adjacent responsibilities sit with an external party rather than with the role. Attach the resulting responsibility record, and name the role that resolves a boundary neither side claims."
+            "en": "A value binds nothing until it names data and a number, so take the categories from the processing inventory and write against each the period after which the data goes, the uses it may be put to, and the uses ruled out. Where two conditions land on the same category and disagree, an analysis wanting three years of history against a twelve-month deletion, decide which one governs now rather than leaving both on the page for whoever operates the system to choose between. A category left without a stated period is not neutral: in practice it defaults to keeping the data forever, so leave those rows visible with an owner named against them."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 1,
-          "suggestedRole": "HR"
+          "evidenceHint": {
+            "en": "Condition table listing each data category, the deletion point set for it, the uses allowed and refused, and the owner of any category still blank."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Find the processing that no stated condition governs"
+          },
+          "description": {
+            "en": "Coverage fails quietly: every condition on the page is about processing somebody remembered, so the set looks complete when read from the inside. Work from the data actions inventory instead, taking each recorded action, finding the condition that governs what it may be used for and how long its data is kept, and listing the actions where nothing does. This does not ask whether practice obeyed the conditions; it asks which processing has nothing to obey, because an action with no condition over it is settled in practice by whoever operates it."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Coverage list naming each data action checked, the condition found over it, and the actions left with none."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-04.2",
+      "title": "Instilling privacy values in development",
+      "description": "Implements GV.PO-P2: Processes to instill organizational privacy values within system/product/service development and operations are established and in place.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.PO-P2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "State what an exception must record before work proceeds against a privacy value"
+          },
+          "description": {
+            "en": "Every delivery process grants exceptions, and the ones granted verbally are indistinguishable afterwards from a value nobody applied. Fix what an exception has to capture — which condition is being set aside, for which piece of work, who authorised it, what compensates, and when it lapses — and put a ceiling on how long one may run unreviewed. Without a lapse date an exception becomes the new default, and the value survives only in the document nobody reads."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "The exception standard as issued, naming the fields an exception must carry, the authorising level, and the maximum period one may run before it is re-decided."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 0
         },
         {
           "title": {
@@ -1886,19 +1939,45 @@
             "en": "Take each condition written down beside the organisation's privacy values and record what carries it into the work of building and running systems — a standard or template it is written into, a default the platform already enforces, a question the change record asks, an approval that cannot be given without it — and for each name where a person doing that work meets it and who is accountable for keeping it there. A condition with nothing carrying it stays as a visible row with its owner named against it. This task records the carrier inside the work; instruction on what the conditions mean is delivered under the awareness control, and the data decision required at each life-cycle stage is recorded separately."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 2,
+          "sortOrder": 1,
           "suggestedRole": "Engineering lead"
         },
         {
           "title": {
-            "en": "Compile the register of legal, regulatory and contractual privacy requirements that apply"
+            "en": "Test the delivery path with a change a privacy condition forbids"
           },
           "description": {
-            "en": "List every legal, regulatory and contractual source that imposes a privacy requirement on the organisation, state in plain terms what each requires it to do, and name the internal policy or process that answers it. Where a requirement has nothing answering it, leave the row visible and name its owner."
+            "en": "A route that has never refused anything looks identical to one nobody consults. Send a deliberate case through the normal path — a design, a ticket or a configuration change that plainly breaches one of the recorded conditions — and note which stage catches it, or that it reached release untouched. Run it on the real path with the usual reviewers rather than asking whether the step exists; what matters is where the work stopped, not that the step is written down."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Dated account of the case put through, the route it travelled, the stage that rejected it or the point it reached unchallenged, and the change made to the path afterwards."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-04.3",
+      "title": "Workforce privacy roles and responsibilities",
+      "description": "Implements GV.PO-P3: Roles and responsibilities for the workforce are established with respect to privacy.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.PO-P3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Record the privacy responsibilities of each role and where they end"
+          },
+          "description": {
+            "en": "For every workforce role that touches data, state what it is responsible for doing and deciding, and state which of the adjacent responsibilities sit with an external party rather than with the role. Attach the resulting responsibility record, and name the role that resolves a boundary neither side claims."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 3,
-          "suggestedRole": "Legal/DPO"
+          "sortOrder": 0,
+          "suggestedRole": "HR"
         },
         {
           "title": {
@@ -1908,11 +1987,170 @@
             "en": "Distribute the values, conditions and responsibility record to everyone bound by them, by whatever means the organisation uses to put a policy in front of staff, and record which version reached whom and when. This closes on the distribution record; instruction on what the responsibilities mean is delivered separately."
           },
           "phase": "OPERATE",
-          "sortOrder": 4,
+          "sortOrder": 1,
           "evidenceHint": {
             "en": "Distribution record showing the policy version issued, the population it went to, and the date each part of that population received it."
           },
           "suggestedRole": "HR"
+        },
+        {
+          "title": {
+            "en": "Identify the privacy duties the current role map leaves unowned"
+          },
+          "description": {
+            "en": "A responsibility record is fixed against the role map of the day it was written, and then people leave, teams merge, posts are renamed and work is handed to a contractor, so a duty ends up recorded against a role nobody now holds — or split until two people each assume the other carries it. Work outward from the current staff and role list, naming the person accountable today for each recorded privacy responsibility, rather than reading the record and judging it plausible; a record that only looks coherent is exactly what decay produces. Catch the reverse case too, where staff are performing data actions from a role the record assigns no privacy responsibility at all, and settle each unowned duty on a named role instead of noting it."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Per-responsibility check naming the role each duty is recorded against, who holds that role today, and every duty found with no accountable person together with where it was placed."
+          },
+          "suggestedRole": "HR",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-04.4",
+      "title": "Coordinating privacy roles internally and externally",
+      "description": "Implements GV.PO-P4: Privacy roles and responsibilities are coordinated and aligned with third-party stakeholders (e.g., service providers, customers, partners).",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.PO-P4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Map the privacy work that no single function or party completes alone"
+          },
+          "description": {
+            "en": "List the privacy activities that cannot be finished inside one function or one organisation, and for each name every holder of a piece — privacy, security, legal, a service provider, a customer, a partner. Start from the activities with a clock on them, because a seam only announces itself when a deadline runs across it. Skip this and the alignment work covers whichever seams somebody happened to remember, while the unclaimed ones stay invisible until a real case lands on them."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Inventory of cross-boundary privacy activities naming the internal functions and external parties holding a piece of each, with those under a deadline marked."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Divide each shared privacy duty into the part each side performs"
+          },
+          "description": {
+            "en": "For every privacy activity that crosses a boundary, write down which steps the organisation performs, which the other party performs, what passes between them and by when — a contract saying a provider will \"assist\" names no step and so leaves the work unallocated. Do the same for the internal seams: privacy, security and legal each hold a piece of a breach assessment or an individual's request, and the piece none of them claims is the one that stalls. Put a named holder on each side of every split, with the deadline that attaches to their part. This captures the working split between the parties; the clause that obliges a party belongs in the requirements register, and instructing that party on what it means is delivered under the awareness control."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Split sheet listing every cross-boundary activity, the steps allocated to each organisation or function, the named holder on both sides, and the deadline against each part."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Replay a case that crossed the boundary and find the step neither side took"
+          },
+          "description": {
+            "en": "An agreed split holds on paper until something actually travels across the seam. Take cases from the period that ran through more than one function or party — a request answered out of a provider's store, an incident first seen on a partner's side, a deletion that had to propagate outward — and reconstruct who did each step and at what point they knew it was theirs. A step done twice is as much a defect as a step nobody did, because both show the two sides were working from different splits. Raise the correction against the split itself and the counterparts named in it, not against the individual case."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Reconstruction of each case examined, showing the sequence of steps, who carried out each one, and every gap or duplication found at the handover."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-04.5",
+      "title": "Legal, regulatory and contractual requirements",
+      "description": "Implements GV.PO-P5: Legal, regulatory, and contractual requirements regarding privacy are understood and managed.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.PO-P5"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Define the test that decides whether a privacy obligation binds the organisation"
+          },
+          "description": {
+            "en": "With no stated test, the register ends up being whatever the person compiling it already knew: the home statute goes in, a customer's processing addendum and a published certification commitment do not, and a duty that attaches because an individual lives somewhere else is never considered. Name the classes of source to be swept — statutes and regulations in each jurisdiction the organisation reaches, sector regimes, supervisory guidance, customer and supplier agreements, and commitments the organisation has made publicly — and the criterion that puts one inside the boundary or outside it. Name who rules on a contested reading as well, because two competent lawyers read the same clause differently and a register with no tie-breaker quietly carries both answers."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Scope statement naming the jurisdictions, sectoral regimes and classes of agreement in the sweep, the criterion for inclusion, and the person who settles a disputed reading."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Compile the register of legal, regulatory and contractual privacy requirements that apply"
+          },
+          "description": {
+            "en": "List every legal, regulatory and contractual source that imposes a privacy requirement on the organisation, state in plain terms what each requires it to do, and name the internal policy or process that answers it. Where a requirement has nothing answering it, leave the row visible and name its owner."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Find the obligations that changed or arrived since the register was compiled"
+          },
+          "description": {
+            "en": "A requirement register decays from the outside in: the entries already written stay readable while a statute is amended, a regulator reissues its guidance, a customer contract is renegotiated at renewal, or the business opens in a market whose regime nobody has read. Work from the sources that know about change — horizon-scanning subscriptions, the contract renewal log, the period's new products and markets — because re-reading the register can only surface entries that are wrong, never obligations that were never entered. For each change decide whether it amends an entry, adds one, or retires one, and say which. This pass tests the statements of what is required, not whether the organisation is complying with them."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Dated review note listing each amendment, new instrument, reissued guidance and renegotiated agreement picked up in the period, the source it came from, and the entry added, altered or withdrawn for it."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-04.6",
+      "title": "Privacy risk in governance and risk management",
+      "description": "Implements GV.PO-P6: Governance and risk management policies, processes, and procedures address privacy risks.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.PO-P6"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Settle which enterprise risk documents and forums privacy must be written into"
+          },
+          "description": {
+            "en": "\"Our risk framework already covers privacy\" stays unfalsifiable until somebody names the documents, and each owner can point at another owner's procedure. Name the instruments in scope — the enterprise risk policy, the risk taxonomy, the risk committee's terms of reference, the risk acceptance procedure, the internal audit plan — and for each state what would count as covering privacy risk, because a passing mention is not coverage. Note the instruments deliberately left outside and why, so the check that follows works from a fixed list rather than an impression of what was meant to be included."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Signed scoping note listing each in-scope instrument, its owner, the bar it must meet for privacy, and the exclusions with reasons."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Give privacy risk its own category, owner and entry in the enterprise risk register"
+          },
+          "description": {
+            "en": "A privacy risk kept on a list the privacy function maintains for itself never competes for money or attention against the risks executives already watch, and one filed under \"compliance\" or \"IT\" loses the thing that defines it — the harm lands on people rather than on the balance sheet. Open a privacy category in the enterprise risk taxonomy, raise entries there for the privacy risks already known, and give each an accountable owner drawn from the same population that owns every other entry. The awkward part is scoring: enterprise impact scales are written as loss to the organisation, so set down how harm to individuals is expressed on that scale, or privacy entries will be rated low by default and drop below the line that gets treated."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Register export showing each privacy entry under its new category with a named owner, plus the written rule for scoring harm to individuals."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 1
         },
         {
           "title": {
@@ -1922,7 +2160,7 @@
             "en": "Read the governance and risk-management policies that are not privacy-specific and record, for each, where privacy risk is addressed and where it is silent. Raise the change needed for each silence and name who will make it."
           },
           "phase": "REVIEW",
-          "sortOrder": 5,
+          "sortOrder": 2,
           "evidenceHint": {
             "en": "Review note naming each governance or risk policy read, the privacy provision found in it, and the changes raised where none was found."
           },
@@ -1931,14 +2169,13 @@
       ]
     },
     {
-      "code": "PRIV-05",
-      "title": "Risk Management Strategy",
+      "code": "PRIV-05.1",
+      "title": "Agreed risk management processes",
+      "description": "Implements GV.RM-P1: Risk management processes are established, managed, and agreed to by organizational stakeholders.",
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "GV.RM-P1",
-        "GV.RM-P2",
-        "GV.RM-P3"
+        "GV.RM-P1"
       ],
       "tasks": [
         {
@@ -1954,6 +2191,74 @@
         },
         {
           "title": {
+            "en": "Name the forum that decides a privacy risk and the authority each seat carries"
+          },
+          "description": {
+            "en": "A process is only as agreed as the people who can be held to it, so name the body that takes privacy risk decisions, who sits on it, and what each seat can commit — accept on behalf of a business line, fund a treatment, overrule a product date. State the quorum and what happens when it is not met, because a decision taken by whoever attended is the failure this requirement is about: the process was established, and then not managed. Record where a seat is vacant rather than letting the remaining members absorb it silently."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Terms of reference for the deciding body: seats, the commitment each may make, quorum, the escalation when quorum fails, and any seat currently vacant."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Obtain agreement to the process and tolerance from the functions bound by them"
+          },
+          "description": {
+            "en": "Put the process description and tolerance statement to each function that has to apply them, and record each one's agreement or objection together with how objections were settled. An unanswered objection recorded is more useful than a signature that hides it."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Agreement record naming each stakeholder function, the date, and any objection raised with its resolution."
+          },
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Trace a sample of raised privacy risks through to the decision that closed them"
+          },
+          "description": {
+            "en": "Draw items from across the period, deliberately including ones nobody pressed for, and follow each from the moment it entered the register to the decision recorded against it: who decided, under what authority, and how long it waited before anyone did. A process can look healthy in aggregate while the items that embarrass someone are precisely the ones that never reach a decision, so the sample has to be drawn by the reviewer rather than offered up by the people running the register. Treat an item still open past the interval the process allows as a finding in its own right, not as work in progress, and note any decision taken by someone the process does not authorise to take it."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Worked sample listing each item followed, the elapsed time from raising to resolution, the person who settled it, and the deviations found where authority or timing departed from the agreed route."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 3
+        }
+      ]
+    },
+    {
+      "code": "PRIV-05.2",
+      "title": "Expressing organisational risk tolerance",
+      "description": "Implements GV.RM-P2: Organizational risk tolerance is determined and clearly expressed.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.RM-P2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Settle what the privacy tolerance caps and whether it is read before or after controls"
+          },
+          "description": {
+            "en": "A tolerance means nothing until it is clear what it is applied to: the risk as it would stand with nothing mitigating it, or the risk left over once the controls the organisation actually runs are counted — the same sentence licenses very different processing under each reading. Decide that here, and decide whether the limit speaks to harm falling on individuals, exposure falling on the organisation, or two separate limits, because one figure covering both is always applied at its looser end. Write the decision down as the preamble the tolerance statement is then drafted against, so the level chosen later is not argued twice."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Scoping note stating the measure the threshold applies to, whether mitigations are counted first, and whether harm to individuals and organisational exposure are held to separate limits."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 0
+        },
+        {
+          "title": {
             "en": "Express the organisation's privacy risk tolerance in terms a ranked risk can be compared against"
           },
           "description": {
@@ -1965,38 +2270,13 @@
         },
         {
           "title": {
-            "en": "Record how the organisation's ecosystem role shaped that tolerance"
-          },
-          "description": {
-            "en": "For each role the organisation holds in the data processing ecosystem, explain why the tolerance sits where it does — a party acting on another's behalf carries a different exposure than one deciding for itself, and a party others depend on carries more than one that stands alone. Attach the reasoning to the tolerance statement."
-          },
-          "phase": "IMPLEMENT",
-          "sortOrder": 2,
-          "suggestedRole": "Legal/DPO"
-        },
-        {
-          "title": {
-            "en": "Obtain agreement to the process and tolerance from the functions bound by them"
-          },
-          "description": {
-            "en": "Put the process description and tolerance statement to each function that has to apply them, and record each one's agreement or objection together with how objections were settled. An unanswered objection recorded is more useful than a signature that hides it."
-          },
-          "phase": "OPERATE",
-          "sortOrder": 3,
-          "evidenceHint": {
-            "en": "Agreement record naming each stakeholder function, the date, and any objection raised with its resolution."
-          },
-          "suggestedRole": "Management"
-        },
-        {
-          "title": {
             "en": "Compare recent risk decisions against the stated tolerance"
           },
           "description": {
             "en": "Take the privacy risk decisions made since the last review and place each against the tolerance as written. Record every decision that fell outside it, whether it was escalated as the process requires, and what is being done about the ones that were not."
           },
           "phase": "REVIEW",
-          "sortOrder": 4,
+          "sortOrder": 2,
           "evidenceHint": {
             "en": "Review note listing the decisions checked, the tolerance applied to each, and the decisions found outside tolerance with their escalation status."
           },
@@ -2005,15 +2285,64 @@
       ]
     },
     {
-      "code": "PRIV-06",
-      "title": "Awareness and Training",
+      "code": "PRIV-05.3",
+      "title": "Tolerance informed by ecosystem role",
+      "description": "Implements GV.RM-P3: The organization's determination of risk tolerance is informed by its role in the data processing ecosystem.",
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "GV.AT-P1",
-        "GV.AT-P2",
-        "GV.AT-P3",
-        "GV.AT-P4"
+        "GV.RM-P3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Decide which parts of the organisation's ecosystem standing may move the tolerance"
+          },
+          "description": {
+            "en": "Before any threshold is written, name the facts about where the organisation sits that its tolerance has to answer to: the roles it holds in each relationship, whose data it handles and at what volume, whether those individuals had any real choice, and who else builds on its output. Say which of those may push the tolerance down and which are not permitted to push it up, because a derivation written after the number is chosen will find a reason for whatever was already wanted. List the facts deliberately left out with the reason for each, so a later reader can tell an omission from a decision."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Scoping note listing each fact admitted as an input to the threshold, the direction it is allowed to push, and the ones excluded with reasons."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Record how the organisation's ecosystem role shaped that tolerance"
+          },
+          "description": {
+            "en": "For each role the organisation holds in the data processing ecosystem, explain why the tolerance sits where it does — a party acting on another's behalf carries a different exposure than one deciding for itself, and a party others depend on carries more than one that stands alone. Attach the reasoning to the tolerance statement."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Find the ecosystem roles the tolerance's justification never accounted for"
+          },
+          "description": {
+            "en": "Take the relationships opened, altered or inherited since the tolerance was last justified — a first processing mandate for a regulated client, a service other firms now build their own products on, a sub-processor engaged on the organisation's own initiative — and check whether the reasoning attached to the tolerance names each one. A justification written while the organisation processed only for itself keeps reading plausibly after it has become a party others depend on, because nothing in it names the role that moved. For each role the reasoning misses, record whether the tolerance stands as written, shifts, or is held open until the body that owns it decides."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Dated note naming each role the organisation held during the period, whether the tolerance reasoning addressed it, and what was decided about the ones it missed."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-06.1",
+      "title": "Workforce privacy awareness and training",
+      "description": "Implements GV.AT-P1: The workforce is informed and trained on its roles and responsibilities.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.AT-P1"
       ],
       "tasks": [
         {
@@ -2029,6 +2358,114 @@
         },
         {
           "title": {
+            "en": "Deliver the instruction to each internal audience and record completion"
+          },
+          "description": {
+            "en": "Deliver to the workforce, the senior executives and the staff holding named privacy duties, by whatever means suits each, and record completion per person. Record separately, for the executive and privacy-duty audiences, what their session covered that the general one did not."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Completion record per audience showing the names reached, the material version delivered, and the dates."
+          },
+          "suggestedRole": "HR"
+        },
+        {
+          "title": {
+            "en": "Check delivery against the audience list and follow up those not reached"
+          },
+          "description": {
+            "en": "Compare the completion and briefing records against the audience list, name every person and party still outstanding, and record the follow-up taken for each. Record anyone who cannot be reached and what is being done about their access instead."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Gap list naming each outstanding recipient, the follow-up taken, and the position of anyone who remained unreached."
+          },
+          "suggestedRole": "HR"
+        }
+      ]
+    },
+    {
+      "code": "PRIV-06.2",
+      "title": "Senior executives understand their roles",
+      "description": "Implements GV.AT-P2: Senior executives understand their roles and responsibilities.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.AT-P2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Set the standard of privacy understanding required of the board and the executive team"
+          },
+          "description": {
+            "en": "Write down what a director or officer is expected to recognise, decide and answer for, and how that differs from the day-to-day practice the workforce is taught. Without that line drawn, the board assumes privacy is discharged by whoever holds the specialist title, while the specialist assumes risks were accepted at a level that never actually saw them. Name the posts the standard binds — board members, committee chairs, officers, and the directors of any subsidiary carrying its own statutory exposure — because personal liability follows the seat rather than the reporting line."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Board-adopted statement of what a director or officer is expected to recognise, decide and answer for on privacy matters."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Walk each senior executive through the privacy decisions reserved to them"
+          },
+          "description": {
+            "en": "Take the decisions that cannot be settled below board or officer level — accepting a privacy risk that sits outside the stated tolerance, funding or cutting privacy work, approving a launch or an acquisition that changes what the organisation processes, authorising notification after a breach — and show each executive what signing one commits the organisation to and what they personally answer for afterwards. An executive who only sits through the workforce session learns handling rules they will never apply themselves and none of the choices that arrive solely at their level. Leave operational procedure out of it: the work is recognising a privacy decision when it arrives dressed as a budget line, a launch date or a deal."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Dated briefing pack and attendance note for the board and officer session, listing each approval that cannot be signed at a lower level."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Question each executive on their privacy duties without the privacy team present"
+          },
+          "description": {
+            "en": "Accountability at this level is personal: a regulator's interview, an investor question or a journalist's call goes to the chief executive, and the organisation finds out at that moment whether the understanding was real or borrowed from a slide deck. Sit with each named executive alone and ask what processing would hurt people most if it went wrong, which privacy decision is currently theirs to take, and what they would do in the first hour of a breach. Deferring the answer to the privacy team is the finding, not a pass. Carry each gap into the next briefing rather than filing it with the attendance record."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Notes from each one-to-one session naming the post held, the questions put, and the gaps carried into the next briefing."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-06.3",
+      "title": "Privacy personnel understand their roles",
+      "description": "Implements GV.AT-P3: Privacy personnel understand their roles and responsibilities.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.AT-P3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Draw the privacy specialists' instruction from the decisions that stop with them"
+          },
+          "description": {
+            "en": "Everyone else's privacy instruction ends in \"raise it with the privacy function\", which has nobody to pass it to — so list the questions that terminate there and make those the syllabus: assessing a newly proposed processing activity, ruling on the ground it relies on, judging whether a data set is disassociated enough to leave, calling a notification inside its deadline. Against each, name the depth its holder needs and the outside sources whose movement makes yesterday's answer wrong, so currency has something specific to track rather than a yearly refresher. Scoped as awareness instead, the specialist ends up fluent in the policy and unable to apply it to the one case nobody else is positioned to decide."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Syllabus per named privacy duty listing the judgements it terminates, the depth required of its holder, and the legal or product sources tracked for change."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
             "en": "Prepare the instruction material for each audience"
           },
           "description": {
@@ -2040,17 +2477,43 @@
         },
         {
           "title": {
-            "en": "Deliver the instruction to each internal audience and record completion"
+            "en": "Re-test the privacy specialists against decisions whose correct answer has since changed"
           },
           "description": {
-            "en": "Deliver to the workforce, the senior executives and the staff holding named privacy duties, by whatever means suits each, and record completion per person. Record separately, for the executive and privacy-duty audiences, what their session covered that the general one did not."
+            "en": "A specialist's knowledge fails at the edges that moved — a regulator's changed position, a processing pattern the product did not have last year, an obligation it has newly fallen under — not at the material learned once. Take decisions the privacy function actually made in the period where the right answer would now differ, put them back to each duty holder and to whoever covers the duty while the holder is away, and settle the correct answer from the source text rather than from what the holder says it is. A specialist answering as they did a year ago is current in attendance only, and nothing downstream catches it: the workforce escalated precisely because it could not judge the question itself."
           },
-          "phase": "OPERATE",
-          "sortOrder": 2,
+          "phase": "REVIEW",
           "evidenceHint": {
-            "en": "Completion record per audience showing the names reached, the material version delivered, and the dates."
+            "en": "Dated re-test record naming each holder and stand-in questioned, the case put to them, the answer given, and the source-based position it was measured against."
           },
-          "suggestedRole": "HR"
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-06.4",
+      "title": "Third parties understand their roles",
+      "description": "Implements GV.AT-P4: Third parties (e.g., service providers, customers, partners) understand their roles and responsibilities.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.AT-P4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Translate each third party's privacy clauses into instructions its own staff can follow"
+          },
+          "description": {
+            "en": "The entity that signs a data processing agreement is never the person holding an individual's deletion request at nine on a Tuesday morning, and a clause drafted to allocate liability tells that person nothing about what to do next. For each engagement, work the binding terms down into the short set of acts the other side's people must actually perform — what to do when someone asks them for their data, what they may not collect on our behalf, whom to call and inside how many hours on a suspected breach — written in their queues, their vocabulary and their clock rather than ours. Address each set to the function that touches the data and name a holder there, because material that lands only with the account team or the signatory reaches nobody who will ever use it."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Per-engagement operating brief showing, for each act required of the counterparty's people, the contract term it derives from and the function it was addressed to."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
         },
         {
           "title": {
@@ -2060,7 +2523,7 @@
             "en": "Take the obligations recorded for each ecosystem party and put them to the people at that party who must act on them, through the channel that relationship uses. Record which party was briefed, what was covered and who received it, including parties that declined."
           },
           "phase": "OPERATE",
-          "sortOrder": 3,
+          "sortOrder": 1,
           "evidenceHint": {
             "en": "Per-party briefing record naming the party, the responsibilities covered, the recipients and the date, including declined or unanswered briefings."
           },
@@ -2068,33 +2531,28 @@
         },
         {
           "title": {
-            "en": "Check delivery against the audience list and follow up those not reached"
+            "en": "Route a test privacy request to each external party's front line, not its account manager"
           },
           "description": {
-            "en": "Compare the completion and briefing records against the audience list, name every person and party still outstanding, and record the follow-up taken for each. Record anyone who cannot be reached and what is being done about their access instead."
+            "en": "A signed agreement plus a relationship manager who says yes, our people know is not evidence that anyone on the floor recognises the request when it lands. Put a real-shaped one — an individual asking for their data, or a suspected-breach report — into the same inbox, portal or number a customer or subcontractor would actually reach, then follow it: who picked it up, whether they recognised what it was, and whether it came back inside the window the contract sets. This is the only lever available here, since the organisation cannot order a supplier's staff onto a course and cannot see its induction records; what it can do is observe behaviour and re-brief the function that dropped the request. Tell the party afterwards that the probe was a test, so the co-operation the next one depends on survives it."
           },
           "phase": "REVIEW",
-          "sortOrder": 4,
           "evidenceHint": {
-            "en": "Gap list naming each outstanding recipient, the follow-up taken, and the position of anyone who remained unreached."
+            "en": "Probe log per party: channel used, date sent, who responded, elapsed time against the contracted window, and the re-brief raised where it went wrong."
           },
-          "suggestedRole": "HR"
+          "suggestedRole": "Procurement",
+          "sortOrder": 2
         }
       ]
     },
     {
-      "code": "PRIV-07",
-      "title": "Monitoring and Review",
+      "code": "PRIV-07.1",
+      "title": "Ongoing re-evaluation of privacy risk",
+      "description": "Implements GV.MT-P1: Privacy risk is re-evaluated on an ongoing basis and as key factors, including the organization's business environment and data processing, change.",
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "GV.MT-P1",
-        "GV.MT-P2",
-        "GV.MT-P3",
-        "GV.MT-P4",
-        "GV.MT-P5",
-        "GV.MT-P6",
-        "GV.MT-P7"
+        "GV.MT-P1"
       ],
       "tasks": [
         {
@@ -2110,14 +2568,17 @@
         },
         {
           "title": {
-            "en": "Define the intake routes for reported problems and individuals' complaints"
+            "en": "Take the current reading of every factor whose movement re-opens a risk assessment"
           },
           "description": {
-            "en": "Write down, for the two populations separately, how a report of a problematic data action from a staff member, researcher or member of the public arrives and how a complaint, concern or question from an individual arrives; where each lands, who analyses it, what response is owed and how it is tracked to a close. Attach the procedure and the contact points it publishes."
+            "en": "A trigger list is unusable until every factor it names has a recorded value to compare against: nobody can say the processing volume, the jurisdictions, the vendor set or the population served has moved if the old state exists only in memory. Fix each factor's value on the day an assessment is signed off, store it with that assessment rather than in a register that ages on its own, and make it specific enough to compare mechanically, since a handful of EU customers cannot be tested against next year's figure. Include the factors that sit outside the organisation, such as the legal regime and the ecosystem position being relied on, because those move without anyone raising a change request."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 1,
-          "suggestedRole": "Legal/DPO"
+          "evidenceHint": {
+            "en": "Dated snapshot filed against each signed-off assessment, giving the value of every watched factor at that moment and the source it was read from."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 1
         },
         {
           "title": {
@@ -2135,31 +2596,57 @@
         },
         {
           "title": {
-            "en": "Assess practice against the recorded requirements and privacy policies"
+            "en": "Age the untouched privacy risk assessments and decide which must be redone"
           },
           "description": {
-            "en": "Take the register of legal, regulatory and contractual requirements together with the privacy policy set, and check what the organisation currently does against each entry. Record the result per entry — met, not met, or unable to determine — and name the owner of every entry not met."
+            "en": "Trigger-driven re-evaluation has a blind spot where it looks safest: processing that nothing has happened to is never re-examined, while the ground under it shifts, as a regulator's interpretation hardens, the population grows, or a control quietly stops working. Order the standing assessments by the date each was last revisited, not by whoever has been asking about them, and send the oldest back through assessment on age alone with no trigger required. An assessment that has outlived the interval the organisation set for itself is a finding in its own right, not a scheduling problem to absorb."
           },
-          "phase": "OPERATE",
-          "sortOrder": 3,
+          "phase": "REVIEW",
           "evidenceHint": {
-            "en": "Compliance assessment listing each requirement and policy checked, the result recorded against it, and the owner of each gap."
+            "en": "Ordered list of every standing assessment with its last-revisited date, the interval it was measured against, and the disposition recorded for each one past that interval."
           },
-          "suggestedRole": "Legal/DPO"
+          "suggestedRole": "Management",
+          "sortOrder": 3
+        }
+      ]
+    },
+    {
+      "code": "PRIV-07.2",
+      "title": "Reviewing values, policies and training",
+      "description": "Implements GV.MT-P2: Privacy values, policies, and training are reviewed and any updates are communicated.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.MT-P2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Assemble the privacy material under review and every restatement of it in circulation"
+          },
+          "description": {
+            "en": "Gather the values statement, the privacy policies and standards, and the instruction material, then go one step further and find where those same rules are restated in someone else's words — a handbook section, an onboarding deck, an intranet answer, a contract annex, an induction quiz. Name the owner and the version of each, because a revision has to reach the restatements as well, and nobody maintains a copy they have not been told they hold. A review drawn up from the documents with privacy in the title leaves staff being taught last year's rule by material nobody counted."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Register of the documents, modules and derived copies in scope, each with its owner, current version and the place it is published."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
         },
         {
           "title": {
-            "en": "Report progress on managing privacy risk to those who must act on it"
+            "en": "Rework the training material each privacy revision touches and reissue it to those already taught"
           },
           "description": {
-            "en": "Issue a report covering what changed in the risk picture, what responses closed, what is overdue and what was learned from reports received, to the people whose decisions depend on it. Record its distribution so silence can later be distinguished from never having been told."
+            "en": "When a rule is revised, the master document moves and everything downstream keeps teaching the old one — the induction deck, the quiz answers, the handbook paragraph, the slide a manager reuses. Work through the material tied to the revised rule, change what the revision actually changed, and mark the version now in force so a reader can tell which one they hold. Then put the change in front of the people who completed the earlier version: material updated only for new joiners leaves the population already taught confidently wrong."
           },
-          "phase": "OPERATE",
-          "sortOrder": 4,
+          "phase": "IMPLEMENT",
           "evidenceHint": {
-            "en": "The report as issued, with its date and distribution list."
+            "en": "The superseded and replacement versions of each module or deck, with the date of issue and the roster of people re-taught against those who had completed the earlier version."
           },
-          "suggestedRole": "Management"
+          "suggestedRole": "HR",
+          "sortOrder": 1
         },
         {
           "title": {
@@ -2169,11 +2656,278 @@
             "en": "Read them against what the organisation now does and against the problematic data actions handled since the last review, revise what no longer holds, and record what each change was for. Communicate the revisions to the people bound by them and record how."
           },
           "phase": "REVIEW",
-          "sortOrder": 5,
+          "sortOrder": 2,
           "evidenceHint": {
             "en": "Change record showing each revision made, the trigger or incident behind it, and how the change was communicated."
           },
           "suggestedRole": "Legal/DPO"
+        }
+      ]
+    },
+    {
+      "code": "PRIV-07.3",
+      "title": "Assessing compliance with requirements",
+      "description": "Implements GV.MT-P3: Policies, processes, and procedures for assessing compliance with legal requirements and privacy policies are established and in place.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.MT-P3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Translate each requirement and policy clause into a check with a pass condition"
+          },
+          "description": {
+            "en": "The register states each obligation in the language of the law or the contract, which is not yet something anyone can test. For every entry, and for every clause of the privacy policy set, name the artefact that would be inspected, the population a sample is drawn from, and the result that separates met from not met — settled before a pass runs, so a contested verdict is decided by the criterion rather than argued after the fact. Where no artefact could evidence an obligation, leave that visible on the row: it is a finding about the obligation, not a hole in the assessment."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Assessment criteria sheet giving, for every register entry and privacy policy clause, the artefact to be inspected, the population sampled from it, and the result that counts as met."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Assess practice against the recorded requirements and privacy policies"
+          },
+          "description": {
+            "en": "Take the register of legal, regulatory and contractual requirements together with the privacy policy set, and check what the organisation currently does against each entry. Record the result per entry — met, not met, or unable to determine — and name the owner of every entry not met."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Compliance assessment listing each requirement and policy checked, the result recorded against it, and the owner of each gap."
+          },
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Re-test a sample of requirements and policy clauses last reported met"
+          },
+          "description": {
+            "en": "A failed entry gets an owner and a date; an entry marked met is never looked at again, so a wrong pass can stand for years. Draw a handful of the met verdicts — weighted towards the obligations that would hurt most if they were wrong — and re-derive each from practice itself rather than from the earlier assessor's note or the policy text that promises it. Count as well how many register entries and policy clauses the last pass never reached, because an assessment that touches only what is easy to evidence can report a clean run across a small fraction of what applies."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Re-performance note naming the rows drawn, the evidence examined for each, any verdict that changed, and the count of register rows the earlier pass never touched."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-07.4",
+      "title": "Communicating progress on privacy risk",
+      "description": "Implements GV.MT-P4: Policies, processes, and procedures for communicating progress on managing privacy risks are established and in place.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.MT-P4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Draw every figure in the progress report from the register behind it"
+          },
+          "description": {
+            "en": "Name the register, tracker or log that each number and statement in the progress report comes from — risks re-ranked, responses closed, responses overdue, problems reported and answered — and pull this period's account from those sources rather than from whoever is writing it. A figure with no fixed source cannot be set beside last period's, so the report shows activity but never movement. Cut the version that goes to a customer, partner or supervisory body from the same registers as the internal one, or two accounts of the same quarter will circulate and differ."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Reporting pack listing each figure issued, the source it was pulled from, and the period it covers."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Report progress on managing privacy risk to those who must act on it"
+          },
+          "description": {
+            "en": "Issue a report covering what changed in the risk picture, what responses closed, what is overdue and what was learned from reports received, to the people whose decisions depend on it. Record its distribution so silence can later be distinguished from never having been told."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "The report as issued, with its date and distribution list."
+          },
+          "suggestedRole": "Management"
+        },
+        {
+          "title": {
+            "en": "Trace each item reported as underway through the reports that followed"
+          },
+          "description": {
+            "en": "A progress report can convey motion for years by carrying the same response as in hand every period, with only the wording refreshed. Take the items the last several reports described as underway, find where each one stands in the register today, and mark those whose state has not moved across successive issues. Put the elapsed time in front of the recipients, because no single issue of a report can show it."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Period-over-period comparison naming each item carried as underway, the issues it appeared in, and its state in the register today."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-07.5",
+      "title": "Responding to problematic data actions",
+      "description": "Implements GV.MT-P5: Policies, processes, and procedures are established and in place to receive, analyze, and respond to problematic data actions disclosed to the organization from internal and external sources (e.g., internal discovery, researchers, individuals).",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.MT-P5"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Draw the line between a disclosed privacy harm and an ordinary defect report"
+          },
+          "description": {
+            "en": "Reports that the organisation's own processing hurt someone do not arrive labelled: one lands in the security inbox as a vulnerability, one in support as an angry ticket, one in an engineer's message saying the export looked wrong. Write the test a triager applies — a person is worse off because of what was done with data about them, whether or not any system misbehaved — and name the queues, addresses and internal channels read against it, including the ones outsiders use without being invited. State that anything matching the test leaves the queue it landed in rather than being closed by whoever fixed the bug, because a fix answers what the system did and never who it reached."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "The triage test as issued, the list of inbound channels and addresses it is applied to, and a sample of recent items classified under it."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Establish which individuals a disclosed data action reached and over what period"
+          },
+          "description": {
+            "en": "A disclosure names a symptom — one exposed record, one misdirected export, one screen showing another person's details — and the first job is to find the boundary of what it describes: who was actually touched, from when, and how many times it repeated. Reconstruct that from the logs and the data itself rather than from the reporter's account, which is bounded by what a single person happened to see, and keep the query or extract that produced the answer. Where the records cannot settle a date or a count, write that down as unproven; a scope recorded as unknown can be re-opened, while one quietly narrowed to what was easy to demonstrate cannot. Everything that follows — halting the action, repairing the records, deciding who must be told — is sized against the reach settled here."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "Per-disclosure finding: the affected population with the query or extract behind it, the first and last dates the action ran, and every figure the records could not settle marked unproven."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Re-examine the disclosures dismissed as no harm against what the logs show"
+          },
+          "description": {
+            "en": "The cheapest way to close a report is to conclude nothing happened, and that verdict is the one nobody audits: disclosures that led to work leave a trail of their own, while a dismissal leaves one sentence. Take every report closed over the period as no harm, unreproducible, or working as intended, and have someone other than the original analyst check the stated reason against the records it should have been drawn from. Count how many were later raised again by a different source — a second person reporting something already written off is the plainest sign the first reading was wrong."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Dated re-read of every closure claiming nothing happened in the period, naming the second reader, the records checked against each, and the verdicts overturned."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-07.6",
+      "title": "Lessons learned from problematic data actions",
+      "description": "Implements GV.MT-P6: Policies, processes, and procedures incorporate lessons learned from problematic data actions.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.MT-P6"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Settle what separates a one-off slip from a rule that must be rewritten"
+          },
+          "description": {
+            "en": "State the test that decides whether an event teaches anything: a person departing from a rule that was clear and workable says little about the rule, whereas an event the rule allowed, or one nobody could have complied with as written, says a great deal. Name the documents a lesson is permitted to reach — the privacy policy set, operating procedures, design standards, retention schedules, contract templates and instruction material — so an amendment cannot land somewhere nobody is bound by. Without the test the standing verdict becomes human error and retraining, which closes the file before anyone asks whether the rule could have been followed at all."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Approved criterion with a worked example on each side of the line, plus the list of amendable documents and the person empowered to change each."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Carry each confirmed lesson into the procedure people work from"
+          },
+          "description": {
+            "en": "A lesson that lives only in the incident write-up changes nothing: the write-up is read once and filed, while the operating text consulted at the moment of the work still says what it said before the harm. Amend the document that governs the step, and accept that some lessons are subtractions rather than additions — a field no longer collected, a default turned off, a standing permission withdrawn. Cite the originating event beside the amended clause, because a rule with no visible reason is the first thing a later editor tidies away. Where a lesson was answered with a briefing instead of a change to the text, say so: a briefing leaves nothing behind once the people change."
+          },
+          "phase": "IMPLEMENT",
+          "evidenceHint": {
+            "en": "The amended document at its new version, showing each clause added, altered or struck, the date it took effect, and the event reference recorded against it."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Walk each handled harm through the procedure as it now reads"
+          },
+          "description": {
+            "en": "An amendment can answer the write-up and still leave the event free to happen again, because the new wording addresses what was reported rather than the step that permitted it. Take the problematic data actions handled since the last pass, follow each original sequence through the text as it now stands, and name the clause that would halt it — or record that nothing would. Put the number of events that produced a documented change beside the period's total, since events closed without touching any document are invisible when only the amendments are listed. Treat a harm that recurred after its lesson was folded in as evidence the wrong cause was addressed."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Per-event trace listing the original sequence, the clause in current text that would now stop it, and the period total shown against the count of events that altered no document."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-07.7",
+      "title": "Complaints, concerns and questions",
+      "description": "Implements GV.MT-P7: Policies, processes, and procedures for receiving, tracking, and responding to complaints, concerns, and questions from individuals about organizational privacy practices are established and in place.",
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "GV.MT-P7"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Set the answer owed to a complaint, a concern and a question"
+          },
+          "description": {
+            "en": "The three arrive through the same door and are not the same thing: a question wants an answer, a concern wants someone to look and say what they found, a complaint wants a decision and a route onward if the person rejects it. Write down, for each, what must reach the individual, the outer limit they wait, and the holding acknowledgement that goes out while the substantive answer is still being prepared. State who may close a contact with nothing sent back and on what grounds — silent closure is the failure this requirement exists to prevent, and it stays invisible unless the permitted grounds are named beforehand."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "The agreed standard as written: each kind of contact, what goes back to the individual, the outer time limit, and the named grounds on which one may be closed with nothing sent."
+          },
+          "suggestedRole": "Legal/DPO",
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Define the intake routes for reported problems and individuals' complaints"
+          },
+          "description": {
+            "en": "Write down, for the two populations separately, how a report of a problematic data action from a staff member, researcher or member of the public arrives and how a complaint, concern or question from an individual arrives; where each lands, who analyses it, what response is owed and how it is tracked to a close. Attach the procedure and the contact points it publishes."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Read the replies sent to individuals who complained in the period"
+          },
+          "description": {
+            "en": "Take the complaints, concerns and questions closed since the last review and read what actually went back to the person: whether it addressed the matter they raised, in words they can use, and whether anything left the organisation at all before the item was marked closed. Count the individuals who made contact a second time about the same matter, because a repeat contact is the person's own verdict on the first reply and it is the one measure that does not rest on the handler's opinion of their own work. Where a closure carries no outbound message, name the item and whoever closed it rather than quietly adjusting the count, and say whether the substance was refused, deferred or simply forgotten."
+          },
+          "phase": "REVIEW",
+          "evidenceHint": {
+            "en": "Sample of items closed in the period showing the outbound message on each, the date it left, every closure with no message at all, and the number of people who made contact a second time about the same matter."
+          },
+          "suggestedRole": "Management",
+          "sortOrder": 2
         }
       ]
     },
@@ -3390,10 +4144,26 @@
       "PRIV-03.3",
       "PRIV-03.4",
       "PRIV-03.5",
-      "PRIV-04",
-      "PRIV-05",
-      "PRIV-06",
-      "PRIV-07",
+      "PRIV-04.1",
+      "PRIV-04.2",
+      "PRIV-04.3",
+      "PRIV-04.4",
+      "PRIV-04.5",
+      "PRIV-04.6",
+      "PRIV-05.1",
+      "PRIV-05.2",
+      "PRIV-05.3",
+      "PRIV-06.1",
+      "PRIV-06.2",
+      "PRIV-06.3",
+      "PRIV-06.4",
+      "PRIV-07.1",
+      "PRIV-07.2",
+      "PRIV-07.3",
+      "PRIV-07.4",
+      "PRIV-07.5",
+      "PRIV-07.6",
+      "PRIV-07.7",
       "PRIV-08",
       "PRIV-09",
       "PRIV-10",
