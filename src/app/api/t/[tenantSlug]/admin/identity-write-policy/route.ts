@@ -25,6 +25,7 @@ import {
     DRY_RUN_MIN_DAYS,
 } from '@/app-layer/usecases/identity-write-policy';
 import { LEAVER_MAX_MODE } from '@/app-layer/usecases/identity-leaver-pass';
+import { JOINER_MAX_MODE } from '@/app-layer/usecases/identity-joiner-pass';
 import { DIRECTION_IMPLEMENTED, LADDER } from '@/lib/identity/write-ladder';
 
 /**
@@ -84,22 +85,35 @@ const getHandler = requirePermission('admin.tenant_lifecycle', async (_req, _ctx
         // enforces its own clamp. For the LEAVER the two now agree: #2187 raised
         // the clamp to AUTOMATIC and #2241 deleted the rung that ran but decided
         // nothing, so every rung this route will accept is one the pass acts on.
-        // The joiner has no implementation at all — no createAccount on either
-        // provider — so any rung above DISABLED is a statement about a subsystem
-        // that does not exist.
+        // The joiner's ceiling is now the joiner pass's own constant too, and
+        // BOTH values here are imported for the same reason (#2638).
         //
-        // Returned so a UI can say that plainly rather than leaving the operator
-        // to infer it from passes that quietly do nothing.
+        // It used to be a hand-typed `'DISABLED' as const` on this line while
+        // the leaver's came from its pass — and that literal-versus-import
+        // difference is precisely what `write-ladder.ts` warned the joiner would
+        // fall into. Flip `DIRECTION_IMPLEMENTED.joiner` with the literal still
+        // here and the gate stops refusing while this response keeps reporting a
+        // DISABLED ceiling: `isAboveClamp` is then true for every rung above
+        // off, the client renders the aboveClamp banner, and nothing clamps
+        // anything — settable-and-inert again, just differently worded.
+        //
+        // With the import there is no second value to drift. `JOINER_MAX_MODE`
+        // is the rung `planJoinerPass` enforces at its own gate 1, so what an
+        // operator is told the runtime will honour is the thing the runtime
+        // honours, by construction rather than by review.
         //
         // `implemented` is READ from `DIRECTION_IMPLEMENTED`, not restated here.
         // It used to be a literal `false` in this block and the only thing that
         // consulted it was this JSON, so the write path let a tenant climb the
         // joiner to AUTOMATIC while this same response called it unbuilt.
         // `describeRefusal` now reads the same constant, so the reason the UI
-        // prints and the refusal the PUT raises cannot drift apart.
+        // prints and the refusal the PUT raises cannot drift apart. It is still
+        // false for the joiner: a planner exists, but nothing dispatches it and
+        // decision 10's department→group map has nowhere to live yet, so a
+        // widened joiner would still produce nothing. See `DIRECTION_IMPLEMENTED`.
         honoured: {
             leaver: { maxMode: LEAVER_MAX_MODE, implemented: DIRECTION_IMPLEMENTED.leaver },
-            joiner: { maxMode: 'DISABLED' as const, implemented: DIRECTION_IMPLEMENTED.joiner },
+            joiner: { maxMode: JOINER_MAX_MODE, implemented: DIRECTION_IMPLEMENTED.joiner },
         },
     });
 });

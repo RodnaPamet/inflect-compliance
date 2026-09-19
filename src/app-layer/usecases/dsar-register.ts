@@ -2,12 +2,15 @@
  * DSAR register — manual-fulfilment queue over `DataSubjectRequest`.
  *
  * This records and tracks GDPR Art. 15 (export) and Art. 17 (erasure)
- * requests. It does **not** fulfil them. The export bundle and erasure
- * cascade are documented in `docs/dsar.md` Stage 2/3 and are not built;
- * `jobs/dsar-export.ts` and `jobs/dsar-erasure.ts` throw unconditionally and
- * are unregistered. Moving a request to COMPLETED here asserts that a human
- * did the work out-of-band — nothing in this module exports or erases
- * anything, and `exportUrl` is never written.
+ * requests. It does **not** fulfil them. `jobs/dsar-export.ts` throws
+ * unconditionally and is unregistered (docs/dsar.md Stage 2).
+ * `jobs/dsar-erasure.ts::eraseUser` was implemented by Stage 3 (#2287) and
+ * DOES execute — but it is unregistered and nothing calls it, this module
+ * included. Moving a request to COMPLETED here asserts that a human did the
+ * work out-of-band — nothing in this module exports or erases anything, and
+ * `exportUrl` is never written. Wiring erasure to this register is the
+ * operator-entry-point decision #2287 deliberately left open; it needs an
+ * answer to who may run it and with what audit record, not just a call.
  *
  * ─── THE TENANT-SCOPING HAZARD (read before editing) ───────────────────
  *

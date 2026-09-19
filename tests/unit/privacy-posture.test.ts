@@ -65,8 +65,10 @@ describe('getPrivacyPosture — capability flags stay honest', () => {
         seed();
         const res = await getPrivacyPosture(makeRequestContext('ADMIN'));
         // Intake flipped true when the manual register landed. Fulfilment did
-        // NOT: jobs/dsar-export.ts and dsar-erasure.ts still throw and are
-        // unregistered. The two flags stay separate so the page cannot imply
+        // NOT, and Stage 3 (#2287) did not change that: jobs/dsar-export.ts
+        // still throws, and while dsar-erasure.ts::eraseUser now executes it is
+        // unregistered and uncalled, so nothing in the product can reach it.
+        // The two flags stay separate so the page cannot imply
         // an export/erasure pipeline just because requests can be recorded —
         // collapsing them into one "DSAR works" boolean is the exact
         // overstatement this assertion exists to prevent.
