@@ -1432,15 +1432,14 @@
       ]
     },
     {
-      "code": "CIS-09",
-      "title": "Email and Web Browser Protections (IG1)",
-      "description": "Implements the IG1 safeguards of CIS Control 9 — Email and Web Browser Protections. Establishes the essential cyber-hygiene baseline for this control area.",
+      "code": "CIS-09.1",
+      "title": "Fully Supported Browsers and Email Clients (IG1)",
+      "description": "Implements safeguard 9.1: only browsers and email clients the vendor still supports are in use on enterprise assets, at a build the vendor still issues fixes for.",
       "category": "Security",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "Security Operations",
       "requirementCodes": [
-        "9.1",
-        "9.2"
+        "9.1"
       ],
       "tasks": [
         {
@@ -1473,13 +1472,54 @@
         },
         {
           "title": {
+            "en": "Compare the deployed browser and email client versions against vendor-supported releases"
+          },
+          "description": {
+            "en": "Take the listing again and set each installed version against the releases the vendor currently supports, listing every asset running something the vendor no longer updates. Record why each one is behind — an update blocked by policy, a device that has not connected for months, a user deferring the restart — because the reason decides the fix and the three fixes are entirely different. Attach the comparison."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Comparison of deployed browser and email client versions against currently supported releases, listing each lagging asset and the reason it is behind"
+          },
+          "suggestedRole": "IT Operations"
+        }
+      ]
+    },
+    {
+      "code": "CIS-09.2",
+      "title": "DNS Filtering Services (IG1)",
+      "description": "Implements safeguard 9.2: enterprise assets resolve DNS through a filtering service that refuses known-malicious domains, on and off the corporate network.",
+      "category": "Security",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Security Operations",
+      "requirementCodes": [
+        "9.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Enumerate where enterprise assets resolve DNS, including off-network and roaming laptops"
+          },
+          "description": {
+            "en": "A filtering service only refuses the queries that reach it. Write down each path by which an enterprise asset resolves a name — the office resolvers, the VPN, and the case that is usually missed, a laptop working from home or a cafe with no tunnel up. A device off the corporate network resolves against whatever DHCP handed it, so the safeguard is silently absent exactly where browsing is least supervised. Record the paths you find and which of them the filtering service currently covers."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "List of DNS resolution paths for enterprise assets — office, VPN and off-network — recording which are covered by the filtering service and which are not"
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
             "en": "Point enterprise assets at the DNS filtering service and record the enforcement per network"
           },
           "description": {
             "en": "Configure the filtering service as the resolver for enterprise networks and for devices working away from them, record which categories are being blocked, and check that a device cannot simply use a different resolver — hardcoded public resolvers in an application or a user's network settings are the usual way filtering is bypassed without anyone intending to. Record the configuration per network and per device class. Attach the DNS filtering configuration."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 2,
+          "sortOrder": 1,
           "evidenceHint": {
             "en": "DNS filtering configuration showing the resolver enforced per network and device class, the categories blocked, and how alternative resolvers are prevented"
           },
@@ -1493,25 +1533,11 @@
             "en": "Export the filter's block report for the period and record the volume, the categories hit, and the assets that appear repeatedly. A device generating the same block over and over is usually not somebody browsing — it is software calling home — so record what was found when each repeat source was investigated, rather than only the count. Attach the block report with the investigation notes."
           },
           "phase": "OPERATE",
-          "sortOrder": 3,
+          "sortOrder": 2,
           "evidenceHint": {
             "en": "DNS filter block report for the period, with the repeat source assets investigated and what each investigation found"
           },
           "suggestedRole": "Security engineering"
-        },
-        {
-          "title": {
-            "en": "Compare the deployed browser and email client versions against vendor-supported releases"
-          },
-          "description": {
-            "en": "Take the listing again and set each installed version against the releases the vendor currently supports, listing every asset running something the vendor no longer updates. Record why each one is behind — an update blocked by policy, a device that has not connected for months, a user deferring the restart — because the reason decides the fix and the three fixes are entirely different. Attach the comparison."
-          },
-          "phase": "REVIEW",
-          "sortOrder": 4,
-          "evidenceHint": {
-            "en": "Comparison of deployed browser and email client versions against currently supported releases, listing each lagging asset and the reason it is behind"
-          },
-          "suggestedRole": "IT Operations"
         }
       ]
     },
@@ -2150,7 +2176,8 @@
       "CIS-06",
       "CIS-07",
       "CIS-08",
-      "CIS-09",
+      "CIS-09.1",
+      "CIS-09.2",
       "CIS-10",
       "CIS-11",
       "CIS-12",

@@ -279,16 +279,14 @@
   ],
   "templates": [
     {
-      "code": "SDLC-PO1",
-      "title": "Secure-SDLC security requirements",
-      "description": "Define, document, and maintain security requirements for both the software development infrastructure and the software being built, and communicate third-party component requirements. Implements SSDF PO.1.",
+      "code": "SDLC-PO1.1",
+      "title": "Security requirements for the development infrastructure",
+      "description": "Implements PO.1.1: the security requirements the organisation's own development infrastructure and processes must meet are written down, sourced, and kept current.",
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Head of Engineering / AppSec Lead",
       "requirementCodes": [
-        "PO.1.1",
-        "PO.1.2",
-        "PO.1.3"
+        "PO.1.1"
       ],
       "tasks": [
         {
@@ -343,13 +341,54 @@
         },
         {
           "title": {
+            "en": "Re-read the requirements registers against current regulation, threats and the technology stack"
+          },
+          "description": {
+            "en": "Take both registers and test each row against the present: the regulation it cites is still in force, the threat it answers is still credible, and the technology it names is still in use. Add rows for anything that entered the stack since the last pass, and mark rows that no longer apply as withdrawn rather than deleting them, so the reason a requirement went away survives the person who withdrew it. Record what changed and the date the review happened. Attach the reviewed registers together with the change list."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Requirements review record listing every row added, amended or withdrawn, and the date the review was carried out"
+          },
+          "suggestedRole": "Engineering lead"
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PO1.2",
+      "title": "Security requirements for software being built",
+      "description": "Implements PO.1.2: the security requirements the organisation's own software must meet are written down, sourced, applied per product, and kept current.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Head of Engineering / AppSec Lead",
+      "requirementCodes": [
+        "PO.1.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Classify each product by the exposure and data it handles, so its requirements can differ by risk"
+          },
+          "description": {
+            "en": "A single requirement list applied flat to every product either over-burdens an internal tool or under-protects the service holding customer data. Record, per product, what it is exposed to and what data it holds, and let that classification decide which of the requirements below bind it. Without this step the register is written once at the strictest level and quietly ignored where it does not fit."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "Product list with the exposure and data classification recorded against each, and the requirement tier each classification attracts"
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 0
+        },
+        {
+          "title": {
             "en": "Record the security requirements the software being built must meet, naming the source of each"
           },
           "description": {
             "en": "Do the same for the products themselves: authentication and session handling, the authorisation model, protection of data in transit and at rest, logging and audit, and anything promised to a customer or a regulator. Keep this register separate from the infrastructure one — the two are satisfied by different people at different points in the lifecycle, and merging them is how a product requirement quietly becomes a platform team's problem. Record the source against each row so it can be defended later. Attach the software requirements register."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 2,
+          "sortOrder": 1,
           "evidenceHint": {
             "en": "Software security requirements register: one row per requirement, the product it applies to and the source it derives from"
           },
@@ -379,13 +418,54 @@
         },
         {
           "title": {
+            "en": "Apply the software requirements to each new product at design time and note every exemption granted"
+          },
+          "description": {
+            "en": "Requirements that exist only in a register govern nothing. At the point a product or major feature is designed, record which of the requirements it takes on and which it is excused from, with who granted the exemption and why. The exemptions are the valuable half: an unrecorded one is indistinguishable from an oversight when somebody asks later why the requirement was not met."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "Per-product record of applied requirements and granted exemptions, each exemption naming its approver and rationale"
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "SDLC-PO1.3",
+      "title": "Security requirements issued to component suppliers",
+      "description": "Implements PO.1.3: the security requirements for reused commercial and open-source components are communicated to their providers, and provenance is collected for what is reused.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Head of Engineering / AppSec Lead",
+      "requirementCodes": [
+        "PO.1.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Identify every third party supplying commercial or open-source components for reuse"
+          },
+          "description": {
+            "en": "Requirements can only be communicated to suppliers who have been named. Draw the list from what is actually reused — the dependency manifests and the commercial agreements — rather than from procurement records alone, because open-source components arrive with no purchase behind them and are the larger population. This list is what the next task issues requirements to."
+          },
+          "phase": "SCOPE",
+          "evidenceHint": {
+            "en": "List of component suppliers drawn from dependency manifests and commercial agreements, distinguishing commercial from open-source sources"
+          },
+          "suggestedRole": "Procurement",
+          "sortOrder": 0
+        },
+        {
+          "title": {
             "en": "Publish the component security requirements issued to third-party providers"
           },
           "description": {
             "en": "Write the statement of what a commercial or open-source component must satisfy before it is used here: support and patching expectations, disclosure of known vulnerabilities, licensing, and the provenance data the provider is expected to supply with each version. Then record how that statement reached every provider currently supplying a component, and when. A requirement the provider has never been shown is not a requirement, and this half of the task is the half most often skipped. Attach the published statement together with the record of who received it."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 3,
+          "sortOrder": 1,
           "evidenceHint": {
             "en": "The issued component security requirements, with a distribution record naming each provider and the date it was sent"
           },
@@ -399,7 +479,7 @@
             "en": "For every third-party component in use, record where it actually came from — the registry or repository, the version, the publisher, the integrity digest and the date it was brought in — and hold that record alongside the component rather than in somebody's memory of the decision. Back-fill components that predate this task from lock files and registry metadata rather than skipping them, since those are the ones with the weakest provenance. Record any component whose origin cannot be established, because that gap is the finding this task exists to surface. Attach the provenance records held at the end of the period."
           },
           "phase": "OPERATE",
-          "sortOrder": 4,
+          "sortOrder": 2,
           "evidenceHint": {
             "en": "Component provenance records: source registry, version, publisher, integrity digest and intake date for each reused component"
           },
@@ -426,20 +506,6 @@
               }
             }
           ]
-        },
-        {
-          "title": {
-            "en": "Re-read the requirements registers against current regulation, threats and the technology stack"
-          },
-          "description": {
-            "en": "Take both registers and test each row against the present: the regulation it cites is still in force, the threat it answers is still credible, and the technology it names is still in use. Add rows for anything that entered the stack since the last pass, and mark rows that no longer apply as withdrawn rather than deleting them, so the reason a requirement went away survives the person who withdrew it. Record what changed and the date the review happened. Attach the reviewed registers together with the change list."
-          },
-          "phase": "REVIEW",
-          "sortOrder": 5,
-          "evidenceHint": {
-            "en": "Requirements review record listing every row added, amended or withdrawn, and the date the review was carried out"
-          },
-          "suggestedRole": "Engineering lead"
         }
       ]
     },
@@ -2773,7 +2839,9 @@
     "version": "1.1",
     "description": "NIST Secure Software Development Framework — practices for producing software with fewer vulnerabilities.",
     "templateCodes": [
-      "SDLC-PO1",
+      "SDLC-PO1.1",
+      "SDLC-PO1.2",
+      "SDLC-PO1.3",
       "SDLC-PO2",
       "SDLC-PO3",
       "SDLC-PO4",
