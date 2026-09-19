@@ -25,6 +25,12 @@
 export interface ControlTemplateProjectionSource {
     code: string | null;
     title: string;
+    /**
+     * Optional because it is a FALLBACK, not a projected field in its own
+     * right: `Control` has no `description` column, so this can only ever
+     * arrive as an `objective`. See the fallback below.
+     */
+    description?: string | null;
     category: string | null;
     objective: string | null;
     successCriteria: string | null;
@@ -54,7 +60,20 @@ export function controlDataFromTemplate(
         // The three internal-controls import fields. These are the ones the
         // thin path dropped; the detail Overview and Tests tabs render them,
         // so their absence looked like an empty template rather than a bug.
-        objective: template.objective,
+        //
+        // `?? description` because those three arrived WITH the internal-controls
+        // import and the framework catalogues authored in this repo never adopted
+        // them: all 473 framework templates carry none, so every control installed
+        // from a framework showed "No objective." while its `description` — which
+        // is written as exactly such a statement ("Keep one register of every ICT
+        // and information asset…") — sat unused, unable to project because
+        // `Control` has no column for it. Measured 2026-09-19: 473 of 893
+        // production controls had no objective, and every one of them had a
+        // template description available. #2664.
+        //
+        // The fallback direction is deliberate. A template that states a real
+        // objective keeps it; only a template with none borrows its description.
+        objective: template.objective ?? template.description ?? null,
         successCriteria: template.successCriteria,
         testingMethodology: template.testingMethodology,
         frequency: template.defaultFrequency as never,
