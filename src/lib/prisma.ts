@@ -7,6 +7,7 @@ import { withSoftDeleteExtension } from './soft-delete';
 import { withPiiEncryptionExtension } from './security/pii-middleware';
 import { withEncryptionExtension } from './db/encryption-middleware';
 import { withRlsTripwireExtension } from './db/rls-middleware';
+import { DB_POOL_MAX, DB_POOL_CONNECTION_TIMEOUT_MS } from './db/concurrency-limits';
 import { logger as auditMiddlewareLogger } from '@/lib/observability/logger';
 import { recordSlowQuery } from '@/lib/observability/metrics';
 
@@ -300,8 +301,26 @@ function buildClient(url: string = env.DATABASE_URL ?? ''): PrismaClient {
     // Falling back to an empty string lets module load succeed; the
     // first real query will surface the missing-URL error at request
     // time, not module-import time.
+    //
+    // The two pool limits below are DECLARED, not inherited (#2653).
+    // `PrismaPg`'s first argument is a full `pg.PoolConfig`, so this is
+    // the one call site where the product's connection ceiling is
+    // settable. Derivations live in `db/concurrency-limits.ts`; the
+    // short form:
+    //   • `max`  — was node-postgres's default 10 (measured). 25 is the
+    //     design point (k6 smoke, 25 VUs) and also PgBouncer's
+    //     `DEFAULT_POOL_SIZE`, so a larger pool would only move the
+    //     queue downstream where we cannot see it.
+    //   • `connectionTimeoutMillis` — was `undefined`, i.e. wait
+    //     forever (measured). Finite so pool exhaustion surfaces as an
+    //     error instead of a hung request, and >= the largest per-call
+    //     `maxWait` (10_000) so it does not silently preempt it.
+    // NOTE: `connectionString` is untouched — the `?? ''` fallback
+    // above is still what keeps "Collecting page data" working.
     const adapter = new PrismaPg({
         connectionString: url,
+        max: DB_POOL_MAX,
+        connectionTimeoutMillis: DB_POOL_CONNECTION_TIMEOUT_MS,
     });
     const client = new PrismaClient({
         adapter,

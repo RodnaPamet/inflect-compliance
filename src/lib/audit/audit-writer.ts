@@ -15,6 +15,9 @@
  *   - pg_advisory_xact_lock(hashtext(tenantId)) serializes appends per tenant
  *   - Automatically releases when the transaction commits/rolls back
  *   - Does NOT block inserts for other tenants
+ *   - The supported queue depth and every timeout around it are
+ *     DECLARED in `src/lib/db/concurrency-limits.ts` (#2653), not
+ *     inherited from Prisma / node-postgres defaults
  *
  * HASH COMPUTATION: Application-side (Node.js)
  *   - Uses canonical-hash.ts: SHA-256 of deterministic JSON serialization
@@ -26,6 +29,7 @@ import { createHash } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import * as prismaModule from '../prisma';
 import { computeEntryHash, toCanonicalTimestamp } from './canonical-hash';
+import { AUDIT_APPEND_TX_OPTIONS } from '../db/concurrency-limits';
 
 /**
  * Lazy getter for the default PrismaClient singleton.
@@ -147,6 +151,25 @@ export async function appendAuditEntry(input: AppendAuditInput, client?: PrismaC
 
     const db = client || getDefaultPrisma();
 
+    // AUDIT_APPEND_TX_OPTIONS is DECLARED, not inherited (#2653).
+    //
+    // Prisma's defaults here were maxWait 2000 / timeout 5000, and the
+    // 2000 is the number the observed CI failure exceeded: five
+    // concurrent appends for one tenant serialise on the advisory lock
+    // below, and the last could not START inside 2000 ms.
+    //
+    // Both fields matter, and for different halves of the wait:
+    //   • `maxWait`  — time to acquire the transaction (a pooled
+    //     connection). Binds when the pool is saturated.
+    //   • `timeout`  — time the BODY may run, and the advisory lock is
+    //     acquired inside the body, so the whole lock queue is charged
+    //     here. Declaring only `maxWait` would have left the larger
+    //     half of the wait on a 5000 ms default that the stated design
+    //     point cannot fit inside.
+    //
+    // Numbers, their arithmetic, and the fact that per-append latency
+    // is a LOWER BOUND rather than a measured p99, are all in
+    // `src/lib/db/concurrency-limits.ts`.
     const result = await db.$transaction(async (tx) => {
         // 1. Acquire per-tenant advisory lock
         //    hashtext() returns a 32-bit int from a string — perfect for advisory locks
@@ -242,7 +265,7 @@ export async function appendAuditEntry(input: AppendAuditInput, client?: PrismaC
         );
 
         return { id, entryHash, previousHash };
-    });
+    }, AUDIT_APPEND_TX_OPTIONS);
 
     // Epic C.4 — best-effort outbound streaming. The audit row is
     // already committed at this point, so a thrown error in the
