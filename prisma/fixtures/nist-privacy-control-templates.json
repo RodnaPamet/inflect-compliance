@@ -4485,21 +4485,15 @@
       ]
     },
     {
-      "code": "PRIV-13",
-      "title": "Data Protection Policies, Processes, and Procedures",
+      "code": "PRIV-13.1",
+      "title": "Baseline configuration for each class of system",
+      "description": {
+        "en": "Implements PR.PO-P1: A baseline configuration of information technology is created and maintained incorporating security principles (e.g., concept of least functionality)."
+      },
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "PR.PO-P1",
-        "PR.PO-P2",
-        "PR.PO-P3",
-        "PR.PO-P4",
-        "PR.PO-P5",
-        "PR.PO-P6",
-        "PR.PO-P7",
-        "PR.PO-P8",
-        "PR.PO-P9",
-        "PR.PO-P10"
+        "PR.PO-P1"
       ],
       "tasks": [
         {
@@ -4515,6 +4509,62 @@
         },
         {
           "title": {
+            "en": "Turn each baseline into the build new systems are provisioned from"
+          },
+          "description": {
+            "en": "A baseline written as prose is read once and then ignored: the next machine is cloned from the one already running, and the standard quietly becomes a description of whatever got built rather than a rule the build has to satisfy. Express each class's baseline in the terms its platform actually uses — setting names and their values, the packages and services the build includes, the accounts that exist at first boot, the interfaces it opens — and hold it as the artefact provisioning begins from, so a system of that class cannot be stood up except through it. Note against each entry where it came from: a vendor default deliberately overridden, guidance the organisation chose to follow, or an internal decision taken for this class, because a later reader otherwise cannot tell a considered choice from an accident nobody dares touch."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "The stored provisioning artefact for every system class — image, template or manifest — showing the values it sets, the origin noted against each, and the role accountable for it."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Re-derive the baselines whose platform version or source guidance has since moved"
+          },
+          "description": {
+            "en": "A baseline rots against the world rather than against the estate: the vendor ships a release that renames or withdraws settings the baseline names, the guidance it was derived from is revised, or a class of system enters service with nothing written for it at all. Work forwards from the release notes and the guidance publishers instead of re-reading the baseline to judge whether it still looks sensible, because a document can be perfectly coherent and still describe a version nobody runs. Close the pass by stating, per class, whether its baseline was reaffirmed, amended or found to have no applicable version left, and by naming any class operating without one."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Dated currency pass listing every system class, the release and edition of guidance it was measured against, the outcome reached, and each class found to have none."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-13.2",
+      "title": "Configuration change control",
+      "description": {
+        "en": "Implements PR.PO-P2: Configuration change control processes are established and in place."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.PO-P2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Decide which configuration alterations need approval before they reach a live system"
+          },
+          "description": {
+            "en": "Name the classes of change that must be proposed and approved first — a firewall rule, a retention setting, a schema migration, an access flag on a store holding personal data — and the everyday actions that may proceed without one, so nobody has to judge it at the keyboard. Where that boundary falls is what the whole process lives or dies on: set too wide it buries routine work in paperwork and people quietly stop filing, set too narrow it leaves the settings deciding who can read personal data outside any approval at all. State the depth of scrutiny each class earns and the point at which the urgent route may be used, because the change made at three in the morning is the one argued about afterwards."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Signed-off classification of change types showing, for each, whether prior approval is required, the scrutiny it attracts, the approving role, and the threshold for the urgent route."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
             "en": "Define how a configuration change is proposed, approved and recorded"
           },
           "description": {
@@ -4526,36 +4576,59 @@
         },
         {
           "title": {
-            "en": "Record the response and recovery plans and who executes each step"
+            "en": "Rebuild the period's change list from the systems and find the changes no approval covers"
           },
           "description": {
-            "en": "Capture the plans for responding to an incident, continuing the business through it, and recovering afterwards; for each plan record the steps in order, the person accountable for each, and the systems and data each step depends on. Name what each plan assumes is still available, since that assumption is what the exercise later tests."
+            "en": "Take what was actually altered from sources nobody edits to flatter themselves — deployment history, configuration management state, package and image versions, provider audit logs — and match each entry against the approvals on file, instead of reading the change log and judging whether it looks complete. Change control fails silently in one direction only: a change that was never proposed leaves nothing behind in the record to look missing. Account for every unmatched alteration, the urgent ones applied first and never written up included, and name who owns closing each gap."
           },
-          "phase": "IMPLEMENT",
-          "sortOrder": 2,
-          "suggestedRole": "Security engineering"
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Dated reconciliation naming each source of applied changes read, every alteration found with no approval behind it, and the disposition agreed for each."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-13.3",
+      "title": "Backups and proven restoration",
+      "description": {
+        "en": "Implements PR.PO-P3: Backups of information are conducted, maintained, and tested."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.PO-P3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Decide which data sets are backed up and how much loss each can absorb"
+          },
+          "description": {
+            "en": "A backup regime inherited from whoever built each system copies what was convenient to copy, not what the organisation could not operate without, and the gap only surfaces during an outage. Name every store holding personal data, state the largest gap between the last usable copy and the moment of failure that the business will accept for it, and state how long copies are held before they expire — a copy retained longer than the data's own retention period quietly reintroduces records that were supposed to be gone. Where a store is deliberately left uncopied, say what would rebuild it and why that is acceptable, so an uncovered store is a decision on the record rather than a discovery made at the worst moment."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Management",
+          "evidenceHint": {
+            "en": "Signed coverage schedule listing every store holding personal data, its tolerable loss window, its copy retention period, and the stores deliberately left uncopied with the reason each is safe to omit."
+          },
+          "sortOrder": 0
         },
         {
           "title": {
-            "en": "Record the privacy steps in hiring, role change and departure"
+            "en": "Schedule each backup and store the copy where production cannot delete it"
           },
           "description": {
-            "en": "For joining, moving and leaving, state what must happen to the person's access, to the data they hold, and to any checks made about them before they are trusted with data, and name who performs each step. Attach the amended people process rather than a separate privacy leaflet beside it."
+            "en": "A copy that sits in the same account, under the same credentials and on the same storage as the system it protects dies with it: ransomware, a mistaken drop or a lapsed subscription takes both at once. Run each backup at the frequency its agreed loss window demands, write the copy somewhere production's own credentials can neither alter nor delete, and encrypt it, because a backup is the same personal data held in a location with fewer eyes on it. Wire every run's success or failure into somewhere a named person actually reads, and keep a catalogue of which copy of which store sits where — a copy nobody can locate is not a backup, and a job failing silently for weeks is worse than no job at all, because it was believed."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 3,
-          "suggestedRole": "HR"
-        },
-        {
-          "title": {
-            "en": "Write the vulnerability management plan and name who acts on each source of findings"
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Job configuration plus a period of run reports for every protected store, with the catalogue entry showing where each copy landed, which credentials can alter it, and the encryption applied."
           },
-          "description": {
-            "en": "State where the organisation learns about weaknesses in what it runs, how a finding is triaged and ranked, who fixes it, and within what the organisation itself sets. Record what happens to a finding nobody will fix, and who accepts it."
-          },
-          "phase": "IMPLEMENT",
-          "sortOrder": 4,
-          "suggestedRole": "Security engineering"
+          "sortOrder": 1
         },
         {
           "title": {
@@ -4565,7 +4638,7 @@
             "en": "Restore information from backup and rehearse one response or recovery plan end to end, recording what worked, what did not, how long each took, and the improvements agreed with their owners. Share what the exercise showed about how well the protections held with the parties that rely on them, and record who was told."
           },
           "phase": "OPERATE",
-          "sortOrder": 5,
+          "sortOrder": 2,
           "evidenceHint": {
             "en": "Exercise record naming what was restored or rehearsed, the date, the participants, the observed outcome, the improvements agreed, and who the findings were shared with."
           },
@@ -4574,17 +4647,398 @@
       ]
     },
     {
-      "code": "PRIV-14",
-      "title": "Identity Management, Authentication, and Access Control",
+      "code": "PRIV-13.4",
+      "title": "Physical operating environment for assets",
+      "description": {
+        "en": "Implements PR.PO-P4: Policy and regulations regarding the physical operating environment for organizational assets are met."
+      },
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "PR.AC-P1",
-        "PR.AC-P2",
-        "PR.AC-P3",
-        "PR.AC-P4",
-        "PR.AC-P5",
-        "PR.AC-P6"
+        "PR.PO-P4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Settle which fire, power and building rules bind each space housing equipment"
+          },
+          "description": {
+            "en": "Obligations over a machine room arrive from three unrelated places — statute and building code, the lease or colocation contract, and the insurer — and none of the three lists the other two. For every space where the organisation's equipment physically sits, including a cage in someone else's data centre and the comms cupboard on a leased floor, name the source of each obligation and the party answerable for meeting it. The usual gap is the space both sides assume the other holds: the tenant reads fire and power as the landlord's business, the landlord sold floor area and nothing more."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Facilities",
+          "evidenceHint": {
+            "en": "Schedule of every space holding equipment, with the statute, lease clause or contract term attached to each and the answerable party named beside it."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Fix the power, temperature and fire-suppression limits each equipment space must hold"
+          },
+          "description": {
+            "en": "A room satisfies its rules only at stated numbers: the temperature and humidity band the hardware is warranted in, how many minutes the battery carries the real load, how long the generator runs on the fuel actually on site, which suppression agent is fitted and whether it is safe for a person working in the aisle. Write the figure for each space and, where a site operator supplies it, take the contracted figure rather than the one quoted in a sales pack. State where every alarm lands and who is on the other end at three in the morning, because a threshold nobody is told about is not a threshold."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Per-space sheet giving each environmental and electrical figure in force, its source in the code or the contract, and the person the alarm reaches out of hours."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Walk each space and test the power and fire protection rather than the certificate"
+          },
+          "description": {
+            "en": "A service label says a system was installed and inspected; it does not say the heat alarm reaches someone who acts, that the battery carries the true load for the minutes claimed, or that the generator runs beyond the few seconds of a start test. Put each protection under load once in the period, and read the site's own log of what happened since the last pass — heat alarms, supply failures, water on the floor — against the figures set for that space. Where the space belongs to another party, ask what its report actually covered, since a building-wide inspection often stops at the shell and never enters your cage. Anything that failed leaves with a named owner and a date instead of waiting for the next annual visit."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Facilities",
+          "evidenceHint": {
+            "en": "Dated walk record per space naming what was loaded or triggered, the result against the figure set, every excursion logged since the last pass, and the owner of each failure."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-13.5",
+      "title": "Improvement of protection processes",
+      "description": {
+        "en": "Implements PR.PO-P5: Protection processes are improved."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.PO-P5"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Amend the protection that let an event through, not only the case it caused"
+          },
+          "description": {
+            "en": "After a safeguard falls short, almost all of the work that follows repairs the instance — the record is corrected, the access is pulled, the individual is told — and the safeguard goes back into service exactly as it was. Name, for every shortfall, what in the protection itself now differs: the rule, the threshold, the default setting, the manual step an automated one replaced, the permission withdrawn. Adding a line to a runbook asking people to take more care is the cheapest answer on offer and the one most easily defeated the same way twice, so log that as an accepted risk rather than count it as an improvement."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Change record for each failed safeguard naming the shortfall that prompted it, what in the mechanism now differs, and the date it took effect."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Push each agreed protection improvement into force and flag the ones that stalled"
+          },
+          "description": {
+            "en": "An improvement agreed in a post-incident meeting but never deployed leaves the exposure exactly where it was, while the minutes make it read as settled. Hold a state against each agreed change and close it only once the altered safeguard is running in the place the failure happened — not when the ticket shuts or the code merges. Name every improvement that slipped its date or was quietly abandoned, with the reason, because that population is where the loop stops without anyone noticing."
+          },
+          "phase": "OPERATE",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Status list per improvement showing the shortfall it answers, its current state, where it is now running, and the reason for anything overdue."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Count the protections that failed twice and find the improvement that never landed"
+          },
+          "description": {
+            "en": "A safeguard that falls short a second time is the plainest evidence the loop did not work, and nobody sees it unless this period's failures are set beside the previous period's changes. Group the period's control failures, exercise findings, audit results and near misses by the safeguard each one implicates, then pull out every safeguard appearing more than once. For each repeat, separate the three cases — no change was ever made, a change was made somewhere the failure does not occur, or the change landed and is not sufficient — because a single repeat count hides which of them you are holding."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Management",
+          "evidenceHint": {
+            "en": "Repeat-failure analysis grouping the period's shortfalls by safeguard, with a count for each and the verdict on why an earlier fix did not hold."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-13.6",
+      "title": "Sharing protection effectiveness",
+      "description": {
+        "en": "Implements PR.PO-P6: Effectiveness of protection technologies is shared."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.PO-P6"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Package each protection technology's measured effectiveness for the peers and sector bodies receiving it"
+          },
+          "description": {
+            "en": "An effectiveness result written in the measuring team's own shorthand does not travel: a peer reading it cannot tell what the technology was guarding, at what scale, or which version behaved that way, so a real finding lands as an anecdote and changes nothing at the other end. Write each account with the conditions the measurement was taken under and the failures alongside the successes, then apply a release rule before it leaves — still-open weaknesses and configuration specifics come out, because the same paragraph that helps a peer harden their deployment tells an attacker where yours is thin. Name who signs off a release and which class of recipient, from a sibling engineering team to a sector information-sharing body or a supervisory authority, each version of the account is cleared for."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Released account for each protection technology, marked with the recipient tier it is cleared for, listing the measurement conditions it carries and the detail cut before issue."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Send each effectiveness account to its named recipients and record who confirmed it arrived"
+          },
+          "description": {
+            "en": "A distribution list is not a recipient: contacts go stale, a sector body rotates its secretariat, and a report can sit unopened for a quarter while the organisation believes the exchange happened. Log the receiving organisation, the person who confirmed it arrived, the version sent and the date, so a later question about whether a finding was passed on is answerable from the record rather than from anyone's memory. Return traffic is part of the same task — a peer asking how the measurement was taken is owed a reply, and one unanswered question quietly ends the exchange for good."
+          },
+          "phase": "OPERATE",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Distribution log per release: receiving organisation, named contact, version sent, date issued, and the confirmation returned."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Compare the accounts recipients received against the effectiveness results actually measured"
+          },
+          "description": {
+            "en": "Two defects hide here and neither shows up in the sending log. The first is silence: a protection technology whose effectiveness was measured and then reported to nobody outside the team, which surfaces only when the period's measurements are used as the denominator and each one is checked for a release. The second is the flattering account — the failure that was in the measurement and is not in what the recipient read, because redaction and reputational instinct delete the same paragraph. Read a sample of issued accounts beside their source results and name what went missing on the way out."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Management",
+          "evidenceHint": {
+            "en": "Period sheet listing every effectiveness measurement taken, whether it was released and to whom, plus a sampled account set beside its source result with the omissions named."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-13.7",
+      "title": "Response and recovery plans",
+      "description": {
+        "en": "Implements PR.PO-P7: Response plans (Incident Response and Business Continuity) and recovery plans (Incident Recovery and Disaster Recovery) are established, in place, and managed."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.PO-P7"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Map each disruption and privacy event to the plan that must answer it"
+          },
+          "description": {
+            "en": "Fix the list of events the organisation must be able to answer — an outage, a supplier collapsing, a ransomware demand, personal data reaching somewhere it should not — and say which document carries each one, from the first hour through to the return of normal service. What falls through is the seam between documents: a privacy event no security incident document claims as its own, or a failure whose handling is clearly owned while each document assumes the other brings the service back. Write down the events deliberately left without a plan as well, so a later gap reads as a decision on the record rather than an omission nobody noticed."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Management",
+          "evidenceHint": {
+            "en": "Coverage matrix naming every scenario in scope, the document that carries it, the point where handling passes from containment to the return of normal service, and the scenarios deliberately left uncovered."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Record the response and recovery plans and who executes each step"
+          },
+          "description": {
+            "en": "Capture the plans for responding to an incident, continuing the business through it, and recovering afterwards; for each plan record the steps in order, the person accountable for each, and the systems and data each step depends on. Name what each plan assumes is still available, since that assumption is what the exercise later tests."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Find the plan steps whose named executor, contact or system no longer exists"
+          },
+          "description": {
+            "en": "A plan rots by reference: the named deputy left in March, the escalation number rings a disconnected desk, the supplier was swapped at renewal, and the standby system a step says to switch to was decommissioned last year. Walk the plans line by line against the current roster, the contact directory, the supplier register and the system inventory, and mark every reference that no longer resolves to a real person, number or asset. Reissue each plan with the corrections and a fresh approval date instead of leaving the findings in a review note, because the copy someone opens at three in the morning is the published one."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Dated reference check listing every role, contact detail, supplier and dependency named across the plans, whether each still resolves today, and the correction issued where it did not."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-13.8",
+      "title": "Exercising response and recovery plans",
+      "description": {
+        "en": "Implements PR.PO-P8: Response and recovery plans are tested."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.PO-P8"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Choose which scenarios go to rehearsal and who must be in the room"
+          },
+          "description": {
+            "en": "A plan is only ever exercised against situations somebody picked in advance, so the picking is the control: name the scenarios for the period, the form each one takes — a seated walkthrough, an out-of-hours call-out with no warning, a hand-over that crosses a shift boundary — and the people whose absence would make the result meaningless. Put the deputies and the outside parties the plan relies on into that list, because a rehearsal that only ever assembles the willing and the available proves nothing about a Sunday morning. State what each scenario has to demonstrate before it counts as attempted: which decisions have to be reached, by whom, and inside what elapsed time."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Management",
+          "evidenceHint": {
+            "en": "Approved exercise programme for the period listing each scenario, its format, the participants required to attend, and the decisions it must produce."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Script the injects, the clock and the observer's marking sheet"
+          },
+          "description": {
+            "en": "An exercise that hands everyone the whole story at the start tests reading comprehension, not judgement under pressure. Break each scenario into timed injects that arrive the way facts really arrive — partial, contradictory, out of order — and fix beforehand the moments where a decision, an escalation or a hand-off is expected, since those moments are the thing being measured. Give observers a grid that marks each one made, missed or deferred with the time it happened, and agree the halt criteria that let the director stop the game before it touches live service or a real customer."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Scenario pack containing the timed inject list, the scoring grid each observer marks against, and the halt criteria agreed before play."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Run the rehearsal and log every stalled decision, hand-off and unreachable contact"
+          },
+          "description": {
+            "en": "Capture what the participants actually did rather than what the plan says they should have done: which decision stalled and on what missing fact, which hand-off fell between two roles who each assumed the other had it, and which name in the plan nobody could raise. Contact details rot quietly, so a number that went to voicemail is a finding in its own right, and so is a deputy who had never been told they were one. Write it down while the room is still assembled — a gap recorded the same hour is a defect with an owner, and the same gap reconstructed a week later is only an anecdote."
+          },
+          "phase": "OPERATE",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Dated log of the exercise naming each decision reached or missed with its clock time, every failed hand-off, and each plan contact who did not answer."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-13.9",
+      "title": "Privacy in human resources practice",
+      "description": {
+        "en": "Implements PR.PO-P9: Privacy procedures are included in human resources practices (e.g., deprovisioning, personnel screening)."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.PO-P9"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Grade each post by the data it will touch and fix the screening each grade requires"
+          },
+          "description": {
+            "en": "Screening pitched at seniority rather than at data reach leaves a junior post holding whole customer files unvetted while a director who touches nothing is checked twice over. Set the grade from what the post can actually read, export or act upon, and state what each grade must clear before a start date, including references, employment history, and any criminal-record check the law permits. Say plainly which worker types the standard binds, because agency staff, contractors, interns and secondees are never formally hired and so fall outside a rule drafted for employees. Name the re-check owed when somebody moves up into a grade with wider reach than the one they were vetted for."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "HR",
+          "evidenceHint": {
+            "en": "Screening standard listing every grade of post, the vetting owed before a start date, and the worker types it binds, including agency and contract staff."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Record the privacy steps in hiring, role change and departure"
+          },
+          "description": {
+            "en": "For joining, moving and leaving, state what must happen to the person's access, to the data they hold, and to any checks made about them before they are trusted with data, and name who performs each step. Attach the amended people process rather than a separate privacy leaflet beside it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "HR"
+        },
+        {
+          "title": {
+            "en": "Draw the period's starters, movers and leavers from payroll, then test the people process against that list"
+          },
+          "description": {
+            "en": "The exits that go wrong are the ones nobody raised a request for: an agency assignment that simply ended, an internal move filed as a transfer so nothing was withdrawn, a last day that shifted after the paperwork went in. Taking the population from payroll or the HR record rather than from the requests the departures generated gives a denominator the process cannot quietly shrink. For each name, check that the screening the post required was complete before the start date and that the leaving or moving steps happened, from data holdings returned or handed over through to the confidentiality obligation being restated. Treat a step performed weeks after the effective date as a finding of its own rather than a closed item."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Legal/DPO",
+          "evidenceHint": {
+            "en": "Period comparison naming everyone who joined, changed role or left according to the HR record, the privacy steps owed for each, and the date each was carried out or found missing."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-13.10",
+      "title": "Vulnerability management plan",
+      "description": {
+        "en": "Implements PR.PO-P10: A vulnerability management plan is developed and implemented."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.PO-P10"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Write the vulnerability management plan and name who acts on each source of findings"
+          },
+          "description": {
+            "en": "State where the organisation learns about weaknesses in what it runs, how a finding is triaged and ranked, who fixes it, and within what the organisation itself sets. Record what happens to a finding nobody will fix, and who accepts it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 0,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Triage each incoming vulnerability and escalate the ones past their fix date"
+          },
+          "description": {
+            "en": "Findings arrive from scanners, vendor advisories, penetration tests and outside reporters at different rates, and every one needs a rating and a repair date before it joins the queue. Where no date is attached at intake, an item that is merely open cannot be told apart from one that is late, so the queue can be reported only as a size rather than as a breach of what the organisation promised itself. Where a compensating measure goes in instead of a repair, leave the underlying weakness open on its own clock, since a mitigated entry marked done disappears from view while the exposure is still there."
+          },
+          "phase": "OPERATE",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Export of the finding register for the period listing origin, rating, owner, deadline, current state and the escalation raised for anything late."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Re-scan the systems where a fix was signed off and list what comes back"
+          },
+          "description": {
+            "en": "A closed ticket proves the work was done, not that the weakness is gone: the rebuilt image may not be the one running, a library can be pinned in the manifest and still loaded from an older path, and a redeployment can restore the very version that was taken out. Run the check against the live system rather than a branch or a staging copy, and count how many sign-offs it contradicts. Anything that answers again returns to the queue as a fresh item with its own deadline, rather than being reopened quietly against the old one."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Verification run dated after the closures it tests, naming each item re-examined, the result, and how any contradiction was dealt with."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-14.1",
+      "title": "Issue, revocation and audit of credentials",
+      "description": {
+        "en": "Implements PR.AC-P1: Identities and credentials are issued, managed, verified, revoked, and audited for authorized individuals, processes, and devices."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.AC-P1"
       ],
       "tasks": [
         {
@@ -4611,14 +5065,45 @@
         },
         {
           "title": {
-            "en": "Record the permissions each role holds and the duties held apart"
+            "en": "Reconstruct a revoked credential's life from the systems, not the closure ticket"
           },
           "description": {
-            "en": "For every role, record the permissions granted to it, why the role needs each of them, and which pairs of duties must not rest with the same person. Record the places where separation is not currently possible, with who accepted that and what compensates for it."
+            "en": "Revocation destroys its own evidence: deleting an account takes with it who authorised the credential, what it was changed to mid-life, and the moment it actually stopped working, leaving only a ticket asserting the job was done. Draw the sample from credentials the directories and applications themselves show as ended in the period rather than from closure records, and for each one establish the authorising entry, every change it passed through, the event that should have ended it, and the timestamp access genuinely ceased. A revocation that happened but can no longer be evidenced is a finding in its own right, as is a credential that outlived its triggering event by longer than the organisation's own stated limit."
           },
-          "phase": "IMPLEMENT",
-          "sortOrder": 2,
-          "suggestedRole": "Security engineering"
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Sample of ended credentials with, per entry, the authorising record, the changes in between, the triggering event, the date access actually ceased, the elapsed gap, and the entries where only a ticket survives."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-14.2",
+      "title": "Physical access to data and devices",
+      "description": {
+        "en": "Implements PR.AC-P2: Physical access to data and devices is managed."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.AC-P2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Locate every room, cabinet and carried device that puts a person within reach of data"
+          },
+          "description": {
+            "en": "Physical scoping usually stops at the server room and misses where data actually sits: a filing cabinet of signed forms, a printer's output tray, a laptop that goes home each night, a rack in a cage shared with other tenants. Name each site, enclosure and mobile asset that brings a human being within touching distance of data or of a machine processing it, and state the test that decides whether something falls in or out. Assets that travel have no fixed address, so scope those by who holds them rather than by where they sit."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Facilities",
+          "evidenceHint": {
+            "en": "Scoping sheet listing each site, enclosure and mobile asset in scope, the in-or-out test applied, and the borderline cases settled with who settled them."
+          },
+          "sortOrder": 0
         },
         {
           "title": {
@@ -4628,8 +5113,50 @@
             "en": "For each location holding data or devices that process it, record what limits who may enter, who authorises an entry, and what is recorded about entries that happen. Include locations operated by another party on the organisation's behalf and what is known about them."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 3,
+          "sortOrder": 1,
           "suggestedRole": "Facilities"
+        },
+        {
+          "title": {
+            "en": "Reach a device holding data without presenting a credential, and note where you were stopped"
+          },
+          "description": {
+            "en": "Barriers fail on the routes nobody issued: a door propped open for a delivery, a cabinet whose key hangs on the wall beside it, a lobby that admits anyone carrying a coffee, another tenant's engineer passing your rack on the way to theirs. Send someone with no badge and no appointment to get within touching distance of a machine or a stored record, and write down the point at which a lock or a human being actually halted them, rather than the point where policy says they would have been halted. If nothing halted them at all, that absence is the finding, and an entry log showing no visit is a second one."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Dated attempt sheet naming the route tried, the point at which the attempt was halted, by whom or what, and the findings raised from it."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-14.3",
+      "title": "Remote access",
+      "description": {
+        "en": "Implements PR.AC-P3: Remote access is managed."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.AC-P3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Name the off-site working situations that count as remote access"
+          },
+          "description": {
+            "en": "Settle which ways of working away from the organisation's own premises are in scope here — home working, travel, a desk at a client or partner site, a personal phone used for evening messages — and name the staff, contractors and on-call groups that work each way, together with the systems holding personal data each needs to get at from there. A situation nobody named is the one that ends up managed by nobody, and later checks have no population to measure against. A vendor engineer dialling in to service an asset is deliberately out of scope: that sits with maintenance, and mixing the two leaves ordinary remote working judged against rules written for someone else."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Scoping note listing each way of working away from the premises that is in scope, the groups that work that way, the systems they need from there, and the exclusions with the person who settled them."
+          },
+          "sortOrder": 0
         },
         {
           "title": {
@@ -4639,7 +5166,60 @@
             "en": "List the routes by which systems can be reached from outside the organisation's own network, who may use each and what is required of them, and record how the parts of the network holding data are kept apart from the parts that have no need of it. Record every route that exists without an owner."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 4,
+          "sortOrder": 1,
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Trace each connection from outside back to a remote worker the arrangement covers"
+          },
+          "description": {
+            "en": "Work from the connection records for the period rather than the list of approved remote workers, and account for every session: who opened it, the off-site working situation that entitles them to it, and the way in they used. This arrangement decays through changed circumstances rather than bad decisions — an engagement that ended, a move to a country nobody sanctioned, a way in opened for one trip and never shut — and none of that appears in a register only ever read forwards. Treat a session that cannot be tied to a covered worker as a finding even where it was plainly innocent, because the same gap would carry someone who was not."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Period trace naming the records examined, how many sessions they held, each one with no covered worker or sanctioned way in behind it, and what was done about it."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-14.4",
+      "title": "Least privilege and separation of duties",
+      "description": {
+        "en": "Implements PR.AC-P4: Access permissions and authorizations are managed, incorporating the principles of least privilege and separation of duties."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.AC-P4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Grade the permissions by what a single holder could do with them"
+          },
+          "description": {
+            "en": "Take the permission sets each in-scope system can hand out and place each into a band by what it lets one holder reach, alter, export or re-grant without a second person acting. State where the line between bands sits and who settles a set that straddles it, because until that line exists least privilege has no denominator and a later review covers only the grants somebody happened to think of. Include the permissions that confer further permissions, since a holder who can widen their own grant sits outside every band already agreed."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Banding table naming each in-scope system, the permission sets it can grant, the band assigned to each, the reach that justified that band, and any system whose grants could not be enumerated."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Record the permissions each role holds and the duties held apart"
+          },
+          "description": {
+            "en": "For every role, record the permissions granted to it, why the role needs each of them, and which pairs of duties must not rest with the same person. Record the places where separation is not currently possible, with who accepted that and what compensates for it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
           "suggestedRole": "Security engineering"
         },
         {
@@ -4650,7 +5230,7 @@
             "en": "Compare the recorded holders and permissions against what each system grants today, one system at a time, and record every difference — an account with more than its role, a holder no longer present, a permission granted outside the process. Record the correction made or the acceptance taken for each difference."
           },
           "phase": "OPERATE",
-          "sortOrder": 5,
+          "sortOrder": 2,
           "evidenceHint": {
             "en": "Audit worksheet naming the systems compared, each difference found between record and grant, and the correction or acceptance recorded against it."
           },
@@ -4659,19 +5239,127 @@
       ]
     },
     {
-      "code": "PRIV-15",
-      "title": "Data Security",
+      "code": "PRIV-14.5",
+      "title": "Network segregation and segmentation",
+      "description": {
+        "en": "Implements PR.AC-P5: Network integrity is protected (e.g., network segregation, network segmentation)."
+      },
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "PR.DS-P1",
-        "PR.DS-P2",
-        "PR.DS-P3",
-        "PR.DS-P4",
-        "PR.DS-P5",
-        "PR.DS-P6",
-        "PR.DS-P7",
-        "PR.DS-P8"
+        "PR.AC-P5"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Name each network segment and the systems it is allowed to admit"
+          },
+          "description": {
+            "en": "Segregation is only a claim until every system that processes data sits in a named segment with a stated level of trust, so set out the segments, what each one may hold, and the rule that decides where a newly built system goes. Build the list from the systems in the inventory outward rather than from the network diagram, because the diagram shows the design and not the machines that were plugged in afterwards. A host that fits no segment — a supplier's box sharing a subnet with a data store, an appliance homed on two networks at once — is exactly what this step is meant to surface."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Segment register listing every zone, its trust level, the processing systems assigned to it, and each host that could not be placed, with an owner named against it."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Tie each permitted crossing to a source, a destination, an owner and a date it lapses"
+          },
+          "description": {
+            "en": "A segmentation rule set decays by accretion: an allowance opened for a migration or a vendor's support session outlives the work that justified it, and two zones end up joined in fact while the diagram still shows them apart. Write every permitted crossing as a row naming the originating zone, the zone it reaches, the service it carries, the person accountable, and the date it falls away unless somebody renews it; traffic outside that list is refused by default rather than tolerated. Rules already in place with nobody behind them belong on the same list as open items, not grandfathered in silence."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Rule register showing, per entry, the originating and destination zones, the service allowed, the accountable owner, the renewal or lapse date, and the default-deny position covering everything unlisted."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Attempt the crossings the rules forbid from a host inside each segment"
+          },
+          "description": {
+            "en": "Reading the rule table proves what was intended, not what the running network does: a forgotten static route, a host homed on two segments, a cloud peering or a flat management VLAN can join two zones that no rule mentions. Work from inside — from a machine in each segment, try to open the connections the register says are impossible, including those between zones that never needed to speak — and note for every attempt what answered. A connection that completes where the register denies it is a defect even though no rule permits it, because something outside the rule set is carrying the traffic, and the fix belongs there rather than in another rule."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Dated test log naming the originating machine, the target address and service, the outcome the register predicted, the response observed, and each unexplained success with the path found to be carrying it."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-14.6",
+      "title": "Identity proofing and authentication strength",
+      "description": {
+        "en": "Implements PR.AC-P6: Individuals and devices are proofed and bound to credentials, and authenticated commensurate with the risk of the transaction."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.AC-P6"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Set the proof of identity required before a credential is bound"
+          },
+          "description": {
+            "en": "State what evidence establishes that a claimant really is the person or device they say they are — documents checked back to their issuer, a live or in-person check, an existing credential of known strength, a hardware attestation or a certificate for a machine — and set a different bar for each class of holder, including contractors, service accounts and devices. Without a stated bar, enrolment quietly settles for whatever the requester could produce that day, and the credential carries an assurance nobody can state afterwards. Name who may accept weaker evidence and what such a decision must leave behind, because those are the holders who later turn out to have the most reach."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "The enrolment standard naming acceptable identity evidence per class of holder, with the authority to accept weaker evidence and what that decision must leave behind."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Step up the authentication strength as a transaction's risk rises"
+          },
+          "description": {
+            "en": "Sort the acts each system offers by what a wrongly authenticated actor could do with them — reading one record, exporting a whole population, changing a payout destination, altering someone else's data — and require stronger or fresher authentication at the acts above the line instead of only at the start of the session. Authenticate once weakly and that assurance otherwise rides along into every action the session reaches for the rest of the day. Decide where re-authentication is compelled mid-session, and put the check at the service that performs the act rather than in the interface that offers it."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "A list of the acts classed above the line in each system, each with the assurance level enforced and the layer where that check runs."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Attempt the riskiest transaction with the weakest credential that reaches it"
+          },
+          "description": {
+            "en": "Take a credential enrolled at the lowest bar and drive it at the acts classed as high risk, reaching them through the API, a mobile client and any recovery path as well as the main screen. A step-up that the interface enforces and the endpoint does not will survive every desk-based review and fail this one. Then pull a sample of the bindings made in the period and compare the evidence actually held for each holder against the bar that applied on the day it was bound."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Dated test log naming each act reached, the route it was reached by, the assurance the credential held and the outcome, alongside the sampled bindings and the evidence found for each."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-15.1",
+      "title": "Protection of data at rest",
+      "description": {
+        "en": "Implements PR.DS-P1: Data-at-rest are protected."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.DS-P1"
       ],
       "tasks": [
         {
@@ -4687,6 +5375,62 @@
         },
         {
           "title": {
+            "en": "Encrypt each store in the register and hold its keys elsewhere"
+          },
+          "description": {
+            "en": "A volume encrypted under a key the same platform will hand back on request defends against a disk carried out of the building and against nothing else: an operator, a leaked console credential and the provider's own support path all still read the values plainly. For every store in the register, settle what encrypts it, where the key sits, which identities may call for the key, and what rotates it when one of those identities departs. Stores that cannot take encryption at all — an ageing appliance, a vendor-run database, a file share nobody owns — need the compensating measure written down and a named person who accepted the exposure that remains."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Per-store listing of the cipher in force, the key's custodian and location, the last rotation date, and a signed acceptance for anything left unprotected."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Read a store's files and snapshots from beneath the application"
+          },
+          "description": {
+            "en": "Protection is asserted in a configuration page and lost in practice — a replica cloned before the policy existed, a snapshot restored into a storage class with no key attached, a cipher switched off for a migration and never switched back. Take a store the register calls protected, open its underlying files, one snapshot and one export without the application in the path, and see whether the values come back legible. A test that only re-reads the configuration proves the setting, not the bytes, so record which reads were done at the storage layer and raise every copy that returned in the clear."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Dated test note naming the artefacts opened, the route used to reach them under the service, what returned readable, and the remediation raised for each."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-15.2",
+      "title": "Protection of data in transit",
+      "description": {
+        "en": "Implements PR.DS-P2: Data-in-transit are protected."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.DS-P2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Fix the protection each transmission must negotiate and where it may be broken open"
+          },
+          "description": {
+            "en": "Name the classes of transmission in scope, including the ones that never leave the organisation's own network, and for each state the outcome a connection must reach and the weaker result it has to refuse rather than settle for. Protection on the wire is the product of a negotiation between two endpoints, so a standard that names only an acceptable result is satisfied by a connection that quietly agreed to less. Name also the places where a session is unwrapped and re-made — a proxy, a gateway, a load balancer, a managed inspection point — because the data is in the clear at each of them and the scope has to say so rather than assume the hop away."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Scoping statement listing each class of transmission held in scope, the outcome a connection is required to reach, the weaker results it must refuse, and every hop at which a session is unwrapped and re-made."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
             "en": "Record the protection applied to each data flow between systems"
           },
           "description": {
@@ -4698,15 +5442,85 @@
         },
         {
           "title": {
+            "en": "Re-check the routes whose far endpoint changed since the protection was last agreed"
+          },
+          "description": {
+            "en": "A route is only ever as well protected as the other end will still accept, so it can weaken with nothing changed on this side: a partner withdraws a protocol version, a provider moves the endpoint behind a hostname, a renewed certificate arrives on a different chain. Take the period's changes at the far ends from the sources that announce them — partner and provider notices, deprecation schedules, renewal dates — and re-check what each affected route now achieves, rather than carrying last period's recorded value forward. A route that fell back and kept working is the case this task exists to catch, because nothing failed and no alert was raised; record each one as open against the owner who must close it."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Period review naming each far-end change taken into account, the routes it touched, what those routes now achieve when they connect, and any still carrying data at a reduced setting with its owner."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-15.3",
+      "title": "Removal, transfer and disposition of systems",
+      "description": {
+        "en": "Implements PR.DS-P3: Systems/products/services and associated data are formally managed throughout removal, transfers, and disposition."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.DS-P3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Identify the systems approaching retirement or handover and who may release them"
+          },
+          "description": {
+            "en": "Assets rarely end the way a plan imagines: a laptop goes back under warranty, a server comes off a lease, a database moves with a divested team, a hosted tenancy is closed while the provider still holds the volume. Name every such ending that actually occurs here, say which classes of equipment and which hosted services each one applies to, and name the person entitled to sign an item out of use. An ending nobody listed is the one that carries data out of the organisation with nothing recorded about what was done to it first."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "List of ending types in scope, the classes of equipment and hosted service each covers, and the person named as release authority for each."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
             "en": "Record what happens to data when a system is removed, transferred or disposed of"
           },
           "description": {
             "en": "By class of system, state what must happen to the data it holds before it leaves the organisation's control, who performs that, who confirms it was done, and what is retained as proof. Include systems handed to another party and systems that leave with a person."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 2,
+          "sortOrder": 1,
           "suggestedRole": "IT Operations"
         },
+        {
+          "title": {
+            "en": "Account for every asset released this period against the confirmations received"
+          },
+          "description": {
+            "en": "Take the items recorded as released since the last pass and set beside each one the proof returned for it: an erasure record, a destruction certificate from the carrier, or the receiving party's written acceptance of what it now holds. The gaps this catches are the machine marked gone in the register while its disk is still racked, and the batch of twenty collected by a contractor who certified seventeen. Anything still without proof stays open against a named owner and a date, rather than being closed on the assumption that the process ran."
+          },
+          "phase": "OPERATE",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Period log naming each item that left, the route it left by, the proof returned for it, and the lines still open with their owner and date."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-15.4",
+      "title": "Capacity for availability",
+      "description": {
+        "en": "Implements PR.DS-P4: Adequate capacity to ensure availability is maintained."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.DS-P4"
+      ],
+      "tasks": [
         {
           "title": {
             "en": "Record the capacity each service needs and how a shortfall becomes known"
@@ -4715,8 +5529,64 @@
             "en": "For every service whose unavailability would affect individuals, record the capacity it requires to serve them, how the organisation learns it is running short, and who is told when that happens. Record services where nobody would learn until it failed, and name the owner."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 3,
+          "sortOrder": 0,
           "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Measure peak consumption against each service's ceiling and record the headroom left"
+          },
+          "description": {
+            "en": "Take the reading from the busiest period the service actually saw rather than a monthly average, because a service sitting at a third of its ceiling all month can still spend an hour above it and turn people away. For each service record what was consumed at that peak, the ceiling that bound first, and how much was left over — and expect the binding ceiling to be an unglamorous one, since a connection pool, a licence seat count, a per-minute quota or a contracted throughput usually runs out well before disk or memory does. Where nothing records consumption at a resolution fine enough to see the peak, enter that as the finding and name the owner, because an unmeasured service is not a service with headroom."
+          },
+          "phase": "OPERATE",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Per-service reading dated to the busiest period observed, naming the limit that bound first, the amount used against it, and the margin that remained."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Compare the demand each service actually saw against the figure its plan assumed"
+          },
+          "description": {
+            "en": "A capacity figure is only as good as the demand it was sized for, and nothing turns red when that assumption quietly stops holding — the service keeps serving while the margin it was built with disappears underneath it. Set the demand observed over the period beside the figure recorded when the service was sized, and wherever the real number has overtaken the assumed one, work out at the observed rate of growth the date the remaining headroom is gone. Pay particular attention to growth that arrived from a new use rather than more of the old one, since a trend drawn from last year's shape will not show it."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Period comparison setting observed demand beside the sized figure for each service, with a recalculated exhaustion date wherever the real number has overtaken the assumed one."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-15.5",
+      "title": "Protections against data leaks",
+      "description": {
+        "en": "Implements PR.DS-P5: Protections against data leaks are implemented."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.DS-P5"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Name the data whose unsanctioned departure would count as a leak"
+          },
+          "description": {
+            "en": "Egress limits hold nothing in until the organisation has said which data they exist to protect and which departures it has already agreed to — the same record sent under a signed arrangement is legitimate, while a copy of it reaching the same destination by any other means is not. Take the categories from the processing inventory and include the derived forms as well: an extract, an aggregate or a report carries the original outward and is the form most often released without anyone calling it a disclosure. Name the accountable owner of each category, so a route later found open has someone to answer for what sits on it."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Legal/DPO",
+          "evidenceHint": {
+            "en": "Scope statement listing the categories in scope, the agreements that make a departure legitimate, and the named owner of each category."
+          },
+          "sortOrder": 0
         },
         {
           "title": {
@@ -4726,8 +5596,64 @@
             "en": "Enumerate the routes by which data could leave — onward transfers, exports, correspondence, portable devices, third-party services — and record what limits each one and who may authorise an exception. Where a route has no limit at all, record it and name the owner who carries it."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 4,
+          "sortOrder": 1,
           "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Attempt an export the stated limits should stop and record what got through"
+          },
+          "description": {
+            "en": "A limit written down and a limit that actually fires are different things, and the difference only shows when something tries to leave. Work from the recorded routes, including the quiet ones — a personal mail client, a file sync client, a support tool that can dump a table — push a marked, harmless sample down each, and note whether it was blocked, allowed, or allowed with nobody alerted. Where a route cannot be exercised safely, write that down rather than a pass: an untested route is an unknown, not a success, and treating it as one is how the gap survives the next check too."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Test record naming each route exercised, the date, the sample used, whether it was blocked or allowed, and the routes left untested with the reason."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-15.6",
+      "title": "Integrity of software, firmware and information",
+      "description": {
+        "en": "Implements PR.DS-P6: Integrity checking mechanisms are used to verify software, firmware, and information integrity."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.DS-P6"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Choose the software, firmware and records whose alteration must be detectable"
+          },
+          "description": {
+            "en": "List the code, firmware images, configuration files and record sets where a silent change would matter — those that decide how processing runs, and those that stand as the account of what was done to a person's data. For each one, state what its authentic version is judged against: a publisher's signature, a digest taken when it was built, or a sequence chained across the records. Items with nothing trustworthy to compare against — an unsigned supplier binary, a log any administrator can rewrite — belong on the list marked that way, because they are precisely the ones a check will pass without noticing anything."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Scoping list naming each artefact and record set in scope, the authentic reference each is judged against, and the entries marked as having none."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Generate the authentic digest for each build, firmware image and record set"
+          },
+          "description": {
+            "en": "Produce the reference value where the artefact is made — at build, at packaging, at the moment a record is committed — and hold it under a key or store the same people and processes cannot also rewrite. A digest recomputed from the file at checking time, or filed beside the file it describes, agrees with any alteration applied to both and will never report one. Fix where the comparison happens — before installation, on load, or when a record is relied on — and what follows a mismatch, since one that only adds a log line leaves the altered software running."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Digest register showing each artefact covered, where its reference value is held, which account or key can rewrite it, and the point in use where the comparison runs."
+          },
+          "sortOrder": 1
         },
         {
           "title": {
@@ -4737,7 +5663,7 @@
             "en": "Carry out the checks the organisation relies on to confirm that software, firmware, held information and hardware are as they should be, and record for each what was verified, what the check expects and what it actually found. Record the assets that could not be checked and why."
           },
           "phase": "OPERATE",
-          "sortOrder": 5,
+          "sortOrder": 2,
           "evidenceHint": {
             "en": "Check record naming each asset verified, the date, the expected result, the observed result, and the assets left unverified with the reason."
           },
@@ -4746,13 +5672,127 @@
       ]
     },
     {
-      "code": "PRIV-16",
-      "title": "Maintenance",
+      "code": "PRIV-15.7",
+      "title": "Separation of development, test and production",
+      "description": {
+        "en": "Implements PR.DS-P7: The development and testing environment(s) are separate from the production environment."
+      },
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "PR.MA-P1",
-        "PR.MA-P2"
+        "PR.DS-P7"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Settle what makes an environment separate from production, and list each one"
+          },
+          "description": {
+            "en": "Separation is asserted far more often than it is defined: two environments can carry different names and still share a database cluster, an identity provider, a message broker or one set of keys. For each system, set out which environments exist - development, test, staging, demonstration, training, a developer's own laptop - which of them is production, and which of infrastructure, network route, credentials and data any pair is forbidden to hold in common. An environment nobody thought to name is the one that turns out to hold live records."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Environment list per system marking the live instance, with the written separation test the other instances are held to."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Sever the services, credentials and data copies that still join test to production"
+          },
+          "description": {
+            "en": "Environments drift back together through the parts nobody re-pointed: a staging system authenticating against the live directory, a test job writing to a production queue, an API key that works in both, a nightly restore of the live database into development. Work through each pair on the environment list and either give the lower side its own instance of the shared item, or name who accepted the sharing and what makes it unsplittable. Where production data has already been copied down, the damage is done at the moment the restore lands - supply the lower environments with manufactured records instead, or transform the extract before it is written, rather than masking it once it sits there."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Per-environment list of shared items found, the action taken on each, and the named acceptance for any that remain shared."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Search each test and development environment for records belonging to real people"
+          },
+          "description": {
+            "en": "Do not re-read the environment list; go into the lower environments and query for values only a live person could produce - a deliverable mailbox, a real employee number, an address that geocodes. Concentrate on the environments refreshed, rebuilt or stood up for a demonstration since the last pass, and on any a team raised outside the standard build, because that is where a live copy lands. A hit is two findings at once: the separation failed, and the organisation has been holding personal data in a store its inventory never listed, so it belongs in that inventory until it is destroyed."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Query results per environment examined, the identifiers searched for, the date, the hits found, and how each was disposed of or accepted."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-15.8",
+      "title": "Integrity of hardware",
+      "description": {
+        "en": "Implements PR.DS-P8: Integrity checking mechanisms are used to verify hardware integrity."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.DS-P8"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Seal each device and register the serials a substitution would have to match"
+          },
+          "description": {
+            "en": "Fit a tamper-evident measure to every device that holds or processes personal data — chassis seals, sealed transit packaging, a covered port — and write down what intact looks like: the seal identifiers, the chassis serial, and the serials of the internal parts a later inspection can read back. An asset tag is the one marking an interdictor can simply move to another box, so the reference has to be built from marks taken off the hardware itself and held in a store the device cannot write to. Without that reference a replaced drive or a swapped mainboard looks exactly like the unit that was bought, and nothing further down the chain will ever raise it."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Per-unit reference sheet giving seal numbers, chassis and internal part identifiers as fitted, the date, and the person who applied them."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Inspect the seals and internal parts of every unit received or returned from repair"
+          },
+          "description": {
+            "en": "Do the physical check at the points where custody left the organisation: a delivery from a supplier or reseller, a machine coming back from a repair bench, a laptop returning from travel that warranted the precaution. Compare the unit in hand against its reference — seals unbroken and bearing the same numbers, internal parts answering with the serials recorded when they were fitted — and hold back anything that disagrees before it is powered onto the network. A maintenance log proves the repair was authorised and says nothing about whether the box that came back is the box that went out; that gap is what this check exists to close."
+          },
+          "phase": "OPERATE",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Dated inspection entries per unit naming the occasion, the seal state found, the parts compared against the reference, and the disposition of anything held back."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Swap a component into a spare unit and route it through the receiving inspection"
+          },
+          "description": {
+            "en": "An inspection that has never stopped anything may be working or may be a signature on a form, and the pass record cannot tell those two apart. Take a machine from the spare pool, fit an internal part whose serial does not match its reference, break and re-apply a seal, then send it down the same receipt path a real delivery follows and see whether the person on that path halts it without having been warned. Count, alongside the planted machine, the devices that entered service in the period with no inspection recorded at all, because the units nobody looked at are the population a pass rate hides."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Outcome of the planted-hardware test — what was altered, who handled it, whether it was stopped and how quickly — plus the tally of devices put into service unchecked."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-16.1",
+      "title": "Maintenance and repair with approved tools",
+      "description": {
+        "en": "Implements PR.MA-P1: Maintenance and repair of organizational assets are performed and logged, with approved and controlled tools."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.MA-P1"
       ],
       "tasks": [
         {
@@ -4768,14 +5808,17 @@
         },
         {
           "title": {
-            "en": "Define how maintenance performed from outside the premises is approved and bounded"
+            "en": "Issue maintenance tools from a controlled store and check each one back in after the job"
           },
           "description": {
-            "en": "State who approves a maintenance session conducted from elsewhere, what the person performing it is permitted to reach, what prevents them reaching more, and what must be recorded about the session while it runs. Include what happens when a session must proceed before approval and how it is brought back into the record."
+            "en": "An approved list only governs the kit the organisation owns; the diagnostic laptop a contractor's engineer carries through the door has been inside other customers' equipment and leaves with whatever it copied off yours. Draw every tool against a named job and a named holder, owned or brought in, and examine it on return before it is available for the next asset. Where a repair needs something that is not on the list, the arrangement has to say who may approve it before the work starts, or the list will be amended after the fact to match whatever was used."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 1,
-          "suggestedRole": "IT Operations"
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Tool custody register listing, per job, the item drawn, who held it, the date returned, the examination result, and any contractor-supplied device admitted with its approval."
+          },
+          "sortOrder": 1
         },
         {
           "title": {
@@ -4808,15 +5851,68 @@
       ]
     },
     {
-      "code": "PRIV-17",
-      "title": "Protective Technology",
+      "code": "PRIV-16.2",
+      "title": "Remote maintenance",
+      "description": {
+        "en": "Implements PR.MA-P2: Remote maintenance of organizational assets is approved, logged, and performed in a manner that prevents unauthorized access."
+      },
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "PR.PT-P1",
-        "PR.PT-P2",
-        "PR.PT-P3",
-        "PR.PT-P4"
+        "PR.MA-P2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List the assets an outside engineer can service without a site visit"
+          },
+          "description": {
+            "en": "A remote service pathway usually arrives with the equipment rather than being asked for: a management interface the manufacturer enables at installation, a call-home agent inside an appliance, a standing jump host named in a support contract. Read the maintenance and support agreements alongside the devices themselves to name, per asset, the external party entitled to service it that way and the interface they arrive on. An asset missing from this list is serviced under no approval at all, because a procedure can only bind the sessions it knows to expect."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Per-asset schedule of remote service pathways giving the external party entitled to each, the interface it lands on, and the contract clause or device setting it was traced from."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Define how maintenance performed from outside the premises is approved and bounded"
+          },
+          "description": {
+            "en": "State who approves a maintenance session conducted from elsewhere, what the person performing it is permitted to reach, what prevents them reaching more, and what must be recorded about the session while it runs. Include what happens when a session must proceed before approval and how it is brought back into the record."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Bind each remote repair session to its fault ticket and end it with the fix"
+          },
+          "description": {
+            "en": "The failure here is not an unapproved session but an approved one that never closed: the supplier's account stays enabled, the tunnel stays up, and what was granted for one fault becomes a standing way in. Open the session against a named fault, allow the access to live only while that fault is open, and withdraw it when the work is signed off rather than at the next review. Where a session had to start before approval because the asset was down, capture the retrospective sign-off against the same ticket."
+          },
+          "phase": "OPERATE",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Session records for the period pairing each connection with the fault it was opened for, the approver, the time it was withdrawn, and any retrospective sign-off."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-17.1",
+      "title": "Removable media",
+      "description": {
+        "en": "Implements PR.PT-P1: Removable media is protected and its use restricted according to policy."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.PT-P1"
       ],
       "tasks": [
         {
@@ -4832,6 +5928,62 @@
         },
         {
           "title": {
+            "en": "Issue encrypted media from controlled stock and have the estate refuse everything else"
+          },
+          "description": {
+            "en": "Hold the permitted devices as stock the organisation owns, apply the protection before an item is handed over, and record which item went to whom. Then configure the machines that accept a device so one drawn from anywhere else is refused, because a rule written down but never pushed to an endpoint is enforced only by the honesty of whoever is standing at the machine, and a drive somebody bought themselves leaves no trace it ever held anything. Apply the protection to the item rather than to the machine that writes to it, or a copy made on the next computer is plain. Name the machines the configuration could not reach - kiosks, instrument controllers, equipment at another party's site - and who carries each."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Stock register naming each device, its serial, its holder and the protection applied, with the endpoint configuration that rejects an unlisted one and the list of machines it reached."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Review each granted removable-media exception and decide whether it stands"
+          },
+          "description": {
+            "en": "List the exceptions in force, confirm the need that justified each still exists, and record the decision to continue, narrow or withdraw it. Record the holder of every exception withdrawn and how they were told."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Review list naming each exception in force, its holder, the justification checked, the decision taken and the date."
+          },
+          "suggestedRole": "IT Operations"
+        }
+      ]
+    },
+    {
+      "code": "PRIV-17.2",
+      "title": "Least functionality in deployed systems",
+      "description": {
+        "en": "Implements PR.PT-P2: The principle of least functionality is incorporated by configuring systems to provide only essential capabilities."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.PT-P2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Pin each platform kind in service to the reading that shows its enabled capabilities"
+          },
+          "description": {
+            "en": "A capability is not the same object on a host operating system, a network appliance, a database engine, a container image and a tenanted cloud service: one shows installed packages and listening services, another a licensed feature set, another loaded extensions and grants, another a subscription tier the tenant cannot switch off. For every platform kind actually in service, name the reading that will be taken from a live instance to stand as its capability list, and who is able to take it. Where a platform admits no such reading because the provider decides what is enabled, say that now and name what is accepted in its place, or the enumeration will pass over it in silence. Readings chosen ad hoc per instance yield findings that cannot be set against a baseline or carried through to a removal decision."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Scoping note listing every platform kind in service, the reading to be taken from a live instance of each, the tool or query that produces it, the named taker, and the substitute agreed where no direct reading exists."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
             "en": "Record the capabilities every deployed system offers against the need for them"
           },
           "description": {
@@ -4843,14 +5995,98 @@
         },
         {
           "title": {
+            "en": "Remove or account for each enabled capability found unnecessary"
+          },
+          "description": {
+            "en": "For every capability marked non-essential on a deployed system, either remove it and record what was removed and when, or record why it must remain and who accepted its remaining. Record the removals that were attempted and could not be completed."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Per-system record showing each non-essential capability, the action taken, the date, and the named acceptance for any that remain."
+          },
+          "suggestedRole": "IT Operations"
+        }
+      ]
+    },
+    {
+      "code": "PRIV-17.3",
+      "title": "Communications and control networks",
+      "description": {
+        "en": "Implements PR.PT-P3: Communications and control networks are protected."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.PT-P3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Grade each network by what an intruder on it could command"
+          },
+          "description": {
+            "en": "Not every network matters equally here: the ones that carry instructions — console and out-of-band access, orchestration and deployment channels, telemetry that makes something happen at the other end — hand an attacker the estate rather than a copy of a file, and they usually ride the same cabling and the same provider circuits as ordinary traffic. Work through the networks and links the estate actually runs on, including the stretches carried by a telecoms supplier or a hosting provider that cannot be inspected, and grade each by what someone positioned on it could issue or alter, not by how much passes over it. A network nobody designed, such as a flat office segment or a lab left joined to production, belongs on the list at its true grade rather than being left off."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Graded list of the estate's networks and links, each with the instructions an attacker astride it could issue and the party operating the stretch."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
             "en": "Record the protection applied to the paths carrying communications and control traffic"
           },
           "description": {
             "en": "For each path over which systems communicate with each other or are managed and controlled, record what protects the traffic on it, who may use the path, and what would follow if the path were interfered with. This covers the management and control channels themselves; the protection of data flows described in the processing map is recorded separately."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 2,
+          "sortOrder": 1,
           "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Replay a captured command and see whether the receiving system acts on it"
+          },
+          "description": {
+            "en": "A path recorded as protected is only an assertion until something tries to abuse it; the common failure is a device that executes any well-formed instruction arriving at its interface, because the designers assumed only trusted equipment could ever put one there. Take a routine instruction from a path already recorded as protected, submit it again unchanged and then altered, and note whether the far end obeys, refuses, or does neither visibly. Include at least one legacy or supplier-operated path, where protection tends to be assumed rather than configured. A path where the attempt cannot be made at all is itself a finding, not an omission."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Test record naming each path exercised, the instruction resubmitted, how the far end responded, and the paths that could not be exercised with the reason."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-17.4",
+      "title": "Resilience mechanisms",
+      "description": {
+        "en": "Implements PR.PT-P4: Mechanisms (e.g., failsafe, load balancing, hot swap) are implemented to achieve resilience requirements in normal and adverse situations."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "PR.PT-P4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Set the component losses each service must absorb without stopping"
+          },
+          "description": {
+            "en": "A resilience mechanism can only be judged against a stated expectation, and most services have never had one written down, so whatever the platform happens to provide quietly becomes the standard. Go service by service and state which single part it is expected to lose and carry on through — an instance, a node, a disk, a broker, an upstream dependency, a whole site — and whether that loss must pass unnoticed or may show as slower work for a stated period. Name the services where the honest answer is that one part takes the whole thing down, because that list is what the rest of this work is aimed at. Where individuals depend on a service, say what they would see while the takeover runs, since a failure nobody notices and one that shows are different promises to them."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Per-service statement of the single part it is expected to ride through, the degradation and duration permitted while it does, and the services recorded as tolerating no loss at all, each with the owner who agreed it."
+          },
+          "sortOrder": 0
         },
         {
           "title": {
@@ -4860,36 +6096,22 @@
             "en": "For every service carrying a stated resilience requirement, record what happens when a component of it fails, what takes over, and what an individual relying on the service would experience during the failure. Record the services with no arrangement at all and the owner who accepted that."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 3,
+          "sortOrder": 1,
           "suggestedRole": "Engineering lead"
         },
         {
           "title": {
-            "en": "Remove or account for each enabled capability found unnecessary"
+            "en": "Match each part failure in the period to the mechanism meant to absorb it"
           },
           "description": {
-            "en": "For every capability marked non-essential on a deployed system, either remove it and record what was removed and when, or record why it must remain and who accepted its remaining. Record the removals that were attempted and could not be completed."
-          },
-          "phase": "OPERATE",
-          "sortOrder": 4,
-          "evidenceHint": {
-            "en": "Per-system record showing each non-essential capability, the action taken, the date, and the named acceptance for any that remain."
-          },
-          "suggestedRole": "IT Operations"
-        },
-        {
-          "title": {
-            "en": "Review each granted removable-media exception and decide whether it stands"
-          },
-          "description": {
-            "en": "List the exceptions in force, confirm the need that justified each still exists, and record the decision to continue, narrow or withdraw it. Record the holder of every exception withdrawn and how they were told."
+            "en": "Work from the alerting and incident records for the period rather than from the resilience register, and take every occasion a part of a service failed: what the register said would take over, what actually took over, and how long the gap ran. A standby that came up with work half-finished, or a balancer that went on sending traffic to a dead instance, both count as the mechanism not holding — the service being back by morning is not the test. Where nothing failed at all, check the arrangement against the deployment as it stands today rather than against the register, because redundancy gets dropped quietly during cost work while the record goes on claiming it. What comes out of this is a corrected arrangement or a named owner accepting the gap, not an incident write-up."
           },
           "phase": "REVIEW",
-          "sortOrder": 5,
+          "suggestedRole": "IT Operations",
           "evidenceHint": {
-            "en": "Review list naming each exception in force, its holder, the justification checked, the decision taken and the date."
+            "en": "Period review listing every failure of a part that was seen, what the register said would cover it, what happened instead, the untouched services re-checked against the live deployment, and the corrections or acceptances that followed."
           },
-          "suggestedRole": "IT Operations"
+          "sortOrder": 2
         }
       ]
     }
@@ -4970,11 +6192,36 @@
       "PRIV-12.6",
       "PRIV-12.7",
       "PRIV-12.8",
-      "PRIV-13",
-      "PRIV-14",
-      "PRIV-15",
-      "PRIV-16",
-      "PRIV-17"
+      "PRIV-13.1",
+      "PRIV-13.2",
+      "PRIV-13.3",
+      "PRIV-13.4",
+      "PRIV-13.5",
+      "PRIV-13.6",
+      "PRIV-13.7",
+      "PRIV-13.8",
+      "PRIV-13.9",
+      "PRIV-13.10",
+      "PRIV-14.1",
+      "PRIV-14.2",
+      "PRIV-14.3",
+      "PRIV-14.4",
+      "PRIV-14.5",
+      "PRIV-14.6",
+      "PRIV-15.1",
+      "PRIV-15.2",
+      "PRIV-15.3",
+      "PRIV-15.4",
+      "PRIV-15.5",
+      "PRIV-15.6",
+      "PRIV-15.7",
+      "PRIV-15.8",
+      "PRIV-16.1",
+      "PRIV-16.2",
+      "PRIV-17.1",
+      "PRIV-17.2",
+      "PRIV-17.3",
+      "PRIV-17.4"
     ]
   }
 }
