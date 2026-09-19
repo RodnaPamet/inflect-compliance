@@ -190,8 +190,52 @@ const HIGH_MULTIPLICITY = 5;
 //   needles described in the HIGHLY_AMBIGUOUS history above, bound to their
 //   import line. All three were already ambiguous here before that diff, so
 //   this end moves by the full three rather than by the net one.
-const AMBIGUOUS_NEEDLE_BASELINE = 1422;
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 238;
+// • 1420 (2026-09-18, #2622): −2, and THE CAUSE IS NOT AN ASSERTION CHANGE.
+//   This entry first said the two whole-file reads in
+//   `catalogue-reaches-production` were rewritten as `.includes(...)` calls.
+//   That is false — grep that file on this branch and there is no `.includes(`
+//   in it, its two needles are `callExpressionOf`/`declarationOf` and were
+//   already construct-bound on main, and its entire diff here is one docblock
+//   paragraph. The attribution was written from the PR's description instead
+//   of from the diff, which is the failure this ratchet's own history is
+//   supposed to prevent. Caught in pre-merge review.
+//
+//   What this PR actually changes in the two test files it touches
+//   (`catalogue-reaches-production`, `guards/policy-template-library`) is
+//   COMMENT TEXT ONLY — stale prose about ISO 27001 having no production
+//   catalogue (#2624). The count moved because a needle is counted ambiguous
+//   when it matches more than once IN ITS FILE, and a comment is part of the
+//   file: rewriting prose can make a needle unique without touching a single
+//   assertion. Worth knowing before hunting for an assertion that moved.
+//
+//   MEASURED ON THE MERGE, NOT CARRIED OVER. This branch and main each lowered
+//   this baseline independently — 1427→1425 here, 1427→1422 there — and the
+//   merge conflicted on the line. Neither number is right for the union and
+//   picking a side would have been wrong in both directions: the union's live
+//   count is 1420. A zero-headroom ratchet is shared state between every open
+//   PR, so the value is re-measured on the merged tree rather than resolved by
+//   preferring one branch's figure.
+//   RE-SEATED 1420 -> 1419 IN THIS SAME PR, for a change made LATER in it.
+//   Repointing the AISVS seed-wiring guard at the builder's own function body
+//   replaced four whole-file `expect(seed).toContain(...)` reads with
+//   `functionBodyOf(...)` ones — and a construct-bound subject leaves the
+//   Class D population entirely, so fixing that guard removed a needle from
+//   this count. Measured per-branch rather than assumed:
+//
+//       main alone    1422      main + #2634  1422
+//       main + #2632  1419      main + #2635  1422
+//                               main + #2636  1422
+//
+//   Worth recording because it means this baseline is NOT shared state with
+//   the four sibling PRs open beside it: none of them moves the count, so the
+//   merge order does not matter for this ratchet. The union was measured too,
+//   and agrees at 1419.
+const AMBIGUOUS_NEEDLE_BASELINE = 1419;
+// 237 (2026-09-18, #2622): −1 on the merge, for the same reason and by the same
+// method as the 1420 above — re-measured on the merged tree, not carried over
+// from either branch. It surfaced only after the other end was re-seated,
+// because the drift sentinel reports one end at a time.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 237;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise

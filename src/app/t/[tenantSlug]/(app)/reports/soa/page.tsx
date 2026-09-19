@@ -30,7 +30,7 @@ export default async function SoAPage({
     // The Statement of Applicability is an ISO-27001-Annex-A artifact — a non-ISO
     // framework has no SoA. Guard the standalone surface against direct-URL access
     // (the hub's SoA card is already ISO-gated) by sending them to the readiness hub.
-    if (!report.isIsoFamily) {
+    if (!report.hasStatementOfApplicability) {
         redirect(`/t/${tenantSlug}/reports`);
     }
 

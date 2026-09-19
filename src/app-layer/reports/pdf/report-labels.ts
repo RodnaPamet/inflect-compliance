@@ -15,7 +15,7 @@ export interface FrameworkLabelInput {
     /** Version-qualified display name, e.g. "ISO 27001:2022" or "SOC 2". */
     frameworkName: string;
     /** ISO-27001 family — gates the Annex-A / SoA wording. */
-    isIsoFamily: boolean;
+    hasStatementOfApplicability: boolean;
     /** Total requirement/control count for the "All N …" data-source note. */
     requirementCount: number;
 }
@@ -30,14 +30,14 @@ export interface AuditReadinessLabels {
 }
 
 export function auditReadinessLabels(fw: FrameworkLabelInput): AuditReadinessLabels {
-    const section = fw.isIsoFamily ? 'Statement of Applicability' : 'Coverage & Readiness';
+    const section = fw.hasStatementOfApplicability ? 'Statement of Applicability' : 'Coverage & Readiness';
     return {
         reportSubtitle: `${section} — ${fw.frameworkName}`,
         applicabilitySection: section,
-        dataSourceDescription: fw.isIsoFamily
+        dataSourceDescription: fw.hasStatementOfApplicability
             ? `All ${fw.requirementCount} Annex A controls with mapping, applicability, and implementation status.`
             : `All ${fw.requirementCount} ${fw.frameworkName} requirements with mapping and implementation status.`,
-        tableSectionTitle: fw.isIsoFamily ? 'Statement of Applicability' : 'Requirements',
+        tableSectionTitle: fw.hasStatementOfApplicability ? 'Statement of Applicability' : 'Requirements',
     };
 }
 
@@ -53,14 +53,14 @@ export function gapAnalysisLabels(
     fw: FrameworkLabelInput,
     gapCount: number,
 ): GapAnalysisLabels {
-    const requirementsPhrase = fw.isIsoFamily
+    const requirementsPhrase = fw.hasStatementOfApplicability
         ? `${fw.frameworkName} Annex A requirements`
         : `${fw.frameworkName} requirements`;
     return {
         reportSubtitle: `${fw.frameworkName} — ${gapCount} gaps identified`,
         dataSourceDescription: `Automated compliance gap detection against ${requirementsPhrase}.`,
         requirementsPhrase,
-        noGapsParagraph: fw.isIsoFamily
+        noGapsParagraph: fw.hasStatementOfApplicability
             ? 'All Annex A requirements are fully mapped, justified, and have associated evidence. The SoA is audit-ready.'
             : `All ${fw.frameworkName} requirements are fully mapped and have associated evidence. Coverage is audit-ready.`,
     };

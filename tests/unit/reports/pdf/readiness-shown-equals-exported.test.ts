@@ -9,7 +9,7 @@
  *
  *   (a) the summary-metric VALUES equal the readiness payload numbers exactly
  *       (so the exported headline == the on-screen headline), and
- *   (b) for a NON-ISO framework (isIsoFamily:false), NO ISO SoA literal
+ *   (b) for a NON-ISO framework (hasStatementOfApplicability:false), NO ISO SoA literal
  *       (Annex A / Statement of Applicability / SoA / Applicable / Justification)
  *       appears in any string the generator emits.
  */
@@ -65,7 +65,7 @@ const ctx = makeRequestContext('ADMIN');
 // A non-ISO (SOC 2) framework with known, distinctive numbers.
 const NON_ISO_PAYLOAD = {
     framework: { key: 'SOC2', name: 'SOC 2', version: null },
-    isIsoFamily: false,
+    hasStatementOfApplicability: false,
     generatedAt: '2026-07-16T00:00:00.000Z',
     coverage: { total: 20, mapped: 12, unmapped: 8, coveragePercent: 60 },
     bySection: [

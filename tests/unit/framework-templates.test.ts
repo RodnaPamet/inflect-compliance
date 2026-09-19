@@ -67,32 +67,31 @@ describe('Framework Templates Enhancement', () => {
         });
     });
 
-    describe('Export Coverage', () => {
-        it('generates valid CSV structure', () => {
-            const rows: string[][] = [
-                ['Status', 'Requirement Code', 'Requirement Title', 'Section', 'Control Code', 'Control Name', 'Control Status'],
-                ['Mapped', 'A.5.1', 'Info Security Policies', '', 'ISO27001-A5.1', 'Policy Control', 'IMPLEMENTED'],
-                ['Unmapped', 'A.5.2', 'Review of Policies', 'Org Controls', '', '', ''],
-            ];
-            const csv = rows.map(r => r.map(c => `"${(c || '').replace(/"/g, '""')}"`).join(',')).join('\n');
-            expect(csv).toContain('"Status","Requirement Code"');
-            expect(csv).toContain('"Mapped","A.5.1"');
-            expect(csv).toContain('"Unmapped","A.5.2"');
-            expect(csv.split('\n').length).toBe(3);
-        });
-
-        it('handles special characters in CSV', () => {
-            const value = 'Policy "review" & update';
-            const escaped = `"${value.replace(/"/g, '""')}"`;
-            expect(escaped).toBe('"Policy ""review"" & update"');
-        });
-
-        it('generates proper filename', () => {
-            const frameworkKey = 'ISO27001';
-            const filename = `${frameworkKey}-coverage.csv`;
-            expect(filename).toBe('ISO27001-coverage.csv');
-        });
-    });
+    /*
+     * "Export Coverage" USED TO LIVE HERE, AND TESTED NOTHING. Removed in
+     * #2620 rather than repaired, because what it asserted was itself:
+     *
+     *   • "generates valid CSV structure" built its own `rows` array, its own
+     *     serialiser and its own escaping, then asserted on that string. It
+     *     imported no product code, so no change to `exportCoverageData` could
+     *     ever redden it. Worse, its Mapped row hard-coded `''` in the Section
+     *     position — the defect #2620 fixes, written into the fixture as
+     *     though it were the expected output.
+     *   • "handles special characters in CSV" escaped a string inline and
+     *     asserted the escaping it had just performed.
+     *   • "generates proper filename" built `${key}-coverage.csv` and asserted
+     *     it equalled `${key}-coverage.csv`.
+     *
+     * Three green tests named after an export, none of which could observe it.
+     * That is why a blank Section column shipped past a suite that appeared to
+     * cover the CSV twice. Deleting them is not a loss of coverage; it is the
+     * removal of a claim of coverage that was never true.
+     *
+     * The real assertions — whole-row, both row kinds, the `category`
+     * fallback, and a field-count check against the declared header — are in
+     * `tests/unit/usecases/framework-coverage.test.ts`, where the export is
+     * actually called.
+     */
 
     describe('API Route Actions', () => {
         it('recognizes all GET actions', () => {

@@ -18,8 +18,8 @@ import {
 
 const ISO_LEAKS = [/ISO\s*27001/i, /Annex\s*A/i, /\b93\b/];
 
-const SOC2 = { frameworkName: 'SOC 2', isIsoFamily: false, requirementCount: 61 };
-const ISO = { frameworkName: 'ISO 27001:2022', isIsoFamily: true, requirementCount: 93 };
+const SOC2 = { frameworkName: 'SOC 2', hasStatementOfApplicability: false, requirementCount: 61 };
+const ISO = { frameworkName: 'ISO 27001:2022', hasStatementOfApplicability: true, requirementCount: 93 };
 
 function allStrings(o: object): string {
     return Object.values(o).join(' | ');
@@ -75,7 +75,7 @@ import { generateGapAnalysisPdf } from '@/app-layer/reports/pdf/gapAnalysis';
 
 const readinessDto = {
     framework: { key: 'SOC2', name: 'SOC 2', version: null },
-    isIsoFamily: false,
+    hasStatementOfApplicability: false,
     generatedAt: '2026-07-16T00:00:00.000Z',
     coverage: { total: 0, mapped: 0, unmapped: 0, coveragePercent: 0 },
     bySection: [],
