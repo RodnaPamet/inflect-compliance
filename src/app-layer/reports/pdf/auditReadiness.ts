@@ -96,10 +96,55 @@ export async function generateAuditReadinessPdf(
 
     // Readiness status — a readiness verdict, NOT an ISO "SoA is audit-ready" line.
     addSectionTitle(doc, 'Readiness Status');
-    if (s.gapRequirements === 0 && report.coverage.unmapped === 0) {
-        addParagraph(doc, `Audit-ready — readiness score ${s.readinessScore}/100. Every requirement is mapped and implemented.`);
+    // "Audit-ready" must mean audit-ready. Requirement coverage alone does not
+    // establish it: this branch used to fire on gaps=0 and unmapped=0 whatever
+    // the evidence position, which on a large catalogue produced "Audit-ready —
+    // readiness score 0/100. Every requirement is mapped and implemented." in
+    // an auditor-facing document (#2618).
+    //
+    // EVIDENCE GATES THE WORD; OVERDUE WORK DOES NOT. Decided by the product
+    // owner on 2026-09-19: a missing audit artifact is the thing an auditor
+    // cannot proceed without, whereas an overdue task is a process signal about
+    // work already identified. So an overdue task still costs readiness points
+    // (see MAX_OVERDUE_PENALTY in framework/coverage.ts) and is still reported
+    // in the sentence — it just does not withhold the verdict.
+    // GATED ON IMPLEMENTATION, NOT ON THE ABSENCE OF GAPS. `gapRequirements
+    // === 0` looks like "everything is implemented" and is not: the rollup at
+    // framework/coverage.ts:398-406 buckets each requirement as implemented,
+    // excepted, gap or not-applicable, and `excepted` and `not-applicable`
+    // increment NEITHER counter. Ten requirements with three implemented and
+    // seven risk-accepted therefore gave gaps=0, unmapped=0 and — with clean
+    // evidence — printed "Audit-ready" over a score of 30. A framework with
+    // ZERO requirements did the same at 0/100, which is the exact sentence
+    // #2618 was filed to remove. Requiring implemented === total makes the
+    // claim the sentence makes literally true, and `> 0` keeps an empty
+    // catalogue from reading as complete (pre-merge review).
+    const allImplemented =
+        s.totalRequirements > 0 && s.implementedRequirements === s.totalRequirements;
+    const requirementsComplete = allImplemented && report.coverage.unmapped === 0;
+
+    // Overdue work never withholds the verdict, but it is never dropped from
+    // the sentence either — appended in EVERY branch, because "does not
+    // withhold" must not become "does not mention".
+    const overdueNote = s.overdueTaskCount > 0 ? ` ${s.overdueTaskCount} task(s) are overdue.` : '';
+
+    if (requirementsComplete && s.missingEvidenceCount === 0) {
+        addParagraph(doc, `Audit-ready — readiness score ${s.readinessScore}/100. Every requirement is mapped and implemented, and every in-scope control carries current evidence.${overdueNote}`);
+    } else if (requirementsComplete) {
+        addParagraph(doc, `Readiness score ${s.readinessScore}/100. Every requirement is mapped and implemented, but ${s.missingEvidenceCount} in-scope control(s) lack current evidence.${overdueNote}`);
     } else {
-        addParagraph(doc, `Readiness score ${s.readinessScore}/100. ${s.gapRequirements} mapped requirement(s) not yet implemented; ${report.coverage.unmapped} unmapped.`);
+        // The honest position, itemised. A requirement that is neither
+        // implemented nor a gap is excepted or not applicable, and saying so
+        // is the difference between "70 outstanding" and "70 decided".
+        const parts = [`${s.implementedRequirements} of ${s.totalRequirements} requirement(s) implemented`];
+        if (s.gapRequirements > 0) parts.push(`${s.gapRequirements} not yet implemented`);
+        if (s.exceptedRequirements > 0) parts.push(`${s.exceptedRequirements} risk-accepted under an exception`);
+        if (report.coverage.unmapped > 0) parts.push(`${report.coverage.unmapped} unmapped`);
+        const evidenceNote =
+            s.missingEvidenceCount > 0
+                ? ` ${s.missingEvidenceCount} in-scope control(s) lack current evidence.`
+                : '';
+        addParagraph(doc, `Readiness score ${s.readinessScore}/100. ${parts.join('; ')}.${evidenceNote}${overdueNote}`);
     }
 
     addSpacer(doc);

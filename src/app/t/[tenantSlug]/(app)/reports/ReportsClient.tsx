@@ -446,7 +446,11 @@ export function ReportsClient({
                             silently drop rows from an auditor-facing export — the
                             same reason `overdueTasks` stayed below.
                             `summary.missingEvidenceCount` also stays: it feeds
-                            `readinessScore`, which subtracts 2 points per entry.
+                            `readinessScore`, which deducts up to 50 points for
+                            the SHARE of applicable controls missing evidence
+                            (#2618 — it used to subtract 2 points per entry,
+                            which is a count, not a share, and saturated the
+                            score at 0 on large catalogues).
 
                             The drill-down now lives on the controls dashboard
                             card, which links to /controls?evidence=missing. */}
