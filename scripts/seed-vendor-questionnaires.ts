@@ -24,6 +24,10 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { fixtureObject } from '../prisma/fixture-io';
+import {
+    seedAisvsVendorQuestionnaire,
+    type AisvsQuestionnaireFixture,
+} from '../prisma/aisvs-vendor-questionnaire';
 
 // Prisma 7 — adapter is required for PrismaClient construction.
 const prisma = new PrismaClient({
@@ -52,6 +56,22 @@ type Fixture = {
     scoringConfig: unknown;
     sections: FixtureSection[];
 };
+
+/**
+ * The AISVS questionnaire is seeded through its own builder rather than joining
+ * `FIXTURES`, because it is not the same shape: no `scoringConfig`, sections
+ * that are `conditional` with an `appliesTo`, and questions carrying
+ * `aisvsId`/`level`/`type`. Its scoring config, option sets and risk points are
+ * DERIVED, which is why it needs a builder and not a row in a list.
+ *
+ * It reached no production database at all until #2622 — built inline in
+ * `prisma/seed.ts`, which production never runs.
+ */
+const AISVS_QUESTIONNAIRE = fixtureObject<AisvsQuestionnaireFixture>(
+    'fixtures/aisvs-vendor-questionnaire',
+    require('../prisma/fixtures/aisvs-vendor-questionnaire.json'),
+    'key', 'name', 'description', 'attribution', 'sections',
+);
 
 // require() so esbuild inlines the fixture JSON into the bundled entrypoint.
 const FIXTURES: Fixture[] = [
@@ -133,6 +153,10 @@ async function main(): Promise<void> {
             if (didCreate) created += 1;
             else skipped += 1;
         }
+        // Same tenant loop, same idempotency contract — a template that already
+        // exists is skipped, so re-running on a populated database is safe.
+        if (await seedAisvsVendorQuestionnaire(prisma, AISVS_QUESTIONNAIRE, id, null)) created += 1;
+        else skipped += 1;
     }
     console.log(
         `✅ Vendor questionnaires seeded across ${tenants.length} tenant(s): created ${created}, skipped ${skipped} (already present).`,

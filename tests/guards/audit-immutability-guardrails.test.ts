@@ -203,7 +203,7 @@ import * as path from 'path';
 
 import { AUDIT_CLEANUP_MODULE } from '../helpers/audit-cleanup';
 import { REPO_ROOT, repoFiles, repoRelative } from '../helpers/repo-files';
-import { codeOf, functionBodyOf } from '../helpers/source-blocks';
+import { codeOf, functionBodyOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const SRC_DIR = path.resolve(__dirname, '..', '..', 'src');
 const PRISMA_DIR = path.resolve(__dirname, '..', '..', 'prisma');
@@ -642,9 +642,24 @@ describe('AuditLog Immutability Guardrails', () => {
 
         expect(immutableMigration).toBeDefined();
 
-        // Verify it contains the trigger function and trigger creation
+        // Verify it contains the trigger function and trigger creation.
+        //
+        // MASKED AT THE READ, and every assertion below is why (#2287). Read
+        // raw, all five were satisfiable by this file's own `--` header, and
+        // two of them were MEASURED green against the real thing deleted:
+        //
+        //   · `BEFORE UPDATE OR DELETE` — narrow the CREATE TRIGGER to
+        //     `BEFORE DELETE`, so audit rows become updatable, and the header
+        //     line `--   BEFORE UPDATE OR DELETE trigger → raises an
+        //     exception` keeps this green. 14/14 at the base commit.
+        //   · `REVOKE UPDATE` — replace the statement with a `--` copy of
+        //     itself. 14/14. That is the PRIVILEGE gate on `AuditLog`, the
+        //     half that was deliberately NOT loosened when the trigger was
+        //     narrowed for DSAR pseudonymization; `app_user` still cannot
+        //     update an audit row at all, which is why erasure has to run via
+        //     `runInGlobalContext`.
         const sqlFile = path.join(migrationDir, immutableMigration!, 'migration.sql');
-        const sql = fs.readFileSync(sqlFile, 'utf-8');
+        const sql = sqlCodeOf(fs.readFileSync(sqlFile, 'utf-8'));
 
         expect(sql).toContain('audit_log_immutable_guard');
         expect(sql).toContain('BEFORE UPDATE OR DELETE');
@@ -666,7 +681,13 @@ describe('AuditLog Immutability Guardrails', () => {
             .sort()
             .filter((d) => {
                 const f = path.join(migrationDir, d, 'migration.sql');
-                return fs.existsSync(f) && fs.readFileSync(f, 'utf-8').includes('FUNCTION audit_log_immutable_guard');
+                // Masked: this selects WHICH migration is the live definition,
+                // so a later migration merely MENTIONING the function in a
+                // `--` note would be resolved as the one that is running.
+                return (
+                    fs.existsSync(f) &&
+                    sqlCodeOf(fs.readFileSync(f, 'utf-8')).includes('FUNCTION audit_log_immutable_guard')
+                );
             });
 
         // Non-vacuous: at least the original and the narrowing exist, and the
@@ -674,12 +695,24 @@ describe('AuditLog Immutability Guardrails', () => {
         expect(defining.length).toBeGreaterThanOrEqual(2);
 
         const raw = fs.readFileSync(path.join(migrationDir, defining[defining.length - 1], 'migration.sql'), 'utf-8');
-        // STRIP `--` COMMENTS BEFORE ASSERTING. Measured the hard way: the
-        // migration's own header explains why granting UPDATE back to app_user
-        // would be wrong, and that sentence matched the regex below — a guard
-        // FALSIFIED by prose, the mirror of #2246's guards SATISFIED by prose.
-        // Either way the fix is the same: assert against code, never text.
-        const live = raw.replace(/^[^\S\n]*--.*$/gm, '');
+        // MASK `--` AND `/* … */` BEFORE ASSERTING. Measured the hard way,
+        // twice, in both directions:
+        //
+        //   · FALSIFIED by prose — the migration's own header explains why
+        //     granting UPDATE back to app_user would be wrong, and that
+        //     sentence matched the `not.toMatch` at the bottom of this test.
+        //   · SATISFIED by prose (#2287) — delete the `to_jsonb(NEW) -
+        //     'userId' = to_jsonb(OLD) - 'userId'` clause, the one thing
+        //     stopping a permitted "pseudonymization" from also rewriting
+        //     `entryHash` / `previousHash`, and park it in a TRAILING `--`
+        //     comment. 14/14 GREEN with the hash chain unprotected.
+        //
+        // That second one is why this is `sqlCodeOf` and no longer a local
+        // `raw.replace(/^[^\S\n]*--.*$/gm, '')`: that strip only removed a
+        // comment occupying a WHOLE LINE, so a comment after code on a line
+        // survived it intact. Masking is now at the READ, shared, and lexes
+        // the language the file is actually written in.
+        const live = sqlCodeOf(raw);
 
         // The permitted shape, spelled out. `to_jsonb(NEW) - 'userId' =
         // to_jsonb(OLD) - 'userId'` is the part that makes "every other column

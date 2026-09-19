@@ -32,6 +32,7 @@ import {
     declarationOf,
     functionBodyOf,
     interfaceBodyOf,
+    sqlCodeOf,
 } from '../helpers/source-blocks';
 
 describe('source-blocks — the anchor reads CODE, not prose', () => {
@@ -282,6 +283,88 @@ describe('source-blocks — codeOf', () => {
 
         const body = functionBodyOf(src, 'handler');
         expect(codeOf(body)).toBe(body);
+    });
+});
+
+/**
+ * `sqlCodeOf` — the `.sql` sibling.
+ *
+ * The three cases below are the three mutations that were MEASURED green
+ * against `tests/guards/audit-immutability-guardrails.test.ts` at
+ * `c3e0df141`, reduced to their smallest form. Each is the same defect:
+ * the real DDL deleted, a `--` comment naming it left behind, guard still
+ * green.
+ */
+describe('source-blocks — sqlCodeOf', () => {
+    it('blanks a WHOLE-LINE -- comment, preserving length and line count', () => {
+        const src = [
+            '--   BEFORE UPDATE OR DELETE trigger → raises an exception',
+            'CREATE TRIGGER t BEFORE DELETE ON "AuditLog"',
+        ].join('\n');
+
+        const masked = sqlCodeOf(src);
+        expect(masked).toHaveLength(src.length);
+        expect(masked.split('\n')).toHaveLength(2);
+        expect(masked).not.toContain('BEFORE UPDATE OR DELETE');
+        expect(masked).toContain('CREATE TRIGGER t BEFORE DELETE ON "AuditLog"');
+    });
+
+    it('blanks a TRAILING -- comment, which a line-anchored strip does not', () => {
+        // The exact shape that defeated the guard's own
+        // `raw.replace(/^[^\S\n]*--.*$/gm, '')`: the clause protecting the
+        // audit hash chain deleted, and parked after live code.
+        const src = "    THEN  -- to_jsonb(NEW) - 'userId' = to_jsonb(OLD) - 'userId'";
+
+        expect(src.replace(/^[^\S\n]*--.*$/gm, '')).toContain('to_jsonb(NEW)');
+        expect(sqlCodeOf(src)).not.toContain('to_jsonb(NEW)');
+        expect(sqlCodeOf(src)).toContain('THEN');
+    });
+
+    it('masks -- inside a $$ … $$ body, because plpgsql reads it as a comment', () => {
+        const src = [
+            'CREATE OR REPLACE FUNCTION f() RETURNS TRIGGER AS $$',
+            'BEGIN',
+            "    -- REVOKE UPDATE, DELETE ON \"AuditLog\" FROM app_user;",
+            '    RETURN NEW;',
+            'END;',
+            '$$ LANGUAGE plpgsql;',
+        ].join('\n');
+
+        expect(sqlCodeOf(src)).not.toContain('REVOKE UPDATE');
+        expect(sqlCodeOf(src)).toContain('RETURN NEW;');
+    });
+
+    it('blanks /* … */ and handles the nesting Postgres allows', () => {
+        const src = 'SELECT 1; /* outer /* inner */ still comment */ SELECT 2;';
+        const masked = sqlCodeOf(src);
+        expect(masked).toHaveLength(src.length);
+        expect(masked).toContain('SELECT 1;');
+        expect(masked).toContain('SELECT 2;');
+        expect(masked).not.toContain('inner');
+        expect(masked).not.toContain('still comment');
+    });
+
+    it('KEEPS string literals — a permitted-shape predicate is code', () => {
+        const src = "IF TG_OP = 'UPDATE' AND NEW.\"userId\" IS NULL THEN";
+        expect(sqlCodeOf(src)).toBe(src);
+    });
+
+    it('is fail-closed: a -- inside a quoted string is masked too', () => {
+        // The one known limit, asserted rather than left to be discovered.
+        // Over-masking makes an assertion DECLINE to match (a red the author
+        // reads); under-masking is a guard satisfied by prose.
+        const src = "SELECT 'a -- b' AS s;";
+        expect(sqlCodeOf(src)).not.toContain("'a -- b'");
+        expect(sqlCodeOf(src)).toHaveLength(src.length);
+    });
+
+    it('is NOT what codeOf does — handing codeOf a .sql file leaves -- intact', () => {
+        // Why this is a second function and not a flag: `codeOf` lexes `//`,
+        // so on SQL it returns a view that still carries every comment while
+        // READING, at the call site, as masked.
+        const src = '-- REVOKE UPDATE, DELETE ON "AuditLog" FROM app_user;';
+        expect(codeOf(src)).toContain('REVOKE UPDATE');
+        expect(sqlCodeOf(src)).not.toContain('REVOKE UPDATE');
     });
 });
 

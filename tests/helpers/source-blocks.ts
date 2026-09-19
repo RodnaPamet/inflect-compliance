@@ -209,6 +209,98 @@ export function codeOf(src: string): string {
 }
 
 /**
+ * The SQL sibling of `codeOf` — blank `--` line comments and `/* … *\/` block
+ * comments in a `.sql` file, offsets and newlines unchanged.
+ *
+ * WHY THIS IS A SEPARATE FUNCTION AND NOT A FLAG. `codeOf` lexes TypeScript.
+ * Handing it a `.sql` file produces the single worst outcome available: a
+ * view that still carries every `--` comment while READING, at the call site,
+ * as masked. `tests/guardrails/raw-source-assertion-ratchet.test.ts` excludes
+ * `.sql` from its population for exactly that reason and its failure message
+ * tells the reader to write a reader per language. This is that reader,
+ * shared, so the next guard does not hand-roll a third copy of it.
+ *
+ * WHAT IT WAS WRITTEN FOR, MEASURED. `tests/guards/audit-immutability-
+ * guardrails.test.ts` read two migration files raw. Three mutations, each the
+ * real thing the guard names, each left the suite 14/14 GREEN:
+ *
+ *   1. `CREATE TRIGGER … BEFORE UPDATE OR DELETE` narrowed to `BEFORE DELETE`
+ *      — audit rows become updatable — satisfied by the header comment
+ *      `--   BEFORE UPDATE OR DELETE trigger → raises an exception`.
+ *   2. `REVOKE UPDATE, DELETE ON "AuditLog" FROM app_user` replaced by a `--`
+ *      line of itself. That is the PRIVILEGE gate of the two that hold the
+ *      audit trail (the other is the trigger); #2287 turns on it staying put.
+ *   3. The live trigger's `to_jsonb(NEW) - 'userId' = to_jsonb(OLD) -
+ *      'userId'` clause — the one that stops a "pseudonymization" from
+ *      rewriting `entryHash` / `previousHash` — deleted and parked in a
+ *      TRAILING `--` comment on the line below it.
+ *
+ * Mutation 3 is why this exists rather than the `raw.replace(/^\s*--.*$/gm,
+ * '')` that guard already carried: that strip removes a comment occupying a
+ * WHOLE LINE and nothing else, so moving the deleted code to the end of a
+ * code line walked straight past it.
+ *
+ * FAIL-CLOSED, DELIBERATELY, AND THAT IS THE ONE KNOWN LIMIT. This is not
+ * string-aware: a `--` or `/*` inside a quoted SQL string is masked too. The
+ * asymmetry is the whole reason to accept it — over-masking can only make an
+ * assertion DECLINE to match (a loud red the author reads), while
+ * under-masking is a guard silently satisfied by prose, which is the defect
+ * class this file exists to close. Same trade the local masker in
+ * `tests/guards/rq2-6-appetite-lec.test.ts` documented before this one
+ * generalised it.
+ *
+ * DOLLAR-QUOTED BODIES ARE CODE, not literals. `$$ … $$` around a plpgsql
+ * function body is a string to the SQL parser but source to the plpgsql one,
+ * and every `$$` block in this repo's migrations is a function body — so a
+ * `--` inside one IS a comment and is masked. That is what makes mutation 3
+ * catchable at all: the clause it moved lives inside `$$ … $$`.
+ *
+ * Block comments NEST in Postgres, so the scan tracks depth; an unterminated
+ * one runs to EOF (blanking the rest of the file), which is the fail-closed
+ * direction and is in any case not valid SQL.
+ */
+export function sqlCodeOf(sql: string): string {
+    const out = sql.split('');
+    const blank = (from: number, to: number) => {
+        for (let k = from; k < to && k < sql.length; k++) {
+            if (sql[k] !== '\n') out[k] = ' ';
+        }
+    };
+
+    let i = 0;
+    while (i < sql.length) {
+        if (sql[i] === '-' && sql[i + 1] === '-') {
+            const nl = sql.indexOf('\n', i);
+            const end = nl < 0 ? sql.length : nl;
+            blank(i, end);
+            i = end;
+            continue;
+        }
+        if (sql[i] === '/' && sql[i + 1] === '*') {
+            let depth = 1;
+            let j = i + 2;
+            while (j < sql.length && depth > 0) {
+                if (sql[j] === '/' && sql[j + 1] === '*') {
+                    depth++;
+                    j += 2;
+                } else if (sql[j] === '*' && sql[j + 1] === '/') {
+                    depth--;
+                    j += 2;
+                } else {
+                    j++;
+                }
+            }
+            blank(i, j);
+            i = j;
+            continue;
+        }
+        i++;
+    }
+
+    return out.join('');
+}
+
+/**
  * Return the whole `const <name> = …;` declaration, from the keyword to the
  * semicolon that closes it at nesting depth zero.
  *

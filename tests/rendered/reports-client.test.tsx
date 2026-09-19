@@ -29,9 +29,9 @@ jest.mock('@/components/ui/tooltip', () => ({
 
 import { ReportsClient } from '@/app/t/[tenantSlug]/(app)/reports/ReportsClient';
 
-const ISO = { key: 'ISO27001', name: 'ISO 27001:2022', isIsoFamily: true };
-const SOC2 = { key: 'SOC2', name: 'SOC 2', isIsoFamily: false };
-const NIS2 = { key: 'NIS2', name: 'NIS2', isIsoFamily: false };
+const ISO = { key: 'ISO27001', name: 'ISO 27001:2022', hasStatementOfApplicability: true };
+const SOC2 = { key: 'SOC2', name: 'SOC 2', hasStatementOfApplicability: false };
+const NIS2 = { key: 'NIS2', name: 'NIS2', hasStatementOfApplicability: false };
 
 function readiness(key: string, coveragePercent: number): any {
     return {

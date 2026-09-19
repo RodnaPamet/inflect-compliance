@@ -64,6 +64,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.1.2
         ref_id: "V1.1.2"
         name: "Threat Modeling"
@@ -74,6 +75,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.1.3
         ref_id: "V1.1.3"
         name: "Security in User Stories"
@@ -84,6 +86,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.1.4
         ref_id: "V1.1.4"
         name: "Trust Boundaries Documented"
@@ -94,6 +97,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.1.5
         ref_id: "V1.1.5"
         name: "Security Analysis of Components"
@@ -104,6 +108,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.1.6
         ref_id: "V1.1.6"
         name: "Centralized Security Controls"
@@ -114,6 +119,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.1.7
         ref_id: "V1.1.7"
         name: "Secure Coding Checklist"
@@ -124,6 +130,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.2.1
         ref_id: "V1.2.1"
         name: "Low-Privilege Component Accounts"
@@ -134,6 +141,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.2.2
         ref_id: "V1.2.2"
         name: "Authenticated Component Communication"
@@ -144,6 +152,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.2.3
         ref_id: "V1.2.3"
         name: "Single Vetted Authentication Mechanism"
@@ -153,6 +162,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.2.4
         ref_id: "V1.2.4"
         name: "Uniform Authentication Strength"
@@ -163,6 +173,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.4.1
         ref_id: "V1.4.1"
         name: "Trusted Enforcement Points"
@@ -173,6 +184,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.4.4
         ref_id: "V1.4.4"
         name: "Single Access Control Mechanism"
@@ -183,6 +195,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.4.5
         ref_id: "V1.4.5"
         name: "Attribute or Feature Based Access Control"
@@ -193,6 +206,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.5.1
         ref_id: "V1.5.1"
         name: "Input and Output Requirements"
@@ -203,6 +217,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.5.2
         ref_id: "V1.5.2"
         name: "Safe Serialization"
@@ -213,6 +228,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.5.3
         ref_id: "V1.5.3"
         name: "Server-Side Validation"
@@ -222,6 +238,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.5.4
         ref_id: "V1.5.4"
         name: "Context-Aware Output Encoding"
@@ -231,6 +248,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.6.1
         ref_id: "V1.6.1"
         name: "Cryptographic Key Management"
@@ -241,6 +259,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.6.2
         ref_id: "V1.6.2"
         name: "Protection of Key Material"
@@ -251,6 +270,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.6.3
         ref_id: "V1.6.3"
         name: "Key Rotation Without Redeploy"
@@ -261,6 +281,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.6.4
         ref_id: "V1.6.4"
         name: "No Client-Side Secrets"
@@ -271,6 +292,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.7.1
         ref_id: "V1.7.1"
         name: "Common Logging Format"
@@ -281,6 +303,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.7.2
         ref_id: "V1.7.2"
         name: "Central Log Collection"
@@ -290,6 +313,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.8.1
         ref_id: "V1.8.1"
         name: "Data Classification"
@@ -300,6 +324,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.8.2
         ref_id: "V1.8.2"
         name: "Protection Per Classification"
@@ -310,6 +335,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.9.1
         ref_id: "V1.9.1"
         name: "Encrypted Component Links"
@@ -319,6 +345,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.9.2
         ref_id: "V1.9.2"
         name: "Authenticated Component Links"
@@ -329,6 +356,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.10.1
         ref_id: "V1.10.1"
         name: "Source Code Control"
@@ -338,6 +366,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.11.1
         ref_id: "V1.11.1"
         name: "Business Logic Documentation"
@@ -347,6 +376,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.11.2
         ref_id: "V1.11.2"
         name: "No Unsafe Shared State"
@@ -356,6 +386,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.11.3
         ref_id: "V1.11.3"
         name: "Thread-Safe High-Value Logic"
@@ -366,6 +397,7 @@ objects:
         depth: 2
         assessable: true
         category: L3
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.12.1
         ref_id: "V1.12.1"
         name: "Safe File Upload Storage"
@@ -375,6 +407,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.14.1
         ref_id: "V1.14.1"
         name: "Component Segregation"
@@ -385,6 +418,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.14.2
         ref_id: "V1.14.2"
         name: "Signed Build Artifacts"
@@ -394,6 +428,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.14.3
         ref_id: "V1.14.3"
         name: "Build Pipeline Warnings"
@@ -404,6 +439,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.14.4
         ref_id: "V1.14.4"
         name: "Automated Deployment"
@@ -413,6 +449,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.14.5
         ref_id: "V1.14.5"
         name: "Application Sandboxing"
@@ -422,6 +459,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V1.14.6
         ref_id: "V1.14.6"
         name: "No Unsupported Client Technologies"
@@ -431,6 +469,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Architecture, Design and Threat Modeling"
       # ─── V2: Authentication ───
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2
         ref_id: "V2"
@@ -449,6 +488,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.1.2
         ref_id: "V2.1.2"
         name: "Long Passwords Permitted"
@@ -458,6 +498,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.1.3
         ref_id: "V2.1.3"
         name: "No Silent Truncation"
@@ -467,6 +508,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.1.4
         ref_id: "V2.1.4"
         name: "Unicode and Spaces Allowed"
@@ -476,6 +518,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.1.5
         ref_id: "V2.1.5"
         name: "Users Can Change Password"
@@ -485,6 +528,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.1.6
         ref_id: "V2.1.6"
         name: "Change Requires Current Password"
@@ -494,6 +538,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.1.7
         ref_id: "V2.1.7"
         name: "Breached Password Screening"
@@ -503,6 +548,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.1.8
         ref_id: "V2.1.8"
         name: "Password Strength Guidance"
@@ -512,6 +558,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.1.9
         ref_id: "V2.1.9"
         name: "No Arbitrary Composition Rules"
@@ -521,6 +568,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.1.10
         ref_id: "V2.1.10"
         name: "No Forced Periodic Rotation"
@@ -530,6 +578,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.1.11
         ref_id: "V2.1.11"
         name: "Password Managers Supported"
@@ -539,6 +588,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.1.12
         ref_id: "V2.1.12"
         name: "Reveal or Show Last Character"
@@ -548,6 +598,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.2.1
         ref_id: "V2.2.1"
         name: "Anti-Automation on Login"
@@ -557,6 +608,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.2.2
         ref_id: "V2.2.2"
         name: "Restrict Weak Authenticators"
@@ -566,6 +618,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.2.3
         ref_id: "V2.2.3"
         name: "Secure Authentication Notifications"
@@ -576,6 +629,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.2.4
         ref_id: "V2.2.4"
         name: "Impersonation Resistance"
@@ -586,6 +640,7 @@ objects:
         depth: 2
         assessable: true
         category: L3
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.2.5
         ref_id: "V2.2.5"
         name: "Verifier Compromise Resistance"
@@ -595,6 +650,7 @@ objects:
         depth: 2
         assessable: true
         category: L3
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.2.6
         ref_id: "V2.2.6"
         name: "Replay Resistance"
@@ -604,6 +660,7 @@ objects:
         depth: 2
         assessable: true
         category: L3
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.2.7
         ref_id: "V2.2.7"
         name: "Intent to Authenticate"
@@ -613,6 +670,7 @@ objects:
         depth: 2
         assessable: true
         category: L3
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.3.1
         ref_id: "V2.3.1"
         name: "Random Initial Secrets"
@@ -622,6 +680,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.3.2
         ref_id: "V2.3.2"
         name: "Enrollment and Renewal"
@@ -631,6 +690,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.3.3
         ref_id: "V2.3.3"
         name: "Renewal Instructions and Timing"
@@ -640,6 +700,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.4.1
         ref_id: "V2.4.1"
         name: "Salted Password Hashing"
@@ -649,6 +710,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.4.2
         ref_id: "V2.4.2"
         name: "Unique Salt Per Credential"
@@ -658,6 +720,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.4.3
         ref_id: "V2.4.3"
         name: "Adequate Work Factor"
@@ -667,6 +730,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.4.4
         ref_id: "V2.4.4"
         name: "Approved Hashing Algorithm"
@@ -676,6 +740,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.4.5
         ref_id: "V2.4.5"
         name: "Additional Pepper or Iteration"
@@ -685,6 +750,7 @@ objects:
         depth: 2
         assessable: true
         category: L3
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.5.1
         ref_id: "V2.5.1"
         name: "No Vendor Default Recovery Secret"
@@ -694,6 +760,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.5.2
         ref_id: "V2.5.2"
         name: "No Password Hints"
@@ -703,6 +770,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.5.3
         ref_id: "V2.5.3"
         name: "Recovery Does Not Reveal Password"
@@ -712,6 +780,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.5.4
         ref_id: "V2.5.4"
         name: "No Shared or Default Accounts"
@@ -721,6 +790,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.5.5
         ref_id: "V2.5.5"
         name: "Notify on Factor Change"
@@ -730,6 +800,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.5.6
         ref_id: "V2.5.6"
         name: "Secure Recovery Mechanism"
@@ -739,6 +810,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.5.7
         ref_id: "V2.5.7"
         name: "Recovery for Lost MFA"
@@ -748,6 +820,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.6.1
         ref_id: "V2.6.1"
         name: "One-Time Lookup Secrets"
@@ -757,6 +830,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.6.2
         ref_id: "V2.6.2"
         name: "Random Lookup Secrets"
@@ -766,6 +840,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.6.3
         ref_id: "V2.6.3"
         name: "Hashed Lookup Secrets"
@@ -775,6 +850,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.7.1
         ref_id: "V2.7.1"
         name: "No Cleartext Out-of-Band"
@@ -784,6 +860,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.7.2
         ref_id: "V2.7.2"
         name: "Out-of-Band Expiry"
@@ -793,6 +870,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.7.3
         ref_id: "V2.7.3"
         name: "Single-Use Out-of-Band"
@@ -802,6 +880,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.7.4
         ref_id: "V2.7.4"
         name: "Authenticated Out-of-Band Delivery"
@@ -811,6 +890,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.8.1
         ref_id: "V2.8.1"
         name: "Time-Based One-Time Passwords"
@@ -820,6 +900,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.8.2
         ref_id: "V2.8.2"
         name: "Protected OTP Secrets"
@@ -829,6 +910,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.8.4
         ref_id: "V2.8.4"
         name: "Single-Use OTP Within Window"
@@ -838,6 +920,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.9.1
         ref_id: "V2.9.1"
         name: "Secure Cryptographic Key Storage"
@@ -847,6 +930,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.9.2
         ref_id: "V2.9.2"
         name: "Challenge Nonce Quality"
@@ -856,6 +940,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.9.3
         ref_id: "V2.9.3"
         name: "Approved Cryptographic Authentication"
@@ -865,6 +950,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.10.1
         ref_id: "V2.10.1"
         name: "Non-Default Service Secrets"
@@ -874,6 +960,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.10.2
         ref_id: "V2.10.2"
         name: "Protected Service Credentials"
@@ -883,6 +970,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V2.10.4
         ref_id: "V2.10.4"
         name: "Secrets in a Vault"
@@ -892,6 +980,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Authentication"
       # ─── V3: Session Management ───
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3
         ref_id: "V3"
@@ -910,6 +999,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.2.1
         ref_id: "V3.2.1"
         name: "New Token After Authentication"
@@ -919,6 +1009,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.2.2
         ref_id: "V3.2.2"
         name: "Sufficient Token Entropy"
@@ -928,6 +1019,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.2.3
         ref_id: "V3.2.3"
         name: "Secure Token Storage"
@@ -937,6 +1029,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.2.4
         ref_id: "V3.2.4"
         name: "Approved Token Generation"
@@ -946,6 +1039,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.3.1
         ref_id: "V3.3.1"
         name: "Logout Invalidates Session"
@@ -955,6 +1049,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.3.2
         ref_id: "V3.3.2"
         name: "Inactivity and Absolute Timeout"
@@ -964,6 +1059,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.3.3
         ref_id: "V3.3.3"
         name: "Terminate Sessions on Credential Change"
@@ -973,6 +1069,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.3.4
         ref_id: "V3.3.4"
         name: "Manage Active Sessions"
@@ -982,6 +1079,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.4.1
         ref_id: "V3.4.1"
         name: "Secure Cookie Attribute"
@@ -991,6 +1089,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.4.2
         ref_id: "V3.4.2"
         name: "HttpOnly Cookie Attribute"
@@ -1000,6 +1099,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.4.3
         ref_id: "V3.4.3"
         name: "SameSite Cookie Attribute"
@@ -1009,6 +1109,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.4.4
         ref_id: "V3.4.4"
         name: "Host-Prefixed Cookies"
@@ -1018,6 +1119,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.4.5
         ref_id: "V3.4.5"
         name: "Path-Scoped Cookies"
@@ -1027,6 +1129,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.5.1
         ref_id: "V3.5.1"
         name: "Revocable Token Sessions"
@@ -1036,6 +1139,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.5.2
         ref_id: "V3.5.2"
         name: "No Static API Secrets as Sessions"
@@ -1045,6 +1149,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.5.3
         ref_id: "V3.5.3"
         name: "Stateless Token Validation"
@@ -1054,6 +1159,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Session Management"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V3.7.1
         ref_id: "V3.7.1"
         name: "Reauthentication for Sensitive Actions"
@@ -1063,6 +1169,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Session Management"
       # ─── V4: Access Control ───
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V4
         ref_id: "V4"
@@ -1081,6 +1188,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Access Control"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V4.1.2
         ref_id: "V4.1.2"
         name: "Non-Manipulable Access Metadata"
@@ -1090,6 +1198,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Access Control"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V4.1.3
         ref_id: "V4.1.3"
         name: "Principle of Least Privilege"
@@ -1099,6 +1208,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Access Control"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V4.1.5
         ref_id: "V4.1.5"
         name: "Fail Securely on Access Errors"
@@ -1108,6 +1218,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Access Control"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V4.2.1
         ref_id: "V4.2.1"
         name: "Protect Against Object Reference Abuse"
@@ -1117,6 +1228,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Access Control"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V4.2.2
         ref_id: "V4.2.2"
         name: "Anti-CSRF for State Changes"
@@ -1126,6 +1238,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Access Control"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V4.3.1
         ref_id: "V4.3.1"
         name: "Multi-Factor Admin Access"
@@ -1135,6 +1248,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Access Control"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V4.3.2
         ref_id: "V4.3.2"
         name: "Directory Browsing Disabled"
@@ -1144,6 +1258,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Access Control"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V4.3.3
         ref_id: "V4.3.3"
         name: "Extra Authorization for Sensitive Ops"
@@ -1153,6 +1268,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Access Control"
       # ─── V5: Validation, Sanitization and Encoding ───
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5
         ref_id: "V5"
@@ -1171,6 +1287,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.1.2
         ref_id: "V5.1.2"
         name: "Mass Assignment Protection"
@@ -1180,6 +1297,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.1.3
         ref_id: "V5.1.3"
         name: "Validate All Input"
@@ -1189,6 +1307,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.1.4
         ref_id: "V5.1.4"
         name: "Allowlist Structured Data"
@@ -1198,6 +1317,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.1.5
         ref_id: "V5.1.5"
         name: "Validate Redirect Targets"
@@ -1207,6 +1327,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.2.1
         ref_id: "V5.2.1"
         name: "Sanitize Untrusted HTML"
@@ -1216,6 +1337,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.2.2
         ref_id: "V5.2.2"
         name: "Sanitize Unstructured Data"
@@ -1225,6 +1347,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.2.3
         ref_id: "V5.2.3"
         name: "Prevent Mail Injection"
@@ -1234,6 +1357,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.2.4
         ref_id: "V5.2.4"
         name: "Avoid Dynamic Code Evaluation"
@@ -1243,6 +1367,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.2.5
         ref_id: "V5.2.5"
         name: "Prevent Template Injection"
@@ -1252,6 +1377,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.2.6
         ref_id: "V5.2.6"
         name: "Mitigate SSRF"
@@ -1261,6 +1387,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.2.7
         ref_id: "V5.2.7"
         name: "Neutralize Scriptable SVG"
@@ -1270,6 +1397,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.2.8
         ref_id: "V5.2.8"
         name: "Sanitize Scriptable Markup"
@@ -1279,6 +1407,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.3.1
         ref_id: "V5.3.1"
         name: "Context-Aware Output Encoding"
@@ -1288,6 +1417,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.3.2
         ref_id: "V5.3.2"
         name: "Unicode-Safe Encoding"
@@ -1297,6 +1427,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.3.3
         ref_id: "V5.3.3"
         name: "Context-Aware XSS Defense"
@@ -1306,6 +1437,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.3.4
         ref_id: "V5.3.4"
         name: "Parameterized Database Queries"
@@ -1315,6 +1447,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.3.5
         ref_id: "V5.3.5"
         name: "Prevent OS Command Injection"
@@ -1324,6 +1457,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.3.6
         ref_id: "V5.3.6"
         name: "Prevent XML Injection"
@@ -1333,6 +1467,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.3.7
         ref_id: "V5.3.7"
         name: "Prevent LDAP Injection"
@@ -1342,6 +1477,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.3.9
         ref_id: "V5.3.9"
         name: "Prevent File Inclusion"
@@ -1351,6 +1487,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.3.10
         ref_id: "V5.3.10"
         name: "Prevent XPath Injection"
@@ -1360,6 +1497,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.4.1
         ref_id: "V5.4.1"
         name: "Memory-Safe String Handling"
@@ -1369,6 +1507,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.4.2
         ref_id: "V5.4.2"
         name: "Safe Format Strings"
@@ -1378,6 +1517,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.4.3
         ref_id: "V5.4.3"
         name: "Buffer Bounds Checking"
@@ -1387,6 +1527,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.5.1
         ref_id: "V5.5.1"
         name: "Safe Deserialization"
@@ -1396,6 +1537,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.5.2
         ref_id: "V5.5.2"
         name: "Hardened XML Parsing"
@@ -1405,6 +1547,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.5.3
         ref_id: "V5.5.3"
         name: "Deserialization Integrity Checks"
@@ -1414,6 +1557,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V5.5.4
         ref_id: "V5.5.4"
         name: "Strict JSON Parsing"
@@ -1423,6 +1567,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Validation, Sanitization and Encoding"
       # ─── V6: Stored Cryptography ───
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V6
         ref_id: "V6"
@@ -1441,6 +1586,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Stored Cryptography"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V6.1.2
         ref_id: "V6.1.2"
         name: "Encrypt Health Data"
@@ -1450,6 +1596,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Stored Cryptography"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V6.1.3
         ref_id: "V6.1.3"
         name: "Encrypt Financial Data"
@@ -1459,6 +1606,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Stored Cryptography"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V6.2.1
         ref_id: "V6.2.1"
         name: "Fail Securely in Crypto Modules"
@@ -1468,6 +1616,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Stored Cryptography"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V6.2.2
         ref_id: "V6.2.2"
         name: "Industry-Proven Algorithms"
@@ -1477,6 +1626,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Stored Cryptography"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V6.2.3
         ref_id: "V6.2.3"
         name: "Correct Encryption Initialization"
@@ -1486,6 +1636,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Stored Cryptography"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V6.2.4
         ref_id: "V6.2.4"
         name: "Random Nonces and IVs"
@@ -1495,6 +1646,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Stored Cryptography"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V6.2.5
         ref_id: "V6.2.5"
         name: "No Insecure Cipher Modes"
@@ -1504,6 +1656,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Stored Cryptography"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V6.2.6
         ref_id: "V6.2.6"
         name: "Avoid Padding Oracles"
@@ -1513,6 +1666,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Stored Cryptography"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V6.2.7
         ref_id: "V6.2.7"
         name: "Authenticated Encryption"
@@ -1522,6 +1676,7 @@ objects:
         depth: 2
         assessable: true
         category: L3
+        section: "Stored Cryptography"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V6.2.8
         ref_id: "V6.2.8"
         name: "Constant-Time Comparisons"
@@ -1531,6 +1686,7 @@ objects:
         depth: 2
         assessable: true
         category: L3
+        section: "Stored Cryptography"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V6.3.1
         ref_id: "V6.3.1"
         name: "Cryptographic Randomness"
@@ -1540,6 +1696,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Stored Cryptography"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V6.3.2
         ref_id: "V6.3.2"
         name: "Unpredictable Identifiers"
@@ -1549,6 +1706,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Stored Cryptography"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V6.4.1
         ref_id: "V6.4.1"
         name: "Managed Secret Storage"
@@ -1558,6 +1716,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Stored Cryptography"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V6.4.2
         ref_id: "V6.4.2"
         name: "Keys Not in Source"
@@ -1567,6 +1726,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Stored Cryptography"
       # ─── V7: Error Handling and Logging ───
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V7
         ref_id: "V7"
@@ -1585,6 +1745,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Error Handling and Logging"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V7.1.2
         ref_id: "V7.1.2"
         name: "No Credentials in Logs"
@@ -1594,6 +1755,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Error Handling and Logging"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V7.1.3
         ref_id: "V7.1.3"
         name: "Log Security-Relevant Events"
@@ -1603,6 +1765,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Error Handling and Logging"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V7.1.4
         ref_id: "V7.1.4"
         name: "Sufficient Log Context"
@@ -1612,6 +1775,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Error Handling and Logging"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V7.2.1
         ref_id: "V7.2.1"
         name: "Log Authentication Decisions"
@@ -1621,6 +1785,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Error Handling and Logging"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V7.2.2
         ref_id: "V7.2.2"
         name: "Log Access-Control Decisions"
@@ -1630,6 +1795,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Error Handling and Logging"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V7.3.1
         ref_id: "V7.3.1"
         name: "Encode Log Data"
@@ -1639,6 +1805,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Error Handling and Logging"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V7.3.3
         ref_id: "V7.3.3"
         name: "Tamper-Resistant Logs"
@@ -1648,6 +1815,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Error Handling and Logging"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V7.3.4
         ref_id: "V7.3.4"
         name: "Synchronized Time Source"
@@ -1657,6 +1825,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Error Handling and Logging"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V7.4.1
         ref_id: "V7.4.1"
         name: "Generic Error Messages"
@@ -1666,6 +1835,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Error Handling and Logging"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V7.4.2
         ref_id: "V7.4.2"
         name: "Structured Exception Handling"
@@ -1675,6 +1845,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Error Handling and Logging"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V7.4.3
         ref_id: "V7.4.3"
         name: "Last-Resort Fail Secure"
@@ -1684,6 +1855,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Error Handling and Logging"
       # ─── V8: Data Protection ───
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V8
         ref_id: "V8"
@@ -1702,6 +1874,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Data Protection"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V8.1.2
         ref_id: "V8.1.2"
         name: "Remove Temporary Copies"
@@ -1711,6 +1884,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Data Protection"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V8.1.3
         ref_id: "V8.1.3"
         name: "Minimize Sensitive Data in Params"
@@ -1720,6 +1894,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Data Protection"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V8.1.4
         ref_id: "V8.1.4"
         name: "Detect Abnormal Data Access"
@@ -1729,6 +1904,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Data Protection"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V8.2.1
         ref_id: "V8.2.1"
         name: "Anti-Caching Response Headers"
@@ -1738,6 +1914,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Data Protection"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V8.2.2
         ref_id: "V8.2.2"
         name: "Limit Client-Side Storage"
@@ -1747,6 +1924,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Data Protection"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V8.2.3
         ref_id: "V8.2.3"
         name: "Clear Data on Logout"
@@ -1756,6 +1934,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Data Protection"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V8.3.1
         ref_id: "V8.3.1"
         name: "Sensitive Data in Request Body"
@@ -1765,6 +1944,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Data Protection"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V8.3.2
         ref_id: "V8.3.2"
         name: "User Data Export and Removal"
@@ -1774,6 +1954,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Data Protection"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V8.3.3
         ref_id: "V8.3.3"
         name: "Privacy Notice and Consent"
@@ -1783,6 +1964,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Data Protection"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V8.3.4
         ref_id: "V8.3.4"
         name: "Sensitive Data Inventory"
@@ -1792,6 +1974,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Data Protection"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V8.3.5
         ref_id: "V8.3.5"
         name: "Audit Sensitive Data Access"
@@ -1801,6 +1984,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Data Protection"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V8.3.6
         ref_id: "V8.3.6"
         name: "Clear Sensitive Memory"
@@ -1810,6 +1994,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Data Protection"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V8.3.7
         ref_id: "V8.3.7"
         name: "Data Minimization"
@@ -1819,6 +2004,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Data Protection"
       # ─── V9: Communication ───
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V9
         ref_id: "V9"
@@ -1837,6 +2023,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Communication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V9.1.2
         ref_id: "V9.1.2"
         name: "Strong Cipher Configuration"
@@ -1846,6 +2033,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Communication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V9.1.3
         ref_id: "V9.1.3"
         name: "Current TLS Versions"
@@ -1855,6 +2043,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Communication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V9.2.1
         ref_id: "V9.2.1"
         name: "Trusted Certificates"
@@ -1864,6 +2053,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Communication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V9.2.2
         ref_id: "V9.2.2"
         name: "Encrypt Internal Connections"
@@ -1873,6 +2063,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Communication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V9.2.3
         ref_id: "V9.2.3"
         name: "Authenticated Connections"
@@ -1882,6 +2073,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Communication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V9.2.4
         ref_id: "V9.2.4"
         name: "Certificate Revocation Checks"
@@ -1891,6 +2083,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Communication"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V9.2.5
         ref_id: "V9.2.5"
         name: "Log Backend TLS Failures"
@@ -1900,6 +2093,7 @@ objects:
         depth: 2
         assessable: true
         category: L3
+        section: "Communication"
       # ─── V10: Malicious Code ───
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V10
         ref_id: "V10"
@@ -1918,6 +2112,7 @@ objects:
         depth: 2
         assessable: true
         category: L3
+        section: "Malicious Code"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V10.2.1
         ref_id: "V10.2.1"
         name: "No Unauthorized Data Collection"
@@ -1927,6 +2122,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Malicious Code"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V10.2.2
         ref_id: "V10.2.2"
         name: "No Undisclosed Phone-Home"
@@ -1936,6 +2132,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Malicious Code"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V10.2.3
         ref_id: "V10.2.3"
         name: "No Backdoors"
@@ -1945,6 +2142,7 @@ objects:
         depth: 2
         assessable: true
         category: L3
+        section: "Malicious Code"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V10.3.1
         ref_id: "V10.3.1"
         name: "Integrity-Checked Updates"
@@ -1954,6 +2152,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Malicious Code"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V10.3.2
         ref_id: "V10.3.2"
         name: "Signed Code and Dependencies"
@@ -1963,6 +2162,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Malicious Code"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V10.3.3
         ref_id: "V10.3.3"
         name: "Protection Against Subdomain Takeover"
@@ -1972,6 +2172,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Malicious Code"
       # ─── V11: Business Logic ───
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V11
         ref_id: "V11"
@@ -1990,6 +2191,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Business Logic"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V11.1.2
         ref_id: "V11.1.2"
         name: "Realistic Timing Limits"
@@ -1999,6 +2201,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Business Logic"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V11.1.3
         ref_id: "V11.1.3"
         name: "Enforce Usage Limits"
@@ -2008,6 +2211,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Business Logic"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V11.1.4
         ref_id: "V11.1.4"
         name: "Anti-Automation for Aggregation"
@@ -2017,6 +2221,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Business Logic"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V11.1.5
         ref_id: "V11.1.5"
         name: "Enforce Business Rule Limits"
@@ -2026,6 +2231,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Business Logic"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V11.1.6
         ref_id: "V11.1.6"
         name: "Prevent Logic Race Conditions"
@@ -2035,6 +2241,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Business Logic"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V11.1.7
         ref_id: "V11.1.7"
         name: "Monitor for Logic Abuse"
@@ -2044,6 +2251,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Business Logic"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V11.1.8
         ref_id: "V11.1.8"
         name: "Alert on Business Anomalies"
@@ -2053,6 +2261,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Business Logic"
       # ─── V12: Files and Resources ───
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V12
         ref_id: "V12"
@@ -2071,6 +2280,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Files and Resources"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V12.1.2
         ref_id: "V12.1.2"
         name: "Validate File Size and Count"
@@ -2080,6 +2290,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Files and Resources"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V12.1.3
         ref_id: "V12.1.3"
         name: "Enforce Storage Quotas"
@@ -2089,6 +2300,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Files and Resources"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V12.2.1
         ref_id: "V12.2.1"
         name: "Validate File Type"
@@ -2098,6 +2310,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Files and Resources"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V12.3.1
         ref_id: "V12.3.1"
         name: "Validate Submitted Filenames"
@@ -2107,6 +2320,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Files and Resources"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V12.3.2
         ref_id: "V12.3.2"
         name: "Guard File Metadata"
@@ -2116,6 +2330,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Files and Resources"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V12.3.3
         ref_id: "V12.3.3"
         name: "Prevent Path Manipulation"
@@ -2125,6 +2340,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Files and Resources"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V12.3.4
         ref_id: "V12.3.4"
         name: "Restrict Executable Extensions"
@@ -2134,6 +2350,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Files and Resources"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V12.3.5
         ref_id: "V12.3.5"
         name: "Distrust File Metadata"
@@ -2143,6 +2360,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Files and Resources"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V12.4.1
         ref_id: "V12.4.1"
         name: "Store Files Outside Web Root"
@@ -2152,6 +2370,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Files and Resources"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V12.4.2
         ref_id: "V12.4.2"
         name: "Scan Uploads for Malware"
@@ -2161,6 +2380,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Files and Resources"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V12.5.1
         ref_id: "V12.5.1"
         name: "Do Not Serve Source Files"
@@ -2170,6 +2390,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Files and Resources"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V12.5.2
         ref_id: "V12.5.2"
         name: "Control Access to Uploaded Files"
@@ -2179,6 +2400,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Files and Resources"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V12.6.1
         ref_id: "V12.6.1"
         name: "Prevent File-Based Redirects"
@@ -2188,6 +2410,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Files and Resources"
       # ─── V13: API and Web Service ───
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V13
         ref_id: "V13"
@@ -2206,6 +2429,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "API and Web Service"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V13.1.3
         ref_id: "V13.1.3"
         name: "No Sensitive Data in API URLs"
@@ -2215,6 +2439,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "API and Web Service"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V13.1.5
         ref_id: "V13.1.5"
         name: "Reject Unexpected Content Types"
@@ -2224,6 +2449,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "API and Web Service"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V13.2.1
         ref_id: "V13.2.1"
         name: "Allowlist HTTP Methods"
@@ -2233,6 +2459,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "API and Web Service"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V13.2.2
         ref_id: "V13.2.2"
         name: "Schema-Validate API Payloads"
@@ -2242,6 +2469,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "API and Web Service"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V13.2.3
         ref_id: "V13.2.3"
         name: "Anti-CSRF for Cookie APIs"
@@ -2251,6 +2479,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "API and Web Service"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V13.2.5
         ref_id: "V13.2.5"
         name: "Verify Request Content Type"
@@ -2260,6 +2489,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "API and Web Service"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V13.2.4
         ref_id: "V13.2.4"
         name: "Rate-Limit API Endpoints"
@@ -2269,6 +2499,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "API and Web Service"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V13.2.6
         ref_id: "V13.2.6"
         name: "Verify Message Authenticity"
@@ -2278,6 +2509,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "API and Web Service"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V13.3.1
         ref_id: "V13.3.1"
         name: "Validate SOAP Payloads"
@@ -2287,6 +2519,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "API and Web Service"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V13.3.2
         ref_id: "V13.3.2"
         name: "Apply Message-Layer Security"
@@ -2296,6 +2529,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "API and Web Service"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V13.4.1
         ref_id: "V13.4.1"
         name: "Constrain GraphQL Queries"
@@ -2305,6 +2539,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "API and Web Service"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V13.4.2
         ref_id: "V13.4.2"
         name: "Enforce GraphQL Authorization"
@@ -2314,6 +2549,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "API and Web Service"
       # ─── V14: Configuration ───
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14
         ref_id: "V14"
@@ -2332,6 +2568,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.1.2
         ref_id: "V14.1.2"
         name: "Secure Compiler Flags"
@@ -2341,6 +2578,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.1.3
         ref_id: "V14.1.3"
         name: "Hardened Server Configuration"
@@ -2350,6 +2588,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.1.4
         ref_id: "V14.1.4"
         name: "Separate Environments"
@@ -2359,6 +2598,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.2.1
         ref_id: "V14.2.1"
         name: "Up-to-Date Dependencies"
@@ -2368,6 +2608,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.2.2
         ref_id: "V14.2.2"
         name: "Remove Unneeded Features"
@@ -2377,6 +2618,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.2.3
         ref_id: "V14.2.3"
         name: "Verify Third-Party Asset Integrity"
@@ -2386,6 +2628,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.2.4
         ref_id: "V14.2.4"
         name: "Sandbox Third-Party Code"
@@ -2395,6 +2638,7 @@ objects:
         depth: 2
         assessable: true
         category: L3
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.2.5
         ref_id: "V14.2.5"
         name: "Maintain a Software Bill of Materials"
@@ -2404,6 +2648,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.2.6
         ref_id: "V14.2.6"
         name: "Reduce Attack Surface"
@@ -2413,6 +2658,7 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.3.2
         ref_id: "V14.3.2"
         name: "Disable Debug Modes"
@@ -2422,6 +2668,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.3.3
         ref_id: "V14.3.3"
         name: "No Version Disclosure"
@@ -2431,6 +2678,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.4.1
         ref_id: "V14.4.1"
         name: "Charset in Content-Type"
@@ -2440,6 +2688,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.4.2
         ref_id: "V14.4.2"
         name: "Content-Disposition for Downloads"
@@ -2449,6 +2698,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.4.3
         ref_id: "V14.4.3"
         name: "Content Security Policy"
@@ -2458,6 +2708,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.4.4
         ref_id: "V14.4.4"
         name: "No MIME Sniffing"
@@ -2467,6 +2718,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.4.5
         ref_id: "V14.4.5"
         name: "Strict Transport Security"
@@ -2476,6 +2728,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.4.6
         ref_id: "V14.4.6"
         name: "Referrer Policy"
@@ -2485,6 +2738,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.4.7
         ref_id: "V14.4.7"
         name: "Anti-Clickjacking Controls"
@@ -2494,6 +2748,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.5.1
         ref_id: "V14.5.1"
         name: "Validate HTTP Methods at Edge"
@@ -2503,6 +2758,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.5.2
         ref_id: "V14.5.2"
         name: "Do Not Trust Origin for Auth"
@@ -2512,6 +2768,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.5.3
         ref_id: "V14.5.3"
         name: "Strict CORS Configuration"
@@ -2521,6 +2778,7 @@ objects:
         depth: 2
         assessable: true
         category: L1
+        section: "Configuration"
       - urn: urn:inflect:req:owasp-asvs-4.0.3:V14.5.4
         ref_id: "V14.5.4"
         name: "Authenticate Trusted Proxies"
@@ -2530,3 +2788,4 @@ objects:
         depth: 2
         assessable: true
         category: L2
+        section: "Configuration"
