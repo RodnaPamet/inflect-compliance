@@ -11,6 +11,9 @@
     "docs/adr/0001-ui-primitive-stack.md": {
       "class": "historical"
     },
+    "docs/adr/0002-agent-behaviour-window-retention.md": {
+      "class": "authoritative"
+    },
     "docs/api-consumer-guide.md": {
       "class": "authoritative"
     },
