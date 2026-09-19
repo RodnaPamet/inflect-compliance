@@ -35,6 +35,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { REPO_ROOT } from '../helpers/repo-files';
+import { parseLibraryFile } from '../../src/app-layer/libraries/library-loader';
 
 const FIXTURE_DIR = path.join(REPO_ROOT, 'prisma/fixtures');
 
@@ -133,6 +134,134 @@ describe('catalogue requirements carry prose', () => {
      * it down.
      */
     const REQUIREMENTS_WITHOUT_SUMMARY_CEILING = 405;
+
+    /**
+     * WHY 485 IS THE RIGHT NUMBER, AND NOT A BACKLOG.
+     *
+     * The ceiling above is a bare count, and a bare count invites someone to
+     * drive it down — by writing 485 summaries from knowledge of the standards,
+     * which is exactly what FROZEN_UNGROUNDED_POPULATIONS refuses to do for ISO
+     * 9001 / 39001 / 28000. So the count needs its reason enforced beside it.
+     *
+     * The reason, measured across every framework that has both a grounding
+     * library and matching code spellings: **a summary is present exactly where
+     * the library says more than the title already does.** 702 comparable
+     * requirements, 702 in agreement, none against.
+     *
+     *   library text ≠ title  ->  a summary is carried   (iso27701, asvs-l1,
+     *                                                     cis-v8, soc2, dora,
+     *                                                     eu-ai-act, imda-mgf,
+     *                                                     owasp-asi)
+     *   library text = title  ->  no summary             (owasp-aisvs 191,
+     *                                                     nist-privacy 100,
+     *                                                     iso42001 62, ssdf 42)
+     *
+     * For the second group the library's `description` IS the title, sometimes
+     * with a citation appended — "Training data limited to necessary features
+     * (AISVS C1.1.1, Level L1)." — and those titles are already whole
+     * requirement statements, median 47 characters against 28 for the titles
+     * that do carry one. A summary there would be elaboration written from
+     * knowledge, not transcription from a source this repo holds.
+     *
+     * So this is not a gap that copying can close, and the assertion below is
+     * what says so in a way that fails if it stops being true — in EITHER
+     * direction. A summary appearing where the source adds nothing is authored
+     * content of unknown provenance; a summary disappearing where the source
+     * does add something is lost transcription.
+     */
+    /**
+     * "Says more" took three attempts, and each failure is worth keeping.
+     *
+     *   1. Strip only CITATION-SHAPED parentheticals, compare remainders.
+     *      Missed "(AISVS C1.1.1, Level L1)" — 191 false disagreements.
+     *   2. Strip ANY trailing parenthetical, compare remainders. Ate the
+     *      title's own in "Actions to address AI risks and opportunities
+     *      (assessment, treatment, impact)" — 1 false disagreement.
+     *   3. Prefix test. A label title can be the opening words of the fuller
+     *      prose — "Validate All Input" against "Validate all input against
+     *      expected type, length, and range on the server" — 5 false ECHOES,
+     *      which is the dangerous direction: it hides real content.
+     *
+     * What works is to strip ONE trailing parenthetical and require EQUALITY.
+     * Equality rather than prefix is what stops (3); stripping exactly one is
+     * what stops (2), because a title ending in its own parenthetical still
+     * matches once the citation alone is removed.
+     */
+    const flat = (s: string) => s.replace(/\s+/g, ' ').replace(/[.\s]+$/, '').trim().toLowerCase();
+    const echoesTheTitle = (libText: string, title: string) => {
+        const lib = flat(libText);
+        const t = flat(title);
+        if (lib === t) return true;
+        return flat(lib.replace(/\s*\([^()]*\)\s*$/, '')) === t;
+    };
+    const saysMoreThan = (libText: string, title: string) => !echoesTheTitle(libText, title);
+
+    /** Libraries whose codes join the fixture directly, with the spelling fix each needs. */
+    const SUMMARY_PAIRS: Array<[string, string, ((c: string) => string)?]> = [
+        ['iso27701-2019.yaml', 'iso27701'],
+        ['owasp-asvs-4.0.3.yaml', 'asvs-l1'],
+        ['cis-controls-v8.yaml', 'cis-v8-ig1'],
+        ['soc2-2017.yaml', 'soc2'],
+        ['dora-2022.yaml', 'dora'],
+        ['eu-ai-act.yaml', 'eu-ai-act'],
+        ['imda-mgf-2026.yaml', 'imda-mgf'],
+        ['owasp-agentic-top10.yaml', 'owasp-asi'],
+        ['owasp-aisvs-1.0.yaml', 'owasp-aisvs'],
+        ['nist-privacy-framework-1.0.yaml', 'nist-privacy'],
+        ['iso-42001.yaml', 'iso42001'],
+        ['nist-ssdf-800-218.yaml', 'ssdf'],
+        // nis2 is deliberately absent: its library is keyed thematically
+        // (NIS2-RM) and its fixture by article (Art.21(2)(a)), so a code join
+        // resolves nothing. prisma/fixtures/nis2-library-map.json is the join,
+        // and tests/guardrails/library-obligations-reach-the-catalogue.test.ts
+        // is where that declaration lives.
+        // iso27001 is absent for the same class of reason: its library carries
+        // 29 coarse Annex A headings against the fixture's 93 controls, so most
+        // rows have no comparable node at all.
+    ];
+
+    it('a summary is present exactly where the library says more than the title', () => {
+        const disagreements: string[] = [];
+        let compared = 0;
+
+        for (const [libFile, fixtureName] of SUMMARY_PAIRS) {
+            const libPath = path.join(REPO_ROOT, 'src/data/libraries', libFile);
+            const fixPath = path.join(REPO_ROOT, 'prisma/fixtures', `${fixtureName}-control-templates.json`);
+            if (!fs.existsSync(libPath) || !fs.existsSync(fixPath)) {
+                disagreements.push(`${fixtureName}: declared pair does not exist`);
+                continue;
+            }
+            const lib = parseLibraryFile(libPath);
+            const byCode = new Map(
+                lib.objects.framework.requirement_nodes
+                    .filter((n) => typeof n.ref_id === 'string')
+                    .map((n) => [String(n.ref_id).trim(), (n.description ?? '').replace(/\s+/g, ' ').trim()]),
+            );
+            const fixture = JSON.parse(fs.readFileSync(fixPath, 'utf-8')) as {
+                requirements?: Array<{ code: string; title?: unknown; summary?: unknown }>;
+            };
+
+            for (const r of fixture.requirements ?? []) {
+                const libText = byCode.get(r.code);
+                if (!libText) continue; // no comparable node — not this rule's business
+                compared++;
+                const saysMore = saysMoreThan(libText, String(r.title));
+                const hasSummary = typeof r.summary === 'string' && r.summary.trim() !== '';
+                if (saysMore !== hasSummary) {
+                    disagreements.push(
+                        `${fixtureName}/${r.code}: library ${saysMore ? 'adds text' : 'only echoes the title'} ` +
+                            `but summary is ${hasSummary ? 'present' : 'absent'}`,
+                    );
+                }
+            }
+        }
+
+        // Positive control. An empty comparison would make the assertion below
+        // pass over nothing, which is the defect this whole file exists to catch
+        // one level down.
+        expect(compared).toBeGreaterThanOrEqual(700);
+        expect(disagreements).toEqual([]);
+    });
 
     it('requirements with no summary at all stay at or below the ceiling', () => {
         const absent = all.filter(({ r }) => typeof r.summary !== 'string' || !r.summary.trim());
