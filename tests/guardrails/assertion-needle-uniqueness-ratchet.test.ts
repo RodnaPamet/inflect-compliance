@@ -309,7 +309,41 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 238;
 // same `path.join(__dirname, …)` shape, so it adds nothing new to hide behind.
 // Note this baseline was LOWERED 1449 → 1447 earlier today when the tree
 // improved; it is still below where it started.
-const UNANALYSABLE_READ_BASELINE = 1448;
+//
+// 1448 → 1455 (2026-09-19, #2287): +7, and it is the 1447-entry's own
+// paragraph happening a second time in a second language — read that one
+// first. `sqlCodeOf` joins `codeOf` in `SOURCE_BLOCKS_MASKERS`, so the
+// analyser now follows a SQL comment mask the way it already follows a
+// TypeScript one, and seven assertions in
+// `tests/guards/audit-immutability-guardrails.test.ts` that read the live
+// `audit_log_immutable_guard` migration stopped dropping out one step early.
+//
+// MEASURED, ALL THREE STATES, because the direction is the whole question:
+//
+//                                   not-a-file-read   path-not-constant   total
+//   base (c3e0df141)                          5351                 911    1448
+//   mask the reads, analyser untaught         5356                 906    1443
+//   mask the reads, analyser taught           5344                 918    1455
+//
+// The middle row is why this rises instead of falling. Leaving `sqlCodeOf`
+// unregistered scores FIVE BETTER — and every one of those five is a read
+// this detector could previously classify and now cannot, sliding out of the
+// capped bucket into the uncapped one. Re-seating DOWN to 1443 would have
+// been recording a coverage regression as an improvement, which is the
+// "counting its own blind spot" failure this file's header names. The seven
+// that arrive were never analysed either: they hid behind a local
+// `raw.replace(/^[^\S\n]*--.*$/gm, '')` in `not-a-file-read`, where nothing
+// caps them. They are the same `path.join(migrationDir, <runtime>, …)` shape
+// the 911 already hold, and the hidden total fell 5351 → 5344 in the same
+// diff.
+//
+// NOT a licence to widen. The two needle ceilings and
+// RAW_ASSERTING_FILE_BASELINE were re-measured unchanged on this diff (`.sql`
+// is excluded from Class A by extension, so masking a migration moves nothing
+// there). The way to bring this seven back down is a constant read path for
+// those two tests, which is a real change to how they resolve "the migration
+// that is actually running" and is not smuggled in here.
+const UNANALYSABLE_READ_BASELINE = 1455;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
