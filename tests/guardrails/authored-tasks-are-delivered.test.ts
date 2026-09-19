@@ -126,12 +126,8 @@ const DELIVERED_WITHOUT_AUTHORED_TASKS: Record<string, string> = {
         'ISO 28000 — 15 templates. Frozen for content, as ISO 9001.',
     'iso39001-control-templates.json':
         'ISO 39001 — 18 templates. Frozen for content, as ISO 9001.',
-    'iso42001-control-templates.json':
-        'ISO/IEC 42001 — 19 AIMS- templates. Authorable: 62 linked requirements carry real clause text. Queued.',
     'owasp-aisvs-control-templates.json':
         'OWASP AISVS — 18 templates over 191 requirements, the richest grounding of any unauthored fixture. Queued.',
-    'eu-ai-act-control-templates.json':
-        'EU AI Act — 16 EUAIA- templates over 16 obligations. Queued.',
 };
 
 /** Every fixture that carries at least one authored task. */
@@ -268,14 +264,15 @@ describe('authored tasks have a delivery path', () => {
     });
 
     it('the delivered-without-authored-tasks list is not growing', () => {
-        // SIX. It was nine: three from the first delivery round and six from
-        // the final conversions. The three from that first round — OWASP ASI,
-        // IMDA MGF and NIST Privacy — are authored now and have removed
-        // themselves, which is the mechanism working.
+        // FOUR. It was nine, then six, then five. OWASP ASI, IMDA MGF and NIST
+        // Privacy left in the first round; the EU AI Act and ISO/IEC 42001 have
+        // now removed their own entries too. The mechanism works each time.
         //
-        // Of the six left, ISO 9001 / 28000 / 39001 are frozen for content and
-        // may never leave; the other three are queued. Each authoring PR
-        // removes its own entry.
-        expect(Object.keys(DELIVERED_WITHOUT_AUTHORED_TASKS)).toHaveLength(6);
+        // Of the four left, ISO 9001 / 28000 / 39001 are FROZEN for content and
+        // may never leave: no library grounds them, so the precondition in
+        // FROZEN_UNGROUNDED_POPULATIONS has to be met before anyone authors
+        // there. That leaves exactly ONE queued and groundable entry — OWASP
+        // AISVS. Each authoring PR removes its own.
+        expect(Object.keys(DELIVERED_WITHOUT_AUTHORED_TASKS)).toHaveLength(4);
     });
 });

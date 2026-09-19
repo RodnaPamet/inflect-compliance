@@ -2,7 +2,7 @@
   "_meta": {
     "purpose": "EU AI Act (2024/1689) in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
     "why": "Built inline in prisma/seed.ts, which is not run on production deploys. Extracted from a database seeded by that block, so the shape is carried over exactly rather than re-derived from grouping logic that ran at seed time.",
-    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here — every template carries the generic five, as it did inline.",
+    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here \u2014 every template carries the generic five, as it did inline.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts"
   },
   "framework": {
@@ -157,162 +157,3510 @@
     {
       "code": "EUAIA-00",
       "title": "Prohibited AI practices",
+      "description": "Implements Art.5: know what every AI system in the organisation actually does, test each one against the practices the Act bans outright, and hold a dated record showing the organisation neither places them on the market, puts them into service nor uses them \u2014 together with a route that stops a system found to cross the line.",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "AI Governance Lead / Legal Counsel",
       "requirementCodes": [
         "Art.5"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Catalogue every AI system in use and record what each one infers about a person"
+          },
+          "description": {
+            "en": "An absence can only be shown for systems somebody has written down, and the ones that matter here arrive without a procurement decision \u2014 a feature switched on inside a product already bought, a model a team wired into an internal tool, a capability a supplier added in an update. Record for each system what it does to or about people: what it infers, what it scores, what it decides, and whose data it runs on. The bans turn on behaviour rather than on product names, so a row reading 'HR analytics platform' and nothing else cannot be tested against any of them. Attach the catalogue with the date it was compiled and the name of whoever compiled it."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "AI system catalogue: one row per system giving its purpose, what it infers, scores or decides about people, and the population it runs on"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Ask each department which AI features they use, including ones inside products already bought."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the models and AI features your own engineers built or wired into internal tools."
+              }
+            },
+            {
+              "text": {
+                "en": "Record for each system what it infers, scores or decides about a person."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the population each system runs on: employees, students, customers, the public."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the systems that arrive as a feature of something else, and name the supplier."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the catalogue and record who compiled it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Write a yes-or-no test for each banned practice in terms a system can be checked against"
+          },
+          "description": {
+            "en": "The bans read as legal categories \u2014 scoring people from unrelated behaviour, scraping facial images untargeted, inferring emotion at work or in education, sorting people by sensitive characteristics from their biometrics \u2014 and a legal category cannot be answered by an engineer looking at a system. Turn each into a question about observable behaviour, with a yes, a no, and the facts that decide between them. Write the near-miss down too: the thing your organisation genuinely does that sits close to a line, and why it falls outside. Without the written test each assessment is one person's reading, nobody can review it, and two teams answer the same question differently. Attach the question set with the reasoning behind each boundary."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Screening question set: one observable test per banned practice, the facts each answer turns on, and the near-miss cases worked through"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Put each banned practice on its own line rather than in one paragraph."
+              }
+            },
+            {
+              "text": {
+                "en": "Write each as a question about what the system does, answerable yes or no."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the facts an assessor must gather before answering each question."
+              }
+            },
+            {
+              "text": {
+                "en": "Work through the near-miss cases the organisation actually operates."
+              }
+            },
+            {
+              "text": {
+                "en": "Have whoever advises the organisation on the Act review the set, and date that review."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Establish who can stop a system that answers yes, and how long that takes"
+          },
+          "description": {
+            "en": "A screening question is only worth asking if a yes has somewhere to go. Name the person who can order a system switched off, the person who can refuse the purchase before it lands, and what happens between the answer and the shutdown \u2014 who is told, how affected teams keep working, and how a feature is disabled when the supplier owns the switch. Record how long each route actually takes, because a route that waits for a quarterly committee is not a stop. Decide as well what happens to what the system already produced: the scores already assigned, the records already written, the decisions already taken on them. Attach the written route with its named roles and its measured timings."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Written stop-and-withdraw route: the roles that can trigger it, the steps from answer to shutdown, the measured time each takes, and the handling of outputs already produced"
+          },
+          "suggestedRole": "Management",
+          "steps": [
+            {
+              "text": {
+                "en": "Name the role that can order an AI system taken out of use."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the steps between a yes answer and the system actually stopping."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how a supplier-controlled feature is disabled, and by whom."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide what happens to the outputs the system already produced."
+              }
+            },
+            {
+              "text": {
+                "en": "Measure how long the route takes end to end and record the figure."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Run the screening questions across the catalogue and record an answer for every system"
+          },
+          "description": {
+            "en": "This is the recurring act that produces the evidence of absence. For each system in the catalogue record the answer to every screening question, who answered it, on what date, and what they looked at \u2014 the model documentation, the fields the system consumes, the decision its output feeds. The first run covers everything; later runs cover what was added or changed since, anything whose supplier shipped new capability, and a refresh of the systems touching employees, students or the public. A no with nothing behind it is the failure here, because it cannot be told apart from a question nobody asked. Attach the dated screening record for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Dated screening record for the period: every catalogued system against every banned-practice question, with the answer, the assessor and the evidence examined"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Take the catalogue and the question set as they stand at the start of the run."
+              }
+            },
+            {
+              "text": {
+                "en": "Record an answer, an assessor and a date for every system and question."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the evidence examined behind each answer, not the answer alone."
+              }
+            },
+            {
+              "text": {
+                "en": "Answer in full every system added or changed since the last run."
+              }
+            },
+            {
+              "text": {
+                "en": "Send any yes or unclear answer into the stop route without waiting for the run to end."
+              }
+            },
+            {
+              "text": {
+                "en": "Close the run by dating the record and listing anything still unanswered."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sample the systems answered no and check that answer against what they do today"
+          },
+          "description": {
+            "en": "A recorded no ages badly: a product adds emotion analytics in a release note, a score built for one purpose starts feeding a decision it was never built for, a pilot moves from customers to employees. Take a sample of the systems answered no, weighted towards those touching employees, students, the public or biometric data, and test the recorded answer against current behaviour \u2014 the outputs now produced, the fields now consumed, the decisions those outputs now feed. Where an answer no longer holds, correct it, send it into the stop route, and record how long the wrong answer stood, because that interval is the exposure. Attach the verification record with what was examined and what changed."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Verification record naming the systems sampled, the evidence examined for each, the answers that changed and how long an incorrect answer had stood"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Select a sample weighted towards systems that touch people directly."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each recorded answer against what the system does today."
+              }
+            },
+            {
+              "text": {
+                "en": "Read the supplier release notes issued since the answer was recorded."
+              }
+            },
+            {
+              "text": {
+                "en": "Correct every answer that no longer holds and date the correction."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how long an incorrect answer stood before it was found."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "code": "EUAIA-01A",
       "title": "Risk management system for high-risk AI",
+      "description": "Implements Art.9: one high-risk AI system carries a risk file that runs the length of its life \u2014 the harms it can do to a person's health, safety or fundamental rights are identified against its intended purpose and its foreseeable misuse, each one is mitigated and the residual risk accepted by name, and what the field shows after release comes back into the file.",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "AI System Owner / Engineering Lead",
       "requirementCodes": [
         "Art.9"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Define the intended purpose and foreseeable misuse this system's risk file is written against"
+          },
+          "description": {
+            "en": "Write down, for this one high-risk system, what it is built to do, where and on whom it will be used, and the uses it will foreseeably be put to that nobody intended \u2014 a triage model pointed at a population it was never validated on, an advisory score read as a decision, a tool used out of hours by staff who were never trained on it. Everything after this task is keyed to that statement: a risk nobody identified is almost always a use nobody wrote down, and a boundary naming only the intended purpose leaves the misuse half of the analysis with nothing to bite on. Name the system version the statement describes, because the same file applied to a retrained system is describing something else. Attach the dated scope statement."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Dated scope statement for the system: intended purpose, deployment context, the people exposed to its output, the foreseeable misuses named, and the system version it describes"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Name the single high-risk system and the version this file covers."
+              }
+            },
+            {
+              "text": {
+                "en": "State the intended purpose in the terms the deployer is given."
+              }
+            },
+            {
+              "text": {
+                "en": "List the uses the system will foreseeably be put to but is not built for."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who is exposed to the output, including people who never touch it."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the statement and hold it as the file's first content."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Identify and rate every harm this system can do to health, safety and fundamental rights"
+          },
+          "description": {
+            "en": "Work through the intended purpose and each foreseeable misuse and write down the harm that follows: a wrong output that delays treatment, a score that shuts somebody out of housing or work, a false match acted on before anybody checks it. One row per harm, naming who bears it \u2014 the risk that matters here falls on the person on the other side of the output, not on the organisation running the system, and a register that only counts legal and reputational exposure has analysed the wrong party. Rate each row and record the reasoning that produced the rating, because a bare score cannot be argued with later. Mark separately the harms that land on children or on people in vulnerable circumstances, whose exposure is not the average user's. Attach the risk register."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Risk register for the system: one row per harm, giving the use it arises from, who bears it, the rating and the reasoning recorded behind that rating"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Take each intended use and each misuse in turn and name the harm."
+              }
+            },
+            {
+              "text": {
+                "en": "Write one row per harm, naming the people it falls on."
+              }
+            },
+            {
+              "text": {
+                "en": "Rate each row and record the reasoning, not only the score."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the harms that land on children or people in vulnerable circumstances."
+              }
+            },
+            {
+              "text": {
+                "en": "Separate harm to the affected person from exposure to the organisation."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Select a mitigation for each rated risk and record the residual risk accepted before release"
+          },
+          "description": {
+            "en": "For every row above tolerance choose the measure that acts on it \u2014 a design change, a data change, a refusal path, a constraint on the operating conditions, instructions the deployer must follow \u2014 then set the threshold the measure has to reach and test it against the risk it was chosen for before the system goes out. A measure chosen but never tested against its own risk is an intention, and it reads identically to a working control once it is written in a table. Record what risk is left once the measure is in place and have a named person accept that remainder on a date, because residual risk nobody signed for is residual risk nobody owns. Attach the mitigation record with its test results and the acceptance."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Mitigation record per risk row: the measure chosen, the threshold set beforehand, the test result against that threshold, the residual risk remaining, and the name and date of whoever accepted it"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Choose a targeted measure for every risk above tolerance."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the threshold the measure must reach before any test is run."
+              }
+            },
+            {
+              "text": {
+                "en": "Test the measure against the specific risk it was chosen for."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the risk that remains once the measure is in place."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain a named acceptance of that remainder, dated before release."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record the incidents, complaints and unexpected uses seen in the field against the risk file"
+          },
+          "description": {
+            "en": "Once the system is in use it will be given inputs, users and situations no design review imagined, and that is where the risks worth knowing about appear. Collect what comes back \u2014 incidents, deployer complaints, overrides by the people meant to oversee it, support tickets describing the system doing something surprising \u2014 and route each one into the file, either matched to an existing row or opened as a new one. The reports that match no row are the point of the task: they are the harms the identification missed, and they are invisible if the field feedback only ever reaches the support queue. Record the date each was seen and the date the file changed, so the lag between them can be read. Attach the field-feedback log for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Field-feedback log for the period: each incident, complaint, override and observed misuse with the risk row it was matched to or the new row opened, and the date it was seen beside the date the file changed"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Collect incidents, complaints and overrides reported about the system."
+              }
+            },
+            {
+              "text": {
+                "en": "Match each report to a risk row, or open a new row for it."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag the reports that match no risk anybody had identified."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date seen beside the date the risk file was updated."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Reassess the risk file at planned intervals and after any change to the system or its use"
+          },
+          "description": {
+            "en": "A file written once before release and left alone is the ordinary failure of this control: the system has since been retrained, given a new data source, connected to a new workflow or pointed at a population it was never rated against, and none of that shows in the file, which now certifies a system that no longer exists. Go through it row by row \u2014 is the rating still right, did the mitigation survive the change, has a new use opened a harm nobody rated \u2014 and retest the measures the change actually touched rather than carrying forward a result from the old version. Record the outcome against every row, with the reviewer and the date, and carry the re-ratings into the register in the same pass. Attach the review record."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Risk-file review record: the outcome against each row (unchanged, re-rated, closed, newly opened), the mitigations retested with their results, and the reviewer and date of the pass"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Trigger the pass on the planned interval and on every system change."
+              }
+            },
+            {
+              "text": {
+                "en": "Read each row and decide whether its rating still holds."
+              }
+            },
+            {
+              "text": {
+                "en": "Retest the mitigations the change or the interval has put in doubt."
+              }
+            },
+            {
+              "text": {
+                "en": "Open rows for harms the new use or population introduces."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the outcome per row with the reviewer named and dated."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "code": "EUAIA-01B",
       "title": "Training, validation and testing data governance",
+      "description": "Implements Art.10: govern the training, validation and testing data sets a high-risk AI system is built on \u2014 what each set is, where it came from, how it was prepared and labelled, and whether it is relevant to and representative of the people and setting the system is used in, with bias examined against the attributes that matter and every gap found recorded and acted on.",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "ML Engineering Lead / Data Owner",
       "requirementCodes": [
         "Art.10"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Inventory the training, validation and testing data sets the system was built on"
+          },
+          "description": {
+            "en": "List every data set the system learns from or is measured against, one row per set, and record where it came from, how it was collected, the version actually used, and whether it trains, validates or tests. Keep the three roles on separate rows even where one source feeds all three, because a set quietly serving as both training and test data makes every later quality claim unfalsifiable. Where a set arrived from a vendor or a public repository, record the licence position and what the supplier states about its collection. Without this list nobody can say which data the system learned from, and the measurements below have no population to run over. Attach the inventory, dated at the point it was compiled."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Dated data set inventory: one row per set giving source, collection process, version identifier, licence position and the split it serves"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "List every data set used to train, validate or test the system."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where each set came from and how it was collected."
+              }
+            },
+            {
+              "text": {
+                "en": "Give one row to each split a source feeds, not one row per source."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the version identifier and date of the copy actually used."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the licence position for every externally sourced data set."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark any set whose origin the records held cannot establish."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Define the intended population and the countable criteria that make a data set representative of it"
+          },
+          "description": {
+            "en": "Write down who the system is intended to be used on and in which geographical, contextual, behavioural and functional setting, then turn that description into attributes somebody can count \u2014 age bands, languages, regions, device types, case mixes, whatever the intended purpose makes material \u2014 with the share each should hold and the tolerance around it. Name separately the attributes where under-representation would fall on people's health, safety or rights, because those are the ones the bias examination must cover. Written down first, representativeness is measurable; left unwritten it is an opinion, and every data set passes. Agree the criteria with legal counsel and the engineering team, and attach them."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Representativeness criteria: the intended population and setting, the countable attributes derived from it, the expected share and tolerance for each, and the attributes flagged as rights-sensitive"
+          },
+          "suggestedRole": "Management",
+          "steps": [
+            {
+              "text": {
+                "en": "State the intended purpose and the people the system will be used on."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe the geographical, contextual and behavioural setting of use."
+              }
+            },
+            {
+              "text": {
+                "en": "Turn the population description into attributes that can be counted."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the expected share and the tolerance for each attribute."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag the attributes where under-representation would affect rights."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record the preparation, labelling and annotation each data set went through"
+          },
+          "description": {
+            "en": "For every set in the inventory, write down what was done to the raw data before it was used: cleaning rules, de-duplication, outlier and missing-value handling, aggregation, enrichment and any synthetic augmentation, together with the labelling step \u2014 the instructions annotators worked to and how disagreement between them was settled. Record the assumptions the preparation rests on, such as what a label is taken to mean or what a blank field is taken to indicate. A cleaning rule that silently drops a minority case is invisible in the finished set and plain here, which is the reason this record is kept separately from the data. Attach the preparation record for each set."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Per-set preparation record covering cleaning, de-duplication, aggregation and augmentation steps, the annotation instructions issued, and the assumptions the preparation rests on"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Write down each cleaning and de-duplication rule applied to the set."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how missing values and outliers were handled."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the instructions the annotators or labellers worked to."
+              }
+            },
+            {
+              "text": {
+                "en": "State how disagreement between annotators was resolved."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the assumptions the labels and the preparation rest on."
+              }
+            },
+            {
+              "text": {
+                "en": "Note any synthetic or augmented data added and its share of the set."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Measure each data set version against the criteria and examine it for bias before it is used"
+          },
+          "description": {
+            "en": "Before a data set version trains or evaluates the system, count it attribute by attribute against the representativeness criteria, and examine the rights-sensitive attributes for bias in two directions: how the records are distributed across groups, and how the labels are distributed within each group \u2014 a set can be balanced on its inputs and skewed in what it was told they mean. Record every deviation with the cause found and what was done about it: reweighting, targeted collection, narrowing the population the system is offered for, or an accepted shortcoming with the reason it is acceptable. Errors and gaps found in the data belong in the same record. Attach the measurement record for each data set version used in the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Measurement record per data set version: measured share against each attribute's tolerance, bias examination results by group, and the deviation, cause and action recorded for each finding"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Count the set against each attribute's expected share and tolerance."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the label distribution across the rights-sensitive groups."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every deviation from tolerance with the cause found."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the action taken for each deviation, or why none was taken."
+              }
+            },
+            {
+              "text": {
+                "en": "Log the errors, gaps and shortcomings the examination surfaced."
+              }
+            },
+            {
+              "text": {
+                "en": "Hold the record against the data set version it was run on."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Trace the model now in production back to the exact data set versions behind it"
+          },
+          "description": {
+            "en": "Registers age faster than models do. A corpus gets swapped in after the record was signed, a refresh runs on a schedule nobody documented, a supplier ships a replacement extract that never went through the quality gate \u2014 and the governance paperwork now describes a system that stopped existing months ago. This review pulls the lineage the build pipeline actually emitted and holds it against what the record claims, so a divergence is found by the organisation rather than by an authority reading a file that no longer matches the model in the field. Skip it and every downstream statement about representativeness, bias and provenance rests on an inventory nobody has re-tested since the day it was written, with no way to tell an honest refresh from an unrecorded substitution."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Lineage reconciliation record for the current release: each registered set beside the version identifier the build actually used, every mismatch dated and explained, plus the corrective actions raised against named owners."
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Pull from the build pipeline the data set identifiers, versions and checksums that produced the release now serving traffic."
+              }
+            },
+            {
+              "text": {
+                "en": "Place that lineage beside the register entry for the same control period and flag every pair that does not agree."
+              }
+            },
+            {
+              "text": {
+                "en": "For each flagged pair, obtain the storage or ticket history that dates the swap, refresh or re-extract and names who made it."
+              }
+            },
+            {
+              "text": {
+                "en": "Challenge any corpus that arrived from a supplier or an upstream team with no evidence it cleared the quality gate."
+              }
+            },
+            {
+              "text": {
+                "en": "Write each divergence into the record with its effect on the representativeness and bias conclusions already signed off."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a corrective action wherever the shipped build rests on material the register cannot account for."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "code": "EUAIA-01C",
       "title": "Annex IV technical documentation",
+      "description": "Implements Art.11: draw up the Annex IV technical documentation demonstrating conformity before the high-risk system is placed on the market, and keep that dossier describing the version actually in the field.",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Engineering Lead / Compliance Lead",
       "requirementCodes": [
         "Art.11"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Map every Annex IV heading to the document and named author that will answer it"
+          },
+          "description": {
+            "en": "Most of the material the dossier needs already exists somewhere in the organisation \u2014 an architecture note, a validation report, a risk file \u2014 scattered across teams that do not know a technical documentation file exists. Go heading by heading and record which document answers each one today, who owns that document and where it is held, and mark the headings nothing answers at all. A heading with no named source is the finding this task exists to surface: it is the section that gets written the night before an assessment, or never. Attach the map, dated at the point it was compiled."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Annex IV heading-to-source map: one row per heading giving the document that answers it, its owner and where it is held, with unanswered headings marked"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the Annex IV headings as rows of one working map."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the document that answers each heading today."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the owner of each source and where it is held."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark every heading no existing document answers."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree a writer for each unanswered heading with their team."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Write the general description sections against the build being placed on the market"
+          },
+          "description": {
+            "en": "These are the sections nobody outside engineering can supply: what the system is for, which uses are ruled out, how it is put together, what it runs on, and exactly which version of model, code and data the description refers to. Write them against the build that is actually going to ship rather than the design as it was pitched, and pin every component to a version identifier \u2014 a dossier that describes 'the model' without saying which one cannot be checked against anything afterwards, and reads as complete while certifying nothing. Attach the drafted sections with those identifiers."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Drafted general-description sections of the technical documentation, carrying the version identifiers of model, code, data and runtime they describe"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "State the intended purpose and the uses ruled out."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe the components, interfaces and how they connect."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the model, code and data versions described."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the hardware and runtime the released build needs."
+              }
+            },
+            {
+              "text": {
+                "en": "Have the build owner read the draft back against the build."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Assemble the risk, data-governance and testing records into the dossier by dated reference"
+          },
+          "description": {
+            "en": "The dossier does not redo work done elsewhere, it points at it \u2014 and a pointer reading 'see the validation report' is worthless the moment three validation reports exist. Bring in each record the documentation relies on with its title, version and date, and keep a copy wherever the dossier is kept so the reference survives the source team reorganising its drive. Where a cited record does not exist yet, write it down as a gap instead of citing an intention, because an unresolvable citation is indistinguishable from a satisfied one on the page. Attach the reference list with the held copies."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Dossier reference list naming each cited record with its version and date, the copies held alongside the dossier, and every unresolved citation recorded as a gap"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "List the records the documentation relies on."
+              }
+            },
+            {
+              "text": {
+                "en": "Give each reference a title, version and date."
+              }
+            },
+            {
+              "text": {
+                "en": "Store a copy of every cited record with the dossier."
+              }
+            },
+            {
+              "text": {
+                "en": "Record as a gap any citation with no record behind it."
+              }
+            },
+            {
+              "text": {
+                "en": "Open each citation and confirm it resolves to that copy."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Revise the dossier sections that each deployed change has made untrue"
+          },
+          "description": {
+            "en": "A high-risk system keeps moving once it is in service: a model retrained on fresh data, a threshold tuned, a new input source wired in, a guardrail relaxed. The documentation drawn up before the system reached buyers describes none of that. Treat every change that reaches production as carrying a documentation consequence - decide which headings it falsifies, rewrite them against the build now running, and date the rewrite so the currency of the file is readable at a glance. Skip this and the dossier degrades quietly: nothing fails and nothing alerts, and the organisation learns only under inspection that its conformity case rests on a description of a system it stopped running months ago."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Dossier revision log for the period: one row per production change giving the change reference, the date, the headings rewritten, and where the superseded text is retrievable."
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Put the documentation owner on the change-advisory and model-release distribution list."
+              }
+            },
+            {
+              "text": {
+                "en": "For each production change, list the Annex IV headings whose text it falsifies."
+              }
+            },
+            {
+              "text": {
+                "en": "Rewrite those headings against the build now running, dating each rewrite."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the superseded text retrievable so an inspector can replay what changed and when."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-read the untouched headings each quarter to catch drift no change ticket named."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Re-check the dossier against the system in the field and name the headings it no longer answers"
+          },
+          "description": {
+            "en": "Take the dossier heading by heading with somebody who did not write it and compare what it claims against the system as it currently runs \u2014 the version deployed, the data it now takes, the performance it now reports, the oversight actually available to operators. Read the change log beside the releases that shipped, because the failure this catches is a release that skipped the documentation step and left a file that still looks complete. Mark each heading accurate, amended or gapped, carry the amendments in during the same pass, and give every gap an owner and a date. Attach the review record."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Dossier review record: the outcome against every Annex IV heading, the amendments made in the pass, and each gap with its owner and date"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Compare each heading against the deployed version."
+              }
+            },
+            {
+              "text": {
+                "en": "Read the change log against the releases that shipped."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each heading accurate, amended or gapped."
+              }
+            },
+            {
+              "text": {
+                "en": "Carry the amendments into the dossier in this pass."
+              }
+            },
+            {
+              "text": {
+                "en": "Give every gap recorded an owner and a date."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "code": "EUAIA-01D",
       "title": "Automatic event logging and record-keeping",
+      "description": "Implements Art.12: the high-risk AI system records its own operation automatically, so a past run can be reconstructed from the entries it emitted rather than from what anybody remembers. Covers which events are recorded and with what fields, where the entries are kept and how they are protected, whether the recording is still happening, and whether an output can actually be traced back through them.",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Engineering lead / AI system owner",
       "requirementCodes": [
         "Art.12"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Define the events the system records automatically and the fields each entry carries"
+          },
+          "description": {
+            "en": "Work through the system's intended purpose and decide which moments of its operation have to leave a trace: the start and end of each period of use, the input presented, the model version and configuration that served it, the output returned, and any person who reviewed or overrode it. Write the decision down as a schedule of event types with the fields each one carries. Without it engineering logs whatever was convenient at the time, and the first question an investigator asks turns out to be the one field nobody recorded. Attach the specification, dated, with the reasoning for anything deliberately left out."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Dated logging specification listing each event type, the fields it carries, and the exclusions with the reasoning for each"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Walk the operational flow and mark every point where the system acts on an input."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the event type the system emits at each of those points."
+              }
+            },
+            {
+              "text": {
+                "en": "List the fields each event carries, including timestamp, version and actor."
+              }
+            },
+            {
+              "text": {
+                "en": "Record why any point is deliberately left unlogged and what compensates for it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Build the logging into the system so entries are emitted by the code path itself"
+          },
+          "description": {
+            "en": "Implement the specified events inside the system rather than around it, so the entry is written by the same code path that performs the action and an operator cannot complete a run without one appearing. Where a component can return a result on a branch that emits nothing, such as a cached answer, a fallback model or a timeout path, that branch is what makes the whole log untrustworthy, because the absence of an entry then means nothing at all. Attach the change record showing each event type wired to its emitting path together with the branch review that found the silent ones."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Change record mapping every specified event type to the code path that emits it, with the branch review listing the silent paths closed"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Wire each specified event type to the code path that performs the action."
+              }
+            },
+            {
+              "text": {
+                "en": "Trace every return branch, including cache hits, fallbacks and timeouts."
+              }
+            },
+            {
+              "text": {
+                "en": "Close the branches that can return a result while emitting no entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Run the system end to end and confirm each expected entry appears."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Set the retention period, storage and tamper protection for the generated entries"
+          },
+          "description": {
+            "en": "Decide how long the automatically generated entries are kept, where they are written, and what stops them being altered or quietly dropped. A store that can be edited after the fact traces nothing, and one rotated away after a fortnight cannot answer a question raised a year later. Set the period against how long the system stays in service and how late a problem with its output could surface, restrict who may write to or delete from the store, and make the deletion of an entry an event in its own right. Attach the configuration as applied, not as proposed."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Applied retention and access configuration for the log store, showing the period held, the write and delete rights, and the alerting on deletion"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Set the retention period against the system's service life and use."
+              }
+            },
+            {
+              "text": {
+                "en": "Configure the store entries are written to and who may read it."
+              }
+            },
+            {
+              "text": {
+                "en": "Restrict alteration and deletion rights to named administrators."
+              }
+            },
+            {
+              "text": {
+                "en": "Make deletion and log-store configuration changes raise a record of their own."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the applied settings match the specification rather than the proposal."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Monitor the log stream for gaps and record every period when entries stopped arriving"
+          },
+          "description": {
+            "en": "Automatic logging fails silently: the system carries on serving output while the entries stop, and nobody notices until somebody goes looking for a run that was never recorded. Watch the arrival of entries against expected volume for every deployed instance, raise the gaps as they happen, and keep one row per gap giving its start and end, what the system was doing in the interval, and whether the missing entries could be reconstructed. Attach the period's gap register together with the volume figures it was derived from."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Log gap register for the period, one row per interruption with its duration, the runs that fell inside it and the recovery outcome, alongside the arrival-volume figures"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Compare entries received against expected volume for each instance."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise an alert when a stream stops or drops below its expected rate."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each gap with its start, end and the runs that fell inside it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether the missing entries were recovered or are lost for good."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Trace a sample of past outputs back through the logs to the run that produced them"
+          },
+          "description": {
+            "en": "Take outputs the system produced earlier in the period, including one from near the far end of the retention window, and reconstruct each from the entries alone: which input was presented, which model version answered it, when, and who saw or overrode the result. This is the only check that shows whether the recording is traceable rather than merely present, and what it usually finds is a field that was never captured or a correlation identifier that changes between components. Rate each reconstruction and carry the gaps back into the logging specification."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Traceability test record naming each sampled output, whether the run could be reconstructed, the cause where it could not, and the specification changes raised"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Select sample outputs spread across the period and the retention window."
+              }
+            },
+            {
+              "text": {
+                "en": "Reconstruct each run from the log entries alone, using no other source."
+              }
+            },
+            {
+              "text": {
+                "en": "Rate each reconstruction complete, partial or impossible with its cause."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise the missing fields and broken identifiers as specification changes."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "code": "EUAIA-01E",
       "title": "Transparency and instructions for use",
+      "description": "Implements Art.13: make the system's operation intelligible to the organisation deploying it, and hand that organisation instructions for use stating the intended purpose, the performance the system was tested to, the conditions under which its output should not be relied on, and what it needs to keep running correctly.",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Product Management / AI Engineering Lead",
       "requirementCodes": [
         "Art.13"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Map every output a deploying organisation acts on to the reading it must support"
+          },
+          "description": {
+            "en": "Take each screen, export, API field and alert a deploying organisation receives and write down what a professional user there is expected to conclude from it and then do: approve, escalate, reject, leave alone. Record beside each one the units, the range and what the figure is actually about, because a score shown without its subject and scale is read as certainty by whoever has to act on it. Where nobody can say what a field means without asking the team that built it, mark that field, because it is the transparency gap this control exists to close and a documentation review will never surface it. Attach the output map."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Output interpretation map: one row per screen, export, field or alert giving its meaning, units and scale, the decision it feeds, and the entries nobody could explain"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "List every screen, export, API field and alert the deployer receives."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what a professional user is meant to conclude from each one."
+              }
+            },
+            {
+              "text": {
+                "en": "Write down the units, scale and subject behind every figure shown."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each field nobody can explain without asking the build team."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Write the instructions for use handed to the deploying organisation"
+          },
+          "description": {
+            "en": "Produce the document that goes to the deployer with the system, carrying the things they cannot work out for themselves: the intended purpose and the users it is built for, the accuracy and robustness figures with the measure and the population they were obtained on, the circumstances known to make the output misleading, what the system expects of input data and what it rejects, the oversight measures it offers the deployer, the resources it needs, its expected service life and its upkeep. A deployer without this operates the system outside the envelope it was tested on and has no way of knowing. Attach the issued document with its version and date."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Versioned instructions-for-use document covering intended purpose, tested performance and its population, out-of-envelope conditions, input expectations, oversight measures available and upkeep needs"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "State the intended purpose and the users the system is built for."
+              }
+            },
+            {
+              "text": {
+                "en": "Give the accuracy figures with the population they were measured on."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the conditions under which the output should not be relied on."
+              }
+            },
+            {
+              "text": {
+                "en": "Specify the input data the system expects and what it rejects."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe the resources, service life and upkeep the system needs."
+              }
+            },
+            {
+              "text": {
+                "en": "Version and date the document before it leaves the organisation."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Build the limits of each output into the surface the deploying organisation reads"
+          },
+          "description": {
+            "en": "Put the caveat where the decision is taken rather than in a document nobody opens at the moment of use: show the model version and the currency of the data behind the output, present the uncertainty next to the figure instead of below it, say plainly when a case falls outside the population the system was tested on, and add one line on what the output does not mean. Instructions alone leave a professional user reading a bare number in a hurry. Attach the reworked surfaces as the deployer's staff now see them."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Before-and-after capture of each output surface showing the model version, data currency, uncertainty and out-of-scope notice now presented in place"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Show the model version and the data date beside each output."
+              }
+            },
+            {
+              "text": {
+                "en": "Present the uncertainty next to the figure it belongs to."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag any case that falls outside the tested population."
+              }
+            },
+            {
+              "text": {
+                "en": "Add a plain line stating what the output does not mean."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture each surface as the deployer's staff now see it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Reconcile the edition of instructions for use each deployer holds against the current release"
+          },
+          "description": {
+            "en": "Take the register of deployers and establish, for each one, which edition of its instructions for use it is actually working from \u2014 the revision it received, not the latest revision that exists. Set that against the edition current for the system as it runs today, single out every deployer left on an earlier one, send them what is current now, and get a dated confirmation back from a named recipient. Where something has changed since their revision in how an output is meant to be interpreted, or in what the system must not be used for, spell that out in the covering note instead of leaving it to be noticed. Skip the pass and a deployer goes on reading live output against guidance the system has outgrown, while the provider cannot show who was told what, or when. Attach the reconciliation for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Distribution reconciliation for the period: every deployer, the revision it was working from, the one current today, the gap found, the covering note sent and the dated confirmation of receipt"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "List every deployer of the system and the revision each was last sent."
+              }
+            },
+            {
+              "text": {
+                "en": "Set each deployer's revision against the edition current today."
+              }
+            },
+            {
+              "text": {
+                "en": "Single out the deployers left on an earlier revision."
+              }
+            },
+            {
+              "text": {
+                "en": "Send what is current now to each one, with a covering note naming what changed."
+              }
+            },
+            {
+              "text": {
+                "en": "Get a dated confirmation back from a named recipient at each deployer."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Test whether the deployer's own operators can read the output from the instructions alone"
+          },
+          "description": {
+            "en": "Sit with the people who actually operate the system at a deploying organisation, give them real outputs and the instructions and nothing else, and ask what each one means and what they would do next. Record every wrong reading, every question they had to escalate to reach an answer, and every part of the document they could not find. The document is clear to its authors by construction, so the only evidence that it is intelligible comes from people who did not write it. Raise a revision against each gap and attach the test record with those revisions."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Comprehension test record naming the participants, the outputs shown, every misreading and unanswered question, and the instruction revisions raised from them"
+          },
+          "suggestedRole": "Management",
+          "steps": [
+            {
+              "text": {
+                "en": "Select operators at the deployer who use the output routinely."
+              }
+            },
+            {
+              "text": {
+                "en": "Give them real outputs and the instructions and nothing else."
+              }
+            },
+            {
+              "text": {
+                "en": "Ask what each output means and what they would do next."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every misreading and every question they escalated."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise an instruction revision for each gap the session exposed."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "code": "EUAIA-01F",
       "title": "Human oversight design and operator competence",
+      "description": "Implements Art.14: build each high-risk AI system so a named person can follow what it is doing, read its output for what it is worth, and halt or overturn it while it runs \u2014 and put people in that seat who have the competence and the authority to use it.",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "AI System Owner / Engineering Lead",
       "requirementCodes": [
         "Art.14"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Identify every point in a high-risk system's operation where a person must be able to step in"
+          },
+          "description": {
+            "en": "Walk each high-risk system output by output and mark the moments where a wrong result reaches somebody before any person has looked at it: the decision it feeds, who is exposed to it, and how long there is to act. Without this map, oversight gets designed against an architecture diagram rather than against the places the system can actually cause harm, and the controls end up on screens no operator ever opens. Attach the map, dated, one row per intervention point."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Intervention-point map, one row per output: the decision it feeds, who is exposed to it, the window available for acting, and the oversight point chosen"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "List each output the system produces and what happens to it next."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person or team an output reaches before any human check."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how long there is between an output and its effect landing."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the points where intervention must be possible, and say why there."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the map and circulate it to the teams that run the system."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Build the halt, override and disregard controls into the running system"
+          },
+          "description": {
+            "en": "Put three distinct capabilities in front of the person holding each oversight seat: stop the operation, replace an output with their own decision, and proceed without the output while recording that they did. Each must work from where that person actually sits, with no deployment, ticket or engineer in the path \u2014 an override that needs a release is not an override, and a stop control on a page the operator never opens is decoration. Attach the interface capture and the change record."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Interface capture and change record for each intervention point, naming the control fitted there and the measured effect it had on a live run"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Add a halt control reachable from the operator's own screen."
+              }
+            },
+            {
+              "text": {
+                "en": "Let the assigned person replace an output with their own decision."
+              }
+            },
+            {
+              "text": {
+                "en": "Record a disregarded output as an outcome rather than as a gap."
+              }
+            },
+            {
+              "text": {
+                "en": "Measure the time from pressing halt to the operation stopping."
+              }
+            },
+            {
+              "text": {
+                "en": "Define the state the system is left in after a halt, and check it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Define the competence, authority and two-person confirmation each oversight seat carries"
+          },
+          "description": {
+            "en": "For every intervention point, write down who holds the seat, what they must understand before they take it \u2014 the system's known limits, the cases where it is confidently wrong, how to read an output together with whatever confidence is attached to it \u2014 and what they may do without asking anyone's permission. Authority is the half usually missing: a person who must escalate before stopping the system does not oversee it. Where an output identifies a person biometrically, record that nothing acts on it until two competent people have separately confirmed it. Attach the assignment record."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Oversight assignment record: the named holder and deputy for each seat, the competence required, the authority granted without escalation, and the outputs needing two-person confirmation"
+          },
+          "suggestedRole": "Management",
+          "steps": [
+            {
+              "text": {
+                "en": "Name the person holding each oversight seat, and their deputy."
+              }
+            },
+            {
+              "text": {
+                "en": "Write down what the holder must know about the system's limits."
+              }
+            },
+            {
+              "text": {
+                "en": "State what the holder may halt or overturn without escalating."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the outputs that need two people to confirm before any action."
+              }
+            },
+            {
+              "text": {
+                "en": "Have the accountable manager sign and date the assignment record."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record every halt, override and disregarded output with the reason the overseer gave"
+          },
+          "description": {
+            "en": "Keep one entry per intervention carrying who acted, which system and output, what they did, the reason in their own words, and what followed for the decision behind it. The machine's event log can show that an output was not acted on; only this entry says why a person judged it wrong, and that reasoning is what tells the provider whether the system or the oversight is the thing failing. Report the period's interventions beside the number of outputs the system produced, so the two are read together. Attach the intervention record for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Oversight intervention record for the period: one entry per halt, override or disregarded output with overseer, timestamp, stated reason and outcome, beside the total output count"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Capture the overseer, the system and the output acted on."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the reason the person gave, in their own words."
+              }
+            },
+            {
+              "text": {
+                "en": "Note what followed for the decision the output was feeding."
+              }
+            },
+            {
+              "text": {
+                "en": "Report the interventions beside the period's total output count."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Test that an assigned overseer can still halt the system and that an override holds"
+          },
+          "description": {
+            "en": "Take each system in turn and have the person actually holding the seat \u2014 not an engineer standing in for them \u2014 halt it, override one output and disregard another, on a live or rehearsed run. Time each act to its effect, and follow the overridden output downstream to confirm the original did not travel on regardless. Read the period's intervention record in the same pass: a system producing thousands of outputs that nobody ever questioned is a finding about over-reliance, not a clean result. Record every failure with its correction and the date that correction lands."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Oversight exercise record naming who performed each test, the measured time from act to effect, the downstream result of the overridden output, and each failure with its correction and date"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Have the seat holder, not a stand-in, exercise each control."
+              }
+            },
+            {
+              "text": {
+                "en": "Time each intervention from the act to its effect on the system."
+              }
+            },
+            {
+              "text": {
+                "en": "Follow an overridden output downstream to confirm it was replaced."
+              }
+            },
+            {
+              "text": {
+                "en": "Read the period's intervention count against the outputs produced."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each failure with its correction and the date it lands."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "code": "EUAIA-01G",
       "title": "Accuracy, robustness and cybersecurity",
+      "description": "Implements Art.15: state what the system's accuracy actually is and under what conditions it was measured, hold that level across the system's whole life, and keep it holding when an input falls outside what was tested, when a component it depends on fails, and when someone sets out to poison its training data, tamper with its artefacts or craft inputs that flip its output.",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "ML Engineering Lead / Security Engineering",
       "requirementCodes": [
         "Art.15"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Define the accuracy metric and the level the system is declared to meet"
+          },
+          "description": {
+            "en": "Pick the metric that reflects what the system is actually used for, and state the minimum level claimed for it, the data it was measured on, the conditions of that measurement and the ground truth it was scored against. One headline figure hides the failure that matters, so break the level down by the output classes and the populations the system runs on. Without this, the declared level can be met and missed at the same time and nobody can tell which, and every later measurement has nothing to be compared with. Attach the performance declaration."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Performance declaration sheet: metric per output class and population, the level claimed for each, the measurement conditions and the named ground-truth source"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Name the metric that reflects each output the system produces."
+              }
+            },
+            {
+              "text": {
+                "en": "State the minimum level claimed for each of those metrics."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the data set and the conditions each level was measured under."
+              }
+            },
+            {
+              "text": {
+                "en": "Break the measured level down by the populations the system runs on."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the ground truth every measurement is scored against."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Configure the fallback behaviour for uncertain inputs and failed components"
+          },
+          "description": {
+            "en": "Decide what the system does at its edges: when an input falls outside the range it was tested on, when a dependency it needs is unavailable or returning nonsense, and when its own confidence sits below the level at which the declared accuracy holds \u2014 abstain, fall back to a safe default, hand off, or stop. Decide separately whether its own outputs may re-enter training, because a system learning from its own answers drifts away from its declared level with no single event to point at. Undefined edge behaviour does not produce an error; it produces a confident wrong answer that looks like every right one. Attach the fallback and redundancy design."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Fallback and redundancy design: the confidence and out-of-range thresholds, the action taken at each, the safe state per dependency failure, and the rule for outputs re-entering training"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Set the confidence threshold below which the system abstains."
+              }
+            },
+            {
+              "text": {
+                "en": "Define what happens to inputs outside the range it was tested on."
+              }
+            },
+            {
+              "text": {
+                "en": "Specify the safe state each dependency failure falls back to."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide whether the system's own outputs may re-enter training."
+              }
+            },
+            {
+              "text": {
+                "en": "Exercise each fallback path under the condition it names."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Implement the protections against data poisoning, model tampering and adversarial input"
+          },
+          "description": {
+            "en": "Name the routes by which someone could change what the system does without changing what it claims to do \u2014 poisoned training or fine-tuning data, a swapped or altered model artefact, crafted inputs that flip an output, and extraction queries that lift the model or its training data back out \u2014 then put a named control against each: provenance and integrity checks on training data, signed and version-pinned artefacts, restricted write access to the pipeline that produces them, validation and rate limiting at the inference boundary. This class of compromise leaves the system running and answering, which is exactly why it goes unnoticed. Attach the mapping of route to control."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Attack-route mapping: each route by which model behaviour could be altered against the control covering it, with the artefact signing, pipeline access and inference-boundary settings in force"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List the routes by which the model's behaviour could be altered."
+              }
+            },
+            {
+              "text": {
+                "en": "Sign and version-pin every model artefact that gets deployed."
+              }
+            },
+            {
+              "text": {
+                "en": "Restrict write access to the training and fine-tuning data stores."
+              }
+            },
+            {
+              "text": {
+                "en": "Validate and rate-limit the inputs reaching the inference boundary."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which control covers each route on the list."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Monitor production accuracy against the declared threshold"
+          },
+          "description": {
+            "en": "Accuracy proven once before deployment does not hold: input populations drift, upstream data sources change, and a model can decay in service without a line of code being touched. Without a standing measurement cycle and an agreed trigger point, that decay first shows up as a user complaint or a supervisory question rather than as an internal reading, and the provider has nothing to show that real-world performance still matches what was stated in the instructions for use. The measurement also has to bite: a reading below the threshold must open remediation, not simply be filed."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Dated in-service performance monitoring record, one entry per measurement period, giving the sample drawn, the figure scored, the comparison verdict and any deviation ticket raised."
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Draw the period's live predictions together with their confirmed outcomes from the serving records."
+              }
+            },
+            {
+              "text": {
+                "en": "Score that sample using the metric fixed at scoping, and note the sample size behind the figure."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the figure with the threshold held in the technical documentation, and mark any shortfall."
+              }
+            },
+            {
+              "text": {
+                "en": "Open a deviation ticket, notify the deployment owner and set a remediation date whenever the figure falls short."
+              }
+            },
+            {
+              "text": {
+                "en": "File the figure, the comparison and the action taken in the dated monitoring record."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Retest the fault and attack cases before each release of the system"
+          },
+          "description": {
+            "en": "Keep a standing set of cases \u2014 the adversarial inputs, the injected component faults, the out-of-range inputs, the extraction attempts \u2014 and run the whole set against the release candidate, comparing each result with the same case's result last time. Robustness and attack resistance decay silently: a retrain, a dependency upgrade or a threshold change can remove a protection while every functional test stays green, so the movement between runs is the signal, not the pass mark. Assign an owner to any case whose outcome moved the wrong way before the release goes out. Attach the retest report."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Robustness and security retest report: every fault and attack case with its result, the change since the previous run, and the owner of each regression"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Assemble the fault and attack cases the system is tested against."
+              }
+            },
+            {
+              "text": {
+                "en": "Run every case against the release candidate build."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each result with the same case's previous result."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any case whose outcome moved in the wrong direction."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign an owner to every regression before the release goes out."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "code": "EUAIA-01H",
       "title": "Provider conformity: assessment, CE marking, declaration and registration",
+      "description": "Implements Art.16: the organisation acts as the provider placing a high-risk AI system on the market \u2014 it establishes where it holds the provider role, has each system version assessed for conformity, issues and signs the EU declaration of conformity, carries the CE marking and its own identity on what ships, and registers the system in the EU database before it goes out.",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Product Compliance Lead / Legal Counsel",
       "requirementCodes": [
         "Art.16"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Determine which high-risk systems the organisation places on the market as provider"
+          },
+          "description": {
+            "en": "Go product by product and decide where the organisation actually sits. It is the provider of a system it develops and puts on the market under its own name or trademark, and it becomes the provider of somebody else's system if it rebrands that system or changes what it is intended to do. Systems the organisation only runs for its own purposes belong to the deployer control, not this one, and a system filed in the wrong column here either gets a declaration nobody owed or none where one was due. For each system the organisation does provide, record the high-risk use case relied on and whether the assessment runs on internal control or needs a notified body, because that answer sets the lead time for everything below. Attach the provider-role determination with the reasoning recorded per system."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Provider-role determination: one row per AI system giving the role held, the reasoning, the high-risk classification relied on and the assessment route chosen"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List every AI system the organisation ships, sells or hosts for other organisations."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each one as provider, deployer or both, with the reasoning written down."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag any third-party system the organisation rebrands or repurposes as its own."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the high-risk use case each provided system is classified under."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide internal control or notified body per system, and note the lead time it implies."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Conduct the conformity assessment for each provided system and record the version it cleared"
+          },
+          "description": {
+            "en": "Run the assessment route chosen for the system and write down what was actually examined: the technical documentation reference it rests on, who performed the assessment, the dates it ran, the notified body and certificate reference where one is involved, and the exact system version and model release that passed. An assessment recorded against a product name rather than a version cannot answer the one question an authority asks later \u2014 whether the thing on the market is the thing that was assessed. Hold open findings as blocking until each is closed, because placing a system before it cleared is not something a later fix repairs. Attach the assessment record for each system version."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Conformity assessment record per system version: route followed, documentation cited, assessor and dates, notified body certificate where applicable, and the clearance decision"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Fix the system version and model release the assessment covers."
+              }
+            },
+            {
+              "text": {
+                "en": "Cite the technical documentation the assessment is carried out against."
+              }
+            },
+            {
+              "text": {
+                "en": "Run the chosen route and record who performed each part of it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the notified body and certificate reference where one applies."
+              }
+            },
+            {
+              "text": {
+                "en": "List open findings and withhold clearance until every one is closed."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Issue a signed EU declaration of conformity naming each cleared system version"
+          },
+          "description": {
+            "en": "Draw up the declaration for every system version the assessment cleared: name the system and its version, identify the organisation as provider with its contact details, state the requirements and standards the declaration is made against, and have it signed by somebody authorised to bind the organisation. An unsigned draft sitting in a folder is not a declaration, and a declaration written once and never re-issued quietly stops covering the version customers are actually running. Keep each declaration retrievable next to the assessment record it rests on, so the pair can be produced together on request. Attach the signed declaration for each system version."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "One EU declaration of conformity held per cleared system version, each naming its signatory and citing the assessment record it rests on"
+          },
+          "suggestedRole": "Management",
+          "steps": [
+            {
+              "text": {
+                "en": "Draft one declaration per system version the assessment cleared."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the provider, the system and the exact version it covers."
+              }
+            },
+            {
+              "text": {
+                "en": "State the requirements and standards it is declared against."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain the signature of somebody authorised to bind the organisation."
+              }
+            },
+            {
+              "text": {
+                "en": "Store the signed declaration alongside the assessment record it cites."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Register each system in the EU database and confirm its CE marking before it is placed on the market"
+          },
+          "description": {
+            "en": "Every time a system or a new version goes out, run the same gate before it leaves: the EU database entry exists and its details match what is shipping, the CE marking is present on the system or its packaging and accompanying documentation, and the provider's name and contact address travel with it. Record the entry identifier, the date registered and the date the version was placed on the market, one row per system version. A registration made after shipping cannot be backdated, and a marking carried over unchanged from a previous release points customers and authorities at a declaration that no longer describes the product. Attach the placing-on-the-market record for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Placing-on-the-market record for the period: one row per system version with its EU database entry identifier, registration date, CE marking confirmation and the date it was placed on the market"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Create or update the EU database entry for the system version."
+              }
+            },
+            {
+              "text": {
+                "en": "Check the registered details match the version about to ship."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the CE marking appears on the system or its packaging."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the provider's name and contact address ship with it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the entry identifier and the date placed on the market."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Reconcile declarations, markings and registrations against the systems actually on the market"
+          },
+          "description": {
+            "en": "Take an independent view of what the organisation currently has on the market \u2014 the price list, the release log, the customer-facing catalogue \u2014 and match it in both directions against the declarations, marking confirmations and database entries held. Three failures leave every individual record looking healthy: a version shipped since the last declaration was signed, a change to intended purpose or performance large enough that the cleared assessment no longer describes the system, and an entry still registered for a product withdrawn from sale. Record each mismatch with an owner, the decision taken \u2014 re-assess, re-declare, correct the entry, withdraw \u2014 and the date it was closed. Attach the reconciliation with its mismatch list."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Reconciliation record matching each system on the market to its declaration, marking and registration entry, listing mismatches, decisions and closing dates"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Take an independent list of the systems currently on the market."
+              }
+            },
+            {
+              "text": {
+                "en": "Match each system to a signed declaration and a registration entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Match each declaration and database entry back to a live system."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag versions changed since the assessment that cleared them."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every mismatch with an owner, a decision and a closing date."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "code": "EUAIA-01I",
       "title": "Quality management system",
+      "description": "Implements Art.17: operate a written quality management system across the organisation that places high-risk AI on the market \u2014 its agreed scope, an accountability framework naming who answers for each part, the indexed and versioned procedure set covering design control, development and quality assurance, examination and validation, data management, post-market monitoring, incident reporting, communication with authorities, record-keeping and resource supply, the records those procedures produce, and the internal audit and management review that keep them in force. This is the provider's system of working, not the risk work done on any one AI system.",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Quality Manager / Head of Engineering",
       "requirementCodes": [
         "Art.17"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Scope the quality management system to every product line and site that ships high-risk AI"
+          },
+          "description": {
+            "en": "Write down which legal entities, development sites, product lines and outsourced parties the quality system governs, and which are deliberately outside it. A quality system scoped implicitly ends up meaning whichever team wrote it: a contract development house training a model, or a second office shipping under the same provider name, sits outside every procedure while the paperwork still reads as complete. Name the excluded parts and the reason each is excluded, because an unexplained gap is indistinguishable from an oversight. Attach the scope statement with the date it was agreed and who agreed it."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Dated quality management system scope statement listing the entities, sites, product lines and outsourced parties governed, with each exclusion and its stated reason"
+          },
+          "suggestedRole": "Management",
+          "steps": [
+            {
+              "text": {
+                "en": "List the legal entities and development sites that build or ship high-risk AI."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the product lines each site places on the market under the provider's name."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every outsourced party that performs a step of design, development or testing."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each item as inside or outside the quality system and give the reason."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the scope statement and record who agreed it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Write the accountability framework naming the role answerable for each part of the quality system"
+          },
+          "description": {
+            "en": "Set out in writing which role carries which responsibility for the quality system: who approves a procedure, who may authorise a departure from one, who answers to the management body for the system as a whole, and who holds the same duties at each site the scope covers. Responsibility recorded as a team name is not an accountability framework \u2014 when a procedure is skipped, somebody has to be identifiable as the person who should have stopped it. Record the reporting line from each role upward, so a finding has somewhere to go. Attach the framework showing role, responsibility, approval authority and reporting line."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Accountability framework: one row per role giving its quality-system responsibilities, its authority to approve or waive a procedure, and its reporting line to management"
+          },
+          "suggestedRole": "Management",
+          "steps": [
+            {
+              "text": {
+                "en": "List the quality-system duties that need a named owner."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the role, not the person, accountable for each duty."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who may approve a procedure and who may authorise a departure."
+              }
+            },
+            {
+              "text": {
+                "en": "Trace each role's reporting line up to the management body."
+              }
+            },
+            {
+              "text": {
+                "en": "Have management adopt the framework and record the date."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Catalogue the written procedures the quality system holds, with the owner and version of each"
+          },
+          "description": {
+            "en": "Build the index of the procedures the quality system is actually made of \u2014 design and design control, development and quality assurance, examination and validation, data management, post-market monitoring, incident reporting, communication with authorities, record-keeping and resource supply \u2014 and record for each its document reference, current version, owner and approval date. Without the index a missing procedure leaves no trace, because absence looks exactly like nothing; with it, an empty row is visible to anyone who opens the file. Where a required procedure does not exist yet, keep its row and mark it outstanding rather than omitting it. Attach the procedure index."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Quality-system procedure index listing each procedure with its document reference, current version, owner, approval date and any row marked outstanding"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "List the procedures the quality system is required to hold."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the document reference and current version for each one."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the owner and the date the current version was approved."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark any required procedure that does not yet exist as outstanding."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the index where every team in scope can reach it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Log every departure from a quality procedure and the corrective action closed against it"
+          },
+          "description": {
+            "en": "Through the period, record each occasion a quality procedure was not followed \u2014 a design review skipped to hold a release date, a validation signed off on partial results, a supplier step done outside the documented flow \u2014 with the date, who authorised or discovered it, and the corrective action raised. A quality system with an empty deviation log is rarely a system nobody departed from; it is usually a system nobody records against, which is the exact state this log exists to make visible. Carry each corrective action through to a closure date rather than leaving it open and unread. Attach the deviation and corrective-action log for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Deviation and corrective-action log for the period: each departure with its date, who raised it, the action taken, and its closure date or open status"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Record each departure from a documented procedure as it happens."
+              }
+            },
+            {
+              "text": {
+                "en": "Note who authorised or discovered it and on what date."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a corrective action against every departure logged."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the closure date and what changed as a result."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the log for the period with open items still showing."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Audit the quality system against its own procedures and report where practice has diverged"
+          },
+          "description": {
+            "en": "Take the procedure index and test, procedure by procedure, whether the work is really done the way the document says \u2014 sample actual releases and actual records rather than asking the owners, because a procedure everybody has quietly stopped following still reads as current on the page. Record each divergence with the evidence that revealed it, the role accountable under the framework, and a due date. Put the findings in front of the management body together with the deviation log and any outstanding procedure rows, so the choice to change a procedure or enforce it is made by someone who can resource it. Attach the audit report and the minutes of that review."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Internal quality-system audit report giving per-procedure findings, the records sampled, the accountable role and due dates, with the minuted management review that received it"
+          },
+          "suggestedRole": "Management",
+          "steps": [
+            {
+              "text": {
+                "en": "Sample real releases and records against each written procedure."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every divergence with the evidence that revealed it."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign each finding to the role accountable under the framework."
+              }
+            },
+            {
+              "text": {
+                "en": "Put the findings, deviation log and outstanding rows to management."
+              }
+            },
+            {
+              "text": {
+                "en": "Minute the decisions taken and the dates they are due."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "code": "EUAIA-01J",
       "title": "Deployer operating obligations",
+      "description": "Implements Art.26: the organisation uses each high-risk AI system it did not build within the conditions the supplier's instructions state, assigns named people with the authority and the standing to oversee it and halt it, monitors how it behaves while in use and reports what it sees to the supplier, keeps the logs the system generates under its control, and tells the workers it is used on \u2014 the obligations that fall on the party using a system rather than the party placing it on the market.",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "AI Deployment Owner / IT Operations",
       "requirementCodes": [
         "Art.26"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "List the AI systems the organisation deploys but did not build, and the instructions for use held for each"
+          },
+          "description": {
+            "en": "Deployer duties attach to systems somebody else supplied, so the first job is knowing which ones are in use and on what terms. Walk the procurement records, the software spend and the business teams themselves, and record for each system what it decides or assists with, which process it sits inside, who supplied it, and whether the instructions for use are actually in the organisation's hands \u2014 a system in daily use whose instructions nobody has ever read is the finding this task exists to surface. Where the supplier has sent nothing, ask for it and record the date of the request. Attach the deployment register."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Deployment register: one row per AI system in use, giving the supplier, the process it sits in, the people it affects and whether the instructions for use are held"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the procurement and software records for systems with an AI component."
+              }
+            },
+            {
+              "text": {
+                "en": "Ask each business team which AI systems they use and for what decisions."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the supplier, the process it sits in and the people it affects."
+              }
+            },
+            {
+              "text": {
+                "en": "Note for each system whether the instructions for use are held and read."
+              }
+            },
+            {
+              "text": {
+                "en": "Request the missing instructions from the supplier and date the request."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Extract the provider's operating conditions and limits into the procedure the operating team follows"
+          },
+          "description": {
+            "en": "Instructions for use are written for the organisation, not for the person at the screen, so turn each set into the working procedure that person actually has: the purposes the system may be used for, the input data it may be given, the conditions it must run under, the outputs that must not be acted on alone, and how long its logs are kept and who can retrieve them. Name the instruction clause beside each line, so a later reader can tell an obligation the supplier stated from a habit the team invented. Where a stated condition cannot be met with what the organisation has, record it as a gap and escalate it rather than writing a procedure that quietly ignores it. Attach the procedure for each system."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Operating procedure per deployed system, each line citing the instruction clause it came from, with the conditions the organisation cannot meet listed separately"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Read the instructions for use and list every condition they state."
+              }
+            },
+            {
+              "text": {
+                "en": "Write down the permitted purposes and the input data the system may be given."
+              }
+            },
+            {
+              "text": {
+                "en": "Set how long the system's logs are kept and who may retrieve them."
+              }
+            },
+            {
+              "text": {
+                "en": "Cite the instruction clause behind each line of the procedure."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any stated condition the organisation cannot meet as a gap."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Assign named overseers to each deployed system and give them written authority to halt its use"
+          },
+          "description": {
+            "en": "Oversight that is nobody's job in particular is not oversight. For each deployed system name the individuals who watch its output and a deputy, cover the hours it actually runs, and put in writing that they may set aside a result or stop the system without seeking approval first \u2014 an overseer who must escalate in order to halt will not halt. Record what they were given to do the job: the training on this specific system, the access needed to see its inputs and outputs, and the time allowed for the work. Tell the workers the system will be used on, and their representatives, that it is coming and who oversees it. Attach the oversight assignment record."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Oversight assignment record naming the overseer and deputy for each system, their written authority to halt it, the hours covered, and the training and access given"
+          },
+          "suggestedRole": "Management",
+          "steps": [
+            {
+              "text": {
+                "en": "Name the overseer and a deputy for each deployed system."
+              }
+            },
+            {
+              "text": {
+                "en": "Put the authority to set aside a result or halt the system in writing."
+              }
+            },
+            {
+              "text": {
+                "en": "Match the oversight roster to the hours the system actually runs."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the training and the access each named overseer received."
+              }
+            },
+            {
+              "text": {
+                "en": "Tell the affected workers and their representatives before use begins."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Monitor each deployed system against its stated conditions and report the deviations to the supplier"
+          },
+          "description": {
+            "en": "Monitoring here means watching a system the organisation cannot change: what is available is the output it produces, the input it is fed and the logs it writes, read against the conditions the procedure records. Each period, record what was observed, every case where the system was used outside those conditions or behaved in a way the instructions do not describe, what the overseers did about it, and which cases were reported to the supplier \u2014 and where use appeared to put people's health, safety or rights at risk, record the decision to suspend the system, who took it and when the authorities were told. Keep the logs the system generated over the same period beside the record, because the observations cannot be checked without them. Attach the monitoring record for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Monitoring record for the period: the deviations observed, what the overseers did, the notifications sent to the supplier or the authorities, any suspension decision, and the retained system logs covering the same dates"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Compare the period's use against the conditions in the procedure."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every deviation and what the overseer did about it."
+              }
+            },
+            {
+              "text": {
+                "en": "Notify the supplier of behaviour the instructions do not describe."
+              }
+            },
+            {
+              "text": {
+                "en": "Record any suspension decision, who took it and who was told."
+              }
+            },
+            {
+              "text": {
+                "en": "Store the logs the system generated over the same period."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Re-read each supplier's current instructions against how the system is actually being used"
+          },
+          "description": {
+            "en": "Two things drift apart quietly: the supplier reissues the instructions after an update, and the organisation finds new uses for a system it bought for one. Take the current instructions from the supplier rather than the copy filed at purchase, put them beside the procedure, the period's monitoring record and the oversight roster, and record for each system whether the purposes, the input data, the operating conditions, the named overseers and the log coverage still match. Where they do not, say which side moved: a use that has grown beyond what the supplier describes is a different problem from a procedure that is merely out of date, and the two are corrected by different people. Attach the review with its findings and the corrections made."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Instructions-versus-practice review for each deployed system, naming the instruction version compared, every divergence found, which side moved and the correction made"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Obtain the current instructions for use from each supplier."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare them against the procedure written for that system."
+              }
+            },
+            {
+              "text": {
+                "en": "Check the purposes and input data in use are still the ones stated."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the named overseers are still in post and still trained."
+              }
+            },
+            {
+              "text": {
+                "en": "Check the retained logs cover every period the system ran."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each divergence, which side moved and the correction made."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "code": "EUAIA-01K",
       "title": "Fundamental rights impact assessment",
+      "description": "Implements Art.27: before a high-risk AI system is put into use, the deployers the Act names assess what its use could do to the fundamental rights of the people it will be applied to \u2014 which categories and groups are affected, what harm could follow for them, who watches for that harm and how an affected person complains \u2014 then notify the result to the market surveillance authority and keep the assessment current as the deployment changes.",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "AI Governance Lead / DPO",
       "requirementCodes": [
         "Art.27"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Identify the people and groups each high-risk deployment will affect, before it goes into use"
+          },
+          "description": {
+            "en": "Take each high-risk system the organisation is about to put into use and write down the decision or process it will feed, the period and frequency over which it will run, and \u2014 the part this assessment exists for \u2014 which categories of natural person the output actually lands on: applicants, claimants, patients, tenants, students, employees. Name the sub-groups inside them carrying more exposure than the average, because an assessment written about 'users' never finds the group the harm falls on. Compiled after go-live it is a formality: the deployment decisions it should have changed have already been made. Attach the affected-persons register, dated before first use."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Affected-persons register per deployment: the process it feeds, the period and frequency of intended use, and every category and sub-group of person the output is applied to"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Write down the decision or process the system will feed into."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the period and frequency over which it will run."
+              }
+            },
+            {
+              "text": {
+                "en": "Name every category of person the output is applied to."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the sub-groups more exposed than the general population."
+              }
+            },
+            {
+              "text": {
+                "en": "Date the register before the system is put into use."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Assess the harm to each affected group's fundamental rights that use of the system could cause"
+          },
+          "description": {
+            "en": "Work group by group down the register and state what could go wrong for those people specifically \u2014 a service wrongly refused, an entitlement delayed, an outcome that falls harder on one group than another, a decision nobody can explain to the person it was made about \u2014 and how likely and how serious each would be. This is not the provider's engineering risk analysis restated: the subject is the person on the receiving end, not the failure mode inside the model. Record the reasoning beside each harm, because a rating with no reasoning cannot be challenged by anyone and cannot be re-run when the deployment moves. Attach the assessment covering every group the register names."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Fundamental-rights impact assessment, one entry per affected group: the harm described in concrete terms, its likelihood and severity, and the reasoning recorded for each"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Take each group from the affected-persons register in turn."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe the harm that group could suffer in concrete terms."
+              }
+            },
+            {
+              "text": {
+                "en": "Rate how likely and how severe that harm would be."
+              }
+            },
+            {
+              "text": {
+                "en": "Write down the reasoning that produced each rating."
+              }
+            },
+            {
+              "text": {
+                "en": "Check that no group in the register is left unassessed."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record the oversight, response and complaint arrangements protecting the people assessed"
+          },
+          "description": {
+            "en": "For every harm the assessment carries forward, record what the organisation will actually do about it: who inside the deployment watches for it, what that person is able to stop, override or escalate, what happens in the hours after it materialises, and how an affected person raises the matter and gets an answer back. Name the owner and the route by name rather than by function, because 'appropriate governance arrangements' commits nobody to anything on the day it is needed. A harm that is documented and has no named response is the one an affected person and an inspector both find first. Attach the measures record mapped one-to-one onto the assessed harms."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Measures record mapping each assessed harm to its named internal owner, the oversight and response arrangement agreed for it, and the complaint route open to affected people"
+          },
+          "suggestedRole": "Management",
+          "steps": [
+            {
+              "text": {
+                "en": "Take each harm carried forward from the assessment."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person inside the deployment accountable for it."
+              }
+            },
+            {
+              "text": {
+                "en": "State what that person can stop, override or escalate."
+              }
+            },
+            {
+              "text": {
+                "en": "Write down the complaint route open to an affected person."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm every assessed harm has a measure against it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Notify the market surveillance authority of the assessment result and keep the submission proof"
+          },
+          "description": {
+            "en": "Once the assessment is complete, notify the market surveillance authority of its result and keep what proves it: the version submitted, the form used, the date, the person who sent it and whatever acknowledgement came back. Freeze the submitted copy rather than letting the working document drift over it, because the filing and the live assessment answer different questions later \u2014 what the authority was told, and what the organisation believes now. An assessment performed and never notified leaves the organisation carrying all of the work and none of the credit, and shows as a gap at the first inspection. Attach the submission record for every deployment notified in the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Submission record per notified deployment: the frozen version of the assessment sent, the form used, the date, the submitter and any acknowledgement received"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Freeze the version of the assessment being submitted."
+              }
+            },
+            {
+              "text": {
+                "en": "Send it to the market surveillance authority on the form it accepts."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date, the submitter and the form used."
+              }
+            },
+            {
+              "text": {
+                "en": "Store the acknowledgement alongside the frozen version."
+              }
+            },
+            {
+              "text": {
+                "en": "List every deployment notified during the period."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Reassess the affected groups and their harms when the use, the population or the system changes"
+          },
+          "description": {
+            "en": "This assessment goes stale quietly. The system is pointed at a second process, the caseload shifts to a different population, the provider ships a new version, or a measure that was written down turns out never to have been staffed \u2014 and none of those announce themselves as a change to the fundamental-rights position. Re-read the assessment against what the deployment is actually doing now, record which groups, harms and measures changed, and carry the corrections into the document in the same pass rather than logging them for a later one. Attach the dated reassessment naming the reviewer and stating what changed."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Dated reassessment record listing each trigger examined, the affected groups, harms and measures amended as a result, and the reviewer who performed it"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Compare the recorded intended use against the current use."
+              }
+            },
+            {
+              "text": {
+                "en": "Check whether the affected population has shifted since filing."
+              }
+            },
+            {
+              "text": {
+                "en": "Ask whether the provider has changed the system since then."
+              }
+            },
+            {
+              "text": {
+                "en": "Test that each recorded measure is actually staffed."
+              }
+            },
+            {
+              "text": {
+                "en": "Amend the assessment and date the reassessment record."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "code": "EUAIA-02",
       "title": "Limited-risk (transparency obligations)",
+      "description": "Implements Art.50: tell people when they are dealing with an AI system rather than a person, and mark or label AI-generated and manipulated content so everyone who meets it can tell what it is.",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Legal/DPO",
       "requirementCodes": [
         "Art.50"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Inventory every point where a person meets the AI system or content it generated"
+          },
+          "description": {
+            "en": "Walk the product and the public channels and record, one row each, the places where a member of the public interacts with the system (chat, voice assistant, in-app helper, phone line) and the places where output the system generated or altered reaches someone (images, audio, video, published text). For each row name who the exposed person is, whether they are told anything today, and which limb applies: interaction disclosure, content marking, or both. Systems that infer emotion or sort people into categories from biometric data belong here too, because the people exposed to them have to be told the feature is running. Without the inventory the disclosure work covers the surfaces somebody remembered, and the ones it misses are the ones nobody is watching. Attach the inventory dated at the point it was compiled."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Dated exposure inventory: one row per interaction or content surface, naming the audience exposed to it and the disclosure that reaches them today"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Walk each product surface a member of the public can reach."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every channel where the system speaks to a person."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every output type the system generates or alters."
+              }
+            },
+            {
+              "text": {
+                "en": "Note any emotion-inference or biometric categorisation in use."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark which rows already show a disclosure today."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Write the first-contact notice that tells a person they are dealing with an AI"
+          },
+          "description": {
+            "en": "Draft the wording each interaction surface shows before the person's first exchange: that they are dealing with an AI system rather than a person, and how to reach a human where that route exists. Place it where it cannot be missed rather than in the terms of service, keep it visible when a conversation hands back from a human agent to the machine, and give voice and telephone channels a spoken equivalent, because a screen notice never reaches a caller. Where the system infers emotion or sorts people by biometric category, the notice tells the exposed person that feature is operating while it operates. Without it a person answers questions they would not have answered to a machine and only finds out afterwards. Attach the approved wording per surface with a capture showing where it appears."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Approved disclosure wording for each interaction surface, with captures showing where and when the exposed person sees or hears it"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Draft the wording for each interaction surface."
+              }
+            },
+            {
+              "text": {
+                "en": "Add a spoken version for voice and phone channels."
+              }
+            },
+            {
+              "text": {
+                "en": "Place the notice ahead of the first exchange."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep it visible after a handover back from a human."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture each surface as the person actually sees it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Mark the output the system generates so a machine can detect it as synthetic"
+          },
+          "description": {
+            "en": "Attach provenance metadata or a watermark to image, audio, video and text output at the moment it is generated rather than at the moment it is published, because output leaves the system by paths nobody remembers to cover. Record for each output type which technique is used, which export, download and re-encode paths preserve it, and where it is known to be stripped \u2014 an honest list of limits is worth more than a claim of full coverage. Where no marking can be applied to a format the system emits, record that gap and what compensates for it. Without a durable mark, somebody who receives the file later has no way to establish it came from a machine, and the visible label alone disappears the first time the asset is cropped or re-shared. Attach the marking specification with the test results behind it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Marking specification per output type, with test results showing which export, re-encode and download paths preserve the marker and which strip it"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Choose a marking technique per output format."
+              }
+            },
+            {
+              "text": {
+                "en": "Apply the marker in the generation path itself."
+              }
+            },
+            {
+              "text": {
+                "en": "Test whether export and re-encoding preserve it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every path that strips the marker."
+              }
+            },
+            {
+              "text": {
+                "en": "Write up the gaps and what compensates for them."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Log every published deepfake and AI-written item with the label the audience saw"
+          },
+          "description": {
+            "en": "Each time manipulated or generated content resembling real people, places or events is published, and each time AI-written text goes out to inform the public, record what was published, where, when, who cleared it and the exact visible label it carried at the point somebody consumes it \u2014 a disclosure sitting in a caption nobody scrolls to is not the same as one on the asset. Keep the item or a capture of it beside the row so the label can be checked later rather than asserted. An item that went out unlabelled is recorded as such with the correction and its date, because a register that only shows the successes tells a reviewer nothing. Attach the publication log for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Publication log for the period: one row per generated or manipulated item giving channel, date, approver, the label shown, and a capture of the item as published"
+          },
+          "suggestedRole": "Management",
+          "steps": [
+            {
+              "text": {
+                "en": "Record each publication of generated or altered content."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture the item showing the label as published."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person who cleared it for release."
+              }
+            },
+            {
+              "text": {
+                "en": "Log any item that went out without a label."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the correction made and the date it landed."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Re-check each surface from the exposed person's side and list what no longer discloses"
+          },
+          "description": {
+            "en": "Take the inventory row by row and approach each surface the way an outsider does \u2014 open the chat cold, call the phone line, download a generated file, view a published item on a phone \u2014 and record what the person actually meets: a disclosure that survived the last redesign, one that has quietly moved below the fold, or none at all. Re-test the markings against the current export paths in the same pass, since a codec or library upgrade strips a watermark without anything failing anywhere. Record surfaces the inventory never knew about, which is the finding only this direction of reading produces. Carry every gap into a correction with an owner and a date. Attach the review record naming who performed it and when."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Review record listing every surface tested, the disclosure or marking actually found, the gaps including surfaces missing from the inventory, and the correction raised for each with owner and date"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Approach each inventoried surface as an outsider."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the disclosure the person actually meets."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-test markings against current export paths."
+              }
+            },
+            {
+              "text": {
+                "en": "List surfaces missing from the inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a correction with an owner and a date."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "code": "EUAIA-03A",
       "title": "GPAI provider obligations: documentation, downstream information and copyright",
+      "description": "Implements Art.53: the baseline every provider of a general-purpose AI model owes, whatever the model's scale \u2014 technical documentation kept current per model version, the information a downstream provider needs to build on the model lawfully, a copyright policy that honours reserved rights inside the training pipeline, and a public summary of the content the model was trained on. Obligations that attach only to models carrying systemic risk are held by their own control.",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Legal/DPO",
       "requirementCodes": [
         "Art.53"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Inventory every general-purpose AI model the organisation releases and the route it reaches users by"
+          },
+          "description": {
+            "en": "Write down each general-purpose model the organisation trains, fine-tunes substantially, or re-releases under its own name, together with how it leaves the building \u2014 hosted API, downloadable weights, a partner licence, or embedded in the organisation's own product. This register decides which obligations attach to whom: a team that believes it merely uses somebody else's model, while publishing a fine-tuned checkpoint under the company name, is a provider and nobody has told it so. Record the version and release date each row refers to, and have counsel confirm the provider call. Attach the register."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "General-purpose model register: one row per model version giving its release route, release date, named owner and the confirmed provider determination"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List every model the organisation trains, fine-tunes or re-releases under its own name."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the release route for each model: API, weights, licence or embedded product."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the model version and the release date each row refers to."
+              }
+            },
+            {
+              "text": {
+                "en": "Ask counsel to confirm, row by row, whether the organisation is the provider."
+              }
+            },
+            {
+              "text": {
+                "en": "Name an accountable owner against each model in the register."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Compile the technical documentation held for each general-purpose model version"
+          },
+          "description": {
+            "en": "Build one documentation set per released model version covering how that model was built and tested: architecture and parameter count, the modalities and intended uses, the training and testing process, the compute and energy the run consumed, and the evaluation results the organisation actually obtained. It is drawn up at the release and kept current, because documentation reconstructed months later from memory and scattered notebooks is where the undocumented training run surfaces. Store it so it can be handed over on request without standing up a project to assemble it. Attach the set for every version on the market."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Per-version model documentation set covering architecture, training and testing process, compute accounting and evaluation results, tagged with the version it describes"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Record architecture, parameter count and the modalities the model handles."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe the training and testing process, data-preparation stages included."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the compute and the energy consumed by the training run."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the evaluation results obtained for this particular version."
+              }
+            },
+            {
+              "text": {
+                "en": "Tag the set with the model version it describes and store it for release."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Write the copyright policy that governs what the model's training pipeline may collect"
+          },
+          "description": {
+            "en": "State in writing which sources the training pipeline may draw on and what happens when a rights holder has reserved its rights: how crawlers read machine-readable reservations, which licensed corpora are approved and on what terms, who signs off a new source before it enters a run, and what a contracted data supplier must warrant. Then configure the collection tooling to match. A policy asserting that reservations are honoured while the crawler ignores them is worse than no policy, because it documents the gap in the organisation's own words. Attach the policy together with the configuration that enforces it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Copyright policy for training data, with the crawler and ingestion configuration showing how reserved rights are detected and excluded"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the source categories the training pipeline may draw data from."
+              }
+            },
+            {
+              "text": {
+                "en": "Set out how machine-readable rights reservations are detected and honoured."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who approves a new data source before it enters a training run."
+              }
+            },
+            {
+              "text": {
+                "en": "Configure the crawler to exclude sources that have reserved their rights."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the warranty a contracted data supplier must give on rights."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Issue the downstream integrator pack with every general-purpose model release"
+          },
+          "description": {
+            "en": "A provider building a product on this model cannot meet its own obligations from an API reference. At each release, send every integrating customer on record what they need: capabilities and tested limitations, intended and excluded uses, the evaluation results bearing on those uses, integration constraints, and what changed since the version they are running. Record who received which version and when, because the failure mode here is silent \u2014 an integrator left on last year's pack keeps building on behaviour the model no longer has. Attach the pack issued this period and the distribution record."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Downstream integrator pack issued this period, with the distribution record naming each recipient, the version they received and the date"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Assemble capabilities, tested limitations and excluded uses for the release."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the evaluation results bearing on the integrator's intended uses."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the change note covering what differs from the previous version."
+              }
+            },
+            {
+              "text": {
+                "en": "Send the pack to every integrating provider on the distribution list."
+              }
+            },
+            {
+              "text": {
+                "en": "Record recipient, version received and date against each delivery."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Reconcile the published training-content summary against the data used for the shipped model"
+          },
+          "description": {
+            "en": "The training-content summary is the one obligation here whose output the public can read, so drift in it is visible from outside the organisation. Take the summary as published and compare it collection by collection against the data manifest for the version actually on the market: a corpus added late in a run, a licensed source dropped, or a modality introduced by a fine-tune all leave the published text describing a model that no longer exists. Republish a dated update wherever the two disagree; where nothing has been published yet, this pass produces the first summary. Attach the comparison and the summary as it now stands."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Summary reconciliation record listing each collection compared and every difference found, with the dated training-content summary as republished"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Export the data manifest for the model version now on the market."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each collection named in the summary against that manifest."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every source added, dropped or re-licensed since publication."
+              }
+            },
+            {
+              "text": {
+                "en": "Rewrite the summary so a rights holder can recognise their material."
+              }
+            },
+            {
+              "text": {
+                "en": "Republish the summary dated, keeping the previous version visible."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "code": "EUAIA-03B",
       "title": "Systemic-risk GPAI: evaluation, adversarial testing, incident reporting and model security",
+      "description": "Implements Art.55: the additional tier a general-purpose model with systemic risk carries on top of the baseline every GPAI provider owes \u2014 state-of-the-art evaluation of the model, adversarial testing of it, tracking and reporting serious incidents, and protecting the weights and the environment that trains and serves them.",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Model Owner / AI Safety Lead",
       "requirementCodes": [
         "Art.55"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Determine which general-purpose models carry systemic risk, and record what the decision rested on"
+          },
+          "description": {
+            "en": "Everything else in this control applies to a named list of models, so the list is the first deliverable and the one most often assumed rather than written down. Record per model the training compute, the capability evidence weighed, whether it entered the tier by designation or by the provider's own assessment, and who signed that decision. Record the models examined and left out as well, because the near misses are what an assessor asks about, and name the event that forces the question to be asked again."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Systemic-risk determination record: one entry per general-purpose model with the compute and capability evidence, the in-or-out decision, its signatory, and the event that re-opens it"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Record the training compute for each general-purpose model provided."
+              }
+            },
+            {
+              "text": {
+                "en": "Gather the capability evidence that bears on the tier decision."
+              }
+            },
+            {
+              "text": {
+                "en": "State for each model whether it is in the tier, and on what grounds."
+              }
+            },
+            {
+              "text": {
+                "en": "List the models examined and left out, with a reason against each."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the event that forces the determination to be made again."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Define the evaluation protocol and the capability thresholds a systemic-risk model must clear before release"
+          },
+          "description": {
+            "en": "An evaluation designed after the results are in can be argued into any conclusion, so fix the protocol first: which capabilities are measured, against which benchmarks and internal test sets, at what threshold a result becomes a blocker, and what happens to the release when one is crossed. Name the standardised protocols and tooling used, so a later reader can tell a state-of-the-art evaluation from an ad-hoc one, and state who may release over a crossed threshold and on what record. Without thresholds written in advance the evaluation becomes a report nobody can fail."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Model evaluation protocol naming the capabilities measured, the tests and tooling used, each decision threshold, and the release rule a crossed threshold triggers"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "List the capabilities that must be measured before a release."
+              }
+            },
+            {
+              "text": {
+                "en": "Choose the benchmarks, internal test sets and tooling for each."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the threshold at which a result blocks the release."
+              }
+            },
+            {
+              "text": {
+                "en": "Write what happens to a release when a threshold is crossed."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree who may approve a release over a crossed threshold."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Run adversarial testing against each systemic-risk model version and record what got through"
+          },
+          "description": {
+            "en": "Test the model as an attacker would rather than as the benchmark suite does: jailbreaks and prompt injection, deliberate elicitation of the capabilities the protocol calls dangerous, misuse chains that combine tools, and fine-tuning or weight-level attacks where the model is released openly. Record every attempt that succeeded with the transcript or artefact that proves it, the severity assigned, and whether it was fixed, accepted or left open at release. A campaign that reports only a pass rate cannot be acted on and shows nobody what the model does under pressure."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Adversarial testing campaign record per model version: attempts made, each successful attack with the transcript proving it, severity, and the mitigation or accepted risk against it"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Scope the campaign on the dangerous capabilities the protocol names."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the testers and state their independence from the build team."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each successful attack with the transcript that proves it."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign a severity and a named owner to every finding."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the fix, the accepted risk or the open item at release."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Track every serious incident involving a systemic-risk model from detection to the report that leaves the organisation"
+          },
+          "description": {
+            "en": "Keeping a register is the easy half; the half that fails is the handover from an engineer noticing something to a report leaving the building with a corrective measure attached. Record for each incident what was detected and when, how it was classified and by whom, what went to the authority and on what date, the acknowledgement received back, and what was changed in the model or its safeguards afterwards. Include the incidents downstream providers and deployers report to you, which is the route most of them will arrive by and the one no internal alert will ever raise."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Serious-incident register for the period: detection and classification times, the outward report with its acknowledgement, and the corrective measure recorded against each incident"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "State what counts as a serious incident for this model."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the detection time and the person who raised it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the classification decision and who made it."
+              }
+            },
+            {
+              "text": {
+                "en": "Log the incidents downstream providers and deployers report in."
+              }
+            },
+            {
+              "text": {
+                "en": "File the report, then store the acknowledgement received back."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the corrective measure applied to the model."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Re-verify who can reach the model weights and the training environment, and close every path that is not on the list"
+          },
+          "description": {
+            "en": "Cybersecurity for a systemic-risk model is about the weights and the environment that produces them, not the product wrapped around them. Pull the actual access lists for the weight stores, checkpoint buckets, training clusters, signing keys and the facilities housing that hardware, compare them against the people and services meant to hold access, and remove whatever nobody can account for. Then test the way out: attempt to copy a checkpoint by the routes an insider would use, and record whether it was blocked, alerted on, or completed unnoticed. A list reviewed on paper shows who was authorised, never who could still walk off with a copy."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Weight-access recertification naming every principal holding access to weight stores, training clusters, signing keys and the facilities housing them, with the removals made and the egress-test result"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Export the access lists for weight stores and training clusters."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the signing keys and physical access to the hardware."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare every principal against the authorised list."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove the access that nobody present can account for."
+              }
+            },
+            {
+              "text": {
+                "en": "Attempt a checkpoint copy by the routes an insider would use."
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether the attempt was blocked, alerted on or unnoticed."
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "code": "EUAIA-04",
       "title": "Minimal-risk AI systems",
+      "description": "Implements Art.95: minimal-risk AI systems carry no mandatory obligations under the Act, so the work is establishing that a system genuinely belongs in this residual tier rather than assuming it, recording the classification and the reasoning behind it, deciding deliberately whether to adopt a voluntary code of conduct, and re-checking when the system changes.",
       "category": "EU AI Act",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "AI Governance Lead / Legal Counsel",
       "requirementCodes": [
         "Art.95"
       ],
-      "tasks": []
+      "tasks": [
+        {
+          "title": {
+            "en": "Classify each AI system as minimal-risk only by ruling out the regulated tiers"
+          },
+          "description": {
+            "en": "Minimal-risk is what is left after the Act's regulated tiers have been excluded, so it is reached by elimination and never by assertion. Take each system in the AI inventory and work through the prohibited practices, the high-risk categories, the transparency triggers for systems people interact with, and the general-purpose model definitions, recording for each tier what made it not apply here. Without that reasoning written down a tenant has an unevidenced claim rather than a classification, and nobody later can tell whether the tier was checked or assumed. Attach the classification record with the decision-maker and date against every system."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Dated classification record listing each system, the tiers ruled out, the ground for ruling each out, and who decided"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Take the AI system inventory as the population to be classified."
+              }
+            },
+            {
+              "text": {
+                "en": "Work each system against the prohibited, high-risk, transparency and general-purpose tiers in turn."
+              }
+            },
+            {
+              "text": {
+                "en": "Record for every tier ruled out the specific ground that rules it out."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person who made the classification and the date it was made."
+              }
+            },
+            {
+              "text": {
+                "en": "Send any system whose tier is arguable to legal counsel before recording it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Evaluate the voluntary codes of conduct available and record the adoption decision"
+          },
+          "description": {
+            "en": "The Act encourages codes of conduct for systems outside the regulated tiers and requires none of them, so the deliverable here is a decision taken on purpose rather than a commitment. Gather the codes that plausibly cover these systems, summarise what each would actually oblige the organisation to do, and put that to whoever can commit the organisation. Declining every code is a legitimate outcome and the one most often left unrecorded, which is how a decision nobody made gets re-litigated each year and how an unconsidered code later reads as an oversight. Attach the signed decision covering each code considered."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Signed decision record naming the codes considered, what each would commit the organisation to, and the decision reached on each"
+          },
+          "suggestedRole": "Management",
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the voluntary codes of conduct that address the systems in scope."
+              }
+            },
+            {
+              "text": {
+                "en": "Summarise for each code what committing to it would require in practice."
+              }
+            },
+            {
+              "text": {
+                "en": "Estimate the effort and the cost of meeting each set of commitments."
+              }
+            },
+            {
+              "text": {
+                "en": "Put the options to the person who can commit the organisation."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the decision reached on each code, adoption and declination alike."
+              }
+            },
+            {
+              "text": {
+                "en": "Date and sign the record so the choice is attributable afterwards."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Map each commitment in an adopted code to the owner and the practice that delivers it"
+          },
+          "description": {
+            "en": "Adopting a code is voluntary, but once adopted its commitments are what the organisation now says about itself, and a public claim nobody delivers is worse than no claim at all. Break the adopted code into its individual commitments, name the person accountable for each, and name the practice or artifact that satisfies it today, marking the ones nothing currently satisfies because those are the gap between the claim and the reality. Where the previous task adopted no code, close this one with a note pointing at that decision, so nobody later asserts adherence the organisation never took on. Attach the commitment map or the note."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Commitment map: one row per clause of the adopted code, each naming who owns it and which existing practice satisfies it, or the note recording that no code was adopted"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Break the adopted code into its individual commitments, one row each."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person accountable for delivering each commitment."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the existing practice or artifact that satisfies each commitment."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the commitments that nothing currently satisfies as open gaps."
+              }
+            },
+            {
+              "text": {
+                "en": "Where no code was adopted, record that and cite the decision record."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Record every change to a minimal-risk system that could move it out of the tier"
+          },
+          "description": {
+            "en": "A classification is true of a system as it was when it was classified, and these systems change: a new purpose, a new user group, a new data source or a model swap can carry one into a tier that does carry obligations. Attach a tier question to the change route these systems already go through, capture the changes that answer it, and re-run the classification where the change is material, recording the outcome next to the change. Without this the register slowly describes systems that no longer exist, and the tier is discovered to be wrong by somebody outside the organisation. Attach the change log for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Change log for minimal-risk systems covering the period, showing each new purpose, capability or user group, the re-check outcome and its date"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Attach a tier question to the change process these systems go through."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture each new purpose, user group, data source or model substitution."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-run the tier classification wherever a captured change is material."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the outcome of that re-check beside the change entry itself."
+              }
+            },
+            {
+              "text": {
+                "en": "Hand any system that leaves the tier to the owner of its new obligations."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Re-check the recorded minimal-risk classifications and confirm each one still holds"
+          },
+          "description": {
+            "en": "Changes captured one at a time miss the drift that arrives gradually and the systems whose changes never reached the change route at all, so the whole population is read again against how it is actually used today. Take each system carried as minimal-risk, compare the reasoning recorded for it against its current purpose and users, and state plainly whether the tier is confirmed or changed rather than leaving the entry untouched, since an unrevisited row and a confirmed row look identical afterwards. Attach the dated review naming every system and its outcome."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 4,
+          "evidenceHint": {
+            "en": "Dated re-classification review listing every system carried as minimal-risk, whether its tier was confirmed or changed, and where each moved system went"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Take every system the record currently carries as minimal-risk."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the reasoning recorded against how the system is used today."
+              }
+            },
+            {
+              "text": {
+                "en": "State for each system whether the tier is confirmed or changed."
+              }
+            },
+            {
+              "text": {
+                "en": "List the systems that left the tier and the tier they moved into."
+              }
+            },
+            {
+              "text": {
+                "en": "Report the outcome to the owner of the AI system inventory."
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pack": {
