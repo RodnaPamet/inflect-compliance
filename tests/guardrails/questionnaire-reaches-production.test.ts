@@ -46,8 +46,42 @@ describe('questionnaire fixtures reach production', () => {
     });
 
     it('every questionnaire fixture is referenced by the seeder production runs', () => {
-        const unwired = fixtures.filter((f) => !seeder.includes(f.replace(/\.json$/, '')));
+        // The needle carries `fixtures/` ON PURPOSE.
+        //
+        // It used to be the bare basename, and for the AISVS questionnaire that
+        // is ALSO the basename of its BUILDER MODULE — `prisma/aisvs-vendor-
+        // questionnaire.ts`. The seeder imports that module, so the import line
+        // alone satisfied the bare needle: deleting every line that actually
+        // reads the fixture left this assertion green while the questionnaire
+        // stopped being seeded. Measured, not theorised (#2645).
+        //
+        // `fixtures/` is the discriminator because it is in the fixture's path
+        // and not in the module's.
+        const unwired = fixtures.filter((f) => !seeder.includes(`fixtures/${f.replace(/\.json$/, '')}`));
         expect(unwired).toEqual([]);
+    });
+
+    it('the needle cannot be satisfied by an import of the builder module', () => {
+        // MUTATION PROOF for the assertion above. Every check in this file is a
+        // `toEqual([])` over a filter, which a needle matching the wrong thing
+        // satisfies just as happily as a correct one — so break the seeder the
+        // way a real regression would and require the guard to notice.
+        //
+        // Removing every `fixtures/` line is exactly "the fixture stops being
+        // seeded", and it leaves the builder import standing.
+        const withoutFixtureReads = seeder
+            .split('\n')
+            .filter((l) => !l.includes('fixtures/'))
+            .join('\n');
+
+        const aisvs = fixtures.find((f) => /aisvs/i.test(f));
+        expect(aisvs).toBeDefined();
+        const stem = (aisvs as string).replace(/\.json$/, '');
+
+        // The old needle survives the mutation — this is the defect, pinned.
+        expect(withoutFixtureReads).toContain(stem);
+        // The current needle does not.
+        expect(withoutFixtureReads).not.toContain(`fixtures/${stem}`);
     });
 
     it('the AISVS questionnaire is seeded through the shared builder, not a second copy', () => {

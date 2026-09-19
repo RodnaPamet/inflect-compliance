@@ -57,9 +57,14 @@
  *
  * Populations `prisma/seed.ts` generates INLINE reach no fixture, so a
  * fixture-keyed scan is blind to them by construction. Naming that limit here
- * rather than implying full coverage: the companion
- * `tests/integration/catalogue-parity.test.ts` seeds both paths and diffs,
- * which is the only check that sees everything.
+ * rather than implying full coverage.
+ *
+ * THERE IS NO COMPANION CHECK THAT SEES EVERYTHING, and this docblock used to
+ * say there was — it pointed at `tests/integration/catalogue-parity.test.ts`,
+ * which has never existed in the tree. That is worse than saying nothing: a
+ * reader told a stronger check lives elsewhere stops looking for one, so the
+ * gap stays open AND stays unrecorded. If such a check is ever written, name
+ * it here; until then the limit above is simply open (#2645).
  *
  * ISO 27001 ANNEX A USED TO BE THE EXAMPLE HERE, AND IT IS NO LONGER TRUE.
  * `prisma/fixtures/iso27001-control-templates.json` carries all 93 A-* templates

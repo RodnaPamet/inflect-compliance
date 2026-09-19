@@ -188,3 +188,12 @@ When NOT to virtualize:
 | `tests/rendered/virtualized-list.test.tsx` | 11-case primitive contract |
 | `tests/rendered/data-table-virtualize.test.tsx` | 22-case DataTable rollout |
 | `tests/rendered/combobox-virtualize.test.tsx` | 14-case Combobox rollout (threshold + DOM-count + keyboard + visual parity). The DOM count is the perf assertion; the `<2s` wall-clock budget that sat beside it was removed 2026-09-06 — see "Performance budget" above |
+
+**Dependency posture.** This stack stays on `react-window` v1
+deliberately; v2 is an API rewrite that removes every export the two
+files that import it here depend on (`virtualized-list.tsx` and
+`virtual-table-body.tsx`). The reasoning, the blast radius and the
+conditions that would flip the answer live in
+`docs/dependency-governance.md`, section "react-window — stay on v1
+until something forces v2", and are pinned by
+`tests/unit/react-window-v1-hold.test.ts`.

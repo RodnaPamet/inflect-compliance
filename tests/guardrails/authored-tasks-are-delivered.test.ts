@@ -121,17 +121,11 @@ const TASKS_AUTHORED_IN_SIBLING_FIXTURE: Record<string, string> = {
 
 const DELIVERED_WITHOUT_AUTHORED_TASKS: Record<string, string> = {
     'iso9001-control-templates.json':
-        'ISO 9001 — 22 templates. FROZEN for content in control-task-actionability: no source library exists to author from. Delivery and content are separate axes, and this entry records only the second.',
+        'ISO 9001 — 26 templates. FROZEN for content in control-task-actionability: no source library exists to author from. Delivery and content are separate axes, and this entry records only the second.',
     'iso28000-control-templates.json':
         'ISO 28000 — 15 templates. Frozen for content, as ISO 9001.',
     'iso39001-control-templates.json':
-        'ISO 39001 — 17 templates. Frozen for content, as ISO 9001.',
-    'iso42001-control-templates.json':
-        'ISO/IEC 42001 — 16 AIMS- templates. Authorable: 62 linked requirements carry real clause text. Queued.',
-    'owasp-aisvs-control-templates.json':
-        'OWASP AISVS — 12 templates over 191 requirements, the richest grounding of any unauthored fixture. Queued.',
-    'eu-ai-act-control-templates.json':
-        'EU AI Act — 5 EUAIA- templates over 16 obligations. Queued.',
+        'ISO 39001 — 18 templates. Frozen for content, as ISO 9001.',
 };
 
 /** Every fixture that carries at least one authored task. */
@@ -268,14 +262,22 @@ describe('authored tasks have a delivery path', () => {
     });
 
     it('the delivered-without-authored-tasks list is not growing', () => {
-        // SIX. It was nine: three from the first delivery round and six from
-        // the final conversions. The three from that first round — OWASP ASI,
-        // IMDA MGF and NIST Privacy — are authored now and have removed
-        // themselves, which is the mechanism working.
+        // THREE, and the QUEUE IS NOW EMPTY. It was nine, then six, five, four.
+        // OWASP ASI, IMDA MGF and NIST Privacy left in the first round; the EU
+        // AI Act, ISO/IEC 42001 and OWASP AISVS have removed their own entries
+        // since. Every fixture that COULD be authored has been.
         //
-        // Of the six left, ISO 9001 / 28000 / 39001 are frozen for content and
-        // may never leave; the other three are queued. Each authoring PR
-        // removes its own entry.
-        expect(Object.keys(DELIVERED_WITHOUT_AUTHORED_TASKS)).toHaveLength(6);
+        // The three that remain — ISO 9001, ISO 28000, ISO 39001 — are not a
+        // backlog. They are FROZEN for content because no library under
+        // src/data/libraries grounds them, so authoring would mean writing from
+        // knowledge of the standard rather than from any source this repo
+        // holds. FROZEN_UNGROUNDED_POPULATIONS names the precondition, and its
+        // libraryPattern is checked: the moment a matching library lands, that
+        // assertion goes red and tells whoever added it what to do.
+        //
+        // So this number should now move only ONE way — down, and only after a
+        // library arrives. If it drops without one, someone has authored
+        // ungrounded content and the freeze was the thing standing in the way.
+        expect(Object.keys(DELIVERED_WITHOUT_AUTHORED_TASKS)).toHaveLength(3);
     });
 });
