@@ -80,129 +80,255 @@
       "summary": "Maintain records of the processing activities carried out as a controller. (Paraphrase)"
     },
     {
+      "code": "7.3.1",
+      "title": "Determining and fulfilling obligations",
+      "category": "PII Controller",
+      "sortOrder": 9,
+      "summary": "Identify the obligations owed to PII principals and put a means in place to meet them. (Paraphrase)"
+    },
+    {
       "code": "7.3.2",
       "title": "Determining information for PII principals",
       "category": "PII Controller",
-      "sortOrder": 9,
+      "sortOrder": 10,
       "summary": "Decide what privacy information individuals should receive about the processing. (Paraphrase)"
     },
     {
       "code": "7.3.3",
       "title": "Providing information to PII principals",
       "category": "PII Controller",
-      "sortOrder": 10,
+      "sortOrder": 11,
       "summary": "Give individuals clear, accessible privacy information at the appropriate time. (Paraphrase)"
     },
     {
       "code": "7.3.4",
       "title": "Mechanism to modify or withdraw consent",
       "category": "PII Controller",
-      "sortOrder": 11,
+      "sortOrder": 12,
       "summary": "Offer individuals a means to change or withdraw their consent. (Paraphrase)"
     },
     {
       "code": "7.3.5",
       "title": "Mechanism to object to processing",
       "category": "PII Controller",
-      "sortOrder": 12,
+      "sortOrder": 13,
       "summary": "Provide a way for individuals to object to the processing of their PII. (Paraphrase)"
     },
     {
       "code": "7.3.6",
       "title": "Access, correction and erasure",
       "category": "PII Controller",
-      "sortOrder": 13,
+      "sortOrder": 14,
       "summary": "Enable individuals to access, correct and erase their PII where applicable. (Paraphrase)"
+    },
+    {
+      "code": "7.3.7",
+      "title": "Inform third parties of changes",
+      "category": "PII Controller",
+      "sortOrder": 15,
+      "summary": "Notify third parties who received PII of corrections, erasures or restrictions where required. (Paraphrase)"
     },
     {
       "code": "7.3.8",
       "title": "Provide a copy of PII processed",
       "category": "PII Controller",
-      "sortOrder": 14,
+      "sortOrder": 16,
       "summary": "On request, give the individual a copy of the PII being processed about them. (Paraphrase)"
     },
     {
       "code": "7.3.9",
       "title": "Handle requests",
       "category": "PII Controller",
-      "sortOrder": 15,
+      "sortOrder": 17,
       "summary": "Operate a process to receive, verify and respond to PII-principal requests within required timescales. (Paraphrase)"
+    },
+    {
+      "code": "7.3.10",
+      "title": "Automated decision making",
+      "category": "PII Controller",
+      "sortOrder": 18,
+      "summary": "Identify and manage obligations where decisions are made solely by automated processing. (Paraphrase)"
     },
     {
       "code": "7.4.1",
       "title": "Limit collection",
       "category": "PII Controller",
-      "sortOrder": 16,
+      "sortOrder": 19,
       "summary": "Collect only the PII that is adequate, relevant and necessary for the identified purposes. (Paraphrase)"
+    },
+    {
+      "code": "7.4.2",
+      "title": "Limit processing",
+      "category": "PII Controller",
+      "sortOrder": 20,
+      "summary": "Restrict processing to what is necessary for the stated purposes. (Paraphrase)"
+    },
+    {
+      "code": "7.4.3",
+      "title": "Accuracy and quality",
+      "category": "PII Controller",
+      "sortOrder": 21,
+      "summary": "Keep PII accurate, complete and up to date for its purpose. (Paraphrase)"
     },
     {
       "code": "7.4.4",
       "title": "PII minimization objectives",
       "category": "PII Controller",
-      "sortOrder": 17,
+      "sortOrder": 22,
       "summary": "Set and pursue objectives to minimize the PII processed. (Paraphrase)"
     },
     {
       "code": "7.4.5",
       "title": "De-identification and deletion at end of processing",
       "category": "PII Controller",
-      "sortOrder": 18,
+      "sortOrder": 23,
       "summary": "De-identify or delete PII when the processing purpose ends. (Paraphrase)"
     },
     {
       "code": "7.4.7",
       "title": "Retention",
       "category": "PII Controller",
-      "sortOrder": 19,
+      "sortOrder": 24,
       "summary": "Retain PII no longer than necessary and enforce defined retention periods. (Paraphrase)"
+    },
+    {
+      "code": "7.4.9",
+      "title": "PII transmission controls",
+      "category": "PII Controller",
+      "sortOrder": 25,
+      "summary": "Protect PII in transit with appropriate controls. (Paraphrase)"
     },
     {
       "code": "7.5.1",
       "title": "Identify basis for cross-border transfer",
       "category": "PII Controller",
-      "sortOrder": 20,
+      "sortOrder": 26,
       "summary": "Establish and document a lawful basis before transferring PII between jurisdictions. (Paraphrase)"
     },
     {
       "code": "7.5.2",
       "title": "Countries and organizations PII may be transferred to",
       "category": "PII Controller",
-      "sortOrder": 21,
+      "sortOrder": 27,
       "summary": "Document the jurisdictions and organizations to which PII may be transferred. (Paraphrase)"
+    },
+    {
+      "code": "7.5.3",
+      "title": "Records of PII transfer",
+      "category": "PII Controller",
+      "sortOrder": 28,
+      "summary": "Keep records of transfers of PII to third parties. (Paraphrase)"
+    },
+    {
+      "code": "7.5.4",
+      "title": "Records of disclosure to third parties",
+      "category": "PII Controller",
+      "sortOrder": 29,
+      "summary": "Record disclosures of PII to third parties, including what was disclosed and to whom. (Paraphrase)"
+    },
+    {
+      "code": "8.2.1",
+      "title": "Customer agreement",
+      "category": "PII Processor",
+      "sortOrder": 30,
+      "summary": "Agree in writing the roles and processing obligations with the controller customer. (Paraphrase)"
+    },
+    {
+      "code": "8.2.2",
+      "title": "Organization's purposes",
+      "category": "PII Processor",
+      "sortOrder": 31,
+      "summary": "Do not process PII for the processor's own purposes beyond the customer's instructions. (Paraphrase)"
+    },
+    {
+      "code": "8.2.4",
+      "title": "Infringing instruction",
+      "category": "PII Processor",
+      "sortOrder": 32,
+      "summary": "Inform the customer if an instruction appears to infringe applicable privacy law. (Paraphrase)"
     },
     {
       "code": "8.2.6",
       "title": "Records related to processing PII",
       "category": "PII Processor",
-      "sortOrder": 22,
+      "sortOrder": 33,
       "summary": "Maintain records of processing carried out on behalf of customers. (Paraphrase)"
+    },
+    {
+      "code": "8.3.1",
+      "title": "Obligations to PII principals",
+      "category": "PII Processor",
+      "sortOrder": 34,
+      "summary": "Provide the controller the means to fulfil PII-principal rights requests. (Paraphrase)"
+    },
+    {
+      "code": "8.4.1",
+      "title": "Temporary files",
+      "category": "PII Processor",
+      "sortOrder": 35,
+      "summary": "Delete temporary files holding PII within a defined period. (Paraphrase)"
+    },
+    {
+      "code": "8.4.2",
+      "title": "Return, transfer or disposal of PII",
+      "category": "PII Processor",
+      "sortOrder": 36,
+      "summary": "Return, transfer or securely dispose of PII at the end of the service as instructed. (Paraphrase)"
+    },
+    {
+      "code": "8.4.3",
+      "title": "PII transmission controls",
+      "category": "PII Processor",
+      "sortOrder": 37,
+      "summary": "Protect customer PII in transit with appropriate controls. (Paraphrase)"
     },
     {
       "code": "8.5.1",
       "title": "Basis for transfer between jurisdictions",
       "category": "PII Processor",
-      "sortOrder": 23,
+      "sortOrder": 38,
       "summary": "Only transfer PII across jurisdictions on a basis agreed with the customer. (Paraphrase)"
+    },
+    {
+      "code": "8.5.2",
+      "title": "Countries and organizations PII may be transferred to",
+      "category": "PII Processor",
+      "sortOrder": 39,
+      "summary": "Disclose to the customer the jurisdictions where PII may be processed. (Paraphrase)"
+    },
+    {
+      "code": "8.5.3",
+      "title": "Records of PII disclosure to third parties",
+      "category": "PII Processor",
+      "sortOrder": 40,
+      "summary": "Record disclosures of customer PII to third parties. (Paraphrase)"
+    },
+    {
+      "code": "8.5.4",
+      "title": "Notification of disclosure requests",
+      "category": "PII Processor",
+      "sortOrder": 41,
+      "summary": "Notify the customer of legally binding requests to disclose their PII unless prohibited. (Paraphrase)"
     },
     {
       "code": "8.5.6",
       "title": "Disclosure of subcontractors",
       "category": "PII Processor",
-      "sortOrder": 24,
+      "sortOrder": 42,
       "summary": "Disclose the use of subcontractors that process PII to the customer. (Paraphrase)"
     },
     {
       "code": "8.5.7",
       "title": "Engagement of a subcontractor",
       "category": "PII Processor",
-      "sortOrder": 25,
+      "sortOrder": 43,
       "summary": "Only engage subcontractors under contract terms consistent with the customer agreement. (Paraphrase)"
     },
     {
       "code": "8.5.8",
       "title": "Change of subcontractor",
       "category": "PII Processor",
-      "sortOrder": 26,
+      "sortOrder": 44,
       "summary": "Inform the customer of intended changes to subcontractors so they can object. (Paraphrase)"
     }
   ],
@@ -1712,6 +1838,3137 @@
           ]
         }
       ]
+    },
+    {
+      "code": "PIMS-11",
+      "title": "Obligations Owed to PII Principals",
+      "description": "Implements 7.3.1: the obligations the organisation owes to PII principals are identified from the law, regulation and contracts that bind it, and each one is matched to a means that actually discharges it.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "7.3.1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Determine the obligations owed to PII principals and the law or contract behind each"
+          },
+          "description": {
+            "en": "Before any request arrives, work out what the organisation actually owes the people whose PII it holds: which privacy laws reach it, which contracts and published notices add commitments of their own, and what timescale each obligation carries. Obligations differ by jurisdiction and by relationship — an employee, a customer and a person whose PII arrived from a partner are rarely owed the same things — so a single undifferentiated list hides the gaps rather than closing them. Cite the source against every row, because an obligation nobody can trace back gets re-argued at the moment it has to be met. Attach the register with the obligation, its source and its timescale recorded per row."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Obligations register listing each obligation owed to PII principals with the jurisdiction, the law or contract it comes from and the timescale it carries"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the jurisdictions the organisation's PII principals belong to."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the privacy law that binds the organisation in each of them."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the commitments made to principals in contracts and notices."
+              }
+            },
+            {
+              "text": {
+                "en": "Write one register row per obligation, citing the source that creates it."
+              }
+            },
+            {
+              "text": {
+                "en": "State the timescale each obligation must be met within."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Assign each registered obligation the means that discharges it, and open work where there is none"
+          },
+          "description": {
+            "en": "An obligation with nothing behind it is an intention. Go down the register and name, for each row, the concrete thing that discharges it — a form, an endpoint, a monitored inbox with a rota, a written procedure — and the team that runs it. The rows where the honest answer is that nothing does are the point of this task: they leave it as dated work with a named owner rather than as a register entry that reads as satisfied because it was written down. Attach the mapping together with the gap list."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Obligation-to-means mapping naming the mechanism and the operating team behind each obligation, with a dated gap list for the obligations that have neither"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Name the mechanism that discharges each registered obligation."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the system, channel or procedure the mechanism runs on."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the team that operates that means day to day."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag every obligation with no means standing behind it."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise each flagged gap as dated work with a named owner."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Log every change of law, contract or processing that moves an obligation in the register"
+          },
+          "description": {
+            "en": "The register is worth what its last update is worth, and obligations move for three reasons: the law changes, the organisation opens a new market or launches new processing, and contracts are signed or ended. Record each movement as it happens with the date and what prompted it, and note which means has to change as a result. An obligation that quietly acquires a shorter deadline is then met late by a process nobody was told to speed up, and the failure surfaces as a complaint rather than as a change. Attach the register change log for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Register change log for the period giving each obligation added, altered or withdrawn, what prompted it, the date it was recorded and the means it affects"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Record each legal or regulatory change that alters an obligation."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the obligations created by new processing or a new market."
+              }
+            },
+            {
+              "text": {
+                "en": "Withdraw the rows whose obligation no longer applies, with the reason."
+              }
+            },
+            {
+              "text": {
+                "en": "Note which means has to change and who was told to change it."
+              }
+            },
+            {
+              "text": {
+                "en": "Date every entry so the register's currency can be read."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Exercise each means and compare what it produced against what is owed"
+          },
+          "description": {
+            "en": "Run the means rather than reading its description: walk the procedure, call the endpoint, read what actually reaches the person at the end of it. Compare the result against the obligation as the register states it, and against the timescale as well as the outcome, because a means that produces the right answer three weeks late has not discharged anything. Record each shortfall against the obligation it belongs to and route it to that obligation's owner with a remediation date. Attach the test results for the period."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Test results per obligation recording what the means produced, whether it met the obligation inside its timescale, and the remediation raised for every shortfall"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Select each obligation and run the means that discharges it."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare what came back against what the obligation requires."
+              }
+            },
+            {
+              "text": {
+                "en": "Check the timescale was met, not only the outcome."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every obligation its means failed to discharge."
+              }
+            },
+            {
+              "text": {
+                "en": "Route each shortfall to its owner with a remediation date."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-12",
+      "title": "Downstream Notification of Corrections and Erasures",
+      "description": "Implements 7.3.7: when PII is corrected, erased or its processing restricted, every third party that already received that PII is told, so the change reaches the copies the organisation no longer holds.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "7.3.7"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Determine which parties already holding PII must be told of a later correction, erasure or restriction"
+          },
+          "description": {
+            "en": "This control starts where the change is already made in your own systems. For each party that was sent PII and still holds it, settle whether a later correction, a later erasure or a later restriction has to be passed on to them, and which of the three — the answer is rarely the same for all three or the same for every recipient. Record the route that can actually reach each one, and where notification would be impossible or out of proportion to the change, write that judgement and its reason down now, because the same judgement made on the day a request lands is the one nobody can defend afterwards."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Per-recipient notification matrix giving, for each downstream holder, which of correction, erasure and restriction it must be told of, the route that reaches it, and every exemption with the reason recorded"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Draw the recipient list for each PII category from the records already held."
+              }
+            },
+            {
+              "text": {
+                "en": "Record for each whether corrections, erasures and restrictions must be passed on."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the contact or endpoint at each party that can receive such a notice."
+              }
+            },
+            {
+              "text": {
+                "en": "Write down any recipient where notification is judged disproportionate, with the reason."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Build the outbound notice that carries a correction, erasure or restriction to each recipient"
+          },
+          "description": {
+            "en": "A notice is only useful if the recipient can act on it, so it has to name the record, say what changed or was erased, say which processing must now stop, and give the date the change took effect on your side. Build that notice and the route it travels — an API call, a ticket raised in the partner's own queue, a signed file drop, an email to the named contact where nothing better exists — and wire raising it into the correction, erasure and restriction workflows themselves. A change applied in your database while three recipients keep serving the old value is not finished, and the workflow that ends at your own write is what lets that happen."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Notice specification plus the workflow wiring that raises it automatically from each correction, erasure and restriction, showing the acknowledgement path back from the recipient"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Write the notice format naming the record, the change and the date applied."
+              }
+            },
+            {
+              "text": {
+                "en": "Choose the sending route each recipient can actually receive and act on."
+              }
+            },
+            {
+              "text": {
+                "en": "Connect the notice to the correction, erasure and restriction workflows."
+              }
+            },
+            {
+              "text": {
+                "en": "Require an acknowledgement from the recipient that the change was applied."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Notify each recipient when PII they hold is corrected, erased or restricted, and log the dispatch"
+          },
+          "description": {
+            "en": "Work the notices as the changes happen rather than in a batch at period end, since a restriction that arrives late has already been ignored. For every correction, erasure or restriction applied, send the notice to each recipient the matrix names and record what went where and when. A recipient that never acknowledges is an open item, not a closed one — chase it and record the chase. Where no notice went out because an exemption applied, log that against the change too, so the silence reads as a decision someone took rather than a step somebody forgot."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Downstream notification log for the period: the record changed, the recipients notified, the date sent, the acknowledgement received, and every exemption relied on"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Send the notice to every recipient the matrix names for that record."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date sent, the recipient and the change the notice carried."
+              }
+            },
+            {
+              "text": {
+                "en": "Track each acknowledgement and chase the recipients that do not reply."
+              }
+            },
+            {
+              "text": {
+                "en": "Log every case where the exemption was relied on instead of notifying."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sample corrections and erasures from the period and verify the downstream copies changed too"
+          },
+          "description": {
+            "en": "Take a sample of the changes applied during the period and follow each one out to the parties that hold copies: ask what value they hold now, or for confirmation that the record is gone and the processing stopped. The log proves a notice was sent; only the recipient's answer proves it was applied, and the gap between the two is the whole point of this check. List every recipient still showing the superseded value, and count a recipient who cannot answer the question alongside those that answered wrongly."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Verification sample comparing each corrected, erased or restricted record against what its recipients confirm they now hold, naming every downstream copy still out of date"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Select a sample of the corrections, erasures and restrictions applied."
+              }
+            },
+            {
+              "text": {
+                "en": "Check a notice was raised for each recipient the matrix names."
+              }
+            },
+            {
+              "text": {
+                "en": "Ask the recipient to confirm the value it now holds or the deletion."
+              }
+            },
+            {
+              "text": {
+                "en": "List the recipients still holding the superseded value or processing."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-13",
+      "title": "Solely automated decision making",
+      "description": "Implements 7.3.10: decisions about a person that take effect with no human involvement are identified and disclosed as such, each one carries a route to a reviewer with authority to overturn it, and that review is checked for being more than a signature.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "7.3.10"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Trace each decision about an individual to the point where a person can still change it"
+          },
+          "description": {
+            "en": "Take every decision the organisation reaches about a person — a price, a credit limit, a fraud hold, a refused application, a suspended account — and follow it forward to the last point at which a human being could alter the outcome. Where no such point exists, or it exists only as a queue nobody works, the decision is made solely by automation and this control applies to it; record alongside each one what it does to the person, because an effect that is legal or comparably significant is what brings the obligation with it. The usual finding is not a disputed judgement call but a decision nobody had noticed was automated at all. Attach the decision inventory with the automated ones marked."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Decision inventory marking each decision that takes effect with no human review, the system producing it, and the effect it has on the person"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the decisions the organisation makes about an individual."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what each system outputs and what is done with it."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person able to change or overturn each outcome."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the decisions no person sees before they take effect."
+              }
+            },
+            {
+              "text": {
+                "en": "Note which of those carry a legal or similarly significant effect."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Deploy the challenge path that hands a contested decision to a named reviewer"
+          },
+          "description": {
+            "en": "Give an individual subject to a decision made with no person in it a way to object, and carry that objection to someone who can act on it. Three parts have to exist: a control on the notice that carries the decision, a queue the objection lands in, and a reviewer holding written authority to let the outcome stand or replace it. Without the third part the objection reaches somebody who can only restate the result, and the individual has been answered rather than heard. Build the path end to end and prove it by moving one objection through it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Walk-through of the live path from decision notice to reviewer queue, naming the reviewer and the authority they hold to change the outcome"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Add an objection control to every notice that carries an automated decision."
+              }
+            },
+            {
+              "text": {
+                "en": "Point that control at a queue a named reviewer works."
+              }
+            },
+            {
+              "text": {
+                "en": "Write down the authority the reviewer holds over the outcome."
+              }
+            },
+            {
+              "text": {
+                "en": "Give the reviewer the inputs and the reasoning behind the decision."
+              }
+            },
+            {
+              "text": {
+                "en": "Walk one test objection from the notice through to a changed outcome."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Log each solely automated decision taken in the period and every intervention requested"
+          },
+          "description": {
+            "en": "Keep a running record of the decisions taken with nobody in the loop: how many of each type, which rule set or model version produced them, who asked for intervention and what the re-taken decision concluded. Record the version explicitly — a decision contested six months later cannot be explained by anyone who does not know what was running when it was made, and the rules will have moved. Attach the automated decision log for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Automated decision log for the period: volume per decision type, the rule set or model version in force, and each intervention request with its outcome"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Record the volume of decisions taken automatically by type."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the rule set or model version that produced them."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every request for human intervention received."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the outcome of each decision that was re-taken."
+              }
+            },
+            {
+              "text": {
+                "en": "List the decision types that drew no challenge at all."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sample the decisions sent for human review and measure how often the outcome changed"
+          },
+          "description": {
+            "en": "Read the reviewed decisions against what the automation originally produced and count the overturns. An override rate of zero across hundreds of reviews says the review is a signature rather than a decision, and that finding is what this task exists to produce; so is a decision type nobody has ever challenged, which usually means the contest route cannot be reached from where the decision is delivered. Re-check the inventory after each rule or model change, since a change can quietly remove the human step a decision used to pass through. Attach the review-quality analysis for the period."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Review-quality analysis giving the override rate per decision type, the types never challenged, and the inventory re-check following each rule or model change"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Select a sample of decisions sent for human review."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each reviewed outcome against the automated one."
+              }
+            },
+            {
+              "text": {
+                "en": "Count how many outcomes the reviewer actually changed."
+              }
+            },
+            {
+              "text": {
+                "en": "Read the reasons recorded where nothing was changed."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-check the inventory after each rule or model change."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-14",
+      "title": "Limit processing",
+      "description": "Implements 7.4.2: the operations performed on PII already held — the jobs, queries, reports and new uses — stay inside what the recorded purposes need, and a use no purpose covers does not run.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Data Owner",
+      "requirementCodes": [
+        "7.4.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Catalogue the jobs, queries and reports that read PII and the purpose each one serves"
+          },
+          "description": {
+            "en": "Work from the systems inward: list every scheduled job, saved query, report, analytics pipeline and support tool that reads PII, and record against each the purpose from the register that requires the read. The operations nobody can name a purpose for are the deliverable here, not the catalogue itself — they are usually inherited, copied from an older pipeline, or built for a project that has since ended. Attach the catalogue with the purpose against each operation and the unaccounted ones flagged."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Catalogue of PII-reading operations with the purpose recorded behind each and the operations no purpose accounts for flagged"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Enumerate every job, query, report and pipeline that reads PII."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the purpose from the register that requires each read."
+              }
+            },
+            {
+              "text": {
+                "en": "Note which data categories and which records each one touches."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag every operation no recorded purpose accounts for."
+              }
+            },
+            {
+              "text": {
+                "en": "Ask each owning team to justify or retire its flagged operations."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Restrict each operation to the fields and records its purpose actually needs"
+          },
+          "description": {
+            "en": "Narrow the reads themselves, not the intent behind them: select the columns the purpose requires instead of the whole row, filter each job to the population the purpose covers, and substitute pseudonyms where the work never needs to know which person a row is. Retire the flagged operations no owner would claim. Record what each operation read before and after, and every one left broad with the reason it stays that way. Attach the change record."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Change record giving the fields and record scope each operation read before and after narrowing, with a reason for every one left broad"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Reduce each query to the fields its purpose requires."
+              }
+            },
+            {
+              "text": {
+                "en": "Filter every job to the records that purpose covers."
+              }
+            },
+            {
+              "text": {
+                "en": "Substitute pseudonyms where identity is not needed."
+              }
+            },
+            {
+              "text": {
+                "en": "Turn off the operations no owner would claim."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each operation left broad and the reason for it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Log every new use proposed for PII already held, with the purpose decision taken before it ran"
+          },
+          "description": {
+            "en": "Data that exists attracts new uses — a model to train, a report somebody wants, a team that could work faster against the customer table. For each proposal, record what was asked for, which recorded purpose was said to cover it, and the decision taken: proceed, narrow the request, or refuse it until a purpose exists. A refusal is the entry that shows the limit binds, so record refusals as carefully as approvals. Attach the period's decision log."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Decision log of proposed new uses of held PII for the period, each with the purpose relied on and the outcome, refusals included"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Capture each proposed new use of PII already held."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify the recorded purpose said to cover it."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide whether to proceed, narrow or refuse the request."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the decision and the reasoning behind it."
+              }
+            },
+            {
+              "text": {
+                "en": "Track the narrowed requests through to what finally ran."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Compare the reads that actually executed against the purposes recorded for them"
+          },
+          "description": {
+            "en": "Read the access and query logs for the period and compare what ran against the catalogue: an operation absent from it, a job now reading columns its purpose never needed, a report whose filter was widened, an export nobody remembers approving. Reading the catalogue alone only confirms what was intended. Record every divergence with the operation, what it read beyond its purpose, and how it was resolved. Attach the comparison."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Period comparison of executed PII reads against the catalogued purposes, listing each divergence and how it was resolved"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Extract the period's access and query logs for PII stores."
+              }
+            },
+            {
+              "text": {
+                "en": "Match each executed read to a catalogued operation."
+              }
+            },
+            {
+              "text": {
+                "en": "List the reads that exceed the purpose recorded for them."
+              }
+            },
+            {
+              "text": {
+                "en": "Record how each divergence was resolved or escalated."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-15",
+      "title": "PII accuracy and quality",
+      "description": "Implements 7.4.3: every category of PII is held to a stated accuracy and currency standard set by what the purpose using it needs, and records falling short of it are corrected in every store that holds them.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Data Owner",
+      "requirementCodes": [
+        "7.4.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Determine the accuracy and currency each purpose demands of the PII it uses"
+          },
+          "description": {
+            "en": "Take each purpose in the register and state what has to be correct about the PII it consumes, how recent that PII must be, and what acting on a wrong value does to the person — a parcel sent to a stale address is a nuisance, an eligibility decision on a stale income is not. The same field answers differently under different purposes, so record it per purpose-and-category pair rather than once per field. Attach the accuracy requirement table with the source of truth named on every row."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Accuracy requirement table giving, per purpose and PII category, the attributes that must be correct, the maximum age allowed and the source of truth each is checked against"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the purpose and PII category pairs the standard must cover."
+              }
+            },
+            {
+              "text": {
+                "en": "State which attributes must be correct for each purpose to work."
+              }
+            },
+            {
+              "text": {
+                "en": "Set how recent a value has to be for that purpose to rely on it."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the source of truth each attribute is checked against."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what acting on a wrong value would do to the person."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Configure the entry validation and refresh checks that hold each field to its stated standard"
+          },
+          "description": {
+            "en": "Put the standard into the systems rather than into a document: reject or flag values failing the format and range checks at the point of entry, and schedule a re-confirmation for every attribute the table gives a maximum age. Where a field is copied into a warehouse, cache or service the organisation runs itself, carry the corrected value through to those copies too, or the corrected record and the stale one will both stay in use. Attach the configuration record naming the check applied to each field and the systems it reaches."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Configuration record listing the validation and re-confirmation check applied to each field, and the internal stores a correction is carried through to"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Add format and range checks at every point PII is entered."
+              }
+            },
+            {
+              "text": {
+                "en": "Schedule re-confirmation for the attributes given a maximum age."
+              }
+            },
+            {
+              "text": {
+                "en": "Route a corrected value into the internal copies of that record."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which systems each check was applied in."
+              }
+            },
+            {
+              "text": {
+                "en": "Submit a failing value and confirm the check rejects it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Log every record found inaccurate or out of date and the correction made to it"
+          },
+          "description": {
+            "en": "Records fall out of the standard through ordinary life — people move, names change, a source system is re-keyed — so this is a running log rather than an exception report. For each one, record how the fault surfaced (a validation failure, a scheduled refresh, or a mismatch against the source of truth), the value it was corrected to, and the date the correction reached each store holding that record. A correction applied in one system and not the others leaves the organisation acting on both versions at once."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Accuracy correction log for the period, giving the record affected, how the fault surfaced, the value corrected and the stores the correction reached"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Record each inaccurate or stale record as it is found."
+              }
+            },
+            {
+              "text": {
+                "en": "Note how the fault came to light in each case."
+              }
+            },
+            {
+              "text": {
+                "en": "Enter the corrected value and the date it was applied."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the correction reached every store holding that record."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sample live records against the source of truth and measure how many fail the standard"
+          },
+          "description": {
+            "en": "Read the data itself rather than the pipeline's success rate: a validation rule nothing ever reached and a refresh job that skipped a table both report no problem. Pull a sample from each category, compare every attribute against the source named in the requirement table, and state the failure rate by category and by purpose. Where a category fails more often than its purpose can tolerate, record what changes as a result — the check, the refresh interval, or that purpose's reliance on the field."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Accuracy sample test reporting the records checked per category, the failure rate measured against the standard and the remediation agreed for each breach"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Draw a sample of live records from each PII category."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each sampled attribute against its source of truth."
+              }
+            },
+            {
+              "text": {
+                "en": "Count the records breaching the accuracy or age standard."
+              }
+            },
+            {
+              "text": {
+                "en": "State the failure rate by category and by purpose."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the change agreed for every category that failed."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-16",
+      "title": "Transit Protection for PII Held as Controller",
+      "description": "Implements 7.4.9: PII the organisation processes on its own account is protected on every path it travels, to a standard the organisation sets itself and owes to the individual, including the last leg that reaches them.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Data Owner",
+      "requirementCodes": [
+        "7.4.9"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List the paths carrying PII the organisation processes as controller, and mark the customer-instructed flows out of scope"
+          },
+          "description": {
+            "en": "Start from the controller half of the records of processing and follow each purpose outward to whatever moves its PII off the system: integrations and APIs, scheduled file transfers, exports and reports, the portal a person logs into, and the email or post by which staff send someone their own data. Flows the organisation runs on a customer's written instruction are marked out of scope here and belong to the processor-side control, because their protection is not the organisation's to decide. Attach the path inventory with the purpose, both endpoints and the channel recorded against every row."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Path inventory of controller-held PII in transit, giving the purpose, both endpoints and the channel per row, with customer-instructed flows marked out of scope"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Take the controller half of the records of processing as the starting list."
+              }
+            },
+            {
+              "text": {
+                "en": "Follow each purpose out to the interfaces that move its PII off the system."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the channels staff use to send a person their own data."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark each flow run on a customer instruction as out of scope here."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the two endpoints and the channel against every path."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Determine the protection each path owes the PII principal, and apply it path by path"
+          },
+          "description": {
+            "en": "This one is decided on the organisation's own judgement, with nobody to take instruction from. For each path in the inventory, rate what it would mean for the person if the content were read or altered on the way, then set the minimum that path must carry from then on — encryption with authenticated endpoints, no PII in URLs or in the body of ordinary email, a recipient check before a file leaves. Apply it to the paths sitting below their minimum. Where less is knowingly accepted, record the path, the reason and who accepted it; where a path cannot be brought up, the choice open to a controller and to nobody else is to stop sending PII along it, and that decision is recorded here too. Attach the per-path standard with its applied state."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Per-path protection standard showing the minimum each path must carry, whether it is applied, and every accepted shortfall with the person who accepted it"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Rate what a reading of each path in transit would mean for the person."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the minimum protection that path must carry from then on."
+              }
+            },
+            {
+              "text": {
+                "en": "Apply the setting to every path found below its minimum."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each accepted shortfall with its reason and approver."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide, for any path that cannot meet it, whether the sending stops."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Flag each transmission sent with weaker protection than its path requires, and drive each to closure"
+          },
+          "description": {
+            "en": "Protection settled path by path decays quietly: a certificate lapses, a partner endpoint negotiates down to an older cipher, an overnight job is repointed at a plain endpoint, and PII keeps moving as though nothing changed. Each period this task takes the transport evidence the paths themselves produce and picks out every transmission that travelled with less protection than the path was set to give it. Without that recurring pass the shortfall surfaces from the outside — a recipient's complaint, a partner's audit, a breach notification — months after the PII has already crossed unprotected and long after the traffic can be reconstructed. Catching it while the logs are still fresh bounds the exposure to a known set of transmissions and forces the path itself to be corrected rather than noted."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Period exception register of under-protected PII transmissions, each row naming the path, recipient, date, cause and the date the path was corrected"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the transport logs for every path carrying PII this period."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each transmission with the protection its path applies."
+              }
+            },
+            {
+              "text": {
+                "en": "Open an entry for every transmission that fell short."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the path, the recipient and the date on each entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Give each entry an owner and a date to correct the path."
+              }
+            },
+            {
+              "text": {
+                "en": "Close an entry once a later transmission on that path passes."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Test each path as its recipient sees it and list where PII still crosses unprotected"
+          },
+          "description": {
+            "en": "Read what the connection actually negotiates rather than what the configuration claims, because a path set correctly a year ago can be answered today by a proxy nobody mentioned. Cover the fallback behaviour — a path that quietly drops to plaintext when the primary route fails is unprotected on exactly the day it matters — and cover the leg that delivers PII to the individual, which is the leg a controller owes and the one most often left out of a scan. Compare what is in use against the inventory and list any path that appeared since without a protection decision behind it. Attach the test with every finding and how it was resolved."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Path test results naming each endpoint probed, the protection actually negotiated, and every unprotected or undecided path found with its resolution"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Probe each endpoint and read the protection actually negotiated."
+              }
+            },
+            {
+              "text": {
+                "en": "Force the fallback route and see what it drops to."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the leg that delivers PII to the individual."
+              }
+            },
+            {
+              "text": {
+                "en": "List any path in use that the inventory does not hold."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each finding with the resolution taken."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-17",
+      "title": "Controller Record of PII Transfers",
+      "description": "Implements 7.5.3: the organisation keeps its own log of the transfers of PII it decides to make to third parties, so every transfer can be shown afterwards with its date, recipient, contents and the person inside the organisation who authorised it.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "7.5.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Identify the transfers of PII to third parties the organisation decides on its own account"
+          },
+          "description": {
+            "en": "Work through the PII the organisation controls and find every point where some of it goes to another organisation: a partner, a credit reference agency, an insurer, a payroll bureau, a marketing platform, another company in the group. Leave out the movements made on a customer's written instruction, because those are discharged by the customer's own record rather than by this one. What remains is the population this log has to cover, and each entry carries the decision inside the organisation that put the transfer there."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Scoped list of controller-side transfers, naming the recipient, the deciding function and the decision that created each one"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the third parties that receive PII the organisation controls."
+              }
+            },
+            {
+              "text": {
+                "en": "Separate out the sends made on a customer's written instruction."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the internal decision that created each remaining transfer."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the function that asked for each transfer and still owns it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Define the entry a transfer log must carry before PII reaches a recipient"
+          },
+          "description": {
+            "en": "Settle the fields first: the date the data left, the recipient named as an organisation rather than as a class, the PII categories and the volume, the purpose the transfer serves, the authorisation it rests on, and the named person who approved it. Point the authorisation field at the transfer register that already holds the safeguard, so the log cites the basis instead of re-arguing it. A field set agreed before the first entry is what stops the log decaying into a list of dates nobody can interpret."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Transfer log specification setting the mandatory fields per entry, with one entry completed end to end as a worked example"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Set the fields that every transfer log entry must carry."
+              }
+            },
+            {
+              "text": {
+                "en": "Require the recipient to be named as a specific organisation."
+              }
+            },
+            {
+              "text": {
+                "en": "Require the name of the person who approved the transfer."
+              }
+            },
+            {
+              "text": {
+                "en": "Cite the existing safeguard record rather than restating it."
+              }
+            },
+            {
+              "text": {
+                "en": "Complete one entry end to end as the worked example."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Log each transfer of PII the organisation sends out during the period"
+          },
+          "description": {
+            "en": "Write the entry when the data moves, not when an auditor asks: a log reconstructed months later records what the paperwork says rather than what happened. Cover the one-off sends as well as the standing feeds, because the spreadsheet emailed to a partner on a Friday is the transfer least likely to be logged and the one a person asking where their data went is most likely to have been in."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Dated transfer log for the period giving recipient, PII categories, volume, purpose, authorisation and approver for every transfer"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Record each standing feed that sent PII during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every one-off send, emailed files included."
+              }
+            },
+            {
+              "text": {
+                "en": "Enter the date on which the PII actually left."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the approver on each entry as it is written."
+              }
+            },
+            {
+              "text": {
+                "en": "Close the period by confirming nothing is left unlogged."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Cross-check the transfer log against the exports that actually left the systems"
+          },
+          "description": {
+            "en": "Read the outbound evidence on its own terms — integration and API egress logs, file transfer histories, bulk export audit trails, the recipients named on vendor invoices — and look in both directions: an export with no entry behind it, and an entry no system ever performed. The unlogged transfer is the one the organisation cannot explain to the person whose data it carried, so record each discrepancy with an owner and the outcome rather than quietly correcting the log."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Cross-check findings setting outbound export evidence beside the transfer log, listing unlogged transfers and how each was settled"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the outbound export and integration egress logs."
+              }
+            },
+            {
+              "text": {
+                "en": "Take the recipient names from vendor invoices and contracts."
+              }
+            },
+            {
+              "text": {
+                "en": "Match every outbound export to a transfer log entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Match every log entry back to an observed export."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each unmatched item with an owner and its outcome."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-18",
+      "title": "Controller Record of PII Disclosures to Third Parties",
+      "description": "Implements 7.5.4: every disclosure of PII the organisation itself decides to make is recorded — what was disclosed, to whom, on which ground and who authorised the release — so the person the PII belongs to can later be told which third parties received it.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "7.5.4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Identify every route by which the organisation discloses PII on its own decision"
+          },
+          "description": {
+            "en": "Go through the ways PII reaches a third party because somebody here decided to hand it over: a police or regulator request, a court order, an insurer or an opposing lawyer asking for a file, a group company asking for an account-holder list, an export a support engineer sends to unblock a partner. What this task is after is the decision-shaped disclosure, the kind that leaves no trace unless a route has been named for it. Record for each route who inside the organisation decides whether the data goes, and mark the routes that disclose today without writing anything down. Attach the route inventory with those unrecorded routes flagged."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Disclosure route inventory naming each channel, the third parties it has reached, the PII categories it can carry, the person who decides, and the routes that record nothing today"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the channels through which PII leaves the organisation to a named third party."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the third parties each channel has actually reached in the last twelve months."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the categories of PII each channel is capable of disclosing."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person here who decides whether a disclosure on that route goes ahead."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark every route that discloses today without leaving a record behind."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Define the fields a disclosure record must carry to answer the individual it concerns"
+          },
+          "description": {
+            "en": "Fix what an entry must contain before it counts as recorded, and test each field against the question the person whose PII it was is entitled to put months later: who was given my data, what of it, and on what basis. That means the recipient named as an organisation and a contact rather than as 'law enforcement', the PII listed field by field rather than as 'account details', the ground the organisation relied on when it decided to disclose, and the name of whoever authorised the release. Fill one worked entry per route so the fields are proved against a real disclosure instead of agreed in the abstract. Attach the record specification with its worked entries."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Disclosure record specification listing the mandatory fields, with one worked entry completed per disclosure route"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Set the fields every disclosure entry must carry before it can be closed."
+              }
+            },
+            {
+              "text": {
+                "en": "Require the recipient to be named as an organisation and a contact."
+              }
+            },
+            {
+              "text": {
+                "en": "Require the PII released to be listed by category and by field."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the ground the organisation relied on when it decided to disclose."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the person here who authorised the release of the data."
+              }
+            },
+            {
+              "text": {
+                "en": "Complete one worked entry per route to prove the fields hold up."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "File a record of what went to which third party, one entry per disclosure"
+          },
+          "description": {
+            "en": "Every time the organisation decides on its own account to hand PII to an outside party, one entry goes into the disclosure register while the release is still fresh. Reconstructed months later a disclosure becomes a guess: the recipient is half-remembered, the exact fields are not, and nobody can say who approved it. That guess is what an individual gets when they ask who now holds their data, and what a regulator gets when it asks the organisation to account for a release it made. Filing at the moment of release keeps the register an account of what happened rather than a reconstruction of what probably happened."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Disclosure register entries covering the period, each carrying recipient, fields released, authorising decision and date sent"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Open a disclosure entry as soon as the release is authorised."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the receiving organisation and the contact who took delivery."
+              }
+            },
+            {
+              "text": {
+                "en": "Write down which PII fields left and the purpose the recipient has for them."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the authorisation and the name of whoever gave it."
+              }
+            },
+            {
+              "text": {
+                "en": "Stamp the entry with the date and the channel the PII travelled by."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Trace one individual through the disclosure log and rebuild the recipient list they are owed"
+          },
+          "description": {
+            "en": "A disclosure log can look complete and still fail the one question it exists to answer: a person asks who the organisation handed their PII to, and nobody can produce the list. Take an individual who was actually disclosed during the period, search the log for them, and write out the recipients it gives back. Then hold that answer against the disclosure routes named in the scope inventory, because a route that moves PII but leaves no searchable record is exactly the failure this task looks for. Attach the returned recipient list and every gap it exposed."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Dated recipient-list extract for the sampled individual, held against the disclosure routes, with a gap note for every route that left no searchable record"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Pick one individual whose PII was disclosed to a third party during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Search the disclosure log for every record that names that individual."
+              }
+            },
+            {
+              "text": {
+                "en": "Write out the recipient list the search returns, one row per recipient and date."
+              }
+            },
+            {
+              "text": {
+                "en": "Hold that list against the disclosure routes named in the scope inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a gap for any route that moved the individual's PII without leaving a record."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-19",
+      "title": "Customer Processing Agreement",
+      "description": "Implements 8.2.1: every engagement where the organisation processes PII for a customer is covered by a written agreement that fixes which party is controller and which is processor, and states the processing obligations owed.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "8.2.1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List each engagement where the organisation processes PII for a customer and the agreement governing it"
+          },
+          "description": {
+            "en": "Work from what actually brings customer data in - the tenant list, onboarding records and billing - and write one row per engagement giving the service supplied, the categories of PII it involves and the signed document that governs the processing. Where the only paper is a service contract carrying no processing terms, or none can be found, record that as a gap rather than leaving the cell empty: an unpapered engagement is the reason the register exists. Attach the register dated at the point it was compiled."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Customer processing register: one row per engagement giving the service supplied, the PII categories involved and the governing agreement or the recorded gap"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the customer list from tenant, onboarding and billing records."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the service supplied under each customer engagement."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the PII categories that engagement involves."
+              }
+            },
+            {
+              "text": {
+                "en": "Cite the signed document governing each engagement."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark every engagement carrying no processing terms as a gap."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Write the processing terms that state which party is controller and which is processor"
+          },
+          "description": {
+            "en": "Draft the terms the organisation offers as processor so a reader can tell, without asking anyone, who is controller and who is processor for each activity, what the organisation is instructed to do, which categories of PII and of people are involved, how long the processing runs, and where the customer's documented instructions are given and amended. Terms that describe the service but never allocate the roles leave the obligation unassigned, which is the failure this control exists to prevent. Attach the approved terms with the clause carrying each element marked."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Approved processing terms with a clause map showing where roles, instructed processing, PII categories, duration and the instruction channel are each stated"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "State which party is controller and which is processor."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe the processing the organisation is instructed to perform."
+              }
+            },
+            {
+              "text": {
+                "en": "List the PII categories and the people that data concerns."
+              }
+            },
+            {
+              "text": {
+                "en": "Set how long the agreed processing runs for."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the channel where documented instructions are given."
+              }
+            },
+            {
+              "text": {
+                "en": "Have the drafted terms approved before they are offered."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Log every customer agreement signed, amended or superseded with the date it took effect"
+          },
+          "description": {
+            "en": "Coverage lapses in contract administration rather than in drafting, so keep one running record: each agreement executed, each amendment, each set of terms replaced by a later version, with the customer, the effective date and the version now in force. Record the date PII first reached the service beside the date the agreement took effect, because the order of those two dates is what this control asks about. Attach the period's log with the executed copies indexed against it."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Customer agreement log for the period: signings, amendments and supersessions with effective dates, the version in force and the executed copy indexed against each"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Record each customer agreement executed in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the effective date and the version now in force."
+              }
+            },
+            {
+              "text": {
+                "en": "Record when PII first reached the service for that customer."
+              }
+            },
+            {
+              "text": {
+                "en": "Index the executed copy against its log entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Log each amendment and the terms version it replaced."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Verify that every customer sending PII is covered by executed terms in force"
+          },
+          "description": {
+            "en": "Read the two sides against each other: the tenants and integrations that actually sent personal data in during the period, and the agreement log. Both directions are findings - a customer whose data is being processed under no executed terms, and an executed agreement left on terms the organisation has since replaced, so the version in force is not the version it operates to. Take the active side from system evidence rather than the sales list, which lags. Record each discrepancy with its correction. Attach the verification with its findings."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Agreement coverage verification listing uncovered customers and superseded term versions, each with its correction and the date it was papered"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Extract the tenants that sent PII during the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare that list against the customer agreement log."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag any customer processed without executed terms."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag agreements left on a superseded version of the terms."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the correction and the date each gap was closed."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-20",
+      "title": "Own-purpose use of customer PII",
+      "description": "Implements 8.2.2: customer PII is processed only for the purposes the customer has instructed, and every internal use that serves the organisation's own ends is either stopped or brought under a recorded instruction.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "8.2.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Trace every internal use of customer PII that serves the organisation's own ends"
+          },
+          "description": {
+            "en": "Customer PII arrives to be processed for the customer, then quietly acquires second readers: a product analytics pipeline, a model-training corpus, a benchmark the organisation publishes, a demo environment seeded from production, an engineer reproducing a bug against live records. Follow the data out of the service boundary and record every internal destination it reaches, the team that reads it there, and the purpose they read it for. Against each use, name the customer instruction it is claimed to rest on — and mark the ones resting on nothing, because that mark is the deliverable rather than the inventory around it."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Inventory of internal uses of customer PII, giving each receiving system, the team reading it, and the customer instruction relied on, with the uncovered uses marked"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Follow customer PII out of the production service into every internal system that receives a copy."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the team reading each copy and the purpose they read it for."
+              }
+            },
+            {
+              "text": {
+                "en": "Cite the customer instruction that is claimed to permit each use."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark every internal use that no instruction covers."
+              }
+            },
+            {
+              "text": {
+                "en": "Circulate the marked list to the owners of those systems."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Separate customer PII from the internal systems whose use no instruction covers"
+          },
+          "description": {
+            "en": "Take the marked uses one at a time. Either the customer instruction is obtained and written down, or the feed stops and the copies already sitting in that system are removed. The derived artefacts are the half that gets forgotten: a trained model, an aggregate table and a cached export all outlive the pipeline that fed them, and a stopped feed with the derivatives left in place has changed nothing about what the organisation still holds for its own benefit. Record for each marked use which way it went, on what date, and exactly what was purged."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Change record per uncovered use stating whether it stopped or gained an instruction, listing the copies and derived artefacts purged and the date"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Decide for each marked use whether an instruction will be obtained or the use stops."
+              }
+            },
+            {
+              "text": {
+                "en": "Disconnect the feed for every use that is stopping."
+              }
+            },
+            {
+              "text": {
+                "en": "Purge the copies already held in those internal systems."
+              }
+            },
+            {
+              "text": {
+                "en": "Delete or retrain the artefacts derived from that data."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the outcome, date and what was purged for each use."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Register each proposal to use customer PII for an internal purpose and record the decision"
+          },
+          "description": {
+            "en": "New own-purpose uses arrive as ordinary requests — a data-science team asking for a production extract, a marketing team asking for usage figures by named customer, a support tool wanting live records to reproduce a fault. Put them through one intake and record, for each, the internal purpose asked for, the customer instruction it was checked against, and the answer given. A refusal is as much the evidence as an approval: a log containing only approvals is a log of a check nobody applied."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Decision log of internal requests to use customer PII, each entry giving the purpose asked for, the instruction checked, and the answer given"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Route every internal request for customer PII into a single intake."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the internal purpose the requester is asking for."
+              }
+            },
+            {
+              "text": {
+                "en": "Check the request against the customer instruction that would permit it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the decision and the reason it was given."
+              }
+            },
+            {
+              "text": {
+                "en": "Report the period's approvals and refusals to the privacy owner."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Reconcile the outbound flows of customer PII against the instructions that permit them"
+          },
+          "description": {
+            "en": "Between reviews an integration is added, a warehouse job widens its query, a vendor is wired into the support tool. Take the flows actually leaving the customer-service boundary — read from egress records, warehouse job definitions and the integrations in place — and set them beside the instructions recorded above. List every flow no instruction accounts for, and treat the length of that list, not the fact the review happened, as the result of this task."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Period reconciliation of observed outbound PII flows against the recorded customer instructions, listing every flow with no instruction behind it"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the flows actually leaving the service boundary this period."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each against the recorded customer instructions."
+              }
+            },
+            {
+              "text": {
+                "en": "List every flow that no instruction accounts for."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise each unexplained flow with the owning team for correction."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the count of unexplained flows beside the previous period's."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-21",
+      "title": "Infringing customer instructions",
+      "description": "Implements 8.2.4: an instruction from a controller customer that appears to breach applicable privacy law is recognised by the staff who receive it, assessed, and put back to that customer in writing rather than quietly carried out.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "8.2.4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Identify the points where customer instructions arrive and who first reads them"
+          },
+          "description": {
+            "en": "An instruction rarely arrives labelled as one. It comes as a support ticket, a migration request to an engineer, a configuration change made in the product, a line in an account manager's email. Work out every route by which a customer can tell this organisation to do something with their PII, and record for each route the role that receives it first — that person is the only one positioned to notice a problem before the work is done. Attach the route inventory with the receiving role named against each."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Inventory of customer-instruction intake routes, naming the role that first receives each and where it goes next"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "List each channel through which a customer sends processing instructions."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the role that first reads an instruction on each channel."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where an instruction can reach an engineer with no review at all."
+              }
+            },
+            {
+              "text": {
+                "en": "Note which channels keep a durable written record of the instruction."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Define the tests that make an instruction reportable and the route for raising one"
+          },
+          "description": {
+            "en": "Support staff and engineers are not lawyers, so the recognition has to be reduced to a short list of readable signals: an instruction to use PII for something the customer's own notice does not cover, to hold it past the period the customer set, to release it to a party the customer cannot name, to restore data the customer previously asked to be erased. Pair the list with one route for raising a concern and the person who rules on it, so the question does not die in the thread it was asked in. Attach the trigger list and the raising route as published to staff."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Published trigger list of instruction patterns that must be raised, with the named assessor and the single raising route"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Write the signals that mark an instruction as questionable."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the assessor who rules on a raised instruction."
+              }
+            },
+            {
+              "text": {
+                "en": "Record whether processing pauses while an assessment runs."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the route to staff on every intake channel identified."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Notify the customer in writing when an instruction is assessed as potentially infringing"
+          },
+          "description": {
+            "en": "Where the assessment concludes the instruction may breach applicable privacy law, say so to the customer in writing: identify the instruction, the date it was received, what about it appears unlawful, and what this organisation is doing with it in the meantime. A concern voiced to an account manager on a call leaves nothing behind, and it is the written notice — with whatever the customer answers — that shows the obligation was met. Attach the notices issued in the period together with the customer replies."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "File of written infringement notices sent to customers in the period, each with the instruction it concerns and the customer's reply"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Record the instruction and the date it was received."
+              }
+            },
+            {
+              "text": {
+                "en": "State plainly which requirement the instruction appears to breach."
+              }
+            },
+            {
+              "text": {
+                "en": "Send the notice to the customer contact named in the agreement."
+              }
+            },
+            {
+              "text": {
+                "en": "Store the notice and any customer reply with the case record."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sample the instructions received in the period and check the questionable ones were raised"
+          },
+          "description": {
+            "en": "The failure mode here is silence: a control that only produces evidence when somebody speaks up looks perfect during a period in which nobody spoke up. Take a sample of instructions actually received across the routes inventoried, apply the trigger list to each independently, and list any that met a trigger yet were never raised, with why they were missed. A period with no notices at all is something to explain — either nothing questionable arrived, or nothing questionable was noticed."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Sample review of instructions received, listing every instruction that met a trigger but was never raised and the cause of each miss"
+          },
+          "suggestedRole": "Management",
+          "steps": [
+            {
+              "text": {
+                "en": "Pull a sample of instructions from each intake route."
+              }
+            },
+            {
+              "text": {
+                "en": "Apply the trigger list to every instruction in the sample."
+              }
+            },
+            {
+              "text": {
+                "en": "List instructions that met a trigger but were never raised."
+              }
+            },
+            {
+              "text": {
+                "en": "Explain a period that produced no notices at all."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-22",
+      "title": "Processor Assistance with PII-Principal Requests",
+      "description": "Implements 8.3.1: the service gives each controller customer the means to answer a PII-principal request about the PII it holds on their behalf — the functions to export, correct and erase it, worked only on the customer's written instruction, with the output handed back so the customer can make the response they owe the individual.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "8.3.1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Determine which part of each rights request the service can discharge for the customer"
+          },
+          "description": {
+            "en": "A customer cannot answer an individual unless they know what the service will do for them and what is left on their own side. Take each request type a controller customer may pass down — access, a copy, correction, erasure, restriction — and record what the service can perform against the PII it holds for them, which of their data stores that reaches, and what the customer still has to do in systems the service never sees. Request types the service cannot act on at all belong on the same statement: an unstated gap is discovered by the customer on the day a deadline is running, not before."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Per-request-type capability statement naming the actions the service performs for the customer, the customer data stores each action reaches, and the actions left with the customer"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the rights request types customers ask the service to act on."
+              }
+            },
+            {
+              "text": {
+                "en": "Record which customer data stores each of those actions must reach."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the actions that remain the customer's own to perform."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the request types the service cannot act on at all."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Build the export, correction and erasure functions the customer drives against their own PII"
+          },
+          "description": {
+            "en": "Turn the capability statement into something the customer can operate — an export of one principal's PII in a form they can hand on, a correction path, an erasure call that reaches every store the service holds that principal in, and a record of completion the customer can keep as their own proof. A function that exists but is undocumented is a function the customer will raise a ticket for instead, which spends the days they need for their own answer. Attach the customer-facing documentation alongside the inventory of what was built."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Function inventory and the customer-facing service documentation covering the export, correction, erasure and completion-record calls available to each customer"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Expose an export of one principal's PII in a readable file format."
+              }
+            },
+            {
+              "text": {
+                "en": "Add a correction path the customer can drive without raising a ticket."
+              }
+            },
+            {
+              "text": {
+                "en": "Add an erasure call that reaches every store holding that principal's PII."
+              }
+            },
+            {
+              "text": {
+                "en": "Return a completion record the customer can file with their own response."
+              }
+            },
+            {
+              "text": {
+                "en": "Describe each function in the service documentation customers receive."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Log each customer instruction worked and each direct approach forwarded unanswered"
+          },
+          "description": {
+            "en": "Work the instructions as they arrive and keep one row per instruction: the customer, who issued it, the systems acted in, what was handed back and when. Two things make this the processor's log rather than a controller's — the authorisation check is on the customer contact, not on the individual, and an individual who contacts the service direct is passed to the customer unanswered, because the outcome is not the service's to decide. Attach the assistance log for the period, direct approaches included."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Assistance log for the period: customer, instruction received, authorisation check, systems acted in, output returned, and every principal approach forwarded"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Confirm the instruction came from an authorised customer contact."
+              }
+            },
+            {
+              "text": {
+                "en": "Work the instruction in every system named in the capability statement."
+              }
+            },
+            {
+              "text": {
+                "en": "Hand the output back to the customer, never to the individual."
+              }
+            },
+            {
+              "text": {
+                "en": "Forward a principal who approached the service direct to their customer."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the systems touched and the date the output was returned."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Compare each assistance turnaround against the deadline the customer had to meet"
+          },
+          "description": {
+            "en": "The service's clock is not the one that matters: the customer answers the individual, so a response returned on the service's last contractual day can still leave the customer with none. Calculate turnaround per closed instruction, set it beside the customer's own deadline, and read the instructions that arrived back late or incomplete rather than the average. Where a sub-processor held the PII, check it answered inside the same window, and list anything the service could not complete with the reason it gave."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Turnaround analysis for the period setting each closed instruction against the customer's own response deadline, with every overrun, sub-processor delay and incomplete instruction named"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Calculate the turnaround for each instruction closed in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each turnaround against the deadline the customer had to meet."
+              }
+            },
+            {
+              "text": {
+                "en": "Check that each sub-processor answered inside the same window."
+              }
+            },
+            {
+              "text": {
+                "en": "List the instructions the service could not complete, with the reason."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-23",
+      "title": "Temporary File Disposal",
+      "description": "Implements 8.4.1: temporary copies of customer PII — scratch space, caches, spool directories and working copies — are deleted within a defined period, enforced by something that outlives the job that created them.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Data Owner",
+      "requirementCodes": [
+        "8.4.1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Inventory every scratch, cache and spool location where PII is written during processing"
+          },
+          "description": {
+            "en": "Temporary copies are created by machinery rather than by people, so nobody holds the list: an upload staging directory, a report renderer's working files, a queued payload spilled to disk, a search index rebuild, a debug dump taken while chasing an incident. Walk each pipeline that handles customer PII and write down every place a copy lands, what writes it, and what is supposed to remove it. Where nothing removes it, that is the finding — an unnamed cleaner is why these files outlive the job that made them."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Inventory of temporary PII locations giving the path or store, the process that writes it, the process that removes it, and every location with no cleaner named"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Trace each processing pipeline that handles customer PII end to end."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every path, bucket or queue a temporary copy is written to."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the process that writes each temporary copy."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the process meant to delete it, or record that none exists."
+              }
+            },
+            {
+              "text": {
+                "en": "Include caches, debug dumps and working copies taken during support work."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Set a maximum lifetime for each temporary location and enable the deletion that enforces it"
+          },
+          "description": {
+            "en": "Give every location on the inventory a period after which a temporary copy must be gone, expressed in hours or days rather than as 'when the job finishes' — a job that crashes never finishes, and its scratch space is exactly the copy that survives. Put the enforcement somewhere that outlives the job: a lifecycle rule on the bucket, a scheduled sweep on the host, a TTL on the cache key. Record the period set against each location and the mechanism that applies it."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Configuration record pairing each temporary location with its defined maximum lifetime and the lifecycle rule, scheduled sweep or TTL that enforces it"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Set the maximum lifetime for each location on the inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Express each period in hours or days, not in job completion."
+              }
+            },
+            {
+              "text": {
+                "en": "Configure the bucket lifecycle rule, host sweep or cache TTL that applies it."
+              }
+            },
+            {
+              "text": {
+                "en": "Make the cleanup run independently of the job that created the file."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the mechanism enforcing each location's period."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Log each cleanup run with the volume removed and every path it could not clear"
+          },
+          "description": {
+            "en": "Cleanup is the activity most often assumed to have happened. Record per run the location swept, the files and volume removed and the date, and — the part that carries the signal — every path the run could not clear with the error that stopped it: a permission lost after a host rebuild, a bucket rule whose prefix no longer matches, a consumer that is down. A run reporting only what it deleted cannot tell an empty directory from an unreachable one."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Cleanup run log for the period: location swept, files and volume removed, run date, and every path left behind with the error that stopped it"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Record the date and location of each cleanup run."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the number of files and the volume removed."
+              }
+            },
+            {
+              "text": {
+                "en": "List every path the run failed to clear, with the error."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a failed or skipped location as an operational issue."
+              }
+            },
+            {
+              "text": {
+                "en": "Retain the log for the period the customer agreement requires."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Scan the temporary locations for PII older than the lifetime set for it"
+          },
+          "description": {
+            "en": "Read the locations themselves rather than the cleanup job's own report: a sweep that lost access to one directory, or a lifecycle rule that never matched its prefix, reports nothing and leaves everything. List what was found past its defined period, where it sat, how old it was and whether it held customer PII. Cover the places a sweep is easiest to forget — a developer's working copy, a support engineer's export, a snapshot taken for debugging, an image layer built over a staging directory."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Scan report naming each temporary location checked, the files found past their defined lifetime with their age, and how each was resolved"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "List the files present in each temporary location."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare each file's age against the period set for that location."
+              }
+            },
+            {
+              "text": {
+                "en": "Open a sample to confirm whether it actually holds PII."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every file found past its period and how it was removed."
+              }
+            },
+            {
+              "text": {
+                "en": "Check the locations a sweep is most likely to have missed."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-24",
+      "title": "Return, transfer or disposal of PII at end of service",
+      "description": "Implements 8.4.2: when a customer service ends, their PII is returned, transferred onward or destroyed by the route the customer instructed, across every store and sub-processor that holds it.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Data Owner",
+      "requirementCodes": [
+        "8.4.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List every store and copy a customer's PII reaches, so an end-of-service instruction can act on all of it"
+          },
+          "description": {
+            "en": "An instruction to return or destroy a customer's PII is only as good as the map it is worked from. Per customer service, record where their PII actually sits: the primary database, the object store, exports and report files, support tickets, log and analytics copies, backup sets, and each sub-processor holding it on your behalf. Record against each store whether one customer's records can be selected there at all; a shared store with no customer key is the finding, because nothing can be returned or destroyed from it on one customer's word. Attach the per-customer holding map."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Per-customer holding map naming every store, copy and sub-processor, with the stores that cannot be filtered by customer flagged"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Name each system holding PII for a customer service."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the backups, exports and log copies each system produces."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every sub-processor that receives the same customer PII."
+              }
+            },
+            {
+              "text": {
+                "en": "State how one customer's records are selected in each store."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag the stores where no per-customer selection exists."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Write the end-of-service procedure covering return, onward transfer and destruction of customer PII"
+          },
+          "description": {
+            "en": "The three routes end differently, so write each one out: what the customer gets back and in what format, how a handover to a successor provider is delivered and acknowledged, and how destruction is carried out in every store on the holding map. State the window each route completes in and the event it is counted from, and state what runs when the customer instructs nothing, because PII left without an instruction otherwise sits on indefinitely. Record against every live customer the route they have instructed, and flag the ones with none on file."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "End-of-service procedure setting out all three routes with their formats, windows and default, plus the register of the route each live customer has instructed"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Write the return route and the export format delivered."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the transfer route and the handover acknowledgement it needs."
+              }
+            },
+            {
+              "text": {
+                "en": "Write the destruction route for every store on the holding map."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the window each route runs in and the event starting it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the route each live customer has instructed, flagging any with none."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Run the instructed route for every customer service that ended in the period and close each one out"
+          },
+          "description": {
+            "en": "Work each termination through: confirm the route that customer instructed, run it across every store on their holding map, and instruct each sub-processor holding their PII to complete the same route and return a confirmation. Record per termination the date the service ended, the route run, the systems covered, the volume returned or destroyed and the date the last copy went. Where a copy could not be acted on inside the window - a backup set still to cycle, a legal hold, a store with no per-customer selection - record it as an exception carrying the date it will clear, rather than closing the termination as complete."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Per-termination closure record giving the route run, systems covered, volumes acted on, sub-processor confirmations and every exception with its clearance date"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Confirm the route the customer instructed for this termination."
+              }
+            },
+            {
+              "text": {
+                "en": "Run that route across every store on the customer's holding map."
+              }
+            },
+            {
+              "text": {
+                "en": "Instruct each sub-processor to complete the same route."
+              }
+            },
+            {
+              "text": {
+                "en": "Collect the confirmation each sub-processor returns."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the systems covered and the volume acted on."
+              }
+            },
+            {
+              "text": {
+                "en": "Log every copy left behind, with the date it will clear."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Search the estate for PII belonging to customers whose service has ended and report what survived"
+          },
+          "description": {
+            "en": "Read the data rather than the closure record, because a termination run that skipped a store reports success exactly as loudly as one that did not. Take the customers whose service ended more than one window ago, query each store on their holding map for their identifiers, and cover the places a termination run routinely misses: backup sets, export buckets, ticket queues and analytics copies. Record every surviving record with the store it was found in, why the original run missed it and how it was dealt with, since a survivor with no cause recorded will be found again next period."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Post-termination search results listing the stores queried, the records found for each ended customer and the resolution recorded against each"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Select the customers whose service ended before the last window."
+              }
+            },
+            {
+              "text": {
+                "en": "Query each store on their holding map for that customer's identifiers."
+              }
+            },
+            {
+              "text": {
+                "en": "Include backup sets, ticket queues and analytics copies in the search."
+              }
+            },
+            {
+              "text": {
+                "en": "Record every surviving record with the store holding it."
+              }
+            },
+            {
+              "text": {
+                "en": "Trace why the original termination run missed each survivor."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-25",
+      "title": "Protecting customer PII in transit as a processor",
+      "description": "Implements 8.4.3: customer PII moving into, out of or across the service is protected in transit to the standard that customer's own agreement fixes, and the protection actually applied on every route is recorded so it can be shown to them.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Platform Engineering / Privacy Officer",
+      "requirementCodes": [
+        "8.4.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Map every route customer PII travels on and record the protection each customer's agreement requires"
+          },
+          "description": {
+            "en": "Trace the paths customer PII actually moves on — the ingest endpoints and upload channels, the exports and scheduled feeds, the API callbacks to customer systems, the replication legs to a sub-processor, the extracts support staff pull when debugging. Against each, record which customers' data travels there and cite the clause or security schedule that fixes how it must be protected. A route carrying customer PII with no commitment standing behind it is the finding worth having: as a processor the organisation does not get to pick the standard for itself, so an unmandated route means somebody chose one anyway. Attach the route inventory with the cited terms."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Route inventory for customer PII in transit: endpoint, direction, customers carried, and the agreed transmission term cited against each route"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Trace every path customer PII takes in or out of the service."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the direction and the customers whose data moves on each path."
+              }
+            },
+            {
+              "text": {
+                "en": "Cite the clause or security schedule fixing the protection for each."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag each route with no customer instruction standing behind it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Configure each route to carry customer PII at the protection that customer was promised"
+          },
+          "description": {
+            "en": "Bring every route in the inventory up to what was committed, remembering that commitments differ between customers: a shared route must satisfy the strictest term any customer on it agreed, or the traffic has to be separated so each customer gets what they were given. Where the platform cannot reach a commitment, the answer is not to relax it — the term belongs to the customer, not to the organisation — so record the shortfall, name the customers it affects, and hand it to whoever owns that agreement to take up with them. Attach the configuration record showing each route against the term it must satisfy."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Per-route configuration record showing the protection applied against the commitment it must satisfy, with every shortfall and the customers it affects"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Set the transport protection on each route in the inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Check the setting against the strictest commitment that route carries."
+              }
+            },
+            {
+              "text": {
+                "en": "Separate traffic where one route cannot satisfy every commitment on it."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each route the platform cannot bring up to its commitment."
+              }
+            },
+            {
+              "text": {
+                "en": "Hand every shortfall to the owner of the affected customer agreement."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Log each transmission of customer PII sent outside the agreed route, with the protection used"
+          },
+          "description": {
+            "en": "Configuration covers the traffic that runs every day; the exposure is the one-off — a dataset exported to reproduce a bug, a bulk file handed over to stand up an integration, a migration run by hand out of hours. Record each as it happens: the customer, what moved, the channel it went on, the protection applied to it, and who authorised leaving the agreed route. Keep it in a form that can be handed to the customer without rework, because the account of how their PII was protected is something they are entitled to ask for and the organisation only holds it on their behalf. Attach the transmission log for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Transmission log of ad hoc customer-PII transfers for the period: customer, dataset, channel, protection applied, and the authorisation recorded"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Record every ad hoc transfer of customer PII as it happens."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the customer and the dataset that moved."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the channel used and the protection applied to it."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture who authorised the transfer off the agreed route."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the log in a form the affected customer can be given."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Verify the protection each route actually applied and name the customers any shortfall affected"
+          },
+          "description": {
+            "en": "Sample what the routes really did rather than what they were configured to do — a negotiated cipher, a fallback that fired, a feed that quietly moved to a different endpoint. Compare each observation against the term that route's customers agreed, and where it fell short, work out which customers' PII travelled on it during the window. The finding does not end in an internal backlog: the promise was made to the customer, so it goes to whoever owns that agreement for them to be told. Attach the verification report covering every route in the inventory."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Verification report per route: protection observed, the agreed term it was measured against, and the customers each shortfall affected"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Sample live traffic on each route in the inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the protection observed against the agreed terms."
+              }
+            },
+            {
+              "text": {
+                "en": "List every route running below what its customers agreed."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the customers whose PII travelled on that route."
+              }
+            },
+            {
+              "text": {
+                "en": "Send each finding to the owner who must tell that customer."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-26",
+      "title": "Processor Disclosure of Processing Countries",
+      "description": "Implements 8.5.2: as a processor, the countries in which customer PII is processed on that customer's instructions — including sub-processor and support locations — are disclosed to the customer in a form they can rely on, before they have to ask and before a new country takes effect.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "8.5.2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Determine the countries each customer's PII is processed in under their instructions"
+          },
+          "description": {
+            "en": "A customer cannot be told where their PII goes until the processor itself can say, service by service, which countries it lands in — the regions the service runs and backs up in, the places support and engineering reach it from, and the countries each sub-processor works in. Scope this per service rather than per company: a customer buying one service should not be handed the countries another service uses, because they will repeat whatever they are given. Attach the per-service country schedule with the processing entity named against each country."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Per-service schedule of processing countries for customer-instructed PII, naming the entity processing in each country, dated"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Take each service delivered to customers as one unit of disclosure."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the hosting, backup and replica regions that service's data sits in."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the countries support and engineering staff reach that data from."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the countries each sub-processor processes that data in."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the entity doing the processing in every country listed."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Write the customer-facing statement of the countries their PII may be processed in"
+          },
+          "description": {
+            "en": "This statement exists for the customer's use, not the processor's file: it is what they rely on to answer their own individuals, complete their own records and decide whether a destination is acceptable to them. So state the location facts and stop there — naming the country is the processor's job, judging whether processing there is lawful is the customer's, and a statement that reaches a conclusion for them oversteps the instruction the processor works under. Version and date it, because a customer quoting an undated statement cannot show what they had been told at the time. Attach the issued statement for each service."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Issued country statement per service, carrying its version number, effective date and the entity named against every country"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List each country against the service and the entity processing there."
+              }
+            },
+            {
+              "text": {
+                "en": "Write it in terms a customer can lift into their own records."
+              }
+            },
+            {
+              "text": {
+                "en": "Stamp the statement with a version number and an effective date."
+              }
+            },
+            {
+              "text": {
+                "en": "State the location facts and leave the lawfulness call to the customer."
+              }
+            },
+            {
+              "text": {
+                "en": "Make it available at contracting, before a customer has to ask."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Issue the revised country statement to each affected customer before processing moves"
+          },
+          "description": {
+            "en": "A region added, a support desk opened elsewhere, a sub-processor shifting work — each puts customer PII into a country their copy of the statement does not name. Revise and send it before the data moves rather than after, so a customer who objects can still act while it matters; whether the new country is acceptable is a question the processor hands back to them, not one it settles on their behalf. Record who was sent which version, on what date, and how each objection was answered. Attach the dispatch record for the period."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Dispatch record per country change: version issued, customers it went to, date sent, date processing moved, and objections with their resolution"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Flag any new region, support location or sub-processor country."
+              }
+            },
+            {
+              "text": {
+                "en": "Revise the statement before the new country carries any data."
+              }
+            },
+            {
+              "text": {
+                "en": "Send the revised version to every customer whose data will move."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date sent and the date processing actually moved."
+              }
+            },
+            {
+              "text": {
+                "en": "Log each customer objection and how it was answered."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Reconcile the statement each customer holds against where their PII is processed today"
+          },
+          "description": {
+            "en": "Read this in both directions. A country in live use that a customer's copy does not name is an undisclosed processing location and the finding that matters; a country still named but no longer used misleads them the other way and erodes trust in the whole statement. Count as well the customers who had to ask where their data is processed — a question asked is a disclosure that failed to arrive in time, and that count is the honest measure of a control whose point is telling them first. Attach the reconciliation with the corrected statements issued."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Reconciliation per customer: the statement version they hold, undisclosed and stale countries found, corrections issued, and the count of customers who had to ask"
+          },
+          "suggestedRole": "Security engineering",
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the statement version each customer currently holds."
+              }
+            },
+            {
+              "text": {
+                "en": "Read the live hosting, backup and access countries per service."
+              }
+            },
+            {
+              "text": {
+                "en": "List every country in use that a customer's copy omits."
+              }
+            },
+            {
+              "text": {
+                "en": "List every country named that no longer processes their data."
+              }
+            },
+            {
+              "text": {
+                "en": "Count the customers who had to ask where their PII is processed."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-issue a corrected statement to each customer affected."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-27",
+      "title": "Processor Records of Customer PII Disclosure",
+      "description": "Implements 8.5.3: every release of a customer's PII to a third party is recorded at the moment it happens, with the customer instruction or legal demand it rested on, and the record is produced for the customer whose data was released so they can account for it themselves.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "8.5.3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Identify the routes that release customer PII to a third party and the authority each runs on"
+          },
+          "description": {
+            "en": "Customer PII leaves a processor by more paths than the service description imagines: a support engineer exporting a tenant's records for a vendor, a scheduled feed to a supplier, counsel answering a subpoena, a restore handed to a forensics firm. Walk each path and record who can trigger it, which third party it reaches, and whether it runs on a written customer instruction or on a legally binding demand. A path that runs on neither is the finding, because no downstream record can carry an authority that never existed. Attach the route map with the authority recorded against each path."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Route map of the paths by which customer PII reaches a third party, naming the recipient and the instruction or demand each path runs on"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Walk the support, engineering, vendor and legal paths that release tenant data."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the third party that each route can reach."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the written instruction or legal demand each route runs on."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the routes able to release data with no authority recorded."
+              }
+            },
+            {
+              "text": {
+                "en": "Circulate the marked routes to the teams that operate them."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Design the disclosure register so each entry names the instructing customer and what was handed over"
+          },
+          "description": {
+            "en": "The register is not the organisation's own memory aid — it is the thing handed to a customer who must account for PII the organisation holds only on their behalf, so an entry has to stand up without anyone explaining it: which tenant's data was released, which records and fields specifically, who received them, on what date, and the instruction or legal demand that authorised it. Keep tenants separable in storage, because the one defect that makes this artefact unusable is a customer's extract carrying another customer's rows. Attach the register definition with its mandatory fields."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Disclosure register definition listing the mandatory fields and the tenant partitioning that keeps one customer's entries out of another's extract"
+          },
+          "suggestedRole": "Engineering lead",
+          "steps": [
+            {
+              "text": {
+                "en": "Fix the fields an entry must carry before a release proceeds."
+              }
+            },
+            {
+              "text": {
+                "en": "Require the tenant whose PII was released on every entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Require the instruction or demand the release rested on."
+              }
+            },
+            {
+              "text": {
+                "en": "Store the records and fields handed over, not a category label."
+              }
+            },
+            {
+              "text": {
+                "en": "Partition the register so one tenant's rows stay separable."
+              }
+            },
+            {
+              "text": {
+                "en": "Give each entry a reference the customer can quote back."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Capture each disclosure at the point of release, with the recipient and the instruction it answered"
+          },
+          "description": {
+            "en": "A release written up days later is written up from memory: the recipient becomes a company name with nobody attached to it, the instruction becomes \"the customer asked for it\" with no ticket behind it, and the volume handed over is a guess. Only an entry made while the request is still open still carries the ticket reference, the exact files the engineer sent, and the date they left. Where entries are made late or not at all, the gap surfaces at the worst possible moment — a customer asking what was disclosed about them — and the answer has to be rebuilt from mailboxes and shell history with no way to show the list is complete."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Dated disclosure register entries raised during the period, each carrying its recipient contact, instruction reference and what was sent"
+          },
+          "suggestedRole": "IT Operations",
+          "steps": [
+            {
+              "text": {
+                "en": "Create the register entry before the data is sent, while the request is still open."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the receiving organisation and the person there who took delivery."
+              }
+            },
+            {
+              "text": {
+                "en": "Quote the customer instruction or ticket that authorised this release."
+              }
+            },
+            {
+              "text": {
+                "en": "Note what actually left: the files, the record count and the date sent."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark any entry written after the fact as late, and say why it was missed."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Produce each customer's own disclosure extract and check it against the log before issuing it"
+          },
+          "description": {
+            "en": "What this control finally owes the customer is the extract, not the register behind it, so test the artefact that leaves the building. For each tenant, generate the extract covering the period and check it in both directions: every logged release of that tenant's PII appears in it, and nothing belonging to another tenant has reached it. Trace a sample of entries back to the export, ticket or demand that produced them, so the extract is verified against the act rather than against another copy of itself. Record every mismatch and the correction made. Attach the issued extracts with the check results."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Issued per-customer disclosure extracts with the completeness, cross-tenant and traceback check results recorded against each"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Generate the period extract for each customer tenant."
+              }
+            },
+            {
+              "text": {
+                "en": "Check every logged release for that tenant appears in it."
+              }
+            },
+            {
+              "text": {
+                "en": "Check no other tenant's entry has reached the extract."
+              }
+            },
+            {
+              "text": {
+                "en": "Trace sampled entries back to the export or demand behind them."
+              }
+            },
+            {
+              "text": {
+                "en": "Record each mismatch found and the correction made."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "PIMS-28",
+      "title": "Notification of disclosure requests",
+      "description": "Implements 8.5.4: a legally binding demand to hand over a customer's PII reaches that customer before the data is handed over, and where the law forbids telling them, the prohibition relied on is recorded and revisited.",
+      "category": "Security",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Privacy Officer / DPO",
+      "requirementCodes": [
+        "8.5.4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Name every channel a legally binding demand for customer PII can arrive through"
+          },
+          "description": {
+            "en": "A subpoena, production order or police demand rarely arrives where the privacy programme is looking: it reaches a registered agent, a support queue, a site reception desk, or an engineer served in person. Walk the ways in and record, for each, who receives it first and how they escalate. The notification duty runs from receipt, so a channel nobody watches spends the whole window unnoticed."
+          },
+          "phase": "SCOPE",
+          "sortOrder": 0,
+          "evidenceHint": {
+            "en": "Intake map of every channel that can receive legal process, naming the first recipient, the escalation route and any customer-specific notification window"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "List the inboxes, postal addresses and registered agents that receive legal process."
+              }
+            },
+            {
+              "text": {
+                "en": "Ask each support and site team where a demand for customer data has landed before."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who is contacted first at each channel and how fast they must escalate it."
+              }
+            },
+            {
+              "text": {
+                "en": "Note every customer contract that sets its own notification window or named contact."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Establish the legal review that settles whether the customer may be told about a demand"
+          },
+          "description": {
+            "en": "Two decisions sit between a demand arriving and a customer hearing about it: whether the demand binds the organisation at all, and whether any law or order forbids telling the customer it exists. Fix who answers each, what they must look at, and what happens when the response deadline arrives before counsel does. Draft the notice itself now rather than under time pressure, so the customer gets the requester, the scope and the deadline in the first message."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Documented notification procedure carrying the counsel decision questions, the approval route when counsel is unreachable, and the customer notice template it produces"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Write the questions counsel answers before any customer PII leaves the organisation."
+              }
+            },
+            {
+              "text": {
+                "en": "State how a gag order or non-disclosure clause is identified on the demand itself."
+              }
+            },
+            {
+              "text": {
+                "en": "Draft the notice naming the requester, the PII sought and the response deadline."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who may decide when counsel cannot answer before the demand's deadline expires."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Log every legally binding demand for customer PII with the date the customer was told"
+          },
+          "description": {
+            "en": "Open the register entry on the day the demand arrives, before anyone knows how it will end, because an entry created afterwards tends to be created only for the demands that were answered comfortably. Each entry carries the requester, the authority cited, the customer affected, and either the date and channel the customer was notified or the specific prohibition that stopped it. Silence in this register is indistinguishable from a demand nobody handled."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Demand register with one dated entry per binding request, giving the requester, the authority cited, and either the customer notification date or the prohibition relied on"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Open a register entry the day a binding demand arrives, before the legal review."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the requester, the authority cited and the customer whose PII is reached."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the date and channel the customer was notified, or why they were not."
+              }
+            },
+            {
+              "text": {
+                "en": "Cite the specific prohibition relied on whenever notification was withheld."
+              }
+            },
+            {
+              "text": {
+                "en": "Cross-reference the entry to the disclosure record kept for the same demand."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Re-check the demands answered without notice and confirm each prohibition still holds"
+          },
+          "description": {
+            "en": "A prohibition on telling the customer is usually temporary — an order expires, an investigation closes, a court lifts the seal — and the duty to notify returns when it does, with nobody sending a reminder. Read every withheld entry in the register, establish the current status of the prohibition behind it, and notify the customers whose prohibition has lapsed. Report the notification times alongside, so a window missed by days is visible next to one missed by months."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 3,
+          "evidenceHint": {
+            "en": "Period review of withheld notifications giving each prohibition's current status, the customers notified once one lapsed, and notification times measured against the contractual window"
+          },
+          "suggestedRole": "Legal/DPO",
+          "steps": [
+            {
+              "text": {
+                "en": "Read each withheld entry and find the expiry or review date of its prohibition."
+              }
+            },
+            {
+              "text": {
+                "en": "Notify the customer for every prohibition that has since lapsed or been lifted."
+              }
+            },
+            {
+              "text": {
+                "en": "Measure the days from demand received to customer notified across the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Report any demand whose notice went out after the contractual window closed."
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pack": {
@@ -1732,7 +4989,25 @@
       "PIMS-07.4",
       "PIMS-08",
       "PIMS-09",
-      "PIMS-10"
+      "PIMS-10",
+      "PIMS-11",
+      "PIMS-12",
+      "PIMS-13",
+      "PIMS-14",
+      "PIMS-15",
+      "PIMS-16",
+      "PIMS-17",
+      "PIMS-18",
+      "PIMS-19",
+      "PIMS-20",
+      "PIMS-21",
+      "PIMS-22",
+      "PIMS-23",
+      "PIMS-24",
+      "PIMS-25",
+      "PIMS-26",
+      "PIMS-27",
+      "PIMS-28"
     ]
   }
 }

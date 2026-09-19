@@ -83,12 +83,12 @@ const FROZEN_UNGROUNDED_POPULATIONS: Record<
         standard: 'ISO 9001',
         libraryPattern: /9001/,
         reason:
-            'ISO 9001 (22). No library under src/data/libraries, and the templates carry a title plus a requirement reference and nothing else — no objective, successCriteria or testingMethodology. Authoring here would mean writing from knowledge of the standard rather than from any source this repo holds.',
+            'ISO 9001 (26). No library under src/data/libraries, and the templates carry a title plus a requirement reference and nothing else — no objective, successCriteria or testingMethodology. Authoring here would mean writing from knowledge of the standard rather than from any source this repo holds.',
     },
     'RTS-': {
         standard: 'ISO 39001',
         libraryPattern: /39001/,
-        reason: 'ISO 39001 road-traffic safety (17). Same absence of a library, same title-only metadata.',
+        reason: 'ISO 39001 road-traffic safety (18). Same absence of a library, same title-only metadata.',
     },
     'SCS-': {
         standard: 'ISO 28000',
