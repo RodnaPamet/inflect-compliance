@@ -120,3 +120,79 @@ model OrgAuditLog {
   @@index([organizationId, action])
   @@index([organizationId, entryHash])
 }
+
+// ─────────────────────────────────────────────────────────────────
+// #2657 — the audit trail's durable fallback
+//
+// A denial can be refused, the user told, and the AUTHZ_DENIED row
+// silently lost, because the write was wrapped in a catch that logged
+// and returned. A missing security audit row is worse than a failed
+// request: a failed request is visible to the user and to error
+// monitoring, a missing row is visible to nobody.
+//
+// This table is the "durable before the response" half. A caller that
+// cannot reach the hash chain writes HERE instead, and the row is
+// drained onto the chain out-of-band by `audit-outbox-flush`. The
+// caller only fails closed if BOTH writes fail, which is a database
+// outage rather than the lock contention #2653 describes.
+//
+// WHY THIS IS MORE AVAILABLE THAN THE THING IT BACKS UP: appendAuditEntry
+// takes a per-tenant pg_advisory_xact_lock INSIDE its transaction, so
+// concurrent appends for one tenant serialise and the last can fail to
+// START. This insert takes no lock and contends with nothing, so the
+// failure modes are genuinely different rather than merely retried.
+// ─────────────────────────────────────────────────────────────────
+model AuditOutbox {
+  id       String @id @default(cuid())
+  tenantId String
+
+  /// The `AppendAuditInput` exactly as the caller built it. Stored whole
+  /// rather than as columns: the drain must reproduce the caller's intent,
+  /// and a column set would silently drop any field added to the input
+  /// type later.
+  payloadJson Json
+
+  /// When the EVENT happened — not when the row was written, and not when
+  /// it was drained.
+  ///
+  /// This is the field that makes a drained entry honest.
+  /// `appendAuditEntry` stamps `createdAt` itself, AFTER taking the lock,
+  /// because strictly-monotonic ordering per tenant is what the lock buys.
+  /// A drained entry therefore lands on the chain stamped at DRAIN time.
+  /// That is correct for the chain and wrong for the reader, so the drain
+  /// carries this value into the entry's `detailsJson.occurredAt`. The
+  /// chain says when it was recorded; the payload says when it happened.
+  occurredAt DateTime
+
+  /// Denormalised from `payloadJson` so an operator can ask "how many
+  /// AUTHZ_DENIED are stuck?" without parsing every payload.
+  action String
+
+  status        AuditOutboxStatus @default(PENDING)
+  attempts      Int               @default(0)
+  lastError     String?
+  nextAttemptAt DateTime          @default(now())
+  createdAt     DateTime          @default(now())
+  appliedAt     DateTime?
+
+  /// The `AuditLog.id` this became, once drained. Present only when
+  /// status is APPLIED — the link that lets an auditor confirm a queued
+  /// denial actually reached the chain.
+  appliedAuditId String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  /// NO `dedupeKey`, deliberately — the one place this model departs from
+  /// `NotificationOutbox`, which has a unique one.
+  ///
+  /// Two identical denials a second apart are two real security events.
+  /// Email dedupes because sending twice is worse than sending once; the
+  /// audit trail is the opposite, because failing to record one is worse
+  /// than recording both. A unique key here would silently drop the
+  /// second — the exact defect #2657 exists to remove, reintroduced in a
+  /// constraint.
+  @@index([status, nextAttemptAt])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, action, status])
+}

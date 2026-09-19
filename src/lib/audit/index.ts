@@ -47,4 +47,12 @@ export { buildAuditEntry } from './event-builder';
 
 // Hash-chained writer
 export { appendAuditEntry, verifyAuditChain } from './audit-writer';
+
+// #2657 — the no-silent-drop wrapper around `appendAuditEntry`, and the
+// error it throws when neither the chain nor the outbox would take an entry.
+export {
+    appendAuditEntryOrQueue,
+    AuditNotRecordedError,
+    type AuditRecordOutcome,
+} from './audit-outbox';
 export type { AppendAuditInput, AppendAuditResult, ChainVerificationResult } from './audit-writer';

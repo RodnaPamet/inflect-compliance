@@ -35,8 +35,7 @@ import type { PermissionSet } from '@/lib/permissions';
 import type { RequestContext } from '@/app-layer/types';
 import { getTenantCtx } from '@/app-layer/context';
 import { forbidden } from '@/lib/errors/types';
-import { appendAuditEntry } from '@/lib/audit';
-import { logger } from '@/lib/observability/logger';
+import { appendAuditEntryOrQueue } from '@/lib/audit';
 
 // ─── Permission key shape ───────────────────────────────────────────
 
@@ -94,48 +93,62 @@ export type RouteHandler<
 // ─── Audit + logging ────────────────────────────────────────────────
 
 /**
- * Emit a structured AUTHZ_DENIED audit entry. Failures here are
- * logged but never propagate to the caller — denial response must
- * always reach the client even if audit storage is unavailable.
+ * Emit a structured AUTHZ_DENIED audit entry, or fail closed (#2657).
+ *
+ * THIS USED TO SWALLOW. The catch here logged a warning and let the
+ * request proceed, so a denial could happen with no audit row and the
+ * only trace was a log line. The denial still happened, the user was
+ * still refused, and the evidence that we refused them was gone.
+ *
+ * `appendAuditEntryOrQueue` replaces that with three outcomes the
+ * caller can distinguish: the entry reaches the hash chain, or a
+ * durable `AuditOutbox` row exists instead and is drained out-of-band,
+ * or it throws. There is no outcome where the entry is gone and nobody
+ * knows.
+ *
+ * WHY THROWING IS NOW CORRECT HERE, HAVING BEEN WRONG BEFORE. The old
+ * comment's reasoning — "the denial response must always reach the
+ * client even if audit storage is unavailable" — was sound against the
+ * alternative it faced, which was propagating EVERY append failure. It
+ * is not sound against this one. The throw now happens only when the
+ * chain write AND the outbox insert both fail, and those have different
+ * failure modes: the append serialises on a per-tenant advisory lock
+ * (#2653), the outbox insert takes no lock at all. Both failing means
+ * the database is unreachable, and a request whose authorization
+ * decision cannot be recorded should not quietly succeed in being
+ * refused — it should surface as an error, which is visible, rather
+ * than as a gap in the trail, which is not.
  */
 async function auditPermissionDenied(
     ctx: RequestContext,
     keys: readonly PermissionKey[],
     reqMeta: { method: string; path: string },
 ): Promise<void> {
-    try {
-        await appendAuditEntry({
-            tenantId: ctx.tenantId,
-            userId: ctx.userId,
-            actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
-            entity: 'Permission',
-            entityId: keys.join(','),
-            action: 'AUTHZ_DENIED',
-            details: `Permission denied for ${reqMeta.method} ${reqMeta.path}`,
-            detailsJson: {
-                // `access` is the canonical category for authz events
-                // per the audit details schema.
-                category: 'access',
-                event: 'authz_denied',
-                permissionKeys: keys,
-                role: ctx.role,
-                apiKeyId: ctx.apiKeyId ?? null,
-                method: reqMeta.method,
-                path: reqMeta.path,
-            },
-            requestId: ctx.requestId,
-            metadataJson: {
-                role: ctx.role,
-                apiKeyId: ctx.apiKeyId ?? null,
-            },
-        });
-    } catch (err) {
-        logger.warn('audit: failed to record AUTHZ_DENIED', {
-            requestId: ctx.requestId,
-            tenantId: ctx.tenantId,
-            error: err instanceof Error ? err.message : String(err),
-        });
-    }
+    await appendAuditEntryOrQueue({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
+        entity: 'Permission',
+        entityId: keys.join(','),
+        action: 'AUTHZ_DENIED',
+        details: `Permission denied for ${reqMeta.method} ${reqMeta.path}`,
+        detailsJson: {
+            // `access` is the canonical category for authz events
+            // per the audit details schema.
+            category: 'access',
+            event: 'authz_denied',
+            permissionKeys: keys,
+            role: ctx.role,
+            apiKeyId: ctx.apiKeyId ?? null,
+            method: reqMeta.method,
+            path: reqMeta.path,
+        },
+        requestId: ctx.requestId,
+        metadataJson: {
+            role: ctx.role,
+            apiKeyId: ctx.apiKeyId ?? null,
+        },
+    });
 }
 
 /**
