@@ -54,7 +54,7 @@ export async function generateGapAnalysisPdf(
 
     // ─── Framework-derived labels (PR-H) — SoA/Annex-A wording gated on the ISO family ───
     const labels = gapAnalysisLabels(
-        { frameworkName, isIsoFamily: report.isIsoFamily, requirementCount: s.totalRequirements },
+        { frameworkName, hasStatementOfApplicability: report.hasStatementOfApplicability, requirementCount: s.totalRequirements },
         totalGaps,
     );
     const requirementsPhrase = labels.requirementsPhrase;

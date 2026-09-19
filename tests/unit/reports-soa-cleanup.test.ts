@@ -31,7 +31,7 @@ describe('SoA page — ISO-only guard + framework threading', () => {
         expect(src).toMatch(/getSoA\(\s*ctx\s*,\s*\{[\s\S]*framework[\s\S]*\}/);
         // redirects a non-ISO framework away from the SoA surface
         expect(src).toMatch(/from 'next\/navigation'/);
-        expect(src).toMatch(/if\s*\(\s*!report\.isIsoFamily\s*\)/);
+        expect(src).toMatch(/if\s*\(\s*!report\.hasStatementOfApplicability\s*\)/);
         expect(src).toMatch(/redirect\(`\/t\/\$\{tenantSlug\}\/reports`\)/);
     });
 });

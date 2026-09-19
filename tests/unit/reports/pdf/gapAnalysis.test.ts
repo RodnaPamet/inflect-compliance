@@ -62,7 +62,7 @@ function readinessReport(over: Partial<any> = {}): any {
     };
     return {
         framework: over.framework ?? { key: 'ISO27001', name: 'ISO 27001', version: '2022' },
-        isIsoFamily: over.isIsoFamily ?? true,
+        hasStatementOfApplicability: over.hasStatementOfApplicability ?? true,
         generatedAt: over.generatedAt ?? new Date().toISOString(),
         coverage: {
             total: summary.totalRequirements,
@@ -155,7 +155,7 @@ describe('generateGapAnalysisPdf', () => {
         // Branch: options.framework absent → resolveInstalledFrameworkKey(ctx).
         mockResolveInstalledFrameworkKey.mockResolvedValue('NIS2');
         mockGenerateReadinessReport.mockResolvedValue(
-            readinessReport({ framework: { key: 'NIS2', name: 'NIS2', version: null }, isIsoFamily: false }),
+            readinessReport({ framework: { key: 'NIS2', name: 'NIS2', version: null }, hasStatementOfApplicability: false }),
         );
 
         const doc = await generateGapAnalysisPdf(ctx);

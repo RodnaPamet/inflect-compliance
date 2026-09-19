@@ -20,6 +20,7 @@
  *     Concatenates applicabilityJustification from NOT_APPLICABLE controls.
  *     If any justification is missing → missingJustification++.
  */
+import { frameworkHasStatementOfApplicability } from '@/lib/compliance/statement-of-applicability';
 import { RequestContext } from '../types';
 import { assertCanRead } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
@@ -93,14 +94,14 @@ export interface InstalledFramework {
     /** Display name, version-qualified (e.g. "ISO 27001:2022"). */
     name: string;
     /** True for the ISO-27001 family — gates the SoA (Annex-A) artifacts. */
-    isIsoFamily: boolean;
+    hasStatementOfApplicability: boolean;
 }
 
 /**
  * PR-G — the frameworks a tenant has actually installed (≥1
  * ControlRequirementLink), for the Reports framework selector. Reuses the same
  * "installed" detection as {@link resolveInstalledFrameworkKey}. Version-
- * qualifies the name and derives `isIsoFamily` from `kind` (mirrors the SoA
+ * qualifies the name and derives `hasStatementOfApplicability` from `kind` (mirrors the SoA
  * DTO) so a non-ISO framework never gets an ISO-Annex-A artifact offered.
  */
 export async function listInstalledFrameworks(
@@ -120,7 +121,7 @@ export async function listInstalledFrameworks(
     return rows.map((f) => ({
         key: f.key,
         name: f.version ? `${f.name}:${f.version}` : f.name,
-        isIsoFamily: f.kind === 'ISO_STANDARD',
+        hasStatementOfApplicability: frameworkHasStatementOfApplicability(f.key),
     }));
 }
 
@@ -397,7 +398,7 @@ export async function getSoA(ctx: RequestContext, options: SoAOptions = {}): Pro
         // ISO-family gate — the SoA is an ISO-27001-Annex-A artifact; for a
         // non-ISO pack (SOC 2 / NIS2 / …) the consumer shows coverage/readiness
         // instead of a mislabeled applicability statement.
-        isIsoFamily: fw.kind === 'ISO_STANDARD',
+        hasStatementOfApplicability: frameworkHasStatementOfApplicability(fw.key),
         generatedAt: new Date().toISOString(),
         entries,
         summary,

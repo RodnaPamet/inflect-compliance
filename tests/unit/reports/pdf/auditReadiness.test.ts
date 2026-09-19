@@ -78,7 +78,7 @@ function readinessReport(over: Partial<any> = {}): any {
     };
     return {
         framework: over.framework ?? { key: 'ISO27001', name: 'ISO 27001', version: '2022' },
-        isIsoFamily: over.isIsoFamily ?? true,
+        hasStatementOfApplicability: over.hasStatementOfApplicability ?? true,
         generatedAt: over.generatedAt ?? new Date().toISOString(),
         coverage: {
             total: summary.totalRequirements,
@@ -156,7 +156,7 @@ describe('generateAuditReadinessPdf', () => {
         // Branch: options.framework absent → resolveInstalledFrameworkKey(ctx).
         mockResolveInstalledFrameworkKey.mockResolvedValue('SOC2');
         mockGenerateReadinessReport.mockResolvedValue(
-            readinessReport({ framework: { key: 'SOC2', name: 'SOC 2', version: null }, isIsoFamily: false }),
+            readinessReport({ framework: { key: 'SOC2', name: 'SOC 2', version: null }, hasStatementOfApplicability: false }),
         );
 
         const doc = await generateAuditReadinessPdf(ctx);
@@ -170,7 +170,7 @@ describe('generateAuditReadinessPdf', () => {
     it('framework without a version renders the bare name', async () => {
         // Branch: framework.version falsy → frameworkName === framework.name.
         mockGenerateReadinessReport.mockResolvedValue(
-            readinessReport({ framework: { key: 'SOC2', name: 'SOC 2', version: null }, isIsoFamily: false }),
+            readinessReport({ framework: { key: 'SOC2', name: 'SOC 2', version: null }, hasStatementOfApplicability: false }),
         );
 
         const doc = await generateAuditReadinessPdf(ctx, { framework: 'SOC2' });

@@ -60,7 +60,7 @@ export default async function SoAPrintPage({
 
     // Same ISO-only guard as the interactive SoA page — the print view is a
     // Statement of Applicability, which a non-ISO framework doesn't have.
-    if (!report.isIsoFamily) {
+    if (!report.hasStatementOfApplicability) {
         redirect(`/t/${tenantSlug}/reports`);
     }
 

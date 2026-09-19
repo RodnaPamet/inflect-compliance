@@ -84,20 +84,20 @@ describe('R2-P3 (5) coverage error vs genuine 0%', () => {
 });
 
 describe('R2-P3 (6) SoA scoped to ISO-family', () => {
-    it('soa.ts computes isIsoFamily and the PAGE redirects a non-ISO framework', () => {
+    it('soa.ts computes hasStatementOfApplicability and the PAGE redirects a non-ISO framework', () => {
         // This used to assert that SoAClient renders a non-ISO notice. That
         // notice was UNREACHABLE: `SoAClient` is mounted in exactly one place
-        // (soa/page.tsx), and that page redirects on `!report.isIsoFamily`
+        // (soa/page.tsx), and that page redirects on `!report.hasStatementOfApplicability`
         // BEFORE rendering it — so the guard was pinning dead code, and would
         // have kept pinning it indefinitely.
         //
         // The invariant worth protecting is the one that actually holds: a
         // non-ISO framework never reaches the SoA surface at all. Asserted at
         // the redirect, which is where the behaviour lives.
-        expect(read(SOA_USECASE)).toMatch(/isIsoFamily/);
+        expect(read(SOA_USECASE)).toMatch(/hasStatementOfApplicability/);
         for (const page of [SOA_PAGE, SOA_PRINT_PAGE]) {
             const src = read(page);
-            expect(src).toMatch(/if\s*\(!report\.isIsoFamily\)/);
+            expect(src).toMatch(/if\s*\(!report\.hasStatementOfApplicability\)/);
             expect(src).toMatch(/redirect\(/);
         }
         // And the client must NOT reintroduce an in-component branch for a case
