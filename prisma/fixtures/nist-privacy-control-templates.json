@@ -2932,15 +2932,15 @@
       ]
     },
     {
-      "code": "PRIV-08",
-      "title": "Data Processing Policies, Processes, and Procedures",
+      "code": "PRIV-08.1",
+      "title": "Authorising, maintaining and revoking data processing",
+      "description": {
+        "en": "Implements CT.PO-P1: Policies, processes, and procedures for authorizing data processing (e.g., organizational decisions, individual consent), revoking authorizations, and maintaining authorizations are established and in place."
+      },
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "CT.PO-P1",
-        "CT.PO-P2",
-        "CT.PO-P3",
-        "CT.PO-P4"
+        "CT.PO-P1"
       ],
       "tasks": [
         {
@@ -2956,6 +2956,62 @@
         },
         {
           "title": {
+            "en": "Bind each data action in the inventory to the authorisation that permits it"
+          },
+          "description": {
+            "en": "Work through the processing the organisation actually performs and, against each one, name the authorisation it runs under, the limits that authorisation carries, and the date or event at which it lapses. Without that binding an action continues simply because nobody stopped it, and a withdrawal has no target — the decision exists on paper while no one can say which processing it was meant to end. Attach the binding at the level the action is performed rather than at system level, since one system commonly runs several actions resting on different grounds. Where an action cannot be traced to any authorisation, leave the entry standing and unresolved instead of blank, because that gap is the finding."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Legal/DPO",
+          "evidenceHint": {
+            "en": "Authorisation map listing every performed processing activity, the decision or agreement it rests on, the limits attached to it, its lapse date or triggering event, and any activity left untraced."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Check a sample of performed actions against the written procedures"
+          },
+          "description": {
+            "en": "Take a sample of data reviews, transfers, disclosures, alterations, deletions and individual requests actually carried out, and compare what was done with what the procedure says. Record each divergence, whether the outcome was still correct, and the procedure step that was skipped or unclear."
+          },
+          "phase": "REVIEW",
+          "sortOrder": 2,
+          "evidenceHint": {
+            "en": "Sample review naming the actions examined, the procedure step each was measured against, and every divergence found with its consequence."
+          },
+          "suggestedRole": "Legal/DPO"
+        }
+      ]
+    },
+    {
+      "code": "PRIV-08.2",
+      "title": "Procedures for review, transfer, alteration and deletion",
+      "description": {
+        "en": "Implements CT.PO-P2: Policies, processes, and procedures for enabling data review, transfer, sharing or disclosure, alteration, and deletion are established and in place (e.g., to maintain data quality, manage data retention)."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.PO-P2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Gather the occasions that oblige the organisation to check, correct, hand over or clear data"
+          },
+          "description": {
+            "en": "Procedures only ever stretch as far as the occasions they were written for, and a list drawn from what the systems already do quietly omits the awkward ones. Work outward from the retention schedule, contracts that end, quality checks that turn up wrong records, provider exits and divestments, because each names a moment when held data has to be looked at, put right, passed on or got rid of. Put down the occasions nobody handles today as well: those are what the written procedure has to close rather than describe. Tie each occasion to the holdings it reaches, so the drafting that follows has a denominator instead of a wish list."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Legal/DPO",
+          "evidenceHint": {
+            "en": "Schedule of handling occasions, each with the obligation or business event behind it, the holdings it reaches, and a marker where nothing is in place today."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
             "en": "Write the procedure for reviewing, transferring, sharing, altering and deleting data"
           },
           "description": {
@@ -2967,14 +3023,98 @@
         },
         {
           "title": {
+            "en": "Ask someone who did not write the steps to run a transfer and an erasure"
+          },
+          "description": {
+            "en": "A procedure can be complete on paper and still leave the organisation unable to act, because the one person who has done it before supplies the missing half from memory and nobody notices the text is short. Pick a holding, hand the written steps to someone who took no part in drafting them, and have them perform a transfer out and an erasure with no spoken help, noting every point where they had to stop and ask. Vary which of the handling steps is exercised each period so review and correction are covered too. Where the reader could not finish, the defect belongs to the text and the wording is what gets changed."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Dated walkthrough record naming the holding used, the person who followed the text unaided, each question they had to ask, and the wording amended afterwards."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-08.3",
+      "title": "Handling individuals' preferences and requests",
+      "description": {
+        "en": "Implements CT.PO-P3: Policies, processes, and procedures for enabling individuals' data processing preferences and requests are established and in place."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.PO-P3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Set out the preferences and requests individuals may make and the time limit on each"
+          },
+          "description": {
+            "en": "Name every choice a person can express and every ask they can put to the organisation, say which are honoured as of right and which are discretionary, and fix how long each has to be answered in. Without this list, staff decide case by case and the promise made in public drifts away from what the procedure can actually deliver. Settle here who may act for someone else, since a parent, executor or appointed agent arrives with no obvious place in an unscoped process."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Legal/DPO",
+          "evidenceHint": {
+            "en": "Approved catalogue listing each choice and ask available to a person, its status as obligatory or discretionary, its answering deadline, and who may raise one on another's behalf."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
             "en": "Write the procedure for handling an individual's preference or request"
           },
           "description": {
             "en": "Record how a request or a stated preference is received, how the requester is established as the person concerned, how the data in scope is located across the inventory, what outcome is given back to them, and what is retained about the exchange. Cover the case where the request cannot be met and what the individual is told instead."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 2,
+          "sortOrder": 1,
           "suggestedRole": "Legal/DPO"
+        },
+        {
+          "title": {
+            "en": "Revisit an older accepted preference against how that person is treated today"
+          },
+          "description": {
+            "en": "A stated preference is a standing instruction, not a ticket that closes. Pick individuals whose preference was accepted in an earlier period and look at what happens to them now, because a restored backup, a reimported marketing list or a newly bought system quietly reinstates the processing they declined and nothing in the case file says so. Judge the outcome by the person's present treatment, not by the note recording that the request was actioned."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Legal/DPO",
+          "evidenceHint": {
+            "en": "Dated sample of individuals whose choice was accepted at least one period ago, showing the present state of processing for each and every case where it had drifted back."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-08.4",
+      "title": "Data life cycle aligned to the system development life cycle",
+      "description": {
+        "en": "Implements CT.PO-P4: A data life cycle to manage data is aligned and implemented with the system development life cycle to manage systems."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.PO-P4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Name the delivery routes the joined life cycle must govern"
+          },
+          "description": {
+            "en": "Systems arrive by more routes than the formal development process: a purchased subscription, a spreadsheet grown into a service, a model pipeline stood up by an analyst, a platform inherited with an acquisition. Set down each route by which a system can enter service, be materially changed or be withdrawn, name who controls each route, and mark which of them the alignment will bind. A route left off this list is one where no decision about data is ever owed, and no later inspection of the development process will notice its absence."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Route list naming each way a system can enter service, be materially changed or be withdrawn, its controlling owner, and whether the alignment binds it."
+          },
+          "sortOrder": 0
         },
         {
           "title": {
@@ -2984,41 +3124,35 @@
             "en": "At each stage of the organisation's own approach to building and changing systems, state what must be decided about the data the system will hold — where it comes from, what it may be used for, how long it stays, and what happens to it when the system goes. Attach the amended life-cycle description showing the data decision required at each stage."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 3,
+          "sortOrder": 1,
           "suggestedRole": "Engineering lead"
         },
         {
           "title": {
-            "en": "Check a sample of performed actions against the written procedures"
+            "en": "Trace last period's launches, changes and retirements back to their data decisions"
           },
           "description": {
-            "en": "Take a sample of data reviews, transfers, disclosures, alterations, deletions and individual requests actually carried out, and compare what was done with what the procedure says. Record each divergence, whether the outcome was still correct, and the procedure step that was skipped or unclear."
+            "en": "Take the period's go-lives, material changes and decommissionings from the change and procurement records rather than from the privacy team's own file, and for each one find the stage that was supposed to produce a decision about the data and read what was actually recorded there. Retirement is where the alignment usually breaks: the system is switched off on schedule while its exports, backups and downstream copies carry on, because settling the fate of the data was never a condition of shutting it down. Write down every case where the decision came late, was taken outside the process, or was never taken at all, and name the stage that let it pass."
           },
           "phase": "REVIEW",
-          "sortOrder": 4,
+          "suggestedRole": "Legal/DPO",
           "evidenceHint": {
-            "en": "Sample review naming the actions examined, the procedure step each was measured against, and every divergence found with its consequence."
+            "en": "Dated trace-back covering every system brought into service, materially changed or withdrawn in the period, naming the stage that owed each decision and what was recorded at it."
           },
-          "suggestedRole": "Legal/DPO"
+          "sortOrder": 2
         }
       ]
     },
     {
-      "code": "PRIV-09",
-      "title": "Data Processing Management",
+      "code": "PRIV-09.1",
+      "title": "Access to data elements for review",
+      "description": {
+        "en": "Implements CT.DM-P1: Data elements can be accessed for review."
+      },
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "CT.DM-P1",
-        "CT.DM-P2",
-        "CT.DM-P3",
-        "CT.DM-P4",
-        "CT.DM-P5",
-        "CT.DM-P6",
-        "CT.DM-P7",
-        "CT.DM-P8",
-        "CT.DM-P9",
-        "CT.DM-P10"
+        "CT.DM-P1"
       ],
       "tasks": [
         {
@@ -3034,6 +3168,342 @@
         },
         {
           "title": {
+            "en": "Decode the values a review retrieval returns into readable text"
+          },
+          "description": {
+            "en": "A store can return a row and still leave a reader with nothing usable: enumerations arrive as integers, references arrive as keys into other tables, and whole answers sit inside uploaded documents, free-text notes and log lines that an identifier-keyed query never opens. Build the lookup that resolves each returned value into the wording a person sees, and extend the retrieval to the elements that live outside the columns it selects. Name the elements for which no resolution exists, because a value that comes back as an opaque identifier has been retrieved but not made reviewable."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Mapping from each stored code, key and document field to the wording a person sees, with every element that still resolves to nothing named."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Check a completed retrieval for gaps and values a reader cannot interpret"
+          },
+          "description": {
+            "en": "State how many elements the inventory says are held for that category of individual and how many came back, so a shortfall is visible instead of assumed away; an empty section usually means a join that matched nothing rather than data that was never held. Give the reading to whoever would use the output in earnest, since the person who built the retrieval reads past codes and abbreviations without noticing them. Write down each value the reader could not make sense of and each element found to be held somewhere the retrieval never reached."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Legal/DPO",
+          "evidenceHint": {
+            "en": "Read-back record naming the store and record used, the count of elements expected beside the count returned, and each value the reader could not make sense of."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-09.2",
+      "title": "Access to data elements for transmission or disclosure",
+      "description": {
+        "en": "Implements CT.DM-P2: Data elements can be accessed for transmission or disclosure."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.DM-P2"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Decide which elements leave with an individual and which are held back"
+          },
+          "description": {
+            "en": "Settle, before anyone writes a query, which elements go out with a person and which are stripped: derived and inferred attributes, free-text notes and uploaded files, and anything carrying a second individual, another party's confidential material or the organisation's own internal analysis. Name who rules on a contested field and where that ruling is written down, or the same argument is re-fought on each request and answered differently every time. Left open, composition falls to whoever happens to run the query that day, and the organisation gives away too much in one case and a fraction of the record in the next."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Legal/DPO",
+          "evidenceHint": {
+            "en": "Signed composition rule listing the fields released, the categories withheld and why, plus the named arbiter for a disputed field."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Extract one individual's records from every store into a form the recipient can open"
+          },
+          "description": {
+            "en": "Every store holding the elements needs a way to return one named person's records on demand — a parameterised query, an export narrowed to a single key, a vendor ticket, or a written manual pull where nothing else exists. The stores with no export feature are the ones that decide whether a disclosure can happen at all, so the SaaS reachable only through its own screens, the archive and the message queue belong on the list as first-class entries rather than exceptions to settle later. Land the results in one package the receiving party can read without any of our software, and note for each store who performs the pull, what identifier it keys on and how long it takes — a path nobody can run inside the promised turnaround is a gap wearing the word manual."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Per-store register naming the mechanism used, the person who runs it, and the elapsed time to produce a named subject's data."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Open an extract already disclosed and find whose data travelled with it"
+          },
+          "description": {
+            "en": "Take something the organisation genuinely sent in the period — a response issued to an individual, a file passed to an insurer, a feed handed to a partner — and read what left field by field against the person it was for. Two defects live in there and neither shows on the request ticket: rows or free-text belonging to somebody else that a join dragged along, and stores whose route returned empty so quietly that nobody noticed they contributed nothing. A package that looks complete is usually reporting the stores that answered, so count the contributing stores against the register rather than trusting the file's size."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Field-level examination of one real outbound payload, naming every record belonging to someone else and every store that returned nothing."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-09.3",
+      "title": "Access to data elements for alteration",
+      "description": {
+        "en": "Implements CT.DM-P3: Data elements can be accessed for alteration."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.DM-P3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Establish which stored copy of a value a correction changes first"
+          },
+          "description": {
+            "en": "For each element, list the places it is held and say which of them a correction is applied to; the others must take their value from that one rather than be edited on their own. A correction written into a derived copy disappears the moment that copy is rebuilt from source, so the choice has to be settled before anyone is asked to make corrections. Flag any holding that cannot be overwritten at all — a signed document, an append-only ledger, a supplier's read-only interface — since those need a superseding entry and a reader that honours it. Note too the elements other records point at by value, where putting one right is not a single-field edit."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Legal/DPO",
+          "evidenceHint": {
+            "en": "Per-element list showing every place it is held, which holding a change is applied to, which ones take their value from that holding, and the holdings that cannot be overwritten with the route agreed for each."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Carry a corrected value into every cache, index and report fed from it"
+          },
+          "description": {
+            "en": "Changing the value at source does not change what a search index, a cached list or last night's aggregate serves; each keeps the old figure until something makes it rebuild. For every copy named in the scope, state what triggers it to take the change and the longest it may lag, and give the operator a way to force it when a correction cannot wait for the schedule. Two-way syncs need the most care: a reconciliation job that treats the far side as authoritative will quietly put the wrong value back, and the correction will look as though it never held."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Propagation note listing each downstream copy, the trigger that makes it take a change at source, the longest it may lag, and the manual override available when it cannot wait."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Alter a live value and check which copies still serve the old one"
+          },
+          "description": {
+            "en": "Pick an element that is genuinely held in more than one place, correct it by the route people actually use, then query each copy for the previous value instead of trusting the design. Record how long each took to agree, and treat a copy that never agreed as a defect in the route rather than a quirk of the exercise. A correction that lasts only until the next rebuild or sync is worse than one refused outright, because nobody is told it came undone."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Walkthrough record naming the element changed, the store it was changed in, each copy queried afterwards, the lag observed, and any copy still holding the superseded figure."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-09.4",
+      "title": "Access to data elements for deletion",
+      "description": {
+        "en": "Implements CT.DM-P4: Data elements can be accessed for deletion."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.DM-P4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Settle what counts as deleted rather than hidden, and which copies must be gone"
+          },
+          "description": {
+            "en": "Most systems can hide a record instantly and remove it slowly, so the word means one thing to a flag on the row, another to a tombstone in a replica, another again to an entry in a search index or a tape in a vault. Fix that standard before anyone builds against it: which stores must hold nothing at all, which may carry a tombstone and for how long, and what lag is accepted for an archive that is only overwritten on its own cycle. Without the line drawn, a soft-delete flag passes as removal and the gap surfaces only when a restore or a data export produces the record whole."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Legal/DPO",
+          "evidenceHint": {
+            "en": "Written standard stating the end state required of each class of store and the longest period a residual copy may survive."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Build a removal route into each store, including the ones that cannot delete in place"
+          },
+          "description": {
+            "en": "A deletion capability is only as good as its weakest store: the transactional database has a delete statement, while the search index, the event log, the analytics warehouse and the object archive frequently have none, so a row removed from the first survives intact in all the rest. For every store holding the element, implement the operation that actually takes it out — a delete, an index purge, a compaction that drops the key, or destruction of the key material where the bytes themselves cannot be rewritten — and write down which of those each store relies on. Where nothing can remove it before a retention window closes, say so plainly instead of letting a hidden row pass as a removal."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Per-store table naming the operation that takes one individual's data out, with any store that can only be emptied by expiry marked as such."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Check whether deleted records returned through a restore, a replica or an upstream feed"
+          },
+          "description": {
+            "en": "Deletion is the data action most easily undone by routine operations nobody thinks of as writes. A backup taken before the removal and restored afterwards, a replica that was detached when the delete propagated, and a nightly feed from a source system that was never told all put the same record back, and the returning copy looks like an ordinary insert. Take the identifiers removed during the period and search for them in the systems restored, rebuilt or re-synchronised since, rather than re-running the deletion that reported success at the time."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Period check listing the identifiers removed, the systems restored or re-synchronised since, and any record found alive again with the action taken."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-09.5",
+      "title": "Destruction of data according to policy",
+      "description": {
+        "en": "Implements CT.DM-P5: Data are destroyed according to policy."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.DM-P5"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Wire each store's retention expiry to a destruction run that leaves nothing recoverable"
+          },
+          "description": {
+            "en": "A delete path that nobody calls is not destruction: data whose retention condition expired sits on, and the policy is honoured only for the records someone happens to ask about. For each store, connect the expiry to something that fires on its own, and pick a technique whose result the platform cannot reverse — overwriting the row is not enough where soft-delete windows, snapshots, replicas and object versioning will hand it back. Name the stores the automated path covers and the ones still needing a person, so the manual cases stay visible rather than being assumed handled."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Per-store configuration or runbook naming what fires the destruction, the technique applied, and the recovery features closed off or accepted."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Record each destruction of data against the condition that required it"
+          },
+          "description": {
+            "en": "When data is destroyed, record what was destroyed, the store it left, the retention condition or request that required it, who performed it and when. Include destructions that were attempted and could not be completed, with what remains."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Destruction record naming the data and store, the condition or request that required it, the performer and the date, including incomplete destructions."
+          },
+          "suggestedRole": "IT Operations"
+        },
+        {
+          "title": {
+            "en": "Find the data still held past the point its destruction was due"
+          },
+          "description": {
+            "en": "Measure from the store, not from the destruction log: the log is written by whoever performed a destruction and says nothing at all about one that was never attempted. Query each store for the oldest surviving item in each data category and compare it against the point at which the policy obliged its destruction, then repeat that against the backups, exports, warehouse copies and non-production environments holding the same data under a different name. Every survivor is either a destruction that never ran or a copy nobody counted as a store, and those two need different fixes."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Legal/DPO",
+          "evidenceHint": {
+            "en": "Dated query output per store naming the oldest surviving item in each category, the date its destruction fell due, and the disposition of every survivor found."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-09.6",
+      "title": "Standardised formats for data transmission",
+      "description": {
+        "en": "Implements CT.DM-P6: Data are transmitted using standardized formats."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.DM-P6"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Select the interchange standards each class of transfer will use"
+          },
+          "description": {
+            "en": "Group the transfers by what they carry and who receives them — regulatory returns, partner feeds, portability copies handed to individuals, replication between the organisation's own systems — and settle on one published specification per group, before every integration picks its own and three dialects have to be kept alive. Write down what disqualifies a candidate: a format nobody maintains outside these walls, or one with no way for a payload to declare which version it follows. Name the transfers deliberately left outside this decision and what keeps them out, so conformance is later measured against a known population rather than whatever happens to be looked at."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Signed decision listing each group of transfers, the specification chosen for it, the tests a candidate had to pass, and the transfers held outside scope."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Bind each data exchange to a named specification and version"
+          },
+          "description": {
+            "en": "For every route on which records leave or enter a system, name the published specification its payloads follow, the version of that specification in force, and the encoding and character set used, then change the sender to emit precisely that rather than whatever its library produces by default. Two endpoints can both claim the same standard and still disagree about dates, repeated elements or optional fields, so a version left unstated is not really a standard at all. Where a counterparty insists on a layout of its own, hold it as a named departure with an owner and an expiry, so the exceptions stay countable rather than quietly becoming the norm."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Register of inbound and outbound routes, each naming the published standard, the release in force, the encoding, and any approved local departure with its end date."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Parse a captured payload against the specification the route declares"
+          },
+          "description": {
+            "en": "Take a message off a live route exactly as it was sent and run it through a validator obtained from the standard's maintainer, not the library the sending team already uses; a sender and its own parser agree with each other even when both are wrong. That the receiving system accepted the traffic proves nothing either, because integrations quietly grow a tolerance for one partner's quirks. Note every structural error, every element the specification does not define, and every field where a coded value has been replaced by free text, since those are the points at which a new recipient would fail."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Validator output for a real message pulled from each sampled route, listing the structural errors, undefined elements and free-text substitutions it reported."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-09.7",
+      "title": "Processing permissions carried with the data",
+      "description": {
+        "en": "Implements CT.DM-P7: Mechanisms for transmitting processing permissions and related data values with data elements are established and in place."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.DM-P7"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Decide which permission values must accompany a record and on which exchanges"
+          },
+          "description": {
+            "en": "Name the exchanges bound by this rule and the values each one must carry with the data: the authorisation relied on, the purposes allowed, how long it may be held, whether it may be passed on again, and when the permission lapses. Left unsettled, the first interface built sets an accidental precedent and every later one carries a different subset, leaving each recipient to guess at whatever is absent. Write down the exchanges deliberately excluded and the reason, so a gap is a decision somebody made rather than an oversight nobody noticed."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Legal/DPO",
+          "evidenceHint": {
+            "en": "Agreed decision listing the in-scope exchanges, the values required on each, and the reasoning recorded for every exclusion."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
             "en": "Record how processing permissions and the agreed form travel with data between systems"
           },
           "description": {
@@ -3045,39 +3515,98 @@
         },
         {
           "title": {
+            "en": "Find the transfers where the data arrived and the permissions did not"
+          },
+          "description": {
+            "en": "Look at the receiving end rather than the sending one: an interface that silently drops a field it does not recognise still reports a successful hand-off, so the sender's log shows every record delivered while the recipient holds data it treats as carrying no restriction at all. Take the period's hand-offs, pull a sample of records as each recipient now stores them, and compare the permission values sitting there against what was attached at source. Count a permission that landed and was then overwritten by a local default as the same defect as one that never landed, because either way the recipient is processing on an assumption nobody made."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Per-recipient sample naming each hand-off examined, the values attached at source, what the recipient held on inspection, and how every discrepancy was closed."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-09.8",
+      "title": "Audit and log records under data minimisation",
+      "description": {
+        "en": "Implements CT.DM-P8: Audit/log records are determined, documented, implemented, and reviewed in accordance with policy and incorporating the principle of data minimization."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.DM-P8"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Choose the events that must leave an audit record behind"
+          },
+          "description": {
+            "en": "Logging otherwise accretes by default: a platform emits whatever its framework happens to emit, so the entries that would answer a later question about who touched personal data are either buried in noise or were never written at all. Name the processing events that must produce a record — those a privacy question cannot be answered without, plus any a statute or contract compels — and state which systems are in scope and which are deliberately excluded. Settling the event list first gives the field-level work a fixed population to justify rather than an open-ended one."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Legal/DPO",
+          "evidenceHint": {
+            "en": "Approved schedule of loggable events, the systems in scope, the obligation or question behind each entry, and the exclusions agreed."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
             "en": "Define what each processing log records and justify every field held"
           },
           "description": {
             "en": "For each log kept about data processing, record which events it captures, which fields each entry carries, why each field is necessary for the purpose the log serves, and how long entries are held. Remove the fields that survive no justification, and record who reads the log and when it is looked at."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 2,
+          "sortOrder": 1,
           "suggestedRole": "Security engineering"
         },
         {
           "title": {
-            "en": "Record the privacy preferences built into algorithmic design objectives"
+            "en": "Separate the logs actually read from those merely retained"
           },
           "description": {
-            "en": "Where processing produces automated decisions or inferences, record the privacy preferences stakeholders hold, how each was turned into a design objective, and how the outputs were compared against those objectives. Record the comparisons that failed as well as those that passed, with what changed as a result."
+            "en": "A stream that is collected, stored and never opened reads exactly like a reviewed one in any summary — both are present, both sit inside retention, and neither shows a reader. Walk the streams the logging policy says must be looked at and produce, for each, dated proof that someone looked: who, which window, and what they raised. Treat a stream with no reviewer against it as a finding in its own right, because a clean review and an absent review both come back empty."
           },
-          "phase": "IMPLEMENT",
-          "sortOrder": 3,
-          "suggestedRole": "Engineering lead"
-        },
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Per-stream schedule of completed reviews for the period naming each reviewer, the window covered, what they raised, and every stream with nobody against it."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-09.9",
+      "title": "Testing of technical data-processing measures",
+      "description": {
+        "en": "Implements CT.DM-P9: Technical measures implemented to manage data processing are tested and assessed."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.DM-P9"
+      ],
+      "tasks": [
         {
           "title": {
-            "en": "Record each destruction of data against the condition that required it"
+            "en": "Derive a test for each technical measure and name the result that would fail it"
           },
           "description": {
-            "en": "When data is destroyed, record what was destroyed, the store it left, the retention condition or request that required it, who performed it and when. Include destructions that were attempted and could not be completed, with what remains."
+            "en": "Go through the technical measures the organisation relies on to manage processing and write, for each, the action to perform, the state it should leave behind, and the observation that would count as a failure. A test with no failing outcome written down can only ever pass, so the measures nobody can describe a failure for are the ones to draft first. Drive each through the same path a user or calling system would take rather than an administrative console, because the console can return success while the measure behind it does nothing."
           },
-          "phase": "OPERATE",
-          "sortOrder": 4,
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Engineering lead",
           "evidenceHint": {
-            "en": "Destruction record naming the data and store, the condition or request that required it, the performer and the date, including incomplete destructions."
+            "en": "Test set listing every measure relied on, the steps to exercise it, the expected state, and the observation that would count as a failure."
           },
-          "suggestedRole": "IT Operations"
+          "sortOrder": 0
         },
         {
           "title": {
@@ -3087,25 +3616,144 @@
             "en": "Exercise the technical measures the organisation relies on — retrieving, releasing, altering and deleting a record, and conveying its permissions onward — using a real or representative record, and record the expected and observed outcome of each. Record the measures that could not be exercised and why."
           },
           "phase": "OPERATE",
-          "sortOrder": 5,
+          "sortOrder": 1,
           "evidenceHint": {
             "en": "Test record naming each measure exercised, the store and record used, the expected outcome, the observed outcome and any measure left untested."
           },
           "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Count the technical measures no test touched, and re-aim the tests that outlived their subject"
+          },
+          "description": {
+            "en": "Take the register of technical measures as it stands now, not the list the tests were written from, and mark every measure that nothing exercised during the period — an empty result reads as a pass and hides the measures nobody thought to try. Then read each test that did run against the measure it claims to cover, because a measure since reconfigured or replaced keeps its old test passing against behaviour it no longer has. Name an owner for each measure left unexercised and each test whose subject has moved."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Period comparison naming the measure register used as the denominator, each measure left unexercised, and every test found aimed at behaviour its measure no longer has."
+          },
+          "sortOrder": 2
         }
       ]
     },
     {
-      "code": "PRIV-10",
-      "title": "Disassociated Processing",
+      "code": "PRIV-09.10",
+      "title": "Privacy preferences in algorithmic design",
+      "description": {
+        "en": "Implements CT.DM-P10: Stakeholder privacy preferences are included in algorithmic design objectives and outputs are evaluated against these preferences."
+      },
       "category": "NIST Privacy",
       "defaultFrequency": "ANNUALLY",
       "requirementCodes": [
-        "CT.DP-P1",
-        "CT.DP-P2",
-        "CT.DP-P3",
-        "CT.DP-P4",
-        "CT.DP-P5"
+        "CT.DM-P10"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Settle which automated decisions fall in scope and whose privacy preferences bind them"
+          },
+          "description": {
+            "en": "List the automated decisions and inferences this control covers, and against each one the groups whose privacy preferences its design objectives must answer to. Those groups run wider than the people whose data trains or feeds the model: the individuals the outputs are applied to hold preferences as well, and many will never have touched the system. Where a model is left out, record the reason and the person who agreed it, so the omission can be argued with later rather than discovered."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Scope list of the automated decisions covered, the stakeholder groups attached to each, and every model excluded with its reason and the person who agreed."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Record the privacy preferences built into algorithmic design objectives"
+          },
+          "description": {
+            "en": "Where processing produces automated decisions or inferences, record the privacy preferences stakeholders hold, how each was turned into a design objective, and how the outputs were compared against those objectives. Record the comparisons that failed as well as those that passed, with what changed as a result."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Examine what each algorithm produced against the preferences its objectives carry"
+          },
+          "description": {
+            "en": "Pull the outputs a model actually produced over the period and hold each recorded preference up against them, rather than re-reading the design note that states it. A model retrained on fresher data can drift away from a preference its objectives still claim, and the objective itself will not announce the drift. Record every divergence found together with the decision taken on it: the model changed, its use narrowed, or the divergence accepted and why. Accepted divergences written down as plainly as corrected ones are what let the next reader tell an honoured preference from a quietly abandoned one."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Legal/DPO",
+          "evidenceHint": {
+            "en": "Comparison note naming the period and the outputs examined, each preference tested against them, every divergence found, and the decision recorded on each."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-10.1",
+      "title": "Limiting observability and linkability",
+      "description": {
+        "en": "Implements CT.DP-P1: Data are processed to limit observability and linkability (e.g., data actions take place on local devices, privacy-preserving cryptography)."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.DP-P1"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Record the disassociation applied to each data action so identified"
+          },
+          "description": {
+            "en": "For every action marked as not needing full identification, record what is actually done to limit identification, linkage or observability, and what identifying material still remains after it. The remaining material is the part a later re-association test is aimed at, so record it precisely rather than as a reassurance."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 0,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Test whether a disassociated data set can be linked back to an individual"
+          },
+          "description": {
+            "en": "Take a data set the organisation treats as disassociated and attempt, using material the organisation itself holds or could obtain, to link it back to a person. Record what was achievable, what was not, and what the attempt reveals about the residual recorded earlier."
+          },
+          "phase": "OPERATE",
+          "sortOrder": 1,
+          "evidenceHint": {
+            "en": "Test record naming the data set, the material used in the attempt, the outcome, and the residual identification found."
+          },
+          "suggestedRole": "Security engineering"
+        },
+        {
+          "title": {
+            "en": "Revisit who can watch each data action and what it can now be joined against"
+          },
+          "description": {
+            "en": "Observability widens quietly: an action that once ran on the user's own device is moved to a shared service, a log gains a new reader, a feed acquires an intermediary, and a newly arrived data set makes two previously separate records matchable. For each action the organisation treats as limited, name every party that can see it take place today and every holding it could be matched against, then set that beside the position recorded when the limitation was put in. Where either has widened, state whether an owner accepted the widening or it simply happened unnoticed."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Review note listing, per action, the parties with visibility today, the holdings it could be matched against, and whether any widening was accepted by a named owner."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-10.2",
+      "title": "Limiting identification of individuals",
+      "description": {
+        "en": "Implements CT.DP-P2: Data are processed to limit the identification of individuals (e.g., de-identification privacy techniques, tokenization)."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.DP-P2"
       ],
       "tasks": [
         {
@@ -3121,50 +3769,17 @@
         },
         {
           "title": {
-            "en": "Record the disassociation applied to each data action so identified"
+            "en": "Generalise or suppress the attributes that still identify an individual"
           },
           "description": {
-            "en": "For every action marked as not needing full identification, record what is actually done to limit identification, linkage or observability, and what identifying material still remains after it. The remaining material is the part a later re-association test is aimed at, so record it precisely rather than as a reassurance."
+            "en": "Work through the actions marked as not needing an identifiable individual and change the data itself: coarsen dates and locations, band small counts, drop the direct identifiers, and hold back the rare combinations only a handful of records share. Stripping name and account number rarely finishes the job — a postcode, a birth date and a job title together will name someone in a small population, so the question is whether any record still stands alone after the transformation, not whether the obvious fields are gone. Run the transformation where the data enters the non-identifying use rather than as a later pass over a copy, or the identifiable original keeps feeding whatever reads it."
           },
           "phase": "IMPLEMENT",
-          "sortOrder": 1,
-          "suggestedRole": "Engineering lead"
-        },
-        {
-          "title": {
-            "en": "Record where a reference stands in place of an attribute value"
-          },
-          "description": {
-            "en": "List the places where a stand-in is held instead of the value it represents, what each stands for, where the mapping back to the value lives, and who is able to resolve it. Record the places where the value itself is still held although a stand-in would serve."
-          },
-          "phase": "IMPLEMENT",
-          "sortOrder": 2,
-          "suggestedRole": "Engineering lead"
-        },
-        {
-          "title": {
-            "en": "Record the collection and disclosure choices each system offers"
-          },
-          "description": {
-            "en": "For each system or device that allows a choice of which data elements are collected or released, record the setting in force, who set it and when it was last changed. Where a system offers no such choice, record that and name the owner who accepted collecting or releasing everything."
-          },
-          "phase": "IMPLEMENT",
-          "sortOrder": 3,
-          "suggestedRole": "Engineering lead"
-        },
-        {
-          "title": {
-            "en": "Test whether a disassociated data set can be linked back to an individual"
-          },
-          "description": {
-            "en": "Take a data set the organisation treats as disassociated and attempt, using material the organisation itself holds or could obtain, to link it back to a person. Record what was achievable, what was not, and what the attempt reveals about the residual recorded earlier."
-          },
-          "phase": "OPERATE",
-          "sortOrder": 4,
+          "suggestedRole": "Engineering lead",
           "evidenceHint": {
-            "en": "Test record naming the data set, the material used in the attempt, the outcome, and the residual identification found."
+            "en": "The transformation applied to each treated data set, naming the fields dropped, the values coarsened or banded and the records held back, with a before-and-after extract from one of them."
           },
-          "suggestedRole": "Security engineering"
+          "sortOrder": 1
         },
         {
           "title": {
@@ -3174,11 +3789,173 @@
             "en": "For each data action, confirm the identification it still carries is required by the purpose it serves today rather than by a purpose it once served. List the actions where identification could now be reduced and name the owner of each reduction."
           },
           "phase": "REVIEW",
-          "sortOrder": 5,
+          "sortOrder": 2,
           "evidenceHint": {
             "en": "Review list showing each data action, the identification retained, the purpose relied on, and whether a reduction was raised."
           },
           "suggestedRole": "Legal/DPO"
+        }
+      ]
+    },
+    {
+      "code": "PRIV-10.3",
+      "title": "Limiting inferences about individuals",
+      "description": {
+        "en": "Implements CT.DP-P3: Data are processed to limit the formulation of inferences about individuals' behavior or activities (e.g., data processing is decentralized, distributed architectures)."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.DP-P3"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "List the deductions about behaviour and activity that must stay out of reach"
+          },
+          "description": {
+            "en": "A limit on inference is unenforceable until someone writes down which conclusions are off-limits: that a person was home on a Tuesday afternoon, that a household's occupancy changed, that somebody in a group is likely unwell. Work from the purpose each analysis actually serves, name the conclusions that reach past it, and separate those barred outright from those permitted only at group level above a stated size. Without that list every design argument collapses into whether the data is anonymous, which is a different question — an anonymous feed can still say what a household does each morning."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Legal/DPO",
+          "evidenceHint": {
+            "en": "Signed-off schedule of off-limits conclusions per analysis, marking which are barred outright and which are allowed only above a stated group size."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Reshape each analytic output so the barred conclusions cannot be drawn"
+          },
+          "description": {
+            "en": "De-identifying the inputs does not stop a result from announcing when a household wakes up, so the limit has to sit on what an analysis emits and not only on the records behind it. For each analysis pick whatever combination keeps a barred conclusion from following — computing where the data already sits and returning only totals, widening time and location bands, suppressing any cell below the agreed group size, or dropping a derived field nobody has a use for — and write the chosen setting beside the analysis it governs. Leave the reasoning attached, because a suppression threshold later relaxed for query performance will otherwise pass as routine tuning."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Per-analysis configuration list naming the technique applied, the aggregation floor or band width in force, and the owner who set it."
+          },
+          "sortOrder": 1
+        },
+        {
+          "title": {
+            "en": "Attempt each forbidden deduction against the outputs the system releases"
+          },
+          "description": {
+            "en": "Hand the released outputs to people who did not build the pipeline, together with whatever can be obtained publicly about the same population, and ask them to state what they can work out about one individual and about a small group. A deduction that fails only because this period's sample happened to be thin is not a control, so record against each attempt whether the design blocked it or the data did. Where an attempt succeeds, log the finding against the analysis that emitted the output rather than the store it drew from, because that is where the remedy has to go."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Dated inference-attempt report listing each conclusion tried, the material used, the result, and whether design or sample size stopped it."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-10.4",
+      "title": "Selective collection and disclosure settings",
+      "description": {
+        "en": "Implements CT.DP-P4: System or device configurations permit selective collection or disclosure of data elements."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.DP-P4"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Set the minimum selectivity a system must offer over what it gathers and sends"
+          },
+          "description": {
+            "en": "Before any product is examined, state the finest split the organisation expects to be able to make: which elements must be switchable on their own, which may be handled together as a group, and which are never optional. Without that standard the record of what each product allows has nothing to be judged against, and an all-or-nothing device passes simply because its single switch was written down. Name who may accept a product that cannot make the required split, and what they must put in writing when they do."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Legal/DPO",
+          "evidenceHint": {
+            "en": "Written standard listing the elements that must be individually controllable, those that may be grouped, the acceptance route for a product unable to meet it, and the named arbiter."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Record the collection and disclosure choices each system offers"
+          },
+          "description": {
+            "en": "For each system or device that allows a choice of which data elements are collected or released, record the setting in force, who set it and when it was last changed. Where a system offers no such choice, record that and name the owner who accepted collecting or releasing everything."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Re-check what each rebuilt or upgraded system now collects and releases"
+          },
+          "description": {
+            "en": "A selective setting is not done once: a re-image, a fleet re-provision or a vendor upgrade restores the supplier's default, and that default is almost always to gather and send everything on offer. For every system rebuilt, re-provisioned or upgraded since the last pass, read the setting back off the system itself rather than from the note made when it was first applied, and look for choices a newer release has added that nobody has taken up. Treat a reverted setting as a finding with a date attached, because how long it stood is the measure of what was gathered or released in the meantime."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "IT Operations",
+          "evidenceHint": {
+            "en": "Per-system list of every rebuild, re-provision and version change in the period, the value read back from the live machine, the value expected, the date each divergence began, and any newly available choice left unused."
+          },
+          "sortOrder": 2
+        }
+      ]
+    },
+    {
+      "code": "PRIV-10.5",
+      "title": "Attribute references in place of values",
+      "description": {
+        "en": "Implements CT.DP-P5: Attribute references are substituted for attribute values."
+      },
+      "category": "NIST Privacy",
+      "defaultFrequency": "ANNUALLY",
+      "requirementCodes": [
+        "CT.DP-P5"
+      ],
+      "tasks": [
+        {
+          "title": {
+            "en": "Fix the properties a reference must have before it replaces a value"
+          },
+          "description": {
+            "en": "Decide ahead of any build whether a reference may be computed from the value it displaces, how much residual meaning it may carry, and which form a given case calls for: an opaque token that resolves only through a held mapping, or a derived assertion such as a band or a yes-or-no claim that resolves back to nothing. A reference calculated from its own value, a hash of an email address or a shortened account number, is not a substitution at all, because anyone with a list of plausible values recomputes it and reads the field. Written as conditions a proposed design is tested against, these properties stop each team settling the question privately and give a later check something it can fail."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Engineering lead",
+          "evidenceHint": {
+            "en": "Agreed criteria for a valid substitution covering permitted derivation, residual meaning and the form required per case, with the reasoning and the approver for each condition."
+          },
+          "sortOrder": 0
+        },
+        {
+          "title": {
+            "en": "Record where a reference stands in place of an attribute value"
+          },
+          "description": {
+            "en": "List the places where a stand-in is held instead of the value it represents, what each stands for, where the mapping back to the value lives, and who is able to resolve it. Record the places where the value itself is still held although a stand-in would serve."
+          },
+          "phase": "IMPLEMENT",
+          "sortOrder": 1,
+          "suggestedRole": "Engineering lead"
+        },
+        {
+          "title": {
+            "en": "Sweep the downstream stores for values a reference was meant to replace"
+          },
+          "description": {
+            "en": "A substitution holds only at the point it was applied, and the displaced value returns downstream by routes nobody rebuilt: an extract taken before the change, a support tool that writes the field into its diagnostics, a warehouse column still loaded from an older feed, a row carrying the reference and the original side by side. Work outward through the copies rather than re-reading the system where the reference is issued, because that system is the one place the substitution is already known to hold. For each original value found, settle whether it predates the substitution or a newer path reintroduced it, since only the second means the design is being bypassed and the store will fill again after a clean-up."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Security engineering",
+          "evidenceHint": {
+            "en": "Dated results listing every copy, extract, log sink and report examined, each original attribute still found in one, and whether an old load or a new integration put it there."
+          },
+          "sortOrder": 2
         }
       ]
     },
@@ -4164,9 +4941,25 @@
       "PRIV-07.5",
       "PRIV-07.6",
       "PRIV-07.7",
-      "PRIV-08",
-      "PRIV-09",
-      "PRIV-10",
+      "PRIV-08.1",
+      "PRIV-08.2",
+      "PRIV-08.3",
+      "PRIV-08.4",
+      "PRIV-09.1",
+      "PRIV-09.2",
+      "PRIV-09.3",
+      "PRIV-09.4",
+      "PRIV-09.5",
+      "PRIV-09.6",
+      "PRIV-09.7",
+      "PRIV-09.8",
+      "PRIV-09.9",
+      "PRIV-09.10",
+      "PRIV-10.1",
+      "PRIV-10.2",
+      "PRIV-10.3",
+      "PRIV-10.4",
+      "PRIV-10.5",
       "PRIV-11.1",
       "PRIV-11.2",
       "PRIV-12.1",
