@@ -46,6 +46,12 @@ jest.mock('@/app-layer/context', () => ({
 
 const mockAppendAuditEntry = jest.fn();
 jest.mock('@/lib/audit', () => ({
+    // #2657 — `permission-middleware` now records AUTHZ_DENIED through
+    // `appendAuditEntryOrQueue`, which falls back to a durable AuditOutbox
+    // row instead of swallowing a failed write. Routed to the SAME spy as
+    // `appendAuditEntry` on purpose: these tests assert the ENTRY'S SHAPE,
+    // which the change does not alter, so they keep testing what they tested.
+    appendAuditEntryOrQueue: (...a: unknown[]) => mockAppendAuditEntry(...a),
     appendAuditEntry: (...a: unknown[]) => mockAppendAuditEntry(...a),
 }));
 

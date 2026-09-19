@@ -21,6 +21,12 @@ jest.mock('@/app-layer/context', () => ({
 }));
 
 jest.mock('@/lib/audit', () => ({
+    // #2657 — `permission-middleware` now records AUTHZ_DENIED through
+    // `appendAuditEntryOrQueue`, which falls back to a durable AuditOutbox
+    // row instead of swallowing a failed write. Routed to the SAME spy as
+    // `appendAuditEntry` on purpose: these tests assert the ENTRY'S SHAPE,
+    // which the change does not alter, so they keep testing what they tested.
+    appendAuditEntryOrQueue: (...args: unknown[]) => mockAppendAuditEntry(...args),
     appendAuditEntry: (...args: unknown[]) => mockAppendAuditEntry(...args),
 }));
 
@@ -225,23 +231,56 @@ describe('requirePermission — denied', () => {
         });
     });
 
-    it('still returns 403 if the audit write fails — fail-open on telemetry, fail-closed on access', async () => {
+    // ─── #2657 — the contract these two replace ───────────────────
+    //
+    // There used to be ONE test here, named "fail-open on telemetry,
+    // fail-closed on access", asserting that a failed audit write still
+    // returned 403 and merely logged. That was the defect: the denial
+    // happened, the user was refused, and the evidence was gone.
+    //
+    // The contract is now three-valued, and it takes two tests because
+    // the two failure depths have OPPOSITE correct answers. Deleting
+    // either one restores half the old behaviour silently.
+
+    it('still returns 403 when the chain write fails but the entry is QUEUED', async () => {
         mockGetTenantCtx.mockResolvedValue(makeCtx('READER'));
-        mockAppendAuditEntry.mockRejectedValue(new Error('audit DB down'));
+        // The chain was unreachable; a durable AuditOutbox row exists
+        // instead. The record is safe, so the request proceeds to its
+        // normal denial — the user must still be refused.
+        mockAppendAuditEntry.mockResolvedValue({
+            recorded: 'queued',
+            outboxId: 'outbox-1',
+        });
 
         await expect(
             requirePermission('risks.create', jest.fn())(makeReq(), routeArgs),
         ).rejects.toMatchObject({ status: 403 });
+    });
 
-        // The telemetry failure surfaces through the logger so ops can
-        // see audit storage degradation, but the request is still denied.
-        expect(mockLoggerWarn).toHaveBeenCalledWith(
-            expect.stringContaining('AUTHZ_DENIED'),
-            expect.objectContaining({
-                tenantId: 'tenant-1',
-                requestId: 'req-test-1',
-            }),
+    it('fails CLOSED when the entry reaches neither the chain nor the outbox', async () => {
+        mockGetTenantCtx.mockResolvedValue(makeCtx('READER'));
+        // Both writes failed, which means the database is unreachable
+        // rather than merely busy — the two paths have different failure
+        // modes (the append serialises on a per-tenant advisory lock, the
+        // outbox insert takes no lock at all).
+        mockAppendAuditEntry.mockRejectedValue(
+            new Error('audit entry reached neither the hash chain nor the outbox'),
         );
+
+        const outcome = await requirePermission('risks.create', jest.fn())(
+            makeReq(),
+            routeArgs,
+        ).then(
+            () => ({ threw: false as const }),
+            (err: unknown) => ({ threw: true as const, err }),
+        );
+
+        expect(outcome.threw).toBe(true);
+        // The distinction that matters: this is NOT a 403. A request whose
+        // authorization decision cannot be recorded must surface as an
+        // error, which is visible, rather than as a denial with a gap in
+        // the trail, which is not.
+        expect(outcome).not.toMatchObject({ err: { status: 403 } });
     });
 
     it('does NOT include the permission key in the response message', async () => {
