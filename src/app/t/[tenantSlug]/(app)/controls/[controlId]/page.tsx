@@ -1043,12 +1043,36 @@ export default function ControlDetailPage() {
                     <div className="grid grid-cols-2 gap-section">
                         <div>
                             <span className="text-xs text-content-subtle uppercase">{tx('detailPage.eyebrowObjective')}</span>
-                            <p className="text-sm text-content-default mt-1 whitespace-pre-line">{control.objective || tx('detailPage.objectiveEmpty')}</p>
+                            {/*
+                              * #2664. `objective`, `successCriteria` and
+                              * `testingMethodology` arrived with the
+                              * internal-controls import; the framework
+                              * catalogues authored here express a control
+                              * through its mapped requirements and its tasks
+                              * instead. So an empty objective on a control that
+                              * HAS those is a different shape, not a missing
+                              * field, and saying "No objective." of it reads as
+                              * a defect the design does not consider one.
+                              */}
+                            <p className="text-sm text-content-default mt-1 whitespace-pre-line">
+                                {control.objective
+                                    || (totalTasks > 0 || (control._count?.frameworkMappings ?? 0) > 0
+                                        ? tx('detailPage.objectiveExpressedElsewhere')
+                                        : tx('detailPage.objectiveEmpty'))}
+                            </p>
                         </div>
-                        <div>
-                            <ConceptEyebrow label={tx('detailPage.eyebrowSuccessCriteria')} help={tx('conceptHelp.successCriteria')} helpLabel={tx('conceptHelp.successCriteriaHelp')} />
-                            <p className="text-sm text-content-default mt-1 whitespace-pre-line">{control.successCriteria || '—'}</p>
-                        </div>
+                        {/*
+                          * Rendered only when set, matching how
+                          * testingMethodology is already treated further down.
+                          * An em-dash here implied the field was owed and
+                          * missing on every framework-installed control.
+                          */}
+                        {control.successCriteria && (
+                            <div>
+                                <ConceptEyebrow label={tx('detailPage.eyebrowSuccessCriteria')} help={tx('conceptHelp.successCriteria')} helpLabel={tx('conceptHelp.successCriteriaHelp')} />
+                                <p className="text-sm text-content-default mt-1 whitespace-pre-line">{control.successCriteria}</p>
+                            </div>
+                        )}
                         <div>
                             <ConceptEyebrow label={tx('editModal.categoryLabel')} help={tx('conceptHelp.category')} helpLabel={tx('conceptHelp.categoryHelp')} />
                             <p className="text-sm text-content-default mt-1">{control.category || '—'}</p>
