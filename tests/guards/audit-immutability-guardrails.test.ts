@@ -114,6 +114,30 @@
  * renaming or moving the helper moves the exemption with it, and deleting it
  * breaks this file's import rather than silently widening what is permitted.
  *
+ * THE SECOND EXEMPTION, AND WHY IT IS SPELLED DIFFERENTLY (#2287 Stage 3)
+ * ──────────────────────────────────────────────────────────────────────
+ * The Prisma UPDATE scan now has exactly one exemption of its own:
+ * `src/app-layer/jobs/dsar-erasure.ts`. That is not a hole somebody opened to
+ * get a diff green — it is the one write the DATABASE itself was narrowed to
+ * permit. `20260917130000_audit_log_immutable_permit_pseudonymization`
+ * replaced the unconditional refusal with a single allowed shape: `userId`
+ * from a value to NULL, `to_jsonb(NEW) - 'userId' = to_jsonb(OLD) - 'userId'`.
+ * GDPR Art. 17 erasure is that write, and there is nowhere else for it to
+ * live. DELETE is still refused by the trigger unconditionally, and this file
+ * still refuses it there too — the exemption is on the UPDATE scan ONLY.
+ *
+ * It is a PATH CONSTANT rather than an exported `__filename`, deliberately.
+ * The cleanup helper can export its own path because it is a test module;
+ * making a `src/` module export `__filename` for a guard's benefit puts
+ * test-only machinery in production source, and `__filename` is not a thing
+ * to depend on across a bundler. What replaces the derivation is verification:
+ * `the DSAR pseudonymization exemption is narrow, load-bearing and live`
+ * asserts the path resolves to a file these scans actually read, that
+ * removing the exemption would turn the UPDATE scan RED, and that the file it
+ * covers contains exactly ONE audit UPDATE, inside the erasure transaction,
+ * whose `data` is the single column the trigger permits. A rename fails that
+ * test loudly AND surfaces the renamed file in the scan — both directions.
+ *
  * AND IT SETTLES THE COST NOTED ABOVE: with teardowns actually deleting
  * their audit rows, `AuditLog_tenantId_fkey` stops firing and the suites
  * stop leaking a Tenant row per run. Measured on `audit-middleware.test.ts`
@@ -348,6 +372,19 @@ const SELF = repoRelative(__filename).replace(/\.js$/, '.ts');
  */
 const AUDIT_CLEANUP_HELPER = repoRelative(AUDIT_CLEANUP_MODULE).replace(/\.js$/, '.ts');
 
+/**
+ * The ONE `src/` module permitted to UPDATE an audit row through Prisma:
+ * DSAR erasure's pseudonymization (`userId` -> NULL). See the "SECOND
+ * EXEMPTION" section of this file's header for why it exists, why it is a
+ * path rather than a derivation, and what verifies it instead.
+ *
+ * Exempt from `UPDATE_CALL` and NOTHING ELSE — the delete verbs, the raw-SQL
+ * patterns and the dynamic-model-index shape all still apply to it.
+ */
+const DSAR_ERASURE_SOURCE = repoRelative(
+    path.resolve(SRC_DIR, 'app-layer', 'jobs', 'dsar-erasure.ts'),
+);
+
 interface ScannedFile {
     rel: string;
     /** Comment-masked source: a JSDoc that QUOTES the forbidden call — e.g.
@@ -471,7 +508,49 @@ describe('AuditLog Immutability Guardrails', () => {
     });
 
     it('no db-reaching code calls the Prisma update verbs on AuditLog', () => {
-        expect(scan(['src', 'tests'], UPDATE_CALL, 'mutates audit rows')).toEqual([]);
+        // One exemption, and it is the write the DB trigger was narrowed to
+        // permit — see `DSAR_ERASURE_SOURCE` and the test below, which is what
+        // keeps this from being a hole rather than a carve-out.
+        expect(scan(['src', 'tests'], UPDATE_CALL, 'mutates audit rows', DSAR_ERASURE_SOURCE))
+            .toEqual([]);
+    });
+
+    it('the DSAR pseudonymization exemption is narrow, load-bearing and live', () => {
+        // It names a file these scans actually read. A rename breaks this line
+        // AND surfaces the renamed file in the scan above — the exemption
+        // cannot rot into one that silently covers nothing.
+        expect(DSAR_ERASURE_SOURCE).toBe('src/app-layer/jobs/dsar-erasure.ts');
+        expect(dbReachingSources('src').some((f) => f.rel === DSAR_ERASURE_SOURCE)).toBe(true);
+
+        const code = codeOf(
+            fs.readFileSync(path.resolve(REPO_ROOT, DSAR_ERASURE_SOURCE), 'utf-8'),
+        );
+
+        // LOAD-BEARING, not decorative: without the exemption the scan above
+        // is RED. (Measured that way — it was, before the exemption existed.)
+        expect(UPDATE_CALL.test(code)).toBe(true);
+
+        // NARROW, in three directions.
+        //
+        // (1) UPDATE only. The trigger refuses DELETE on an audit row
+        //     unconditionally and always will; nothing about erasure changes
+        //     that, so the delete verbs are forbidden here as everywhere.
+        expect(DELETE_CALL.test(code)).toBe(false);
+        // (2) Prisma only. Raw SQL against the trail is not covered by this
+        //     exemption in any spelling, and neither is the dynamic index.
+        expect(RAW_UPDATE.test(code)).toBe(false);
+        expect(RAW_DELETE.test(code)).toBe(false);
+        expect(RAW_TRUNCATE.test(code)).toBe(false);
+        expect(DYNAMIC_MODEL_INDEX_WRITE.test(code) && AUDIT_LOG_AS_STRING.test(code)).toBe(false);
+        // (3) ONE call, in the erasure transaction, writing the ONE column the
+        //     trigger permits. `to_jsonb(NEW) - 'userId' = to_jsonb(OLD) -
+        //     'userId'` is the database half of this same claim; a second
+        //     field in that `data` is how the hash chain gets rewritten inside
+        //     something called a pseudonymization.
+        expect(code.match(/auditLog\s*\.\s*(?:update|updateMany)\s*\(/g)).toHaveLength(1);
+        const eraseBody = functionBodyOf(code, 'eraseUserWithin');
+        expect(UPDATE_CALL.test(eraseBody)).toBe(true);
+        expect(eraseBody).toMatch(/data:\s*\{\s*userId:\s*null\s*,?\s*\}/);
     });
 
     it('no db-reaching code calls the Prisma delete verbs on AuditLog', () => {

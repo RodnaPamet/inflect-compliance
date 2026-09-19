@@ -1,15 +1,32 @@
 /**
  * DSAR erasure cascade (GDPR Art. 17 right-to-erasure).
  *
- * ⚠️ STAGE 1 FOUNDATION — execution is NOT enabled. This file documents
- * the intended cascade + carries the cooling-off guard; it is NOT
- * registered in register-schedules / executor-registry, so it never runs.
- * The irreversible execution lands in the Stage 3 PR (see docs/dsar.md),
- * which additionally requires:
- *   - a change to the IMMUTABLE_AUDIT_LOG DB trigger to PERMIT the
- *     pseudonymization UPDATE (NULL userId) while still refusing all other
- *     AuditLog UPDATEs, and
- *   - a full FK-cascade validated in staging against a real database.
+ * STAGE 3 — `eraseUser` EXECUTES. It is still NOT registered in
+ * register-schedules / executor-registry and nothing in `src/` calls it, so
+ * no scheduler and no route can reach it; whether it gets an operator entry
+ * point (who may run it, for which subject, with what audit record) is a
+ * separate decision and deliberately not taken here. What changed is that the
+ * function is no longer a stub: called, it writes.
+ *
+ * THE TWO GATES ON `AuditLog`, AND WHICH ONE THIS DEPENDS ON. There are two,
+ * and only one was ever loosened:
+ *
+ *   privilege — WHO may attempt the write. `app_user` still has UPDATE and
+ *     DELETE on the audit table REVOKED outright (migration
+ *     20260324010000_audit_log_immutable_trigger), and 20260917130000
+ *     deliberately did NOT grant it back. Every tenant-path context
+ *     (`withTenantDb`, `runInTenantContext`, `runInTenantJobContext`) does
+ *     `SET LOCAL ROLE app_user`, so erasure run from any of them fails on
+ *     privilege before the trigger is ever consulted.
+ *   trigger — WHICH write is acceptable. `audit_log_immutable_guard()`
+ *     permits exactly one shape (20260917130000): `OLD."userId" IS NOT NULL`,
+ *     `NEW."userId" IS NULL`, and `to_jsonb(NEW) - 'userId' =
+ *     to_jsonb(OLD) - 'userId'`. DELETE stays unconditionally refused.
+ *
+ * So the default path below runs through `runInGlobalContext`, which never
+ * drops to `app_user`. Granting UPDATE back to `app_user` would widen the
+ * permitted write to every tenant request in the product and is NOT how this
+ * is to be made to work.
  *
  * @module app-layer/jobs/dsar-erasure
  */
@@ -27,47 +44,213 @@ export function coolingOffElapsed(verifiedAt: Date, now: Date = new Date()): boo
     return now.getTime() - verifiedAt.getTime() >= COOLING_OFF_HOURS * 3_600_000;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+//  ERASURE — the irreversible path
+// ─────────────────────────────────────────────────────────────────────────
+
 /**
- * Erase a user. NOT enabled in Stage 1 — throws. The body documents the
- * cascade so the Stage 3 implementation has a fixed contract.
+ * The slice of a Prisma client erasure needs. Narrow so a test can supply a
+ * fake, and so the set of tables this function can possibly reach is readable
+ * in one screen rather than inferred from a whole client.
  *
- * Stage 1 — Pseudonymize AuditLog: set `userId = NULL` for every row
- *   referencing the user. This is pseudonymization, NOT deletion —
- *   deleting audit rows breaks the hash chain and is refused by the
- *   IMMUTABLE_AUDIT_LOG trigger. NULL-userId is the GDPR-correct choice
- *   (Art. 17(3)(b): the audit trail is itself a compliance obligation).
- * Stage 2 — Hard-delete the User row + its `onDelete: Cascade` children
- *   (sessions, MFA enrolments, notification preferences). Authorship
- *   references (`onDelete: SetNull`) become "former user".
- * Stage 3 — Invalidate cached DEK material keyed on the user's email-hash
- *   (the per-tenant DEK itself is tenant-scoped and unaffected).
- * Stage 4 — Emit an anonymized verification report (which rows touched,
- *   which FKs nullified) as compliance evidence — no PII.
+ * `$transaction` is REQUIRED, not optional, and an already-open transaction
+ * is therefore not an acceptable argument: atomicity is the safety property
+ * (see `eraseUserWithin`), and a seam that silently degrades to non-atomic
+ * when handed a `PrismaTx` would lose it without saying so.
  */
-export async function eraseUser(_userId: string): Promise<never> {
-    throw new Error(
-        'dsar-erasure: execution is not enabled (Stage 1 foundation — see docs/dsar.md)',
-    );
+export interface ErasureDb {
+    $transaction<T>(fn: (tx: ErasureDb) => Promise<T>): Promise<T>;
+    user: {
+        findUnique(args: { where: { id: string } }): Promise<{ id: string } | null>;
+        delete(args: { where: { id: string } }): Promise<unknown>;
+    };
+    auditLog: {
+        updateMany(args: {
+            where: { userId: string };
+            data: { userId: null };
+        }): Promise<{ count: number }>;
+    };
+}
+
+/** What an erasure did. No PII — this is the compliance evidence. */
+export interface ErasureReceipt {
+    userId: string;
+    /** AuditLog rows whose `userId` went from the subject to NULL. */
+    auditRowsPseudonymized: number;
+    /** Literally zero, and a field rather than a comment so a caller can assert it. */
+    auditRowsDeleted: 0;
+    /** The subject's own `User` row, hard-deleted. */
+    userDeleted: true;
+}
+
+/**
+ * Prisma error codes for "a reference refuses this delete".
+ *
+ * P2003 is the FK-constraint failure Postgres raises for ON DELETE RESTRICT /
+ * NO ACTION; P2014 is Prisma's own required-relation refusal. Both mean the
+ * same thing to an operator — something still points at this subject — and
+ * both are recognised here so the message can say so, rather than surfacing
+ * "Foreign key constraint violated on the (not available)" from a function
+ * whose whole job was to delete a user.
+ */
+const REFERENCE_REFUSAL_CODES = new Set(['P2003', 'P2014']);
+
+function isReferenceRefusal(error: unknown): boolean {
+    const code = (error as { code?: unknown } | null)?.code;
+    return typeof code === 'string' && REFERENCE_REFUSAL_CODES.has(code);
+}
+
+/**
+ * Erase `userId`. GDPR Art. 17.
+ *
+ * ── THE INVARIANT: PSEUDONYMIZATION, NOT DELETION ──────────────────
+ *
+ * The audit trail SURVIVES this. Every `AuditLog` row referencing the subject
+ * keeps existing, keeps every column it had — `entryHash` and `previousHash`
+ * included, because those are the hash chain and rewriting one forges history
+ * — and loses exactly one thing: the link to the subject. `userId` ends NULL.
+ * The RECORD OF THE ACTION is retained (Art. 17(3)(b): the trail is itself a
+ * compliance obligation); the IDENTITY OF THE ACTOR is not. Nothing here
+ * deletes an audit row, and the database refuses one unconditionally even if
+ * something tried.
+ *
+ * Everything else the subject's `User` row owns goes with it by FK cascade —
+ * the database's own `ON DELETE CASCADE` declarations are the enumeration.
+ * This function deliberately keeps no second list of child tables to delete
+ * by hand: an un-extended list is how a table added next quarter quietly
+ * survives an erasure, and the catalog already knows the answer (that is what
+ * `planErasure` below reads). Authored content (`ON DELETE SET NULL`) is
+ * retained with its attribution anonymized, per docs/dsar.md.
+ *
+ * ── WHAT THIS FUNCTION DOES NOT DO, ON PURPOSE ─────────────────────
+ *
+ * IT DOES NOT CHECK THE COOLING-OFF WINDOW. `coolingOffElapsed()` above is
+ * the 24h gate and it belongs to whoever drives the DSAR workflow, not here:
+ * this function receives a subject id and no `verifiedAt`, so a check it
+ * could make would be one it skips whenever the caller omits the timestamp —
+ * a gate that is off by default is worse than an absent one. A caller that
+ * cannot show the window elapsed must not call this.
+ *
+ * IT DOES NOT CHECK THE SESSION'S ROLE. `planErasure` does, because it is a
+ * READ whose partial view would produce a confidently wrong answer; here the
+ * database is the enforcement point and it is not silent — `app_user` has
+ * UPDATE on "AuditLog" revoked, so an erasure mistakenly run on a tenant-path
+ * connection fails loudly on privilege rather than half-succeeding.
+ *
+ * IT DOES NOT DECIDE WHETHER THE ERASURE IS ALLOWED. `evaluateDsarRejection`
+ * (`src/lib/dsar.ts`) owns LAST_OWNER / OUTSTANDING_BALANCE / LEGAL_HOLD.
+ *
+ * ── ATOMIC, AND THAT IS THE SAFETY PROPERTY ────────────────────────
+ *
+ * The pseudonymization and the hard delete are ONE transaction. Several
+ * `User`-referencing FKs are `ON DELETE RESTRICT`, so the delete genuinely
+ * can be refused (that is the question `planErasure` answers per subject). If
+ * it is, the pseudonymization must go back too — because it cannot be undone
+ * afterwards: the trigger permits `userId` value -> NULL and nothing else, so
+ * a half-run erasure would leave the trail permanently de-attributed for a
+ * user who still exists, with no statement that could restore it. All or
+ * nothing.
+ *
+ * @param options.db A FULL client (not a `PrismaTx`). Omit it and the
+ *   erasure runs via `runInGlobalContext` — the RLS-free, never-`app_user`
+ *   context the `AuditLog` privilege gate requires.
+ */
+export async function eraseUser(
+    userId: string,
+    options: { db?: ErasureDb } = {},
+): Promise<ErasureReceipt> {
+    if (!userId) {
+        throw new Error('dsar-erasure: refusing to erase without a subject id.');
+    }
+    if (options.db) return eraseUserWithin(options.db, userId);
+
+    // Imported lazily so that merely importing this module does not build the
+    // Prisma client: `coolingOffElapsed` and `planErasure` are both usable
+    // without one, and their tests should not pay for a client they never use.
+    const { runInGlobalContext } = await import('@/lib/db-context');
+    return runInGlobalContext((db) => eraseUserWithin(db as unknown as ErasureDb, userId));
+}
+
+/** The cascade itself, in one transaction. See {@link eraseUser}. */
+async function eraseUserWithin(db: ErasureDb, userId: string): Promise<ErasureReceipt> {
+    return db.$transaction(async (tx) => {
+        // ── POSITIVE CONTROL, same reasoning as planErasure's ──────
+        //
+        // Every count and every zero below is only meaningful once something
+        // non-zero has been observed through this same client. A wrong
+        // column, a mistyped id, or a connection whose view is narrowed makes
+        // an erasure that touched nothing indistinguishable from one that had
+        // nothing to touch — and this one reports success. So the subject's
+        // own row must be visible first.
+        const subject = await tx.user.findUnique({ where: { id: userId } });
+        if (!subject) {
+            throw new Error(
+                `dsar-erasure: subject ${JSON.stringify(userId)} is not visible to this `
+                    + 'connection. Refusing rather than reporting an erasure whose every '
+                    + 'count would be zero — an absent subject and an unobservable one '
+                    + 'produce identical output.',
+            );
+        }
+
+        // ── PSEUDONYMIZE ───────────────────────────────────────────
+        //
+        // `where` carries the subject id and nothing else: the trigger grades
+        // ONE ROW at a time against a SHAPE, so a statement that nulled
+        // `userId` on every row in the table would satisfy it row by row. Not
+        // over-anonymizing is an application obligation, and this clause is
+        // where it lives.
+        //
+        // `data` carries ONE column. `AuditLog` has no `@updatedAt`, so
+        // nothing else moves and `to_jsonb(NEW) - 'userId' = to_jsonb(OLD) -
+        // 'userId'` holds. Adding a second field here is how the hash chain
+        // gets rewritten inside something called a pseudonymization.
+        const { count } = await tx.auditLog.updateMany({
+            where: { userId },
+            data: { userId: null },
+        });
+
+        // ── HARD-DELETE THE SUBJECT ────────────────────────────────
+        try {
+            await tx.user.delete({ where: { id: userId } });
+        } catch (error) {
+            if (!isReferenceRefusal(error)) throw error;
+            throw new Error(
+                `dsar-erasure: the hard delete of ${JSON.stringify(userId)} was refused by a `
+                    + 'reference to them (an ON DELETE RESTRICT FK, or a required relation). '
+                    + 'The whole erasure is rolled back, pseudonymization included — a '
+                    + 'half-run erasure cannot be undone. Run planErasure() for the list of '
+                    + 'blocking references and resolve them first.',
+                { cause: error },
+            );
+        }
+
+        return {
+            userId,
+            auditRowsPseudonymized: count,
+            auditRowsDeleted: 0,
+            userDeleted: true,
+        };
+    });
 }
 
 // ─────────────────────────────────────────────────────────────────────────
 //  DRY RUN — what erasure WOULD do, writing nothing
 // ─────────────────────────────────────────────────────────────────────────
 //
-// WHY THIS IS NOT `eraseUser`. The obvious shape — make `eraseUser` report
-// instead of write — reddens the Stage 3 oracle, and for a good reason. The
-// probe in tests/helpers/dsar-erasure-probe.ts grades a run as REFUSED (threw
-// the Stage-1 error, wrote nothing), EXECUTED (issued operations), or
+// WHY THIS IS NOT `eraseUser`, STILL. It was written while `eraseUser` was a
+// refusing stub, and the reason it stayed a sibling rather than becoming a
+// `dryRun: true` flag on the real function outlives that: the probe in
+// tests/helpers/dsar-erasure-probe.ts grades a run as REFUSED, EXECUTED, or
 // UNOBSERVED (returned without refusing and without touching the database) —
 // and UNOBSERVED is a FAILURE carrying its own `UNOBSERVED_EXECUTION` code,
 // because a function that quietly does nothing is indistinguishable from one
-// wired to the wrong client. A dry run is exactly that shape.
+// wired to the wrong client. A dry run is exactly that shape, so a reporting
+// mode on `eraseUser` would be gradeable only by weakening the oracle.
 //
-// So `eraseUser` stays a refusing stub and this is a sibling. The property
-// worth having is stronger than tidiness: NOTHING IN THIS PR CAN ERASE
-// ANYTHING. The irreversible path is still closed, and A1/A2/B1 keep grading
-// the real function honestly rather than being relaxed to accommodate a
-// half-implementation.
+// `eraseUser` executes now. That does NOT make this redundant: it answers,
+// before anything irreversible is attempted, which references would refuse the
+// hard delete — the question `eraseUser` can otherwise only answer by trying
+// it and rolling back. Nothing calls either of them yet.
 //
 // WHY IT READS THE CATALOG RATHER THAN THE PRISMA SCHEMA. The question this
 // answers — "which FKs would refuse the Stage 2 hard-delete" — must be
