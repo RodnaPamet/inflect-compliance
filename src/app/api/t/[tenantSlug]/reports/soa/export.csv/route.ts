@@ -58,7 +58,7 @@ export const GET = withApiErrorHandling(
         includeTasks: true,
         includeTests: true,
     });
-    const isIso = report.isIsoFamily;
+    const isIso = report.hasStatementOfApplicability;
 
     // ─── Build CSV ───
     // The SoA columns (Annex-A key + Applicability + Justification) are an

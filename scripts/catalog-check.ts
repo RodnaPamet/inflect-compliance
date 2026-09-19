@@ -31,8 +31,16 @@
  *
  * Exits 1 when the database is missing something the repo declares. Extra rows
  * in the database are REPORTED but do not fail: a catalogue may legitimately
- * carry populations this repo never declared — production carries `A-`, `AIMS-`,
- * `AISVS-` and `EUAIA-`, seeded from src/data/libraries by a different path.
+ * carry populations this repo never declared.
+ *
+ * THE EXAMPLE THIS USED TO GIVE HAS EXPIRED. It named `A-`, `AIMS-`, `AISVS-`
+ * and `EUAIA-` as populations "this repo never declared ... seeded from
+ * src/data/libraries by a different path". All four are now declared and
+ * delivered by `scripts/seed-framework-catalogs.ts` from fixtures in
+ * `prisma/fixtures/` — iso27001 (93 A-*), iso42001, owasp-aisvs and eu-ai-act
+ * are each listed there (#2624). The reported-not-failed behaviour is still
+ * correct, but it is no longer correct to point at those prefixes as the reason
+ * for it.
  */
 import fs from 'node:fs';
 import path from 'node:path';

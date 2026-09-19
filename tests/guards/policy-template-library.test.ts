@@ -32,9 +32,8 @@
  * `usecases/policy-template-mapping.ts`, not seeded, so a fixture read is the
  * honest question there. Its NIS2 half now resolves against the requirement set
  * production INSTALLS (`nis2-control-templates.json`) rather than the dev-only
- * `nis2_requirements.json`; the ISO 27001 half cannot follow, because no
- * production seeder ships an ISO 27001 Annex A catalogue at all — see the
- * comment at that assertion.
+ * `nis2_requirements.json`; the ISO 27001 half has NOT followed yet, though the
+ * reason it could not has since expired — see the comment at that assertion.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -155,10 +154,19 @@ describe('IC original gap-fill policy templates', () => {
         );
         expect(nis2Codes.size).toBeGreaterThanOrEqual(20);
 
-        // ISO 27001 has NO production catalogue — no seeder the entrypoint runs
-        // ships an Annex A requirement set — so this half stays an
-        // internal-consistency check against the vendored fixture. Repointing it
-        // would mean naming a delivery path that does not exist.
+        // THIS COMMENT USED TO SAY ISO 27001 HAS NO PRODUCTION CATALOGUE, AND
+        // GAVE THAT AS THE REASON NOT TO REPOINT THE ASSERTION. It is no longer
+        // true: `prisma/fixtures/iso27001-control-templates.json` carries 93 A-*
+        // templates with 93 requirements and `scripts/seed-framework-catalogs.ts`
+        // lists it, so the delivery path exists (#2624).
+        //
+        // The assertion still reads the vendored fixture, and that is now a
+        // CHOICE rather than a necessity. Repointing it to the delivered
+        // catalogue swaps this half from an internal-consistency check to a
+        // production-truth one — a different and better question, but a
+        // behaviour change to make deliberately with its own reasoning, not a
+        // side effect of correcting a stale comment. Recorded here so the next
+        // reader is not told the door is locked when it is merely shut.
         const isoCodes = new Set((readJson('prisma/fixtures/iso27001_2022_annexA.json') as { key: string }[]).map((r) => r.key));
         expect(isoCodes.size).toBeGreaterThan(0);
 

@@ -224,3 +224,61 @@ describe('Import Metadata Structure', () => {
         expect(typeof lib.packager === 'string' || lib.packager === undefined).toBe(true);
     });
 });
+
+/**
+ * A RELABEL IS NOT A CHANGE OF OBLIGATION (#2619 pre-merge review).
+ *
+ * `changedCodes` drives `propagateFrameworkDelta`, which sets every linked
+ * control to NEEDS_REVIEW (`usecases/framework-delta.ts:163`). Reserving that
+ * for title/description keeps a `section` or `category` relabel from demoting
+ * a tenant's implemented controls and notifying them about a heading.
+ */
+describe('changedCodes is substantive-only', () => {
+    const { computeRequirementDiff } = jest.requireActual<
+        typeof import('@/app-layer/services/library-updater')
+    >('@/app-layer/services/library-updater');
+
+    /** Exactly the filter `library-importer.ts` applies before propagating. */
+    const substantive = (changed: Array<{ code: string; fields: string[] }>) =>
+        changed.filter((c) => c.fields.some((f) => f === 'title' || f === 'description')).map((c) => c.code);
+
+    const base = { code: 'V2.1.1', title: 'Minimum Password Length', description: 'Require twelve characters.' };
+
+    it('a section-only relabel is diffed as changed but does not propagate', () => {
+        const diff = computeRequirementDiff(
+            [{ ...base, category: 'L1', section: 'L1' }],
+            [{ ...base, category: 'L1', section: 'Authentication' }],
+        );
+        // The row still gets WRITTEN — the diff must see it…
+        expect(diff.changed).toHaveLength(1);
+        expect(diff.changed[0].fields).toEqual(['section']);
+        // …but no control is flagged for re-review over a heading.
+        expect(substantive(diff.changed)).toEqual([]);
+    });
+
+    it('a reworded requirement still propagates', () => {
+        // The positive control. Without it, a filter that returned [] always
+        // would pass the test above.
+        const diff = computeRequirementDiff(
+            [{ ...base, category: 'L1', section: 'Authentication' }],
+            [{ ...base, description: 'Require fourteen characters.', category: 'L1', section: 'Authentication' }],
+        );
+        expect(diff.changed[0].fields).toEqual(['description']);
+        expect(substantive(diff.changed)).toEqual(['V2.1.1']);
+    });
+
+    it('a rename propagates, and a mixed relabel+rename propagates once', () => {
+        const renamed = computeRequirementDiff(
+            [{ ...base, category: 'L1', section: 'Authentication' }],
+            [{ ...base, title: 'Minimum Passphrase Length', category: 'L1', section: 'Authentication' }],
+        );
+        expect(substantive(renamed.changed)).toEqual(['V2.1.1']);
+
+        const mixed = computeRequirementDiff(
+            [{ ...base, category: 'L1', section: 'L1' }],
+            [{ ...base, title: 'Minimum Passphrase Length', category: 'L1', section: 'Authentication' }],
+        );
+        expect(mixed.changed[0].fields.sort()).toEqual(['section', 'title']);
+        expect(substantive(mixed.changed)).toEqual(['V2.1.1']);
+    });
+});

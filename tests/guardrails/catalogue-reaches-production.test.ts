@@ -56,10 +56,18 @@
  * ═══ WHAT THIS CANNOT SEE ═══
  *
  * Populations `prisma/seed.ts` generates INLINE reach no fixture, so a
- * fixture-keyed scan is blind to them by construction — ISO 27001 Annex A (93
- * templates) among them. Naming that limit here rather than implying full
- * coverage: the companion `tests/integration/catalogue-parity.test.ts` seeds
- * both paths and diffs, which is the only check that sees everything.
+ * fixture-keyed scan is blind to them by construction. Naming that limit here
+ * rather than implying full coverage: the companion
+ * `tests/integration/catalogue-parity.test.ts` seeds both paths and diffs,
+ * which is the only check that sees everything.
+ *
+ * ISO 27001 ANNEX A USED TO BE THE EXAMPLE HERE, AND IT IS NO LONGER TRUE.
+ * `prisma/fixtures/iso27001-control-templates.json` carries all 93 A-* templates
+ * and 93 requirements, and `scripts/seed-framework-catalogs.ts` lists it — so
+ * Annex A has a delivery path and this scan does see it. The claim did not move;
+ * the catalogue did, and the prose stayed where it was (#2624). Corrected rather
+ * than deleted, because the limit above is still real for whatever remains
+ * inline.
  */
 import fs from 'node:fs';
 import path from 'node:path';

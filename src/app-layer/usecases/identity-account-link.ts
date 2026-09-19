@@ -40,6 +40,7 @@
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
+import { emailKey } from '@/lib/identity/email-key';
 
 /** Bound on the employee population read in one matching pass. */
 const MAX_EMPLOYEES = 10_000;
@@ -90,11 +91,13 @@ export interface LinkMatchResult {
     readonly contradicted: number;
 }
 
-/** Normalised join key. Directory casing and HR casing routinely disagree. */
-function emailKey(raw: string | null | undefined): string | null {
-    const v = String(raw ?? '').trim().toLowerCase();
-    return v.length > 0 ? v : null;
-}
+// `emailKey` MOVED to `@/lib/identity/email-key` (imported above) rather than
+// copied. It was private here, which was right while this matcher was the only
+// caller; the joiner planner now asks the same question of the same two columns,
+// and a second spelling of the rule is how the collision check and this matcher
+// come to disagree about one address. See that module for what such a
+// disagreement costs — an account no link ever covers, i.e. one the leaver can
+// never disable.
 
 /**
  * Observe worker <-> account pairings for one provider and record them.
