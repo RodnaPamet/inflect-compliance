@@ -1949,6 +1949,7 @@
       },
       "metaApplicability": "Applicability",
       "objectiveEmpty": "No objective.",
+      "objectiveExpressedElsewhere": "Set out through this control’s mapped requirements and tasks.",
       "activityEmptyDesc": "Status changes, link updates, and edits show up here once anything moves.",
       "testsVsChecks": "Tests are manual test plans you execute on a schedule. Checks are automated integration checks the platform runs for you — a failing check can feed a test run automatically.",
       "checksVsTests": "Checks are automated integration runs (on a schedule). For manual, human-executed test plans, use the Tests tab. A failing check can create a test run automatically.",
