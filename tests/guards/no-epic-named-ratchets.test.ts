@@ -142,10 +142,34 @@ describe('epic-named ratchets are not added back', () => {
 
     it('the retirement actually happened', () => {
         // Guards against a revert that restores the retired files without
-        // anyone noticing this rule went quiet. 777 -> 624 on 2026-08-05;
-        // the ceiling leaves room for legitimate new invariant-named guards
-        // while catching a bulk restore.
-        expect(guardFiles().length).toBeLessThan(700);
+        // anyone noticing this rule went quiet. 777 -> 624 on 2026-08-05.
+        //
+        // RAISED 700 -> 725 on 2026-09-19, because the ceiling had stopped
+        // measuring what it is for. The retirement removed EPIC-NAMED guards;
+        // the tree then grew back to 697 with invariant-named ones, which is
+        // precisely the growth the comment above says it means to permit. At
+        // 697 the headroom was 2 — `toBeLessThan(700)` fails AT 700 — and four
+        // legitimate new guards were in flight across two concurrent stacks:
+        //
+        //     questionnaire-reaches-production      (#2622)
+        //     soa-gate-is-declared-not-inferred     (#2617)
+        //     section-axis-is-structural            (#2619)
+        //     identity-write-ceiling-matches-the-pass (#2638)
+        //
+        // so the THIRD of them to merge would have turned main red whoever
+        // owned it. That is the ceiling catching ordinary work, not a bulk
+        // restore.
+        //
+        // THE COUNT WAS ALWAYS THE BACKSTOP, NOT THE DETECTOR. A bulk restore
+        // reintroduces epic-named FILES, and the assertion immediately above
+        // names them one by one — it fails with the list, not with a number.
+        // 725 still sits 52 below the pre-retirement 777, so a restore of the
+        // 153 retired files remains impossible to land quietly.
+        //
+        // Found by a peer's eight-way union sweep across both stacks; neither
+        // a per-branch measurement nor either stack's own union would have
+        // seen it, because no single branch crosses the line.
+        expect(guardFiles().length).toBeLessThan(725);
     });
 
     /**
