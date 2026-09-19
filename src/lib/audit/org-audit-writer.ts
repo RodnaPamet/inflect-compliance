@@ -16,6 +16,9 @@
  * CONCURRENCY: PostgreSQL advisory locks (per-organization)
  *   - pg_advisory_xact_lock(hashtext('org:' || organizationId))
  *     serializes appends per organization
+ *   - The supported queue depth and every timeout around it are
+ *     DECLARED in `src/lib/db/concurrency-limits.ts` (#2653, #2661),
+ *     not inherited from Prisma / node-postgres defaults
  *   - The 'org:' prefix namespaces the lock so it can NEVER collide
  *     with the per-tenant lock used by appendAuditEntry — `hashtext`
  *     of 'org:abc123' and of tenantId 'abc123' produce different
@@ -38,6 +41,7 @@ import { PrismaClient, OrgAuditAction } from '@prisma/client';
 import * as prismaModule from '../prisma';
 import { computeOrgEntryHash } from './org-canonical-hash';
 import { toCanonicalTimestamp } from './canonical-hash';
+import { AUDIT_APPEND_TX_OPTIONS } from '../db/concurrency-limits';
 
 /**
  * Lazy getter for the default PrismaClient singleton.
@@ -115,6 +119,24 @@ export async function appendOrgAuditEntry(
 
     const db = client || getDefaultPrisma();
 
+    // AUDIT_APPEND_TX_OPTIONS is DECLARED, not inherited (#2661).
+    //
+    // The same three limits, the same mechanism, one file over from
+    // `audit-writer.ts`. The advisory lock below is taken INSIDE the
+    // transaction, so N concurrent appends for one organization each
+    // hold a pooled connection and an open transaction while idling on
+    // the lock — which is what makes the inherited defaults binding
+    // rather than theoretical:
+    //   • `maxWait` (default 2000) — time to acquire the connection.
+    //   • `timeout` (default 5000) — time the BODY may run, and the
+    //     lock queue is charged HERE, not to maxWait. Declaring only
+    //     maxWait would leave the larger half of the wait on a default
+    //     the stated design point cannot fit inside.
+    //
+    // Deliberately the SAME constants as the tenant path rather than a
+    // second set: both serialise on a per-key advisory lock held for
+    // the same body, and two sources of truth for one property is how
+    // they drift. Derivations live in `src/lib/db/concurrency-limits.ts`.
     return db.$transaction(async (tx) => {
         // 1. Per-org advisory lock — 'org:' prefix namespaces against
         //    the per-tenant locks used by AuditLog.
@@ -179,7 +201,7 @@ export async function appendOrgAuditEntry(
         );
 
         return { id, entryHash, previousHash };
-    });
+    }, AUDIT_APPEND_TX_OPTIONS);
 }
 
 // ─── Chain Verification ─────────────────────────────────────────────
