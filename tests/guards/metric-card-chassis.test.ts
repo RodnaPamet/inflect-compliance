@@ -23,14 +23,14 @@
  */
 import * as fs from "fs";
 import * as path from "path";
+import { codeOf } from "../helpers/source-blocks";
 
 const ROOT = path.resolve(__dirname, "../..");
+// #2246 Class A — comments blanked at the read, string literals kept.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), "utf8"));
 
 describe("v2-PR-8 MetricCard chassis primitive contract", () => {
-    const src = fs.readFileSync(
-        path.join(ROOT, "src/components/ui/MetricCard.tsx"),
-        "utf8",
-    );
+    const src = read("src/components/ui/MetricCard.tsx");
 
     it("exports the MetricCard component + props interface", () => {
         expect(src).toMatch(/export\s+function\s+MetricCard/);
@@ -97,10 +97,7 @@ describe("v2-PR-8 MetricCard chassis primitive contract", () => {
 });
 
 describe("v2-PR-8 KpiCard adoption", () => {
-    const src = fs.readFileSync(
-        path.join(ROOT, "src/components/ui/KpiCard.tsx"),
-        "utf8",
-    );
+    const src = read("src/components/ui/KpiCard.tsx");
 
     it("imports + renders <MetricCard>", () => {
         expect(src).toMatch(

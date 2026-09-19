@@ -71,6 +71,36 @@ import { analyseClassA, type ClassAReport } from '../helpers/raw-source-assertio
  *     that shipped it: deleting `'AuditLog'` from `EXCLUDED_MODELS` in
  *     `src/lib/prisma.ts` and leaving a comment naming it left that test GREEN
  *     on the raw read and turned it RED through `codeOf`.
+ *   • 356 (2026-09-19): 20 files converted at the read seam, chosen by a
+ *     measured PROSE-EXPOSURE ranking rather than alphabetically. For every
+ *     raw site the needle was counted in the target TWICE — once on the raw
+ *     text and once through `codeOf` — and a file was a candidate only where
+ *     some needle matched FEWER times masked, i.e. the asserted token really
+ *     does occur in the prose of the file being read. 163 of the 376 listed
+ *     files carry at least one such needle. Inside these 20, measured on the
+ *     pre-conversion tree: 307 raw assertion sites, 12 of them carrying a
+ *     needle the analyser cannot score (a flagged or interpolated regex), 74
+ *     prose-inflated, and 54 of those 74 with exactly ONE surviving code
+ *     occurrence — one deletion away from green-on-prose. All 20 files carry
+ *     at least one.
+ *
+ *     The conversion turned one assertion red, and that is the finding rather
+ *     than a regression: `ai-aisvs-hardening-coverage` asserted
+ *     `/default-deny/i` over the whole of
+ *     `src/app-layer/ai/risk-assessment/feature-gate.ts` for AISVS C5.2.1,
+ *     and the phrase occurs ONLY in that file's docblock and one inline
+ *     comment. The allow-list loop could have been deleted with the paragraph
+ *     describing it left behind and the guard would have stayed green. It now
+ *     reads `functionBodyOf(gate, 'checkFeatureGate')` and asserts the loop
+ *     itself. Note WHY the ranking above did not predict it: the assertion
+ *     carries an `i` flag, so its needle is not a recoverable literal and the
+ *     site sits in the un-analysed bucket — the exposure ranking UNDER-counts.
+ *
+ *     Three of the 20 also mask `readPrismaSchema()`, and one of those is
+ *     `enterprise-identity-epic` — one of the FIVE the 381 entry below names
+ *     as real but NOT fixed there, because that read lowers
+ *     `AMBIGUOUS_NEEDLE_BASELINE`. It is fixed here and that constant moves
+ *     in this same diff.
  *   • 381 (2026-09-17): seated when this ratchet landed. Measured by AST walk
  *     over every `.ts`/`.tsx` file git lists under `tests/` — 2402 files,
  *     12301 `toMatch`/`toContain` sites, of which 5937 resolve to the whole
@@ -118,10 +148,10 @@ import { analyseClassA, type ClassAReport } from '../helpers/raw-source-assertio
  *     So a file's presence in this list is NOT an accusation, and this ratchet
  *     is a cap rather than a work queue: it says the population may not grow.
  */
-const RAW_ASSERTING_FILE_BASELINE = 376;
+const RAW_ASSERTING_FILE_BASELINE = 356;
 
 /**
- * The 379 files themselves, sorted, in a sibling JSON.
+ * The 356 files themselves, sorted, in a sibling JSON.
  *
  * WHY A LIST AND NOT ONLY A NUMBER. A count-only ceiling can say "one more
  * than yesterday" and nothing else, and on a population this size that is not

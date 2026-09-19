@@ -33,10 +33,11 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SCAN_ROOT = path.join(ROOT, 'src/app');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
 const PRIMITIVE_PATH = 'src/components/layout/PageActions.tsx';
 const PAGE_HEADER_PATH = 'src/components/layout/PageHeader.tsx';
@@ -105,7 +106,9 @@ describe('PageActions discipline (Roadmap-3 PR-1)', () => {
         // because the regex anchors elsewhere.
         const offenders: Hit[] = [];
         for (const file of walk(SCAN_ROOT)) {
-            const content = fs.readFileSync(file, 'utf-8');
+            // Masked (#2246 Class A): a `<Button size="lg">` written inside
+            // a comment or a commented-out block is not a live offender.
+            const content = codeOf(fs.readFileSync(file, 'utf-8'));
             const rx = new RegExp(BUTTON_SIZE_OUTLIER_RE.source, 'g');
             let match: RegExpExecArray | null;
             while ((match = rx.exec(content)) !== null) {

@@ -8,9 +8,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// #2246 Class A — source reads masked at the seam (comments blanked,
+// string literals kept). The JSON fixture keeps its own RAW reader: JSON
+// has no comments to blank and codeOf would corrupt a `//` inside a string.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+const readJson = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const usecase = read('src/app-layer/usecases/gap-assessment-assignment.ts');
 
 describe('NIS2 assignment — single source of the bank', () => {
@@ -22,7 +27,7 @@ describe('NIS2 assignment — single source of the bank', () => {
 });
 
 describe('NIS2 assignment — partition is a disjoint cover of the real 116-question bank', () => {
-    const bank = JSON.parse(read('prisma/fixtures/nis2-gap-assessment.json')) as {
+    const bank = JSON.parse(readJson('prisma/fixtures/nis2-gap-assessment.json')) as {
         questions: Array<{ id: string; respondent: string }>;
     };
     const ROLES = new Set(['CEO', 'IT', 'HR', 'PROCUREMENT', 'ANYONE']);
@@ -64,7 +69,7 @@ describe('NIS2 assignment — invariants', () => {
 
 describe('NIS2 assignment — schema + route registration', () => {
     it('Nis2GapAssignment carries both tenantId-leading indexes + the role unique', () => {
-        const schema = readPrismaSchema();
+        const schema = codeOf(readPrismaSchema());
         const block = schema.slice(schema.indexOf('model Nis2GapAssignment'));
         expect(block).toMatch(/@@index\(\[tenantId, assessmentId\]\)/);
         expect(block).toMatch(/@@index\(\[tenantId, assigneeUserId\]\)/);

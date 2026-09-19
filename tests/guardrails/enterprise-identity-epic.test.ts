@@ -27,7 +27,12 @@ const ROOT = path.resolve(__dirname, '../..');
  */
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
-const schema = readPrismaSchema();
+// #2246 Class A — the TS reads above were already masked; the schema read
+// was not, which is the exact residual the ratchet's own history names.
+// `codeOf` lexes `.prisma` correctly (`//` comments, double-quoted
+// strings) and preserves offsets, so the `indexOf`/`slice` block
+// extractions below still line up.
+const schema = codeOf(readPrismaSchema());
 const tenantContext = read('src/lib/tenant-context.ts');
 const permissions = read('src/lib/permissions.ts');
 const apiKeyAuth = read('src/lib/auth/api-key-auth.ts');

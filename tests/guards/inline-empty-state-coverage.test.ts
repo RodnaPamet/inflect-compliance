@@ -29,35 +29,41 @@
  */
 import * as fs from "fs";
 import * as path from "path";
+import { codeOf } from "../helpers/source-blocks";
 
 const ROOT = path.resolve(__dirname, "../..");
 const PRIMITIVE = "src/components/ui/inline-empty-state.tsx";
 
 describe("InlineEmptyState primitive contract", () => {
     const fp = path.join(ROOT, PRIMITIVE);
+    // Read with comments blanked (#2246 Class A). `py-8` / `py-6` /
+    // `text-sm font-medium` are each spelled out in this primitive's own
+    // docblock as well as in its className, so a raw read cannot tell the
+    // rhythm contract from the paragraph describing it.
+    const readSrc = () => codeOf(fs.readFileSync(fp, "utf8"));
 
     it("primitive file exists at the expected path", () => {
         expect(fs.existsSync(fp)).toBe(true);
     });
 
     it("exports InlineEmptyState + props type", () => {
-        const src = fs.readFileSync(fp, "utf8");
+        const src = readSrc();
         expect(src).toMatch(/export\s+function\s+InlineEmptyState/);
         expect(src).toMatch(/InlineEmptyStateProps/);
     });
 
     it("does NOT import from lucide-react (R2-PR8 ban)", () => {
-        const src = fs.readFileSync(fp, "utf8");
+        const src = readSrc();
         expect(src).not.toMatch(/from\s+["']lucide-react["']/);
     });
 
     it("emits the data-inline-empty-state marker for E2E selectability", () => {
-        const src = fs.readFileSync(fp, "utf8");
+        const src = readSrc();
         expect(src).toMatch(/data-inline-empty-state/);
     });
 
     it("vertical rhythm contract: py-8 with icon / py-6 without", () => {
-        const src = fs.readFileSync(fp, "utf8");
+        const src = readSrc();
         // The conditional rhythm is the primitive's locked
         // contract. Flattening to one shared padding undoes the
         // composed-with-icon vs bare-text rhythm distinction.
@@ -66,7 +72,7 @@ describe("InlineEmptyState primitive contract", () => {
     });
 
     it("title weight contract: text-sm font-medium", () => {
-        const src = fs.readFileSync(fp, "utf8");
+        const src = readSrc();
         // Locked at `text-sm font-medium` per the primitive's
         // docblock: "premium products lean on icon + tone for
         // hierarchy at this density rather than weight contrast."

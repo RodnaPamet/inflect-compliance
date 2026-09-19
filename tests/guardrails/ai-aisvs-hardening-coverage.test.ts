@@ -32,12 +32,21 @@ import {
 } from '@/app-layer/ai/risk-assessment/prompt-builder';
 import type { RiskAssessmentInput } from '@/app-layer/ai/risk-assessment/types';
 
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// #2246 Class A — TypeScript reads are masked at the seam (comments
+// blanked, string literals kept), so an assertion about a metric name or
+// a guard call cannot be satisfied by a docblock that merely names it.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+// Markdown is NOT lexable by codeOf (`//` in a URL would blank the rest of
+// the line), and the doc assertions below are ABOUT prose. Separate reader,
+// deliberately raw.
+const readDoc = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const AI = 'src/app-layer/ai/risk-assessment';
 
 describe('AISVS self-assessment doc', () => {
-    const doc = read('docs/security/aisvs-self-assessment.md');
+    const doc = readDoc('docs/security/aisvs-self-assessment.md');
 
     it('covers all 7 applicable chapters', () => {
         for (const ch of ['C2', 'C4', 'C5', 'C6', 'C7', 'C11', 'C12']) {
@@ -203,7 +212,21 @@ describe('C6.1.3 / C6.1.4 / C12.4.3 / C5.2.1 — supply-chain integrity + config
 
     it('the feature gate is an explicit default-deny allow-list (C5.2.1 L2)', () => {
         expect(gate).toMatch(/AI_ACCESS_ALLOWLIST/);
-        expect(gate).toMatch(/default-deny/i);
+        // RETARGETED (#2246 Class A). This line was `expect(gate).toMatch(
+        // /default-deny/i)`, and that phrase lives ONLY in feature-gate.ts's
+        // docblock and one inline comment — masking the read at the seam
+        // turned it red, which is the finding rather than a regression: the
+        // assertion named a security property and was satisfied by the
+        // paragraph describing it. Deleting the loop below while keeping the
+        // AISVS docblock would have left it green.
+        //
+        // The property in CODE is that `checkFeatureGate` walks EVERY
+        // allow-list predicate and returns the first refusal, so falling off
+        // the end of the list is the only path to `allowed: true`.
+        const body = functionBodyOf(gate, 'checkFeatureGate');
+        expect(body).toMatch(/for \(const predicate of AI_ACCESS_ALLOWLIST\)/);
+        expect(body).toMatch(/if \(!result\.allowed\) return result;/);
+        expect(body).toMatch(/return \{ allowed: true \};\s*\}$/);
     });
 });
 

@@ -49,9 +49,10 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
 const PRIMITIVE = 'src/components/ui/required-marker.tsx';
 const FORM_FIELD = 'src/components/ui/form-field.tsx';
@@ -98,7 +99,10 @@ describe('Required-field marker discipline (Roadmap-4 PR-4)', () => {
                 if (!/\.tsx$/.test(e.name)) continue;
                 const rel = path.relative(ROOT, full);
                 if (rel === PRIMITIVE) continue;
-                const src = fs.readFileSync(full, 'utf-8');
+                // Masked (#2246 Class A): an asterisk span written into a
+                // comment or a commented-out block is not a hand-rolled
+                // marker, and must not be reported as an offender.
+                const src = codeOf(fs.readFileSync(full, 'utf-8'));
                 // <span ... text-content-error ...>*</span> shape.
                 // Matches both `text-content-error` solo and combos
                 // like `text-content-error ml-1`.

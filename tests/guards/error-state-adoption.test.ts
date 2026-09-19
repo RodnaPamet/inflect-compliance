@@ -18,6 +18,7 @@
  *      `<ErrorState>` OR appears in EXEMPTIONS with a written reason.
  */
 import * as fs from 'fs';
+import { codeOf } from '../helpers/source-blocks';
 import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -45,9 +46,14 @@ function walk(dir: string, results: string[] = []): string[] {
 
 describe('ErrorState adoption (R11-PR3)', () => {
     test('the shared ErrorState primitive preserves its canonical shape', () => {
-        const src = fs.readFileSync(
-            path.resolve(ROOT, 'src/components/ui/error-state.tsx'),
-            'utf-8',
+        // #2246 Class A — comments blanked at the read. `role="alert"`,
+        // `text-content-error`, `onRetry` and `retryLabel` are all named in
+        // this primitive's docblock as well as in its body.
+        const src = codeOf(
+            fs.readFileSync(
+                path.resolve(ROOT, 'src/components/ui/error-state.tsx'),
+                'utf-8',
+            ),
         );
         // alert role for accessibility
         expect(src).toMatch(/role="alert"/);
@@ -65,7 +71,9 @@ describe('ErrorState adoption (R11-PR3)', () => {
         for (const file of walk(path.resolve(ROOT, 'src/app'))) {
             const rel = path.relative(ROOT, file);
             if (EXEMPTIONS[rel]) continue;
-            const src = fs.readFileSync(file, 'utf-8');
+            // Masked here too: a commented-out import or a mention of
+            // `<ErrorState>` in a note must not count as adoption.
+            const src = codeOf(fs.readFileSync(file, 'utf-8'));
             const imports = /from\s+['"]@\/components\/ui\/error-state['"]/.test(src);
             const mounts = /<ErrorState\b/.test(src);
             if (!imports || !mounts) {

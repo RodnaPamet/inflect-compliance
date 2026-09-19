@@ -230,12 +230,33 @@ const HIGH_MULTIPLICITY = 5;
 //   the four sibling PRs open beside it: none of them moves the count, so the
 //   merge order does not matter for this ratchet. The union was measured too,
 //   and agrees at 1419.
-const AMBIGUOUS_NEEDLE_BASELINE = 1419;
+//   1419 -> 1365 (2026-09-19, the #2246 Class A batch of 20 read seams).
+//   Nothing in that diff touched an assertion: masking comments at the READ
+//   removes comment occurrences from what each needle is counted against, so
+//   54 needles that were ambiguous only THROUGH PROSE became unique. That is
+//   the same mechanism the 2026-09-18 note above records for a comment
+//   rewrite, applied deliberately and in bulk — three of the 20 mask
+//   `readPrismaSchema()`, which is where most of the 54 come from, since the
+//   concatenated schema is the most-read file in `tests/`.
+//
+//   SHARED STATE, AND MEASURED ON THIS TREE ONLY. This is a zero-headroom
+//   number shared with every open PR; 1365 is the live count of
+//   main@8a46be9c3 + this branch. Two sibling Class A batches were in flight
+//   beside it, and any of them that also masks a read will lower it further —
+//   so whoever merges second re-measures on the merged tree rather than
+//   keeping this figure.
+const AMBIGUOUS_NEEDLE_BASELINE = 1365;
 // 237 (2026-09-18, #2622): −1 on the merge, for the same reason and by the same
 // method as the 1420 above — re-measured on the merged tree, not carried over
 // from either branch. It surfaced only after the other end was re-seated,
 // because the drift sentinel reports one end at a time.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 237;
+// 230 (2026-09-19): −7 from the same #2246 Class A batch that took the
+// baseline above 1419 -> 1365 — a needle whose five-plus satisfying positions
+// were partly comment occurrences drops below the high-multiplicity threshold
+// once the read is masked. It surfaced only after the other end was re-seated,
+// because the drift sentinel reports one end at a time. Shared state with
+// every open PR: re-measure on the merged tree.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 230;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -387,7 +408,14 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 237;
 // there). The way to bring this seven back down is a constant read path for
 // those two tests, which is a real change to how they resolve "the migration
 // that is actually running" and is not smuggled in here.
-const UNANALYSABLE_READ_BASELINE = 1455;
+// 1454 (2026-09-19): −1, and the one site is nameable. The #2246 Class A
+// batch retargeted `ai-aisvs-hardening-coverage`'s AISVS C5.2.1 assertion
+// from `expect(gate).toMatch(/default-deny/i)` — a whole-file read whose
+// needle carries a flag, so `needle-not-literal`, so one of the skips summed
+// here — onto `functionBodyOf(gate, 'checkFeatureGate')`, which is a narrowed
+// subject and leaves the whole-file population altogether. Taking the
+// ratchet's own advice lowers this ceiling by exactly the site it removed.
+const UNANALYSABLE_READ_BASELINE = 1454;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
