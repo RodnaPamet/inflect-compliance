@@ -228,11 +228,23 @@ export const AUDIT_APPEND_MAX_WAIT_MS = 10_000;
 export const AUDIT_APPEND_TIMEOUT_MS = 15_000;
 
 /**
- * Transaction options for the per-tenant audit append.
+ * Transaction options for BOTH hash-chained audit appends.
  *
  * Passed as the second argument to `$transaction` in
- * `src/lib/audit/audit-writer.ts`. Both fields are load-bearing; see
- * each constant above for why.
+ * `src/lib/audit/audit-writer.ts` (per-tenant, #2653) and
+ * `src/lib/audit/org-audit-writer.ts` (per-organization, #2661).
+ * Both fields are load-bearing; see each constant above for why.
+ *
+ * The two call sites SHARE these numbers on purpose. They are the same
+ * shape — a per-key `pg_advisory_xact_lock` taken inside the
+ * transaction, serialising appends for one key — so the queue the
+ * budgets have to cover is the same queue. Giving the org path its own
+ * copy would create a second source of truth for one property, and the
+ * copies would drift the first time only one of them was revised.
+ *
+ * This docblock named only the tenant path until #2661. If a third
+ * call site appears, name it here too: a reader checking whether a
+ * number is safe to change needs the full list of who reads it.
  */
 export const AUDIT_APPEND_TX_OPTIONS = {
     maxWait: AUDIT_APPEND_MAX_WAIT_MS,
