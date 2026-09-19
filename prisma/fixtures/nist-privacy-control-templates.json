@@ -1723,10 +1723,10 @@
         },
         {
           "title": {
-            "en": "Maintain a current holder and a stand-in for every communication role"
+            "en": "Refresh the holder and stand-in for every communication role each period"
           },
           "description": {
-            "en": "An assignment names roles, but a role with no occupant behind it cannot approve or speak, so carry each named communication role through to a person today and an identified cover, and update it as people join, change job or leave. Put the list where anyone fielding a question about the organisation's data processing can see who holds the role now, instead of routing it to whoever answered last time. Keep the dated history alongside the current state: a communication issued three months ago has to be attributable to whoever held the approval then, not to whoever holds it today."
+            "en": "An assignment names roles, but a role with no occupant behind it cannot approve or speak, so each period carry every named communication role through to a person today and an identified cover, and record the reassignments made since the last pass. Publish it where anyone fielding a question about the organisation's data processing can see who holds the role now, instead of routing it to whoever answered last time. Keep the dated history alongside the current state: a communication issued three months ago has to be attributable to whoever held the approval then, not to whoever holds it today."
           },
           "phase": "OPERATE",
           "evidenceHint": {

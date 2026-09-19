@@ -40,6 +40,16 @@ const FRAME_MIN_WORDS = 4;       // known-bad shares 5; worst false positive sha
 const HINT_RUN_WORDS = 5;        // an evidenceHint echoing 5+ words of its title
 const VERB_PILE_SHARE = 0.15;    // a leading verb already >15% of the file
 
+// MIRRORED FROM tests/guardrails/control-task-conformance.test.ts, because a
+// gate that runs BEFORE the write should enforce everything the guard enforces
+// after it. The CM slice passed this gate, then failed that suite in CI on
+// "Maintain a current holder…" — `maintain` names a state with nothing to
+// finish, so a task opening with it can never be marked done. Every rule that
+// file checks on a title is now checked here too, at the point it is cheap.
+const UNFINISHABLE_OPENERS = ['ensure', 'maintain', 'be ', 'remain', 'continue', 'keep'];
+const MIN_TASKS = 3;
+const MAX_TASKS = 6;
+
 /** Dice coefficient over bigrams — cheap, and stable for short titles. */
 function similarity(a, b) {
     const grams = (s) => {
@@ -167,6 +177,33 @@ for (const c of candidates) {
     if (desc && desc.length <= title.length) {
         findings.push(`${c.code}: description is not longer than its title`);
     }
+
+    // 7. a title that names a STATE has no completion — you cannot finish
+    //    "maintain the register". Mirrors control-task-conformance.
+    const lower = title.toLowerCase().trim();
+    const opener = UNFINISHABLE_OPENERS.find((o) => lower.startsWith(o));
+    if (opener) {
+        findings.push(`${c.code}: opens with "${opener.trim()}" — a state, not an act, so it has no observable completion`);
+    }
+
+    // 8. an OPERATE task must name the artifact it produces
+    if (c.phase === 'OPERATE' && !ev) {
+        findings.push(`${c.code}: OPERATE task with no evidenceHint`);
+    }
+}
+
+// 9. per-control task counts, including the tasks already on the control.
+//    `keptCount` may be supplied by the caller; absent, only the batch counts.
+const perControl = new Map();
+for (const c of candidates) {
+    const n = (perControl.get(c.code) ?? 0) + 1;
+    perControl.set(c.code, n);
+}
+for (const [code, n] of perControl) {
+    const kept = candidates.find((c) => c.code === code)?.keptCount ?? 0;
+    const total = n + kept;
+    if (total < MIN_TASKS) findings.push(`${code}: ${total} tasks, below the ${MIN_TASKS} minimum`);
+    if (total > MAX_TASKS) findings.push(`${code}: ${total} tasks, above the ${MAX_TASKS} maximum`);
 }
 
 console.log(`corpus: ${existing.length} existing titles from ${fixturePath}`);
