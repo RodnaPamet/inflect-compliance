@@ -146,7 +146,13 @@ export async function verifyTenantChain(
                 to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAtIso"
          FROM "AuditLog"
          WHERE ${whereClause}
-         ORDER BY "createdAt" ASC`,
+         -- The id tiebreaker matches the order appendAuditEntry chains in.
+         -- Without it, rows sharing a millisecond can be walked in a different
+         -- order than they were written and a sound chain reads as tampered
+         -- with. (No backticks in here: this comment lives INSIDE a JS
+         -- template literal, so a backtick is a string delimiter to the
+         -- TypeScript parser before it is ever a character to Postgres.)
+         ORDER BY "createdAt" ASC, "id" ASC`,
         ...params,
     );
 

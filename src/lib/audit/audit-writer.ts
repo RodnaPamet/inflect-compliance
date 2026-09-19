@@ -161,10 +161,25 @@ export async function appendAuditEntry(input: AppendAuditInput, client?: PrismaC
         const occurredAt = toCanonicalTimestamp(now);
 
         // 2. Fetch the latest entryHash for this tenant's chain
+        //
+        // `, "id" DESC` IS LOAD-BEARING, and its absence was a latent bug.
+        // The advisory lock above serialises appends, and the comment at the
+        // timestamp assignment says that gives "distinct, ordered timestamps".
+        // Serialised is not distinct: `new Date()` is millisecond resolution
+        // and `createdAt` is `DateTime @default(now())`, so appends that each
+        // take under a millisecond — which is what a fast machine does — share
+        // a `createdAt`. `ORDER BY "createdAt" DESC LIMIT 1` then has no
+        // defined winner among the tied rows and an append can chain off the
+        // wrong predecessor, forking the chain.
+        //
+        // The tiebreaker's job is not to be chronological — cuid is not
+        // time-ordered — but to be a TOTAL ORDER that this query and the
+        // verifier both compute identically. `org-audit-writer.ts` has carried
+        // exactly this form since it was written; the tenant writer did not.
         const lastRows: Array<{ entryHash: string | null }> = await tx.$queryRawUnsafe(
             `SELECT "entryHash" FROM "AuditLog"
              WHERE "tenantId" = $1 AND "entryHash" IS NOT NULL
-             ORDER BY "createdAt" DESC
+             ORDER BY "createdAt" DESC, "id" DESC
              LIMIT 1`,
             input.tenantId,
         );
@@ -308,7 +323,10 @@ export async function verifyAuditChain(tenantId: string, client?: PrismaClient):
                 to_char("createdAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAtIso"
          FROM "AuditLog"
          WHERE "tenantId" = $1
-         ORDER BY "createdAt" ASC`,
+         -- Same total order as the append above, and for the same reason: a
+         -- verifier that walks tied rows in a different order than they were
+         -- chained reports a VALID chain as broken.
+         ORDER BY "createdAt" ASC, "id" ASC`,
         tenantId,
     );
 
