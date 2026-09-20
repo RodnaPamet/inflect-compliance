@@ -29,6 +29,13 @@
  *             landed only on the new major means the override is no
  *             longer a patch.
  *
+ *   UNANALYSABLE — the range is not `^X.Y.Z`, the only shape the
+ *             comparator reads, so freshness was NOT decided either
+ *             way. Reported rather than dropped: an entry that
+ *             produces no finding is indistinguishable from one that
+ *             passed, and coverage the report does not claim is the
+ *             defect this whole file is about.
+ *
  * ─── The advisory half ──────────────────────────────────────────────
  *
  * The offline guard records, per override, WHICH advisory justifies it
@@ -102,17 +109,126 @@ function satisfiesCaret(version, range) {
     return cmp(v, upper) < 0;
 }
 
+/**
+ * Can the freshness half reason about this range AT ALL?
+ *
+ * `satisfiesCaret` understands `^X.Y.Z` and nothing else — every other
+ * shape returns `null`. The loop below filters the registry's version
+ * list with `satisfiesCaret(v, spec) === true`, so an exact pin
+ * (`sharp: '0.35.4'`) or a conjunction (`nwsapi: '>=2.2.16 <2.2.25'`)
+ * yields an EMPTY in-range set, which makes both drift branches
+ * unreachable: the entry produces no finding and reads exactly like a
+ * pass. Three of today's 24 population entries are that shape.
+ *
+ * So the loop asks this first and emits an `unanalysable` finding
+ * instead of dropping the entry, because a silent drop is
+ * indistinguishable from a clean bill of health — the whole defect
+ * class this script was written for, one level down.
+ */
+const analysableRange = (spec) => spec.startsWith('^') && parse(spec.slice(1)) !== null;
+
 // ── inputs ─────────────────────────────────────────────────────────
 
+/** `pkg@>=1 <2` → `pkg`; a scoped name with no range selector → itself. */
+function overrideTargetName(key) {
+    const at = key.lastIndexOf('@');
+    const scopedOnly = key.startsWith('@') && at === 0;
+    return at > 0 && !scopedOnly ? key.slice(0, at) : key;
+}
+
+/**
+ * The TOP-LEVEL version-forcing overrides.
+ *
+ * `$name` values are skipped here because they force whatever the
+ * matching DIRECT dependency requests, so their freshness is
+ * Dependabot's job rather than this script's — and their registry
+ * entry is checked against that direct range by the offline guard.
+ */
 function versionForcingOverrides() {
     const pkg = readJson('package.json');
     const out = [];
     for (const [key, value] of Object.entries(pkg.overrides ?? {})) {
         if (typeof value !== 'string' || value.startsWith('$')) continue;
-        const at = key.lastIndexOf('@');
-        const scopedOnly = key.startsWith('@') && at === 0;
-        const name = at > 0 && !scopedOnly ? key.slice(0, at) : key;
-        out.push({ name, key, spec: value });
+        out.push({ name: overrideTargetName(key), key, spec: value });
+    }
+    return out;
+}
+
+/**
+ * The NESTED version-forcing overrides, at ANY depth —
+ * `{ jsdom: { ws: '^8.21.0' } }` and
+ * `{ 'jest-environment-jsdom': { jsdom: { ws: '^8.21.0' } } }` alike.
+ *
+ * These were skipped entirely until 2026-09-20, and the skip was a
+ * blind spot of exactly the kind this script exists to close. A nested
+ * LITERAL pin forces a transitive package just as hard as a top-level
+ * one; Dependabot does not touch it (it is not a direct dependency);
+ * and nothing was asking the registry whether it had fallen behind its
+ * own range. `@istanbuljs/load-nyc-config > js-yaml` is the case that
+ * makes it concrete — its own registry entry calls `^3.15.2` a
+ * security floor, "the 3.x branch of the SAME advisory" as the
+ * top-level `js-yaml` key, and that floor had never once been checked
+ * for freshness. `jsdom > ws` was the other, and it is the one no
+ * other entry covers even by accident.
+ *
+ * The walk RECURSES, because npm's `overrides` nest without limit. The
+ * first version of this function read exactly ONE level down, which
+ * was a smaller copy of the very bug it was written to fix: adding
+ * `{ 'jest-environment-jsdom': { jsdom: { ws: '^7.0.0' } } }` to
+ * `package.json` left the population unchanged at 24 and every offline
+ * check green (measured, 2026-09-20). There is no depth-3 entry today;
+ * the point is that one could be added and land outside the detector
+ * without anything going red.
+ *
+ * npm's `.` key pins the PARENT package itself rather than a child
+ * (`{ foo: { '.': '^1.0.0' } }` is an override on `foo`), so it is
+ * resolved against the trail instead of being read as a package name.
+ *
+ * Nested `$name` values stay skipped for the same reason as above.
+ */
+function nestedVersionForcingOverrides() {
+    const pkg = readJson('package.json');
+    const out = [];
+    const walk = (node, trail) => {
+        for (const [key, value] of Object.entries(node)) {
+            const self = key === '.' && trail.length > 0;
+            const target = self ? trail[trail.length - 1] : key;
+            const here = self ? trail : [...trail, key];
+            if (typeof value === 'string') {
+                if (value.startsWith('$')) continue;
+                out.push({ name: overrideTargetName(target), key: here.join(' > '), spec: value });
+                continue;
+            }
+            if (value && typeof value === 'object') walk(value, here);
+        }
+    };
+    for (const [parent, value] of Object.entries(pkg.overrides ?? {})) {
+        if (!value || typeof value !== 'object') continue;
+        walk(value, [parent]);
+    }
+    return out;
+}
+
+/**
+ * Everything the FRESHNESS half examines: top-level first, then the
+ * nested pins, deduplicated on `(name, spec)`.
+ *
+ * Top-level goes first on purpose — the same `(name, spec)` written
+ * under several parents is ONE registry question, and the label the
+ * report carries should be the canonical top-level key rather than
+ * whichever parent happened to be enumerated first. `brace-expansion
+ * ^5.0.9` is written three times (top-level, under
+ * `@sentry/bundler-plugin-core`, under `minimatch@>=10.0.0`) and must
+ * report once, as `brace-expansion@>=3.0.0 <=5.0.6`.
+ */
+function freshnessPopulation() {
+    const seen = new Set();
+    const out = [];
+    for (const o of [...versionForcingOverrides(), ...nestedVersionForcingOverrides()]) {
+        const id = `${o.name}|${o.spec}`;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push(o);
     }
     return out;
 }
@@ -121,6 +237,38 @@ function versionForcingOverrides() {
  * The version actually installed, ignoring npm's bundled tree (an
  * override cannot rewrite bundled deps, so a version in there says
  * nothing about whether the override is current).
+ *
+ * ─── KNOWN LIMITATION: keyed by PACKAGE NAME ────────────────────────
+ *
+ * This collects EVERY resolved instance of `name` anywhere in the
+ * tree. That is right for a bare top-level override, which rewrites
+ * every instance. It is WRONG for a nested pin, which constrains only
+ * the copy its parent resolves, and for a range-selector key
+ * (`js-yaml@>=4.0.0 <4.3.2`), which constrains only the instances
+ * whose requester asked inside that range.
+ *
+ * The concrete cost today, measured 2026-09-20 against this lockfile:
+ * `@istanbuljs/load-nyc-config > js-yaml ^3.15.2` constrains exactly
+ * `node_modules/@istanbuljs/load-nyc-config/node_modules/js-yaml`,
+ * which sits at 3.15.2 — but this function returns
+ * `{3.15.2, 4.3.2, 5.4.2}` and the loop below takes the MAX, so the
+ * report prints `locked: 5.4.2` for a `^3.15.2` pin. Because 5.4.2 is
+ * greater than any 3.x, the `lagging` branch is UNREACHABLE for that
+ * entry: no matter how far behind the real 3.x instance falls, it
+ * cannot be reported. `jsdom > ws ^8.21.0` happens to come out right,
+ * and only by accident — the constrained instance is the hoisted
+ * `node_modules/ws`, which is also the newest of the two `ws` copies.
+ *
+ * Fixing it means resolving each parent's own lockfile path(s) and
+ * replaying npm's directory walk from there, plus matching requested
+ * ranges for the selector keys. That was judged too large to bolt on
+ * here, and the naive version is WORSE: restricting to
+ * `node_modules/<parent>/node_modules/<child>` finds nothing for a
+ * hoisted instance, which makes the entry read as inert and drops it
+ * silently — re-opening the exact failure this script exists to close.
+ *
+ * So: for a nested pin, treat `locked` in the report as "the newest
+ * copy of this package anywhere", not "the copy this pin governs".
  */
 function lockedVersions(lock, name) {
     const suffix = `node_modules/${name}`;
@@ -257,6 +405,13 @@ if (process.argv.includes('--self-test')) {
         ['caret excludes next major', satisfiesCaret('5.0.0', '^4.12.27'), false],
         ['caret 0.x holds minor', satisfiesCaret('0.3.0', '^0.2.6'), false],
         ['caret 0.x admits patch', satisfiesCaret('0.2.7', '^0.2.6'), true],
+        // An `analysableRange` that answered `true` for everything
+        // would put exact pins and conjunctions back on the silent-drop
+        // path, which is what it was added to end.
+        ['caret is analysable', analysableRange('^1.14.4'), true],
+        ['exact pin is not analysable', analysableRange('0.35.4'), false],
+        ['conjunction is not analysable', analysableRange('>=2.2.16 <2.2.25'), false],
+        ['malformed caret is not analysable', analysableRange('^not.a.version'), false],
     ];
     const failed = checks.filter(([, actual, expected]) => actual !== expected);
     for (const [label, actual, expected] of failed) {
@@ -266,10 +421,56 @@ if (process.argv.includes('--self-test')) {
     process.exit(failed.length ? 1 : 0);
 }
 
+// ── population dump ────────────────────────────────────────────────
+//
+// Emits the exact set of overrides the freshness half will examine,
+// WITHOUT touching the network — so an offline Jest guard can assert
+// that the set still covers every version-forcing override in
+// `package.json`.
+//
+// The guard exists because the interesting failure is silent: this
+// script reports "all overrides are at the newest release their range
+// permits" over whatever population it happens to select, so narrowing
+// the selection reads as a clean bill of health. Re-implementing the
+// selection rule inside the test would not catch that — the test would
+// grade its own copy. Running the real function and printing what it
+// returns is the only version of this check with a causal path from the
+// code that ships to the assertion that watches it.
+//
+// Placed beside `--self-test` and above every `await`, so the process
+// exits before a single request is made.
+
+// ONE binding, two readers — the dump below and the loop further
+// down. Calling `freshnessPopulation()` separately in each place would
+// leave the guard watching a set the loop need not iterate: narrow the
+// LOOP alone and the dump keeps printing the full population, so the
+// offline check stays green over a detector that stopped looking.
+// There is one call, so the two cannot diverge.
+const FRESHNESS_POPULATION = freshnessPopulation();
+
+if (process.argv.includes('--print-population')) {
+    console.log(JSON.stringify(FRESHNESS_POPULATION, null, 2));
+    process.exit(0);
+}
+
 const lock = readJson('package-lock.json');
 const findings = [];
 
-for (const o of versionForcingOverrides()) {
+for (const o of FRESHNESS_POPULATION) {
+    // Asked BEFORE the registry call: there is nothing to compare the
+    // answer against, and the entry must be ACCOUNTED FOR rather than
+    // dropped. See `analysableRange`.
+    if (!analysableRange(o.spec)) {
+        findings.push({
+            level: 'unanalysable',
+            name: o.name,
+            spec: o.spec,
+            key: o.key,
+            note: 'range is not `^X.Y.Z`, so freshness was NOT evaluated for this entry — this is a gap in coverage, not a clean result',
+        });
+        continue;
+    }
+
     const locked = lockedVersions(lock, o.name);
     if (locked.length === 0) continue; // inert override — the offline guard governs these
 
@@ -313,6 +514,14 @@ for (const o of versionForcingOverrides()) {
 // Runs over EVERY security override, including ones the lockfile
 // currently resolves to nothing: an inert floor's facts still have to
 // be true, because the floor is what governs the package if it returns.
+//
+// TOP-LEVEL ONLY, deliberately — unlike the freshness half above. The
+// registry is keyed by PACKAGE NAME and holds one entry per package,
+// so a nested pin on a name that already has a top-level override
+// (`js-yaml`, `brace-expansion`) would re-resolve the same recorded id
+// and emit the same finding twice. One advisory question per recorded
+// fact. A nested pin on a name with NO registry entry is skipped by
+// the `kind !== 'security'` guard below either way.
 
 const registry = readJson('tests/guards/override-registry.json');
 
@@ -410,11 +619,18 @@ if (AS_JSON) {
     const lagging = findings.filter((f) => f.level === 'lagging');
     const outside = findings.filter((f) => f.level === 'outside');
     const skipped = findings.filter((f) => f.level === 'skip');
+    const unanalysable = findings.filter((f) => f.level === 'unanalysable');
     const advisoryIssues = findings.filter((f) => f.level === 'advisory');
     const floorIssues = findings.filter((f) => f.level === 'floor');
 
-    if (!findings.length) {
-        console.log('All version-forcing overrides are at the newest release their range permits, and every recorded advisory checks out.');
+    // The headline names its own scope. `unanalysable` entries are
+    // always present (three today), so an unqualified "all overrides
+    // are current" would be a claim about a population this run did
+    // not examine in full.
+    if (!findings.some((f) => f.level !== 'unanalysable')) {
+        console.log(
+            `Every override with an analysable range is at the newest release that range permits, and every recorded advisory checks out — ${unanalysable.length} of ${FRESHNESS_POPULATION.length} entries were NOT analysed (listed below).`,
+        );
     }
     // Registry-correctness first: a lagging lockfile is a nudge, but a
     // registry that records the wrong fact makes every other signal —
@@ -434,6 +650,9 @@ if (AS_JSON) {
     for (const f of skipped) {
         console.log(`::notice title=Override check skipped::${f.name} — ${f.note}`);
     }
+    for (const f of unanalysable) {
+        console.log(`::notice title=Override range not analysed::${f.key} ${f.spec}: ${f.note}`);
+    }
 
     const summary = process.env.GITHUB_STEP_SUMMARY;
     if (summary) {
@@ -451,7 +670,7 @@ if (AS_JSON) {
         }
 
         if (!lagging.length && !outside.length) {
-            lines.push('Every version-forcing override is at the newest release its range permits.');
+            lines.push('Every override with an ANALYSABLE range is at the newest release that range permits.');
         } else {
             lines.push('| Package | Override | Locked | Newest in range | Newest overall | State |');
             lines.push('|---|---|---|---|---|---|');
@@ -459,6 +678,21 @@ if (AS_JSON) {
                 lines.push(`| \`${f.name}\` | \`${f.spec}\` | ${f.locked} | ${f.newestInRange ?? '—'} | ${f.newestOverall ?? '—'} | ${f.level} |`);
             }
         }
+
+        // The denominator belongs beside the verdict. Without this
+        // block the summary reads as a statement about every override,
+        // when it is a statement about the analysable ones.
+        if (unanalysable.length) {
+            lines.push(
+                '',
+                `**${unanalysable.length} of ${FRESHNESS_POPULATION.length} entries were NOT analysed** — the range is not \`^X.Y.Z\`, so freshness could not be decided either way:`,
+                '',
+                '| Entry | Override |',
+                '|---|---|',
+            );
+            for (const f of unanalysable) lines.push(`| \`${f.key}\` | \`${f.spec}\` |`);
+        }
+
         appendFileSync(summary, lines.join('\n') + '\n');
     }
 }
