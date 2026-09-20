@@ -404,6 +404,12 @@ describe('catalogue requirements carry prose', () => {
     const SUMMARY_COVERAGE_BY_FIXTURE: Record<string, string> = {
         'asvs-l1-control-templates.json': '0 of 128',
         'cis-v8-ig1-control-templates.json': '0 of 56',
+        // COSO ships every requirement WITH a summary. It is the first
+        // framework here authored principle-first: the 17 principles carry
+        // original prose because COSO's own body text is copyrighted and
+        // could not have been transcribed even if we wanted it, so there was
+        // never a thin-transcription path to fall down.
+        'coso-icf-2013-control-templates.json': '0 of 17',
         'dora-control-templates.json': '0 of 24',
         'eu-ai-act-control-templates.json': '0 of 16',
         'imda-mgf-control-templates.json': '0 of 19',

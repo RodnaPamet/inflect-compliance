@@ -143,6 +143,64 @@ const IMPERATIVE_VERBS = new Set([
     'Search', 'Seed', 'Segment', 'Select', 'Send', 'Separate', 'Set', 'Sign', 'Spot-check',
     'Store', 'Summarise', 'Test', 'Trace', 'Track', 'Train', 'Triage', 'Turn', 'Update',
     'Validate', 'Verify', 'Walk', 'Write',
+
+    // ── ICFR and governance vocabulary (COSO ICF 2013) ──────────────
+    //
+    // The list grew 61 -> 125 when the first authored content landed, for the
+    // reason this file already records: it was curated before any content
+    // existed, so it was a guess at the vocabulary. The same thing happened
+    // again here and for the same structural reason — the 132 verbs were
+    // curated against SECURITY subject matter, and these are the verbs a
+    // financial-controls task set actually uses. `Escalate` a matter to a
+    // committee, `Table` a paper, `Convene` a session, `Grant` a waiver,
+    // `Re-perform` a reconciliation, `Back-test` an estimate: none of these
+    // has a security analogue already on the list.
+    //
+    // Safe to grow for the reason stated above: an absent verb is a LOUD false
+    // positive, while the noun-phrase titles this rejects still cannot get in.
+    // Each was read in context before being admitted — one candidate, `Fit`,
+    // was rejected and its title redrafted to use `Attach` instead.
+    'Accumulate',
+    'Amend',
+    'Attach',
+    'Back-test',
+    'Challenge',
+    'Chase',
+    'Choose',
+    'Commission',
+    'Connect',
+    'Convene',
+    'Delimit',
+    'Derive',
+    'Draft',
+    'Draw',
+    'Enumerate',
+    'Escalate',
+    'Frame',
+    'Grade',
+    'Grant',
+    'Investigate',
+    'Judge',
+    'Load',
+    'Operate',
+    'Plan',
+    'Poll',
+    'Prepare',
+    'Publicise',
+    'Put',
+    'Qualify',
+    'Re-approve',
+    'Re-perform',
+    'Re-read',
+    'Re-test',
+    'Refer',
+    'Reflect',
+    'Refresh',
+    'Resolve',
+    'Settle',
+    'Sweep',
+    'Table',
+    'Time',
 ]);
 
 /**

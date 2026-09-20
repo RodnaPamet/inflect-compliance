@@ -71,6 +71,14 @@ const CATALOG_FIXTURES = [
     'prisma/fixtures/iso42001-control-templates.json',
     'prisma/fixtures/owasp-aisvs-control-templates.json',
     'prisma/fixtures/eu-ai-act-control-templates.json',
+    // COSO ICF 2013. Declares the SAME framework key as
+    // src/data/libraries/coso-icf-2013.yaml on purpose, so the library import
+    // and this fixture converge on ONE Framework row — every other framework
+    // here exists twice under two keys, one per authoring path, and
+    // usecases/framework/coverage.ts records that a tenant's links hang off
+    // whichever row its database got. COSO has no such split and should not
+    // acquire one.
+    'prisma/fixtures/coso-icf-2013-control-templates.json',
     // Last on purpose. This one carries no standard of its own — it gives the
     // 151-control internal-controls library a framework and a pack so a tenant
     // can install it deliberately, instead of receiving it as a side effect of
