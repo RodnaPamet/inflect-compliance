@@ -17,9 +17,22 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf-8');
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// At the seam, not per assertion, so a new `expect(read(...))` inherits it.
+// String literals are KEPT — masking them would silently empty assertions that
+// harvest codes or ids from source. Every path this file reads is a
+// TypeScript-alike, re-derived per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
 
+const ROOT = path.resolve(__dirname, '../..');
+const readRaw = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf-8');
+const read = (p: string) => codeOf(readRaw(p));
+// `readDoc` is the DELIBERATE raw seam (#2246). Masking comments is the right
+// default, but an assertion whose SUBJECT is the prose inverts the defect: the
+// text it names is the very text masking blanks, so the assertion could never
+// pass (or, for a negative, never fail) again. Named, so the choice is visible.
+const readDoc = (p: string) => readRaw(p);
 const RUN_PAGE = 'src/app/t/[tenantSlug]/(app)/tests/runs/[runId]/page.tsx';
 const CONTROL_PLAN_PAGE = 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/tests/[planId]/page.tsx';
 
@@ -44,6 +57,6 @@ describe('test-plan ↔ run route split — breadcrumb bridge', () => {
             fs.existsSync(path.join(ROOT, 'src/app/t/[tenantSlug]/(app)/tests/plans/[planId]/page.tsx')),
         ).toBe(true);
         // The control-scoped entry documents WHY the split stands.
-        expect(read(CONTROL_PLAN_PAGE)).toMatch(/deliberate/i);
+        expect(readDoc(CONTROL_PLAN_PAGE)).toMatch(/deliberate/i);
     });
 });
