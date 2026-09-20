@@ -18,11 +18,16 @@ import * as path from 'node:path';
 
 import { computeRequirementDiff } from '@/app-layer/services/library-updater';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 /** Comments MASKED at the read seam (#2246) — assertions bind to code, not prose. */
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+// LANGUAGE SPLIT (#2644). `read` lexes TypeScript, so on a `.sql` file it
+// blanks nothing and a `--` comment reaches the assertion verbatim — masked
+// at the call site, unmasked in fact. Migrations go through `sqlCodeOf`,
+// which lexes `--` and `/* */`; TypeScript keeps `read`.
+const readSql = (rel: string) => sqlCodeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 const engine = read('src/app-layer/usecases/framework-delta.ts');
 const importer = read('src/app-layer/services/library-importer.ts');
 
@@ -95,7 +100,7 @@ describe('Framework delta — wired into the library importer', () => {
 
 describe('Framework delta — model hardening', () => {
     it('TenantFrameworkDelta has RLS tenant-isolation in a migration + tenant index', () => {
-        const mig = read('prisma/migrations/20260701160000_framework_version_delta/migration.sql');
+        const mig = readSql('prisma/migrations/20260701160000_framework_version_delta/migration.sql');
         expect(mig).toMatch(/ALTER TABLE "TenantFrameworkDelta" FORCE ROW LEVEL SECURITY/);
         expect(mig).toMatch(/CREATE POLICY tenant_isolation ON "TenantFrameworkDelta"/);
         expect(mig).toMatch(/CREATE POLICY superuser_bypass ON "TenantFrameworkDelta"/);

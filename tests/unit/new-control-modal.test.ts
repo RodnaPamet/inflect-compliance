@@ -19,8 +19,18 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../../');
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
 function read(rel: string): string {
+    return codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
+}
+// `codeOf` lexes TypeScript, so the JSON message catalogue keeps its
+// own RAW reader — it is parsed, never asserted on as text.
+function readRaw(rel: string): string {
     return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 }
 
@@ -28,7 +38,7 @@ const MODAL_SRC = read('src/app/t/[tenantSlug]/(app)/controls/NewControlModal.ts
 const CLIENT_SRC = read('src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx');
 const NEW_PAGE_SRC = read('src/app/t/[tenantSlug]/(app)/controls/new/page.tsx');
 // User-facing strings migrated to next-intl; resolve keys against en.json.
-const EN_CONTROLS = JSON.parse(read('messages/en.json')).controls as {
+const EN_CONTROLS = JSON.parse(readRaw('messages/en.json')).controls as {
     new: Record<string, string>;
 };
 

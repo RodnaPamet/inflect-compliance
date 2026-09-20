@@ -24,16 +24,21 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { MAX_REDUCTION } from '@/lib/risk-residual';
 
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
+// LANGUAGE SPLIT (#2644). `read` lexes TypeScript, so on a `.sql` file it
+// blanks nothing and a `--` comment reaches the assertion verbatim — masked
+// at the call site, unmasked in fact. Migrations go through `sqlCodeOf`,
+// which lexes `--` and `/* */`; TypeScript keeps `read`.
+const readSql = (rel: string) => sqlCodeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
 const riskUsecase = read('src/app-layer/usecases/risk.ts');
 const planUsecase = read('src/app-layer/usecases/risk-treatment-plan.ts');
 const eventsUsecase = read('src/app-layer/usecases/risk-score-events.ts');
 const zodSchemas = read('src/lib/schemas/index.ts');
-const migration = read('prisma/migrations/20260611100000_rq2_1_score_events/migration.sql');
+const migration = readSql('prisma/migrations/20260611100000_rq2_1_score_events/migration.sql');
 
 describe('RQ2-1 — every score write is paired with a provenance event', () => {
     test('risk.ts imports recordScoreEvent and calls it at every scoring site (create, template, update×2)', () => {

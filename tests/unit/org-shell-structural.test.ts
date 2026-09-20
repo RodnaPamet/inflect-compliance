@@ -21,13 +21,21 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
+// `codeOf` lexes TypeScript, so the JSON message catalogue keeps its
+// own RAW reader — it is parsed, never asserted on as text.
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
 // i18n-aware: nav labels now route through next-intl (`t('nav.*')`).
 // Resolve the key against the real English catalog so the original
 // intent (the visible English text) still holds.
-const EN = JSON.parse(read('messages/en.json'));
+const EN = JSON.parse(readRaw('messages/en.json'));
 const enOrg = (key: string): unknown =>
     key.split('.').reduce<unknown>(
         (o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),
@@ -86,16 +94,25 @@ describe('Epic O-4 — org shell structural contract', () => {
         const src = read(NAV_PATH);
         // Order matches the Epic O-4 spec. Settings was removed from the
         // sidebar (see the "Settings entry is not in the sidebar nav" test).
-        for (const label of [
-            'Portfolio Overview',
-            'All Tenants',
-            'Non-Performing Controls',
-            'Critical Risks',
-            'Overdue Evidence',
-            'Members',
-            'Audit Log',
-        ]) {
-            expect(src).toContain(label);
+        //
+        // #2246 Class A — this used to assert the seven ENGLISH labels
+        // against the component text. The labels migrated to next-intl, so
+        // the only surviving occurrence of 'Portfolio Overview' in that file
+        // is the docblock at the top LISTING the spec: the assertion had
+        // become a test of its own comment. It now pins the key in code and
+        // resolves that key against the real English catalogue — the same
+        // two-sided shape the drill-down test below already uses.
+        for (const [key, english] of [
+            ['portfolioOverview', 'Portfolio Overview'],
+            ['allTenants', 'All Tenants'],
+            ['nonPerformingControls', 'Non-Performing Controls'],
+            ['criticalRisks', 'Critical Risks'],
+            ['overdueEvidence', 'Overdue Evidence'],
+            ['members', 'Members'],
+            ['auditLog', 'Audit Log'],
+        ] as const) {
+            expect(src).toContain(`t('nav.${key}')`);
+            expect(enOrg(`nav.${key}`)).toBe(english);
         }
     });
 
