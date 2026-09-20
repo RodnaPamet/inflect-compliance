@@ -177,10 +177,22 @@ the table contract with `display: grid` div semantics instead. Both
 seams therefore have to be ported, and they cannot be ported as one.
 
 `tests/unit/react-window-v1-hold.test.ts` pins both halves — the v1
-major in `package.json` plus the lockfile, and the seam set with the
-v1 identifiers each seam depends on. A third importer, or a bump to
-v2, turns it red, which is the signal that this section needs
-re-arguing in the same PR.
+major in `package.json`, the lockfile and the installed tree, plus the
+seam set with the v1 identifiers each seam depends on. A third
+importer, or a bump to v2, turns it red, which is the signal that this
+section needs re-arguing in the same PR.
+
+Two details of that test are worth knowing before editing either half.
+The seam scan is **repo-wide and AST-based**, not a grep over `src/`:
+nine files in this repository contain the string `react-window` and
+only two depend on it, so a text search answers this question wrongly
+by seven. It counts a dynamic `import()` and a `require()` as
+dependencies too, since neither is an `ImportDeclaration`. And it
+asserts on values computed from that AST rather than on file text, so
+it joins neither the Class A nor the Class D assertion-reach
+population and spends none of their zero-allowance budget — which is
+why it could be written at all after the #2552 draft was dropped for
+exactly that cost (#2646).
 
 ### What the migration would buy
 
