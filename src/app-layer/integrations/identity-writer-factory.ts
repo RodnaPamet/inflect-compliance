@@ -57,6 +57,7 @@ import {
     type DirectoryWriter,
 } from '../usecases/identity-disable-account';
 import { createEntraIdWriter } from './providers/entra-id/writer';
+import { isWritesNotEnabledRefusal } from './providers/entra-id/write-direction';
 import { createActiveDirectoryWriter } from './providers/active-directory/writer';
 import {
     describeWriteReadiness,
@@ -482,9 +483,18 @@ export async function resolveDirectoryWriter(
     } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         // The Entra constructor refuses a connection that has not opted in to
-        // writes. Named separately because it is a deliberate operator state,
-        // not a misconfiguration.
-        const refusal: WriterRefusal = /not enabled for directory writes/i.test(detail)
+        // writes IN THE DIRECTION IT ASKED FOR. Named separately because it is
+        // a deliberate operator state, not a misconfiguration.
+        //
+        // The predicate is IMPORTED rather than spelled as a regex here. It was
+        // an inline `/not enabled for directory writes/i` matched against a
+        // literal sentence in `entra-id/writer.ts` — two spellings of one
+        // string in two modules, held together by nothing. #2674 added the
+        // direction to that sentence, which is exactly the edit that breaks
+        // such a pair silently, and the symptom would have been this deliberate
+        // opt-out arriving on the operator's screen as an unexplained
+        // WRITER_REFUSED.
+        const refusal: WriterRefusal = isWritesNotEnabledRefusal(detail)
             ? 'WRITES_NOT_ENABLED'
             : 'WRITER_REFUSED';
         logger.warn('directory writer could not be constructed', {

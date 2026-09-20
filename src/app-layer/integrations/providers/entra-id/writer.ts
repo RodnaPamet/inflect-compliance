@@ -145,6 +145,10 @@ import {
     IntegrationRateLimitedError,
 } from '../../http-resilience';
 import { fetchOAuthToken } from '../../oauth-token-fetch';
+import {
+    directionWriteRefusal,
+    LEAST_PRIVILEGE_WRITE_ROLE,
+} from './write-direction';
 import { logger } from '@/lib/observability/logger';
 import { redactDirectoryIdentifiers } from '@/lib/security/redact-directory-identifiers';
 
@@ -219,8 +223,11 @@ const WRITE_ROLES: readonly string[] = [
     'Directory.ReadWrite.All',
 ];
 
-/** Named in operator-facing copy: the one an admin should actually grant. */
-const LEAST_PRIVILEGE_WRITE_ROLE = 'User.EnableDisableAccount.All';
+// `LEAST_PRIVILEGE_WRITE_ROLE` — the one an admin should actually grant — now
+// lives in `./write-direction` beside the refusal copy that quotes it, so the
+// permission string has ONE spelling across the two modules. `WRITE_ROLES`
+// above is untouched: it says what Graph ACCEPTS, which is a different claim
+// and deliberately wider.
 
 /**
  * Renew this many ms before the token's own expiry.
@@ -397,36 +404,15 @@ export class EntraCredentialRejectedError extends DirectoryWriteError {
 }
 
 /**
- * The trailing half of the writes-disabled refusal, when the stored value is
- * the reason rather than the absence of one.
+ * The per-direction opt-in used to live here as `describeWritesEnabled` plus a
+ * literal `config.writesEnabled !== true` in the constructor.
  *
- * Returns '' for a plainly absent opt-in (undefined / null / false / missing),
- * where the base message already says everything there is to say. The extra
- * sentence is earned only by a value that an operator would reasonably read as
- * an opt-in, because that is the case where repeating "turn it on" describes
- * something they have already done.
+ * It moved to `./write-direction` when the joiner arrived (#2674, owner
+ * decision 8), because a single boolean cannot say WHICH direction was asked
+ * for and this directory's own `WRITE_ROLES` list means a credential consented
+ * for a create can also disable. The refusal below therefore names its
+ * direction, and the flag it reads is the leaver's.
  */
-function describeWritesEnabled(value: unknown): string {
-    if (value === undefined || value === null || value === false) return '';
-    const shown = typeof value === 'string' ? JSON.stringify(value) : String(value);
-    const looksAffirmative =
-        (typeof value === 'string' && ['true', 'yes', 'on', '1'].includes(value.trim().toLowerCase())) ||
-        value === 1;
-    if (!looksAffirmative) {
-        return (
-            ` (This connection stores writesEnabled as ${typeof value} ${shown}, which is not an opt-in: ` +
-            'the flag is compared strictly against the boolean true.)'
-        );
-    }
-    return (
-        ` (This connection stores writesEnabled as the ${typeof value} ${shown} rather than the boolean ` +
-        'true, so the flag reads as ON in the admin UI and OFF here — writes are compared strictly, on ' +
-        'purpose, because a value that merely looks affirmative is not a deliberate grant of standing ' +
-        'power to disable accounts. Other booleans on this same connection are read through a ' +
-        'string-coercing helper and WILL be on, which is why this one looks inconsistent. Re-save the ' +
-        'connection, or correct the stored value to a JSON boolean.)'
-    );
-}
 
 /**
  * What a capture knows about a leaver's group memberships.
@@ -685,32 +671,28 @@ export class EntraIdDirectoryWriter implements DirectoryWriter {
             // credentials are revoked".
             throw new Error('Entra writer skipped: clientSecret is missing or failed to decrypt');
         }
-        if (config.writesEnabled !== true) {
-            // Fail CLOSED, and STRICTLY — `!== true`, not a coercion. `.default`
-            // on a client-credentials grant returns whatever an admin has
-            // already consented, so the moment a tenant re-consents for one
-            // purpose this application gains standing power to disable any user
-            // in that directory, including tenants that only ever wanted posture
-            // checks. This flag is the per-connection statement that they asked
-            // for more than reading, and it is why a setup-guide edit alone
-            // cannot upgrade a read-only tenant. A value that merely LOOKS true
-            // is not that statement.
-            //
-            // The strictness is right and the silence was not. Sibling booleans
-            // on this very connection — `enrichMfa`, `enrichFederation` in
-            // index.ts — are read through a string-coercing `truthy` helper, so
-            // a config row that stored "true" as a string has those ON while
-            // this one is OFF. The operator sees a checkbox they ticked, an
-            // error telling them to tick it, and no way to tell those apart. So
-            // when the stored value is truthy-shaped but not the boolean, say
-            // exactly that instead of repeating the instruction they followed.
-            throw new Error(
-                'Entra writer refused: this connection is not enabled for directory writes. Turn on ' +
-                    '"Allow offboarding writes" on the connection, and make sure an administrator has ' +
-                    `consented the application permission ${LEAST_PRIVILEGE_WRITE_ROLE}.` +
-                    describeWritesEnabled(config.writesEnabled),
-            );
-        }
+        // Fail CLOSED, and STRICTLY — `!== true` inside `directionWriteRefusal`,
+        // not a coercion. `.default` on a client-credentials grant returns
+        // whatever an admin has already consented, so the moment a tenant
+        // re-consents for one purpose this application gains standing power to
+        // disable any user in that directory, including tenants that only ever
+        // wanted posture checks. The flag is the per-connection statement that
+        // they asked for more than reading, and it is why a setup-guide edit
+        // alone cannot upgrade a read-only tenant. A value that merely LOOKS
+        // true is not that statement — `describeStoredWriteFlag` explains that
+        // case rather than repeating the instruction they already followed.
+        //
+        // THE DIRECTION IS NAMED, and passed from HERE rather than defaulted
+        // inside the gate. This writer is the LEAVER's — `DirectoryWriter`
+        // declares `readState` / `disable` / `preflight` and no create verb —
+        // so it asks for the leaver direction explicitly. A joiner write goes
+        // through `DirectoryProvisioner` (`integrations/identity-provisioner`)
+        // and must ask this same gate for `'joiner'`, which reads a DIFFERENT
+        // field. A default here would let that call site inherit the leaver's
+        // grant by forgetting an argument, which is the entire failure #2674
+        // exists to prevent.
+        const writesRefusal = directionWriteRefusal(config, 'leaver');
+        if (writesRefusal) throw new Error(writesRefusal);
 
         const inner = deps.fetchImpl ?? createBoundedFetch();
         this.doFetch = createResilientFetch({
