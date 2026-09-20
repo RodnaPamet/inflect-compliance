@@ -104,15 +104,81 @@ function satisfiesCaret(version, range) {
 
 // ── inputs ─────────────────────────────────────────────────────────
 
+/** `pkg@>=1 <2` → `pkg`; a scoped name with no range selector → itself. */
+function overrideTargetName(key) {
+    const at = key.lastIndexOf('@');
+    const scopedOnly = key.startsWith('@') && at === 0;
+    return at > 0 && !scopedOnly ? key.slice(0, at) : key;
+}
+
+/**
+ * The TOP-LEVEL version-forcing overrides.
+ *
+ * `$name` values are skipped here because they force whatever the
+ * matching DIRECT dependency requests, so their freshness is
+ * Dependabot's job rather than this script's — and their registry
+ * entry is checked against that direct range by the offline guard.
+ */
 function versionForcingOverrides() {
     const pkg = readJson('package.json');
     const out = [];
     for (const [key, value] of Object.entries(pkg.overrides ?? {})) {
         if (typeof value !== 'string' || value.startsWith('$')) continue;
-        const at = key.lastIndexOf('@');
-        const scopedOnly = key.startsWith('@') && at === 0;
-        const name = at > 0 && !scopedOnly ? key.slice(0, at) : key;
-        out.push({ name, key, spec: value });
+        out.push({ name: overrideTargetName(key), key, spec: value });
+    }
+    return out;
+}
+
+/**
+ * The NESTED version-forcing overrides — `{ jsdom: { ws: '^8.21.0' } }`.
+ *
+ * These were skipped entirely until 2026-09-20, and the skip was a
+ * blind spot of exactly the kind this script exists to close. A nested
+ * LITERAL pin forces a transitive package just as hard as a top-level
+ * one; Dependabot does not touch it (it is not a direct dependency);
+ * and nothing was asking the registry whether it had fallen behind its
+ * own range. `@istanbuljs/load-nyc-config > js-yaml` is the case that
+ * makes it concrete — its own registry entry calls `^3.15.2` a
+ * security floor, "the 3.x branch of the SAME advisory" as the
+ * top-level `js-yaml` key, and that floor had never once been checked
+ * for freshness. `jsdom > ws` was the other, and it is the one no
+ * other entry covers even by accident.
+ *
+ * Nested `$name` values stay skipped for the same reason as above.
+ */
+function nestedVersionForcingOverrides() {
+    const pkg = readJson('package.json');
+    const out = [];
+    for (const [parent, value] of Object.entries(pkg.overrides ?? {})) {
+        if (!value || typeof value !== 'object') continue;
+        for (const [child, spec] of Object.entries(value)) {
+            if (typeof spec !== 'string' || spec.startsWith('$')) continue;
+            out.push({ name: overrideTargetName(child), key: `${parent} > ${child}`, spec });
+        }
+    }
+    return out;
+}
+
+/**
+ * Everything the FRESHNESS half examines: top-level first, then the
+ * nested pins, deduplicated on `(name, spec)`.
+ *
+ * Top-level goes first on purpose — the same `(name, spec)` written
+ * under several parents is ONE registry question, and the label the
+ * report carries should be the canonical top-level key rather than
+ * whichever parent happened to be enumerated first. `brace-expansion
+ * ^5.0.9` is written three times (top-level, under
+ * `@sentry/bundler-plugin-core`, under `minimatch@>=10.0.0`) and must
+ * report once, as `brace-expansion@>=3.0.0 <=5.0.6`.
+ */
+function freshnessPopulation() {
+    const seen = new Set();
+    const out = [];
+    for (const o of [...versionForcingOverrides(), ...nestedVersionForcingOverrides()]) {
+        const id = `${o.name}|${o.spec}`;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push(o);
     }
     return out;
 }
@@ -266,10 +332,42 @@ if (process.argv.includes('--self-test')) {
     process.exit(failed.length ? 1 : 0);
 }
 
+// ── population dump ────────────────────────────────────────────────
+//
+// Emits the exact set of overrides the freshness half will examine,
+// WITHOUT touching the network — so an offline Jest guard can assert
+// that the set still covers every version-forcing override in
+// `package.json`.
+//
+// The guard exists because the interesting failure is silent: this
+// script reports "all overrides are at the newest release their range
+// permits" over whatever population it happens to select, so narrowing
+// the selection reads as a clean bill of health. Re-implementing the
+// selection rule inside the test would not catch that — the test would
+// grade its own copy. Running the real function and printing what it
+// returns is the only version of this check with a causal path from the
+// code that ships to the assertion that watches it.
+//
+// Placed beside `--self-test` and above every `await`, so the process
+// exits before a single request is made.
+
+// ONE binding, two readers — the dump below and the loop further
+// down. Calling `freshnessPopulation()` separately in each place would
+// leave the guard watching a set the loop need not iterate: narrow the
+// LOOP alone and the dump keeps printing the full population, so the
+// offline check stays green over a detector that stopped looking.
+// There is one call, so the two cannot diverge.
+const FRESHNESS_POPULATION = freshnessPopulation();
+
+if (process.argv.includes('--print-population')) {
+    console.log(JSON.stringify(FRESHNESS_POPULATION, null, 2));
+    process.exit(0);
+}
+
 const lock = readJson('package-lock.json');
 const findings = [];
 
-for (const o of versionForcingOverrides()) {
+for (const o of FRESHNESS_POPULATION) {
     const locked = lockedVersions(lock, o.name);
     if (locked.length === 0) continue; // inert override — the offline guard governs these
 
@@ -313,6 +411,14 @@ for (const o of versionForcingOverrides()) {
 // Runs over EVERY security override, including ones the lockfile
 // currently resolves to nothing: an inert floor's facts still have to
 // be true, because the floor is what governs the package if it returns.
+//
+// TOP-LEVEL ONLY, deliberately — unlike the freshness half above. The
+// registry is keyed by PACKAGE NAME and holds one entry per package,
+// so a nested pin on a name that already has a top-level override
+// (`js-yaml`, `brace-expansion`) would re-resolve the same recorded id
+// and emit the same finding twice. One advisory question per recorded
+// fact. A nested pin on a name with NO registry entry is skipped by
+// the `kind !== 'security'` guard below either way.
 
 const registry = readJson('tests/guards/override-registry.json');
 
