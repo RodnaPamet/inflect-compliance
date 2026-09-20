@@ -17,9 +17,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = 'src/app-layer/usecases/task-source-reconcile.ts';
-const src = fs.readFileSync(path.join(ROOT, SRC), 'utf-8');
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
+const src = codeOf(fs.readFileSync(path.join(ROOT, SRC), 'utf-8'));
+// DELIBERATELY RAW, for the one test below that asserts the load-bearing
+// COMMENT is still there. Masking that read would delete its subject.
+const srcRaw = fs.readFileSync(path.join(ROOT, SRC), 'utf-8');
 
 describe('NIS2 plain-CONTROL_GAP reconcile skip (confirmed behaviour)', () => {
     it('reconcileControlGap only runs when the task carries a real controlId', () => {
@@ -34,8 +42,8 @@ describe('NIS2 plain-CONTROL_GAP reconcile skip (confirmed behaviour)', () => {
     it('the reason for the skip is documented at the call site', () => {
         // Load-bearing comment: it explains WHY an obvious-looking reconciler
         // is deliberately absent. Without it the next reader "fixes" the gap.
-        expect(src).toMatch(/source of truth/i);
-        expect(src).toMatch(/NIS2/);
+        expect(srcRaw).toMatch(/source of truth/i);
+        expect(srcRaw).toMatch(/NIS2/);
     });
 
     it('no reconciler advances a self-assessment answer from a task close', () => {

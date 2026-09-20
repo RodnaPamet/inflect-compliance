@@ -17,8 +17,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
+// `codeOf` lexes TypeScript, so the JSON message catalogue keeps its
+// own RAW reader — it is parsed, never asserted on as text.
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 
 const lib = read('src/lib/risk-coherence.ts');
 const usecase = read('src/app-layer/usecases/risk-analytics.ts');
@@ -37,14 +45,19 @@ describe('RQ2-5 — both languages on every surface', () => {
             expect(repo).toContain(f);
         }
         expect(risksClient).toMatch(/riskAle\(row\.original\)/);
-        expect(risksClient).toMatch(/formatCompactCurrency/);
+        // #2246 Class A — this asserted /formatCompactCurrency/, and B1-4
+        // had already REMOVED that import in favour of the tenant-aware
+        // `useMoneyFormatter` hook; the only surviving occurrence is the
+        // comment recording the swap. Pin the formatter that ships.
+        expect(risksClient).toMatch(/useMoneyFormatter\(\)/);
+        expect(risksClient).toMatch(/money=\{money\}/);
     });
 
     test('the detail header carries the ALE next to the score chip', () => {
         expect(riskDetail).toMatch(/resolveALE\(/);
         // ALE header label migrated to next-intl; assert the key + en value
         expect(riskDetail).toMatch(/label: t\('detail\.ale'\)/);
-        const en = JSON.parse(read('messages/en.json')) as { risks: { detail: Record<string, string> } };
+        const en = JSON.parse(readRaw('messages/en.json')) as { risks: { detail: Record<string, string> } };
         expect(en.risks.detail.ale).toBe('ALE');
     });
 

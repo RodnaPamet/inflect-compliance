@@ -22,12 +22,17 @@ import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src/app/org/[orgSlug]/(app)/controls/ControlsTable.tsx');
 
 /** Parse the literal map out of the component, so the test reads what ships. */
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
 function parseVariants(): Record<string, string> {
-    const src = fs.readFileSync(SRC, 'utf8');
+    const src = codeOf(fs.readFileSync(SRC, 'utf8'));
     const start = src.indexOf('const STATUS_VARIANTS');
     expect(start).toBeGreaterThan(-1);
     const open = src.indexOf('{', src.indexOf('=', start));
@@ -86,8 +91,10 @@ describe('org non-performing controls — status emphasis', () => {
     it('records why this map is not consolidated', () => {
         // The comment is load-bearing: it is the only thing standing between
         // this file and a well-meant "import the shared map" cleanup.
-        const src = fs.readFileSync(SRC, 'utf8');
-        expect(src).toMatch(/DELIBERATELY hotter than `CONTROL_STATUS_VARIANT`/);
-        expect(src).toMatch(/non-performing/i);
+        // DELIBERATELY RAW — this test's subject IS the comment (see its
+        // name); the masked reader above would delete what it asserts.
+        const srcRaw = fs.readFileSync(SRC, 'utf8');
+        expect(srcRaw).toMatch(/DELIBERATELY hotter than `CONTROL_STATUS_VARIANT`/);
+        expect(srcRaw).toMatch(/non-performing/i);
     });
 });

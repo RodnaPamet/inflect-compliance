@@ -22,10 +22,20 @@ import {
 } from '@/lib/eu-ai-act/classification';
 import { TIER_OBLIGATIONS, allObligationRefs } from '@/lib/eu-ai-act/obligations';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
-const readJson = (rel: string) => JSON.parse(read(rel)) as { key: string }[];
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+// Two deliberate RAW readers, both for text `codeOf` must not touch:
+//   · readRawJson — JSON fixtures, parsed rather than asserted on;
+//   · readProvenance — the Regulation citation below IS a comment, so
+//     masking would delete the thing under test.
+const readRawJson = (rel: string) =>
+    JSON.parse(fs.readFileSync(path.join(ROOT, rel), 'utf8')) as { key: string }[];
+const readProvenance = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 describe('classification correctness (authored from the Act)', () => {
     it('Article 5 practice → PROHIBITED, citing the clause', () => {
@@ -83,8 +93,8 @@ describe('classification correctness (authored from the Act)', () => {
 });
 
 describe('mapping validity — no dangling requirement refs', () => {
-    const euCodes = new Set(readJson('prisma/fixtures/eu_ai_act_requirements.json').map((r) => r.key));
-    const isoCodes = new Set(readJson('prisma/fixtures/iso_42001_requirements.json').map((r) => r.key));
+    const euCodes = new Set(readRawJson('prisma/fixtures/eu_ai_act_requirements.json').map((r) => r.key));
+    const isoCodes = new Set(readRawJson('prisma/fixtures/iso_42001_requirements.json').map((r) => r.key));
 
     it('every tier obligation resolves in the seeded AI-Act / ISO 42001 library', () => {
         const dangling: string[] = [];
@@ -124,7 +134,9 @@ describe('propose-not-commit — conformity generator', () => {
 });
 
 describe('schema + security wiring', () => {
-    const schema = readPrismaSchema();
+    // `.prisma` is lexable — its comments are `//` and its strings are
+    // double-quoted — so the concatenated schema is masked too.
+    const schema = codeOf(readPrismaSchema());
     const manifest = read('src/lib/security/encrypted-fields.ts');
     const usecase = read('src/app-layer/usecases/ai-system.ts');
 
@@ -156,7 +168,14 @@ describe('AGPL tripwire — no AegisAI-derived material', () => {
         expect(offenders).toEqual([]);
     });
     it('the domain modules cite the Regulation as provenance', () => {
-        expect(read('src/lib/eu-ai-act/classification.ts')).toContain('Regulation (EU) 2024/1689');
-        expect(read('src/lib/eu-ai-act/obligations.ts')).toContain('Regulation (EU) 2024/1689');
+        // DELIBERATELY RAW. The citation is a docblock line in both files —
+        // this assertion is ABOUT the comment, so the masked reader would
+        // delete its subject and turn a correct test red.
+        expect(readProvenance('src/lib/eu-ai-act/classification.ts')).toContain(
+            'Regulation (EU) 2024/1689',
+        );
+        expect(readProvenance('src/lib/eu-ai-act/obligations.ts')).toContain(
+            'Regulation (EU) 2024/1689',
+        );
     });
 });

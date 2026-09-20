@@ -13,6 +13,8 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 // next-intl is ESM (jest can't parse its export); mock it to resolve real
 // en.json values so the RisksClient render under test yields the original English.
 jest.mock('next-intl', () => {
@@ -44,13 +46,16 @@ const RISK_USECASE = path.resolve(
     '../../src/app-layer/usecases/risk.ts',
 );
 
-const clientSrc = readFileSync(RISKS_CLIENT, 'utf8');
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
+const clientSrc = codeOf(readFileSync(RISKS_CLIENT, 'utf8'));
 // Column headers migrated to next-intl keys; resolve them against the catalog.
 const EN_RISKS = JSON.parse(
     readFileSync(path.join(__dirname, '..', '..', 'messages/en.json'), 'utf8'),
 ).risks as { colHeaders: Record<string, string> };
-const pageSrc = readFileSync(RISKS_PAGE, 'utf8');
-const usecaseSrc = readFileSync(RISK_USECASE, 'utf8');
+const pageSrc = codeOf(readFileSync(RISKS_PAGE, 'utf8'));
+const usecaseSrc = codeOf(readFileSync(RISK_USECASE, 'utf8'));
 
 describe('Risks list — Epic 44.4 column + matrix wiring', () => {
     it('still uses <DataTable> from the shared platform', () => {
@@ -100,9 +105,13 @@ describe('Risks list — Epic 44.4 column + matrix wiring', () => {
         // and checking it there also covers the detail page and the PDF
         // exporter, which read the same constant. Strictly stronger than
         // the old per-file string scan.
-        const mapping = readFileSync(
-            path.resolve(__dirname, '../../src/app-layer/domain/entity-status-mapping.ts'),
-            'utf8',
+        // Offsets are preserved by `codeOf`, so the indexOf/slice below
+        // still lines up with the real file.
+        const mapping = codeOf(
+            readFileSync(
+                path.resolve(__dirname, '../../src/app-layer/domain/entity-status-mapping.ts'),
+                'utf8',
+            ),
         );
         const variants = mapping.slice(
             mapping.indexOf('RISK_STATUS_VARIANT'),

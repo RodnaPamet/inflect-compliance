@@ -23,12 +23,17 @@ import {
     containmentRunbookFor,
 } from '@/data/incident-containment';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const readRaw = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
 /** Comments MASKED at the read seam (#2246) — assertions bind to code, not prose. */
 const read = (rel: string) => codeOf(readRaw(rel));
+// LANGUAGE SPLIT (#2644). `read` lexes TypeScript, so on a `.sql` file it
+// blanks nothing and a `--` comment reaches the assertion verbatim — masked
+// at the call site, unmasked in fact. Migrations go through `sqlCodeOf`,
+// which lexes `--` and `/* */`; TypeScript keeps `read`.
+const readSql = (rel: string) => sqlCodeOf(readRaw(rel));
 const exists = (rel: string) => fs.existsSync(path.join(REPO_ROOT, rel));
 
 const REAL_TYPES = ['RANSOMWARE', 'DATA_BREACH', 'DDOS', 'UNAUTHORIZED_ACCESS'] as const;
@@ -106,7 +111,7 @@ describe('IncidentEvidence junction (P3 schema)', () => {
         const migration =
             'prisma/migrations/20260629120000_incident_containment_forensics/migration.sql';
         expect(exists(migration)).toBe(true);
-        const sql = read(migration);
+        const sql = readSql(migration);
         expect(sql).toMatch(/ALTER TABLE "IncidentEvidence" ENABLE ROW LEVEL SECURITY/);
         expect(sql).toMatch(/CREATE POLICY tenant_isolation ON "IncidentEvidence"/);
         expect(sql).toMatch(/CREATE POLICY superuser_bypass ON "IncidentEvidence"/);

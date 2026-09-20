@@ -21,6 +21,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const SANKEY_PAGE = path.resolve(
     __dirname,
     '../../src/app/t/[tenantSlug]/(app)/controls/sankey/page.tsx',
@@ -54,8 +56,11 @@ const DEPRECATED_TRACEABILITY_DIR = path.resolve(
     '../../src/app/t/[tenantSlug]/(app)/traceability',
 );
 
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
 function read(p: string): string {
-    return fs.readFileSync(p, 'utf-8');
+    return codeOf(fs.readFileSync(p, 'utf-8'));
 }
 
 describe('Traceability page removal', () => {

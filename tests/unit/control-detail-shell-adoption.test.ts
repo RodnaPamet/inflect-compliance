@@ -21,9 +21,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const PAGE_PATH = 'src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx';
-const read = () => fs.readFileSync(path.join(ROOT, PAGE_PATH), 'utf-8');
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
+const read = () => codeOf(fs.readFileSync(path.join(ROOT, PAGE_PATH), 'utf-8'));
 
 describe('Controls detail page — EntityDetailLayout adoption', () => {
     it('imports EntityDetailLayout from @/components/layout', () => {
@@ -76,13 +81,15 @@ describe('Controls detail page — EntityDetailLayout adoption', () => {
         // owns the inner <Modal> + 'control-edit-dialog' id.
         const src = read();
         expect(src).toContain('<EditControlModal');
-        const modalSrc = fs.readFileSync(
-            path.resolve(
-                __dirname,
-                '../..',
-                'src/app/t/[tenantSlug]/(app)/controls/[controlId]/_modals/EditControlModal.tsx',
+        const modalSrc = codeOf(
+            fs.readFileSync(
+                path.resolve(
+                    __dirname,
+                    '../..',
+                    'src/app/t/[tenantSlug]/(app)/controls/[controlId]/_modals/EditControlModal.tsx',
+                ),
+                'utf8',
             ),
-            'utf8',
         );
         expect(modalSrc).toContain('control-edit-dialog');
         expect(modalSrc).toMatch(/<Modal\b/);

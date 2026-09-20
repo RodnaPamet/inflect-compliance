@@ -8,11 +8,17 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 /** Comments MASKED at the read seam (#2246) — assertions bind to code, not prose. */
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+/**
+ * LANGUAGE SPLIT (#2644). `read` lexes TypeScript, so on a `.sql` file it
+ * blanks nothing and a `--` comment reaches the assertion verbatim — masked
+ * at the call site, unmasked in fact. `.sql` goes through `sqlCodeOf`.
+ */
+const readSqlAbs = (abs: string) => sqlCodeOf(fs.readFileSync(abs, 'utf8'));
 
 describe('Audit S5 — Audit Readiness & Scoring', () => {
     describe('schema', () => {
@@ -46,9 +52,7 @@ describe('Audit S5 — Audit Readiness & Scoring', () => {
                 'prisma/migrations/20260524130000_audit_s5_readiness_snapshot_and_weights',
             );
             expect(fs.existsSync(migDir)).toBe(true);
-            const sql = codeOf(
-                fs.readFileSync(path.join(migDir, 'migration.sql'), 'utf8'),
-            );
+            const sql = readSqlAbs(path.join(migDir, 'migration.sql'));
             expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "ReadinessSnapshot"/);
             expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS "readinessWeightsJson"/);
         });

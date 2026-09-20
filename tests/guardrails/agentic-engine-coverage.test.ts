@@ -22,11 +22,16 @@ import * as path from 'node:path';
 
 import { VALID_SCOPES } from '@/lib/auth/api-key-auth';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
-import { codeOf, declarationOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const read = (rel: string) => codeOf(readRaw(rel));
+// LANGUAGE SPLIT (#2644). `codeOf` lexes `//`, so on a `.sql` file it blanks
+// nothing and a `--` comment reaches the assertion verbatim — masked at the
+// call site, unmasked in fact. Migrations go through `sqlCodeOf`, which lexes
+// `--` and `/* */`; TypeScript keeps `read`.
+const readSql = (rel: string) => sqlCodeOf(readRaw(rel));
 
 const engine = read('src/app-layer/usecases/workflow-runs.ts');
 const types = read('src/lib/agentic/workflow-types.ts');
@@ -109,7 +114,7 @@ describe('Agentic engine — scope + model hardening', () => {
     });
 
     it('WorkflowRun + WorkflowStep have RLS tenant-isolation in a migration', () => {
-        const mig = read('prisma/migrations/20260701150000_agentic_workflow_engine/migration.sql');
+        const mig = readSql('prisma/migrations/20260701150000_agentic_workflow_engine/migration.sql');
         for (const tbl of ['WorkflowRun', 'WorkflowStep']) {
             expect(mig).toMatch(new RegExp(`ALTER TABLE "${tbl}" FORCE ROW LEVEL SECURITY`));
             expect(mig).toMatch(new RegExp(`CREATE POLICY tenant_isolation ON "${tbl}"`));
