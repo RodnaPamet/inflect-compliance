@@ -52,6 +52,31 @@ mapping_entries:
     target_ref: "A.8.32"
     strength: INTERSECT
     rationale: "A.8.32 requires changes to be subject to change management procedures, which is the change-control half of general controls over technology."
+  # ── Added with the ITGC control content (PR 2C) ──────────────────────
+  #
+  # The note at the top of this file said the detailed A.5/A.8 correspondence
+  # belonged with the ITGC controls rather than being asserted at principle
+  # level before any existed. Those controls exist now, and each row below is
+  # justified by a specific one, named in its rationale. The claim is still
+  # INTERSECT throughout and deliberately so: Annex A governs information
+  # security, P11 governs the reliability of the systems financial controls
+  # depend on, and the two overlap without either covering the other.
+  - source_ref: "P11"
+    target_ref: "A.5.17"
+    strength: INTERSECT
+    rationale: "A.5.17 governs authentication information; COSO-CA-05.05 tests that the authentication configuration enforces the policy a financial system relies on."
+  - source_ref: "P11"
+    target_ref: "A.8.5"
+    strength: INTERSECT
+    rationale: "A.8.5 requires secure authentication procedures, which is the technical half of the configuration COSO-CA-05.05 examines."
+  - source_ref: "P11"
+    target_ref: "A.8.13"
+    strength: INTERSECT
+    rationale: "A.8.13 requires backups to be maintained and tested; COSO-CA-07.02 and COSO-CA-07.03 split that into execution with verification and a separate proven restore."
+  - source_ref: "P11"
+    target_ref: "A.8.25"
+    strength: INTERSECT
+    rationale: "A.8.25 requires a secure development life cycle; COSO-CA-06.02 and COSO-CA-06.03 test the evidenced testing and environment segregation a financial system's changes depend on."
 
   # ── Monitoring and improvement — DELIBERATELY ABSENT ─────────────────
   #

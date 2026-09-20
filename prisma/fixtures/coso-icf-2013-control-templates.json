@@ -3252,6 +3252,3504 @@
       ]
     },
     {
+      "code": "COSO-CA-05.01",
+      "title": "Access provisioning approved by the system or data owner",
+      "description": "Access to an in-scope financial system is created only after the named owner of that system or its data has approved the specific entitlement, and what the administrator built is compared with what was approved before the request is closed.",
+      "category": "CA",
+      "defaultFrequency": "AD_HOC",
+      "defaultOwnerHint": "Process Owner",
+      "requirementCodes": [
+        "P11"
+      ],
+      "objective": "To ensure an entitlement in an in-scope financial system is created only on the approval of that system's named owner, and that the access built matches the access approved.",
+      "successCriteria": "Every in-scope system names one accountable owner, and a request reaching an administrator without that owner's approval is refused rather than built.\nThe approval names the role or entitlement asked for, not merely the person and the system.\nThe access actually created is compared with the approved request before the request is closed.\nAccounts that never passed the request path are found against the ConnectedIdentityAccount enumeration and either approved afterwards or removed.\nEach approval is attached to this control as Evidence through ControlEvidenceLink.",
+      "testingMethodology": "Evidence:\nThe list of in-scope financial systems with the owner named against each and the date that naming was approved.\nThe population of accounts and entitlements created in the period, drawn from each system's own administration log rather than from the ticket queue.\nThe request records for the same period carrying requester, approver, entitlement and approval time.\nThe ConnectedIdentityAccount rows the nightly sync returned for those systems, as an independent account population.\nThe joiner and internal-move records HR raised in the period.\n\nAnalysis:\nReconcile the administration log to the directory enumeration, so the population is known to be complete rather than merely supplied.\nSample twenty-five grants stratified by system and by privilege level, and match each to an approval timed before the account or entitlement existed.\nCompare the entitlement built against the entitlement approved, treating a wider grant as an exception even where an approval exists.\nTest that the approver was the named owner or a delegate recorded as such, rather than a manager standing in.\nIsolate directory accounts with no request behind them and establish by what route each was created.\n\nOutput:\nPopulation and sample sizes per system with the strata used, so coverage can be judged rather than assumed.\nList of grants created before an approval, or with none at all, naming the entitlement each conferred.\nSchedule of grants wider than the approval that authorised them.\nExceptions where the approver held no owner or delegate authority over the system concerned.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Establish who owns each in-scope system and what they may approve"
+          },
+          "description": {
+            "en": "Settle for every application, database and interface in scope which single person answers for its data, and how far their approval authority runs before a second approver is needed."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Process Owner",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Take the application list from the significant account and process scoping."
+              }
+            },
+            {
+              "text": {
+                "en": "Record one accountable owner per system, with a named deputy for absences."
+              }
+            },
+            {
+              "text": {
+                "en": "State which entitlements that owner may approve alone and which need a second."
+              }
+            },
+            {
+              "text": {
+                "en": "Note where access is granted outside the identity platform, in the system itself."
+              }
+            },
+            {
+              "text": {
+                "en": "Have each named owner accept the systems and entitlements put to them."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Route every access request to that owner before an administrator acts"
+          },
+          "description": {
+            "en": "Put the approval where the grant is actually made, so the administrator's queue carries the owner's decision with it rather than the requester's assurance that one was given."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Build the request form so the entitlement asked for is named, not described."
+              }
+            },
+            {
+              "text": {
+                "en": "Address each request to the owner of the system it names, or to the deputy."
+              }
+            },
+            {
+              "text": {
+                "en": "Hold the request in the administrator's queue until the decision is recorded."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture requester, approver, entitlement and both timestamps on the request."
+              }
+            },
+            {
+              "text": {
+                "en": "Close the direct-creation route for everyone but break-glass administrators."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Grant only what the owner approved, and evidence the match"
+          },
+          "description": {
+            "en": "Perform the provisioning itself: build the entitlement named in the approval, compare what the system now shows against what was asked for, and attach the pair as the evidence of the grant."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The closed request showing the owner's decision and its time, beside a reading of the account as the system holds it, linked to this control through Evidence and ControlEvidenceLink."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Build the entitlement the approval names and nothing adjacent to it."
+              }
+            },
+            {
+              "text": {
+                "en": "Read the account back from the system and set it beside the approved request."
+              }
+            },
+            {
+              "text": {
+                "en": "Return the request where the build is wider than the decision allowed."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the approval and the read-back to the control as one evidence record."
+              }
+            },
+            {
+              "text": {
+                "en": "Stamp the joiner or move record with the date access became usable."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Detect accounts that appeared without passing the request path"
+          },
+          "description": {
+            "en": "Work from the directory rather than the queue, finding accounts and entitlements that exist in a system with no approval behind them, and establishing how each came into being."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The comparison run of ConnectedIdentityAccount rows against the period's approved requests, with the disposition recorded against each unmatched account."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Compare the directory enumeration against the requests approved in the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Separate integration and migration accounts from unexplained user accounts."
+              }
+            },
+            {
+              "text": {
+                "en": "Put each unexplained account to the system owner for approval or removal."
+              }
+            },
+            {
+              "text": {
+                "en": "Record what created it, so the route can be closed rather than re-swept."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-run the comparison after removal to confirm the account is gone."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Re-perform the owner check against what the systems now hold"
+          },
+          "description": {
+            "en": "Test the gate independently of its own records by starting from live entitlements and working back to the approval that should exist for each, which is the direction that exposes a grant nobody logged."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Select entitlements reaching the ledger, payments and master data first."
+              }
+            },
+            {
+              "text": {
+                "en": "Trace each back to an approval and read who gave it against the owner list."
+              }
+            },
+            {
+              "text": {
+                "en": "Judge whether the approval covers the entitlement or merely the system."
+              }
+            },
+            {
+              "text": {
+                "en": "Report grants with no approval, separating the unlogged from the unapproved."
+              }
+            },
+            {
+              "text": {
+                "en": "State whether the gate can be relied on for the period under review."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-05.02",
+      "title": "Access removed on termination or transfer within SLA",
+      "description": "Access held by a worker who has left or moved is withdrawn inside the agreed interval: through the platform identity-lifecycle chain where the directory is connected, and through a named manual route where it is not, with each account's withdrawal evidenced.",
+      "category": "CA",
+      "defaultFrequency": "AD_HOC",
+      "defaultOwnerHint": "IT Operations",
+      "requirementCodes": [
+        "P11"
+      ],
+      "objective": "To ensure access held by a terminated or transferred worker is withdrawn inside the agreed interval, and that every account the directory holds for that person is accounted for.",
+      "successCriteria": "Termination and transfer reach the identity chain from the HR record, so a leaver is acted on from a stated status, never inferred from absence.\nThe leaver pass acts only through an IdentityAccountLink a completed sync re-observed, refusing a stale or contradicted one.\nEvery disable carries an IdentityWriteJournal row written before the provider call, and none is left PENDING or UNKNOWN past the operator sweep.\nSystems no connected directory reaches have a named manual route recorded against the same leaver.\nThe interval from effective date to the last account withdrawn is measured against the SLA.",
+      "testingMethodology": "Evidence:\nThe period's terminations and internal moves from the HR record with effective dates; this is the population the control is tested over.\nThe IdentityWriteJournal rows for the period with action, mode, outcome, attemptedAt and settledAt on each.\nThe tenant's identityLeaverMode and its history, since DISABLED and DRY_RUN decide without writing to any directory.\nConnectedIdentityAccount status per leaver from the first sync that ran after the withdrawal.\nThe manual withdrawal records for systems outside the connected directories.\n\nAnalysis:\nTest every leaver who held privileged or financial-system access, and sample twenty-five of the remainder stratified by month and by business unit.\nMeasure the effective date against the settledAt of that leaver's last account and compare the interval with the SLA in force.\nAccount for every account still ACTIVE in the later sync, by a protection flag, a documented retention or an exception.\nRead the refusals the pass recorded — stale link, contradicted link, connection disabled — and follow each to the manual withdrawal that had to replace it.\nEstablish the write mode in force on each date, because in DISABLED or DRY_RUN the journal records intent and removal must be evidenced elsewhere.\n\nOutput:\nSchedule of leavers and movers with the count of accounts withdrawn for each.\nList of withdrawals outside the SLA, with elapsed days and the system concerned.\nJournal rows still PENDING, FAILED or UNKNOWN at the period end, with the account each names.\nExceptions where an account stayed enabled with no protection flag and no recorded reason.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Pair each in-scope system with the route that withdraws its access"
+          },
+          "description": {
+            "en": "Determine which systems the connected directories actually reach and which have to be handled by hand, because the manual remainder is where a leaver's access survives unnoticed."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Mark which in-scope systems authenticate through a connected directory."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the manual route and its performer for every system that does not."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the interval allowed from effective date to withdrawal for each route."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify accounts that must survive a departure, such as running integrations."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree the routes and the interval with HR and the system owners."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Connect the HR termination record to the nightly identity sync"
+          },
+          "description": {
+            "en": "Wire the trigger end of the chain: the employment status HR records is what the leaver pass reads, and the link between account and person is what lets it act on the right one."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Feed employment status and effective date from the HR system of record."
+              }
+            },
+            {
+              "text": {
+                "en": "Let the sync enumerate each directory into ConnectedIdentityAccount nightly."
+              }
+            },
+            {
+              "text": {
+                "en": "Reconcile those accounts to Employee rows as IdentityAccountLink pairings."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the tenant's write mode deliberately, starting at DISABLED or DRY_RUN."
+              }
+            },
+            {
+              "text": {
+                "en": "Resolve accounts no link explains before relying on the pass to be complete."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Revoke the leaver's remaining access inside the agreed interval"
+          },
+          "description": {
+            "en": "Carry out the withdrawal for one departure: let the pass act on the links it can prove, and perform the manual route for every system it cannot reach, inside the interval the SLA sets."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The IdentityWriteJournal rows for that person, each naming provider, write mode and the outcome the directory returned, held with the signed manual withdrawals for the unconnected systems."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Let the pass select links a completed sync re-observed, and no others."
+              }
+            },
+            {
+              "text": {
+                "en": "Disable each connected account through the journalled write path."
+              }
+            },
+            {
+              "text": {
+                "en": "Perform the named manual route for every system the pass cannot reach."
+              }
+            },
+            {
+              "text": {
+                "en": "Transfer ownership of shared mailboxes, jobs and files before disabling."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the completion time of each withdrawal against the leaver."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Settle every journal row the pass left unresolved"
+          },
+          "description": {
+            "en": "Close out the writes whose outcome is not yet known, since a row that never settled is an account nobody can say is disabled, and an unknown outcome is not a failure."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The operator sweep over IdentityWriteJournal outcomes for the period, naming each PENDING or UNKNOWN row and what the directory was found to hold."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "List journal rows still PENDING or UNKNOWN after the pass has finished."
+              }
+            },
+            {
+              "text": {
+                "en": "Read the account's current state directly from the provider concerned."
+              }
+            },
+            {
+              "text": {
+                "en": "Retry or withdraw by hand where the directory still shows it enabled."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the settled outcome and the reason on the journal row itself."
+              }
+            },
+            {
+              "text": {
+                "en": "Refer repeated failures on one provider to the connection's owner."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Measure the period's removals against the interval the SLA sets"
+          },
+          "description": {
+            "en": "Test the control by timing rather than by presence: count from each effective date to the last account actually withdrawn, and separate a late removal from one that never happened."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Draw the leaver population from HR, not from the identity chain's own output."
+              }
+            },
+            {
+              "text": {
+                "en": "Time each departure to the withdrawal of that person's last account."
+              }
+            },
+            {
+              "text": {
+                "en": "Check the directory after the interval expired for accounts still enabled."
+              }
+            },
+            {
+              "text": {
+                "en": "Separate breaches of the interval from accounts never withdrawn at all."
+              }
+            },
+            {
+              "text": {
+                "en": "Report both counts with the systems and privileges the access carried."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-05.03",
+      "title": "User access reviewed periodically by the system owner",
+      "description": "Each quarter the owner of every in-scope system decides account by account whether the entitlements people currently hold are still warranted, deciding against a frozen snapshot, and the revocations that result are carried through to the system.",
+      "category": "CA",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "Process Owner",
+      "requirementCodes": [
+        "P11"
+      ],
+      "objective": "To ensure the owner of each in-scope system decides every quarter whether the entitlements currently held are still warranted, and that the revocations reach the system.",
+      "successCriteria": "An AccessReview campaign exists per in-scope system for the quarter, carrying its period, reviewer and due date.\nDecision rows cover every account the scope returned, so the reviewer works from a frozen snapshot, not a list the reviewed assembled.\nEach AccessReviewDecision records CONFIRM, MODIFY or REVOKE with the decider and the time, and anything but CONFIRM carries a reason.\nA revocation is executed against the membership or connected account and stamped as executed, not assumed from the decision.\nThe campaign closes with its evidence artefact attached, and one past its due date is escalated.",
+      "testingMethodology": "Evidence:\nEvery AccessReview raised for the quarter with scope, period, reviewer, due date and closure time.\nThe AccessReviewDecision and AccessReviewConnectedDecision rows for those campaigns, carrying the snapshot decided against, the decision, the decider and the execution stamp.\nThe live entitlement list per in-scope system as at the campaign start, obtained independently of the campaign.\nThe closeout artefact for each closed campaign, and the escalations raised for the overdue.\nThe remediation records for revocations that had to be carried out in the system by hand.\n\nAnalysis:\nReconcile the decision rows to the independently drawn entitlement list, so an account the scope never returned becomes visible.\nTest that the decider was the system owner or a recorded delegate, and in no case the holder of the entitlement being decided.\nTake every REVOKE and twenty-five CONFIRM decisions, and re-perform each against the entitlement the system holds today.\nCompare the decision time with the execution time on each revocation and measure the interval against the remediation expectation.\nRead the reasons recorded on a sample of decisions, to judge whether the reviewer decided or merely cleared a queue.\n\nOutput:\nCoverage schedule per system: accounts live at campaign start, accounts decided, accounts never returned by the scope.\nList of revocations not executed, naming the entitlement still held and the days elapsed.\nSchedule of campaigns closed late, or closed with decisions outstanding.\nExceptions where a reviewer decided their own access or held no authority over the system.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Delimit which accounts each quarter's campaign has to return"
+          },
+          "description": {
+            "en": "Decide before the campaign opens what its scope must sweep in — memberships, connected directory accounts, contractors and service identities — because an account the scope never returns is never reviewed and never shows as missing."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Process Owner",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List the systems whose entitlements a quarter's review must cover."
+              }
+            },
+            {
+              "text": {
+                "en": "Choose the campaign scope that returns every account in those systems."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the reviewer for each system and the deputy who stands in."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide how contractor and non-human accounts enter or leave the scope."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the due date against the quarter, not against the day it was raised."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Raise the campaign with its scope, reviewer and period set"
+          },
+          "description": {
+            "en": "Open the review in the platform so the entitlement snapshot is frozen at creation and each account becomes a decision row the reviewer must answer, rather than a spreadsheet circulated by mail."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Process Owner",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Create the AccessReview with period, reviewer and due date recorded."
+              }
+            },
+            {
+              "text": {
+                "en": "Let it seed a decision row per account the chosen scope returns."
+              }
+            },
+            {
+              "text": {
+                "en": "Check the snapshot shows role, status and administrative rights per row."
+              }
+            },
+            {
+              "text": {
+                "en": "Brief the reviewer on what confirming an entitlement commits them to."
+              }
+            },
+            {
+              "text": {
+                "en": "Leave the reminder and overdue escalation jobs to chase the deadline."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Judge each account against the snapshot the campaign froze"
+          },
+          "description": {
+            "en": "Do the review itself: take each decision row, test the entitlement against what the person's current duties need, and confirm, reduce or revoke it with the reason recorded."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The closed AccessReview with its decision rows, each naming the reviewer, the time decided, the snapshot decided against and the reason recorded for anything but a confirmation."
+          },
+          "suggestedRole": "Process Owner",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Work the decision rows one account at a time rather than in bulk."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the snapshot entitlement with the duties the holder performs now."
+              }
+            },
+            {
+              "text": {
+                "en": "Record CONFIRM, MODIFY or REVOKE with a reason on every reduction."
+              }
+            },
+            {
+              "text": {
+                "en": "Refer accounts whose holder you cannot identify to the system owner."
+              }
+            },
+            {
+              "text": {
+                "en": "Close the campaign only once no row is left undecided."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Remove the entitlements the reviewers revoked"
+          },
+          "description": {
+            "en": "Carry the decisions into the systems, because a campaign that closes with revocations unexecuted has recorded an opinion about access the holder still has."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "Decision rows stamped as executed with the executor and time, set beside the system's own entitlement list read after the campaign closed."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Take the revocations and reductions the closed campaign produced."
+              }
+            },
+            {
+              "text": {
+                "en": "Apply each to the membership or connected account it names."
+              }
+            },
+            {
+              "text": {
+                "en": "Stamp the decision row with who executed it and when."
+              }
+            },
+            {
+              "text": {
+                "en": "Chase revocations in systems that need a manual change to complete."
+              }
+            },
+            {
+              "text": {
+                "en": "Read the entitlement back to confirm the change actually took effect."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Recompute the campaign's coverage from the systems themselves"
+          },
+          "description": {
+            "en": "Test the review from outside its own records by drawing the entitlement population directly from each system and asking which of those accounts a campaign ever put in front of anybody."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Extract the live entitlement list from each in-scope system directly."
+              }
+            },
+            {
+              "text": {
+                "en": "Match it against the decision rows the quarter's campaigns produced."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the accounts no campaign returned, and establish why the scope missed them."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-test a sample of confirmations against the holder's current duties."
+              }
+            },
+            {
+              "text": {
+                "en": "Report coverage and unexecuted revocations to the audit committee."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-05.04",
+      "title": "Privileged and administrative access restricted and reviewed",
+      "description": "Administrative rights over in-scope financial systems and the databases beneath them are held by as few named people as the work requires, held apart from those people's ordinary accounts, and what the rights were used for is examined each month.",
+      "category": "CA",
+      "defaultFrequency": "MONTHLY",
+      "defaultOwnerHint": "IT Operations",
+      "requirementCodes": [
+        "P11"
+      ],
+      "objective": "To ensure administrative rights over in-scope financial systems are held only by named people whose duties require them, and that what those rights did is examined each month.",
+      "successCriteria": "Privileged entitlements are enumerated at the level each system grants them, not inferred from holders' job titles.\nA privileged right is exercised through an account separate from the holder's ordinary one.\nThe accounts the nightly sync marks isAdmin are reconciled monthly to the approved holder list, and an unapproved administrator removed or approved that month.\nPrivileged sessions leave activity records the holder cannot alter, examined each month by someone holding no such right.\nStanding privilege no current duty justifies becomes a time-boxed grant whose expiry is set when it is issued.",
+      "testingMethodology": "Evidence:\nThe approved privileged-holder list per in-scope system, with the duty that justifies each name and the date it was approved.\nThe accounts the nightly directory sync marked isAdmin across the period, per provider.\nEach system's own administrator group membership, read from the system rather than from the directory.\nThe monthly privileged-activity examinations with the examiner and the date of each.\nThe time-boxed grants issued in the period with their expiry, and the records of withdrawal.\n\nAnalysis:\nCompare three populations — the approved list, the directory administrators and each system's own administrator group — and treat membership of one but not the others as an exception.\nTest every privileged holder rather than a sample: the population is small enough that sampling discards the point of the control.\nTrace each holder to duties that require the right and to an account separate from their ordinary one.\nRe-perform one month's activity examination from the raw records and compare the queries raised with those the examiner recorded.\nCheck each time-boxed grant against its expiry, so a silent renewal is distinguished from a decision to extend.\n\nOutput:\nThree-way reconciliation per system of approved holders, directory administrators and system group members.\nList of privileged rights exercised through an ordinary user account.\nSchedule of months whose examination is missing, late, or performed by someone holding the right.\nExceptions where privilege outlived the duty behind it or the expiry set on it.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Enumerate what counts as privileged in each in-scope system"
+          },
+          "description": {
+            "en": "Write down, per system, which entitlements can change configuration, alter data outside the application, or grant access to others, since privilege is what an account can do and not what its holder is called."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "List the entitlements that can alter configuration or posting rules."
+              }
+            },
+            {
+              "text": {
+                "en": "Add database and operating-system access beneath each application."
+              }
+            },
+            {
+              "text": {
+                "en": "Include rights that can grant or approve access for other people."
+              }
+            },
+            {
+              "text": {
+                "en": "State the duty that would justify holding each of those rights."
+              }
+            },
+            {
+              "text": {
+                "en": "Have the system owner accept the resulting privileged entitlement list."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Separate administrative rights from the holder's everyday account"
+          },
+          "description": {
+            "en": "Put privilege in a second, named account so that ordinary mail, browsing and day-to-day transactions do not run with rights that can rewrite the ledger or its configuration."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Issue a distinct administrative account to each approved holder."
+              }
+            },
+            {
+              "text": {
+                "en": "Strip privileged entitlements from the ordinary accounts that carry them."
+              }
+            },
+            {
+              "text": {
+                "en": "Require a second factor at elevation, not only at first sign-on."
+              }
+            },
+            {
+              "text": {
+                "en": "Turn on session recording or command logging for the privileged accounts."
+              }
+            },
+            {
+              "text": {
+                "en": "Deny the holders the ability to edit or delete their own activity records."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Reconcile the month's administrators against the approved holders"
+          },
+          "description": {
+            "en": "Run the monthly comparison between who actually holds administrative rights and who was approved to, in all three places that can answer the question differently."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The month's reconciliation listing every account carrying administrative rights in each system and in the directory, the approval behind it, and the disposition of every unmatched one."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Pull the isAdmin accounts from the month's directory enumeration."
+              }
+            },
+            {
+              "text": {
+                "en": "Read each system's administrator group from the system itself."
+              }
+            },
+            {
+              "text": {
+                "en": "Set both against the approved holder list and isolate what differs."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove or approve each unmatched administrator inside the month."
+              }
+            },
+            {
+              "text": {
+                "en": "Note removals that required an emergency change and why."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Examine the month's privileged sessions for work nobody requested"
+          },
+          "description": {
+            "en": "Look at what the rights were used for rather than who holds them, testing the recorded activity against the changes, incidents and requests that should explain it."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The activity extract the examiner worked from for the month, the queries put to each holder, and the answers accepted, retained whether or not anything was found."
+          },
+          "suggestedRole": "Process Owner",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Extract the period's privileged sessions and the commands they ran."
+              }
+            },
+            {
+              "text": {
+                "en": "Match each session to a change record, an incident or a service request."
+              }
+            },
+            {
+              "text": {
+                "en": "Query any direct data change made outside the application's own screens."
+              }
+            },
+            {
+              "text": {
+                "en": "Escalate unexplained activity to the system owner before the month closes."
+              }
+            },
+            {
+              "text": {
+                "en": "Keep the extract and the answers as the record of the examination."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Contest standing privilege that no current duty requires"
+          },
+          "description": {
+            "en": "Challenge the holder list itself rather than its administration, asking of each standing right whether the duty behind it still exists and whether it could be issued for an hour instead of held for a year."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Take each standing holder and the duty recorded as justifying the right."
+              }
+            },
+            {
+              "text": {
+                "en": "Test that duty against what the person's role now actually involves."
+              }
+            },
+            {
+              "text": {
+                "en": "Propose a time-boxed grant wherever the right is used a few times a year."
+              }
+            },
+            {
+              "text": {
+                "en": "Report holders whose justification has lapsed to the system owner."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-check after the next month's reconciliation that the right has gone."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-05.05",
+      "title": "Authentication configuration enforces policy",
+      "description": "The authentication settings actually in force in each in-scope system — federation, second factor, password rules, session and lockout behaviour — are read out of the systems themselves and compared with the approved standard each year and after any change to it.",
+      "category": "CA",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Engineering lead",
+      "requirementCodes": [
+        "P11"
+      ],
+      "objective": "To ensure the authentication settings in force in each in-scope system match the approved standard, read out of the systems themselves rather than from the policy text.",
+      "successCriteria": "An approved standard states, setting by setting, the value each system must hold and what an exception requires.\nThe values compared are read out of each system's own configuration, never from a policy document or a vendor default.\nSecond-factor enrolment is measured over the account population the directory returns, so an unenrolled account is named, not lost in a rate.\nPaths that avoid federation — local logins, legacy protocols, break-glass accounts — are listed with an owner each.\nDifferences are corrected or carry a dated approved exception, and the comparison re-runs when the standard changes.",
+      "testingMethodology": "Evidence:\nThe approved authentication standard with its effective date and the settings it fixes for each class of system.\nA configuration export from every in-scope system, taken by the tester or witnessed as it was taken.\nThe mfaEnrolled and status fields per account from the nightly ConnectedIdentityAccount enumeration.\nThe register of local, service and break-glass accounts able to authenticate outside federation.\nThe exception approvals that were in force during the period, with their expiry dates.\n\nAnalysis:\nCompare setting by setting rather than in aggregate, since a system meeting most of the standard fails on the settings it does not meet.\nCompute second-factor coverage across the whole ACTIVE population and name the accounts making up the shortfall rather than reporting a rate.\nAttempt an authentication down a non-federated path in a test tenant, to establish that the path is closed rather than merely undocumented.\nTest each exception for an owner, an expiry and approval at the level the standard demands.\nSet the export date against the date the standard last changed, because a comparison older than the standard evidences nothing about today.\n\nOutput:\nSetting-by-setting comparison per system, showing the value held beside the value required.\nCount and list of ACTIVE accounts carrying no second factor, by system and by privilege.\nRegister of authentication paths that avoid federation, with the owner and reason for each.\nExceptions carrying no approval, no expiry, or an expiry that has already passed.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Define the value every authentication setting must hold"
+          },
+          "description": {
+            "en": "Turn the access policy into a settings standard an engineer can apply and a tester can compare against: a required value per setting, per class of system, with the route to an exception stated."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Group the in-scope systems by what their platforms can actually enforce."
+              }
+            },
+            {
+              "text": {
+                "en": "State the required value for each factor, password and session setting."
+              }
+            },
+            {
+              "text": {
+                "en": "Set lockout and idle-timeout values against the sensitivity of the data."
+              }
+            },
+            {
+              "text": {
+                "en": "Say who may approve an exception and for how long it may stand."
+              }
+            },
+            {
+              "text": {
+                "en": "Have the standard approved and dated before anything is measured against it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Configure federation, second factor and lockout to those values"
+          },
+          "description": {
+            "en": "Apply the standard in each platform's own configuration, so the enforcement lives where authentication actually happens rather than in a document people are asked to follow."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Point each in-scope system at the identity provider for sign-on."
+              }
+            },
+            {
+              "text": {
+                "en": "Require a second factor for every interactive account, privileged first."
+              }
+            },
+            {
+              "text": {
+                "en": "Apply the password, lockout and session values the standard fixes."
+              }
+            },
+            {
+              "text": {
+                "en": "Record where a platform cannot meet a value and what compensates for it."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-apply the settings after any platform upgrade that can reset them."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Close the authentication paths that skip federation entirely"
+          },
+          "description": {
+            "en": "Find and shut the side doors — legacy protocols, local application logins, shared break-glass credentials — because a single open path makes every setting above it optional."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Enumerate the protocols and local login routes each system still accepts."
+              }
+            },
+            {
+              "text": {
+                "en": "Disable the ones no current integration or process depends on."
+              }
+            },
+            {
+              "text": {
+                "en": "Vault the break-glass credentials and alarm on their use."
+              }
+            },
+            {
+              "text": {
+                "en": "Give every remaining path an owner, a reason and a review date."
+              }
+            },
+            {
+              "text": {
+                "en": "Test from outside that a closed path now refuses an authentication."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Export the live configuration and compare it with the standard"
+          },
+          "description": {
+            "en": "Perform the comparison itself once a year and after any change to the standard, working from a dated export of what each system currently enforces rather than from what it was configured to enforce."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The dated configuration export from each in-scope system beside the comparison sheet, showing value held, value required and the disposition of every difference."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Export the authentication configuration from each system on one date."
+              }
+            },
+            {
+              "text": {
+                "en": "Set each exported value beside the value the standard requires."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a correction or an exception for every difference found."
+              }
+            },
+            {
+              "text": {
+                "en": "Stamp the comparison with the standard version it was made against."
+              }
+            },
+            {
+              "text": {
+                "en": "Repeat the comparison within the month whenever the standard changes."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Measure second-factor coverage across the accounts the sync returned"
+          },
+          "description": {
+            "en": "Check the claim that a second factor is enforced against the account population a directory enumeration returns, which is the only place an account excluded from enrolment becomes visible."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Take the ACTIVE accounts from the latest ConnectedIdentityAccount sync."
+              }
+            },
+            {
+              "text": {
+                "en": "Split them by whether the directory records an enrolled second factor."
+              }
+            },
+            {
+              "text": {
+                "en": "Name every unenrolled account and the rights it holds, rather than a rate."
+              }
+            },
+            {
+              "text": {
+                "en": "Test whether each exclusion carries an approved and unexpired exception."
+              }
+            },
+            {
+              "text": {
+                "en": "Report the shortfall to the system owners with a date to clear it by."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-05.06",
+      "title": "Generic, shared and service accounts inventoried and governed",
+      "description": "Every account in an in-scope system that no single person answers for — shared logins and mailboxes, application, integration and batch accounts — is on an inventory carrying a named human custodian and a stated purpose, and is re-attested each quarter.",
+      "category": "CA",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "IT Operations",
+      "requirementCodes": [
+        "P11"
+      ],
+      "objective": "To ensure every account that no single person answers for carries a named human custodian and a stated purpose, and that the quarter confirms both are still true.",
+      "successCriteria": "The inventory is derived from the directory itself: ConnectedIdentityAccount rows no IdentityAccountLink resolves to an Employee are the candidate population.\nEach entry names a human custodian, the purpose served and the systems reached, and one whose custodian has left is reassigned inside the quarter.\nCredentials are vaulted with issue and rotation recorded, and are rotated when a holder changes.\nAn account automation must never disable carries the account-protection flag, so a leaver pass refuses it.\nEntries serving no remaining purpose are disabled, and the attestation records who attested and when.",
+      "testingMethodology": "Evidence:\nThe ConnectedIdentityAccount rows the nightly sync returned, with status, isAdmin and whether an IdentityAccountLink resolves each to an Employee.\nThe inventory of generic, shared and service accounts with custodian, purpose and systems reached per entry.\nVault records showing credential issue and rotation for those accounts across the period.\nThe quarter's attestation returns with the attester and the date on each.\nThe protection flags set on accounts automation must not disable, and the leaver-pass refusals they produced.\n\nAnalysis:\nCompare unlinked directory accounts against the inventory in both directions: an unlinked account absent from the inventory, and an entry no directory account matches.\nTest every custodian against the current HR roster, since a custodian who has left leaves the account answerable to nobody.\nSample fifteen service accounts and trace each to the job or integration it runs and to the date its credential was last rotated.\nTest whether the accounts carrying a protection flag are the ones a disable would actually break, and whether any ordinary user account carries one.\nAttempt an interactive sign-on with a shared account whose purpose does not require it, in a controlled test.\n\nOutput:\nTwo-way reconciliation of unlinked directory accounts to inventory entries, with counts on each side.\nList of accounts with no custodian, or a custodian no longer on the roster.\nSchedule of credentials past the rotation interval, naming the systems each reaches.\nExceptions where a protection flag shields an account that is not a service account.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Derive the candidate list from accounts no link resolves"
+          },
+          "description": {
+            "en": "Build the population from the directory rather than from memory: the accounts a nightly sync returned that the reconciler could not pair with an employee are the ones nobody personally answers for."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Take the accounts the latest sync returned for each connected directory."
+              }
+            },
+            {
+              "text": {
+                "en": "Set aside every account an IdentityAccountLink resolves to an employee."
+              }
+            },
+            {
+              "text": {
+                "en": "Add local accounts in systems no connected directory enumerates."
+              }
+            },
+            {
+              "text": {
+                "en": "Classify what remains as shared, application, integration or batch."
+              }
+            },
+            {
+              "text": {
+                "en": "Put the unclassifiable remainder to the system owner for a decision."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Name the custodian answerable for each shared or service account"
+          },
+          "description": {
+            "en": "Give every entry a person who answers for it, a purpose written plainly enough to test, and the systems it can reach, so the account stops being a thing that merely exists."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Record one human custodian and a deputy against every entry."
+              }
+            },
+            {
+              "text": {
+                "en": "State the purpose in terms of the job or integration the account serves."
+              }
+            },
+            {
+              "text": {
+                "en": "List the systems and data the account can reach with its entitlements."
+              }
+            },
+            {
+              "text": {
+                "en": "Flag the accounts automation must never disable, and set the protection flag."
+              }
+            },
+            {
+              "text": {
+                "en": "Deny interactive sign-on where the purpose does not require a person."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Rotate the shared credentials on the interval the inventory sets"
+          },
+          "description": {
+            "en": "Hold the credentials somewhere they can be issued and changed without being known to everybody, and change them when the set of people who could know them changes."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The vault's issue and rotation record for each entry over the quarter, showing the date, the reason and the systems the credential reaches."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Move every shared credential into the vault and remove local copies."
+              }
+            },
+            {
+              "text": {
+                "en": "Rotate on the interval set, and whenever a person with access departs."
+              }
+            },
+            {
+              "text": {
+                "en": "Record who checked out a credential and for what piece of work."
+              }
+            },
+            {
+              "text": {
+                "en": "Replace embedded credentials in jobs and scripts as they are rotated."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a finding where a credential cannot be rotated without an outage."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Confirm each entry with its custodian before the quarter closes"
+          },
+          "description": {
+            "en": "Put the inventory back to the people named on it each quarter and make them answer for the purpose, the entitlements and whether the account is needed at all."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The quarter's attestation return per entry: custodian, purpose confirmed or amended, entitlements accepted, and the disposition of accounts found no longer needed."
+          },
+          "suggestedRole": "Process Owner",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Send each custodian the entries they hold with the current entitlements."
+              }
+            },
+            {
+              "text": {
+                "en": "Require a decision to keep, reduce or retire on every single entry."
+              }
+            },
+            {
+              "text": {
+                "en": "Reassign entries whose custodian has left or changed role this quarter."
+              }
+            },
+            {
+              "text": {
+                "en": "Disable the accounts confirmed as serving no remaining purpose."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the attester and the date against each entry attested."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Contrast the inventory with what the directory currently returns"
+          },
+          "description": {
+            "en": "Test the inventory from the directory's side, since the failure that matters is a live account nobody has written down, and it cannot be found by reading the inventory alone."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Draw the unlinked accounts from the latest directory enumeration."
+              }
+            },
+            {
+              "text": {
+                "en": "Match them against the inventory and count the misses in both directions."
+              }
+            },
+            {
+              "text": {
+                "en": "Trace a sample of entries to the integration or job said to need them."
+              }
+            },
+            {
+              "text": {
+                "en": "Test the custodians named against the current employee roster."
+              }
+            },
+            {
+              "text": {
+                "en": "Report unattributed live accounts with the entitlements each carries."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-06.01",
+      "title": "Changes requested, documented and approved pre-implementation",
+      "description": "Every change to a system carrying financial reporting data starts as a written request naming what will change, which reports depend on it and why it is wanted, approved by someone other than the person who raised it before implementation begins.",
+      "category": "CA",
+      "defaultFrequency": "AD_HOC",
+      "defaultOwnerHint": "Engineering lead",
+      "requirementCodes": [
+        "P11"
+      ],
+      "objective": "To ensure every change to an in-scope financial system is raised as a written request stating its reason and approved by an authorised approver before implementation begins.",
+      "successCriteria": "Every production change to an in-scope system traces to a request naming the requester, the systems touched and its reason.\nThe approval is recorded before the implementation timestamp, and the approver is neither the requester nor the implementer.\nAn approver acts inside a delegation naming them for that system, and an approval given outside it is refused rather than ratified later.\nChanges altering calculation, posting logic or a key report carry a second approval from the process owner relying on the output.\nRequests refused or withdrawn are closed with the reason, and none appears in the deployment log.",
+      "testingMethodology": "Evidence:\nObtain the production change population for the period from the deployment log of each in-scope system, not from the change register, so completeness is tested against the pipeline.\nExport the change request records for the same window, carrying requester, approver, approval time and target system.\nObtain the delegation of authority naming who may approve changes for each in-scope system, with its effective dates.\nCollect the approvals already filed as Evidence against this control through ControlEvidenceLink.\nRequest the subset of changes touching calculation, posting or key report logic and the process owner approvals for them.\n\nAnalysis:\nReconcile the deployment log to the request register in full for one month, so a change made with no request is visible rather than sampled around.\nSample 25 changes across the period, stratified by system and weighted to calculation and posting changes, with at least two per in-scope system.\nCompare each approval timestamp with the implementation timestamp, treating an approval recorded afterwards as a failure rather than a late filing.\nTest approver authority against the delegation in force on the approval date, not the version current at fieldwork.\nCheck that requester, approver and implementer are three people, or that a compensating review is named where the team is too small.\n\nOutput:\nCount of production changes carrying no approved request, by system and by month.\nSchedule of approvals recorded after implementation, with the elapsed time on each.\nList of approvals given outside the delegation, naming the approver and the system.\nStatement of whether the request population is complete against the deployment log.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Classify which systems and change types the gate covers"
+          },
+          "description": {
+            "en": "Decide where the approval gate bites by naming the systems whose output reaches the financial statements and separating the change types that must pass through it from those deliberately left outside."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Process Owner",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Name the applications, interfaces and reports whose output reaches the financial statements."
+              }
+            },
+            {
+              "text": {
+                "en": "Separate configuration changes from code changes and say who approves each."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the change types left outside the gate, such as content edits with no posting effect."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree that exclusion list with the finance owner who relies on each system's output."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the scope decision with the date it takes effect and the systems it names."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Design the request record and the approval it cannot bypass"
+          },
+          "description": {
+            "en": "Turn the scope decision into a working gate: a request record that captures the reason and the reporting effect, and a pipeline that refuses to carry a change whose request is unapproved."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Add fields for the reason, the systems touched and the expected effect on reporting."
+              }
+            },
+            {
+              "text": {
+                "en": "Require an approver drawn from the delegation for that system before work opens."
+              }
+            },
+            {
+              "text": {
+                "en": "Block the pipeline from accepting a change whose request is unapproved or withdrawn."
+              }
+            },
+            {
+              "text": {
+                "en": "Stamp the approval time onto the request so it can be set against the deployment time."
+              }
+            },
+            {
+              "text": {
+                "en": "Route calculation, posting and key report changes for a second approval by the process owner."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Approve or refuse every request under the delegation in force"
+          },
+          "description": {
+            "en": "Work the gate as changes arrive, judging each request on what it alters and who is entitled to authorise it, and closing the ones that are refused so they cannot reappear quietly."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The approved change request for each production change, carrying an approver named in the delegation and an approval time earlier than the deployment it authorised, filed as Evidence and attached through ControlEvidenceLink."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Read the request for what it alters and which reports depend on it."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the approver is named in the delegation covering that system."
+              }
+            },
+            {
+              "text": {
+                "en": "Refuse a request carrying no reason or no named target system."
+              }
+            },
+            {
+              "text": {
+                "en": "Send calculation and posting changes to the process owner for the second approval."
+              }
+            },
+            {
+              "text": {
+                "en": "Close a withdrawn request with its reason so it cannot be revived silently."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Cross-check deployments against the requests that authorised them"
+          },
+          "description": {
+            "en": "Look back over the quarter from the deployment side rather than the register side, so a change that reached production with no approved request is found by the control rather than by the auditor."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Pull every production change the deployment log shows for the quarter."
+              }
+            },
+            {
+              "text": {
+                "en": "Match each one to a request approved before its deployment time."
+              }
+            },
+            {
+              "text": {
+                "en": "Investigate the unmatched changes with the engineer who made them."
+              }
+            },
+            {
+              "text": {
+                "en": "Report changes that went in unapproved to the control owner as exceptions."
+              }
+            },
+            {
+              "text": {
+                "en": "Amend the gate where a class of change keeps escaping it."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-06.02",
+      "title": "Changes tested with results evidenced before release",
+      "description": "A change reaches release only once the tests it was meant to pass have run against the build actually being shipped, with the result set kept as an artefact that names the build rather than asserted in a comment on the ticket.",
+      "category": "CA",
+      "defaultFrequency": "AD_HOC",
+      "defaultOwnerHint": "Engineering lead",
+      "requirementCodes": [
+        "P11"
+      ],
+      "objective": "To ensure every change is tested against acceptance criteria written beforehand, with results kept as an artefact naming the build tested and the person who accepted it.",
+      "successCriteria": "Each released change carries a test result set naming the build identifier, the tests run and the outcome of each.\nAcceptance criteria are written before testing starts, and the result set answers each one rather than reporting a pass rate.\nThe build tested is the build released, traced by identifier rather than by branch name or by date.\nA failing or skipped test stops the release unless a named approver accepts it in writing and the defect is left open.\nChanges to calculation, posting or a key report carry a user acceptance sign-off from the finance owner of the affected output.",
+      "testingMethodology": "Evidence:\nObtain the release population for the period from the deployment log of each in-scope system; these commonly run from 40 to 400 releases a year.\nExport the test result artefacts for those releases, each naming the build identifier and the tests executed.\nCollect the acceptance criteria recorded on the corresponding change requests.\nRequest the written acceptances for releases shipped with a failing or skipped test, and the defects left open behind them.\nObtain the user acceptance sign-offs for changes touching calculation, posting or a key report.\n\nAnalysis:\nSample 25 releases stratified by system and weighted to calculation and posting changes, and add every release shipped with a failing test.\nTrace the build identifier on each artefact to the identifier in the deployment record, treating a mismatch as untested.\nCompare the acceptance criteria against the result set and confirm each criterion is answered rather than covered by a summary pass rate.\nTest whether the artefact predates the release using pipeline timestamps rather than the file's upload time.\nRe-perform two tests from the sample in the test environment and set the outcome against the filed result.\n\nOutput:\nCount of releases carrying no test artefact, by system and by month.\nSchedule of releases whose tested build differs from the build deployed.\nList of failing or skipped tests accepted at release, with the approver and the open defect.\nStatement of whether user acceptance was obtained for each calculation change in the sample.",
+      "tasks": [
+        {
+          "title": {
+            "en": "State the acceptance criteria each class of change must meet"
+          },
+          "description": {
+            "en": "Settle in advance what proof a change of each risk class owes before it may be released, so that testing depth is a decision taken once rather than an argument had at each release."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Process Owner",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Group changes by the damage their failure would do to reporting."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the tests each group must pass before a release is permitted."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the finance owner who accepts changes to each key report."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide what a test run has to leave behind for it to count as evidence."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree the depth expected of configuration changes that carry no code."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Bind each test result set to the build identifier it ran against"
+          },
+          "description": {
+            "en": "Make the pipeline produce proof that cannot drift from what shipped, by emitting a result file stamped with the same build identifier the deployment record carries and storing it beyond the run that made it."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Emit a result file from the pipeline naming every test and its outcome."
+              }
+            },
+            {
+              "text": {
+                "en": "Stamp the build identifier onto both the result file and the deployment record."
+              }
+            },
+            {
+              "text": {
+                "en": "Store the artefact where it outlives the pipeline run that produced it."
+              }
+            },
+            {
+              "text": {
+                "en": "Fail the release automatically when a required test did not run at all."
+              }
+            },
+            {
+              "text": {
+                "en": "Open an approval path for a release that ships with a known failing test."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Exercise the agreed tests and file the outcome before release"
+          },
+          "description": {
+            "en": "Run the criteria the change was scoped against on the candidate build, and put the result where the release decision can be traced to it, escalating a failure instead of quietly repeating the run."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The test result artefact for each release, naming the build identifier, every test executed and its outcome, attached to this control as Evidence through ControlEvidenceLink."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Build the candidate and note the identifier the tests will quote."
+              }
+            },
+            {
+              "text": {
+                "en": "Run the acceptance criteria written on the change request against it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the result set to the request before asking for release."
+              }
+            },
+            {
+              "text": {
+                "en": "Escalate a failing test to the named approver rather than re-running it silently."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain the finance owner's sign-off where a key report changes."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Spot-check filed results by re-running them in the test environment"
+          },
+          "description": {
+            "en": "Judge whether the filed artefacts describe what actually happened, by repeating a couple of the recorded tests and by following the build identifier through to the deployment it claims to cover."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Select releases from the quarter weighted towards calculation changes."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-perform two of the filed tests and compare the outcome recorded."
+              }
+            },
+            {
+              "text": {
+                "en": "Trace the tested build identifier through to the deployment record."
+              }
+            },
+            {
+              "text": {
+                "en": "Report artefacts that do not match the build they claim to cover."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-06.03",
+      "title": "Development, test and production environments segregated",
+      "description": "Separate places to build, to test and to run the financial systems, holding separate credentials and separate data, so work in progress cannot reach the ledger and nobody can alter what production runs except through the release path.",
+      "category": "CA",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "IT Operations",
+      "requirementCodes": [
+        "P11"
+      ],
+      "objective": "To ensure development, test and production run as separate environments with separate credentials and data, so nothing reaches production except through the release path.",
+      "successCriteria": "An environment register names every instance of each in-scope system and the environment it serves.\nCredentials do not span environments: an account that authenticates to development cannot authenticate to production.\nNobody holds standing write access to both the source of a change and the production instance running it, unless a compensating review is named.\nProduction data copied into a lower environment is masked or separately approved, and each copy is recorded with its date and requester.\nConfiguration altered directly in production, outside the release path, is blocked or raises an alert that is answered.",
+      "testingMethodology": "Evidence:\nObtain the environment register listing every instance of each in-scope system, commonly three to five instances per system.\nExport the account list for each environment; where environments are entered through the corporate directory, the nightly identity sync's ConnectedIdentityAccount rows give that population.\nRequest the record of production data refreshes into lower environments for the period, with the masking applied to each.\nCollect the alerts raised for configuration changed directly in production outside the release path.\nObtain the hosting and network configuration showing the boundary between environments.\n\nAnalysis:\nReconcile the register against the hosting inventory in full, so an instance nobody listed is visible rather than sampled around.\nIntersect the production and development account lists and examine every account appearing in both, rather than a sample of them.\nSample five data refreshes and confirm the masking recorded was applied by inspecting the data that landed, not the request that asked for it.\nTest the boundary in a witnessed attempt to authenticate to production with a development credential.\nTrace each direct production change alert to a ticket, treating an unexplained one as an exception.\n\nOutput:\nList of accounts holding access in more than one environment, with the role each holds.\nCount of instances found in hosting but absent from the environment register.\nSchedule of production data refreshes with the masking applied and the approver of each.\nStatement of whether an unmasked production copy sits in a lower environment at the review date.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Diagram the environments each in-scope system runs in"
+          },
+          "description": {
+            "en": "Establish what separation currently exists by walking the hosting inventory, naming every instance of every in-scope system and drawing the path a change travels from a developer's machine to the ledger."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Walk the hosting inventory and name every instance of each in-scope system."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark which instance is production and which environments feed into it."
+              }
+            },
+            {
+              "text": {
+                "en": "Draw the path a change takes from a developer's machine to the ledger."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the interfaces that cross an environment boundary and why they do."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree the register with the engineering and finance owners of each system."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Separate the credentials and the data each environment holds"
+          },
+          "description": {
+            "en": "Make the boundary real rather than nominal: distinct credentials per environment, no standing production write access from development accounts, and lower environments fed with masked or synthetic data."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Issue distinct credentials per environment and retire any account shared across them."
+              }
+            },
+            {
+              "text": {
+                "en": "Remove standing production write access from accounts used to develop."
+              }
+            },
+            {
+              "text": {
+                "en": "Mask or synthesise the production data copied into a lower environment."
+              }
+            },
+            {
+              "text": {
+                "en": "Alert on configuration altered in production outside the release path."
+              }
+            },
+            {
+              "text": {
+                "en": "Document the compensating review where one person must hold both sides."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Track each refresh of production data into a lower environment"
+          },
+          "description": {
+            "en": "Handle copies of live data as events that leave a record, so the question of what production data sits outside production can be answered from a register rather than from memory."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The refresh register for the period, each entry naming the requester, the target, the masking routine applied and the approver where live records were carried across."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Log the requester, the date and the target environment for each copy."
+              }
+            },
+            {
+              "text": {
+                "en": "Apply the agreed masking before the data is made available to users."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain approval where a copy must carry unmasked live records."
+              }
+            },
+            {
+              "text": {
+                "en": "Delete the copy once the work that needed it has finished."
+              }
+            },
+            {
+              "text": {
+                "en": "File the register entry as Evidence linked to this control."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Cross-reference the environment account lists for people on both"
+          },
+          "description": {
+            "en": "Test the separation from the identity side each quarter by taking the account lists of every environment at one moment and challenging each person who appears in more than one of them."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Export the account list for every environment at the same moment."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify the accounts appearing in both development and production."
+              }
+            },
+            {
+              "text": {
+                "en": "Challenge each one against the compensating review recorded for it."
+              }
+            },
+            {
+              "text": {
+                "en": "Escalate an unexplained crossing to the control owner as an exception."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-06.04",
+      "title": "Production deployment authorization restricted",
+      "description": "A short, named roster of people and service principals able to put a change into production, enforced by the pipeline rather than by convention, with every deployment in the period traceable to one of them.",
+      "category": "CA",
+      "defaultFrequency": "MONTHLY",
+      "defaultOwnerHint": "IT Operations",
+      "requirementCodes": [
+        "P11"
+      ],
+      "objective": "To ensure the ability to deploy to production is held by a recorded few, enforced by the pipeline, and that every deployment traces to one of them carrying an approved change.",
+      "successCriteria": "A deployer roster names every person and service principal able to release to production, with the systems each one covers.\nThe pipeline enforces that roster: a deployment attempted by an identity outside it fails rather than succeeding with a warning.\nEvery production deployment names the identity that triggered it and the change request it carried.\nThe roster is re-attested monthly through an AccessReview campaign scoped to deployment rights, with a decision recorded against each account.\nAccess granted for a single release is time-boxed and observably withdrawn rather than left standing afterwards.",
+      "testingMethodology": "Evidence:\nObtain the deployer roster in force at each month end in the period, with the systems each entry covers.\nExport the production deployment log from each in-scope pipeline; populations commonly run from 50 to 500 deployments a year.\nCollect the AccessReview campaigns scoped to deployment rights, with the AccessReviewDecision and AccessReviewConnectedDecision rows they carry.\nRequest the grant and withdrawal records for temporary deployment access issued during the period.\nObtain the pipeline configuration that enforces the roster, with its own change history.\n\nAnalysis:\nReconcile every deployment in the log to the roster in force on its date, in full rather than by sample, because the population is machine readable.\nTake each monthly campaign and confirm a decision exists against every account in scope, with none left undecided at close.\nTest the enforcement in a witnessed attempt to deploy from an account the roster does not name.\nCompare temporary grants with their withdrawal records and measure how long each stayed live after its release.\nExamine, for 15 deployments drawn from calculation changes, whether the deployer also wrote the change.\n\nOutput:\nList of deployments whose triggering identity is absent from the roster in force that day.\nCount of accounts holding deployment rights at each month end, with the movement between months.\nSchedule of temporary grants with the time each stayed live beyond its release.\nStatement of whether every monthly re-attestation closed with each account decided.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Enumerate the identities able to release to production today"
+          },
+          "description": {
+            "en": "Find out who can actually reach production before deciding who should, reading the pipeline and platform permissions rather than the organisation chart, and keeping this roster separate from the recertification run over the whole estate."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Read the pipeline and platform permissions for every identity that can reach production."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide which of them the business genuinely needs to hold that right."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach each entry to the systems it covers rather than granting it broadly."
+              }
+            },
+            {
+              "text": {
+                "en": "Set how a temporary grant is requested, time-boxed and withdrawn."
+              }
+            },
+            {
+              "text": {
+                "en": "Separate this roster from the periodic access recertification run for the whole estate."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Enforce the roster in the pipeline rather than in a document"
+          },
+          "description": {
+            "en": "Move the restriction from a list somebody maintains to a check the deployment job performs, so an unauthorised release is impossible rather than merely discouraged and every deployment records who triggered it."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Restrict the production deployment job to the identities the roster names."
+              }
+            },
+            {
+              "text": {
+                "en": "Reject a deployment triggered by an identity the roster does not carry."
+              }
+            },
+            {
+              "text": {
+                "en": "Require the change request identifier as an input to the deployment job."
+              }
+            },
+            {
+              "text": {
+                "en": "Emit a deployment record naming the identity, the build and the request."
+              }
+            },
+            {
+              "text": {
+                "en": "Expire a temporary grant automatically at the end of its window."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Correlate each production deployment with an authorised deployer"
+          },
+          "description": {
+            "en": "Close every month by setting the deployment log against the roster that was in force, so an unauthorised release is found within weeks rather than at the year-end audit."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The monthly reconciliation of the deployment log to the roster, naming each release whose triggering identity was not authorised on the day it ran, filed as Evidence against this control."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Export the month's production deployments with their triggering identities."
+              }
+            },
+            {
+              "text": {
+                "en": "Match each identity to the roster entry in force on that date."
+              }
+            },
+            {
+              "text": {
+                "en": "Investigate a release with no matching entry before the month closes."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm every temporary grant issued in the month has been withdrawn."
+              }
+            },
+            {
+              "text": {
+                "en": "File the completed reconciliation with the month's control evidence."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Recertify the deployer roster in an access review campaign"
+          },
+          "description": {
+            "en": "Put the roster in front of the person who owns the pipeline each month as a campaign with a decision per account, and act on the revocations rather than leaving them recorded."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The closed AccessReview campaign for the month, its decision rows carrying a confirm, modify or revoke against each account, with the closeout artefact generated at close."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Open a campaign scoped to deployment rights alone, not the whole estate."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign the reviewer who owns the pipeline rather than the account holders."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide each AccessReviewDecision row as confirm, modify or revoke."
+              }
+            },
+            {
+              "text": {
+                "en": "Execute the revocations and confirm the account can no longer deploy."
+              }
+            },
+            {
+              "text": {
+                "en": "Close the campaign so its evidence artefact is generated for the month."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Contrast the roster against who actually deployed in the period"
+          },
+          "description": {
+            "en": "Judge whether the roster has stayed as small as it claims by setting the names on it against the names appearing in the deployment log, and by asking what the dormant entries are still for."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Count the accounts holding deployment rights at each month end."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify roster entries that deployed nothing across two quarters."
+              }
+            },
+            {
+              "text": {
+                "en": "Question whether each dormant entry still needs the right it holds."
+              }
+            },
+            {
+              "text": {
+                "en": "Report the exceptions the monthly reconciliations raised and their outcome."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-06.05",
+      "title": "Emergency changes documented and retrospectively approved",
+      "description": "The exception path written down in advance: what qualifies as an emergency, who may declare one, the record made while the change is happening, and the approval that has to follow within a stated number of days once the system is running again.",
+      "category": "CA",
+      "defaultFrequency": "AD_HOC",
+      "defaultOwnerHint": "Engineering lead",
+      "requirementCodes": [
+        "P11"
+      ],
+      "objective": "To ensure an emergency change is made only on stated grounds, recorded as it happens, and approved afterwards within a fixed window by someone who neither made nor declared it.",
+      "successCriteria": "A written definition states what qualifies as an emergency change and which roles may declare one.\nEvery emergency change carries a record raised at the time, naming the trigger, the system touched and the person who made it.\nRetrospective approval is recorded within the stated window, commonly five business days, by someone other than the implementer.\nThe emergency population reconciles to the deployment log, so a change that skipped the normal gate without being labelled is visible.\nAn emergency change arising from an Incident cites it, and the Incident record names the change made in response.",
+      "testingMethodology": "Evidence:\nObtain the emergency change definition in force and the list of roles entitled to declare one.\nExport the emergency change population for the period from the change register; in a settled pipeline this is commonly two to five per cent of all changes.\nObtain the full production deployment log for the same window, so completeness is tested against the pipeline rather than the register.\nCollect the retrospective approvals with their timestamps and the Incident records the changes cite.\nRequest the post-implementation reviews written for those changes and any follow-up work they raised.\n\nAnalysis:\nTest every emergency change in the period rather than a sample: the population is small and it is the one an auditor examines first.\nReconcile the deployment log to the change register and examine each deployment carrying neither a prior approval nor an emergency label.\nMeasure the elapsed time from implementation to retrospective approval against the stated window, in business days.\nConfirm the approver is neither the implementer nor the person who declared the emergency.\nTrace changes citing an Incident to that record and compare the two narratives of the same event.\n\nOutput:\nSchedule of emergency changes with the elapsed days to retrospective approval on each.\nCount of changes deployed without prior approval and never labelled as emergencies.\nList of retrospective approvals given by the implementer or by the declarer.\nStatement of how the emergency rate moved across the period and which systems drove it.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Qualify what counts as an emergency and who may declare one"
+          },
+          "description": {
+            "en": "Write the exception path down before it is needed, so the grounds for bypassing the normal gate are a decision taken calmly rather than a judgement made at two in the morning."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Write the conditions that justify bypassing the normal approval gate."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the roles entitled to declare an emergency and their deputies."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the window inside which the retrospective approval must follow."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide what the record must capture at the moment of the change."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree the definition with finance so a convenience release cannot qualify."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Open a labelled path the pipeline records as an exception"
+          },
+          "description": {
+            "en": "Give the emergency route its own machinery, so using it is an observable act that starts a clock and notifies an approver rather than a normal deployment with the paperwork skipped."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Add an emergency flag the deployment job requires and records."
+              }
+            },
+            {
+              "text": {
+                "en": "Require the declarer, the trigger and the system on that record."
+              }
+            },
+            {
+              "text": {
+                "en": "Notify the approver automatically as soon as the flag is used."
+              }
+            },
+            {
+              "text": {
+                "en": "Start the retrospective approval clock from the deployment time."
+              }
+            },
+            {
+              "text": {
+                "en": "Link the record to the Incident that prompted it where one exists."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Approve emergency changes after the fact inside the stated window"
+          },
+          "description": {
+            "en": "Judge each bypass once the system is stable again: whether the grounds held, whether the declarer was entitled to declare, and what follow-up work the hurried fix has left behind."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The emergency change record with its retrospective approval, naming the trigger, the implementer and an approver who was neither, filed as Evidence against this control."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Review what was altered and why the normal gate was bypassed."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the declarer was entitled to declare an emergency."
+              }
+            },
+            {
+              "text": {
+                "en": "Decide approval or rejection within the window, with the reason."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise follow-up work where the fix was partial or temporary."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the record and its approval through ControlEvidenceLink."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sweep the deployment log for emergencies nobody labelled"
+          },
+          "description": {
+            "en": "Test the completeness of the exception population from the pipeline side, because the change that skipped the gate and was never called an emergency is the one the register can never show."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Pull every deployment that carried no prior approval."
+              }
+            },
+            {
+              "text": {
+                "en": "Subtract the changes the register labels as emergencies."
+              }
+            },
+            {
+              "text": {
+                "en": "Investigate what remains with the engineer who deployed it."
+              }
+            },
+            {
+              "text": {
+                "en": "Report unlabelled bypasses and the pattern behind them."
+              }
+            },
+            {
+              "text": {
+                "en": "Revise the definition where a recurring case was never anticipated."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-07.01",
+      "title": "Scheduled jobs monitored and failures resolved",
+      "description": "The batch runs and interfaces that move data into the accounting records, watched so that a run which failed or never started is found and put right before the figures it feeds are relied on.",
+      "category": "CA",
+      "defaultFrequency": "DAILY",
+      "defaultOwnerHint": "IT Operations",
+      "requirementCodes": [
+        "P11"
+      ],
+      "objective": "To ensure every job on the processing schedule is confirmed to have run, and that a failed or skipped run is corrected and its data proven complete before the period's figures are relied on.",
+      "successCriteria": "The schedule names every automated run a reported figure depends on, each with an owner, a run window and what breaks when it misses.\nEach day's execution records resolve every watched job to completed, failed or never started, with no run unaccounted for.\nA failure carries its cause, the corrective action taken, and the date the affected data was confirmed complete.\nFailure alerts reach a named on-call recipient rather than an unattended mailbox, and an unacknowledged alert escalates.\nA job failure that degraded service or corrupted data is raised as an incident and worked there, not closed twice.",
+      "testingMethodology": "Evidence:\nExport the job schedule as at period end, giving each job's name, run window, owner and the data it feeds.\nExport the execution records for the period, giving start time, status, duration and error text against every run.\nFor jobs operated in this platform, take the definitions from SCHEDULED_JOBS in src/app-layer/jobs/schedules.ts and the outcomes from the execution record each run writes.\nObtain the alerting configuration and the on-call rota each failure alert was routed to.\nObtain the tickets and rerun records raised against the period's failures.\n\nAnalysis:\nPopulation is every job on the schedule at period end. Test all of them for a named owner, a run window and an alert route, since a sample cannot show a job nobody watches.\nSelect 25 job-days across the period, weighted to period-end dates and to the jobs feeding the general ledger, and trace each to an execution record.\nTest every failed run in the period rather than a sample, through to the rerun and the confirmation that the recovered data reconciled to source.\nCompare the distinct jobs appearing in the execution records against the jobs the schedule holds, to find entries that were disabled or silently removed.\nMatch each alert recipient to the roster, and measure the gap between a failure and its first acknowledgement.\n\nOutput:\nA completeness result stating, per job-day tested, the status recorded and whether the schedule expected a run at all.\nA failure register for the period naming cause, corrective action and the date the data was confirmed complete.\nAn exception list of scheduled jobs with no owner, no alert route, or no execution record anywhere in the period.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Enumerate the scheduled jobs a reported figure depends on"
+          },
+          "description": {
+            "en": "Draw the watched population from the data flows behind the accounts rather than from whatever the scheduler happens to hold, so a job nobody owns is visible before the night it fails."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Trace each significant account back to the interfaces and batch runs that feed it."
+              }
+            },
+            {
+              "text": {
+                "en": "Open the scheduler and match every traced flow to a job definition that actually exists."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the jobs operated in this platform, taken from SCHEDULED_JOBS in src/app-layer/jobs/schedules.ts, where a control leans on one."
+              }
+            },
+            {
+              "text": {
+                "en": "Name one owner per job, and the window inside which the run must complete."
+              }
+            },
+            {
+              "text": {
+                "en": "State what goes wrong downstream when each job misses its window entirely."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Configure a failure alert that reaches a named on-call owner"
+          },
+          "description": {
+            "en": "Wire the scheduler's own failure signal to a person and a response clock, because an unread alert in a shared mailbox is how a missed overnight run survives until month end."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Turn on both failure and did-not-start alerting across the watched set."
+              }
+            },
+            {
+              "text": {
+                "en": "Route each alert to a named on-call rota rather than to a shared mailbox."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the acknowledgement window after which an unread alert escalates upward."
+              }
+            },
+            {
+              "text": {
+                "en": "Fire a deliberate test failure and confirm it reached the rota holder on duty."
+              }
+            },
+            {
+              "text": {
+                "en": "Hold the alert route on the job record so the wiring can be audited later."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Triage each overnight job failure before the ledger is used"
+          },
+          "description": {
+            "en": "Work the previous night's failures at the start of the day, so a broken feed is caught while the postings it affects can still be corrected cheaply."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The daily run-status review: the execution records for the night with a status against every watched job, the failures picked up, and the initials and time of the operator who worked them."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Open the execution records for the night and sort them by outcome."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm every watched job produced a record, rather than inferring success from silence."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign each failure to a handler with the hour it has to be cleared by."
+              }
+            },
+            {
+              "text": {
+                "en": "Hold the downstream posting or report until the affected feed is back."
+              }
+            },
+            {
+              "text": {
+                "en": "Note the outcome against the run so the next reviewer inherits the history."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Run the recovery for each failed job and confirm what landed"
+          },
+          "description": {
+            "en": "Rerunning is only half of it: the control is proven when the record count or control total from the recovered run is matched back to the source system it came from."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The rerun record for every failed job, carrying the reconciliation of recovered data to its source totals and the acceptance of the owner who took the figures back."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Establish whether the failed attempt left partial data that must be backed out first."
+              }
+            },
+            {
+              "text": {
+                "en": "Rerun the job from the restart point the run book specifies for it."
+              }
+            },
+            {
+              "text": {
+                "en": "Match the recovered record count or control total back against the source system."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain the data owner's acceptance that the affected figures are now complete."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise an incident where the failure reached users or disturbed a reported figure."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Reconcile the period's run log against the job schedule itself"
+          },
+          "description": {
+            "en": "Test completeness from the schedule side, since a run log can only show the jobs that started and says nothing at all about one that was disabled or quietly deleted."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Export the schedule as it stood at the start and again at the end of the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare both against the distinct jobs appearing in the period's execution records."
+              }
+            },
+            {
+              "text": {
+                "en": "Investigate every job present in one of those lists and absent from the other."
+              }
+            },
+            {
+              "text": {
+                "en": "Establish who disabled or amended a schedule entry, and under whose approval."
+              }
+            },
+            {
+              "text": {
+                "en": "Report the count of unwatched or silently retired jobs beside the size of the schedule."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-07.02",
+      "title": "Backups executed per schedule and verified",
+      "description": "The scheduled copying of the systems behind the accounting records, where each run is confirmed to have completed over the data it was meant to cover and the copy itself is checked as readable.",
+      "category": "CA",
+      "defaultFrequency": "DAILY",
+      "defaultOwnerHint": "IT Operations",
+      "requirementCodes": [
+        "P11"
+      ],
+      "objective": "To ensure each system holding accounting data is copied at the frequency set for it, and that every completed copy is checked as readable and complete rather than assumed from a clean exit status.",
+      "successCriteria": "Every system whose loss would delay or misstate a reported figure sits in the backup inventory with a frequency, a retention and an owner.\nEach scheduled run resolves to a completed, partial or failed outcome, with no run missing from the record.\nA completed run carries an integrity or checksum result read back from the copy itself, not merely the job's exit code.\nA failed or unverifiable run is escalated the same working day, rerun where possible, and the coverage lost stated in hours.\nWhat is verified here is the copy's own readability; that the data comes back is proven separately under restore testing.",
+      "testingMethodology": "Evidence:\nObtain the backup inventory as at period end, giving system, frequency, retention, destination and owner.\nExport the backup run history for the period, giving run date, outcome, bytes written, duration and the data set each run covered.\nObtain the integrity or checksum output produced against each completed copy.\nObtain the escalation records raised for failed, partial or unverified runs, with the coverage gap each one left.\nObtain the storage listing showing which copies still exist, against the retention the inventory states.\n\nAnalysis:\nPopulation is every system in the backup inventory at period end. Test all of them for a stated frequency, retention and owner, since a sample cannot show a system nobody copies.\nSelect 20 system-days across the period, weighted to the systems feeding the general ledger and to period-end dates, and trace each to a run record.\nFor each selected run read the integrity result over the copy rather than the exit code, and confirm the data set covered matches what the inventory entry requires.\nTest every failed or partial run in the period rather than a sample, through to its rerun and the hours of coverage it left open.\nCompare the copies present in storage against the retention period stated, in both directions, to find copies missing and copies kept too long.\n\nOutput:\nA coverage result stating, per system-day tested, whether a run occurred, what it covered, and what the integrity check returned.\nAn exception list of inventoried systems with no run in the period, or with runs carrying no integrity result at all.\nA statement of the longest coverage gap in the period, the system it fell on, and who accepted it.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Delimit which systems hold data a reported figure rests on"
+          },
+          "description": {
+            "en": "Set the backup population from the accounts backwards, so an interface staging store or a reporting database is not missed because nobody thought of it as a system of record."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Take the significant accounts and name the systems that originate or hold their data."
+              }
+            },
+            {
+              "text": {
+                "en": "Add the staging, integration and reporting stores those systems depend on."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree for each the tolerable loss in hours the business is prepared to accept."
+              }
+            },
+            {
+              "text": {
+                "en": "Derive the copy frequency and the retention period that tolerable loss implies."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign an owner to each entry who can confirm what a copy has to cover."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Set the retention, frequency and destination for each backup job"
+          },
+          "description": {
+            "en": "Turn the agreed tolerances into configured job settings, so the schedule enforces the recovery point rather than leaving it to whoever last edited the job by hand."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Configure each job to the frequency the tolerable loss for that system implies."
+              }
+            },
+            {
+              "text": {
+                "en": "Point the copy at a destination separated from the system being copied."
+              }
+            },
+            {
+              "text": {
+                "en": "Apply the retention period and confirm copies age out rather than accumulate."
+              }
+            },
+            {
+              "text": {
+                "en": "Turn on the integrity step so every copy is read back after it is written."
+              }
+            },
+            {
+              "text": {
+                "en": "Alert on a run that fails, completes partially, or does not start at all."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Verify each completed backup against its own integrity check"
+          },
+          "description": {
+            "en": "Read the verification result rather than the exit status, because a job can finish cleanly over a data set that quietly stopped including the database that actually matters."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The run history for the day across every inventoried system, showing against each copy the checksum or verification result and the data set the run actually covered."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Open the previous day's run history across every system in the inventory."
+              }
+            },
+            {
+              "text": {
+                "en": "Confirm the integrity step ran and returned a pass against each copy written."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the data set the run covered with what the inventory entry requires."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the day's verification output as Evidence against this control."
+              }
+            },
+            {
+              "text": {
+                "en": "Sign the day off against the operator who performed the verification."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Escalate a missed or unverifiable backup the same working day"
+          },
+          "description": {
+            "en": "Treat a gap in coverage as a dated exposure with a named owner, since the cost of a missing copy is otherwise discovered only on the day somebody needs it."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The escalation raised for each failed or partial run, naming the system, the hours of protection lost, the out-of-cycle copy taken, and who accepted any residual exposure."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Raise the failure to the system owner within the working day it occurred."
+              }
+            },
+            {
+              "text": {
+                "en": "State the hours of data now unprotected and what would be lost today."
+              }
+            },
+            {
+              "text": {
+                "en": "Take an out-of-cycle copy or rerun the job to close the gap where possible."
+              }
+            },
+            {
+              "text": {
+                "en": "Obtain the system owner's acceptance where the gap cannot be closed at all."
+              }
+            },
+            {
+              "text": {
+                "en": "Refer a system failing repeatedly into the incident and problem process."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sample a month of backup records against the schedule that governs them"
+          },
+          "description": {
+            "en": "Test the pair the other way round, from the schedule into the records, because a system dropped from the job definition leaves no failed run behind for anyone to notice."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Choose a month and export the backup schedule as it stood inside it."
+              }
+            },
+            {
+              "text": {
+                "en": "Pull the run records for that month across every inventoried system."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify systems carried in the inventory with no run record in the month."
+              }
+            },
+            {
+              "text": {
+                "en": "Trace each schedule change made during the month to whoever approved it."
+              }
+            },
+            {
+              "text": {
+                "en": "Report the systems actually covered beside the systems the inventory claims."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-07.03",
+      "title": "Restore testing performed periodically",
+      "description": "The periodic exercise in which a copy from the live backup set is actually brought back into a working environment and the recovered data is reconciled, proving the copies are usable.",
+      "category": "CA",
+      "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "IT Operations",
+      "requirementCodes": [
+        "P11"
+      ],
+      "objective": "To ensure the organization proves at a set interval that a backup can be brought back into a usable and reconciled state inside the recovery time the business has agreed to accept.",
+      "successCriteria": "A dated test plan names the systems to be tested, the scenario each is tested under, and the recovery time agreed for it.\nEach test restores from a copy drawn out of the live backup set rather than one prepared in advance for the exercise.\nThe recovered data is reconciled to a known position, so the test concludes on completeness and not on the restore finishing.\nElapsed time is measured from a declared start to usable data and compared against the recovery time agreed.\nA test that misses its target raises a dated remediation action and a scheduled retest, rather than a note that it was attempted.",
+      "testingMethodology": "Evidence:\nObtain the restore test plan approved for the period, naming systems, scenarios, participants and agreed recovery times.\nObtain the test record for each restore performed, with the copy identifier used, the declared start and the time usable data was reached.\nObtain the reconciliation worked between the recovered data and a control total held outside the copy.\nObtain the remediation actions raised where a test missed its target, with owners, due dates and status at period end.\nObtain the recovery time and recovery point the business has stated for each system in the backup inventory.\n\nAnalysis:\nPopulation is every system the plan requires to be restore-tested in the period, taken from the backup inventory rather than from the tests that happened.\nTest all of them for a completed test record, since a system quietly omitted from the exercise is precisely what a sample would miss.\nFor each test performed, confirm the copy used came from the routine backup set and establish who selected it and when.\nRe-perform the reconciliation on one test from the recovered data and the retained control totals, without relying on the tester's own summary.\nCompare each measured elapsed time against the recovery time agreed, and trace every miss to a remediation action and its status.\n\nOutput:\nA coverage statement naming the systems the plan required, those actually tested, and those carried forward with a reason.\nA result per test giving the copy used, the elapsed time, the recovery time agreed and the reconciliation outcome.\nAn open-action list of failed tests carrying the remediation owner and the date the retest is scheduled for.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Choose the restore scenarios the year's test has to prove"
+          },
+          "description": {
+            "en": "Pick the failure cases worth exercising, since recovering one deleted file proves something quite different from rebuilding a server whose underlying storage is gone."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Rank the systems by what a day of their loss would cost the reported figures."
+              }
+            },
+            {
+              "text": {
+                "en": "Pair each ranked system with the failure mode it is most exposed to."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree the recovery time and recovery point the business will accept for each."
+              }
+            },
+            {
+              "text": {
+                "en": "Fix the calendar dates on which the tests will actually be performed."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the people whose participation the test needs in order to mean anything."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Draft the restore runbook with the target time each scenario must meet"
+          },
+          "description": {
+            "en": "Write down the steps, the environment and the measurement rules before the day itself, so the exercise produces an elapsed time that can be compared from one year to the next."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Set out the restore steps in the order the operator will perform them."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the isolated environment the copy will be brought back into."
+              }
+            },
+            {
+              "text": {
+                "en": "Define when the clock starts and what counts as data a user can work with."
+              }
+            },
+            {
+              "text": {
+                "en": "State the reconciliation that will decide whether the recovered data is complete."
+              }
+            },
+            {
+              "text": {
+                "en": "Version the runbook so the edition a given test was run against stays identifiable."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Restore the chosen backup into an isolated environment and reconcile it"
+          },
+          "description": {
+            "en": "Perform the exercise on a copy taken unprepared from the live backup set, and finish by proving the recovered data matches a known position rather than that the job completed."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The completed test record: the copy identifier restored, the clock start and finish, the environment used, the reconciliation output and the tester's stated conclusion."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Select the copy from the routine backup set without preparing it in advance."
+              }
+            },
+            {
+              "text": {
+                "en": "Start the clock at the declared point and follow the runbook exactly as written."
+              }
+            },
+            {
+              "text": {
+                "en": "Bring the data back into the isolated environment rather than into production."
+              }
+            },
+            {
+              "text": {
+                "en": "Reconcile the recovered records against control totals held outside the copy."
+              }
+            },
+            {
+              "text": {
+                "en": "File the completed test record as Evidence and link it to this control through ControlEvidenceLink."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Grade the test against the recovery time the business agreed"
+          },
+          "description": {
+            "en": "Conclude on the exercise rather than filing it, because a restore that took three days against a one-day target is a finding and not a test that was successfully performed."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Compare the elapsed time measured against the recovery time agreed for that system."
+              }
+            },
+            {
+              "text": {
+                "en": "Judge the reconciliation result, including any records that never came back."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a dated remediation action for each target the test did not meet."
+              }
+            },
+            {
+              "text": {
+                "en": "Schedule the retest and name the individual accountable for running it."
+              }
+            },
+            {
+              "text": {
+                "en": "Report the systems tested beside the systems the backup inventory holds."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-07.04",
+      "title": "IT incidents logged, prioritised and resolved",
+      "description": "The record kept of IT events that disrupt service or threaten data, each graded for severity against a published scale, given an owner and a response clock, and closed only when its cause is stated.",
+      "category": "CA",
+      "defaultFrequency": "AD_HOC",
+      "defaultOwnerHint": "IT Operations",
+      "requirementCodes": [
+        "P11"
+      ],
+      "objective": "To ensure a disruptive IT event is logged as an incident, graded against a published severity scale, and closed only once its cause and its effect on the accounting records are stated.",
+      "successCriteria": "Every incident carries a severity taken from the published scale, a named owner, a detection time and the systems it affected.\nThe response and update intervals actually achieved are visible against the ones the assigned severity demanded.\nArtefacts gathered during the investigation are attached to the incident record itself, not left in a chat thread.\nClosure states the cause, the correction applied, and whether any reported figure was affected or has to be restated.\nEvents surfacing through monitoring, the service desk or a failed job reach the register, and a control failure behind one is named.",
+      "testingMethodology": "Evidence:\nExport the Incident register for the period, giving reference, severity, detection time, owner, phase and the time of closure.\nObtain the published severity scale and the response, update and resolution intervals each grade carries.\nObtain the IncidentEvidence attached to each sampled incident, with the time each artefact was captured.\nObtain the monitoring alerts, service desk tickets and failed job runs raised over the same period.\nObtain the post-incident reviews and any correction or restatement they led to.\n\nAnalysis:\nPopulation is every incident recorded in the period. Test all of them for a severity grade, a named owner and a detection time, since a blank field is the defect itself.\nSample 15 incidents stratified across the grades, taking every one graded at the top two levels rather than sampling those.\nFor each sampled incident compare the response and update times achieved against the intervals its grade demanded, measured from detection.\nTest completeness the other way: trace a sample of 20 monitoring alerts, service desk tickets and failed job runs into the register, to find events worked but never logged.\nRead each sampled closure for a stated cause and an explicit conclusion on whether a reported figure was affected.\n\nOutput:\nA register exception list naming incidents without a severity grade, a named owner or a detection time.\nA sample result stating, per incident, the grade assigned, the interval its grade required and the interval achieved.\nA completeness result naming the alerts, tickets or job failures that never became an incident record at all.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Determine which operational events are raised as incidents"
+          },
+          "description": {
+            "en": "Draw the line between a routine service request and an incident before the pressure of an outage, so the register holds a comparable population rather than whatever felt serious at the time."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Name the event types that reach service availability, data integrity or confidentiality."
+              }
+            },
+            {
+              "text": {
+                "en": "Separate an incident from a service request, a change and a known problem."
+              }
+            },
+            {
+              "text": {
+                "en": "Fix the detection sources that must feed the register, monitoring and service desk included."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree which events oblige a report to a regulator, a customer or an auditor."
+              }
+            },
+            {
+              "text": {
+                "en": "Publish the definition to everyone who could be first to see such an event."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Build the severity matrix that fixes each incident's response clock"
+          },
+          "description": {
+            "en": "Attach response, update and resolution intervals to each grade, so the severity assigned at detection decides what happens next rather than the handler's judgement on the day."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Define the grades by effect on users, on data and on reported figures."
+              }
+            },
+            {
+              "text": {
+                "en": "Set the response, update and resolution intervals each grade carries."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the roles that must be told at each grade, and inside what time."
+              }
+            },
+            {
+              "text": {
+                "en": "Configure the Incident record so severity and detection time cannot be left blank."
+              }
+            },
+            {
+              "text": {
+                "en": "Test the matrix against the previous year's worst events to see whether it fits."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Open an incident record the moment detection is confirmed"
+          },
+          "description": {
+            "en": "Create the record at detection rather than after recovery, because the detection timestamp is the point from which every response interval is afterwards measured."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The Incident row created at detection, carrying its reference, the grade assigned, the detection timestamp, the owner it went to and the notifications that followed."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Raise the record as soon as the event is confirmed, before recovery work begins."
+              }
+            },
+            {
+              "text": {
+                "en": "Assign the grade from the published matrix and name the owner accountable."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture the detection timestamp and the source the detection came from."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark the incident reportable where it is, so the IncidentNotification deadlines run from detection."
+              }
+            },
+            {
+              "text": {
+                "en": "Update the record as the incident moves through containment and recovery."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Attach the forensic artefacts to the incident before it is closed"
+          },
+          "description": {
+            "en": "Gather the logs and captures while they still exist and hang them on the record itself, since retention windows expire long before a later review asks what actually happened."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The IncidentEvidence links on the closed record, covering the logs, captures and screenshots relied on, each carrying the time it was taken and the person who took it."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Collect the logs, captures and screenshots the investigation actually relied on."
+              }
+            },
+            {
+              "text": {
+                "en": "Link each artefact to the incident as IncidentEvidence rather than to a chat thread."
+              }
+            },
+            {
+              "text": {
+                "en": "State the cause reached and the correction that was applied to remove it."
+              }
+            },
+            {
+              "text": {
+                "en": "Conclude whether a reported figure was affected and whether a restatement follows."
+              }
+            },
+            {
+              "text": {
+                "en": "Close the record only once the owner and the affected system's owner agree."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Examine the quarter's incidents for controls that failed to detect them"
+          },
+          "description": {
+            "en": "Read the register as evidence about the control environment, because the events nobody detected say more about the monitoring in place than the ones that were caught within the hour."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Group the period's incidents by the system and the underlying cause behind them."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify which were found by monitoring and which by a user complaining."
+              }
+            },
+            {
+              "text": {
+                "en": "Trace each repeating cause to the control that should have prevented it."
+              }
+            },
+            {
+              "text": {
+                "en": "Raise a dated action where a control is shown to be absent or ineffective."
+              }
+            },
+            {
+              "text": {
+                "en": "Report the count detected by monitoring beside the total the register holds."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-08.01",
+      "title": "Inventory of ICFR-relevant systems and key reports",
+      "description": "The register of applications, interfaces and reports that financial reporting controls depend on, each carrying an owner, the controls that rely on it, and the basis on which it was judged in or out of scope.",
+      "category": "CA",
+      "defaultFrequency": "QUARTERLY",
+      "defaultOwnerHint": "IT Operations",
+      "requirementCodes": [
+        "P11",
+        "P13"
+      ],
+      "objective": "To ensure every application, interface and report a financial reporting control depends on is registered with an owner, a scope decision and the controls that rely on it.",
+      "successCriteria": "Every application and interface an in-scope control depends on is held as an Asset row, not in a side list.\nEach report a control operator relies on is registered with its source system, its parameters and the control that consumes it.\nRegistered entries carry an owner, a criticality and a ControlAsset link to the controls depending on them, with the rationale stated.\nA system run by a third party is cross-referenced to the service organization inventory rather than described twice.\nSystems and reports withdrawn in the period are marked retired with a date, and the controls pointing at them re-pointed.",
+      "testingMethodology": "Evidence:\nObtain the asset register export at period end, filtered to rows carrying financial reporting scope, with owner, type and criticality.\nObtain the risk-control matrix; its key controls are the population the register must account for.\nObtain the ControlAsset extract showing which controls link to which systems, with the rationale on each link.\nObtain the report register with source system, parameters and consuming control for each entry.\nObtain the period's implementation and decommission records, the identity directory's application list and the service organization inventory.\n\nAnalysis:\nPopulation one is every key control on the matrix. Reconcile in full against the ControlAsset extract, listing controls that name a system or report but carry no link.\nPopulation two is every registered system and report. Sample twenty-five weighted to those feeding material accounts and confirm owner, criticality and consumer.\nWalk completeness from outside the register: take the application list from the identity directory and the hosting records, and find systems holding financial data on no register row.\nCompare the period's implementations and decommissions against register additions and retirements, and measure the lag.\nConfirm each third-party hosted system resolves to an entry in the service organization inventory.\n\nOutput:\nSchedule of key controls whose system or report dependency is unrecorded, naming the account each affects.\nSample results for registered entries, stating how many were tested and which lacked an owner, a criticality or a consumer.\nCompleteness exception list from the directory walk, naming each unregistered system and the balances it touches.\nAgeing of register additions against the implementation dates that should have triggered them.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Delimit which systems and reports carry financial reporting scope"
+          },
+          "description": {
+            "en": "Decide scope from what the controls actually consume rather than from the size of the system, so a small tool feeding a key reconciliation is in and a large system touching no reported figure is out."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "CFO/Controller",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Read each key control on the risk-control matrix for the system or report it consumes."
+              }
+            },
+            {
+              "text": {
+                "en": "Trace every significant account to the application that originates its transactions."
+              }
+            },
+            {
+              "text": {
+                "en": "State the scope test in one line: a control conclusion rests on the figures it produces."
+              }
+            },
+            {
+              "text": {
+                "en": "Record a basis for each financial system judged to fall outside scope."
+              }
+            },
+            {
+              "text": {
+                "en": "Settle who arbitrates the scope decision when finance and IT read it differently."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Register each in-scope system as an asset with its dependent controls"
+          },
+          "description": {
+            "en": "Put the inventory where the product already holds technology, so the dependency is a queryable link from a control to an asset instead of a document that ages the day it is written."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Create an Asset row for each in-scope system with its type, owner and criticality set."
+              }
+            },
+            {
+              "text": {
+                "en": "Link every control to the systems it depends on through ControlAsset."
+              }
+            },
+            {
+              "text": {
+                "en": "State on each link what the control takes from the system, in the rationale field."
+              }
+            },
+            {
+              "text": {
+                "en": "Capture interfaces between systems as dependencies rather than leaving them implied."
+              }
+            },
+            {
+              "text": {
+                "en": "Point a hosted system at its entry in the service organization inventory."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Refresh the register as systems and reports enter and leave service"
+          },
+          "description": {
+            "en": "Keep the inventory level with the estate by working the period's change records, because a register refreshed only at year end is wrong for eleven months of the year it covers."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The register export at period end set beside the period's implementation and decommission records, showing the date each entry was added, retired or re-pointed."
+          },
+          "suggestedRole": "IT Operations",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Take the period's implementations, migrations and decommissions from the change records."
+              }
+            },
+            {
+              "text": {
+                "en": "Add each new system or report before it first feeds a control's figures."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark withdrawn rows retired with a date instead of deleting the history."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-point controls whose dependency was retired onto the system that replaced it."
+              }
+            },
+            {
+              "text": {
+                "en": "Name any change that reached production with no register entry raised for it."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Sweep the IT estate for systems the register never recorded"
+          },
+          "description": {
+            "en": "Test completeness from outside the register, since a list can only show what somebody remembered to put on it and the omission is exactly what an auditor is looking for."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Draw the application list from the identity directory and the hosting records."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify systems holding financial data that appear on no row of the register."
+              }
+            },
+            {
+              "text": {
+                "en": "Test a sample of registered reports back to the catalogue of their source system."
+              }
+            },
+            {
+              "text": {
+                "en": "Refer unregistered systems to the control owner with the balances they touch."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-08.02",
+      "title": "Key report logic validated on creation and after change",
+      "description": "The validation that a key report returns what it claims: its logic agreed to the data underneath it before a control relies on it, and agreed again whenever the query, its parameters or the feeding system change.",
+      "category": "CA",
+      "defaultFrequency": "AD_HOC",
+      "defaultOwnerHint": "Process Owner",
+      "requirementCodes": [
+        "P11",
+        "P13"
+      ],
+      "objective": "To ensure a report relied upon by a financial reporting control is agreed to its source data before first use and agreed again whenever its logic or feeding system changes.",
+      "successCriteria": "Each key report holds a validation record naming its query version, the data it was agreed to and who performed the agreement.\nValidation agrees record counts to the source tables and sampled values to the transactions behind them.\nThe parameters, filters and date range used are captured with the result, so a later run can be shown to be the same report.\nA change to the report logic, its parameters or the feeding system raises a fresh validation before reliance resumes.\nThe validator is not the author of the logic, and the result is attached as Evidence linked through ControlEvidenceLink.",
+      "testingMethodology": "Evidence:\nObtain the report register at period end; its key reports are the population every validation record must account for.\nObtain the validation records for the period, each naming the report version, the parameters used, the performer and the date.\nObtain the re-performance working papers and the source extracts or queries the report was agreed against.\nObtain the change records for reports altered in the period and for the systems feeding them.\nObtain the Evidence rows and their ControlEvidenceLink entries where validation results were attached to consuming controls.\n\nAnalysis:\nPopulation one is every key report on the register. Reconcile in full to the validation records; a report relied on with no validation is an exception on its own.\nPopulation two is every change in the period to a key report or its feeding system. Take all of them where fewer than twenty-five, otherwise sample twenty-five weighted to logic changes.\nRe-perform ten sampled validations: run the report on the stated parameters, agree the record count to the source and agree five values back to their transactions.\nCompare the validator named on each record against the report's own change history to find self-validation.\nSet the validation date against the date the report was first relied upon, and measure any reliance that preceded it.\n\nOutput:\nSchedule of key reports carrying no validation, or validated against a definition version since superseded.\nRe-performance results per sampled report, stating the counts and values agreed and every difference found.\nList of changed reports relied upon before re-validation, with the days between the change and the validation.\nExceptions where the validator and the author of the report logic are the same person.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Name the reports a control operator genuinely relies on"
+          },
+          "description": {
+            "en": "Separate the reports a control conclusion rests on from the ones read for context, because validating everything a system can print costs more than it proves and leaves the real dependencies unexamined."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "Process Owner",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Ask each key control's operator which report supplies the figures they check."
+              }
+            },
+            {
+              "text": {
+                "en": "Distinguish a report read for background from one a control conclusion rests on."
+              }
+            },
+            {
+              "text": {
+                "en": "Record the source system and the report identifier for every report named."
+              }
+            },
+            {
+              "text": {
+                "en": "Mark reports whose figures are re-keyed into a workbook before they are used."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Frame the validation a report must pass before first use"
+          },
+          "description": {
+            "en": "Write down what agreeing a report to its source actually means here, so two validators reach the same standard and a record saying the report looked correct cannot pass as one."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "State the completeness test: record counts agreed to the source tables."
+              }
+            },
+            {
+              "text": {
+                "en": "State the accuracy test: sampled values agreed to the underlying transactions."
+              }
+            },
+            {
+              "text": {
+                "en": "Require the parameters, filters and date range to be captured with the result."
+              }
+            },
+            {
+              "text": {
+                "en": "Name who may validate, excluding whoever wrote the report logic."
+              }
+            },
+            {
+              "text": {
+                "en": "Set what is attached as Evidence and which controls the result is linked to."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Re-perform the report against its source before reliance begins"
+          },
+          "description": {
+            "en": "Do the agreement itself: run the report, take the same figures out of the data underneath it, and settle every difference before a control operator uses the output as fact."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The completed validation record for that definition version: parameters used, counts and values agreed to source, differences cleared, attached in the evidence library against the consuming control."
+          },
+          "suggestedRole": "Process Owner",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Run the report on the stated parameters and capture the definition version."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree the record count returned to the count held in the source tables."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree a sample of values back to the transactions that produced them."
+              }
+            },
+            {
+              "text": {
+                "en": "Settle each difference found and record what was changed to clear it."
+              }
+            },
+            {
+              "text": {
+                "en": "Attach the result as Evidence and link it to the controls consuming the report."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Re-test a report whenever its logic or feeding system changes"
+          },
+          "description": {
+            "en": "Treat a changed report as a new report until it has been agreed again, since the version a control was proved against is not the version it is now being given."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The change record for the report or its feeding system set beside the re-validation performed on the new version, showing both dates and the validation it supersedes."
+          },
+          "suggestedRole": "Engineering lead",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Watch change records for edits to a report definition or to its source tables."
+              }
+            },
+            {
+              "text": {
+                "en": "Hold a changed report back from control use until it has been agreed again."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-run the completeness and accuracy tests against the changed version."
+              }
+            },
+            {
+              "text": {
+                "en": "Note in the record what the change did to the figures the report returns."
+              }
+            },
+            {
+              "text": {
+                "en": "Supersede the previous validation rather than leaving two current records."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Contest a validation performed by the report's own author"
+          },
+          "description": {
+            "en": "Look for the agreements that prove nothing: a builder checking their own query, a result nobody can reproduce, a reliance that began before the validation was signed."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 4,
+          "steps": [
+            {
+              "text": {
+                "en": "Compare the validator named on each record with the report's change history."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-perform two validations independently and compare the figures reached."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify reports relied on between a change and the validation that followed it."
+              }
+            },
+            {
+              "text": {
+                "en": "Refer validations that cannot be reproduced to the owner of the consuming control."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "COSO-CA-08.03",
+      "title": "End-user computing controls applied to ICFR-relevant files",
+      "description": "The controls around the spreadsheet beside the system: the user-built files whose output reaches a journal, a reconciliation or a disclosure, each with a named owner, restricted write access, a fixed retained version and a check of what it calculates.",
+      "category": "CA",
+      "defaultFrequency": "MONTHLY",
+      "defaultOwnerHint": "CFO/Controller",
+      "requirementCodes": [
+        "P13"
+      ],
+      "objective": "To ensure each user-built file producing a figure relied upon in financial reporting is owned, restricted to named writers, retained as a fixed version and checked before its output is used.",
+      "successCriteria": "A register names every user-built file whose output reaches a journal, a reconciliation or a disclosure, with its owner and consuming control.\nWrite access is held by named people and shown from the file store's own permission export rather than asserted.\nThe version used each period is retained as Evidence whose FileRecord sha256 fixes the bytes relied upon.\nFormulas and cell ranges are checked when the file changes, and the check names what was compared.\nManual inputs cite the document they came from, and each is agreed to it before the file's output is used.",
+      "testingMethodology": "Evidence:\nObtain the register of user-built files at period end with owners and consuming controls; a completeness walk must account for it.\nObtain the permission exports for the folders or workbooks holding the registered files, drawn at the period end.\nObtain the Evidence rows retained for the period with their FileRecord hashes and version numbers.\nObtain the formula and cell-range checks performed on files changed in the period, stating what was compared.\nObtain the journals, reconciliations and disclosures of the sampled months with the support filed behind them.\n\nAnalysis:\nFor two sampled months reconcile in full the support behind posted journals and completed reconciliations against the register; a workbook behind a posted entry and on no register row is a completeness exception.\nSample fifteen registered files weighted to those feeding material accounts and to files carrying manual inputs.\nFor each sampled file compare the hash of the retained version against the file in use, re-perform one calculated column, and agree two manual inputs to the documents cited for them.\nTest each file's permission export against the named writer set, and against the leavers recorded for the period.\nSet the date of each formula check against the date the file was last changed.\n\nOutput:\nReconciliation of posted support to the register, naming files relied upon but never registered and the accounts they reached.\nSample results stating hash mismatches found, formula differences and the effect of each on the figure reported.\nPermission exceptions listing writers outside the named set and leavers who kept access after their last day.\nStatement of the population and sample sizes with the date each extract was drawn.",
+      "tasks": [
+        {
+          "title": {
+            "en": "Enumerate the files whose output reaches a reported figure"
+          },
+          "description": {
+            "en": "Build the population by following support backwards from posted entries, because the files that matter are found in the working papers behind a number rather than in a survey of what people keep on a drive."
+          },
+          "phase": "SCOPE",
+          "suggestedRole": "CFO/Controller",
+          "sortOrder": 0,
+          "steps": [
+            {
+              "text": {
+                "en": "Follow each key control's support back to the file that produced its numbers."
+              }
+            },
+            {
+              "text": {
+                "en": "Include files that only reformat system output if a figure is edited inside them."
+              }
+            },
+            {
+              "text": {
+                "en": "Name the owner and the consuming control for each file the walk turns up."
+              }
+            },
+            {
+              "text": {
+                "en": "Exclude files whose output is re-derived in the system before use, and say why."
+              }
+            },
+            {
+              "text": {
+                "en": "Cross-reference files fed by a key report to that report's register entry."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Restrict write access on registered files to their named holders"
+          },
+          "description": {
+            "en": "Put the files somewhere the permissions can be exported and the calculation cells cannot be typed over, so the restriction becomes a testable fact rather than an understanding among colleagues."
+          },
+          "phase": "IMPLEMENT",
+          "suggestedRole": "IT Operations",
+          "sortOrder": 1,
+          "steps": [
+            {
+              "text": {
+                "en": "Move registered files to a location whose permissions can be exported."
+              }
+            },
+            {
+              "text": {
+                "en": "Grant write access to the owner and the named preparers, read access to the rest."
+              }
+            },
+            {
+              "text": {
+                "en": "Protect the calculation cells so an input cannot overwrite a formula."
+              }
+            },
+            {
+              "text": {
+                "en": "Include the file store's permission group in the periodic access review population."
+              }
+            },
+            {
+              "text": {
+                "en": "Export the permission list as the artefact that shows the restriction is real."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Stamp the period's file as a retained version before its figures are used"
+          },
+          "description": {
+            "en": "Fix what was actually relied upon: the closed file goes into the evidence library where its hash and version number make a later substitution visible instead of arguable."
+          },
+          "phase": "OPERATE",
+          "evidenceHint": {
+            "en": "The retained workbook in the evidence library with its sha256 and version number, alongside the agreed manual inputs and the column re-performed for that period."
+          },
+          "suggestedRole": "Process Owner",
+          "sortOrder": 2,
+          "steps": [
+            {
+              "text": {
+                "en": "Upload the closed file as Evidence against the control it supports."
+              }
+            },
+            {
+              "text": {
+                "en": "Read back the FileRecord sha256 so the bytes relied upon are fixed."
+              }
+            },
+            {
+              "text": {
+                "en": "Agree each manual input to the document that is cited as its source."
+              }
+            },
+            {
+              "text": {
+                "en": "Re-perform one calculated column and compare it to the figure reported."
+              }
+            },
+            {
+              "text": {
+                "en": "Replace a superseded file through the evidence version chain, not a second row."
+              }
+            }
+          ]
+        },
+        {
+          "title": {
+            "en": "Trace posted entries back to the register of user-built files"
+          },
+          "description": {
+            "en": "Test the register from the accounting records rather than from itself, and check that the file behind a posted entry is the version the evidence library holds for that period."
+          },
+          "phase": "REVIEW",
+          "suggestedRole": "Internal Audit",
+          "sortOrder": 3,
+          "steps": [
+            {
+              "text": {
+                "en": "Sample journal entries and reconciliations whose support is a workbook."
+              }
+            },
+            {
+              "text": {
+                "en": "Identify supporting files that appear on no row of the register."
+              }
+            },
+            {
+              "text": {
+                "en": "Compare the file behind the entry against the version retained as Evidence."
+              }
+            },
+            {
+              "text": {
+                "en": "Test the permission export against the leavers recorded for the period."
+              }
+            },
+            {
+              "text": {
+                "en": "Report unregistered files with the accounts their figures reached."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "code": "COSO-CA-09.01",
       "title": "Policy framework approved with defined ownership",
       "description": "The set of written policies through which control activities are carried into practice, each approved by someone with authority over its subject and held by one named owner.",
@@ -10390,6 +13888,24 @@
       "COSO-CA-04.04",
       "COSO-CA-04.05",
       "COSO-CA-04.06",
+      "COSO-CA-05.01",
+      "COSO-CA-05.02",
+      "COSO-CA-05.03",
+      "COSO-CA-05.04",
+      "COSO-CA-05.05",
+      "COSO-CA-05.06",
+      "COSO-CA-06.01",
+      "COSO-CA-06.02",
+      "COSO-CA-06.03",
+      "COSO-CA-06.04",
+      "COSO-CA-06.05",
+      "COSO-CA-07.01",
+      "COSO-CA-07.02",
+      "COSO-CA-07.03",
+      "COSO-CA-07.04",
+      "COSO-CA-08.01",
+      "COSO-CA-08.02",
+      "COSO-CA-08.03",
       "COSO-CA-09.01",
       "COSO-CA-09.02",
       "COSO-CA-09.03",
