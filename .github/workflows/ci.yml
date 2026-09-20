@@ -1072,11 +1072,29 @@ jobs:
           # NEXT_TEST_MODE, which next.config.js:342 uses solely for distDir.
           # Naming it as open rather than calling it luck.
           #
-          # 10240 leaves the measured ~2.1 GB of non-heap plus a ~1.2 GB
-          # baseline inside a ~16 GB box with ~2.5 GB spare. If one compilation
-          # genuinely needs more than 10240 the failure is LOUD and
-          # deterministic (SIGABRT + a V8 stack), never the silent kernel kill —
-          # the trade this file has argued for throughout.
+          # 10240 WAS TRIED AS A FIX AND IT IS NOT ONE. Measured, same job, same
+          # box, cap lowered by 2048 MB:
+          #
+          #     cap 12288 (main, 3 runs)  peak 15466-15572   avail 416-527 MB
+          #     cap 10240 (this change)   peak 15479         avail 510 MB
+          #
+          # A 28 MB difference across a 2048 MB change in the cap — inside main's
+          # own 106 MB run-to-run range. The old-space cap is NOT the binding
+          # constraint here, and the excess ABOVE the cap GREW as the cap fell
+          # (~2.0 GB -> ~4.1 GB): the workload sets the total, the cap only
+          # redistributes it.
+          #
+          # So do not retune this number again expecting peak RSS to follow. The
+          # build PASSED at 10240, which proves the compile does not need 12288 of
+          # old space — that is the only thing this number settles. Whatever holds
+          # the other ~4 GB is off-heap or in another process, and no value of
+          # --max-old-space-size reaches it. 10240 is kept over 12288 only because
+          # a cap below what the box supplies fails legibly, per the principle
+          # this file states throughout.
+          #
+          # THE HEADROOM PROBLEM IS UNSOLVED. Open leads: the unexplained
+          # Build/E2E gap recorded above (~2.3 GB on identical work), and the
+          # page-data workers noted below.
           #
           # For the next retune: `next build` ALSO spawns page-data workers
           # ("Collecting page data using 3 workers") and NODE_OPTIONS reaches
