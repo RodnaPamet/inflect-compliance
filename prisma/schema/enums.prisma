@@ -1594,6 +1594,23 @@ enum AiSystemStatus {
 /// (`getIdentityWritePolicy`) and reads as DRY_RUN. Do NOT write it back: an
 /// unrecognised mode fails PERMISSIVE in `isAboveClamp`, so the coercion is
 /// load-bearing rather than cosmetic.
+/// Which engine executes a tenant's agentic runs.
+///
+/// STATIC — the walk in `workflow-registry.ts`, which is what every run has
+/// always used and what this repo owns end to end.
+/// FLUE   — an external agent runtime decides what to try; `runReadTool` still
+///          decides what is permitted, so every register control stays in front
+///          of it.
+///
+/// This column is ONE OF TWO switches and cannot enable anything on its own:
+/// the operator's `AGENT_DRIVER_FLUE` must also be on. `STATIC` is the default
+/// and the fail-closed answer for an absent row, a NULL, or a value this build
+/// does not recognise. See `src/lib/agentic/agent-driver.ts`.
+enum AgentDriverMode {
+  STATIC
+  FLUE
+}
+
 enum IdentityWriteMode {
   DISABLED
   DRY_RUN

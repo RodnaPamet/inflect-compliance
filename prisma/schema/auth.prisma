@@ -1350,6 +1350,14 @@ model TenantSecuritySettings {
   /// rationally accept one unattended and not the other.
   identityLeaverMode           IdentityWriteMode @default(DISABLED)
   identityJoinerMode           IdentityWriteMode @default(DISABLED)
+
+  /// WHICH ENGINE EXECUTES THIS TENANT'S AGENTIC RUNS. The customer's half of a
+  /// two-key gate — the operator's `AGENT_DRIVER_FLUE` is the other half, and
+  /// both must say FLUE. Defaults to STATIC, which is also what an absent row,
+  /// a NULL and an unrecognised value all resolve to; there is no input that
+  /// yields FLUE by accident. `src/lib/agentic/agent-driver.ts` owns the
+  /// resolution and is the only place that reads this column.
+  agentDriver                  AgentDriverMode   @default(STATIC)
   /// When the current DRY_RUN period began, per direction. The gate to
   /// AUTOMATIC reads this: dry-run is time-boxed and mandatory, so a tenant
   /// cannot enable unattended writes the same afternoon it enables the feature.

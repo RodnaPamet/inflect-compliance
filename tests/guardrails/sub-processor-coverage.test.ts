@@ -54,6 +54,15 @@ const NON_SUBPROCESSOR_ALLOWLIST: Record<string, string> = {
     // operator feature flag.
     PIPELOCK_PUBLIC_KEY: 'public Ed25519 verify key for the self-hosted pipelock MCP mediator — verify-only, no data sent externally, not a sub-processor',
     PIPELOCK_STRICT_MODE: 'operator feature flag toggling strict receipt enforcement — not an external endpoint',
+    // Agent DRIVER seam — selects which engine executes an agentic run. `flue`
+    // names `@flue/runtime`, an IN-PROCESS framework library (an npm package we
+    // import and run ourselves), not a hosted service: turning this flag on
+    // opens no socket to a third party and sends no customer or personal data
+    // anywhere. The model provider such a run would eventually call is a
+    // separate question, configured by the AI_* / inference vars that are
+    // triaged on their own above — which is exactly why this flag must not be
+    // read as covering them.
+    AGENT_DRIVER_FLUE: 'operator feature flag selecting the in-process agent execution engine — an imported library, not an external endpoint, and not a sub-processor',
     // AI sovereignty (DS-1) — the local/self-hosted LLM gateway. These configure
     // the TENANT'S OWN in-jurisdiction inference endpoint (Ollama / vLLM), the
     // OPPOSITE of an external sub-processor: a LOCAL_ONLY tenant's inference
