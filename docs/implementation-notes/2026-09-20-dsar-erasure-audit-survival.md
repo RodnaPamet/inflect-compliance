@@ -85,6 +85,25 @@ each checked against the disposition declared for it in `ERASURE_DISPOSITIONS`. 
 cascade that widened to a third table fails the surface test rather than going
 unchecked.
 
+**That covers a raw-SQL widening too, because the proxy was written to make it.**
+An `$executeRawUnsafe` goes through no model delegate, so a proxy that bound every
+`$`-prefixed method straight through to the target would record nothing and the
+surface would still read `['auditLog', 'user']` — true of the first draft, and it
+would have made the sentence above false for exactly the escape hatch a
+hand-written cascade reaches for. Every `$` call except `$transaction` (recursed
+into) and `$connect` / `$disconnect` (lifecycle, they reach no table) is now
+recorded as `table: '$raw'` and then executed unchanged, the way the sibling probe
+at `tests/helpers/dsar-erasure-probe.ts:314` already records it. `$raw` is not a
+key of `ERASURE_DISPOSITIONS`, so it reddens the surface test on arrival. Proven
+by mutation: an `$executeRawUnsafe` UPDATE added to `eraseUserWithin` turned
+`TABLE SURFACE` red on `['$raw', 'auditLog', 'user']`; removed again, green.
+
+What is still outside the net, stated rather than left to be found: a cascade that
+reached a client the proxy never wrapped — a module-level `@/lib/prisma` import
+instead of the injected `db` — is invisible here, because the recording begins at
+the injection seam. That seam is the one `dsar-workflow-coverage.test.ts` covers,
+by `jest.mock()`ing `@/lib/prisma` onto its own probe client.
+
 ## Files
 
 | File | Role |
@@ -114,7 +133,14 @@ unchecked.
 - **The `Promise<never>` tripwire needed no action.** Zero occurrences remain in
   `src/app-layer/jobs/dsar-erasure.ts` (positive control: one remains in
   `dsar-export.ts`, a different stub) and zero assertions anywhere mention it
-  (positive control: seven assertion-bearing `eraseUser` lines exist). One
+  (positive control: **5** assertion-bearing `eraseUser` lines exist — lines
+  carrying both `eraseUser` and `expect(`, being 4 in
+  `tests/unit/dsar-erasure-execute.test.ts` and 1 in
+  `tests/integration/dsar-erasure-rollback.test.ts`; re-derive with
+  `grep -rn eraseUser tests/ src/ --include=*.ts | grep -c 'expect('`. The
+  earlier figure of seven was wrong and matched no derivation; the absence it
+  controls for is real, and 5 is enough of a population for a zero to mean
+  something). One
   comment at `dsar-workflow-coverage.test.ts:101` records that A1/A2 were deleted
   — that is the handshake's record, not a live tripwire, and deleting it would
   erase why they went.

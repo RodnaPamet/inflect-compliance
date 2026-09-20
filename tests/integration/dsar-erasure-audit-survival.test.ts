@@ -77,6 +77,28 @@
  * widened to a third table would fail the surface test rather than slip
  * past a per-table check that never knew to look.
  *
+ * THAT COVERS RAW SQL, and only because the proxy is written to make it. A
+ * widening issued as `$executeRawUnsafe` goes through no model delegate, so a
+ * proxy that bound every `$`-prefixed method straight through to the target
+ * would record nothing, the surface would still read `['auditLog', 'user']`,
+ * and the claim above would be false for precisely the escape hatch a
+ * hand-written cascade reaches for. So every `$` call EXCEPT `$transaction`
+ * (recursed into, above) and `$connect` / `$disconnect` (lifecycle — they
+ * reach no table) is recorded as `table: '$raw'` and then executed unchanged,
+ * the way the sibling probe records it
+ * (`tests/helpers/dsar-erasure-probe.ts:314`). `$raw` is not a key of
+ * `ERASURE_DISPOSITIONS`, so it reddens the surface test on arrival rather
+ * than needing a disposition invented for it. Proven by mutation: an
+ * `$executeRawUnsafe` UPDATE added to `eraseUserWithin` turns TABLE SURFACE
+ * red (`['$raw', 'auditLog', 'user']`); removed again, green.
+ *
+ * WHAT IS STILL OUTSIDE THE NET, said plainly rather than left to be
+ * discovered: a cascade that reached a client this proxy never wrapped — a
+ * module-level `@/lib/prisma` import instead of the injected `db` — is
+ * invisible here, because the recording starts at the seam the injection
+ * uses. That seam is the one `tests/guardrails/dsar-workflow-coverage.test.ts`
+ * covers, by jest.mock()ing `@/lib/prisma` onto its own probe client.
+ *
  * `options.db` rather than the default `runInGlobalContext` path: it is the
  * same `eraseUserWithin` cascade either way (`eraseUser` branches on the
  * option and calls the same private function), and
@@ -130,13 +152,28 @@ const BYSTANDER = `u-survive-bystander-${SUFFIX}`;
 // than declared.
 
 interface RecordedOp {
-    /** Prisma delegate name, e.g. `auditLog`. */
+    /** Prisma delegate name, e.g. `auditLog` — or `$raw` for a raw-SQL call. */
     table: string;
-    /** Delegate method, e.g. `updateMany`. */
+    /** Delegate method, e.g. `updateMany`, or the `$`-method for a raw call. */
     method: string;
 }
 
 const recordedOps: RecordedOp[] = [];
+
+/**
+ * The pseudo-table a raw-SQL call is recorded under, spelled as the sibling
+ * probe spells it (`tests/helpers/dsar-erasure-probe.ts:314`). Deliberately
+ * NOT a key of `ERASURE_DISPOSITIONS`: a raw widening has no declared
+ * disposition, and the surface test should say so rather than accept it.
+ */
+const RAW_TABLE = '$raw';
+
+/**
+ * The `$` calls that reach no table, so recording them as `$raw` would be a
+ * false positive. `$transaction` is not here because it is handled earlier —
+ * it is recursed into, not recorded.
+ */
+const LIFECYCLE_METHODS = new Set(['$connect', '$disconnect']);
 
 function recordingProxy<T extends object>(client: T, ops: RecordedOp[]): T {
     return new Proxy(client, {
@@ -154,7 +191,21 @@ function recordingProxy<T extends object>(client: T, ops: RecordedOp[]): T {
 
             const value = Reflect.get(target, prop, receiver) as unknown;
             if (prop.startsWith('$') || prop.startsWith('_')) {
-                return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+                if (typeof value !== 'function') return value;
+                const bound = (value as (...a: unknown[]) => unknown).bind(target);
+                if (prop.startsWith('_') || LIFECYCLE_METHODS.has(prop)) return bound;
+                // Everything else `$`-prefixed can reach a table without going
+                // through a delegate — `$executeRawUnsafe` and
+                // `$queryRawUnsafe` obviously, `$extends` by handing back a
+                // client this proxy never wrapped, and whatever a future
+                // Prisma adds. Recorded rather than enumerated, so a method
+                // nobody anticipated is loud instead of silent; then executed
+                // unchanged, because this proxy changes what is OBSERVED and
+                // never what runs.
+                return (...args: unknown[]) => {
+                    ops.push({ table: RAW_TABLE, method: prop });
+                    return bound(...args);
+                };
             }
             if (!value || typeof value !== 'object') return value;
 
@@ -342,8 +393,11 @@ describeFn('#2287 Stage 3 — erasure pseudonymizes the audit trail, per table, 
         // Recorded from the run, not listed here. This is the denominator for
         // the two per-table tests that follow: if the cascade ever reaches a
         // third table, this fails rather than the new table going unchecked.
+        // A raw-SQL widening lands in here as `$raw` (see the proxy above), so
+        // it fails this line too rather than bypassing the delegate surface.
         const touched = [...new Set(recordedOps.map((op) => op.table))].sort();
         expect(touched).toEqual(['auditLog', 'user']);
+        expect(touched).not.toContain(RAW_TABLE);
 
         for (const table of touched) {
             expect(Object.keys(ERASURE_DISPOSITIONS)).toContain(table);
