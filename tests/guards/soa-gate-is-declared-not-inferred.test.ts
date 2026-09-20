@@ -153,7 +153,7 @@ describe('SoA gate is declared, not inferred (#2617)', () => {
         // The pinned list IS the decision record. A new framework lands here as
         // a failure naming itself, and whoever adds it says yes or no.
         //
-        // 34 keys, not the 22 this guard first pinned. The 12 it missed were
+        // 35 keys, not the 22 this guard first pinned. The 12 it missed were
         // every key from the CatalogFile path — the one production runs — which
         // is why it stayed green while `ISO27701` and `ISO42001` were losing
         // their SoA. The duplicate-looking pairs (ISO27701 / ISO27701-2019,
@@ -165,6 +165,12 @@ describe('SoA gate is declared, not inferred (#2617)', () => {
             'AISVS-1.0',
             'CIS-CONTROLS-V8',
             'CIS-V8',
+            // COSO gets NO Statement of Applicability, and the reason is the
+            // same one that shapes its whole implementation: an SoA lists which
+            // Annex A controls apply and why, and COSO has no Annex A. It stops
+            // at 17 principles and leaves control design to the organization,
+            // so there is no fixed list for a tenant to accept or exclude.
+            'COSO-ICF-2013',
             'DORA',
             'DORA-2022',
             'EU-AI-ACT',
