@@ -43,10 +43,10 @@
  * than the frameworks beside it, which is the specific thing this file exists to
  * prevent.
  */
-import fs from 'node:fs';
 import path from 'node:path';
 
 import { loadCatalogFile } from '../../prisma/catalog-loader';
+import { appliedSources } from '../helpers/applied-catalogue';
 
 const ROOT = path.resolve(__dirname, '../..');
 const FIXTURE = path.join(ROOT, 'prisma/fixtures/coso-icf-2013-control-templates.json');
@@ -225,13 +225,27 @@ describe('the content is original, which is a licensing claim as well as a quali
 });
 
 describe('the fixture reaches production', () => {
-    it('is listed in the seeder that entrypoint.sh runs', () => {
+    it('is applied by a seeder that entrypoint.sh runs', () => {
         // The whole point of authoring under prisma/fixtures/ rather than
         // prisma/catalogs/: the latter is read by one integration test and one
-        // doc, and reaches no tenant. Without this line the 33 controls would be
+        // doc, and reaches no tenant. Without this the 33 controls would be
         // installable by nobody.
-        const seeder = fs.readFileSync(path.join(ROOT, 'scripts/seed-framework-catalogs.ts'), 'utf8');
-        expect(seeder).toContain('prisma/fixtures/coso-icf-2013-control-templates.json');
+        //
+        // ASKED THROUGH `appliedSources()`, NOT BY READING THE SEEDER. The first
+        // draft did `expect(readFileSync(seeder)).toContain('<path>')`, which is
+        // two defects at once: it is a Class A raw-source assertion (the ratchet
+        // caught it), and a COMMENTED-OUT registration would have satisfied it —
+        // the precise failure that class exists to name. This helper follows the
+        // real chain instead, entrypoint.sh -> seeder -> fixture, which is what
+        // it was built for.
+        const applied = appliedSources().filter((s) => s.reachesProduction);
+        const named = applied.filter((s) =>
+            s.text.includes('coso-icf-2013-control-templates.json'),
+        );
+        expect(named.length).toBeGreaterThan(0);
+        // Positive control: the discovery found the production seeders at all.
+        // An empty `applied` would make the line above pass by vacuity.
+        expect(applied.length).toBeGreaterThan(0);
     });
 
     it('declares the same framework key as the library, so there is ONE row', () => {
