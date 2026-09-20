@@ -19,12 +19,18 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 /** Comments MASKED at the read seam (#2246) — assertions bind to code, not prose. */
 const read = (rel: string) =>
     codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+/**
+ * LANGUAGE SPLIT (#2644). `read` lexes TypeScript, so on a `.sql` file it
+ * blanks nothing and a `--` comment reaches the assertion verbatim — masked
+ * at the call site, unmasked in fact. `.sql` goes through `sqlCodeOf`.
+ */
+const readSqlAbs = (abs: string) => sqlCodeOf(fs.readFileSync(abs, 'utf8'));
 
 describe('Audit S9 — Cross-Framework Traceability', () => {
     describe('Gap A — temporal validity window', () => {
@@ -53,9 +59,7 @@ describe('Audit S9 — Cross-Framework Traceability', () => {
                 'prisma/migrations/20260524160000_audit_s9_mapping_validity',
             );
             expect(fs.existsSync(migDir)).toBe(true);
-            const sql = codeOf(
-                fs.readFileSync(path.join(migDir, 'migration.sql'), 'utf8'),
-            );
+            const sql = readSqlAbs(path.join(migDir, 'migration.sql'));
             expect(sql).toMatch(
                 /ADD COLUMN IF NOT EXISTS "validFrom"\s+TIMESTAMP/i,
             );
