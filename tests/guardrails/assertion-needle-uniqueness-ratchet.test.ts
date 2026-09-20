@@ -474,7 +474,12 @@ function report(): ClassDReport {
  * of which the diff touched: appending a single COMMENT mentioning
  * `MAX_STEPS` to `src/lib/agentic/workflow-types.ts` turned this red with
  * `delta: +1` and a list headed by `/OWASP/ ×54`, while the actual culprit
- * (`agentic-engine-coverage.test.ts:56`, freshly at 2) appeared nowhere.
+ * (`agentic-engine-coverage.test.ts`, freshly at 2) appeared nowhere.
+ * That citation carried a line number and the line moved: it was :56 when
+ * written, :59 on main before this batch, and :64 after the language split
+ * added a `readSql` seam above it. Dropped rather than re-pinned — the file
+ * and the needle identify the site, and a number that rots every time an
+ * unrelated line is inserted above teaches a reader to distrust the note.
  *
  * Firing on a diff that touches no test is correct here and is the point of
  * the class — a source change had just hollowed out an existing guard.
