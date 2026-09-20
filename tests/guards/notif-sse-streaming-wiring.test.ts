@@ -27,8 +27,17 @@
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+// Applied here rather than per assertion so a new `expect(read(...))` inherits
+// it. String literals are KEPT: masking them would silently empty assertions
+// that harvest codes or ids from source. Every path this file reads is a
+// TypeScript-alike (re-derived per file, not assumed from the directory), so
+// `codeOf` is the right lexer and no language split is needed.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => readFileSync(path.join(ROOT, p), 'utf-8');
+const read = (p: string) => codeOf(readFileSync(path.join(ROOT, p), 'utf-8'));
 
 describe('PR-C SSE notification streaming wiring', () => {
     describe('1. Notification bus module', () => {
