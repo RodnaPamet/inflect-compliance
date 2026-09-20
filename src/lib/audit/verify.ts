@@ -188,12 +188,25 @@ export async function verifyTenantChain(
     // It is issued AFTER the main query on purpose, so callers that inspect
     // `$queryRawUnsafe.mock.calls[0]` still see the chain query there.
     //
-    // BOTH ARMS ARE RESTRICTED TO HASHED ROWS, for one reason. A record is
-    // trustworthy only because the walk below recomputes its hash and breaks
-    // there if it does not match — and the walk iterates `hashedRows`. A
-    // record with a NULL `entryHash` is never graded by anything, so letting
-    // one into this set would let an UNVERIFIED row excuse mismatches on rows
-    // the verifier does check. Unhashed rows exist in quantity (that is what
+    // BOTH ARMS ARE RESTRICTED TO HASHED ROWS. A record with a NULL
+    // `entryHash` is never graded by anything, so letting one into this set
+    // would let an entirely UNVERIFIED row excuse mismatches on rows the
+    // verifier does check.
+    //
+    // ONE ASYMMETRY, STATED BECAUSE IT IS EASY TO READ PAST. In the RANGED
+    // arm the tolerance query is deliberately NOT range-filtered — it asks for
+    // every hashed `ERASURE_EXECUTED` in the tenant. That is correct: an
+    // erasure recorded before the window still lawfully explains a
+    // pseudonymized row inside it, and range-filtering the records would make
+    // a narrow verification report tampering on a compliant trail.
+    //
+    // The cost is that a ranged run may accept a tolerance from a record its
+    // OWN walk does not recompute, because the walk covers only the rows in
+    // range. So a ranged verification is not self-contained: a forged record
+    // outside the window would be caught by an unranged run, which recomputes
+    // every hashed row including the records themselves, but not by this one.
+    // Unranged verification remains the authority; ranged is a filter over it,
+    // not an equivalent. Unhashed rows exist in quantity (that is what
     // `unhashedEntries` counts): `logAudit` and the lifecycle jobs still
     // write `auditLog.create` rows with a caller-supplied `action` and no
     // hash. Hence `IS NOT NULL` in the ranged lookup and `hashedRows` — not
