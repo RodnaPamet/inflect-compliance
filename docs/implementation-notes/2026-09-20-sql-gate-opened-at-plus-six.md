@@ -59,16 +59,35 @@ The other 23 of the 29 raw-`.sql` files were already in the 338 for their
 TypeScript reads, so they cost the ceiling nothing. That six are exactly the
 six the measurement's §5a predicted is the check that the two passes agree.
 
-### 353 is not reachable by any defensible change, and that was measured too
+### 353 is reachable, and it is refused rather than impossible
 
-The obvious way to "get back to +15" would be to stop crediting `sqlCodeOf`.
-Tried, as a throwaway experiment: unregistering `['sqlCodeOf', sqlCodeOf]` from
-`SOURCE_BLOCKS_MASKERS` does **not** produce 353. It leaves the count at
-**344** and drops those 46 sites out of the whole-file population entirely,
-into `not-a-file-read` (5432 → 5490) and out of `path-not-constant`
-(917 → 905, measured before the `a443e550f` merge) — i.e. into the bucket nothing caps, which is the evasion route the
-ratchets exist to close. `tests/helpers/assertion-reach.ts` was restored from a
-byte-for-byte backup and the restore verified by `md5sum` + `diff`, not by eye.
+An earlier revision of this note claimed 353 was not reachable by any
+defensible change. **That was false, and it is retracted here.** One condition
+reaches it: `if (masked && ext !== '.sql')` in `analyseClassA` — refuse masked
+credit on a `.sql` read whichever masker produced it — measures **exactly 353**,
+with `wholeFileReads` unchanged at 5938 and `subjectSkips` byte-identical. The
++9 is the nine of the twelve `sqlCodeOf` seams not already listed for their
+TypeScript reads; `bia-coverage`, `incident-containment-forensic-coverage` and
+`scanner-ingestion-coverage` are already among the 344, so twelve reclassified
+files move the count by nine.
+
+**What it costs is the owner's own condition,** which is why the baseline stays
+at 344 by decision rather than by necessity. "Nobody is credited for a mask they
+do not have" excludes a seam whose mask is absent, or wrong for the language it
+reads — precisely what `codeOf`-on-`.sql` was before #2679. These twelve carry a
+real SQL-aware mask, mutation-proved 12/12. Counting them raw would refuse
+credit for a mask that works: the inversion of the principle, not its
+application. So 353 is reachable and undesirable, which is the claim the
+measurement supports and the one the decision rests on.
+
+**The route this section originally described genuinely does not reach 353,**
+and that half stands. Unregistering `['sqlCodeOf', sqlCodeOf]` from
+`SOURCE_BLOCKS_MASKERS` leaves the count at **344** and drops those 46 sites out
+of the whole-file population entirely, into `not-a-file-read` (5437 → 5495) and
+out of `path-not-constant` (917 → 905) — i.e. into the bucket nothing caps,
+which is the evasion route the ratchets exist to close. Both mutations were
+applied to a byte-for-byte backup and both restores verified by `md5sum` +
+`diff`, not by eye.
 
 ## Denominators, and what did not move
 

@@ -177,12 +177,38 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     states 2 and 3 are now the SAME state and both measure 344: the twelve
  *     are masked under either rule because they genuinely carry the
  *     SQL-aware mask, mutation-proved 12/12 in #2679 (comment out the DDL,
- *     twelve named tests redden). There is no defensible change that reaches
- *     353 — reaching it would require refusing `sqlCodeOf` credit on a `.sql`
- *     read, and measured, unregistering it does not produce 353 either: it
- *     drops those 46 sites out of the whole-file population into
- *     `not-a-file-read`, where nothing caps them, and leaves this count at
- *     344 anyway.
+ *     twelve named tests redden).
+ *
+ *     353 IS REACHABLE, AND THE BASELINE STAYS 344 BY DECISION RATHER THAN
+ *     BY NECESSITY. An earlier draft of this entry said no defensible change
+ *     reached 353. That was false, and measuring it is what turned this from
+ *     an arithmetic accident into a judgement somebody made. ONE condition
+ *     does it — `if (masked && ext !== '.sql')` in `analyseClassA`, i.e.
+ *     refusing masked credit on a `.sql` read whichever masker produced it —
+ *     and it lands on exactly 353, with `wholeFileReads` unchanged at 5938
+ *     and `subjectSkips` byte-identical. The +9 is the nine of the twelve
+ *     `sqlCodeOf` seams not already in this list for their TypeScript reads;
+ *     the other three (`bia-coverage`, `incident-containment-forensic-
+ *     coverage`, `scanner-ingestion-coverage`) are already among the 344, so
+ *     twelve reclassified files move the count by nine.
+ *
+ *     WHAT THAT CONDITION COSTS IS THE OWNER'S OWN PRINCIPLE. "Nobody is
+ *     credited for a mask they do not have" excludes a seam whose mask is
+ *     absent, or wrong for the language it reads — which is exactly what
+ *     `codeOf`-on-`.sql` was before #2679. These twelve have a real one that
+ *     works, proved 12/12. Counting them raw would refuse credit for a mask
+ *     that does its job: the inversion of the rule, not its application. So
+ *     353 is reachable and not desirable, which is a different sentence from
+ *     the one this entry used to carry, and the only one the measurement
+ *     supports.
+ *
+ *     A SECOND ROUTE TO 353 GENUINELY DOES NOT EXIST, and that half of the
+ *     old claim survives: unregistering `['sqlCodeOf', sqlCodeOf]` from
+ *     `SOURCE_BLOCKS_MASKERS` leaves this count at 344, because it drops
+ *     those 46 sites out of the whole-file population entirely — into
+ *     `not-a-file-read` (5437 → 5495) and out of `path-not-constant`
+ *     (917 → 905), i.e. into the bucket nothing caps, which is the evasion
+ *     route these ratchets exist to close.
  *
  *     THE OWNER'S CONDITION IS THE ONE THAT HELD, not the arithmetic:
  *     "nobody is credited for a mask they do not have". Measured on this
@@ -193,7 +219,7 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *
  *     WHAT DID NOT MOVE, measured rather than predicted: the six sibling
  *     zero-allowance constants. `subjectSkips` is byte-identical across the
- *     change (`not-a-file-read` 5432, `path-not-constant` 917,
+ *     change (`not-a-file-read` 5437, `path-not-constant` 917,
  *     `binding-not-resolvable` 101, `content-transformed` 73,
  *     `file-not-found` 1), because `LEXABLE_EXTENSIONS` has no importer
  *     outside this pair of files and Classes C and D contain no extension
