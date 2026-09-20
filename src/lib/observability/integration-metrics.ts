@@ -32,6 +32,7 @@ let _identityDeprovisioned: Counter | null = null;
 let _deprovisionRefused: Counter | null = null;
 let _identityLinkReconcile: Counter | null = null;
 let _leaverPassOutcome: Counter | null = null;
+let _joinerPassOutcome: Counter | null = null;
 let _leaverNotification: Counter | null = null;
 let _scannerFindingsTruncated: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
 let _deviceReport: Counter | null = null;
@@ -371,6 +372,37 @@ export function recordLeaverPassOutcome(attrs: {
             unit: '1',
         });
     _leaverPassOutcome.add(1, { provider: attrs.provider, outcome: attrs.outcome });
+}
+
+/**
+ * One joiner pass, by how it ended.
+ *
+ * Emitted on EVERY terminal path — including the two ladder refusals, which
+ * deliberately write no execution row. That asymmetry is the reason this counter
+ * matters more than its leaver twin: for a DISABLED tenant the metric is the
+ * ONLY evidence the pass fired at all, so without it "the joiner dispatcher
+ * stopped" and "every tenant has the joiner switched off" are the same silence.
+ *
+ * No tenant label: roughly eight outcomes x two writable providers.
+ */
+export function recordJoinerPassOutcome(attrs: {
+    provider: string;
+    outcome:
+        | 'completed'
+        | 'mode_disabled'
+        | 'mode_above_clamp'
+        | 'no_starters'
+        | 'no_department_map'
+        | 'no_default_group'
+        | 'batch_over_cap'
+        | 'error';
+}): void {
+    if (!_joinerPassOutcome)
+        _joinerPassOutcome = getMeter().createCounter('identity.joiner.pass', {
+            description: 'Joiner passes by terminal outcome',
+            unit: '1',
+        });
+    _joinerPassOutcome.add(1, { provider: attrs.provider, outcome: attrs.outcome });
 }
 
 export function recordIdentityLinkReconcile(attrs: {

@@ -48,6 +48,12 @@ const DISPATCHERS: ReadonlyArray<{ schedule: string; file: string }> = [
         file: 'compliance-posture-summary.ts',
     },
     { schedule: 'calendar-push-dispatch', file: 'calendar-push.ts' },
+    // #2687. Daily cron, daily bucket. Listed from the day the dispatcher
+    // landed rather than after the first cadence change, because the edit this
+    // guard exists to catch — tightening the schedule and leaving the bucket —
+    // is silent, and a dispatcher absent from this table is one the guard
+    // cannot see.
+    { schedule: 'identity-joiner-dispatch', file: 'identity-joiner.ts' },
 ];
 
 /**

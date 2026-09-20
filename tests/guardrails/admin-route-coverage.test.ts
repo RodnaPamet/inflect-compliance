@@ -149,6 +149,13 @@ const ADMIN_ONLY_ROUTES = [
     // ordered ahead of the subtree one — a later softening of the report's
     // gate must not reach the write trigger by inheritance.
     'admin/identity-leaver-passes/run/route.ts',
+    // #2687 — the joiner's half of the same pair. The report names which of a
+    // customer's people the product would create an account for and at what
+    // address; the trigger fires the pass that decides it. Both OWNER-only, and
+    // the trigger carries its own ROUTE_PERMISSIONS rule ordered ahead of the
+    // subtree one for the same reason the leaver's does.
+    'admin/identity-joiner-passes/route.ts',
+    'admin/identity-joiner-passes/run/route.ts',
     'admin/identity-account-protection/[accountId]/route.ts',
     // The read half of the reversal story: what a directory write REPLACED.
     // Two files because the index and the by-reference lookup return different
