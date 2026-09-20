@@ -14,7 +14,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const UI_DIR = path.resolve(__dirname, '../../src/components/ui');
+
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
+const readWidget = (file: string): string =>
+    codeOf(fs.readFileSync(path.join(UI_DIR, file), 'utf-8'));
+const readSrc = (rel: string): string =>
+    codeOf(fs.readFileSync(path.resolve(__dirname, '../..', rel), 'utf-8'));
 
 // i18n: StatusBreakdown's "No data" title flows through next-intl now.
 const EN_CHART = JSON.parse(
@@ -35,36 +45,36 @@ describe('Dashboard Widget Exports', () => {
     test.each(widgetFiles)('%s exists and is non-empty', (file) => {
         const filePath = path.join(UI_DIR, file);
         expect(fs.existsSync(filePath)).toBe(true);
-        const content = fs.readFileSync(filePath, 'utf-8');
+        const content = readWidget(file);
         expect(content.length).toBeGreaterThan(100);
     });
 
     test('KpiCard exports default component and KpiCardProps type', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'KpiCard.tsx'), 'utf-8');
+        const content = readWidget('KpiCard.tsx');
         expect(content).toContain('export default function KpiCard');
         expect(content).toContain('export interface KpiCardProps');
     });
 
     test('DonutChart exports default component and DonutSegment type', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'DonutChart.tsx'), 'utf-8');
+        const content = readWidget('DonutChart.tsx');
         expect(content).toContain('export default function DonutChart');
         expect(content).toContain('export interface DonutSegment');
     });
 
     test('TrendCard exports a named component and TrendCardProps type', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'TrendCard.tsx'), 'utf-8');
+        const content = readWidget('TrendCard.tsx');
         expect(content).toContain('export function TrendCard');
         expect(content).toContain('export interface TrendCardProps');
     });
 
     test('ProgressCard exports default component and ProgressCardProps type', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'ProgressCard.tsx'), 'utf-8');
+        const content = readWidget('ProgressCard.tsx');
         expect(content).toContain('export default function ProgressCard');
         expect(content).toContain('export interface ProgressCardProps');
     });
 
     test('StatusBreakdown exports default component and StatusItem type', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'StatusBreakdown.tsx'), 'utf-8');
+        const content = readWidget('StatusBreakdown.tsx');
         expect(content).toContain('export default function StatusBreakdown');
         expect(content).toContain('export interface StatusItem');
     });
@@ -74,7 +84,7 @@ describe('Dashboard Widget Exports', () => {
 
 describe('Widget Empty State Handling', () => {
     test('KpiCard handles absent/non-finite values gracefully (renders "—")', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'KpiCard.tsx'), 'utf-8');
+        const content = readWidget('KpiCard.tsx');
         // The emptiness test used to be `value === null || value === undefined`.
         // That let `NaN` through to the formatter, which printed "NaN%" — and
         // once the headline gradient swallowed the letters, bare punctuation.
@@ -87,13 +97,13 @@ describe('Widget Empty State Handling', () => {
     });
 
     test('DonutChart handles empty segments (total === 0)', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'DonutChart.tsx'), 'utf-8');
+        const content = readWidget('DonutChart.tsx');
         expect(content).toContain('total === 0');
         expect(content).toContain('No data');
     });
 
     test('TrendCard handles empty points via the chart emptyState prop', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'TrendCard.tsx'), 'utf-8');
+        const content = readWidget('TrendCard.tsx');
         // TimeSeriesChart already empties-out on data.length === 0 and renders
         // the caller-provided emptyState, so TrendCard just needs to pass one.
         expect(content).toContain('emptyState');
@@ -101,19 +111,19 @@ describe('Widget Empty State Handling', () => {
     });
 
     test('ProgressCard handles max === 0 (no division by zero)', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'ProgressCard.tsx'), 'utf-8');
+        const content = readWidget('ProgressCard.tsx');
         expect(content).toContain('max > 0');
     });
 
     test('StatusBreakdown handles zero total gracefully', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'StatusBreakdown.tsx'), 'utf-8');
+        const content = readWidget('StatusBreakdown.tsx');
         expect(content).toContain('total > 0');
         expect(content).toContain("t('noData')");
         expect(EN_CHART.noData).toBe('No data');
     });
 
     test('DonutChart avoids division by zero for flat range', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'DonutChart.tsx'), 'utf-8');
+        const content = readWidget('DonutChart.tsx');
         // total is always checked before division
         expect(content).toContain('seg.value / total');
     });
@@ -134,7 +144,7 @@ describe('Widget Design System Compliance', () => {
         // wrapper (`<MetricCard>` for KpiCard) that composes the
         // primitive on their behalf.
         for (const file of ['KpiCard.tsx', 'ProgressCard.tsx', 'StatusBreakdown.tsx']) {
-            const content = fs.readFileSync(path.join(UI_DIR, file), 'utf-8');
+            const content = readWidget(file);
             expect(content).toMatch(/cardVariants\(|<Card\b|<MetricCard\b/);
         }
     });
@@ -142,7 +152,7 @@ describe('Widget Design System Compliance', () => {
     test('DonutChart and TrendCard do NOT carry the canonical Card surface (embeddable)', () => {
         // These are embeddable in other cards — no outer card wrapper.
         for (const file of ['DonutChart.tsx', 'TrendCard.tsx']) {
-            const content = fs.readFileSync(path.join(UI_DIR, file), 'utf-8');
+            const content = readWidget(file);
             expect(content).not.toContain('glass-card');
             expect(content).not.toMatch(/cardVariants\(/);
         }
@@ -150,14 +160,14 @@ describe('Widget Design System Compliance', () => {
 
     test('chart-embeddable widgets carry an accessible aria-label', () => {
         for (const file of ['DonutChart.tsx', 'TrendCard.tsx']) {
-            const content = fs.readFileSync(path.join(UI_DIR, file), 'utf-8');
+            const content = readWidget(file);
             expect(content).toContain('aria-label');
         }
     });
 
     test('card-style widgets support className prop for customization', () => {
         for (const file of ['KpiCard.tsx', 'DonutChart.tsx', 'ProgressCard.tsx', 'StatusBreakdown.tsx']) {
-            const content = fs.readFileSync(path.join(UI_DIR, file), 'utf-8');
+            const content = readWidget(file);
             expect(content).toContain("className?: string");
             expect(content).toContain("className = ''");
         }
@@ -165,7 +175,7 @@ describe('Widget Design System Compliance', () => {
 
     test('card-style widgets support id prop for testing', () => {
         for (const file of ['KpiCard.tsx', 'DonutChart.tsx', 'ProgressCard.tsx', 'StatusBreakdown.tsx']) {
-            const content = fs.readFileSync(path.join(UI_DIR, file), 'utf-8');
+            const content = readWidget(file);
             expect(content).toContain("id?: string");
         }
     });
@@ -181,7 +191,7 @@ describe('Widget Dependency Guard', () => {
         // boundary for new chart libraries is that shared module.
         const banned = ['recharts', 'chart.js', 'nivo', 'victory', 'tremor'];
         for (const file of ['DonutChart.tsx']) {
-            const content = fs.readFileSync(path.join(UI_DIR, file), 'utf-8');
+            const content = readWidget(file);
             for (const lib of banned) {
                 expect(content).not.toContain(`from '${lib}`);
                 expect(content).not.toContain(`from "${lib}`);
@@ -190,7 +200,7 @@ describe('Widget Dependency Guard', () => {
     });
 
     test('KpiCard only imports approved primitives', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'KpiCard.tsx'), 'utf-8');
+        const content = readWidget('KpiCard.tsx');
         const importLines = content.split('\n').filter(l => l.trim().startsWith('import'));
         // Allowed externals:
         //   - lucide-react (icons)
@@ -226,41 +236,50 @@ describe('Widget Dependency Guard', () => {
 
 describe('Widget Prop Contracts', () => {
     test('KpiCard format supports number, percent, and compact', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'KpiCard.tsx'), 'utf-8');
+        const content = readWidget('KpiCard.tsx');
         expect(content).toContain("'number'");
         expect(content).toContain("'percent'");
         expect(content).toContain("'compact'");
     });
 
     test('DonutChart segments have label, value, color', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'DonutChart.tsx'), 'utf-8');
+        const content = readWidget('DonutChart.tsx');
         expect(content).toContain('label: string');
         expect(content).toContain('value: number');
         expect(content).toContain('color: string');
     });
 
     test('TrendCard points is an ordered {date,value} series', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'TrendCard.tsx'), 'utf-8');
+        const content = readWidget('TrendCard.tsx');
         expect(content).toContain('points: ReadonlyArray<{ date: Date; value: number }>');
     });
 
     test('ProgressCard supports segments for stacked bar', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'ProgressCard.tsx'), 'utf-8');
+        const content = readWidget('ProgressCard.tsx');
         expect(content).toContain('segments?: ProgressSegment[]');
         expect(content).toContain('export interface ProgressSegment');
     });
 
     test('StatusBreakdown items have label, value, color', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'StatusBreakdown.tsx'), 'utf-8');
+        const content = readWidget('StatusBreakdown.tsx');
         expect(content).toContain('label: string');
         expect(content).toContain('value: number');
         expect(content).toContain('color: string');
     });
 
     test('KpiCard has delta indicator support', () => {
-        const content = fs.readFileSync(path.join(UI_DIR, 'KpiCard.tsx'), 'utf-8');
+        const content = readWidget('KpiCard.tsx');
         expect(content).toContain('delta?: number');
         expect(content).toContain('deltaLabel?: string');
-        expect(content).toMatch(/▲|▼/); // Trend arrows
+        // #2246 Class A — this asserted /▲|▼/ against KpiCard.tsx, where
+        // the glyphs now appear ONLY in the `delta` JSDoc ('shows as ▲/▼
+        // with color'). The arrows themselves moved to
+        // `trendDirectionIcon()` in src/lib/kpi-trend.ts. Assert the wiring
+        // here and the glyphs where they actually live.
+        expect(content).toMatch(/trendDirectionIcon\(/);
+        expect(content).toMatch(/data-kpi-trend-direction=/);
+        const trend = readSrc('src/lib/kpi-trend.ts');
+        expect(trend).toMatch(/▲/);
+        expect(trend).toMatch(/▼/);
     });
 });

@@ -17,6 +17,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const DASHBOARD_DIR = path.resolve(
     __dirname,
     '../../src/app/t/[tenantSlug]/(app)/dashboard',
@@ -24,11 +26,14 @@ const DASHBOARD_DIR = path.resolve(
 const DASHBOARD_PAGE = path.join(DASHBOARD_DIR, 'page.tsx');
 const DASHBOARD_CLIENT = path.join(DASHBOARD_DIR, 'DashboardClient.tsx');
 
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
 function readPage(): string {
-    return fs.readFileSync(DASHBOARD_PAGE, 'utf-8');
+    return codeOf(fs.readFileSync(DASHBOARD_PAGE, 'utf-8'));
 }
 function readClient(): string {
-    return fs.readFileSync(DASHBOARD_CLIENT, 'utf-8');
+    return codeOf(fs.readFileSync(DASHBOARD_CLIENT, 'utf-8'));
 }
 /**
  * Combined view — used by composition / contract assertions that

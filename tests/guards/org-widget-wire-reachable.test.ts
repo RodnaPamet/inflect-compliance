@@ -17,8 +17,16 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+// DELIBERATELY RAW, for the one assertion whose subject IS a comment
+// (`the presets module documents its single-default scope`).
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 const DISPATCHER = read('src/app/org/[orgSlug]/(app)/widget-dispatcher.tsx');
 const PICKER = read('src/components/ui/dashboard-widgets/WidgetPicker.tsx');
@@ -27,7 +35,7 @@ const SECTIONS = read('src/app/org/[orgSlug]/(app)/dashboard-sections.tsx');
 const TYPES = read('src/components/ui/dashboard-widgets/types.ts');
 const RENDERER = read('src/components/ui/dashboard-widgets/ChartRenderer.tsx');
 const INDEX = read('src/components/ui/dashboard-widgets/index.ts');
-const PRESETS = read('src/app-layer/usecases/org-dashboard-presets.ts');
+const PRESETS = readRaw('src/app-layer/usecases/org-dashboard-presets.ts');
 
 describe('1. target lines wired end-to-end', () => {
     it('the dispatcher forwards config.target to the area chart', () => {

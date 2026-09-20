@@ -101,6 +101,52 @@ import { analyseClassA, type ClassAReport } from '../helpers/raw-source-assertio
  *     as real but NOT fixed there, because that read lowers
  *     `AMBIGUOUS_NEEDLE_BASELINE`. It is fixed here and that constant moves
  *     in this same diff.
+ *   • 338 (2026-09-20): the second Class A batch — 22 files converted at
+ *     the read seam, 18 of which leave this population. The four that stay
+ *     are deliberate: each keeps a SECOND, separately named RAW reader for
+ *     one assertion whose subject IS a comment (`readProvenance` in
+ *     `ai-system-registry`, `srcRaw` in `nis2-gap-reconcile-skip` and in
+ *     `org-controls-status-emphasis`, `readRaw` for `PRESETS` in
+ *     `org-widget-wire-reachable`) — the same shape the six files named in
+ *     the 381 entry below already had. Seven raw sites remain across those
+ *     four, and all seven are that assertion.
+ *
+ *     SELECTED BY THE SAME MEASURED RANKING as the 356 entry: for every raw
+ *     site the needle was counted in the target twice, once raw and once
+ *     through `codeOf`, and a file was a candidate only where some needle
+ *     matched FEWER times masked. On the pre-conversion tree, over the 356
+ *     listed files: 4062 raw assertion sites, 236 carrying a needle the
+ *     analyser cannot score, 270 prose-inflated, of which 36 already match
+ *     ZERO times in code and 82 exactly once. 143 of the 356 files carry at
+ *     least one prose-inflated needle; 28 carry one at zero. This batch took
+ *     the top of that ranking.
+ *
+ *     SEVEN GUARDS WERE ALREADY GREEN ON PROSE, not one. Five were found by
+ *     the ranking and two only by running the converted suites:
+ *       · `search-palette-migration` — `it('usecase enforces a role check
+ *         before searching')` asserted `/!ctx\.role/` and `/forbidden\(/`;
+ *         both phrases live in `search.ts` ONLY inside the comment recording
+ *         their removal ("Was `if (!ctx.role) throw forbidden(…)`").
+ *       · `rq2-5-coherence` — `/formatCompactCurrency/` survives only in the
+ *         comment recording the B1-4 swap to `useMoneyFormatter`.
+ *       · `policies-list-shell-adoption` — `'POLICY_STATUS_LABELS'` is in
+ *         three comments and no code; the labels moved behind
+ *         `buildPolicyStatusLabels()`.
+ *       · `dashboard-widgets` — `/▲|▼/` is in `KpiCard`'s JSDoc; the glyphs
+ *         moved to `trendDirectionIcon()` in `src/lib/kpi-trend.ts`.
+ *       · `org-shell-structural` — `it('OrgSidebarNav declares the spec nav
+ *         entries')` asserted seven English labels that migrated to
+ *         next-intl; they survive only in the docblock LISTING the spec, so
+ *         the test had become a test of its own comment.
+ *     All five are retargeted at the construct that ships, with the catalogue
+ *     resolved where the assertion was about user-visible copy.
+ *
+ *     AND THE RANKING UNDER-COUNTS FOR A SECOND REASON. The 356 entry records
+ *     one (a flagged regex). `org-shell-structural` shows another: its needle
+ *     is a LOOP VARIABLE (`for (const label of [...]) expect(src).toContain(
+ *     label)`), so `recoverNeedle` returns `needle-not-literal` and the site
+ *     is unscorable — 236 of the 4062 sites are. A ranking built on literal
+ *     needles cannot see them; running the converted suite can.
  *   • 381 (2026-09-17): seated when this ratchet landed. Measured by AST walk
  *     over every `.ts`/`.tsx` file git lists under `tests/` — 2402 files,
  *     12301 `toMatch`/`toContain` sites, of which 5937 resolve to the whole
@@ -148,7 +194,7 @@ import { analyseClassA, type ClassAReport } from '../helpers/raw-source-assertio
  *     So a file's presence in this list is NOT an accusation, and this ratchet
  *     is a cap rather than a work queue: it says the population may not grow.
  */
-const RAW_ASSERTING_FILE_BASELINE = 356;
+const RAW_ASSERTING_FILE_BASELINE = 338;
 
 /**
  * The 356 files themselves, sorted, in a sibling JSON.

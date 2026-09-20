@@ -8,8 +8,13 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 const AZURE = 'src/app-layer/integrations/providers/azure-posture-provider.ts';
 const GCP = 'src/app-layer/integrations/providers/gcp-posture-provider.ts';

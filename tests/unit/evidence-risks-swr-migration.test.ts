@@ -23,6 +23,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 const RISKS_CLIENT = path.join(
@@ -38,16 +40,14 @@ const UPLOAD_MODAL = path.join(
     'src/app/t/[tenantSlug]/(app)/evidence/UploadEvidenceModal.tsx',
 );
 
-const read = (p: string) => fs.readFileSync(p, 'utf-8');
-
-/** Strip block + line comments so prose mentions of removed
- *  symbols (in migration docstrings) don't trip the negative
- *  assertions. We only want to match real call sites. */
-function stripComments(src: string): string {
-    return src
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/^\s*\/\/.*$/gm, '');
-}
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
+// This file used to hand-roll a `stripComments()` for its three
+// negative assertions and read RAW everywhere else — the shape #2246
+// names as the defect. The local stripper is gone: one masked seam
+// covers every assertion in the file, including ones added later.
+const read = (p: string) => codeOf(fs.readFileSync(p, 'utf-8'));
 
 // ─── Risks list ────────────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ describe('RisksClient — Epic 69 SWR migration', () => {
     });
 
     it('does NOT use TanStack React Query', () => {
-        const code = stripComments(read(RISKS_CLIENT));
+        const code = read(RISKS_CLIENT);
         expect(code).not.toMatch(/from\s+['"]@tanstack\/react-query['"]/);
         expect(code).not.toMatch(/\bqueryKeys\b/);
         expect(code).not.toMatch(/\buseQuery\b/);
@@ -119,7 +119,7 @@ describe('EvidenceClient — Epic 69 SWR migration', () => {
     });
 
     it('does NOT use TanStack React Query', () => {
-        const code = stripComments(read(EVIDENCE_CLIENT));
+        const code = read(EVIDENCE_CLIENT);
         expect(code).not.toMatch(/from\s+['"]@tanstack\/react-query['"]/);
         expect(code).not.toMatch(/\bqueryKeys\b/);
         expect(code).not.toMatch(/\buseQuery\b/);
@@ -164,7 +164,7 @@ describe('UploadEvidenceModal — Epic 69 optimistic-append migration', () => {
     });
 
     it('does NOT use TanStack React Query', () => {
-        const code = stripComments(read(UPLOAD_MODAL));
+        const code = read(UPLOAD_MODAL);
         expect(code).not.toMatch(/from\s+['"]@tanstack\/react-query['"]/);
         expect(code).not.toMatch(/\bqueryKeys\b/);
         expect(code).not.toMatch(/\buseQueryClient\b/);

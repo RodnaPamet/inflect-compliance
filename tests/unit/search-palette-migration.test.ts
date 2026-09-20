@@ -21,6 +21,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const HOOK = path.resolve(
     __dirname,
     '../../src/components/command-palette/use-entity-search.ts',
@@ -35,8 +37,11 @@ const USECASE = path.resolve(
 );
 const TYPES = path.resolve(__dirname, '../../src/lib/search/types.ts');
 
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
 function read(p: string): string {
-    return fs.readFileSync(p, 'utf-8');
+    return codeOf(fs.readFileSync(p, 'utf-8'));
 }
 
 describe('Command palette — uses the unified search endpoint', () => {
@@ -145,8 +150,14 @@ describe('Search route + usecase — structural shape', () => {
     });
 
     it('usecase enforces a role check before searching', () => {
-        expect(usecase).toMatch(/!ctx\.role/);
-        expect(usecase).toMatch(/forbidden\(/);
+        // #2246 Class A — this asserted /!ctx\.role/ and /forbidden\(/, and
+        // both phrases survive in `search.ts` ONLY inside the comment that
+        // records their REMOVAL ('Was `if (!ctx.role) throw forbidden(...)`
+        // — a branch getTenantCtx makes unreachable'). The guard was green
+        // because its subject had been deleted. The gate that actually
+        // ships is the per-domain one, so that is what is pinned now.
+        expect(usecase).toMatch(/assertAnyDomainViewable\(/);
+        expect(usecase).toMatch(/canViewDomain\(/);
     });
 
     it('searches all five canonical entity types', () => {

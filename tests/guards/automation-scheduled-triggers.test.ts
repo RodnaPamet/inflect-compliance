@@ -4,8 +4,15 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
+// `.prisma` is lexed too: its comment syntax is `//` and its strings
+// are double-quoted, so the same lexer is correct there.
+const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
 describe('scheduled triggers', () => {
