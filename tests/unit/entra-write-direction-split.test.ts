@@ -8,7 +8,11 @@
  * right in review, and would leave the joiner riding the leaver's grant — the
  * exact state #2674 exists to end. So the load-bearing assertions here are the
  * CROSS ones: consent to one direction must leave the OTHER refused, in both
- * orders, over the whole `IdentityDirection` population rather than one sample.
+ * orders rather than one sample. "Both orders" is both members of `DIRECTIONS`
+ * below, which is a HAND-WRITTEN literal and enumerates `IdentityDirection` as
+ * it stands today — it does not track the union. Nothing in this file would
+ * notice a third direction; `tsc` would, at the `Record<IdentityDirection, …>`
+ * in `ENTRA_WRITE_FLAG_FIELD` and at the `never` arm of `storedWriteFlag`.
  *
  * WHY THE LEAVER ARM GOES THROUGH `createEntraIdWriter` AND THE JOINER ARM
  * DOES NOT
@@ -44,9 +48,23 @@ import {
     readDirectionWritesEnabled,
 } from '@/app-layer/integrations/providers/entra-id/write-direction';
 import { EntraIdProvider } from '@/app-layer/integrations/providers/entra-id';
+import { validateProviderConfig } from '@/app-layer/integrations/config-schema';
 import type { IdentityDirection } from '@/lib/identity/write-ladder';
 
-/** Both members, written out so the denominator is visible in every loop below. */
+/**
+ * Both members of `IdentityDirection` as of today, written out so the
+ * denominator of every loop below is visible rather than implied.
+ *
+ * It is a literal, not a derivation, so it is worth being exact about what that
+ * buys and what it does not. It buys a printed denominator. It does NOT grow
+ * with the union: a third direction would leave this list at two, and every
+ * `it.each(DIRECTIONS)` below would keep passing while covering two thirds of
+ * the population. The thing that actually refuses to compile in that case is
+ * `ENTRA_WRITE_FLAG_FIELD`, typed `Record<IdentityDirection, string>`, together
+ * with the `never` arm of `storedWriteFlag` — both in `write-direction.ts`, and
+ * both compile-time. This file is downstream of that guarantee, not the source
+ * of it.
+ */
 const DIRECTIONS: readonly IdentityDirection[] = ['leaver', 'joiner'];
 
 const CREDENTIALS = {
@@ -75,8 +93,13 @@ function constructLeaverWriter(config: Record<string, unknown>): Error | null {
 
 describe('#2674 — the two directions are two separate grants', () => {
     it('each direction reads its OWN field, and the two fields are distinct', () => {
-        // The denominator is the whole union, not a sample: a third direction
-        // added without its own field would leave this length check red.
+        // The denominator is `DIRECTIONS`, the hand-written pair above — which
+        // is the whole union today, and is not guaranteed to stay that way. A
+        // third direction would NOT redden the length check (two distinct
+        // fields for a two-element list still agrees); it would redden `tsc` at
+        // `ENTRA_WRITE_FLAG_FIELD`'s `Record<IdentityDirection, string>`. What
+        // the two assertions here do catch is the failure this module exists
+        // for: the two directions resolving to the SAME field.
         const fields = DIRECTIONS.map((d) => ENTRA_WRITE_FLAG_FIELD[d]);
         expect(fields).toEqual([ENTRA_LEAVER_WRITES_FIELD, ENTRA_JOINER_WRITES_FIELD]);
         expect(new Set(fields).size).toBe(DIRECTIONS.length);
@@ -194,7 +217,7 @@ describe('#2674 — the stored-value diagnostic follows the field it is about', 
     it.each(DIRECTIONS)('names the %s field when the stored value merely looks true', (direction) => {
         const sentence = describeStoredWriteFlag(direction, 'true');
         expect(sentence).toContain(ENTRA_WRITE_FLAG_FIELD[direction]);
-        expect(sentence).toContain('string-coercing helper');
+        expect(sentence).toContain('compared strictly');
     });
 
     it.each(DIRECTIONS)('says nothing extra when the %s flag is simply absent', (direction) => {
@@ -206,9 +229,54 @@ describe('#2674 — the stored-value diagnostic follows the field it is about', 
     });
 
     it('distinguishes a value that looks affirmative from one that plainly does not', () => {
-        expect(describeStoredWriteFlag('leaver', 'true')).toContain('reads as ON in the admin UI');
+        expect(describeStoredWriteFlag('leaver', 'true')).toContain('Re-save the connection');
         expect(describeStoredWriteFlag('leaver', {})).toContain('is not an opt-in');
-        expect(describeStoredWriteFlag('leaver', {})).not.toContain('reads as ON in the admin UI');
+        expect(describeStoredWriteFlag('leaver', {})).not.toContain('Re-save the connection');
+    });
+
+    it('does not tell a JOINER operator to look at a checkbox that is not on the form', () => {
+        // The sentence was parameterised by FIELD NAME but carried leaver
+        // facts: an admin-UI control showing ON, and "re-save the connection"
+        // as the fix. Neither is true for `joinerWritesEnabled`, which is
+        // deliberately undeclared — `validateProviderConfig` rejects the key,
+        // so no form control shows it and re-saving would not rewrite it.
+        const joiner = describeStoredWriteFlag('joiner', 'true');
+        expect(joiner).toContain('no control for this field on the connection form');
+        expect(joiner).not.toContain('Re-save the connection');
+
+        // The positive control for this pair: the leaver sentence DOES make
+        // both of those claims, so the assertions above are separating the two
+        // directions rather than matching a sentence nobody emits.
+        const leaver = describeStoredWriteFlag('leaver', 'true');
+        expect(leaver).toContain('Re-save the connection');
+        expect(leaver).not.toContain('no control for this field on the connection form');
+    });
+
+    it('is unreachable for the joiner today, and that is asserted rather than assumed', () => {
+        // Two independent reasons, both of which would have to stop being true
+        // before the sentence above could reach an operator.
+        //
+        // 1. No production caller passes 'joiner'. The only `directionWriteRefusal`
+        //    call site under src/ is the Entra writer's constructor, and it
+        //    passes 'leaver' — asserted by the cross tests at the top of this
+        //    file, which build a writer from a joiner-only config and get a
+        //    refusal naming the LEAVER direction.
+        // 2. The field cannot be stored. `joinerWritesEnabled` is not a
+        //    declared config field, and an undeclared key is rejected outright
+        //    rather than ignored.
+        expect(new EntraIdProvider().configSchema.configFields.map((f) => f.key)).not.toContain(
+            ENTRA_JOINER_WRITES_FIELD,
+        );
+        expect(() =>
+            validateProviderConfig('entra-id', { [ENTRA_JOINER_WRITES_FIELD]: 'true' }),
+        ).toThrow(/Unknown configuration field/);
+
+        // The positive control: the SAME call shape with the declared leaver
+        // field is accepted, so the throw above is about this key and not about
+        // the provider id or the call itself.
+        expect(() =>
+            validateProviderConfig('entra-id', { [ENTRA_LEAVER_WRITES_FIELD]: 'true' }),
+        ).not.toThrow();
     });
 });
 

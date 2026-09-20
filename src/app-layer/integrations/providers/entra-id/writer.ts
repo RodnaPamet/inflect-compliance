@@ -404,17 +404,6 @@ export class EntraCredentialRejectedError extends DirectoryWriteError {
 }
 
 /**
- * The per-direction opt-in used to live here as `describeWritesEnabled` plus a
- * literal `config.writesEnabled !== true` in the constructor.
- *
- * It moved to `./write-direction` when the joiner arrived (#2674, owner
- * decision 8), because a single boolean cannot say WHICH direction was asked
- * for and this directory's own `WRITE_ROLES` list means a credential consented
- * for a create can also disable. The refusal below therefore names its
- * direction, and the flag it reads is the leaver's.
- */
-
-/**
  * What a capture knows about a leaver's group memberships.
  *
  * A UNION rather than a list plus a boolean, because the two-field shape could

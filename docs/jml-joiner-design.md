@@ -528,15 +528,17 @@ reason the reservation is taken before anything is written rather than after.
 
 **The consent coupling, which must be decided rather than inherited.** `WRITE_ROLES` is
 `['User.EnableDisableAccount.All', 'User.ReadWrite.All', 'Directory.ReadWrite.All']`
-(`entra-id/writer.ts:216-220`). Creating a user requires one of the latter two — **both members of
+(`entra-id/writer.ts`). Creating a user requires one of the latter two — **both members of
 that list**. So any consent sufficient to *create* is, by this repo's own list, sufficient to
-*disable*, and `hasWriteRole` (`:797`) stops objecting. The least-privilege argument at
-`writer.ts:207-211` does not survive the joiner, and the only remaining separator is the single
-per-connection `writesEnabled` boolean, which can no longer say *which* direction was asked for.
+*disable*, and `hasWriteRole` stops objecting. The least-privilege argument in the `WRITE_ROLES`
+docblock (`entra-id/writer.ts`) does not survive the joiner, and the only remaining separator is
+the single per-connection `writesEnabled` boolean, which can no longer say *which* direction was
+asked for.
 Either add a per-direction writes flag, or state plainly that enabling joiner writes grants
 standing disable authority at the credential layer. **Silence here decides it by omission.**
 
-**DECIDED, and the first branch was taken** (owner decision 8, 2026-09-19; shipped #2674). The flag
+**DECIDED, and the first branch is the one taken** (owner decision 8, 2026-09-19; #2674, open —
+this is the diff that builds it, not a record of one already shipped). The flag
 splits per direction in `providers/entra-id/write-direction.ts`: the leaver reads `writesEnabled`,
 the joiner reads its own `joinerWritesEnabled`, and `directionWriteRefusal` names the direction it
 refused. `WRITE_ROLES` is deliberately unchanged — it states what Graph *accepts*, and narrowing it
@@ -1282,11 +1284,11 @@ rest as `suppressed`, which reads as dedupe working. Five failed hires, one emai
 
 4. ~~**Does `writesEnabled` split per direction — and does the HRIS write get its own flag?**~~
    **ANSWERED — owner decision 8, 2026-09-19: yes to both, three switches.** The HRIS flag
-   (`writeBackEnabled`) shipped in #2642 with its own refusal; the Entra per-direction split shipped
-   in #2674 (`providers/entra-id/write-direction.ts`). The credential-layer coupling is accepted as
-   unfixable — `WRITE_ROLES` still means create-consent implies disable authority — and the
-   separation is stated per connection instead. See the consent-coupling section above for what a
-   pre-existing `writesEnabled: true` now grants.
+   (`writeBackEnabled`) shipped in #2642 with its own refusal; the Entra per-direction split is
+   #2674, still open, and arrives with this diff (`providers/entra-id/write-direction.ts`). The
+   credential-layer coupling is accepted as unfixable — `WRITE_ROLES` still means create-consent
+   implies disable authority — and the separation is stated per connection instead. See the
+   consent-coupling section above for what a pre-existing `writesEnabled: true` now grants.
 
 5. **Should MANUAL employees be joiner candidates?** `createEmployee` sets no `syncedAt`
    (`usecases/personnel.ts:70-75`), so any roster-freshness gate excludes every manually-entered

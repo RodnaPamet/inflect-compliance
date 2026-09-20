@@ -212,6 +212,40 @@ export function readDirectionWritesEnabled(
 }
 
 /**
+ * What an operator should DO about a stored value that merely looks
+ * affirmative — and it differs per direction, because the two fields are not
+ * both on the connection form.
+ *
+ * The leaver's field is declared, so the admin UI has a control showing it and
+ * re-saving rewrites it. The joiner's is deliberately undeclared (see the
+ * module docblock), so there is no control to read as ON, `re-save the
+ * connection` would not rewrite it, and `validateProviderConfig` rejects the
+ * key outright — a stored value can only have arrived from outside the form.
+ * Telling a joiner operator to look at a checkbox and re-save would be two
+ * false statements in one sentence.
+ *
+ * Splitting this is precaution rather than a bug fix: the joiner sentence is
+ * UNREACHABLE today, twice over, and both reasons are checked by tests.
+ * `directionWriteRefusal(config, 'joiner')` has no production caller at all —
+ * the only call site in `src/` is `writer.ts`'s constructor, which passes
+ * `'leaver'` — and even given one, `CONFIG_FIELD_RULES['entra-id']` does not
+ * list `joinerWritesEnabled`, so `validateProviderConfig` throws `Unknown
+ * configuration field` before such a value could be stored. It is split now
+ * because the day the create verb lands is the day this ships to an operator,
+ * and a wrong sentence discovered then is discovered in a support ticket.
+ */
+const DIRECTION_STORED_VALUE_REMEDY: Readonly<Record<IdentityDirection, string>> = {
+    leaver:
+        'Other booleans on this same connection are read through a string-coercing helper and WILL ' +
+        'be on, which is why the checkbox looks inconsistent with the behaviour. Re-save the ' +
+        'connection, or correct the stored value to a JSON boolean.',
+    joiner:
+        'There is no control for this field on the connection form, so re-saving will not rewrite ' +
+        'it — the value did not come from the form, and the form would reject the key. Correct the ' +
+        'stored value to a JSON boolean, or remove it.',
+};
+
+/**
  * The trailing half of the refusal, when the STORED VALUE is the reason
  * rather than the absence of one.
  *
@@ -220,7 +254,8 @@ export function readDirectionWritesEnabled(
  * would reasonably read as an opt-in, because that is the case where
  * repeating "turn it on" describes something they have already done. The
  * wording is the one `describeWritesEnabled` reached after a real support
- * round trip; it is parameterised by field here rather than duplicated.
+ * round trip; the parts that are TRUE OF BOTH directions are parameterised by
+ * field, and the part that is not comes from `DIRECTION_STORED_VALUE_REMEDY`.
  */
 export function describeStoredWriteFlag(direction: IdentityDirection, value: unknown): string {
     if (value === undefined || value === null || value === false) return '';
@@ -237,11 +272,9 @@ export function describeStoredWriteFlag(direction: IdentityDirection, value: unk
     }
     return (
         ` (This connection stores ${field} as the ${typeof value} ${shown} rather than the boolean ` +
-        'true, so the flag reads as ON in the admin UI and OFF here — writes are compared strictly, on ' +
-        'purpose, because a value that merely looks affirmative is not a deliberate grant of standing ' +
-        'power to write to a directory. Other booleans on this same connection are read through a ' +
-        'string-coercing helper and WILL be on, which is why this one looks inconsistent. Re-save the ' +
-        'connection, or correct the stored value to a JSON boolean.)'
+        'true, so it is read as OFF here — writes are compared strictly, on purpose, because a value ' +
+        'that merely looks affirmative is not a deliberate grant of standing power to write to a ' +
+        `directory. ${DIRECTION_STORED_VALUE_REMEDY[direction]})`
     );
 }
 

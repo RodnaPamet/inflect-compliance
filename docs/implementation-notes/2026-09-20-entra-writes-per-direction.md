@@ -64,7 +64,11 @@ flag, which is the single failure the module exists to prevent.
 
 - **Neither direction is a superset of the other.** A joiner grant does not
   imply a leaver grant. Two statements about one credential, tested in both
-  orders over the whole `IdentityDirection` population rather than one sample.
+  orders rather than one sample. The test's `DIRECTIONS` is a hand-written
+  literal that happens to be the whole `IdentityDirection` union today; it does
+  not track the union, and the comment there says so. A third direction is
+  caught by `tsc` at `Record<IdentityDirection, string>` and the `never` arm of
+  `storedWriteFlag`, not by that loop.
 
 - **`joinerWritesEnabled` is deliberately NOT declared on the connection form.**
   Same argument `providers/hris/write-back.ts` makes for BambooHR: a checkbox is
@@ -91,6 +95,17 @@ flag, which is the single failure the module exists to prevent.
   `writer.ts`. Adding the direction to that sentence is exactly the edit that
   breaks such a pair silently, and the symptom would have been a deliberate
   operator state arriving on screen as an unexplained `WRITER_REFUSED`.
+
+- **The stored-value diagnostic is per-direction copy, not one sentence with
+  the field name substituted.** `describeStoredWriteFlag` was parameterised by
+  FIELD but carried leaver FACTS — that the flag "reads as ON in the admin UI",
+  and that the fix is to re-save the connection. Neither is true of
+  `joinerWritesEnabled`, which is deliberately undeclared: no control shows it,
+  re-saving would not rewrite it, and `validateProviderConfig` rejects the key
+  outright. The joiner sentence is unreachable today for two independent
+  reasons (no caller passes `'joiner'`; the field cannot be stored), both
+  asserted in the test rather than assumed — it was split now because the day
+  the create verb lands is the day a wrong sentence reaches an operator.
 
 - **The joiner arm has no production caller today, and that is stated rather
   than papered over.** Giving it one would have meant either inventing a live
