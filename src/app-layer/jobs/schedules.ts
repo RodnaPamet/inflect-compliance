@@ -125,6 +125,38 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'identity-joiner-dispatch',
+        pattern: '30 4 * * *',    // daily at 04:30 UTC
+        tz: 'UTC',
+        // Each part of the time is load-bearing:
+        //   - AFTER identity-sync-dispatch (03:00), because the pass reads link
+        //     freshness and the account enumeration, both of which are only
+        //     refreshed by a sync that returned PASSED. Before it, the pass
+        //     would judge yesterday's evidence and refuse for the wrong reason.
+        //   - BEFORE identity-leaver-dispatch (05:00), so the two halves of JML
+        //     do not share a minute. They read the same tables and write to the
+        //     same execution log, and an incident in one must not arrive inside
+        //     the other's window and be triaged as part of it.
+        //   - OFF the hour and off 04:00, which already carries retention-sweep.
+        //
+        // UTC, and the plan says so rather than this field pretending otherwise.
+        // Owner decision 9 of 2026-09-19 fires the joiner on the tenant's own
+        // timezone; nothing stores one, so every plan this job produces carries a
+        // written caveat that a person whose local start date falls either side
+        // of midnight UTC can be planned a day early or a day late.
+        //
+        // Declaration order in this array is NOT execution order — only the cron
+        // pattern is.
+        // NO SAFETY CLAIM IN THIS STRING, deliberately. "Writes nothing to any
+        // directory" was true of the leaver's description too, until #2187 moved
+        // a constant in another file and left this field answering the operator's
+        // question wrongly for four days. What this job may do is the tenant's own
+        // identityJoinerMode against the JOINER_MAX_MODE ceiling in source; both
+        // are named here so a reader knows where to look, and neither is asserted.
+        description: 'Fan out a joiner pass per (tenant, writable directory provider): assemble the starters the HR feed marks ONBOARDING, decide what identity each would be given, and record a decision per person with what the run could not check. How far a given tenant may go is that tenant\'s own identityJoinerMode, held under the JOINER_MAX_MODE ceiling in usecases/identity-joiner-pass.ts — read those two, not this field.',
+        defaultPayload: {},
+    },
+    {
         name: 'identity-leaver-dispatch',
         pattern: '0 5 * * *',     // daily at 05:00 UTC
         // AFTER identity-sync-dispatch (03:00) on purpose: the pass acts only on

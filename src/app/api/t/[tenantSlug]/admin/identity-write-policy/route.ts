@@ -108,9 +108,11 @@ const getHandler = requirePermission('admin.tenant_lifecycle', async (_req, _ctx
         // joiner to AUTOMATIC while this same response called it unbuilt.
         // `describeRefusal` now reads the same constant, so the reason the UI
         // prints and the refusal the PUT raises cannot drift apart. It is still
-        // false for the joiner: a planner exists, but nothing dispatches it and
-        // decision 10's department→group map has nowhere to live yet, so a
-        // widened joiner would still produce nothing. See `DIRECTION_IMPLEMENTED`.
+        // false for the joiner, and #2687 narrowed the reason to ONE: a planner
+        // exists AND a dispatcher and a schedule now call it, but
+        // decision 10's department→group map has nowhere to live, so every plan
+        // refuses `NO_DEPARTMENT_MAP` and a widened joiner would still produce
+        // nothing an operator can act on. See `DIRECTION_IMPLEMENTED`.
         honoured: {
             leaver: { maxMode: LEAVER_MAX_MODE, implemented: DIRECTION_IMPLEMENTED.leaver },
             joiner: { maxMode: JOINER_MAX_MODE, implemented: DIRECTION_IMPLEMENTED.joiner },

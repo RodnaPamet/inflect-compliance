@@ -744,6 +744,8 @@ export interface JobPayloadMap {
     'identity-sync-dispatch': IdentitySyncDispatchPayload;
     'identity-leaver-pass': IdentityLeaverPassPayload;
     'identity-leaver-dispatch': IdentityLeaverDispatchPayload;
+    'identity-joiner-pass': IdentityJoinerPassPayload;
+    'identity-joiner-dispatch': IdentityJoinerDispatchPayload;
     'cloud-posture-collect-dispatch': CloudPostureCollectDispatchPayload;
     'azure-posture-collect': AzurePostureCollectPayload;
     'gcp-posture-collect': GcpPostureCollectPayload;
@@ -849,6 +851,31 @@ export interface IdentityLeaverPassPayload {
  * not exempt from the isolation audit.
  */
 export interface IdentityLeaverDispatchPayload {
+    [key: string]: never;
+}
+
+export interface IdentityJoinerPassPayload {
+    tenantId: string;
+    /**
+     * The DIRECTORY, not the connection — the same unit the leaver uses, and for
+     * a joiner-specific reason on top of the leaver's.
+     *
+     * Both of the pass's directory-derived inputs are provider-scoped:
+     * `hasFreshLink` (a fresh Entra link says nothing about Active Directory)
+     * and `observedAddresses` (the collision read is one directory's
+     * enumeration). An unscoped pass would answer ALREADY_PROVISIONED and
+     * ACCOUNT_OBSERVED from a union of directories the create would not have
+     * gone to.
+     */
+    provider: string;
+}
+
+/**
+ * No tenantId, deliberately — this is the cross-tenant fan-out, and the tenant
+ * is what it DISCOVERS. Its child `IdentityJoinerPassPayload` carries one and is
+ * not exempt from the isolation audit.
+ */
+export interface IdentityJoinerDispatchPayload {
     [key: string]: never;
 }
 
@@ -981,6 +1008,28 @@ export const JOB_DEFAULTS: Record<JobName, {
         removeOnFail: 500,
     },
     'identity-leaver-dispatch': {
+        // The dispatcher only enqueues, and its job ids are deterministic per
+        // (tenant, provider, UTC day) — so a retry cannot double-dispatch.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 1000 },
+        removeOnComplete: 50,
+        removeOnFail: 200,
+    },
+    'identity-joiner-pass': {
+        // ONE attempt. The pass writes no directory and no HRIS, so this is not
+        // the leaver's journal argument — it is about the ARTEFACT. Each run
+        // inserts one IntegrationExecution row holding a decision per starter,
+        // and the seven-day DRY_RUN window is read by counting and comparing
+        // those rows against what HR and IT actually did. Three attempts in ~35
+        // seconds would put three rows on one morning, and an observation window
+        // that cannot tell a run from a retry is not an observation window.
+        // Tomorrow's dispatch is the retry.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 1000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'identity-joiner-dispatch': {
         // The dispatcher only enqueues, and its job ids are deterministic per
         // (tenant, provider, UTC day) — so a retry cannot double-dispatch.
         attempts: 1,
