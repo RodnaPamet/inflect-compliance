@@ -63,6 +63,38 @@
  * exempt — but the exemption is checked rather than assumed: a `$ref`
  * that resolves to nothing silently disables its override, so every
  * exempt entry must name a real direct dependency.
+ *
+ * ─── What being IN the population does NOT buy you ──────────────────
+ *
+ * This file answers "is the script LOOKING at this override?" and
+ * nothing else. Two known gaps sit downstream of it, both in the
+ * script, and being in the population does not close either:
+ *
+ *   • **A nested pin is judged against the wrong instance.**
+ *     `lockedVersions(lock, name)` in
+ *     `scripts/check-override-freshness.mjs` is keyed by PACKAGE NAME,
+ *     so it returns every copy of the package in the tree and the
+ *     freshness loop takes the MAX. A nested pin constrains only the
+ *     copy its parent resolves. Measured 2026-09-20:
+ *     `@istanbuljs/load-nyc-config > js-yaml ^3.15.2` governs
+ *     `node_modules/@istanbuljs/load-nyc-config/node_modules/js-yaml`
+ *     at 3.15.2, but the report prints `locked: 5.4.2` (the hoisted
+ *     root copy) — and since 5.4.2 exceeds every 3.x, the `lagging`
+ *     branch is UNREACHABLE for that entry however far behind the real
+ *     instance falls. `jsdom > ws ^8.21.0` comes out right only by
+ *     accident. Declined here as too large: doing it properly means
+ *     replaying npm's resolution walk per parent path, and the naive
+ *     version (match only `<parent>/node_modules/<child>`) finds
+ *     nothing for a hoisted instance and drops the entry silently,
+ *     which is worse than the bug. That docblock carries the same note.
+ *
+ *   • **A range that is not `^X.Y.Z` is not evaluated at all.** The
+ *     script now REPORTS those as `unanalysable` findings rather than
+ *     dropping them (three of today's 24), but reported-as-unknown is
+ *     not checked.
+ *
+ * So a green run of this file means "the detector sees every entry",
+ * never "every entry is fresh".
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -101,24 +133,51 @@ interface Entry {
 }
 
 /**
- * EVERY entry in the overrides block, top-level and nested, flattened.
+ * EVERY entry in the overrides block, at EVERY nesting depth,
+ * flattened. npm's `overrides` nest without limit, so this recurses
+ * rather than reading a fixed number of levels.
  *
  * This is the denominator. It is derived from `package.json` here
  * rather than from the script, precisely so the two can disagree.
+ *
+ * **A denominator that shares the detector's blind spot is not a
+ * denominator.** Until 2026-09-20 both this function and the script's
+ * flattener read exactly ONE level below a top-level key, so a depth-3
+ * pin was invisible to both and they agreed perfectly about a set that
+ * excluded it. Measured: adding
+ * `{ 'jest-environment-jsdom': { jsdom: { ws: '^7.0.0' } } }` to
+ * `package.json` left the population at 24 and this suite passing
+ * 14/14. That is the reason the recursion has to land on BOTH sides —
+ * fixing only the script would leave this file unable to notice the
+ * script narrowing back.
+ *
+ * npm's `.` key pins the PARENT package rather than a child
+ * (`{ foo: { '.': '^1.0.0' } }` is an override on `foo`), so it is
+ * resolved against the trail instead of being read as a package name.
+ * There is no such key in `package.json` today.
  */
 function allOverrideEntries(): Entry[] {
     const out: Entry[] = [];
-    for (const [key, value] of Object.entries(pkg.overrides ?? {})) {
-        if (typeof value === 'string') {
-            out.push({ entry: key, name: targetName(key), spec: value, nested: false });
-            continue;
+    const walk = (node: Record<string, unknown>, trail: string[]) => {
+        for (const [key, value] of Object.entries(node)) {
+            const self = key === '.' && trail.length > 0;
+            const target = self ? trail[trail.length - 1] : key;
+            const here = self ? trail : [...trail, key];
+            if (typeof value === 'string') {
+                out.push({
+                    entry: here.join(' > '),
+                    name: targetName(target),
+                    spec: value,
+                    nested: trail.length > 0,
+                });
+                continue;
+            }
+            if (value && typeof value === 'object') {
+                walk(value as Record<string, unknown>, here);
+            }
         }
-        if (!value || typeof value !== 'object') continue;
-        for (const [child, spec] of Object.entries(value as Record<string, unknown>)) {
-            if (typeof spec !== 'string') continue;
-            out.push({ entry: `${key} > ${child}`, name: targetName(child), spec, nested: true });
-        }
-    }
+    };
+    walk((pkg.overrides ?? {}) as Record<string, unknown>, []);
     return out;
 }
 
@@ -317,12 +376,22 @@ describe('override freshness — every override is inside the detector', () => {
         // like, which is how the guard is mutation-proved.
 
         const analysed: string[] = [];
+        const unanalysable: string[] = [];
         const split: Array<{ override: string; spec: string; admitted: string[] }> = [];
 
         for (const e of literal) {
-            const admitted = [...new Set(resolvedVersions(e.name))].filter(
-                (v) => satisfies(v, e.spec),
-            );
+            let admitted: string[];
+            try {
+                admitted = [...new Set(resolvedVersions(e.name))].filter(
+                    (v) => satisfies(v, e.spec),
+                );
+            } catch (err) {
+                // The ONLY path on which `analysed` does not grow. It
+                // is what makes the assertion below able to fail — see
+                // its comment.
+                unanalysable.push(`${e.entry} -> ${e.spec}: ${(err as Error).message}`);
+                continue;
+            }
             analysed.push(e.entry);
             if (admitted.length > 1) {
                 split.push({
@@ -334,9 +403,24 @@ describe('override freshness — every override is inside the detector', () => {
         }
 
         it('analysed every literal override (the denominator is part of the result)', () => {
-            // `satisfies` throws rather than returning false on a shape
-            // it cannot read, so a range this check cannot analyse
-            // fails the suite instead of quietly dropping out of it.
+            // `satisfies` THROWS rather than returning false on a range
+            // shape it cannot read, and the loop above catches that
+            // into `unanalysable` instead of letting it escape.
+            //
+            // Both halves matter. Letting it escape put the throw in
+            // the `describe` body, where it takes the whole FILE down
+            // at collection time and this `it` never runs — so the
+            // assertion could not fail, only be skipped, while reading
+            // like coverage. Catching it without recording would be
+            // worse still: the entry would vanish from a count nothing
+            // compares against.
+            //
+            // Now an unreadable range names itself here. Proved by
+            // mutation: rewriting `sharp`'s `0.35.4` as `~0.35.4` in
+            // `package.json` turns this test red with
+            // `sharp -> ~0.35.4: unparseable comparator: ~0.35.4`,
+            // where before the change it aborted the suite.
+            expect(unanalysable).toEqual([]);
             expect(analysed).toHaveLength(literal.length);
         });
 
