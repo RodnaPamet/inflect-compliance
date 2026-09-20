@@ -272,6 +272,156 @@ describe('catalogue requirements carry prose', () => {
         );
     });
 
+    /**
+     * WHERE THE MISSING SUMMARIES ARE — pinned per fixture, both directions.
+     *
+     * ═══ WHAT THE CEILING ABOVE CANNOT SEE (#2615, the half left over) ═══
+     *
+     * The assertion above interpolates `all.length` into BOTH sides, so the
+     * denominator cancels. It is printed on a failure and never compared —
+     * which is exactly what its own comment says it is there to stop: "a bare
+     * count invites lowering the ceiling without knowing whether the
+     * population moved under it."
+     *
+     * Measured, not argued (2026-09-20). Delete SOC 2 `CC9.1` — a shipped
+     * requirement WITH an authored summary — from
+     * `soc2-control-templates.json`. The population moves 989 -> 988,
+     * `absent.length` stays at 405, and all six tests in this file stay GREEN.
+     * A customer lost a requirement and its prose, and the guard named for
+     * requirement prose said nothing.
+     *
+     * This is not a hypothetical shape. #2669 retired ISO 9001 / 39001 / 28000
+     * and moved BOTH numbers by 80 — 485 of 1069 became 405 of 989. The
+     * docblock above records in prose that the drop was RETIREMENT rather than
+     * authoring, and argues that saying which is the whole point; the
+     * assertion beneath it could not tell the two apart. A ceiling that falls
+     * because the work was done and a ceiling that falls because the
+     * population was deleted are opposite events wearing the same number.
+     *
+     * ═══ WHY PER FIXTURE AND NOT ONE MORE TOTAL ═══
+     *
+     * A total is also blind to a swap. The "says more than the title" rule
+     * above compares 702 requirements across 12 declared pairs, and two
+     * populations sit outside it BY DECLARATION: ISO 27001 (93 — its library
+     * carries 29 coarse Annex A headings, so most rows have no comparable
+     * node) and NIS 2 (20 — joined by `nis2-library-map.json`, not by code).
+     * Strip ten ISO 27001 summaries, author ten onto the NIS 2 rows that lack
+     * them, and the total is still 405 with no pair rule to object. Per
+     * fixture that is two red lines naming both frameworks.
+     *
+     * DELIBERATELY SENSITIVE TO THE DENOMINATOR. Adding or retiring a
+     * requirement reddens this, and that is the feature rather than the cost:
+     * it is precisely the event the paragraph above wanted recorded. The
+     * repair is one line in this map, in the same PR that moves the catalogue,
+     * which is also where a reviewer can see what moved.
+     *
+     * This constant is local to this file. It is NOT one of the shared
+     * zero-allowance baselines, so re-seating it grades nothing but the
+     * catalogue.
+     */
+    const SUMMARY_COVERAGE_BY_FIXTURE: Record<string, string> = {
+        'asvs-l1-control-templates.json': '0 of 128',
+        'cis-v8-ig1-control-templates.json': '0 of 56',
+        'dora-control-templates.json': '0 of 24',
+        'eu-ai-act-control-templates.json': '0 of 16',
+        'imda-mgf-control-templates.json': '0 of 19',
+        'internal-controls-catalog.json': '0 of 174',
+        'iso27001-control-templates.json': '0 of 93',
+        'iso27701-control-templates.json': '0 of 44',
+        'iso42001-control-templates.json': '62 of 62',
+        'nis2-control-templates.json': '10 of 20',
+        'nist-privacy-control-templates.json': '100 of 100',
+        'owasp-aisvs-control-templates.json': '191 of 191',
+        'owasp-asi-control-templates.json': '0 of 10',
+        'soc2-control-templates.json': '0 of 10',
+        'ssdf-control-templates.json': '42 of 42',
+    };
+
+    const summaryLessIn = (requirements: CatalogRequirement[]) =>
+        requirements.filter((r) => typeof r.summary !== 'string' || !r.summary.trim()).length;
+
+    it('each fixture carries its pinned count of summary-less requirements', () => {
+        const measured: Record<string, string> = {};
+        for (const f of files) {
+            measured[f.file] = `${summaryLessIn(f.requirements)} of ${f.requirements.length}`;
+        }
+
+        const pinnedKeys = Object.keys(SUMMARY_COVERAGE_BY_FIXTURE);
+        const keys = [...new Set([...pinnedKeys, ...Object.keys(measured)])].sort();
+        const differences = keys
+            .filter((k) => measured[k] !== SUMMARY_COVERAGE_BY_FIXTURE[k])
+            .map((k) => {
+                const pinned = SUMMARY_COVERAGE_BY_FIXTURE[k] ?? '(not pinned — a new catalogue)';
+                const found = measured[k] ?? '(not a CatalogFile any more — retired or reshaped)';
+                return `  ${k}\n      pinned  : ${pinned}\n      measured: ${found}`;
+            });
+
+        if (differences.length > 0) {
+            throw new Error(
+                [
+                    'Requirement summary coverage moved.',
+                    '',
+                    ...differences,
+                    '',
+                    'Each entry is "requirements with no summary" of "requirements in the',
+                    'fixture". BOTH halves are compared, which is the point — the total',
+                    'ceiling above cannot tell a summary being authored from a framework',
+                    'being retired.',
+                    '',
+                    'What to do, by which half moved:',
+                    '',
+                    '  numerator DOWN   summaries were authored or transcribed. Lower the',
+                    '                   entry here AND REQUIREMENTS_WITHOUT_SUMMARY_CEILING',
+                    '                   by the same amount, in this PR.',
+                    '  numerator UP     prose was destroyed. That is the defect #2615 is',
+                    '                   about; restore the summaries rather than re-seat.',
+                    '  denominator UP   requirements were added. Seat the new pair and say',
+                    '                   in the PR whether the new rows carry prose.',
+                    '  denominator DOWN requirements were retired (#2669 did this to three',
+                    '                   frameworks). Move BOTH numbers and write RETIRED, so',
+                    '                   a falling ceiling is not read as work done.',
+                    '  key added        a new CatalogFile fixture. Add it here.',
+                    '  key removed      the fixture stopped being CatalogFile-shaped. Check',
+                    '                   that was deliberate before deleting the line.',
+                    '',
+                    'WHICH summaries are right is governed by "a summary is present exactly',
+                    'where the library says more than the title" above. This only counts.',
+                ].join('\n'),
+            );
+        }
+
+        // Backstop, not the detector. The walk above is what reports a move;
+        // this fires if the walk itself ever stops finding a real mismatch.
+        expect(measured).toEqual(SUMMARY_COVERAGE_BY_FIXTURE);
+    });
+
+    it('the per-fixture pins sum to the ceiling and to the whole population', () => {
+        // A BACKSTOP, and measured to be one rather than assumed. It ties the
+        // two constants into a single arithmetic fact, but it never fires
+        // alone: every way to make the map and the ceiling disagree also
+        // reddens one of the two assertions above. Proved by mutation — moving
+        // the ceiling to 404 with the map untouched turns this red AND
+        // 'requirements with no summary at all stay at or below the ceiling'
+        // red; no input was found that reddens only this one.
+        //
+        // It earns its place on the MESSAGE rather than on detection: the two
+        // numbers are re-seated together by hand, and this is the assertion
+        // that says they have drifted apart instead of leaving a reader to
+        // subtract fifteen entries. The detector for the denominator is the
+        // per-fixture test above, where each pin carries its own "of N".
+        const pinned = Object.values(SUMMARY_COVERAGE_BY_FIXTURE).map((v) => {
+            const m = /^(\d+) of (\d+)$/.exec(v);
+            if (!m) throw new Error(`SUMMARY_COVERAGE_BY_FIXTURE entry is not "A of N": ${v}`);
+            return { absent: Number(m[1]), total: Number(m[2]) };
+        });
+        const sumAbsent = pinned.reduce((n, p) => n + p.absent, 0);
+        const sumTotal = pinned.reduce((n, p) => n + p.total, 0);
+
+        expect(`${sumAbsent} of ${sumTotal}`).toBe(
+            `${REQUIREMENTS_WITHOUT_SUMMARY_CEILING} of ${all.length}`,
+        );
+    });
+
     it('summaries are prose, not empty and not a bare restatement of the title', () => {
         // The repair strips a suffix. Stripping it down to nothing, or leaving
         // a summary that only repeats the title, would satisfy the rule above
