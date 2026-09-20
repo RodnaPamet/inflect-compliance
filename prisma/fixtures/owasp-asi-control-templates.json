@@ -1,8 +1,8 @@
 {
   "_meta": {
     "purpose": "OWASP Agentic AI Top 10 in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
-    "why": "Built inline in prisma/seed.ts, which is not run on production deploys. Production has never held this framework \u2014 not the framework row, not the templates, not the pack. Extracted from a database seeded by the inline block, so the shape is carried over exactly rather than re-derived from the grouping logic.",
-    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here \u2014 every template carries the generic five, as it did inline.",
+    "why": "Built inline in prisma/seed.ts, which is not run on production deploys. Production has never held this framework — not the framework row, not the templates, not the pack. Extracted from a database seeded by the inline block, so the shape is carried over exactly rather than re-derived from the grouping logic.",
+    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here — every template carries the generic five, as it did inline.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts"
   },
   "framework": {
@@ -10,7 +10,7 @@
     "name": "OWASP Agentic AI Top 10",
     "version": "1.0",
     "kind": "INDUSTRY_STANDARD",
-    "description": "The ten most critical security risks specific to AI systems that act \u2014 agents that plan, call tools, hold delegated identity and carry memory.",
+    "description": "The ten most critical security risks specific to AI systems that act — agents that plan, call tools, hold delegated identity and carry memory.",
     "sourceUrn": "urn:inflect:library:owasp-agentic-top10",
     "metadata": {
       "locale": "en",
@@ -18,7 +18,7 @@
       "packager": "inflect",
       "license": "CC-BY-SA-4.0",
       "sourceUrl": "https://genai.owasp.org/",
-      "copyright": "OWASP Agentic AI Top 10 \u00a9 OWASP Foundation / OWASP GenAI Security Project, licensed CC-BY-SA-4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Source: https://genai.owasp.org/. Inflect stores a reference index (canonical ASI identifiers + short risk titles) with its own governance summaries, not the verbatim OWASP risk prose."
+      "copyright": "OWASP Agentic AI Top 10 © OWASP Foundation / OWASP GenAI Security Project, licensed CC-BY-SA-4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Source: https://genai.owasp.org/. Inflect stores a reference index (canonical ASI identifiers + short risk titles) with its own governance summaries, not the verbatim OWASP risk prose."
     }
   },
   "requirements": [
@@ -36,7 +36,7 @@
       "section": "ASI02 Tool Misuse and Exploitation",
       "category": "OWASP Agentic AI Top 10",
       "sortOrder": 1,
-      "summary": "The agent invokes its authorised tools and APIs in unintended, unsafe or excessive ways \u2014 chained calls, injected parameters, destructive operations beyond what the task required."
+      "summary": "The agent invokes its authorised tools and APIs in unintended, unsafe or excessive ways — chained calls, injected parameters, destructive operations beyond what the task required."
     },
     {
       "code": "ASI03",
@@ -92,7 +92,7 @@
       "section": "ASI09 Human-Agent Trust Exploitation",
       "category": "OWASP Agentic AI Top 10",
       "sortOrder": 8,
-      "summary": "The agent's fluency, persona or apparent authority is used to manipulate people into approving actions, disclosing secrets or lowering scrutiny \u2014 including automation bias in approval workflows."
+      "summary": "The agent's fluency, persona or apparent authority is used to manipulate people into approving actions, disclosing secrets or lowering scrutiny — including automation bias in approval workflows."
     },
     {
       "code": "ASI10",
@@ -100,7 +100,7 @@
       "section": "ASI10 Rogue Agents",
       "category": "OWASP Agentic AI Top 10",
       "sortOrder": 9,
-      "summary": "Agents operate outside the sanctioned inventory or beyond their authorised scope, schedule or lifecycle \u2014 unregistered, orphaned after an owner leaves, or never decommissioned."
+      "summary": "Agents operate outside the sanctioned inventory or beyond their authorised scope, schedule or lifecycle — unregistered, orphaned after an owner leaves, or never decommissioned."
     }
   ],
   "templates": [
@@ -110,6 +110,9 @@
       "description": "Record the authorised objective of each deployed agent, establish which sources can reach its instruction channel, and treat untrusted content so that reaching the agent is not the same as instructing it.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure each deployed agent pursues only the objective it was authorised to pursue, and that content reaching its instruction channel cannot redirect it.",
+      "successCriteria": "Every agent in service has a recorded objective naming what it may pursue, what it must not do, and who is accountable.\nThe sources reaching each agent's instruction channel are enumerated, with those outside the organisation's control marked.\nEach untrusted source carries a recorded treatment that stops its content restating the agent's objective.\nRuns sampled in the period stayed within the recorded objective, or the deviation has a cause and an action recorded.",
+      "testingMethodology": "Evidence:\nObtain the objective statement for each deployed agent, with its prohibited actions and accountable owner.\nObtain the per-agent list of sources reaching the instruction channel, with the untrusted ones marked.\nGather the treatment recorded for each untrusted source, naming the change made, the date and who made it.\nAcquire the sampled agent run records for the period with the reviewer's finding on each.\n\nAnalysis:\nCompare the agents in service against the objective statements and identify any agent holding none.\nVerify that every source feeding an instruction channel appears on the list and is correctly marked.\nConfirm each untrusted source has a treatment in force, and test one to see that injected direction is not obeyed.\nRead the sampled runs against the recorded objective and check every deviation carries a cause and an action.\n\nOutput:\nA register of agents showing which hold a current authorised objective.\nA source-and-treatment table for each agent's instruction channel.\nA findings report on the sampled runs listing deviations, causes and actions taken.\nRecommendations where an objective no longer describes how the agent is now used.",
       "requirementCodes": [
         "ASI01"
       ],
@@ -130,7 +133,7 @@
             "en": "List the sources whose content reaches each agent's instruction channel"
           },
           "description": {
-            "en": "For each agent, enumerate everything that ends up in what the agent reads as direction \u2014 the requester's own words, retrieved documents, results returned by tools, file and message contents \u2014 and mark which of those sources the organisation does not control. Attach the per-agent list of sources with the untrusted ones identified."
+            "en": "For each agent, enumerate everything that ends up in what the agent reads as direction — the requester's own words, retrieved documents, results returned by tools, file and message contents — and mark which of those sources the organisation does not control. Attach the per-agent list of sources with the untrusted ones identified."
           },
           "phase": "SCOPE",
           "sortOrder": 1,
@@ -177,9 +180,12 @@
     {
       "code": "ASI-02",
       "title": "Tool Misuse and Exploitation",
-      "description": "List the tools each agent may invoke and what each one can actually do, bound every invocation, and withdraw the tools an agent's work does not require \u2014 so a compromised agent is limited by what it holds rather than by what it intends.",
+      "description": "List the tools each agent may invoke and what each one can actually do, bound every invocation, and withdraw the tools an agent's work does not require — so a compromised agent is limited by what it holds rather than by what it intends.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure an agent holds only the tools its work requires and that every invocation is bounded, so a compromised agent is limited by what it holds.",
+      "successCriteria": "Every agent has a current tool list naming each tool it may invoke, what that tool reads, changes or spends, and on which system.\nEach listed tool carries recorded limits on arguments, targets, size or value, and a stated outcome for a call exceeding them.\nTools an agent's recorded work does not require have been withdrawn, or retained with a reason and a named acceptor.\nInvocations in the period fell within the recorded limits, or were flagged with a disposition and follow-up recorded.",
+      "testingMethodology": "Evidence:\nObtain the per-agent tool list naming each tool's effect and the owner of every target system.\nObtain the limits recorded against each tool and what happens to a call that falls outside them.\nGather the record of tools withdrawn from each agent and the reasons for any surplus tool retained.\nAcquire the tool invocation records for the period with the calls flagged and the disposition of each.\n\nAnalysis:\nReconcile the tool list against the tools each agent can actually reach in the running configuration.\nTest a sample of limits by attempting a call beyond the permitted argument, target, value or count.\nCheck that each withdrawal took effect and that every retained surplus tool names who accepted it.\nExamine flagged and refused calls for the disposition reached and the follow-up raised on real misuse.\n\nOutput:\nA per-agent tool inventory showing effect, target system and recorded limits.\nA table of withdrawals and of surplus tools retained, with their acceptors.\nA findings report on the period's invocations listing breaches, refusals and follow-up.\nRecommendations where a limit blocked legitimate work or caught nothing it should have.",
       "requirementCodes": [
         "ASI02"
       ],
@@ -200,7 +206,7 @@
             "en": "Record the limits placed on each tool an agent may invoke"
           },
           "description": {
-            "en": "For every entry on the tool list, write down what constrains a call \u2014 which arguments are permitted, which targets are in range, what size, value or count a call may not exceed \u2014 and what happens to a call that falls outside those limits. Attach the limits record against each tool."
+            "en": "For every entry on the tool list, write down what constrains a call — which arguments are permitted, which targets are in range, what size, value or count a call may not exceed — and what happens to a call that falls outside those limits. Attach the limits record against each tool."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -222,12 +228,12 @@
             "en": "Examine the tool invocations recorded in the period against the agreed limits"
           },
           "description": {
-            "en": "Go through the invocations agents made during the period and pick out calls that breached a recorded limit, targeted a system not on the tool list, or were refused. For each such call record what was decided about it and, where the call indicates a real attempt at misuse, the follow-up raised \u2014 wherever the organisation records follow-up. Where the period's invocations produced nothing outside the limits, record the invocations examined and that none breached a recorded limit."
+            "en": "Go through the invocations agents made during the period and pick out calls that breached a recorded limit, targeted a system not on the tool list, or were refused. For each such call record what was decided about it and, where the call indicates a real attempt at misuse, the follow-up raised — wherever the organisation records follow-up. Where the period's invocations produced nothing outside the limits, record the invocations examined and that none breached a recorded limit."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
           "evidenceHint": {
-            "en": "The invocation records examined for the period, the calls flagged with the disposition reached and the follow-up raised for each \u2014 or, where nothing was flagged, the records examined and the statement that no call fell outside the recorded limits."
+            "en": "The invocation records examined for the period, the calls flagged with the disposition reached and the follow-up raised for each — or, where nothing was flagged, the records examined and the statement that no call fell outside the recorded limits."
           },
           "suggestedRole": "Security engineering"
         },
@@ -236,7 +242,7 @@
             "en": "Reassess the tool limits against the calls that were refused or flagged"
           },
           "description": {
-            "en": "Using the flagged and refused calls, judge for each limit whether it sits where it should \u2014 too tight and it is blocking legitimate work, too loose and it caught nothing it should have. Record the limits changed, the reasoning, and who approved each change."
+            "en": "Using the flagged and refused calls, judge for each limit whether it sits where it should — too tight and it is blocking legitimate work, too loose and it caught nothing it should have. Record the limits changed, the reasoning, and who approved each change."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -250,6 +256,9 @@
       "description": "Give each agent an identity of its own carrying its own rights, record how an action taken on a person's behalf is attributed to both, and control how agent credentials are issued, held and withdrawn.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure each agent authenticates as itself carrying its own rights, so that an action can be attributed to the agent and to the person on whose behalf it was taken.",
+      "successCriteria": "Every agent has an identity of its own on each system it reaches, with the rights it holds and its accountable owner recorded.\nActions taken for a person are attributed to both the agent and the requester in the target system's record.\nEach agent credential has a recorded issuer, holding place, withdrawal trigger and the person who performs the withdrawal.\nAgents retired in the period hold no working access, and the rights systems now grant match those on the register.",
+      "testingMethodology": "Evidence:\nObtain the register of agent identities with the rights each holds on every system it reaches.\nObtain the record of how an action taken for a person is attributed to both agent and requester.\nGather the issuance, holding and withdrawal record for each agent credential.\nAcquire the identity withdrawals made for retired agents with the confirmation from each target system.\n\nAnalysis:\nIdentify agents authenticating as a person or sharing an identity with another agent.\nTrace a sample of on-behalf-of actions through the target system's records to confirm both parties appear.\nVerify each credential's secret is held where recorded and reachable only by those named.\nRead back the rights each system now grants and list those the register or the agent's work does not justify.\n\nOutput:\nAn identity register annotated with shared, borrowed and unattributable identities.\nAn attribution test report for the sampled on-behalf-of actions.\nA list of retired agents with confirmation that their access no longer works.\nA rights-difference report with the reductions raised and the exceptions accepted.",
       "requirementCodes": [
         "ASI03"
       ],
@@ -320,6 +329,9 @@
       "description": "Inventory the externally supplied components each agent depends on, record what was established about each before it was adopted, and know by what route a change to one reaches the organisation.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure the externally supplied models, integrations, packs and third-party agents an agent depends on are known, assessed before adoption, and watched for change.",
+      "successCriteria": "Every agent's externally supplied components are listed with the supplier and the version in use for each.\nEach component carries an acceptance record of what was established about its origin and fitness, and who accepted it.\nEach supplier has a recorded route by which a new version, defect or withdrawal reaches a named recipient.\nChanges received in the period were assessed and decided as adopt, defer or refuse before entering service.",
+      "testingMethodology": "Evidence:\nObtain the per-agent list of supplied models, tool integrations, prompt or skill packs and third-party agents.\nObtain the acceptance record for each component naming what was examined and who accepted it.\nGather the notification route recorded for each supplier and the person who receives the notice.\nAcquire the component changes received in the period with the assessment, decision, decider and date.\n\nAnalysis:\nCompare the suppliers and versions recorded against what the agents in service are actually running.\nIdentify components in use carrying no acceptance record and list them for retrospective assessment.\nCheck each supplier for a working notification route and name those for which none exists.\nVerify that every change taken into service was assessed and decided before it was adopted.\n\nOutput:\nA component inventory per agent with supplier, version and acceptance status.\nA supplier notification map showing recipients and the gaps between them.\nA change log for the period with each decision, its decider and its effective date.\nA reconciliation report listing unassessed versions and dependencies absent from the list.",
       "requirementCodes": [
         "ASI04"
       ],
@@ -340,7 +352,7 @@
             "en": "Record what was established about each component before it was adopted"
           },
           "description": {
-            "en": "For every entry on the component list, write down what the organisation determined about its origin and fitness before putting it into service \u2014 where it came from, how it was obtained, what was examined \u2014 and who accepted it on that basis. Attach the acceptance record; components already in use with no such record are listed for retrospective assessment."
+            "en": "For every entry on the component list, write down what the organisation determined about its origin and fitness before putting it into service — where it came from, how it was obtained, what was examined — and who accepted it on that basis. Attach the acceptance record; components already in use with no such record are listed for retrospective assessment."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -362,7 +374,7 @@
             "en": "Assess each component change received before it is taken into service"
           },
           "description": {
-            "en": "For every new version, defect notice or withdrawal received during the period, record what was assessed about it and the decision reached \u2014 adopt, defer, or refuse and replace. Record the person who decided and the date the decision took effect."
+            "en": "For every new version, defect notice or withdrawal received during the period, record what was assessed about it and the decision reached — adopt, defer, or refuse and replace. Record the person who decided and the date the decision took effect."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -376,7 +388,7 @@
             "en": "Reconcile the component list against what the agents are running"
           },
           "description": {
-            "en": "Compare the suppliers and versions recorded on the list with the components the agents in service are actually using. Record every discrepancy \u2014 a version in use that was never assessed, a listed component no longer present, an agent depending on something absent from the list \u2014 and raise the correction for each."
+            "en": "Compare the suppliers and versions recorded on the list with the components the agents in service are actually using. Record every discrepancy — a version in use that was never assessed, a listed component no longer present, an agent depending on something absent from the list — and raise the correction for each."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -390,6 +402,9 @@
       "description": "Identify where an agent's output is executed rather than read, establish what each executing environment can reach, and reduce that reach to what the work requires.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure every point at which an agent's output is executed rather than read is known, given a stated boundary, and reduced to the reach the work actually requires.",
+      "successCriteria": "Every point at which an agent's output is run rather than presented is listed, with the executing system and its owner.\nEach execution point carries a stated boundary: the data, networks and accounts it can reach and what it cannot.\nReach beyond what the agent's work requires has been removed, or retained with a reason and a named acceptor.\nExecutions that failed, were refused or reached past the boundary were reviewed with a cause and an action recorded.",
+      "testingMethodology": "Evidence:\nObtain the list of execution points per agent naming the system that runs the output and its owner.\nObtain the boundary recorded for each point: the data, networks and accounts available to it.\nGather the record of reach removed at each point with dates, and of any reach deliberately retained.\nAcquire the execution records for the period with the notes on failed, refused and out-of-boundary runs.\n\nAnalysis:\nTrace each agent's outputs downstream to find execution points absent from the list.\nTest a sample of boundaries by reaching from the executing environment for a resource recorded as out of scope.\nConfirm each reduction took effect and that retained reach names the person who accepted it.\nExamine out-of-boundary executions for cause and check the action taken closed the route.\n\nOutput:\nAn inventory of execution points with executing system, owner and stated boundary.\nA boundary test report for the sampled executing environments.\nA findings report on the period's failed, refused and out-of-boundary executions.\nRecommendations on outputs that could be delivered for a person to act on rather than executed.",
       "requirementCodes": [
         "ASI05"
       ],
@@ -399,7 +414,7 @@
             "en": "Identify where an agent's output is executed rather than read"
           },
           "description": {
-            "en": "Go through each agent and record every point at which what it produces is run rather than presented to a person \u2014 code, queries, commands, or configuration applied to a system \u2014 naming the system that executes it and the person who owns that system. Attach the list of execution points per agent."
+            "en": "Go through each agent and record every point at which what it produces is run rather than presented to a person — code, queries, commands, or configuration applied to a system — naming the system that executes it and the person who owns that system. Attach the list of execution points per agent."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -460,6 +475,9 @@
       "description": "Catalogue what each agent retains between runs, control who or what may write to those stores, hold the origin alongside every entry, and purge what cannot be accounted for.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure what an agent carries between runs is catalogued, written only by known sources, traceable to its origin, and removable when an entry cannot be accounted for.",
+      "successCriteria": "Every store read back into a later run is catalogued per agent, with where it is held and how long entries persist.\nThe people, systems and agents able to write to each store are recorded, with the uncontrolled sources marked.\nEntries carry an origin showing where they came from and when they arrived, or the store is named as holding none.\nEntries found wrong or untrusted in the period were removed from the store and anything derived from it.",
+      "testingMethodology": "Evidence:\nObtain the catalogue of retained stores per agent with the location and retention of each.\nObtain the record of who or what may write to each store, with uncontrolled sources marked.\nGather the origin held alongside entries and the list of stores whose entries carry none.\nAcquire the purge records for the period, or the dated record of stores checked where nothing required removal.\n\nAnalysis:\nConfirm the catalogue covers every store read back into a later run, indexes and caches included.\nCheck the recorded writers against the write access the stores actually grant.\nSample entries from each store and trace each to a source recorded as able to write there.\nVerify purged entries are gone from derived indexes and that the agent no longer returns the content.\n\nOutput:\nA catalogue of retained stores with writers, retention and origin coverage.\nA sampling report listing entries with missing or inconsistent origin.\nA purge record for the period with the authorisation and confirmation for each removal.\nRecommendations for stores writable by sources the organisation does not control.",
       "requirementCodes": [
         "ASI06"
       ],
@@ -469,7 +487,7 @@
             "en": "Catalogue what each agent retains between runs"
           },
           "description": {
-            "en": "For every agent, record each store whose contents are read back into a later run \u2014 prior conversations, notes the agent wrote for itself, indexed documents, cached results \u2014 with where it is held and how long entries persist. Attach the catalogue of stores per agent."
+            "en": "For every agent, record each store whose contents are read back into a later run — prior conversations, notes the agent wrote for itself, indexed documents, cached results — with where it is held and how long entries persist. Attach the catalogue of stores per agent."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -502,12 +520,12 @@
             "en": "Purge the retained entries identified in the period as wrong or untrusted"
           },
           "description": {
-            "en": "At least once in the period, assemble the entries identified as having come from an untrusted source or as being incorrect \u2014 those raised by the origin review, by reports of an agent returning wrong content, and by any incident touching a store \u2014 then remove each from its store and from anything derived from it, and confirm the agent no longer returns it. Record what was removed, from which store and on whose authority. Where the period identified no such entry, record the stores checked, the routes of identification consulted, and that nothing required removal."
+            "en": "At least once in the period, assemble the entries identified as having come from an untrusted source or as being incorrect — those raised by the origin review, by reports of an agent returning wrong content, and by any incident touching a store — then remove each from its store and from anything derived from it, and confirm the agent no longer returns it. Record what was removed, from which store and on whose authority. Where the period identified no such entry, record the stores checked, the routes of identification consulted, and that nothing required removal."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
           "evidenceHint": {
-            "en": "For the period, the removals made \u2014 the entry, the store, the person who authorised it and confirmation the agent no longer returns the content \u2014 or, where nothing was identified, the dated record of the stores checked, the routes consulted and the statement that no entry required removal."
+            "en": "For the period, the removals made — the entry, the store, the person who authorised it and confirmation the agent no longer returns the content — or, where nothing was identified, the dated record of the stores checked, the routes consulted and the statement that no entry required removal."
           },
           "suggestedRole": "IT Operations"
         },
@@ -530,6 +548,9 @@
       "description": "Map the exchanges between agents and the parties at each end, establish how each end proves who it is exchanging with, and protect the exchange in transit between them.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure exchanges between agents are mapped, that each end can establish who it is exchanging with, and that a message is protected between sender and receiver.",
+      "successCriteria": "Every path on which one agent passes work, results or direction to another is mapped, with both ends and the far party named.\nEach path records what the receiver relies on to accept the sender's identity, and what the sender relies on in return.\nEach path records what protects a message in transit and what the receiver does with one arriving without it.\nRefused and unattributed exchanges in the period were classified as fault or injection attempt and acted on.",
+      "testingMethodology": "Evidence:\nObtain the exchange map naming both ends of every path, what the message carries, and any far end outside the organisation.\nObtain the record of how each end establishes the identity of the other, with the unauthenticated paths named.\nGather the record of how each exchange is protected and what happens to a message failing that protection.\nAcquire the refused and unattributed exchanges for the period with the cause and classification of each.\n\nAnalysis:\nCompare the paths used in the period's traffic against the paths on the map.\nTest a sample of paths by presenting a message from an unrecognised sender and observing the receiver.\nVerify protection in transit on each path and confirm a message failing it is rejected rather than acted on.\nSeparate configuration faults from attempts to inject a message into a chain and check the action taken.\n\nOutput:\nAn exchange map annotated with the identity basis and transit protection of each path.\nA test report on sender acceptance and rejection behaviour at each end.\nA findings report classifying the period's refused and unattributed exchanges.\nA reconciliation listing unmapped paths in use and mapped paths fallen out of use.",
       "requirementCodes": [
         "ASI07"
       ],
@@ -600,6 +621,9 @@
       "description": "Trace the chains in which one agent's output drives a further action, bound how far each may run before it halts, and record who can halt it and when they are available to.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure a chain in which one agent's output drives a further action cannot run past an agreed bound, and can be halted by a named person available to do it.",
+      "successCriteria": "Every chain in which an agent's output drives a further action is traced, with the longest unattended stretch marked.\nEach chain carries a recorded ceiling in actions, volume, spend or elapsed time past which it halts rather than continues.\nThe means of halting each chain, who may invoke it and when they are available are recorded, with the state a halt leaves.\nA halt was exercised on a live chain in the period, with the elapsed time, the residue and any faulty step recorded.",
+      "testingMethodology": "Evidence:\nObtain the chain descriptions showing what consumes each agent's output and the longest unattended stretch.\nObtain the bound recorded for each chain, who set it and on what basis.\nGather the halt procedure per chain with the named people, their hours and the residue a halt leaves behind.\nAcquire the record of the halt exercised on a live chain during the period.\n\nAnalysis:\nFollow a single input through each chain to confirm the traced path and where a person first sees it.\nCheck each bound is enforced by the running system rather than only recorded, and observe a chain meeting it.\nIdentify hours in which nobody named can halt a chain and confirm what holds the chain in the meantime.\nRead the exercise record for elapsed time, completeness of the stop and steps that did not work as written.\n\nOutput:\nA chain map with bounds, halt means, named responders and their availability.\nA test report on bound enforcement and on the halt exercised.\nA list of unattended hours with the compensating arrangement for each.\nRecommendations where a bound was never approached or where it halted legitimate work.",
       "requirementCodes": [
         "ASI08"
       ],
@@ -609,7 +633,7 @@
             "en": "Trace the chains in which one agent's output drives a further action"
           },
           "description": {
-            "en": "For each agent, record what consumes its output \u2014 another agent, a change to a system, a message sent onward \u2014 and how far a single input can travel before a person sees it. Attach the chain descriptions with the longest unattended stretch marked on each."
+            "en": "For each agent, record what consumes its output — another agent, a change to a system, a message sent onward — and how far a single input can travel before a person sees it. Attach the chain descriptions with the longest unattended stretch marked on each."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -620,7 +644,7 @@
             "en": "Set a bound on how far each chain may run before it halts"
           },
           "description": {
-            "en": "For each chain, agree and record the ceiling past which it stops rather than continues \u2014 a count of actions, a volume changed, an amount spent, an elapsed duration, or a combination. Record who set each bound and on what basis, and attach it against the chain."
+            "en": "For each chain, agree and record the ceiling past which it stops rather than continues — a count of actions, a volume changed, an amount spent, an elapsed duration, or a combination. Record who set each bound and on what basis, and attach it against the chain."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -631,7 +655,7 @@
             "en": "Record how each chain is halted, who may halt it and when they are available"
           },
           "description": {
-            "en": "For each chain on the map, state the means by which it is stopped mid-flight, name the people able to invoke that means, and record the hours during which each of them is available. Where nobody is available at some hours, record that plainly and state what holds the chain in the meantime \u2014 the bound recorded for it, or a rule that the chain does not run unattended at those hours. Describe as well the state left behind when a chain stops part-way. Attach the record against each chain so the means, the named people, their availability and the residue are all known in advance."
+            "en": "For each chain on the map, state the means by which it is stopped mid-flight, name the people able to invoke that means, and record the hours during which each of them is available. Where nobody is available at some hours, record that plainly and state what holds the chain in the meantime — the bound recorded for it, or a rule that the chain does not run unattended at those hours. Describe as well the state left behind when a chain stops part-way. Attach the record against each chain so the means, the named people, their availability and the residue are all known in advance."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -670,6 +694,9 @@
       "description": "Identify the points at which an agent addresses a person, disclose on each channel that the counterparty is an agent, and record which decisions may not rest on an agent's output alone.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure a person dealing with an agent knows it is an agent, and that decisions needing human judgement are not left resting on an agent's output alone.",
+      "successCriteria": "Every point at which an agent addresses a person is listed with the audience and the channel used.\nEach channel carries agreed disclosure that the counterparty is an agent, or a recorded acceptance that none is needed.\nThe decisions that may not rest on agent output alone are named, with the person who must judge and what they are given.\nStaff acting on agent requests have been briefed on what to refuse, and each report raised carries a finding and an answer.",
+      "testingMethodology": "Evidence:\nObtain the list of points at which each agent addresses a person, with audience, channel and current disclosure.\nObtain the disclosure wording in use on each channel and the acceptance for any channel carrying none.\nGather the record of decisions that may not rest on agent output alone and who must judge each.\nAcquire the briefing records and the reports of suspicious agent requests received in the period.\n\nAnalysis:\nObserve a live exchange on each channel to confirm the disclosure appears where it is recorded to appear.\nSet the decisions named as needing judgement against what these agents can actually set in motion.\nConfirm the briefed population covers the staff who receive requests originating from an agent.\nRead each report for the finding on where the request originated, the action taken and the answer given.\n\nOutput:\nA channel inventory showing disclosure wording and any accepted exceptions.\nA list of decisions reserved for human judgement with the person accountable for each.\nA briefing coverage report for the staff who act on agent requests.\nA findings report on the period's reports, naming any left unanswered.",
       "requirementCodes": [
         "ASI09"
       ],
@@ -679,7 +706,7 @@
             "en": "List the points at which an agent addresses a person"
           },
           "description": {
-            "en": "For each agent, record every audience it communicates with \u2014 staff, customers, suppliers \u2014 the channel used, and whether the person on the other end can currently tell they are dealing with an agent. Attach the list with the channels lacking that disclosure marked."
+            "en": "For each agent, record every audience it communicates with — staff, customers, suppliers — the channel used, and whether the person on the other end can currently tell they are dealing with an agent. Attach the list with the channels lacking that disclosure marked."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -740,6 +767,9 @@
       "description": "Register every agent approved to operate with its owner and its approver, require that approval before one starts, and search for agents running without an entry on the register.",
       "category": "OWASP Agentic AI Top 10",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure no agent operates without approval, by registering each approved agent with its owner and approver and searching out those running with no entry.",
+      "successCriteria": "Every approved agent appears on the register with its purpose, its accountable owner and the person who approved it.\nThe approval route is recorded, naming who may approve, what they are shown, and where the approval is kept.\nA search for agents running without a register entry was performed in the period across the places an agent could run.\nEach agent found unapproved was stopped with its access withdrawn, or approved retrospectively by a named person.",
+      "testingMethodology": "Evidence:\nObtain the register of approved agents with the purpose, owner and approver of each.\nObtain the approval route, including the routes by which an agent could reach production without passing through it.\nGather the search performed in the period, the places examined and the agents found.\nAcquire the decommissioning records for the agents found operating without approval.\n\nAnalysis:\nCompare the agents the search found against the register and list every unmatched one.\nTest the reach of the search against the platforms, accounts and runtimes on which an agent could run.\nVerify each approval on the register was granted by someone entitled to grant it and is retrievable.\nConfirm stopped agents are no longer running and that their credentials and access were withdrawn.\n\nOutput:\nA register of approved agents with owners and approvers.\nA search coverage report naming the places examined and those not reached.\nA disposition list for unmatched agents: stopped, or approved retrospectively and by whom.\nRecommendations closing the routes by which an agent reached production unregistered.",
       "requirementCodes": [
         "ASI10"
       ],
@@ -785,7 +815,7 @@
             "en": "Decommission the agents found operating without approval"
           },
           "description": {
-            "en": "Stop each unapproved agent identified, remove the access and credentials it held, and confirm it is no longer running. Record the removal, or \u2014 where the agent is judged legitimate \u2014 the approval granted retrospectively and by whom."
+            "en": "Stop each unapproved agent identified, remove the access and credentials it held, and confirm it is no longer running. Record the removal, or — where the agent is judged legitimate — the approval granted retrospectively and by whom."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -799,7 +829,7 @@
             "en": "Reassess the approval route against the agents found unregistered"
           },
           "description": {
-            "en": "Using the period's findings, establish why each unregistered agent escaped the register \u2014 a gap in the approval route, an owner who left, a path into production that bypasses approval \u2014 and record the changes agreed to close each gap."
+            "en": "Using the period's findings, establish why each unregistered agent escaped the register — a gap in the approval route, an owner who left, a path into production that bypasses approval — and record the changes agreed to close each gap."
           },
           "phase": "REVIEW",
           "sortOrder": 4,

@@ -340,6 +340,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure every processing activity is tied to a stated purpose and to a lawful basis that has been reasoned, recorded and re-confirmed as circumstances change.",
+      "successCriteria": "Every PII category in the inventory is matched to a specific purpose it is processed for.\nEach purpose carries a recorded lawful basis and the reasoning relied on when that basis was chosen.\nActivities added or amended during the period appear in the register with the date and the person who reported them.\nBases found on review no longer to hold have been amended and the processing they cover changed accordingly.",
+      "testingMethodology": "Evidence:\nObtain the dated purpose inventory listing each PII category against the purposes it is processed for.\nObtain the lawful-basis record showing the basis and the recorded reasoning for each purpose.\nExport the purpose and lawful-basis register for the period together with its change log.\nObtain the register review record showing the outcome reached against every row.\n\nAnalysis:\nTrace a sample of PII categories from the inventory to the purposes claimed for them and identify categories left without one.\nTest that the basis recorded for each sampled purpose is supported by the reasoning written beside it rather than merely asserted.\nCompare the change log against processing known to have started or changed in the period and name activities that never reached the register.\nCheck that rows the review marked as no longer holding were amended, and that the processing they cover moved with them.\n\nOutput:\nA schedule of purposes with the lawful basis and the reasoning recorded for each.\nA list of processing activities found operating without a register entry.\nA summary of review outcomes, the amendments made and the bases still unresolved.",
       "requirementCodes": [
         "7.2.1",
         "7.2.2"
@@ -432,6 +435,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure individuals agree to each purpose separately, that their agreement is evidenced as given, and that withdrawing it stops the processing it permitted.",
+      "successCriteria": "Each collection point relying on consent offers its purposes separately rather than bundled into one acceptance.\nA withdrawal route is available to the individual and the change propagates to every downstream system.\nEvery consent given, changed or withdrawn is recorded with subject, purposes, wording version and timestamp.\nProcessing sampled against the consent records is limited to the purposes the individual agreed to.",
+      "testingMethodology": "Evidence:\nObtain the consent collection-point list with the purposes covered at each point.\nCapture each consent surface as presented, showing the per-purpose choices and the wording offered.\nObtain the withdrawal route documentation naming the systems the change propagates to.\nExport the consent record log for the period, one row per consent event.\nObtain the consent sample test showing the records examined against the processing compared.\n\nAnalysis:\nCheck each captured surface against the collection-point list and confirm the purposes are offered as separate choices, none pre-selected.\nExercise the withdrawal route for a test subject and time how long the change takes to reach each named downstream system.\nTrace sampled consent records to the processing that followed and identify purposes processed beyond what was agreed.\nConfirm the wording version stored on each sampled record matches the text presented on the surface at that date.\n\nOutput:\nA register of consent surfaces with the purposes and wording each presents.\nTiming results for withdrawal propagation across the named downstream systems.\nA list of processing found outside the consent given, with the correction applied to each.",
       "requirementCodes": [
         "7.2.3",
         "7.2.4",
@@ -583,6 +589,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure new or changed processing is screened at the point it enters the organisation, so that high-risk cases are assessed and their risks mitigated before go-live.",
+      "successCriteria": "Every route by which new or changed processing enters the organisation has screening attached at a defined point.\nThe screening questions yield a recorded assessment-required decision rather than leaving it to judgement.\nNo high-risk processing reached go-live without a completed and dated assessment preceding it.\nMitigations committed in an assessment carry an owner and a due date and are tracked until closing evidence exists.",
+      "testingMethodology": "Evidence:\nObtain the list of intake routes for new or changed processing and the point at which screening attaches to each.\nObtain the screening question set and the mapping from answers to the assessment-required decision.\nCollect the completed privacy impact assessments for the period with the go-live dates they preceded.\nExport the assessment action tracker covering mitigations, owners, due dates and closing evidence.\nObtain the screening coverage comparison for everything initiated during the period.\n\nAnalysis:\nWalk a sample of initiatives from each intake route and confirm screening was applied at the stated point rather than after build.\nApply the screening questions to known high-risk and low-risk cases and check the mapping returns the decision expected.\nCompare each assessment date with the go-live date of the processing it covers to find assessments completed after the fact.\nTest tracker items marked closed against the closing evidence held for them, and age the items still open.\n\nOutput:\nA coverage table of intake routes against the screening actually applied.\nA schedule of assessments with their dates set beside the go-live dates they preceded.\nAn ageing of open mitigations with owners, and the evidence supporting those marked closed.",
       "requirementCodes": [
         "7.2.5"
       ],
@@ -732,6 +741,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure the organisation can show, activity by activity, which PII it processes for its own purposes and which it processes on a customer's written instruction.",
+      "successCriteria": "Each processing activity is classified as controller, processor or both, with the reasoning recorded.\nController entries name the PII and individual categories held, the recipients and the storage locations.\nProcessor entries identify the customer whose instruction the processing rests on.\nChanges of recipient, data category or customer instruction appear in the records with the date they took effect.",
+      "testingMethodology": "Evidence:\nObtain the role determination listing each activity as controller, processor or both with its reasoning.\nObtain the controller section of the records of processing with categories, recipients and storage locations.\nObtain the processor section showing each activity against the customer that instructed it.\nExport the records of processing for the period together with the change log.\nObtain the reconciliation of the records against the live systems and vendors holding PII.\n\nAnalysis:\nTest a sample of role determinations against the contracts and instructions governing them to confirm the classification is supportable.\nTrace controller entries to the systems named and check the recipients listed match the integrations and exports actually configured.\nCheck that every customer-instructed activity names its instructing customer and is not recorded as the organisation's own processing.\nCompare the reconciliation findings with the change log to see whether the discrepancies were carried back into the records.\n\nOutput:\nA classification table of activities by role with the supporting instrument for each.\nA discrepancy list of recipients and storage locations found in systems but absent from the records.\nA statement of reconciliation differences and how each was resolved.",
       "requirementCodes": [
         "7.2.8",
         "8.2.6"
@@ -865,6 +877,9 @@
       "category": "Security",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure an individual exercising a right reaches a monitored channel, has their identity checked, and receives a complete answer within the time the law allows.",
+      "successCriteria": "Each of the access, correction, erasure, objection and copy request types maps to the systems involved and a named team.\nThe published intake channel is monitored under a written arrangement rather than left as an unwatched mailbox.\nNo request was actioned before the requester passed the identity check defined for the route it arrived on.\nEvery request closed in the period has a recorded receipt and response date, and overruns carry a stated cause.",
+      "testingMethodology": "Evidence:\nObtain the request-type map naming the systems and the responsible team for each right.\nObtain the published intake channel and the written monitoring arrangement covering it.\nObtain the identity verification procedure for the authenticated and unauthenticated request routes.\nExport the data-subject request log for the period with verification outcomes and response dates.\nObtain the timeliness analysis showing receipt-to-response time per request.\n\nAnalysis:\nSubmit a test request through the published channel and confirm it reaches the team the map names.\nTake a sample of fulfilled requests and check the response covered every system the map associates with that request type.\nTest that the verification outcome recorded on each sampled request matches the evidence the procedure demands for its route.\nRecompute elapsed times from the logged receipt and response dates and examine the cause recorded against each overrun.\n\nOutput:\nA coverage map of request types against systems and responsible teams.\nA sample results table showing the verification evidence and the systems searched per request.\nA timeliness summary listing every overrun with its recorded cause.",
       "requirementCodes": [
         "7.3.5",
         "7.3.6",
@@ -995,6 +1010,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure individuals learn in plain terms what will be done with their PII, at the moment it is collected from them and whenever the purposes behind it change.",
+      "successCriteria": "Every purpose in the register has a passage of the privacy notice that describes it.\nEach screen and form that collects PII presents the privacy information at the point of collection.\nNotice versions carry an effective date and the reason for the change, and superseded text is retained.\nThe published notice contains no statement the purpose register contradicts.",
+      "testingMethodology": "Evidence:\nObtain the mapping from each processing purpose to the privacy information the individual receives about it.\nObtain the privacy notice draft with the passage covering each mapped purpose marked.\nCollect captures of every PII collection surface showing what is presented at the point of collection.\nObtain the notice version history for the period with effective dates, changes and the superseded text.\nObtain the comparison of the published notice against the purpose register.\n\nAnalysis:\nCheck each purpose in the register against its marked notice passage and list the purposes the notice leaves undescribed.\nInspect the collection captures for surfaces that take PII with no privacy information shown, or only a link reachable after submission.\nTest that the version in force on a chosen date describes the processing that was actually running on that date.\nRead the notice statements against the register entries and flag descriptions that are stale or broader than the recorded purpose.\n\nOutput:\nA purpose-to-notice coverage table naming the purposes left undescribed.\nA list of collection surfaces missing privacy information at the point of collection.\nA version history extract marking the statements found inconsistent with the register.",
       "requirementCodes": [
         "7.3.2",
         "7.3.3"
@@ -1122,6 +1140,10 @@
       "description": "Implements 7.4.1: only PII that is adequate, relevant and necessary for an identified purpose is collected, and fields no purpose needs are removed from the collection surface.",
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Data Owner",
+      "objective": "To ensure a collection point asks only for the fields an identified purpose needs, and that fields nothing needs are taken out rather than left dormant in the payload.",
+      "successCriteria": "Every PII field captured at a collection point names the purpose it serves.\nFields no purpose needs have been removed from the form and from the stored payload, not merely hidden from view.\nAny flagged field kept in place carries a written justification naming the purpose that needs it.\nFields introduced by a release reach the field inventory with a stated purpose before they collect data.",
+      "testingMethodology": "Evidence:\nObtain the field-level collection inventory giving the purpose served by each PII field.\nObtain the change record listing every field removed and the systems cleared of it.\nObtain the justifications recorded for flagged fields that were retained.\nCollect the post-release comparison of captured fields against the purpose register.\n\nAnalysis:\nSubmit a test entry at a sample of collection points and compare the fields captured in the payload with those shown on the form.\nQuery the stores behind those collection points for the removed fields to confirm the data is gone rather than hidden at the interface.\nRead each retention justification against the purpose it claims and challenge those resting on possible future use.\nCompare the fields present after the most recent release with the inventory and name any that arrived without a stated purpose.\n\nOutput:\nA field inventory annotated with the purpose relied on for each field.\nPayload captures evidencing the removal of the fields no purpose needs.\nA list of post-release field additions lacking a recorded purpose.",
       "requirementCodes": [
         "7.4.1"
       ],
@@ -1190,8 +1212,7 @@
           "suggestedRole": "Engineering lead",
           "sortOrder": 2
         }
-      ],
-      "defaultOwnerHint": "Data Owner"
+      ]
     },
     {
       "code": "PIMS-07.2",
@@ -1199,6 +1220,10 @@
       "description": "Implements 7.4.4: measurable objectives for reducing the PII processed are set, tracked and reported against.",
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Data Owner",
+      "objective": "To ensure holding less PII is pursued as a measured commitment with baselines, targets and reported movement, rather than as an intention nobody can check.",
+      "successCriteria": "A dated baseline records the volume of PII held in each category and the systems holding it.\nEach minimization objective names the measure it is tracked by and the baseline figure it starts from.\nThe period report states every measure against its target, not only those that improved.\nMeasures that moved away from their target carry a recorded cause.",
+      "testingMethodology": "Evidence:\nObtain the dated baseline measurement of PII held per category with the holding systems named.\nObtain the minimization objectives with the measure and baseline figure recorded for each.\nObtain the period report of each measure against its baseline and target.\nCollect the causes recorded for measures that moved adversely.\n\nAnalysis:\nReproduce a sample of baseline figures by querying the systems named and compare the counts with those recorded.\nCheck that each objective's measure can be recomputed from data the organisation holds rather than estimated by hand.\nCompare the measures reported this period against the full objective list to find any quietly dropped between periods.\nAssess whether each adverse movement has a cause identifying a change in processing rather than a change in how it was measured.\n\nOutput:\nA reconciliation of the reported baselines against the recomputed figures.\nA table of objectives with the movement reported against target for the period.\nA list of objectives reported without a measure, or dropped since the baseline was set.",
       "requirementCodes": [
         "7.4.4"
       ],
@@ -1245,8 +1270,7 @@
           "suggestedRole": "Legal/DPO",
           "sortOrder": 2
         }
-      ],
-      "defaultOwnerHint": "Data Owner"
+      ]
     },
     {
       "code": "PIMS-07.3",
@@ -1254,6 +1278,10 @@
       "description": "Implements 7.4.5: when the purpose a set of PII was collected for ends, that PII is de-identified or deleted — driven by the purpose ending, not by a clock.",
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Data Owner",
+      "objective": "To ensure PII stops being identifiable once the purpose it was collected for has ended, driven by that ending as a signal the systems can read for themselves.",
+      "successCriteria": "Each purpose names the event that ends it and the system field or signal that event can be read from.\nPurposes with no readable end-of-processing trigger are flagged rather than left to run on indefinitely.\nEvery system holding PII for a purpose is connected to that purpose's end signal.\nRun logs show what was de-identified or deleted, in which systems, and the reason for each exception.",
+      "testingMethodology": "Evidence:\nObtain the per-purpose list of end-of-processing events with the field or signal recording each.\nObtain the mapping of each purpose-end signal to the systems it triggers de-identification in.\nObtain the list of holding systems recorded as not yet connected to a signal.\nExport the de-identification and deletion run log for the period with volumes and exceptions.\n\nAnalysis:\nTake a sample of purposes that ended in the period and confirm the signal fired when the underlying event occurred, not on a later sweep.\nFollow each fired signal into the systems the mapping names and check the records there were de-identified or removed.\nSearch a system outside the mapping for records belonging to an ended purpose, to test whether unconnected holdings keep identifiable data.\nReview each logged exception for a reason naming the obstacle and the date it is expected to clear.\n\nOutput:\nA purpose-to-signal table showing where each end event is read from.\nPer-system results for the sampled ended purposes, naming records still identifiable.\nAn exception schedule with the obstacle and the expected resolution for each.",
       "requirementCodes": [
         "7.4.5"
       ],
@@ -1327,8 +1355,7 @@
             }
           ]
         }
-      ],
-      "defaultOwnerHint": "Data Owner"
+      ]
     },
     {
       "code": "PIMS-07.4",
@@ -1336,6 +1363,10 @@
       "description": "Implements 7.4.7: each category of PII carries a defined retention period, and records past it are removed everywhere they are held.",
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
+      "defaultOwnerHint": "Data Owner",
+      "objective": "To ensure PII that has outlived its defined retention period is removed from every place it is held, including the copies that sit outside the primary store.",
+      "successCriteria": "Every PII category in the schedule carries a retention period and the event its clock runs from.\nThe deletion log records, for each category falling due, whether backups, replicas, analytics copies and archives were reached.\nSampling the systems for records past their retention period returns none, or returns items with a resolution recorded against them.",
+      "testingMethodology": "Evidence:\nObtain the retention schedule giving the period and the clock-start event for every PII category.\nObtain the deletion log for the period showing the categories that fell due.\nObtain the record of backup, replica, analytics and archive coverage for those deletions.\nCollect the retention sample test showing the systems queried and the records found.\n\nAnalysis:\nCheck that each category's clock-start event is a date the systems actually record, rather than one an operator has to infer.\nSelect categories that fell due and query the live store for records older than the period set for them.\nRepeat the query against a restored backup or a replica to test whether removal reached the secondary copies the log claims.\nReview each record found past its retention period for the resolution applied and the date it completed.\n\nOutput:\nA retention schedule extract naming the clock-start field for each category.\nQuery results per category from the live stores and from the secondary copies.\nA list of records found past retention with the resolution recorded against each.",
       "requirementCodes": [
         "7.4.7"
       ],
@@ -1404,8 +1435,7 @@
           },
           "suggestedRole": "Engineering lead"
         }
-      ],
-      "defaultOwnerHint": "Data Owner"
+      ]
     },
     {
       "code": "PIMS-08",
@@ -1414,6 +1444,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Vendor Manager",
+      "objective": "To ensure every third party handling PII is bound by written terms carrying the customer's obligations through, and that customers learn of changes before they take effect.",
+      "successCriteria": "Every third party receiving PII appears on the list marked processor or sub-processor with the PII categories it handles.\nEach processor on the list is covered by an executed processing agreement.\nSub-processor terms carry through the privacy obligations owed to the customer, with any gap owned and dated.\nSub-processor additions and replacements were notified to customers before taking effect, and objections were resolved.",
+      "testingMethodology": "Evidence:\nObtain the third-party PII processing list with the role and service marked against each entry.\nObtain the processor agreement index with the executed agreement referenced for each processor.\nObtain the flow-down comparison of sub-processor terms against the customer obligations they must satisfy.\nObtain the published sub-processor list with its issue date and the route it was made available on.\nCollect the sub-processor change notifications sent during the period with their dates and recipients.\n\nAnalysis:\nCompare the third-party list against payables and live integrations to find recipients of PII that were never listed.\nRead a sample of executed agreements for the privacy terms the comparison claims they carry, rather than relying on the index alone.\nCheck each notification date against the date the sub-processor first received PII, to test whether notice preceded the change.\nConfirm objections raised by customers have a recorded outcome, and that processing did not proceed while one stood unresolved.\n\nOutput:\nA third-party register annotated with role, agreement reference and disclosure status.\nA flow-down gap schedule naming the missing obligations and their owners.\nA notification timeline setting notice dates beside first-flow dates per sub-processor.",
       "requirementCodes": [
         "7.2.6",
         "8.5.6",
@@ -1558,6 +1591,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure PII leaves its origin jurisdiction only towards destinations known in advance and covered by a safeguard settled before the first flow reaches them.",
+      "successCriteria": "Every flow leaving its origin jurisdiction is mapped with its destination jurisdiction and receiving organisation.\nEach mapped flow names the safeguard relied on and the document that evidences it.\nThe consolidated list of countries and receiving organisations is dated and agrees with the mapped flows.\nDestinations added during the period had their safeguard settled before PII first reached them.",
+      "testingMethodology": "Evidence:\nObtain the cross-border transfer map with source, destination jurisdiction, receiving organisation and PII categories.\nObtain the transfer register naming the safeguard and evidencing document for each flow.\nObtain the dated list of countries and receiving organisations PII may be transferred to.\nExport the transfer approval log for the period with the first-flow date recorded per destination.\nObtain the comparison of the map against live hosting, backup and access locations.\n\nAnalysis:\nInspect hosting regions, backup destinations and support access paths, and identify jurisdictions absent from the map.\nRead the evidencing document behind a sample of safeguards and confirm it names the parties and the data of the flow relied on.\nCompare each new destination's safeguard date with the first-flow date recorded against it.\nCheck the consolidated country list against the map for destinations dropped from it or never added.\n\nOutput:\nA transfer map annotated with the safeguard and its evidencing document per flow.\nA list of destinations observed in the infrastructure but undeclared in the map.\nA schedule of new destinations setting the safeguard date against the first-flow date.",
       "requirementCodes": [
         "7.5.1",
         "7.5.2",
@@ -1692,6 +1728,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Security / Privacy Incident Lead",
+      "objective": "To ensure incidents touching PII are judged against breach criteria without delay, and that authorities and affected individuals hear of the ones that meet them.",
+      "successCriteria": "The criteria separating a personal-data breach from other incidents are written and illustrated with worked examples.\nThe incident response procedure holds the breach assessment and notification steps with owners named against them.\nEvery incident involving PII has a recorded assessment decision with the reasoning for notifying or not notifying.\nA timed drill shows the authority path completing inside the 72-hour window, with the gaps found written up.",
+      "testingMethodology": "Evidence:\nObtain the breach criteria document with the worked examples classifying past incidents.\nObtain the incident response procedure showing the breach assessment and notification steps and their owners.\nObtain the authority and individual notification templates with the assessment-supplied fields marked.\nCollect the breach assessment records for the incidents that involved PII during the period.\nObtain the notification drill record with the elapsed times measured against the 72-hour path.\n\nAnalysis:\nApply the criteria to a set of closed incidents and compare the classification reached with the one recorded at the time.\nCheck that each PII incident in the period carries an assessment record, and that decisions not to notify state their reasoning.\nTest the templates against a completed assessment to confirm every marked field can be populated from what the assessment captures.\nMeasure the drill's elapsed times from the point of awareness in the scenario and review the gaps carried into actions.\n\nOutput:\nA classification comparison of past incidents against the documented criteria.\nA schedule of PII incidents with their assessment decisions and notification outcomes.\nA drill report giving elapsed times, the gaps found and the actions raised from them.",
       "requirementCodes": [
         "6"
       ],
@@ -1846,6 +1885,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure each obligation the organisation owes PII principals under law or contract is identified and carries a named means that discharges it within the time allowed.",
+      "successCriteria": "The obligations register names each duty owed to PII principals with its jurisdiction, its source in law or contract, and its timescale.\nEvery registered obligation is matched to a mechanism and an operating team, and those with neither sit on a dated gap list.\nChanges of law, contract or processing that move an obligation are recorded in the register with what prompted them.\nExercising a means meets its obligation inside the timescale, and each shortfall carries dated remediation.",
+      "testingMethodology": "Evidence:\nObtain the obligations register with the jurisdiction, source law or contract and timescale recorded against each duty.\nCollect the obligation-to-means mapping naming the mechanism and the operating team behind each entry.\nAcquire the dated gap list of obligations that have no means assigned.\nGather the register change log covering obligations added, altered or withdrawn in the period.\nRetrieve the test results recording what each means produced when it was exercised.\n\nAnalysis:\nTrace sampled obligations back to the law, regulation or contract cited to confirm the duty and its timescale.\nIdentify obligations left with no mechanism or no owning team and confirm each sits on the gap list with a date.\nCompare the change log against legal changes and new processing in the period to find obligations that should have moved.\nSet the test results beside the register to confirm each means delivered what is owed inside the stated timescale.\nReview the remediation raised for each shortfall for a named owner and a closure date.\n\nOutput:\nAn assessment of register completeness against the legal and contractual sources cited.\nA list of obligations with no discharging means or no owning team.\nA table of exercised means with the outcome produced and the timescale met or missed.\nA findings log of unrecorded register changes and open remediation.",
       "requirementCodes": [
         "7.3.1"
       ],
@@ -2023,6 +2065,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure a correction, erasure or restriction applied to PII reaches every third party already holding a copy, so the change takes effect beyond the organisation's own stores.",
+      "successCriteria": "Each downstream holder of PII appears in the notification matrix with the change types it must be told of and the route that reaches it.\nCorrections, erasures and restrictions raise the outbound notice without a manual prompt, and every dispatch is logged with its acknowledgement.\nExemptions from notifying a recipient carry the reason recorded against them.\nSampled changes leave no downstream copy still holding the superseded value.",
+      "testingMethodology": "Evidence:\nObtain the per-recipient notification matrix showing which of correction, erasure and restriction each downstream holder must be told of.\nCollect the notice specification and the workflow wiring that raises a notice from each change type.\nAcquire the downstream notification log for the period with dispatch dates and acknowledgements.\nGather the exemptions relied on and the reason recorded against each.\nRetrieve the verification sample comparing changed records against what recipients confirm they hold.\n\nAnalysis:\nCompare the matrix against the recipients named in transfer and disclosure records to find PII holders it omits.\nTrace sampled corrections, erasures and restrictions from the source record to the notice raised, confirming the workflow fired unprompted.\nIdentify dispatches with no acknowledgement returned and measure how long they have stood open.\nTest each claimed exemption against the ground recorded for it.\nFollow every downstream copy still carrying the superseded value through to its correction.\n\nOutput:\nA coverage assessment of the notification matrix against known PII recipients.\nA trace of sampled changes from source record to dispatched notice and acknowledgement.\nA list of unacknowledged notices and exemptions with no supporting ground.\nA statement of downstream copies found out of date and how each was resolved.",
       "requirementCodes": [
         "7.3.7"
       ],
@@ -2180,6 +2225,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure decisions taken about a person with no human involvement are known and disclosed as such, and that a contested one reaches a reviewer with authority to overturn it.",
+      "successCriteria": "The decision inventory marks every decision that takes effect with no human review, the system producing it and its effect on the person.\nEach such decision is disclosed as automated to the person it concerns and carries a route to a named reviewer.\nThe reviewer holds authority to change the outcome, and every intervention request is logged with what it produced.\nOverride rates show review altering outcomes rather than confirming them, and the inventory is re-checked after each rule or model change.",
+      "testingMethodology": "Evidence:\nObtain the decision inventory identifying decisions that take effect with no human review and the systems producing them.\nCollect the walk-through of the live challenge path from decision notice to reviewer queue.\nAcquire the automated decision log for the period with volumes per decision type and the rule set or model version in force.\nGather the intervention requests raised and the outcome recorded against each.\nRetrieve the review-quality analysis reporting the override rate per decision type.\n\nAnalysis:\nFollow sampled decision types through the processing chain to confirm the inventory marks those no person can alter before they take effect.\nTrace a challenge along the live path and confirm it reaches the named reviewer rather than the team that produced the decision.\nConfirm the reviewer's role carries authority to overturn the outcome, not only to record the objection.\nCompare override rates across decision types and examine those where review has never changed an outcome.\nCheck that each rule set or model version change in the log triggered a re-check of the inventory.\n\nOutput:\nA verified inventory of solely automated decisions with the effect of each on the individual.\nA walk-through record of the challenge path with timings and the reviewer reached.\nAn override-rate table by decision type naming the types never challenged.\nA finding list of decisions operating outside the inventory or with no challenge route.",
       "requirementCodes": [
         "7.3.10"
       ],
@@ -2357,6 +2405,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Data Owner",
+      "objective": "To ensure the jobs, queries and reports reading PII already held stay inside the purposes recorded for that PII, so a use no purpose covers never executes.",
+      "successCriteria": "Every job, query and report that reads PII appears in the catalogue with the purpose recorded behind it.\nEach operation reads only the fields and records its purpose needs, and any left broader carries a stated reason.\nA proposed new use of held PII is decided against a recorded purpose before it runs, and refusals are logged with the rest.\nReads that actually executed reconcile to the catalogued purposes, with every divergence closed rather than noted.",
+      "testingMethodology": "Evidence:\nObtain the catalogue of PII-reading operations with the purpose behind each and the unaccounted operations flagged.\nCollect the change records giving the fields and record scope each operation read before and after narrowing.\nAcquire the decision log of proposed new uses of held PII with the outcome of each, refusals included.\nGather the execution logs or query audit trails covering PII reads in the period.\nRetrieve the period comparison of executed reads against the catalogued purposes.\n\nAnalysis:\nSample scheduled jobs, reports and ad hoc query access from the production estate and check each has a catalogue entry naming a purpose.\nInspect the narrowed operations to confirm the removed fields are absent from the live definition, and weigh the reasons given for those left broad.\nTest whether any new use began before its purpose decision was taken, and confirm a refused use left no running job behind it.\nReconcile executed reads against the catalogue and quantify the reads no recorded purpose accounts for.\nFollow each recorded divergence through to the change that closed it.\n\nOutput:\nA catalogue completeness assessment against the PII-reading operations observed running.\nA field-scope comparison for narrowed operations with the broad ones still outstanding.\nA register of new-use decisions with decision dates set beside first execution.\nA list of executed reads with no recorded purpose and the disposition of each.",
       "requirementCodes": [
         "7.4.2"
       ],
@@ -2529,6 +2580,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Data Owner",
+      "objective": "To ensure each category of PII meets the accuracy and currency its purpose demands, and that records falling short are corrected in every store that holds them.",
+      "successCriteria": "Each purpose states the attributes that must be correct, the maximum age allowed and the source of truth for the PII it uses.\nEntry validation and re-confirmation checks are configured on the fields those standards cover.\nA correction reaches every internal store holding the record, not only the system it was entered in.\nSampling live records against the source of truth holds failure rates inside the standard, and each breach carries agreed remediation.",
+      "testingMethodology": "Evidence:\nObtain the accuracy requirement table giving, per purpose and PII category, the attributes, the maximum age allowed and the source of truth.\nCollect the configuration record of the validation and re-confirmation check applied to each field.\nAcquire the list of internal stores a correction is carried through to.\nGather the accuracy correction log showing how each fault surfaced and the value corrected.\nRetrieve the accuracy sample test results with the failure rate measured per category.\n\nAnalysis:\nCheck the requirement table covers every purpose in the processing records and that the maximum age set suits how that purpose uses the data.\nExercise the configured validation with sample inputs to confirm the field rejects or flags values outside its standard.\nTake corrections from the log and confirm the new value is present in every store named, reporting copies and downstream caches included.\nRecalculate the sampled failure rate and set it against the standard stated for that category.\nConfirm each breach found in the sample was fed into the correction log and re-tested after the fix, not merely recorded.\n\nOutput:\nA coverage assessment of accuracy standards against the recorded processing purposes.\nTest results for the entry validation and re-confirmation checks, field by field.\nA propagation trace for sampled corrections across the internal stores.\nA failure-rate summary per PII category with the open remediation listed.",
       "requirementCodes": [
         "7.4.3"
       ],
@@ -2701,6 +2755,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Data Owner",
+      "objective": "To ensure PII the organisation processes on its own account is protected on every path it travels, including the final leg that delivers it to the individual.",
+      "successCriteria": "The path inventory covers controller-held PII in transit with purpose, both endpoints and channel, and marks customer-instructed flows out of scope.\nEach path carries the protection the organisation determined it owes the PII principal, or an accepted shortfall with the person who accepted it.\nTransmissions sent below their path's standard are raised as exceptions and driven to a corrected path.\nProbing a path from the recipient's side shows the protection actually negotiated matching the standard set for it.",
+      "testingMethodology": "Evidence:\nObtain the inventory of paths carrying controller-held PII with purpose, both endpoints and the channel per row.\nCollect the per-path protection standard stating the minimum each path must carry and whether it is applied.\nAcquire the accepted shortfalls with the name of the person who accepted each.\nGather the exception register of under-protected transmissions with the cause and the date the path was corrected.\nRetrieve the path test results giving the protection negotiated at each endpoint probed.\n\nAnalysis:\nCompare the inventory against egress records and delivery channels to find paths carrying PII that it omits.\nCheck the out-of-scope markings, confirming the excluded flows are genuinely customer-instructed rather than the organisation's own decisions.\nProbe sampled paths as a recipient reaches them and set the negotiated protection beside the standard recorded for that path.\nTest the last leg to the individual, covering portal download, email attachment and postal or courier delivery wherever used.\nTrack exception entries through to the change that corrected the path and measure how long each stayed open.\n\nOutput:\nAn inventory coverage assessment naming PII-carrying paths that were not listed.\nA per-path table of required protection against the protection observed in the probe.\nA list of accepted shortfalls with the acceptor and the expiry of each acceptance.\nFindings on exception closure times and on paths still carrying PII unprotected.",
       "requirementCodes": [
         "7.4.9"
       ],
@@ -2883,6 +2940,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure every transfer of PII the organisation itself decides to make can be evidenced afterwards with its date, recipient, contents and internal authoriser.",
+      "successCriteria": "The transfers in scope are those the organisation decides on its own account, each with its recipient and deciding function named.\nThe log specification fixes the fields an entry must carry before the PII reaches its recipient.\nEvery transfer in the period holds a dated entry giving PII categories, volume, purpose, authorisation and approver.\nOutbound export evidence from the systems reconciles to the log with no transfer left unlogged.",
+      "testingMethodology": "Evidence:\nObtain the scoped list of controller-side transfers with the recipient and the deciding function behind each.\nCollect the transfer log specification and the worked example entry completed end to end.\nAcquire the dated transfer log for the period.\nGather outbound export evidence from the systems that move PII, such as file transfer records, integration job histories and bulk export audit trails.\nRetrieve the authorisation records supporting a sample of logged transfers.\n\nAnalysis:\nCheck each sampled entry carries every field the specification makes mandatory, and identify entries written after the PII had already left.\nReconcile export evidence against the log in both directions: exports with no entry, and entries with no matching export.\nConfirm the approver recorded holds authority to release the PII categories and the volume the transfer moved.\nAssess whether transfers under a standing arrangement produce an entry per occurrence rather than one entry for the arrangement.\nFollow each unlogged transfer found to the explanation recorded and the correction made.\n\nOutput:\nA completeness test of log entries against the mandatory field specification.\nA two-way reconciliation of system export evidence against the transfer log.\nAn authorisation sample showing the approver and their authority for each transfer tested.\nA list of unlogged and late-logged transfers with the resolution of each.",
       "requirementCodes": [
         "7.5.3"
       ],
@@ -3055,6 +3115,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure the organisation can tell a PII principal which third parties received their PII, by recording every disclosure it decides to make with its ground and authoriser.",
+      "successCriteria": "Every route by which the organisation discloses PII on its own decision is inventoried, including the routes that record nothing today.\nA disclosure record carries the recipient, the fields released, the ground relied on, the authorising decision and the date sent.\nThe register can be searched by PII principal, so the third parties that received one person's PII can be listed on request.\nRoutes that leave no searchable record are named as gaps with remediation, not assumed covered.",
+      "testingMethodology": "Evidence:\nObtain the disclosure route inventory naming each channel, the third parties it has reached and the person who decides.\nCollect the disclosure record specification with a worked entry completed per route.\nAcquire the disclosure register entries covering the period.\nGather the dated recipient-list extract produced for the sampled individual.\nRetrieve the gap notes recorded against routes that leave no searchable record.\n\nAnalysis:\nWalk each inventoried route to confirm a disclosure made through it lands in the register, and look for channels it misses such as support tooling, shared folders and ad hoc email.\nCheck register entries against the specification for the ground relied on and the authorising decision, treating an unstated ground as a finding.\nRebuild the recipient list for the sampled individual independently and set it against the extract the register produced.\nAssess whether the register can be queried by PII principal at all, or only by recipient or date.\nConfirm each gap note carries a remediation owner and date rather than standing as an accepted limitation.\n\nOutput:\nA route inventory assessment naming undocumented disclosure channels.\nA test result showing which disclosures name no ground and no authorising decision.\nA comparison of the independently rebuilt recipient list against the register extract.\nA schedule of routes with no searchable record and the remediation agreed for each.",
       "requirementCodes": [
         "7.5.4"
       ],
@@ -3237,6 +3300,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure every engagement in which the organisation processes PII for a customer runs under written terms fixing the controller and processor roles and the obligations owed.",
+      "successCriteria": "Each engagement sits in the customer processing register with the service supplied, the PII categories involved and the agreement governing it.\nThe approved terms state which party is controller and which is processor, and fix instructed processing, PII categories, duration and the instruction channel.\nSignings, amendments and supersessions are logged with effective dates and the executed copy indexed against each.\nNo customer sends PII without executed terms in force at the time that processing happens.",
+      "testingMethodology": "Evidence:\nObtain the customer processing register with one row per engagement and the governing agreement or the recorded gap.\nCollect the approved processing terms and the clause map locating roles, instructed processing, PII categories, duration and the instruction channel.\nAcquire the customer agreement log of signings, amendments and supersessions with their effective dates.\nGather executed copies for a sample of engagements.\nRetrieve the agreement coverage verification listing uncovered customers and superseded versions.\n\nAnalysis:\nReconcile the register against customer and billing records to find engagements handling PII that it omits.\nRead the sampled executed copies against the clause map and confirm each mapped clause is present in the version actually signed, not only in the template.\nTest the role allocation against how the engagement operates, since terms naming the organisation controller while it acts only on instruction are a finding.\nCompare each agreement's effective date against the date PII first flowed for that customer.\nConfirm superseded versions were withdrawn rather than left running alongside the current terms.\n\nOutput:\nA register completeness assessment against the live customer base.\nA clause-presence test result for the sampled executed agreements.\nA timeline comparison of effective dates against first processing of customer PII.\nA list of uncovered customers and stale term versions with the date each was papered.",
       "requirementCodes": [
         "8.2.1"
       ],
@@ -3419,6 +3485,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure customer PII serves only the purposes the customer instructed, so an internal use of it that no instruction covers is stopped or brought under a recorded one.",
+      "successCriteria": "Every internal system and team reading customer PII is inventoried with the customer instruction relied on, and uncovered uses are marked as such.\nEach uncovered use has stopped or gained an instruction, with its copies and derived artefacts purged on a recorded date.\nA proposal to use customer PII for an internal purpose is decided and logged before that use begins.\nObserved outbound flows of customer PII reconcile to instructions that permit them.",
+      "testingMethodology": "Evidence:\nObtain the inventory of internal uses of customer PII with the receiving system, the reading team and the instruction relied on.\nCollect the change record for each uncovered use stating whether it stopped or gained an instruction.\nAcquire the purge records for copies and derived artefacts such as analytics extracts, model training sets and reporting warehouses.\nGather the decision log of internal requests to use customer PII with the answer given to each.\nRetrieve the period reconciliation of observed outbound flows against the recorded instructions.\n\nAnalysis:\nSample internal analytics, product and support systems for customer PII and check each against the inventory and the instruction cited for it.\nTest whether the instruction relied on authorises the use claimed, rather than a neighbouring purpose in the same agreement.\nConfirm the purges reached derived artefacts as well as the primary copy, since a deleted source with a surviving training set leaves the use running.\nCompare each decision date in the log against the date that use first read customer PII.\nTrace flows found with no instruction behind them to the action taken on them.\n\nOutput:\nAn inventory assessment against the systems observed holding customer PII.\nAn instruction-to-use mapping showing which uses the cited instruction genuinely covers.\nPurge confirmation for copies and derived artefacts with the date of each.\nA list of internal uses begun before their decision, and flows still lacking an instruction.",
       "requirementCodes": [
         "8.2.2"
       ],
@@ -3596,6 +3665,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure an instruction from a controller customer that appears to breach privacy law is recognised on arrival, assessed, and put back to that customer in writing before it is worked.",
+      "successCriteria": "Every route by which customer instructions arrive is inventoried with the role that first reads one.\nA published trigger list tells those readers which instruction patterns must be raised, and names one assessor and one raising route.\nAn instruction assessed as potentially infringing is notified to the customer in writing, and the reply is kept with it.\nSampling the instructions received finds none that met a trigger and was never raised.",
+      "testingMethodology": "Evidence:\nObtain the inventory of customer-instruction intake routes naming the role that first receives each and where it goes next.\nCollect the published trigger list of instruction patterns that must be raised, with the named assessor and the single raising route.\nAcquire the file of written infringement notices sent in the period with the customer's reply to each.\nGather the sample review of instructions received and the misses it identified.\nRetrieve the briefing or training records showing the trigger list reached the receiving roles.\n\nAnalysis:\nCheck the intake inventory against how instructions actually arrive, including support tickets, account-manager email and in-product requests.\nAssess whether each trigger is stated concretely enough for a first reader to apply without legal judgement.\nRead sampled instructions against the trigger list and identify any that met a trigger but produced no assessment.\nConfirm the written notice preceded the work, and read the replies for instructions the customer pressed regardless.\nAsk staff on the intake routes to name the raising route and compare the answers against the published one.\n\nOutput:\nAn intake assessment naming instruction channels nobody is watching.\nA trigger applicability review flagging wording too vague for a first reader to act on.\nA sample result setting instructions raised against instructions that met a trigger.\nA list of notices sent after the instruction was already worked, with the outcome of each.",
       "requirementCodes": [
         "8.2.4"
       ],
@@ -3753,6 +3825,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure each controller customer can answer a PII-principal request against the PII the service holds for them, worked only on that customer's written instruction.",
+      "successCriteria": "The capability statement names, per request type, what the service performs for the customer and what remains the customer's to do.\nThe export, correction and erasure functions reach every customer data store the statement claims and return a completion record.\nEach instruction worked records the authorisation check made, the systems acted in and the output handed back.\nA principal approaching the service directly is forwarded to the customer unanswered, and turnarounds close inside the customer's own deadline.",
+      "testingMethodology": "Evidence:\nObtain the per-request-type capability statement naming the actions the service performs and the customer stores each reaches.\nCollect the customer-facing service documentation for the export, correction, erasure and completion-record calls.\nAcquire the assistance log with instruction, authorisation check, systems acted in and output returned.\nGather the record of principal approaches received directly and forwarded on unanswered.\nRetrieve the turnaround analysis setting each closed instruction against the customer's own response deadline.\n\nAnalysis:\nExercise the export and erasure calls in a test tenant and compare what they return against the customer stores listed, backups, logs and sub-processor holdings included.\nVerify the authorisation check on sampled instructions, confirming each came from an authorised customer contact rather than from the principal.\nConfirm forwarded approaches were passed on without the service answering the principal on the customer's behalf.\nMeasure turnaround against the customer's deadline and attribute each overrun to the service or to a sub-processor.\nCheck that instructions the service could only part-complete were reported back rather than closed as done.\n\nOutput:\nA capability-to-store coverage map naming customer stores no function reaches.\nTest results for the export, correction and erasure calls exercised in the test tenant.\nAn authorisation sample recording the contact verified for each instruction worked.\nA turnaround table naming overruns, sub-processor delays and part-completed instructions.",
       "requirementCodes": [
         "8.3.1"
       ],
@@ -3920,6 +3995,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Data Owner",
+      "objective": "To ensure temporary copies of customer PII are deleted within a defined lifetime by a mechanism that outlives the job which created them.",
+      "successCriteria": "Every scratch, cache and spool location written with PII during processing is inventoried with the process that writes it and the process that removes it.\nEach location carries a defined maximum lifetime enforced by a lifecycle rule, scheduled sweep or TTL rather than by the writing job.\nCleanup runs are logged with the volume removed and every path left behind with the error that stopped it.\nScanning the temporary locations finds no PII older than the lifetime set for the location holding it.",
+      "testingMethodology": "Evidence:\nObtain the inventory of temporary PII locations with the writing process, the removing process, and the locations that name no cleaner.\nCollect the configuration record pairing each location with its maximum lifetime and the lifecycle rule, sweep or TTL enforcing it.\nAcquire the cleanup run log for the period with the files and volume removed per location.\nGather the errors recorded against paths the cleanup could not clear.\nRetrieve the scan report of files found past their defined lifetime with the age of each.\n\nAnalysis:\nSearch processing hosts and object stores for scratch, cache, spool and upload directories holding PII and check each against the inventory.\nConfirm the enforcing mechanism runs independently of the writing job, since cleanup coded inside a job leaves files behind whenever that job aborts.\nRead the run log for locations that produced no run in the period, and for runs whose removed volume is implausible against the volume written.\nAge the files the scan found against the lifetime set for their location and quantify the overrun.\nFollow the uncleared paths to the fix applied and confirm the same error did not recur in later runs.\n\nOutput:\nAn inventory assessment naming temporary PII locations with no cleaner behind them.\nA configuration table of location, defined lifetime and enforcing mechanism.\nA cleanup coverage summary naming locations that produced no run in the period.\nA scan result listing files found past their lifetime with age and resolution.",
       "requirementCodes": [
         "8.4.1"
       ],
@@ -4097,6 +4175,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Data Owner",
+      "objective": "To ensure that PII held for a departing customer leaves the organisation by the route that customer instructed, with no copy surviving in any store or sub-processor.",
+      "successCriteria": "Every store, copy and sub-processor holding a departing customer's PII is named on the holding map.\nEach live customer has a recorded instruction of return, transfer or destruction, and the default applies only where none exists.\nTerminations closed in the period have a closure record covering every mapped system and sub-processor confirmations.\nPost-termination searches find no PII for an ended customer beyond a recorded exception carrying its clearance date.",
+      "testingMethodology": "Evidence:\nObtain the per-customer holding map and the list of stores it flags as unable to filter by customer.\nCollect the end-of-service procedure and the register of the route each live customer has instructed.\nSelect the customer services that terminated during the period and request the closure record for each.\nGather the sub-processor confirmations returned for those terminations.\nRetrieve the post-termination search results with the stores queried and the resolution against each hit.\n\nAnalysis:\nTrace one terminated customer from the holding map through the closure record and confirm every mapped store was acted on.\nCompare the route run in each closure record against the route that customer instructed in the register.\nCheck completion windows against those the procedure fixes, and examine how the flagged unfilterable stores were handled.\nRe-perform a search for a sample ended customer and account for anything the organisation's own results did not report.\n\nOutput:\nA schedule of terminations in the period showing instructed route, route run and completion date.\nA list of the stores and sub-processors reached for the traced customer, marking any not evidenced.\nFindings on PII surviving termination, with the exception and clearance date recorded against each.",
       "requirementCodes": [
         "8.4.2"
       ],
@@ -4279,6 +4360,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Platform Engineering / Privacy Officer",
+      "objective": "To ensure customer PII in transit is carried at the protection each customer's agreement promised, and that what was actually applied can be shown to that customer.",
+      "successCriteria": "Every route carrying customer PII is inventoried with its endpoint, direction and the agreed transmission term.\nProtection configured on a route meets the strictest commitment among the customers it carries, or the shortfall names who is affected.\nTransfers made outside an inventoried route are logged with the protection used and the authorisation obtained.\nWhat each route actually applied has been verified, not merely what its configuration claims.",
+      "testingMethodology": "Evidence:\nObtain the transit route inventory for customer PII with the agreed transmission term recorded against each route.\nCollect the customer agreements cited, for the clauses fixing transmission protection.\nAcquire the per-route configuration records showing the protection applied and any open shortfall.\nGather the transmission log of transfers sent outside an inventoried route during the period.\nRetrieve the verification reports produced per route in the period.\n\nAnalysis:\nCompare the inventory against the service's live endpoints and identify any path carrying customer PII that it omits.\nMeasure each route's configured protection against the term cited from the agreements of the customers it carries.\nObserve a live negotiation on a sample route and compare the protocol and cipher seen with what the configuration record claims.\nTest each logged out-of-route transfer for a recorded authorisation and for protection at least equal to the route it bypassed.\n\nOutput:\nA route-by-route table of committed, configured and observed protection.\nA list of paths carrying customer PII that the inventory does not cover.\nA register of shortfalls naming the customers each affects and the agreement clause it falls short of.",
       "requirementCodes": [
         "8.4.3"
       ],
@@ -4451,6 +4535,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure each customer knows, without having to ask and before processing moves, which countries their PII is processed in and which entity processes it there.",
+      "successCriteria": "The schedule for each service names every country of processing and the entity there, sub-processor and support locations included.\nThe statement a customer holds carries a version and effective date and matches the schedule for the service they buy.\nA revised statement reaches affected customers before processing moves, and objections are resolved before the move.\nReconciliation finds no undisclosed or stale country, and no customer had to ask.",
+      "testingMethodology": "Evidence:\nObtain the per-service schedule of processing countries with the entity named against each and the date it was compiled.\nCollect the issued country statements for each service, with their version numbers and effective dates.\nAcquire the dispatch records for every country change made during the period.\nGather the sub-processor contracts and support-team locations that the schedule rests on.\nRetrieve the latest per-customer reconciliation and the count of customers who asked where processing occurs.\n\nAnalysis:\nCompare the schedule against sub-processor contracts, hosting regions and support rosters to find a country of processing it omits.\nFor each change, compare the date the revised statement was dispatched with the date processing actually moved.\nConfirm the statement version held by a sample of customers is the one current for the service they buy.\nExamine the objections raised against a change and the outcome recorded for each.\n\nOutput:\nA country-by-country comparison of the schedule against the evidence of where processing occurs.\nA timeline per change showing issue date against move date, flagging any move that preceded notice.\nA list of customers holding a superseded statement, with the correction issued to each.",
       "requirementCodes": [
         "8.5.2"
       ],
@@ -4633,6 +4720,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure every release of a customer's PII to a third party is traceable to the instruction or demand behind it and can be handed to that customer to account for.",
+      "successCriteria": "Each path by which customer PII reaches a third party is mapped to a recipient and the authority it runs on.\nEntries are raised at the point of release, carrying the instructing customer, the recipient, what was sent and the authority relied on.\nAn extract can be produced for one customer alone, with no entry belonging to another tenant.\nEvery release evidenced elsewhere appears in the register, and every extracted entry traces back to a real release.",
+      "testingMethodology": "Evidence:\nObtain the route map of the paths carrying customer PII to third parties, with the recipient and authority named against each.\nCollect the register definition setting out the mandatory fields and the tenant partitioning.\nExtract the disclosure register entries raised during the period.\nGather the customer instructions and legal demands those entries cite.\nAcquire the per-customer extracts issued in the period with the check results recorded against each.\n\nAnalysis:\nIdentify releases evidenced outside the register, from egress logs, support tickets or recipient correspondence, and look for the entry recording them.\nTest entry timestamps against the release they record to confirm capture at the point of release rather than in a later sweep.\nFollow a sample of entries to the instruction or demand cited and confirm it covers the data actually handed over.\nRun an extract for one customer and inspect it for entries belonging to another.\n\nOutput:\nA reconciliation of releases evidenced elsewhere against register entries, naming each gap.\nA table of sampled entries showing the authority cited, the data released and the timing of capture.\nFindings on extract completeness and tenant separation, listing any cross-tenant entry found.",
       "requirementCodes": [
         "8.5.3"
       ],
@@ -4815,6 +4905,9 @@
       "category": "Security",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Privacy Officer / DPO",
+      "objective": "To ensure a customer learns of a legally binding demand for their PII before it is handed over, unless a prohibition recorded at the time forbids telling them.",
+      "successCriteria": "Every channel that can receive legal process has a named first recipient and an escalation route into legal review.\nEach binding demand carries either the date the customer was told or the specific prohibition relied on for withholding.\nNotification reaches the customer within the window their agreement sets and before release, wherever the law permits notice.\nProhibitions relied on are revisited each period, and the customer is notified once one lapses.",
+      "testingMethodology": "Evidence:\nObtain the intake map of channels able to receive legal process, with first recipients, escalation routes and notification windows.\nCollect the notification procedure with its counsel decision questions and the approval route used when counsel is unreachable.\nExtract the demand register entries for the period.\nGather the customer notices issued and the counsel determinations recorded for demands answered without notice.\nRetrieve the period review of withheld notifications.\n\nAnalysis:\nWalk a test demand into each intake channel and confirm it reaches legal review by the mapped escalation.\nCompare the notification date on each entry with the date data was released and with the window that customer's agreement fixes.\nCheck that each withheld notification cites a specific prohibition rather than a general caution, with counsel's determination recorded.\nTest whether prohibitions carried forward still hold, and whether the customer was notified once one lapsed.\n\nOutput:\nA register extract for the period showing release date, notification date and the contractual window for each demand.\nA list of demands answered without notice, with the prohibition cited and its current status.\nFindings on intake channels that bypass legal review, naming the demands that arrived through them.",
       "requirementCodes": [
         "8.5.4"
       ],

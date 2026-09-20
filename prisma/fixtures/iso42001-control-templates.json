@@ -2,7 +2,7 @@
   "_meta": {
     "purpose": "ISO/IEC 42001:2023 in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
     "why": "Built inline in prisma/seed.ts, which is not run on production deploys. Extracted from a database seeded by that block, so the shape is carried over exactly rather than re-derived from grouping logic that ran at seed time.",
-    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here \u2014 every template carries the generic five, as it did inline.",
+    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here — every template carries the generic five, as it did inline.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts"
   },
   "framework": {
@@ -10,7 +10,7 @@
     "name": "ISO/IEC 42001:2023",
     "version": "2023",
     "kind": "ISO_STANDARD",
-    "description": "AI Management System (AIMS) \u2014 requirements + Annex A controls.",
+    "description": "AI Management System (AIMS) — requirements + Annex A controls.",
     "sourceUrn": "urn:inflect:library:iso-42001",
     "metadata": {
       "locale": "en",
@@ -467,6 +467,9 @@
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "AI Governance Lead / Top Management",
+      "objective": "To ensure the AI management system rests on a current reading of the organisation's AI context and interested parties, and covers the AI activity actually being run.",
+      "successCriteria": "The context record gives the organisation's role for every AI activity and is dated within the current review interval.\nEach interested party's requirement is written in checkable terms, with a decision recorded on whether the AIMS adopts it.\nThe scope statement names the units, sites and AI activities it covers and records a reason against every exclusion.\nEach AIMS process has one named owner, and every output it produces is consumed by a named downstream process.",
+      "testingMethodology": "Evidence:\nObtain the dated context record listing internal and external issues with the role held against each AI activity.\nRetrieve the interested-party register and the requirement wording recorded for each entry.\nCollect the current versioned scope statement together with the reason recorded for each exclusion.\nAcquire the AIMS process map showing owners, inputs, outputs and hand-offs.\nBuild an independent list of AI activity in use from procurement, architecture and budget sources.\n\nAnalysis:\nCompare the independent activity list with the scope statement to find AI activity operating outside the declared boundary.\nTest whether each recorded role matches how the organisation actually uses that activity rather than how it was first classified.\nCheck every party requirement for a stated adoption or rejection decision and a named owner of that decision.\nFollow each process output on the map to the process that consumes it and flag outputs with no consumer.\n\nOutput:\nA scope-to-activity coverage table marking every undeclared or retired AI activity.\nA findings list of party requirements left undecided or unowned.\nA process-map defect note naming orphaned outputs and unowned processes.",
       "requirementCodes": [
         "4.1",
         "4.2",
@@ -689,10 +692,13 @@
     {
       "code": "AIMS-01",
       "title": "Clause 5 Leadership",
-      "description": "Implements AIMS-01: the acts top management performs itself \u2014 demonstrating commitment to the AI management system, issuing the AI policy under its own authority, and conferring AIMS roles, responsibilities and authorities on named people who can be held to them.",
+      "description": "Implements AIMS-01: the acts top management performs itself — demonstrating commitment to the AI management system, issuing the AI policy under its own authority, and conferring AIMS roles, responsibilities and authorities on named people who can be held to them.",
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Top management (accountable executive sponsoring the AIMS)",
+      "objective": "To ensure top management itself directs the AI management system, issuing the AI policy under its own authority and conferring AIMS authority on named, answerable holders.",
+      "successCriteria": "Every AI decision reserved to top management has a named holder and a deputy who may take it in their absence.\nThe AI policy in force carries a dated top-management approval and the announcement record that put it into effect.\nEach role holder's authorisation states the decisions held, their limits and the route for escalating beyond them.\nLeadership minutes for the period show AI items reaching top management and resources or escalations being settled there.",
+      "testingMethodology": "Evidence:\nObtain the accountability statement naming top-management holders, deputies and the reserved AI decisions.\nRetrieve the signed and dated approval record for the AI policy as issued, with the announcement that accompanied it.\nCollect the authorisation record held for each AIMS role holder.\nAcquire the period's leadership minutes covering AI agenda items, resources released and escalations settled.\nSelect a sample of reserved decisions actually taken during the period.\n\nAnalysis:\nTrace each sampled decision to the individual who approved it and compare that person with the holder the accountability statement names.\nConfirm the policy approval date precedes publication and that the approver holds authority to issue it.\nTest each authorisation for stated limits and a working escalation route rather than an open grant.\nRead the minutes for resources released and escalations closed, distinguishing these from AI items merely noted.\n\nOutput:\nA decision-to-approver trace table with each mismatch flagged.\nA schedule of authorisations lacking limits, deputies or escalation routes.\nA memorandum on the substance of leadership involvement across the period.",
       "requirementCodes": [
         "5.1",
         "5.2",
@@ -704,7 +710,7 @@
             "en": "Name the top-management holders of AIMS accountability and the decisions reserved to them"
           },
           "description": {
-            "en": "Top management is a role in this standard, not a job title, so write down which named individuals or which body holds it for the AI management system and which AI decisions cannot be taken without them \u2014 approving the policy, accepting AI risk above a stated level, releasing a system to users, withdrawing one. Left implicit, the accountability lands on whoever happens to chair the meeting, and an auditor is shown a governance diagram nobody in it has agreed to. Give every holder a deputy, because an unavailable approver is the usual reason a reserved decision quietly gets taken one level down. Attach the statement naming the holders and the decisions they hold."
+            "en": "Top management is a role in this standard, not a job title, so write down which named individuals or which body holds it for the AI management system and which AI decisions cannot be taken without them — approving the policy, accepting AI risk above a stated level, releasing a system to users, withdrawing one. Left implicit, the accountability lands on whoever happens to chair the meeting, and an auditor is shown a governance diagram nobody in it has agreed to. Give every holder a deputy, because an unavailable approver is the usual reason a reserved decision quietly gets taken one level down. Attach the statement naming the holders and the decisions they hold."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -786,7 +792,7 @@
             "en": "Authorise each AIMS role holder and record the decisions that holder may take"
           },
           "description": {
-            "en": "Assigning a role is only half of it: the holder also needs conferred authority and written limits on it \u2014 what may be approved alone, what must be escalated, what may be stopped. For each holder record the decisions conferred, the limit on them, and the reporting line that carries AIMS performance back to top management. Without the limits the holder either over-reaches or refers everything upward, and the assignment stops being a delegation of authority at all. The detailed role and accountability structures sit with the internal organization control; this is top management conferring the authority. Attach the authorisation record covering every holder."
+            "en": "Assigning a role is only half of it: the holder also needs conferred authority and written limits on it — what may be approved alone, what must be escalated, what may be stopped. For each holder record the decisions conferred, the limit on them, and the reporting line that carries AIMS performance back to top management. Without the limits the holder either over-reaches or refers everything upward, and the assignment stops being a delegation of authority at all. The detailed role and accountability structures sit with the internal organization control; this is top management conferring the authority. Attach the authorisation record covering every holder."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -827,7 +833,7 @@
             "en": "Minute the leadership decisions that directed, resourced and unblocked the AIMS this period"
           },
           "description": {
-            "en": "Through the period leadership keeps taking decisions that either support the AI management system or quietly starve it \u2014 budget and people released to it, an item put on or dropped from an agenda, an escalation settled in favour of a launch date. Record them as they happen, with the date, the decision and who took it, rather than reconstructing a commitment narrative at audit time out of meetings that were about something else. This is the running record of direction and support, separate from the formal management review, which carries its own required inputs and outputs. Attach the dated decision log for the period."
+            "en": "Through the period leadership keeps taking decisions that either support the AI management system or quietly starve it — budget and people released to it, an item put on or dropped from an agenda, an escalation settled in favour of a launch date. Record them as they happen, with the date, the decision and who took it, rather than reconstructing a commitment narrative at audit time out of meetings that were about something else. This is the running record of direction and support, separate from the formal management review, which carries its own required inputs and outputs. Attach the dated decision log for the period."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -868,7 +874,7 @@
             "en": "Trace each decision reserved to top management back to the person who actually took it"
           },
           "description": {
-            "en": "Take a sample of the decisions the organisation reserved to top management \u2014 a policy change, an AI risk accepted, a system released or withdrawn \u2014 and find out who actually took each one. Reserved decisions drift downward silently: an approval given by a delegate, a vacancy that left a holder unnamed for a quarter, a reorganisation that moved the reporting line somewhere below top management, and the governance statement still reads correctly throughout. Record the gaps, who they were raised with and what was corrected, and refresh the authorisation record in the same pass. Attach the review record with its sample and findings."
+            "en": "Take a sample of the decisions the organisation reserved to top management — a policy change, an AI risk accepted, a system released or withdrawn — and find out who actually took each one. Reserved decisions drift downward silently: an approval given by a delegate, a vacancy that left a holder unnamed for a quarter, a reorganisation that moved the reporting line somewhere below top management, and the governance statement still reads correctly throughout. Record the gaps, who they were raised with and what was corrected, and refresh the authorisation record in the same pass. Attach the review record with its sample and findings."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -909,10 +915,13 @@
     {
       "code": "AIMS-02A",
       "title": "AI risk and impact assessment framework",
-      "description": "Implements AIMS-02A: builds the instrument the organisation judges AI risk with \u2014 the criteria and scales, the method by which a risk is identified, analysed and scored, the rules for choosing treatment and signing off what is left over, and the threshold above which an impact assessment becomes mandatory. It produces the method and keeps it calibrated; assessing any particular AI system against it happens under Clause 8.",
+      "description": "Implements AIMS-02A: builds the instrument the organisation judges AI risk with — the criteria and scales, the method by which a risk is identified, analysed and scored, the rules for choosing treatment and signing off what is left over, and the threshold above which an impact assessment becomes mandatory. It produces the method and keeps it calibrated; assessing any particular AI system against it happens under Clause 8.",
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "AI Governance Lead / Risk Manager",
+      "objective": "To ensure AI risk is judged on one approved instrument: agreed criteria and scales, a defined assessment method, and rules for treatment and residual-risk acceptance.",
+      "successCriteria": "Consequence and likelihood bands carry worked examples, so two assessors scoring the same AI risk land in the same band.\nThe issued method names what an assessor must hold before starting and how the inputs combine into a single risk level.\nThe treatment procedure gives the options, requires the Annex A comparison, and fixes who may accept residual risk at each band.\nThe threshold that makes an AI system impact assessment mandatory is written down and version-controlled.",
+      "testingMethodology": "Evidence:\nObtain the approved criteria sheet with its consequence and likelihood bands, worked examples and accepting roles.\nRetrieve the version-numbered assessment method and the written treatment procedure with its statement-of-applicability format.\nCollect the recorded threshold that makes an impact assessment mandatory.\nAcquire the framework change log and the calibration review record for the period.\n\nAnalysis:\nRe-score a small set of completed risk entries against the published criteria and compare the result with the level recorded.\nCheck that the method states a single scoring rule rather than leaving the level to assessor judgement.\nConfirm every band names an accepting role and that seniority rises as the band rises.\nExamine the band distribution for bands never used, and test whether the calibration review acted on them.\nVerify each logged misfit of the criteria closed with an amendment or an explicit decision that none was needed.\n\nOutput:\nA re-scoring comparison showing where the criteria failed to reproduce the recorded risk level.\nA band-usage distribution marking inert bands and the revision made to each.\nA conformance note on the treatment rules, naming any band left without an acceptor.",
       "requirementCodes": [
         "6.1"
       ],
@@ -1131,6 +1140,9 @@
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "AI Governance Lead / Top Management",
+      "objective": "To ensure AI objectives are expressed so they can be measured and missed, and that AIMS changes are decided before they take effect rather than reconstructed afterwards.",
+      "successCriteria": "Each AI policy commitment appears in the objectives register as a measure with a target value, a due date and an accountable function.\nEvery objective has a delivery plan naming the work, the resources committed and how its result will be judged.\nNo AIMS change took effect without a recorded purpose, its knock-on effects and an approval dated before the effective date.\nThe responsibilities and resources a change moved are named in the change entry itself.",
+      "testingMethodology": "Evidence:\nObtain the AI objectives register together with the policy commitments it is meant to cover.\nRetrieve the per-objective delivery plans with their committed resources and completion dates.\nCollect the approved change-planning procedure for the AI management system.\nAcquire the dated AIMS change log for the period and the period-end review record.\n\nAnalysis:\nMatch each policy commitment to an objective and identify commitments carrying no measure.\nTest whether each target is stated as a value that can be missed rather than as an activity to perform.\nFor a sample of logged changes, compare the approval date with the effective date and confirm the proposal stated purpose, consequences and reallocated responsibilities.\nConfirm the period-end record gives a final measured value for each objective rather than a status colour.\nCheck that post-change verification notes exist for the changes that have already landed.\n\nOutput:\nA commitment-to-objective coverage matrix listing unmeasured commitments.\nA change sample table pairing approval dates with effective dates and flagging retrospective approvals.\nA period-end objective scorecard of measured outcomes against targets.",
       "requirementCodes": [
         "6.2",
         "6.3"
@@ -1141,7 +1153,7 @@
             "en": "Express each AI policy commitment as a measurable objective with an owner and a date"
           },
           "description": {
-            "en": "Take the AI policy commitment by commitment and turn each one into an objective somebody can be measured against: a named measure, a target value, a due date and the function that owns it. An objective phrased as an intention \u2014 use AI responsibly, improve model quality \u2014 cannot be missed, so it never shows as behind and never triggers anything. Include the objectives implied by the risk and impact treatment decisions already taken, because a treatment nobody carries an objective for is the one that quietly does not happen. Attach the objectives register as it stands once the set is agreed."
+            "en": "Take the AI policy commitment by commitment and turn each one into an objective somebody can be measured against: a named measure, a target value, a due date and the function that owns it. An objective phrased as an intention — use AI responsibly, improve model quality — cannot be missed, so it never shows as behind and never triggers anything. Include the objectives implied by the risk and impact treatment decisions already taken, because a treatment nobody carries an objective for is the one that quietly does not happen. Attach the objectives register as it stands once the set is agreed."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -1182,7 +1194,7 @@
             "en": "Build an achievement plan for every AI objective, naming resources, owner and due date"
           },
           "description": {
-            "en": "For each objective in the register, set out the plan that actually gets there: the work to be done, the resources it consumes, the single person accountable, the date it completes and how the result will be judged when it does. Objectives without plans are the common failure at this clause \u2014 the register reads healthy all year while the work was never resourced, and the gap only surfaces at the deadline. Where a plan depends on budget or people that are not yet committed, say so in the plan rather than assuming them. Attach the plans alongside the register."
+            "en": "For each objective in the register, set out the plan that actually gets there: the work to be done, the resources it consumes, the single person accountable, the date it completes and how the result will be judged when it does. Objectives without plans are the common failure at this clause — the register reads healthy all year while the work was never resourced, and the gap only surfaces at the deadline. Where a plan depends on budget or people that are not yet committed, say so in the plan rather than assuming them. Attach the plans alongside the register."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -1228,7 +1240,7 @@
             "en": "Set the route a change to the AI management system must travel before it takes effect"
           },
           "description": {
-            "en": "Write down how a change to the management system itself is proposed, weighed and approved: who may raise one, what must be stated about its purpose and its likely consequences, who decides, and how responsibilities and resources are reallocated when it lands. Changes made outside a route arrive as surprises \u2014 a scope narrowed here, an owner reassigned there \u2014 and every arrangement that referenced the old shape quietly stops matching. Keep this to the management system: operational and product changes are controlled elsewhere. Attach the written route once it is approved."
+            "en": "Write down how a change to the management system itself is proposed, weighed and approved: who may raise one, what must be stated about its purpose and its likely consequences, who decides, and how responsibilities and resources are reallocated when it lands. Changes made outside a route arrive as surprises — a scope narrowed here, an owner reassigned there — and every arrangement that referenced the old shape quietly stops matching. Keep this to the management system: operational and product changes are controlled elsewhere. Attach the written route once it is approved."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -1269,7 +1281,7 @@
             "en": "Minute every AIMS change made in the period with its purpose, effects and approval"
           },
           "description": {
-            "en": "Each time the management system changes \u2014 its scope, roles, processes or documented arrangements \u2014 open a record stating why the change was made, what effect was expected, what else it touched, which resources and responsibilities moved, and who approved it and from when. Without that record a reviewer cannot separate a planned change from drift, and the organisation keeps no evidence that consequences were weighed before the change rather than discovered after it. Changes that bypassed the route still get a record, marked as unplanned. Attach the period's change records."
+            "en": "Each time the management system changes — its scope, roles, processes or documented arrangements — open a record stating why the change was made, what effect was expected, what else it touched, which resources and responsibilities moved, and who approved it and from when. Without that record a reviewer cannot separate a planned change from drift, and the organisation keeps no evidence that consequences were weighed before the change rather than discovered after it. Changes that bypassed the route still get a record, marked as unplanned. Attach the period's change records."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -1355,6 +1367,9 @@
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "AI Governance Lead / People Ops",
+      "objective": "To ensure the AI management system has the resources, competent and aware people, planned communication and controlled documentation it needs in order to operate.",
+      "successCriteria": "Every AIMS activity has staffing, tooling and funding recorded against it, and each shortfall carries a decision.\nEach role whose work affects AI performance has a required competence, its holders assessed against it and every gap under a closing action.\nEach planned AI communication names its subject, audience, trigger, channel and the person who sends or approves it.\nPeople working under the organisation's control can state what the AI policy asks of them and what departing from it means.",
+      "testingMethodology": "Evidence:\nObtain the dated resourcing record setting each AIMS activity against the staffing, tooling and funding provided.\nRetrieve the competence matrix, the holder assessments and the index of qualification and training records retained.\nCollect the communication plan and the dispatch evidence for the messages it schedules.\nAcquire the documented-information register export covering the period.\nGather the results of the awareness sample test.\n\nAnalysis:\nCheck each recorded shortfall for a decision that either released the resource or accepted the consequence of not doing so.\nSample role holders and compare the qualifications they hold with the competence the matrix requires of them.\nVerify sampled communications against dispatch evidence, including the externally directed messages.\nTest the register for versions approved, distributed, superseded and withdrawn, and confirm withdrawn copies were recalled.\nQuestion a fresh sample of workers directly and compare their answers with the recorded awareness results.\n\nOutput:\nA resourcing gap schedule showing each shortfall and its disposition.\nA competence exception list naming under-qualified holders and their closing actions.\nAn awareness test report setting out the briefing gaps exposed.",
       "requirementCodes": [
         "7.1",
         "7.2",
@@ -1368,7 +1383,7 @@
             "en": "Determine the people, compute, data access and budget the AI management system needs to run"
           },
           "description": {
-            "en": "Work through what establishing, running and improving the AIMS actually consumes \u2014 the people who staff the governance, assessment and monitoring work, the tooling and compute those activities depend on, the access to systems and data that reviewers need, and the money that pays for it \u2014 then set each need against what the organisation holds today. Where a shortfall is real, record the decision taken on it, including a decision not to fund it, because an unfunded requirement that nobody wrote down resurfaces later as an unexplained gap in whichever clause depended on it. Attach the resourcing record with the date it was agreed."
+            "en": "Work through what establishing, running and improving the AIMS actually consumes — the people who staff the governance, assessment and monitoring work, the tooling and compute those activities depend on, the access to systems and data that reviewers need, and the money that pays for it — then set each need against what the organisation holds today. Where a shortfall is real, record the decision taken on it, including a decision not to fund it, because an unfunded requirement that nobody wrote down resurfaces later as an unexplained gap in whichever clause depended on it. Attach the resourcing record with the date it was agreed."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -1404,7 +1419,7 @@
             "en": "Map each role whose work affects AI system performance to the competence it must hold"
           },
           "description": {
-            "en": "Start from the roles that actually change AI outcomes \u2014 the people who build and evaluate models, the ones who approve a deployment, the reviewers who sign off assessments, the operators watching systems in production \u2014 and state, per role, what somebody must know or have done to hold it. Then assess the current holders against that statement and agree the action that closes each shortfall, with an owner and a date. A competence claim resting on a job title is not a claim anybody can check: what makes this defensible is that the qualification, course record or documented experience behind each entry is retained and can be produced on request. Attach the matrix together with the index of those records."
+            "en": "Start from the roles that actually change AI outcomes — the people who build and evaluate models, the ones who approve a deployment, the reviewers who sign off assessments, the operators watching systems in production — and state, per role, what somebody must know or have done to hold it. Then assess the current holders against that statement and agree the action that closes each shortfall, with an owner and a date. A competence claim resting on a job title is not a claim anybody can check: what makes this defensible is that the qualification, course record or documented experience behind each entry is retained and can be produced on request. Attach the matrix together with the index of those records."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -1486,7 +1501,7 @@
             "en": "Log every AIMS document issued, revised, superseded or withdrawn in the period, with its approver and version"
           },
           "description": {
-            "en": "Keep one row per movement of AIMS documented information: the document, its version, who approved it and on what date, where it is held, who it went to, and \u2014 where it was replaced or withdrawn \u2014 what became of the copy people had been using. Include documents of external origin the AIMS depends on, such as a standard, a regulator's guidance or a supplier's model documentation, because an obsolete external document still in circulation misleads exactly as an obsolete internal one does and nothing else is tracking it. A superseded version left reachable beside its replacement is the condition these rows exist to make visible. Attach the register export for the period."
+            "en": "Keep one row per movement of AIMS documented information: the document, its version, who approved it and on what date, where it is held, who it went to, and — where it was replaced or withdrawn — what became of the copy people had been using. Include documents of external origin the AIMS depends on, such as a standard, a regulator's guidance or a supplier's model documentation, because an obsolete external document still in circulation misleads exactly as an obsolete internal one does and nothing else is tracking it. A superseded version left reachable beside its replacement is the condition these rows exist to make visible. Attach the register export for the period."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -1527,7 +1542,7 @@
             "en": "Sample people doing work under the organisation's control and test what they know of the AI policy"
           },
           "description": {
-            "en": "Awareness is claimed by an attendance list and disproved by a conversation, so draw a sample across the roles the AIMS reaches \u2014 contractors and recent joiners included, since they are the likeliest gap \u2014 and ask each person three things: what the AI policy asks of their own work, how what they do contributes to the AIMS working, and what follows if they depart from it. Write the answers down as given rather than as a pass mark, note which version of the briefing each person had actually received, and carry the weak areas into the next round of briefing rather than closing the task on the sample alone. Attach the sample test with its findings."
+            "en": "Awareness is claimed by an attendance list and disproved by a conversation, so draw a sample across the roles the AIMS reaches — contractors and recent joiners included, since they are the likeliest gap — and ask each person three things: what the AI policy asks of their own work, how what they do contributes to the AIMS working, and what follows if they depart from it. Write the answers down as given rather than as a pass mark, note which version of the briefing each person had actually received, and carry the weak areas into the next round of briefing rather than closing the task on the sample alone. Attach the sample test with its findings."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -1572,6 +1587,9 @@
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "AI Governance Lead / AI System Owner",
+      "objective": "To ensure AI processes run under planned operating controls and that each system's risk assessment, treatment and impact assessment is performed when due or triggered.",
+      "successCriteria": "Every AI system in scope has both assessment due dates scheduled and a named person accountable for running them.\nA change meeting a defined trigger in the period produced an early assessment, or a recorded reason why none was run.\nEach AI process description marks its control points, names the performer at each, and identifies the steps provided externally.\nEvery action on the AI risk treatment plan closed with evidence of the change it made to the running system.",
+      "testingMethodology": "Evidence:\nObtain the assessment schedule giving, per AI system, both due dates, the accountable person and the events that bring an assessment forward.\nRetrieve the assessment records filed in the period by system and version.\nCollect the worked risk treatment plan with the evidence attached to each completed action.\nAcquire the process description per AI system showing control points and externally provided steps.\nTake an independent change list for the period from release and change-management records.\n\nAnalysis:\nReconcile assessments owed against assessments filed and identify each one overdue or missing.\nTest the independent change list against the trigger definitions to find changes that should have forced an early assessment.\nExamine a sample of treatment actions for an observed change in operation rather than a completion tick.\nWalk the control points in a process description and confirm the named party performs them, including the externally provided steps.\n\nOutput:\nAn assessment reconciliation showing owed, performed, late and unanswered triggers.\nA treatment action sample with the operational effect evidenced for each.\nA control-point walkthrough note covering the externally provided process steps.",
       "requirementCodes": [
         "8.1",
         "8.2",
@@ -1798,6 +1816,9 @@
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "AI Governance Lead / Compliance Lead",
+      "objective": "To ensure the AIMS is measured against defined indicators on a set schedule, and that the readings are analysed into a judgement on its performance and effectiveness.",
+      "successCriteria": "Every measured AIMS process, control and AI system property was selected for a stated reason, not because the number was available.\nEach indicator has a written calculation, a source system it is read from, a named reader and an acceptance threshold.\nThe calendar fixes a reading interval and a separate analysis point for each indicator, each with a named performer.\nThe period's results show every reading against its threshold with a judgement written against it, and mark readings not taken.",
+      "testingMethodology": "Evidence:\nObtain the measurement scope list with the selection reason recorded for each process, control and property.\nRetrieve the measure definition sheet giving calculation, source, reader and threshold per indicator.\nCollect the measurement calendar showing reading intervals and separate analysis points.\nAcquire the dated results set for the period and the periodic evaluation record.\n\nAnalysis:\nRecompute a small set of indicators directly from the named source system and compare with the published reading.\nCheck the calendar against the results set to find readings due but not taken, and confirm each absence is marked as such.\nTest whether analysis happened at its scheduled point and produced a written judgement rather than a stored number.\nAssess the evaluation record for indicators kept, retired or replaced, and for a conclusion drawn about the AIMS as a whole.\n\nOutput:\nA recomputation comparison for the sampled indicators.\nA schedule-adherence table listing missed readings and missed analysis points.\nAn evaluation summary giving the reasoning behind each indicator kept, retired or replaced.",
       "requirementCodes": [
         "9.1"
       ],
@@ -2007,10 +2028,13 @@
     {
       "code": "AIMS-05B",
       "title": "AIMS internal audit programme",
-      "description": "Implements AIMS-05B: runs a planned programme of internal AIMS audits \u2014 a schedule built from process importance and earlier findings, auditors chosen for competence and held clear of the work they own, stated criteria and coverage for each audit, and findings reported to the managers accountable for what was audited.",
+      "description": "Implements AIMS-05B: runs a planned programme of internal AIMS audits — a schedule built from process importance and earlier findings, auditors chosen for competence and held clear of the work they own, stated criteria and coverage for each audit, and findings reported to the managers accountable for what was audited.",
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Internal Audit Lead / AI Governance Lead",
+      "objective": "To ensure internal AIMS audits are planned by importance and prior findings, run by competent auditors independent of what they audit, and reported to the accountable managers.",
+      "successCriteria": "Each planned audit's frequency is justified by the importance of the process and by findings raised in earlier cycles.\nEvery audit opens on terms of reference stating its criteria, the processes and AI systems inside the boundary, and each omission with a reason.\nNo auditor is assigned to an area they own, and any area without an impartial candidate has a recorded alternative arrangement.\nFindings reached the manager accountable for the audited area, evidenced by a dated distribution record.",
+      "testingMethodology": "Evidence:\nObtain the approved audit programme for the cycle with the risk reasoning recorded behind each frequency.\nRetrieve the terms of reference issued for the audits conducted.\nCollect the auditor roster with competence evidence and the areas each person may not audit.\nAcquire the audit reports with their graded findings and dated distribution lists.\nGather the cycle coverage comparison of planned against completed audits.\n\nAnalysis:\nCompare each auditor's assignment with their declared restricted areas and reporting line to test impartiality.\nCheck whether programme frequencies moved in response to prior findings or simply repeated a fixed rotation.\nVerify that sampled findings are supported by the records each report says were examined.\nTrace every deferred or omitted audit to a recorded reason and to the revision made for the next cycle.\n\nOutput:\nAn impartiality exception list naming auditors assigned to areas they own.\nA planned-versus-completed coverage table with deferrals and areas left unaudited.\nA finding traceability note linking the sampled findings to the records examined.",
       "requirementCodes": [
         "9.2"
       ],
@@ -2061,7 +2085,7 @@
             "en": "Define the criteria, scope and exclusions of an audit before fieldwork opens"
           },
           "description": {
-            "en": "Before any fieldwork starts, put in writing the criteria the audit works to \u2014 the AIMS policies, procedures, objectives and obligations that conformity is measured against \u2014 and which processes, sites and AI systems sit inside its boundary. Name what is left out as plainly as what is taken in, and give the reason for leaving it, because a process nobody looked at is otherwise read afterwards as a process looked at and found sound. Get the terms agreed by the person who owns the programme, and attach the agreed terms of reference."
+            "en": "Before any fieldwork starts, put in writing the criteria the audit works to — the AIMS policies, procedures, objectives and obligations that conformity is measured against — and which processes, sites and AI systems sit inside its boundary. Name what is left out as plainly as what is taken in, and give the reason for leaving it, because a process nobody looked at is otherwise read afterwards as a process looked at and found sound. Get the terms agreed by the person who owns the programme, and attach the agreed terms of reference."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -2102,7 +2126,7 @@
             "en": "Select auditors on competence and bar each one from the work they own"
           },
           "description": {
-            "en": "Choose who audits what, and hold two decisions per auditor rather than one: what makes them competent here \u2014 audit method, AIMS knowledge, enough grasp of AI systems to test the claim in front of them \u2014 and what they are barred from because they built, run or manage it. Impartiality is the part that quietly fails in a small organisation, where the only person who understands the model pipeline is the person who owns it; where that happens, record the compensating arrangement \u2014 an auditor from another function, a swap with a sister site, or an external auditor \u2014 rather than letting an owner examine their own work."
+            "en": "Choose who audits what, and hold two decisions per auditor rather than one: what makes them competent here — audit method, AIMS knowledge, enough grasp of AI systems to test the claim in front of them — and what they are barred from because they built, run or manage it. Impartiality is the part that quietly fails in a small organisation, where the only person who understands the model pipeline is the person who owns it; where that happens, record the compensating arrangement — an auditor from another function, a swap with a sister site, or an external auditor — rather than letting an owner examine their own work."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -2143,7 +2167,7 @@
             "en": "Conduct each planned audit and issue its findings to the managers accountable"
           },
           "description": {
-            "en": "Run the audit against its stated criteria: sample real records rather than asking whether a procedure exists, note what was examined so a reader can tell coverage from assertion, and grade what comes back as conformity, nonconformity or an observation that is not yet either. Report the result to the manager accountable for the audited process, with a date on the handover \u2014 a finding that lands nowhere in particular has not been reported \u2014 and pass nonconformities into the corrective-action route rather than closing them inside the audit."
+            "en": "Run the audit against its stated criteria: sample real records rather than asking whether a procedure exists, note what was examined so a reader can tell coverage from assertion, and grade what comes back as conformity, nonconformity or an observation that is not yet either. Report the result to the manager accountable for the audited process, with a date on the handover — a finding that lands nowhere in particular has not been reported — and pass nonconformities into the corrective-action route rather than closing them inside the audit."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -2234,6 +2258,9 @@
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Top management (AIMS review chair)",
+      "objective": "To ensure top management reviews the AI management system at planned intervals on a complete set of inputs, and leaves each sitting with recorded decisions and actions.",
+      "successCriteria": "Each sitting held in the period met the quorum rule, with the named top-management roles present and a chair recorded.\nThe standing input pack reached the chair before a sitting opened, with a supplier named against every required input.\nMinutes record what the sitting decided and what it changed, not only what it was shown.\nEvery action a sitting raised was closed on accepted proof, or carried with an owner and a revised date, before the next sitting opened.",
+      "testingMethodology": "Evidence:\nObtain the review calendar with its attendee roles, chair and the quorum rule that makes a sitting count.\nRetrieve the agenda template listing each required input, its named supplier and its due date to the chair.\nCollect the signed minute book for the period.\nAcquire the action register with owners, due dates, states and the proof accepted at closure.\nGather the annual conformity check made over the sittings held.\n\nAnalysis:\nCompare the attendance recorded at each sitting with the quorum rule and identify sittings that fell short.\nCheck each sitting's papers against the standing input list and name the inputs that never arrived.\nRead the minutes for decisions taken and changes directed, separating these from items merely noted.\nFollow open actions from one sitting to the next and test whether closure rested on accepted proof or on assertion.\n\nOutput:\nA sitting-by-sitting table of quorum and input completeness.\nA decision extract separating decisions and resource commitments from noted items.\nAn action ageing report showing items closed, carried and overdue at the following sitting.",
       "requirementCodes": [
         "9.3"
       ],
@@ -2448,10 +2475,13 @@
     {
       "code": "AIMS-06",
       "title": "Clause 10 Improvement",
-      "description": "Implements AIMS-06: Clause 10 Improvement \u2014 routes every AIMS nonconformity from wherever it is raised through containment, cause analysis and a corrective action sized to that cause, drives improvement opportunities to a dated closure that changed something, and re-checks later that each correction actually held.",
+      "description": "Implements AIMS-06: Clause 10 Improvement — routes every AIMS nonconformity from wherever it is raised through containment, cause analysis and a corrective action sized to that cause, drives improvement opportunities to a dated closure that changed something, and re-checks later that each correction actually held.",
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "AI Governance Lead / AIMS Manager",
+      "objective": "To ensure every AIMS nonconformity is contained, traced to the cause that allowed it and corrected in proportion to that cause, with each correction later re-checked.",
+      "successCriteria": "Every route that can raise an AIMS nonconformity feeds one register, and each open item carries a classification.\nContainment ran before cause analysis began, exercised by someone named as holding authority to pause or roll back an AI system.\nEach cause analysis states the mechanism that allowed the failure and names the other systems checked for the same weakness.\nNo entry was closed without a recorded change to the management system and the date that change took effect.",
+      "testingMethodology": "Evidence:\nObtain the improvement and nonconformity register together with the intake routes that feed it.\nRetrieve the containment procedure and the containment records for the period's entries.\nCollect the cause analyses completed during the period.\nAcquire the closure log giving owner, action taken, resulting AIMS change and its date.\nGather the effectiveness re-check performed over sampled closures.\n\nAnalysis:\nTest each intake route by tracing a known issue from where it arose into the register.\nCompare containment timestamps with the start of cause analysis to confirm the order actually held.\nExamine cause analyses for a mechanism rather than a restatement of the symptom, and check how far the extent test reached.\nSample closed entries and confirm the recorded change is present in the current management system documentation.\nReview the re-check results for causes that returned and confirm those entries were reopened.\n\nOutput:\nAn intake coverage test showing which routes actually reach the register.\nA closure sample table pairing each entry with the AIMS change it produced.\nA recurrence report naming re-checked causes that came back and the entries reopened.",
       "requirementCodes": [
         "10.1",
         "10.2"
@@ -2462,7 +2492,7 @@
             "en": "Consolidate every route that raises an AIMS nonconformity into one register"
           },
           "description": {
-            "en": "Nonconformities arrive from internal audit findings, breached monitoring thresholds, AI system incidents, complaints from users or affected third parties, supplier failures and the outputs of the management review, and each route tends to keep its own list \u2014 so the same weakness is corrected three times and counted as none. Pull the routes into a single register, and write beside it the test that separates a nonconformity (a requirement of the AIMS was not met) from an improvement opportunity (it was met, and could work better), because the two are handled differently and every later task reads this register. Attach the register with its intake routes listed and the open items from the last period loaded into it."
+            "en": "Nonconformities arrive from internal audit findings, breached monitoring thresholds, AI system incidents, complaints from users or affected third parties, supplier failures and the outputs of the management review, and each route tends to keep its own list — so the same weakness is corrected three times and counted as none. Pull the routes into a single register, and write beside it the test that separates a nonconformity (a requirement of the AIMS was not met) from an improvement opportunity (it was met, and could work better), because the two are handled differently and every later task reads this register. Attach the register with its intake routes listed and the open items from the last period loaded into it."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -2498,7 +2528,7 @@
             "en": "Set the containment steps that run before any cause analysis begins"
           },
           "description": {
-            "en": "A raised nonconformity runs two clocks: what the AI system or process is doing wrong right now, and why it is. This task covers only the first \u2014 controlling and correcting the nonconformity itself, and dealing with the consequences it has already produced, such as decisions taken on a faulty model output, data written where it should not have been, or wrong information given to a user. State who may authorise a pause, a rollback or a fallback to human handling, and how affected parties are told, because teams otherwise open a cause investigation while the harm keeps accruing. Attach the containment procedure with the authority levels it names."
+            "en": "A raised nonconformity runs two clocks: what the AI system or process is doing wrong right now, and why it is. This task covers only the first — controlling and correcting the nonconformity itself, and dealing with the consequences it has already produced, such as decisions taken on a faulty model output, data written where it should not have been, or wrong information given to a user. State who may authorise a pause, a rollback or a fallback to human handling, and how affected parties are told, because teams otherwise open a cause investigation while the harm keeps accruing. Attach the containment procedure with the authority levels it names."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -2534,7 +2564,7 @@
             "en": "Analyse each nonconformity to its cause and test whether it sits elsewhere"
           },
           "description": {
-            "en": "Correcting what was seen leaves the mechanism that produced it intact, so this is where an entry stops being a symptom. Work each nonconformity back to what allowed it \u2014 a missing check in the life cycle, a dataset nobody owned, an objective never turned into a measure, a role assigned to a vacant post \u2014 and record the cause in those terms rather than as human error, which names nobody's mechanism and can never be eliminated. Then ask the question that decides scope: does the same cause exist in another AI system, dataset or process that simply has not failed yet? Add whatever that finds to the register. The AIMS owner reviews each analysis before a corrective action is sized against it."
+            "en": "Correcting what was seen leaves the mechanism that produced it intact, so this is where an entry stops being a symptom. Work each nonconformity back to what allowed it — a missing check in the life cycle, a dataset nobody owned, an objective never turned into a measure, a role assigned to a vacant post — and record the cause in those terms rather than as human error, which names nobody's mechanism and can never be eliminated. Then ask the question that decides scope: does the same cause exist in another AI system, dataset or process that simply has not failed yet? Add whatever that finds to the register. The AIMS owner reviews each analysis before a corrective action is sized against it."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -2575,7 +2605,7 @@
             "en": "Close each nonconformity and improvement entry only when something in the AIMS changed"
           },
           "description": {
-            "en": "This is the recurring act the clause produces its evidence from. For every open entry, carry the action agreed against its cause, the owner, what changed in the AIMS as a result \u2014 a revised procedure, a new control, an altered objective, a retrained model, a withdrawn use \u2014 and the date it closed. Improvement opportunities travel the same path, which is what makes continual improvement of the AIMS visible as worked items rather than an intention stated in a policy. An entry closing with nothing changed is either not a nonconformity or not finished, and the log has to show which. Attach the log covering the period."
+            "en": "This is the recurring act the clause produces its evidence from. For every open entry, carry the action agreed against its cause, the owner, what changed in the AIMS as a result — a revised procedure, a new control, an altered objective, a retrained model, a withdrawn use — and the date it closed. Improvement opportunities travel the same path, which is what makes continual improvement of the AIMS visible as worked items rather than an intention stated in a policy. An entry closing with nothing changed is either not a nonconformity or not finished, and the log has to show which. Attach the log covering the period."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -2657,10 +2687,13 @@
     {
       "code": "AIMS-07",
       "title": "A.2 Policies related to AI",
-      "description": "Implements AIMS-07: keep the written AI policy framework as a maintained set of documents \u2014 the topics it covers, the pointers that keep it consistent with the organisation's other policies, and the interval reviews that keep every document current.",
+      "description": "Implements AIMS-07: keep the written AI policy framework as a maintained set of documents — the topics it covers, the pointers that keep it consistent with the organisation's other policies, and the interval reviews that keep every document current.",
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "AI Governance Lead / DPO",
+      "objective": "To ensure the AI policy framework stands as a maintained and internally consistent set of owned, versioned documents that covers every AI topic the organisation needs stated.",
+      "successCriteria": "Every AI subject on the coverage map is stated in a named document, and each uncovered subject is recorded as a gap with an owner.\nEach framework document shows its version, its date of issue, the topics it governs and its named owner.\nConflicts between an AI policy statement and the security, privacy or procurement policies were closed by an amendment with a recorded decision-maker.\nNo framework document has passed its review date without an outcome recorded against it.",
+      "testingMethodology": "Evidence:\nObtain the dated coverage map pairing each AI subject with the document stating it today.\nRetrieve the issued AI policy set with its contents page and the version block on each document.\nCollect the cross-policy reconciliation table and the re-issued versions it produced.\nAcquire the version history for the period and the interval review record.\n\nAnalysis:\nRead a sample of AI policy statements against the corresponding security, privacy and procurement clauses and look for contradictions the reconciliation table missed.\nConfirm the version in circulation matches the version named on the contents page and in the review record.\nCheck that each amendment names the trigger that prompted it and records the consistency re-check performed after it.\nTest every document's review date against its recorded outcome and identify those now overdue.\n\nOutput:\nA coverage assessment listing AI subjects with no governing document.\nA contradiction schedule naming the conflicting clause pairs found in the sample.\nA currency table showing each document's version, reviewer, outcome and next due date.",
       "requirementCodes": [
         "A.2.2",
         "A.2.3",
@@ -2672,7 +2705,7 @@
             "en": "Map the AI policy topics against the documents that already carry them"
           },
           "description": {
-            "en": "Before a word of new policy is written, settle what the framework has to consist of: list the subjects the organisation's AI policy must speak to \u2014 acceptable use of AI, data used for training and prompting, model development, human oversight, procurement of AI services \u2014 and beside each one name the document that states it today. Several will already sit inside a security, privacy, HR or procurement policy, and copying them into a fresh AI policy creates two statements of the same rule that drift apart at the first amendment. Mark every topic as covered elsewhere, covered but stale, or not covered at all. Attach the dated map."
+            "en": "Before a word of new policy is written, settle what the framework has to consist of: list the subjects the organisation's AI policy must speak to — acceptable use of AI, data used for training and prompting, model development, human oversight, procurement of AI services — and beside each one name the document that states it today. Several will already sit inside a security, privacy, HR or procurement policy, and copying them into a fresh AI policy creates two statements of the same rule that drift apart at the first amendment. Mark every topic as covered elsewhere, covered but stale, or not covered at all. Attach the dated map."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -2713,7 +2746,7 @@
             "en": "Assemble the AI policy framework with an owner, version and issue date on every document"
           },
           "description": {
-            "en": "Turn the topic map into the framework itself \u2014 a single AI policy or a named set of documents \u2014 and stamp each document with its owner, version number, issue date and the topics it governs, so a reader can tell which document answers a question and whether the copy in front of them is the current one. Cite the approval that already exists rather than seeking a fresh one here. Where an existing policy already governs a topic well, point to it from the framework's contents page instead of restating the rule, because a restated rule is the one that later contradicts its original. Attach the framework as issued."
+            "en": "Turn the topic map into the framework itself — a single AI policy or a named set of documents — and stamp each document with its owner, version number, issue date and the topics it governs, so a reader can tell which document answers a question and whether the copy in front of them is the current one. Cite the approval that already exists rather than seeking a fresh one here. Where an existing policy already governs a topic well, point to it from the framework's contents page instead of restating the rule, because a restated rule is the one that later contradicts its original. Attach the framework as issued."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -2754,7 +2787,7 @@
             "en": "Reconcile each AI policy statement against the security, privacy and procurement policies it touches"
           },
           "description": {
-            "en": "Read the AI policy clause by clause beside the policies it overlaps and find the places where they say different things: an AI policy permitting customer records in model training while the privacy policy forbids secondary use, a supplier rule that contradicts the procurement standard, an oversight requirement no security policy supports. Record every conflict as a pair of clause references, decide which document is the one that states the rule, and amend the other in the same pass \u2014 leaving both texts standing means whichever a team reads first becomes the organisation's position. Attach the reconciliation and the re-issued documents."
+            "en": "Read the AI policy clause by clause beside the policies it overlaps and find the places where they say different things: an AI policy permitting customer records in model training while the privacy policy forbids secondary use, a supplier rule that contradicts the procurement standard, an oversight requirement no security policy supports. Record every conflict as a pair of clause references, decide which document is the one that states the rule, and amend the other in the same pass — leaving both texts standing means whichever a team reads first becomes the organisation's position. Attach the reconciliation and the re-issued documents."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -2795,7 +2828,7 @@
             "en": "Log every amendment to a framework document with the trigger that prompted it"
           },
           "description": {
-            "en": "Changes reach the framework between scheduled reviews \u2014 a new regulation, a class of AI system nobody had deployed before, an incident, a supplier arrangement \u2014 and each one needs an entry recording what prompted it, which clauses moved, the version it produced, and which neighbouring policies were re-checked for consistency afterwards. Without the trigger written down, the next reviewer cannot tell a change that was considered and rejected from one that never reached the document at all, and the framework's currency becomes a matter of memory. Attach the log covering the period."
+            "en": "Changes reach the framework between scheduled reviews — a new regulation, a class of AI system nobody had deployed before, an incident, a supplier arrangement — and each one needs an entry recording what prompted it, which clauses moved, the version it produced, and which neighbouring policies were re-checked for consistency afterwards. Without the trigger written down, the next reviewer cannot tell a change that was considered and rejected from one that never reached the document at all, and the framework's currency becomes a matter of memory. Attach the log covering the period."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -2877,10 +2910,13 @@
     {
       "code": "AIMS-08",
       "title": "A.3 Internal organization",
-      "description": "Implements AIMS-08: A.3 Internal organization \u2014 sets out which function is accountable for each decision an AI system passes through, keeps the function that clears a system for use apart from the one that builds it, and runs an internal route by which anyone can raise a concern about an AI system and have it triaged, answered and recorded.",
+      "description": "Implements AIMS-08: A.3 Internal organization — sets out which function is accountable for each decision an AI system passes through, keeps the function that clears a system for use apart from the one that builds it, and runs an internal route by which anyone can raise a concern about an AI system and have it triaged, answered and recorded.",
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "AI Governance Lead",
+      "objective": "To ensure each AI decision has an accountable function, that clearing a system for use sits apart from building it, and that concerns about an AI system can be raised and answered.",
+      "successCriteria": "Every AI lifecycle decision point names one holding function, a deputy and the route for escalating a disagreement.\nThe function that clears an AI system for use reports outside the delivery line and holds approvals the builders cannot grant themselves.\nThe concern mechanism is published with its intake options, anonymity terms, acknowledgement time and the protection offered to whoever raises a concern.\nEvery concern raised in the period was routed, decided and closed, with each date recorded.",
+      "testingMethodology": "Evidence:\nObtain the accountability map of AI decision points with holding functions, deputies and escalation routes.\nRetrieve the terms of reference for the clearing function, including its reporting line and reserved approvals.\nCollect the published description of the concern mechanism as staff actually see it.\nAcquire the concern register for the period.\nSelect a sample of recent AI decisions taken on systems in production.\n\nAnalysis:\nTrace each sampled decision to the person who took it and test whether they sit in the function the map names.\nCompare the clearing function's reporting line with the delivery line to confirm the separation is structural rather than stated.\nCheck acknowledgement dates in the register against the time the published mechanism commits to.\nTest whether closed concerns reached a decision, and whether any were routed back to the function they were about.\n\nOutput:\nA decision sample table setting who decided against who should have.\nA separation assessment of the clearing function's reporting line and reserved approvals.\nA concern-handling report covering acknowledgement times, routing and closure.",
       "requirementCodes": [
         "A.3.2",
         "A.3.3"
@@ -2891,7 +2927,7 @@
             "en": "Map each AI lifecycle decision to the function accountable for it"
           },
           "description": {
-            "en": "Work along the path an AI system takes \u2014 proposal, data selection, build, sign-off for use, monitoring, change, retirement \u2014 and record which function holds the decision at each point, who deputises when that function is unavailable, and where the decision escalates when it cannot be settled. Name functions rather than individuals, because a map keyed to people is stale the week someone leaves. The output that matters is the set of decision points no function claims: those are the ones taken by whoever happens to be in the room. Attach the map."
+            "en": "Work along the path an AI system takes — proposal, data selection, build, sign-off for use, monitoring, change, retirement — and record which function holds the decision at each point, who deputises when that function is unavailable, and where the decision escalates when it cannot be settled. Name functions rather than individuals, because a map keyed to people is stale the week someone leaves. The output that matters is the set of decision points no function claims: those are the ones taken by whoever happens to be in the room. Attach the map."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -2932,7 +2968,7 @@
             "en": "Separate the function that clears an AI system for use from the one that builds it"
           },
           "description": {
-            "en": "Decide which approvals are reserved to a function outside the delivery team \u2014 releasing a system into live use, accepting a residual risk, overriding a monitoring threshold \u2014 and move them there in writing, with a reporting line that does not run back through the team whose work is being cleared. A reviewer who reports to the builder can only ever slow a release down, never stop one. Record what happens when the two disagree, because that is the case the structure exists for. Attach the terms of reference."
+            "en": "Decide which approvals are reserved to a function outside the delivery team — releasing a system into live use, accepting a residual risk, overriding a monitoring threshold — and move them there in writing, with a reporting line that does not run back through the team whose work is being cleared. A reviewer who reports to the builder can only ever slow a release down, never stop one. Record what happens when the two disagree, because that is the case the structure exists for. Attach the terms of reference."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -2973,7 +3009,7 @@
             "en": "Open a confidential route for raising a concern about an AI system"
           },
           "description": {
-            "en": "Stand up the internal mechanism this control is really about: a way for anyone working with or around an AI system to report that it is behaving wrongly, being used beyond what was agreed, or harming someone \u2014 without needing the agreement of the team responsible for it. Offer at least one intake that does not require a name, say who reads what arrives and how quickly it is acknowledged, and state plainly what protection a person raising a concern has. A route nobody can find, or nobody believes is safe, produces the same silence as having none. Attach the description of the mechanism as it is published to staff."
+            "en": "Stand up the internal mechanism this control is really about: a way for anyone working with or around an AI system to report that it is behaving wrongly, being used beyond what was agreed, or harming someone — without needing the agreement of the team responsible for it. Offer at least one intake that does not require a name, say who reads what arrives and how quickly it is acknowledged, and state plainly what protection a person raising a concern has. A route nobody can find, or nobody believes is safe, produces the same silence as having none. Attach the description of the mechanism as it is published to staff."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -3014,7 +3050,7 @@
             "en": "Log every concern raised about an AI system with its triage and outcome"
           },
           "description": {
-            "en": "Keep one record per concern carrying the date it arrived, the route it came in by, the system it names, the function it was routed to, what was decided and when it closed. Route from the accountability map rather than by judgement, so the same kind of concern does not reach a different desk each time. Record the outcome even where the answer was that nothing needed changing \u2014 the register is the only evidence that raising something leads anywhere, and a run of concerns closed with no action is itself a finding. Attach the register for the period."
+            "en": "Keep one record per concern carrying the date it arrived, the route it came in by, the system it names, the function it was routed to, what was decided and when it closed. Route from the accountability map rather than by judgement, so the same kind of concern does not reach a different desk each time. Record the outcome even where the answer was that nothing needed changing — the register is the only evidence that raising something leads anywhere, and a run of concerns closed with no action is itself a finding. Attach the register for the period."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -3050,7 +3086,7 @@
             "en": "Sample recent AI decisions and confirm the accountable function actually took them"
           },
           "description": {
-            "en": "Draw a sample of decisions taken since the last review \u2014 releases, risk acceptances, changes to a live model \u2014 and find who actually took each one and under what authority, then read that against the map. Two failures show up only from this direction: a decision routinely taken by someone the map does not name, and a concern that travelled by a manager's inbox or a chat thread instead of the published route, which says the route is not trusted rather than not needed. Record each gap with the correction made to the structure. Attach the sample test."
+            "en": "Draw a sample of decisions taken since the last review — releases, risk acceptances, changes to a live model — and find who actually took each one and under what authority, then read that against the map. Two failures show up only from this direction: a decision routinely taken by someone the map does not name, and a concern that travelled by a manager's inbox or a chat thread instead of the published route, which says the route is not trusted rather than not needed. Record each gap with the correction made to the structure. Attach the sample test."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -3095,6 +3131,9 @@
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "AI Platform Owner / Engineering Lead",
+      "objective": "To ensure the datasets, models, tooling, environments and people each AI system is built from are recorded per system, kept current, and reconciled against what is deployed.",
+      "successCriteria": "Every AI system in the AIMS scope has a stable identifier, an owner and a resource record declaring each required resource class.\nEach dataset a system depends on shows its origin, the agreement permitting its use, its storage location and the systems consuming it.\nModels, library dependencies, external APIs and hosting environments are each linked to the AI system running on them.\nDuties held by a single person are flagged, with an agreed deputy or a cover date recorded against them.",
+      "testingMethodology": "Evidence:\nObtain the register of AI systems in scope with their owners, identifiers and declared resource classes.\nRetrieve the dataset catalogue giving origin, permitting agreement, storage location and consuming systems.\nCollect the technical resource register linking models, dependencies, external APIs and hosting environments to systems.\nAcquire the competence and cover review with its named duty holders.\nTake an independent inventory of deployed model artefacts, data stores and cloud accounts.\n\nAnalysis:\nCompare the deployed inventory with the register to find running systems and artefacts holding no record.\nTest a sample of datasets for an agreement that actually permits the use the system makes of them.\nCheck that model and environment entries name the version now in production, not the version first registered.\nConfirm each sole-holder duty carries a deputy or a cover date that has not already passed.\n\nOutput:\nA reconciliation report naming unrecorded systems, datasets and environments.\nA dataset permission exception list covering uses beyond the agreement held.\nA key-person dependency schedule with the cover arranged against each duty.",
       "requirementCodes": [
         "A.4.2",
         "A.4.3",
@@ -3318,10 +3357,13 @@
     {
       "code": "AIMS-10",
       "title": "A.5 Assessing impacts of AI systems",
-      "description": "Implements AIMS-10: A.5 Assessing impacts of AI systems \u2014 a repeatable process for judging what each AI system does to the individuals who meet it, to the groups it treats as a class, and to society at large, together with the records that process leaves behind. Covers naming the affected parties for every system, the procedure and the events that trigger it, a societal-impact section with its dimensions named, completed impact records broken out per affected group, and a comparison of what was predicted against what the deployed systems actually produced.",
+      "description": "Implements AIMS-10: A.5 Assessing impacts of AI systems — a repeatable process for judging what each AI system does to the individuals who meet it, to the groups it treats as a class, and to society at large, together with the records that process leaves behind. Covers naming the affected parties for every system, the procedure and the events that trigger it, a societal-impact section with its dimensions named, completed impact records broken out per affected group, and a comparison of what was predicted against what the deployed systems actually produced.",
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "AI Governance Lead / DPO",
+      "objective": "To ensure that what each AI system does to the individuals it processes, the classes it sorts them into and wider society is established before deployment and owned afterwards.",
+      "successCriteria": "Every AI system names the individuals it processes, the classes its outputs assign them to and the communities downstream of it.\nAssessments fire on the documented triggers and use the fixed rating wording, so two assessors reach the same conclusion.\nEach impact record separates findings by affected group, covers the named societal dimensions, and names who accepted the residual.\nDeployed systems whose observed effects diverged from the forecast have their assessments reopened.",
+      "testingMethodology": "Evidence:\nObtain the affected-party mapping covering each AI system, its users, the classes it assigns and the communities downstream.\nRequest the impact-assessment procedure with its trigger events, rating wording and blank record template.\nCollect the societal-impact section of the method, with the dimensions considered and the reasons logged for those ruled out.\nPull the impact records filed in the period and the residual-impact acceptances attached to them.\nObtain the prediction-versus-outcome comparison and the assessments reopened as a result.\n\nAnalysis:\nTrace a sample of systems from the inventory into the mapping to find an affected class or community left unnamed.\nRe-rate one assessed system using only the procedure's wording and compare the result with the rating on file.\nCheck that each record was raised by a trigger the procedure names, and that no trigger event passed unassessed.\nTest whether the societal dimensions ruled out carry a recorded reason rather than a silent omission.\nConfirm each residual impact was accepted by a person holding the authority the procedure requires.\n\nOutput:\nCoverage table of AI systems against the affected parties and communities identified for each.\nRating-reproduction worksheet showing the assessor's result beside the one on file.\nSchedule of sampled impact records with their trigger, societal findings and residual acceptance.\nList of forecast-versus-outcome divergences and the assessments reopened or left standing.",
       "requirementCodes": [
         "A.5.2",
         "A.5.3",
@@ -3375,7 +3417,7 @@
             "en": "Assemble the impact-assessment procedure so two assessors reach the same conclusion"
           },
           "description": {
-            "en": "A process that gives a different answer depending on who runs it is not repeatable, and repeatability is what this requirement is about. Turn the organisation's assessment criteria into a procedure a project team can run without a specialist sitting beside them: the events that make it mandatory, the questions asked, the wording each severity rating must match, who has to take part, and the record template that comes out at the end. State the triggers explicitly \u2014 before a system is deployed, when a model changes materially, when it is pointed at a new population, and at a fixed interval after that \u2014 because an assessment with no trigger happens once and then never again. Attach the procedure and the blank record template."
+            "en": "A process that gives a different answer depending on who runs it is not repeatable, and repeatability is what this requirement is about. Turn the organisation's assessment criteria into a procedure a project team can run without a specialist sitting beside them: the events that make it mandatory, the questions asked, the wording each severity rating must match, who has to take part, and the record template that comes out at the end. State the triggers explicitly — before a system is deployed, when a model changes materially, when it is pointed at a new population, and at a fixed interval after that — because an assessment with no trigger happens once and then never again. Attach the procedure and the blank record template."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -3416,7 +3458,7 @@
             "en": "Extend the assessment to societal effects that no individual would think to report"
           },
           "description": {
-            "en": "Harm to a person arrives as a complaint; harm to society arrives as nothing at all, so the method has to go looking for it. Add a societal section that considers by name the dimensions this organisation's systems can actually move \u2014 employment and de-skilling in the roles being automated, access to essential services for people who cannot use the system, the environmental load of training and serving it, the effect on public information where outputs are published, and the concentration of decisions in a single model. Require a written reason whenever a dimension is judged not applicable, because a blank section and a considered 'not relevant here' look identical a year later. Attach the societal section with the sources consulted for it."
+            "en": "Harm to a person arrives as a complaint; harm to society arrives as nothing at all, so the method has to go looking for it. Add a societal section that considers by name the dimensions this organisation's systems can actually move — employment and de-skilling in the roles being automated, access to essential services for people who cannot use the system, the environmental load of training and serving it, the effect on public information where outputs are published, and the concentration of decisions in a single model. Require a written reason whenever a dimension is judged not applicable, because a blank section and a considered 'not relevant here' look identical a year later. Attach the societal section with the sources consulted for it."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -3538,6 +3580,9 @@
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Head of AI Engineering / Engineering Lead",
+      "objective": "To ensure that an AI system reaches production only through the defined build process, against stated requirements, and with its release cleared on recorded evidence.",
+      "successCriteria": "Responsible development objectives carry a measurable property and a threshold rather than an aspiration.\nEach AI system holds a versioned specification pairing required behaviour and quality attributes with their rationale.\nNo build went live without clearing the release criteria in force, and every stage closure carries its named signer.\nThe life-cycle log accounts for each training run, release, change and withdrawal, linked to the handover issued.",
+      "testingMethodology": "Evidence:\nObtain the dated development guidance with its objectives, thresholds, build stages and stage signers.\nRequest the specification for a sample of deployed AI systems at each revision it passed through.\nCollect the verification and validation plan, the release criteria, and the rollout and fallback steps.\nExport the life-cycle event log for the period with the clearance evidence attached to each go-live.\nGather the handover packs held by the teams now operating the sampled systems.\n\nAnalysis:\nWalk one deployed model version back through its test results to the requirements it was built on.\nCheck that each release cleared the criteria in force on its date, not a revision issued later.\nCompare stage closures against the guidance to find stages signed by someone other than the named signer.\nSample model versions running in production and test whether each appears in the life-cycle log.\nAssess whether post-release measures have a watcher who acted when a threshold moved.\n\nOutput:\nTraceability chain for the sampled system from requirement through test result to deployed version.\nException list of releases missing clearance evidence or closed by an unauthorised signer.\nRegister of production model versions reconciled against the life-cycle event log.",
       "requirementCodes": [
         "A.6.1.2",
         "A.6.1.3",
@@ -3555,7 +3600,7 @@
             "en": "Express the responsible development objectives and the documented process every AI build follows"
           },
           "description": {
-            "en": "Turn the organisation's responsible-AI aims into properties a build can be checked against \u2014 accuracy floors, robustness on degraded input, explainability, the points where a person stays in the loop, the behaviour expected when the system is unsure \u2014 and set out the stages a build passes through from concept to retirement, with who signs the exit of each one. An objective stated as an aspiration cannot fail a build, and an undocumented process still exists but exists as habit: it varies by team and cannot be shown to an auditor. Both halves are the guidance every later task in this control is measured against."
+            "en": "Turn the organisation's responsible-AI aims into properties a build can be checked against — accuracy floors, robustness on degraded input, explainability, the points where a person stays in the loop, the behaviour expected when the system is unsure — and set out the stages a build passes through from concept to retirement, with who signs the exit of each one. An objective stated as an aspiration cannot fail a build, and an undocumented process still exists but exists as habit: it varies by team and cannot be shown to an auditor. Both halves are the guidance every later task in this control is measured against."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -3601,7 +3646,7 @@
             "en": "Capture each AI system's functional and non-functional requirements and the design decisions behind them"
           },
           "description": {
-            "en": "For every system being built, write the requirements down in a form somebody can test: what it must do, and the non-functional side \u2014 accuracy and error tolerance, latency, behaviour on inputs outside the training range, security, and the oversight a person must be able to exercise. Alongside them keep the design record: the model approach chosen, the alternatives rejected and why, and the constraints that shaped it, updated when the design moves rather than reconstructed from memory a year later. Requirements held only in tickets and conversation are the ones quietly dropped mid-project, and nobody can say afterwards that they were."
+            "en": "For every system being built, write the requirements down in a form somebody can test: what it must do, and the non-functional side — accuracy and error tolerance, latency, behaviour on inputs outside the training range, security, and the oversight a person must be able to exercise. Alongside them keep the design record: the model approach chosen, the alternatives rejected and why, and the constraints that shaped it, updated when the design moves rather than reconstructed from memory a year later. Requirements held only in tickets and conversation are the ones quietly dropped mid-project, and nobody can say afterwards that they were."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -3647,7 +3692,7 @@
             "en": "Set the verification and validation methodology and the release criteria a build must clear"
           },
           "description": {
-            "en": "Decide, before a release is in flight, how a candidate is tested and what it must reach to be let out: which evaluation data is used and why it reflects live conditions, which tests are repeated after retraining, the thresholds that block a go-live, and who may approve an exception and on what record. The deployment plan then says how the system reaches production \u2014 staged rollout, fallback, and the performance measures watched afterwards with the people who watch them. Criteria settled while a release is in flight are always the criteria that candidate happens to meet."
+            "en": "Decide, before a release is in flight, how a candidate is tested and what it must reach to be let out: which evaluation data is used and why it reflects live conditions, which tests are repeated after retraining, the thresholds that block a go-live, and who may approve an exception and on what record. The deployment plan then says how the system reaches production — staged rollout, fallback, and the performance measures watched afterwards with the people who watch them. Criteria settled while a release is in flight are always the criteria that candidate happens to meet."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -3688,7 +3733,7 @@
             "en": "Log each AI release, model version and retirement as it happens through the period"
           },
           "description": {
-            "en": "Keep one running record of life-cycle events \u2014 training runs, evaluations, go-lives, material configuration changes, withdrawals and retirements \u2014 each with its date, version, authorising person and the evidence that the release criteria were cleared. Attach the technical documentation handed to the people who run the system, matched to the version actually deployed rather than the one the pack was first written for. Assembled after the fact this log is a best guess; kept as events happen it is the only way to answer which model was live on a given day and what was known about it then."
+            "en": "Keep one running record of life-cycle events — training runs, evaluations, go-lives, material configuration changes, withdrawals and retirements — each with its date, version, authorising person and the evidence that the release criteria were cleared. Attach the technical documentation handed to the people who run the system, matched to the version actually deployed rather than the one the pack was first written for. Assembled after the fact this log is a best guess; kept as events happen it is the only way to answer which model was live on a given day and what was known about it then."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -3734,7 +3779,7 @@
             "en": "Trace a deployed AI system back through its verification results to the requirements it was built on"
           },
           "description": {
-            "en": "Take a system that went live during the period and follow it backwards: every requirement to the result that verified it, the design record to the version actually running, and the documentation its operators hold to the version they are operating. This is where life-cycle paperwork fails in practice \u2014 a requirement dropped quietly during development, a test run against a model two versions old, a handover pack describing behaviour that changed at the last release. Record each mismatch with the correction agreed and the person who owns it, and feed anything systemic back into the development guidance."
+            "en": "Take a system that went live during the period and follow it backwards: every requirement to the result that verified it, the design record to the version actually running, and the documentation its operators hold to the version they are operating. This is where life-cycle paperwork fails in practice — a requirement dropped quietly during development, a test run against a model two versions old, a handover pack describing behaviour that changed at the last release. Record each mismatch with the correction agreed and the person who owns it, and feed anything systemic back into the development guidance."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -3775,10 +3820,13 @@
     {
       "code": "AIMS-12",
       "title": "A.7 Data for AI systems",
-      "description": "Implements AIMS-12: A.7 Data for AI systems \u2014 where each dataset used to build or retrain a model came from and why it was chosen, the quality criteria it must clear and the evidence it cleared them, the preparation applied between the raw source and the training set, and the lineage joining a deployed model back to the records behind it.",
+      "description": "Implements AIMS-12: A.7 Data for AI systems — where each dataset used to build or retrain a model came from and why it was chosen, the quality criteria it must clear and the evidence it cleared them, the preparation applied between the raw source and the training set, and the lineage joining a deployed model back to the records behind it.",
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Data Owner / ML Engineering Lead",
+      "objective": "To ensure that the data a model is built and retrained on is of known origin, permitted for the use made of it, and fit for purpose against stated criteria.",
+      "successCriteria": "Every dataset in use names its supplier, acquisition route and the licence or consent that permits the use made of it.\nQuality measures carry a method and a numeric bar, and data falling under a bar triggers the action the criteria state.\nPreparation between raw source and training set is described per dataset, including exclusions, labelling and any synthetic content.\nA deployed model can be joined back to the dataset versions it was trained on.",
+      "testingMethodology": "Evidence:\nObtain the provenance entry for each dataset: supplier, acquisition route, licence basis and permitted uses.\nRequest the data-quality criteria sheet giving each measure its method, bar and remedial action.\nCollect the preparation description per dataset, covering cleaning, exclusions, labelling, augmentation and the split.\nExport the lineage log joining dataset versions to the model builds trained on them.\nGather the latest verification results measured against each declared bar.\n\nAnalysis:\nSelect a deployed model and trace it back through the lineage log to the datasets and licences behind it.\nCheck that the permitted uses on record cover the training actually performed, retraining included.\nRecompute one quality measure from the data now in live use and compare it with the declared value.\nConfirm that datasets failing a bar were withheld or remediated rather than used with the failure noted.\nTest whether labelling method and synthetic-content entries exist for the datasets that carry them.\n\nOutput:\nProvenance register flagging any dataset whose licence or consent basis is missing or exceeded.\nRecomputed quality measures set beside the declared values, with each variance explained.\nTraceback record for the sampled model listing its dataset versions and the changes that created them.",
       "requirementCodes": [
         "A.7.2",
         "A.7.3",
@@ -3792,7 +3840,7 @@
             "en": "Trace each dataset back to the source it came from and the reason it was chosen"
           },
           "description": {
-            "en": "For every dataset feeding development, retraining or evaluation, follow it back to where it actually originated \u2014 a supplier feed, a customer-data extract, a public corpus, a synthetic generator \u2014 and record who provided it, under what licence, contract or consent basis, and what uses those terms permit. Second-hand data is what bites: a corpus a supplier assembled from sources they will not name cannot be defended to an auditor or a regulator, and the moment to discover that is before it trains anything. Record alongside it why this data was selected and what was rejected, since a selection nobody wrote down is indistinguishable from whatever was easiest to obtain."
+            "en": "For every dataset feeding development, retraining or evaluation, follow it back to where it actually originated — a supplier feed, a customer-data extract, a public corpus, a synthetic generator — and record who provided it, under what licence, contract or consent basis, and what uses those terms permit. Second-hand data is what bites: a corpus a supplier assembled from sources they will not name cannot be defended to an auditor or a regulator, and the moment to discover that is before it trains anything. Record alongside it why this data was selected and what was rejected, since a selection nobody wrote down is indistinguishable from whatever was easiest to obtain."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -3833,7 +3881,7 @@
             "en": "Set the quality thresholds a dataset must clear before it trains anything"
           },
           "description": {
-            "en": "Write down, per dataset and for the purpose it serves, what good enough means in numbers: completeness, label accuracy, duplication, class balance, how current the records are, and coverage of the populations the system will actually be used on. Criteria stated as adjectives cannot be verified \u2014 'representative' passes whatever dataset somebody already wanted to use \u2014 so each one needs a measurement method, a threshold and a stated consequence when data arrives below it. Agree them with the people who have to meet them, or the thresholds get quietly reinterpreted at the first deadline."
+            "en": "Write down, per dataset and for the purpose it serves, what good enough means in numbers: completeness, label accuracy, duplication, class balance, how current the records are, and coverage of the populations the system will actually be used on. Criteria stated as adjectives cannot be verified — 'representative' passes whatever dataset somebody already wanted to use — so each one needs a measurement method, a threshold and a stated consequence when data arrives below it. Agree them with the people who have to meet them, or the thresholds get quietly reinterpreted at the first deadline."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -3874,7 +3922,7 @@
             "en": "Capture every preparation step that turns the raw source into a training set"
           },
           "description": {
-            "en": "Describe the pipeline between the data as it arrived and the data the model actually sees: cleaning and de-duplication, filtering and exclusion rules, labelling and whoever or whatever applied the labels, feature engineering, normalisation, augmentation, any synthetic records added, and how the training, validation and test split was drawn. Preparation is where silent damage happens \u2014 an exclusion rule that drops a whole population, an augmentation that multiplies one class \u2014 and none of it is visible from the raw data or from the final accuracy figure. Parameters belong in the record too: the same step at a different threshold is a different dataset."
+            "en": "Describe the pipeline between the data as it arrived and the data the model actually sees: cleaning and de-duplication, filtering and exclusion rules, labelling and whoever or whatever applied the labels, feature engineering, normalisation, augmentation, any synthetic records added, and how the training, validation and test split was drawn. Preparation is where silent damage happens — an exclusion rule that drops a whole population, an augmentation that multiplies one class — and none of it is visible from the raw data or from the final accuracy figure. Parameters belong in the record too: the same step at a different threshold is a different dataset."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -3956,7 +4004,7 @@
             "en": "Re-verify the declared quality criteria against the data now in live use"
           },
           "description": {
-            "en": "At the review interval, re-run each defined measurement against the data that is training and evaluating models today, rather than against the snapshot measured when the criteria were written. Read the misses instead of the summary: a corpus that cleared every bar at onboarding drifts as feeds change, labels accumulate and the population shifts, and these measurements are the only thing that will say so before the model does. Take one deployed model in the same pass and walk it back through the log to the source records it trained on \u2014 a lineage that cannot be walked is a lineage that does not exist."
+            "en": "At the review interval, re-run each defined measurement against the data that is training and evaluating models today, rather than against the snapshot measured when the criteria were written. Read the misses instead of the summary: a corpus that cleared every bar at onboarding drifts as feeds change, labels accumulate and the population shifts, and these measurements are the only thing that will say so before the model does. Take one deployed model in the same pass and walk it back through the log to the source records it trained on — a lineage that cannot be walked is a lineage that does not exist."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -3997,10 +4045,13 @@
     {
       "code": "AIMS-13",
       "title": "A.8 Information for interested parties",
-      "description": "Implements AIMS-13: what the organisation tells the people outside it about its AI systems \u2014 user-facing documentation of purpose and limits, a working route for outsiders to report AI behaviour they consider wrong, a plan for notifying affected people when an AI system fails, and proactive disclosure when a system changes underneath them.",
+      "description": "Implements AIMS-13: what the organisation tells the people outside it about its AI systems — user-facing documentation of purpose and limits, a working route for outsiders to report AI behaviour they consider wrong, a plan for notifying affected people when an AI system fails, and proactive disclosure when a system changes underneath them.",
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "AI Governance Lead / Legal-DPO",
+      "objective": "To ensure that people outside the organisation can learn what an AI system does, raise concerns about how it behaves, and be told when it fails them.",
+      "successCriteria": "Each deployed system has published documentation stating its intended use, known limitations and the route to a human.\nThe reporting channel is reachable from where the system is used, and reports are acknowledged within the stated time.\nFailures meeting a notification trigger reached their named audiences inside the committed period.\nA change to a system's purpose, data or limits was followed by a refreshed disclosure on record.",
+      "testingMethodology": "Evidence:\nObtain the published documentation set and the list of systems currently in live use.\nRequest the incident-notification plan with its failure triggers, audiences, committed timings and named sender.\nCollect the definition of the problem-intake channel, where it is surfaced, its triage owner and escalation rule.\nExport the intake register and the outward communications log for the period.\nGather the disclosures issued after each change to a system's purpose, data or limits.\n\nAnalysis:\nRead a sample of published entries against the system's actual behaviour to find limits left unstated.\nSubmit a report through the intake route and time the acknowledgement against the commitment.\nCheck every failure in the period against the notification triggers, those judged not to qualify included.\nCompare the change records with the communications log to find changes that went out undisclosed.\nVerify that reports meeting the escalation rule were passed into incident notification.\n\nOutput:\nCoverage matrix of systems in live use against their published documentation.\nSampled intake cases with acknowledgement and resolution times set against the commitment.\nException list of qualifying failures or system changes with no outward notice on record.",
       "requirementCodes": [
         "A.8.2",
         "A.8.3",
@@ -4013,7 +4064,7 @@
             "en": "Determine which AI failures oblige an outward notice, to whom and within what time"
           },
           "description": {
-            "en": "Decide in advance what an AI system doing the wrong thing obliges the organisation to say publicly: which failure kinds trigger a notice (harmful output, a wrongful automated decision, behaviour outside the system's stated envelope, a data problem that changed results), which audiences each kind reaches \u2014 affected individuals, users, the wider public, a regulator \u2014 and how long the organisation gives itself before the first notice goes out. Settled during an incident instead, this becomes an argument about whether anybody needs to be told at all, while the clock runs. Attach the notification plan with its trigger-to-audience matrix and stated timings."
+            "en": "Decide in advance what an AI system doing the wrong thing obliges the organisation to say publicly: which failure kinds trigger a notice (harmful output, a wrongful automated decision, behaviour outside the system's stated envelope, a data problem that changed results), which audiences each kind reaches — affected individuals, users, the wider public, a regulator — and how long the organisation gives itself before the first notice goes out. Settled during an incident instead, this becomes an argument about whether anybody needs to be told at all, while the clock runs. Attach the notification plan with its trigger-to-audience matrix and stated timings."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -4054,7 +4105,7 @@
             "en": "Publish user-facing documentation giving each AI system's purpose, limits and oversight route"
           },
           "description": {
-            "en": "Write the documentation the people who use the system, or are subject to its output, actually receive: what it is for, what it does and does not do well, the conditions under which its output degrades, what data about the person it uses, whether a human reviews its decisions and how to reach one. Documentation written for the buyer rather than the user is the common failure here \u2014 it describes capability and omits limitation, and limitation is the half that protects the reader. Attach the documentation set as published, per system."
+            "en": "Write the documentation the people who use the system, or are subject to its output, actually receive: what it is for, what it does and does not do well, the conditions under which its output degrades, what data about the person it uses, whether a human reviews its decisions and how to reach one. Documentation written for the buyer rather than the user is the common failure here — it describes capability and omits limitation, and limitation is the half that protects the reader. Attach the documentation set as published, per system."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -4095,7 +4146,7 @@
             "en": "Open an outside route for reporting AI behaviour, with acknowledgement and routing rules"
           },
           "description": {
-            "en": "Stand up a channel a person outside the organisation can use to say an AI system behaved wrongly, reachable from the place the behaviour happened rather than buried in a policy page. Decide who receives the reports, what the reporter is told and how quickly, when a report escalates into the notification plan, and how somebody who is not a customer is handled \u2014 an intake that only accepts contract holders is the failure this requirement exists to prevent. Attach the channel definition with its routing and acknowledgement rules."
+            "en": "Stand up a channel a person outside the organisation can use to say an AI system behaved wrongly, reachable from the place the behaviour happened rather than buried in a policy page. Decide who receives the reports, what the reporter is told and how quickly, when a report escalates into the notification plan, and how somebody who is not a customer is handled — an intake that only accepts contract holders is the failure this requirement exists to prevent. Attach the channel definition with its routing and acknowledgement rules."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -4136,7 +4187,7 @@
             "en": "Send refreshed disclosures whenever a system's purpose, data or limits change"
           },
           "description": {
-            "en": "Treat every change that moves a system away from what was published \u2014 a retrained model, a new data source, a widened purpose, a newly discovered limitation, a retirement \u2014 as a trigger to tell the audiences it affects, rather than waiting for an annual documentation refresh. The silent version of this failure is documentation that is accurate on the day it ships and describes last year's model one release later, with nobody outside able to tell. Attach the dated log of disclosures issued during the period."
+            "en": "Treat every change that moves a system away from what was published — a retrained model, a new data source, a widened purpose, a newly discovered limitation, a retirement — as a trigger to tell the audiences it affects, rather than waiting for an annual documentation refresh. The silent version of this failure is documentation that is accurate on the day it ships and describes last year's model one release later, with nobody outside able to tell. Attach the dated log of disclosures issued during the period."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -4177,7 +4228,7 @@
             "en": "Sample the reports received and check what the reporter was told and how fast"
           },
           "description": {
-            "en": "Read the reports that actually arrived rather than the channel's own statistics: for a sample, check whether the reporter was acknowledged within the committed period, what substantive answer they got, whether the report met a notification trigger and whether the notice was in fact sent. Count the AI complaints that reached the organisation by other routes \u2014 support tickets, social media, a regulator's letter \u2014 because those are the evidence that the published channel is not reachable. Attach the review with its findings and the corrections made."
+            "en": "Read the reports that actually arrived rather than the channel's own statistics: for a sample, check whether the reporter was acknowledged within the committed period, what substantive answer they got, whether the report met a notification trigger and whether the notice was in fact sent. Count the AI complaints that reached the organisation by other routes — support tickets, social media, a regulator's letter — because those are the evidence that the published channel is not reachable. Attach the review with its findings and the corrections made."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -4222,6 +4273,9 @@
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "AI System Owner / IT Operations",
+      "objective": "To ensure that an AI system already in production stays inside the purpose it was assessed for, and is paused or reassessed at the point it no longer does.",
+      "successCriteria": "Every system in production has a recorded approved purpose and an explicit list of uses it is not authorised for.\nOperating instructions reached the teams using each system and state when a human must override its output.\nEach live system has a use objective with a threshold, a stated action on breach and the person who calls it.\nNew uses of a deployed system were decided against its assessed purpose before they began, not afterwards.",
+      "testingMethodology": "Evidence:\nObtain the per-system purpose baseline, with the decisions each system may influence and the uses ruled out.\nRequest the responsible-use operating procedures and the distribution record naming the teams that received them.\nCollect the use objectives with their thresholds, breach actions and named owners.\nExport the new-use decision register for the period.\nPull usage logs for a sample of production systems covering the same period.\n\nAnalysis:\nCompare logged usage against the approved purpose to identify uses that were never declared.\nCheck that each new-use request was decided before the use started and that refusals were enforced.\nTest whether a breached threshold produced the stated action, the pause included, and who called it.\nConfirm the operating teams hold the current procedure version rather than a superseded one.\nAssess whether the uses ruled out in the baseline are technically prevented or only written down.\n\nOutput:\nUsage-against-purpose comparison naming each undeclared use found and its disposition.\nUse-objective results for the period with every threshold breach and the action taken against it.\nSchedule of new-use decisions, their purpose-check outcome and any reassessment raised.",
       "requirementCodes": [
         "A.9.2",
         "A.9.3",
@@ -4315,7 +4369,7 @@
             "en": "Set responsible-use objectives and the thresholds that pause a system already in production"
           },
           "description": {
-            "en": "Say what good use of each live system looks like in numbers the operating team can read \u2014 override rate, complaint volume, accuracy on the population it actually sees, the share of outputs a human changed \u2014 and attach to each one a threshold that triggers a pause, a fallback to manual handling, or a referral back for reassessment. Objectives with no threshold produce a dashboard nobody acts on, and thresholds with no owner produce a breach everyone saw and nobody called. Attach the objective set with its thresholds and named owners."
+            "en": "Say what good use of each live system looks like in numbers the operating team can read — override rate, complaint volume, accuracy on the population it actually sees, the share of outputs a human changed — and attach to each one a threshold that triggers a pause, a fallback to manual handling, or a referral back for reassessment. Objectives with no threshold produce a dashboard nobody acts on, and thresholds with no owner produce a breach everyone saw and nobody called. Attach the objective set with its thresholds and named owners."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -4356,7 +4410,7 @@
             "en": "Authorise every new use of a deployed system against the purpose it was originally assessed for"
           },
           "description": {
-            "en": "Run a standing gate: before an existing system is pointed at a new population, a new dataset, a new decision or a new market, someone checks the request against that system's assessed purpose and either authorises it, sends it back for a fresh impact assessment, or refuses it. The failure this prevents is quiet and cheap \u2014 a model bought for one job is reused for a second because it is already paid for and already integrated, and nobody re-ran the assessment because no new system was deployed. Keep one register row per request, refusals included."
+            "en": "Run a standing gate: before an existing system is pointed at a new population, a new dataset, a new decision or a new market, someone checks the request against that system's assessed purpose and either authorises it, sends it back for a fresh impact assessment, or refuses it. The failure this prevents is quiet and cheap — a model bought for one job is reused for a second because it is already paid for and already integrated, and nobody re-ran the assessment because no new system was deployed. Keep one register row per request, refusals included."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -4397,7 +4451,7 @@
             "en": "Compare actual usage over the period with the approved purpose and the use objectives"
           },
           "description": {
-            "en": "Once a period, read what the systems were actually used for \u2014 usage logs, override records, support tickets and the new-use register \u2014 and put that beside the purpose baseline and the objective thresholds. Look specifically for uses that never passed the gate, because scope creep rarely arrives as a request: it arrives as a quietly widened integration, or as a team that found the API useful. For each departure, settle whether the use stops or is authorised with its assessment reworked. Attach the usage review with findings and decisions."
+            "en": "Once a period, read what the systems were actually used for — usage logs, override records, support tickets and the new-use register — and put that beside the purpose baseline and the objective thresholds. Look specifically for uses that never passed the gate, because scope creep rarely arrives as a request: it arrives as a quietly widened integration, or as a team that found the API useful. For each departure, settle whether the use stops or is authorised with its assessment reworked. Attach the usage review with findings and decisions."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -4442,6 +4496,9 @@
       "category": "ISO 42001",
       "defaultFrequency": "ANNUALLY",
       "defaultOwnerHint": "Procurement lead / Legal counsel",
+      "objective": "To ensure that every AI obligation has an answerable party once an AI system is supplied by a third party or carries commitments made to a customer.",
+      "successCriteria": "Each externally supplied AI component has a named party answerable for each obligation, with unclaimed gaps listed.\nSuppliers met the stated disclosure, change-notification and verification expectations before their model went into production.\nObligations created by customer agreements are mapped to the internal process and owner that has to meet them.\nAn accepted supplier shortfall carries a dated sign-off rather than passing unrecorded.",
+      "testingMethodology": "Evidence:\nObtain the supply-chain accountability matrix, one row per externally supplied AI component.\nRequest the supplier AI requirements schedule with its disclosure, change-notification and verification terms.\nCollect the assessment files for engagements onboarded or renewed in the period, with the supplier answers received.\nExport the customer obligation register giving clause, binding party, owning process and owner.\nGather the incidents and complaints that crossed a supplier or customer boundary in the period.\n\nAnalysis:\nReconcile the matrix against the inventory of externally supplied AI components to find rows never created.\nCheck that each supplier in production was assessed before use and again at renewal, not at onboarding alone.\nCompare supplier answers item by item with the requirements schedule and test whether each shortfall was signed off.\nTrace a sample of customer clauses to the internal process that meets them and to evidence that it did.\nFor each boundary incident, compare the party the matrix names with the party that actually acted.\n\nOutput:\nAccountability matrix marked with unclaimed obligations and components holding no row.\nSupplier assessment summary setting assessment dates against production-use dates.\nClause-to-process trace for the sampled customer obligations, with unsatisfied clauses flagged.\nBoundary-incident findings and the contract or allocation amendments raised from them.",
       "requirementCodes": [
         "A.10.2",
         "A.10.3",
@@ -4453,7 +4510,7 @@
             "en": "Allocate each AI obligation across the supply chain to the party answerable for it"
           },
           "description": {
-            "en": "Take the AI systems in scope and decide, obligation by obligation, which party actually answers for it: the organisation, a supplier upstream, or the customer operating the output. The failure this prevents is mutual assumption \u2014 the supplier believes the deployer watches for drift, the deployer believes the supplier does, and nobody watches until an incident exposes the gap. Include the sub-suppliers a supplier itself depends on, because an obligation allocated to a party that has quietly outsourced it has not been allocated at all. Attach the matrix with every unclaimed obligation listed rather than silently dropped."
+            "en": "Take the AI systems in scope and decide, obligation by obligation, which party actually answers for it: the organisation, a supplier upstream, or the customer operating the output. The failure this prevents is mutual assumption — the supplier believes the deployer watches for drift, the deployer believes the supplier does, and nobody watches until an incident exposes the gap. Include the sub-suppliers a supplier itself depends on, because an obligation allocated to a party that has quietly outsourced it has not been allocated at all. Attach the matrix with every unclaimed obligation listed rather than silently dropped."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -4474,7 +4531,7 @@
             },
             {
               "text": {
-                "en": "Split each obligation \u2014 data quality, testing, monitoring, incident handling \u2014 between the parties."
+                "en": "Split each obligation — data quality, testing, monitoring, incident handling — between the parties."
               }
             },
             {
@@ -4535,7 +4592,7 @@
             "en": "Map each obligation the customer agreements create onto the internal process that has to meet it"
           },
           "description": {
-            "en": "Go through the in-force customer agreements and pull out what they oblige the organisation to do about its AI \u2014 and what they oblige the customer to do in its own use of the output. Give each obligation an owning process and a named owner, and flag the ones no current process satisfies. An obligation that lives in a signed contract and in no process is one the organisation learns about when a customer asks for it, which is the worst moment to find out. This register records who owes what to whom; the content of any customer-facing documentation is a separate control's subject."
+            "en": "Go through the in-force customer agreements and pull out what they oblige the organisation to do about its AI — and what they oblige the customer to do in its own use of the output. Give each obligation an owning process and a named owner, and flag the ones no current process satisfies. An obligation that lives in a signed contract and in no process is one the organisation learns about when a customer asks for it, which is the worst moment to find out. This register records who owes what to whom; the content of any customer-facing documentation is a separate control's subject."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -4576,7 +4633,7 @@
             "en": "Run the supplier AI check at onboarding and at renewal, and log every accepted shortfall"
           },
           "description": {
-            "en": "The recurring act: put the expectations schedule to the supplier, compare what comes back against it item by item, and record the outcome per engagement. Write down every shortfall that was accepted anyway, who accepted it and for how long \u2014 an accepted gap that is not recorded becomes indistinguishable from a gap nobody noticed. Repeat when the supplier materially changes the service, because a supplier assessed once at onboarding is being trusted against a product that may no longer exist. Attach the assessment file for each engagement in the period."
+            "en": "The recurring act: put the expectations schedule to the supplier, compare what comes back against it item by item, and record the outcome per engagement. Write down every shortfall that was accepted anyway, who accepted it and for how long — an accepted gap that is not recorded becomes indistinguishable from a gap nobody noticed. Repeat when the supplier materially changes the service, because a supplier assessed once at onboarding is being trusted against a product that may no longer exist. Attach the assessment file for each engagement in the period."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
