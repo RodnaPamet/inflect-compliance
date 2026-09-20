@@ -265,7 +265,21 @@ const HIGH_MULTIPLICITY = 5;
 //   every open PR: 1333 is the live count of main@70369107d + this branch. A
 //   sibling Class A batch was in flight beside it, so whoever merges second
 //   re-measures on the merged tree rather than keeping this figure.
-const AMBIGUOUS_NEEDLE_BASELINE = 1333;
+//   1333 -> 1319 (2026-09-20, the THIRD #2246 Class A batch — the six `.sql`
+//   seams #2644 had just made visible, converted with `sqlCodeOf`, plus 16
+//   TypeScript read seams; 22 files leave the Class A population). Same
+//   mechanism as the two notes above, and the split is worth recording: the
+//   six `.sql` conversions moved this number by −9 on their own, because a
+//   migration's `--` header comments repeat the table and column names the
+//   assertions match, and the 16 TypeScript seams account for the other −5.
+//   `device-connector` masks `readPrismaSchema()`, which is again a
+//   disproportionate share of the second group.
+//
+//   SHARED STATE, MEASURED ON THIS TREE ONLY. Zero-headroom and shared with
+//   every open PR: 1319 is the live count of main@fc8954092 + this branch.
+//   Whoever merges second re-measures on the merged tree rather than keeping
+//   this figure.
+const AMBIGUOUS_NEEDLE_BASELINE = 1319;
 // 237 (2026-09-18, #2622): −1 on the merge, for the same reason and by the same
 // method as the 1420 above — re-measured on the merged tree, not carried over
 // from either branch. It surfaced only after the other end was re-seated,
@@ -282,7 +296,17 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1333;
 // once the read is masked. It surfaced only after the other end was re-seated,
 // because the drift sentinel reports one end at a time. Shared state with
 // every open PR: re-measure on the merged tree.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 226;
+// 218 (2026-09-20): −8 from the THIRD #2246 Class A batch (six `.sql` seams
+// via `sqlCodeOf` + 16 TypeScript seams), by the same mechanism again.
+// MEASURED PER HALF, because the two ends of this batch behave differently
+// and the guess would have been backwards: the six `.sql` conversions move
+// this number by ZERO (226 -> 226) while moving `AMBIGUOUS` by −9, and all
+// −8 here come from the TypeScript half. A migration's `--` comments repeat
+// a name once or twice, which is enough to push a needle off UNIQUE but not
+// off the five-plus threshold; a `.tsx` docblock listing props and mounts is
+// what carries a needle over five. Shared state with every open PR:
+// re-measure on the merged tree.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 218;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise

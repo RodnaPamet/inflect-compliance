@@ -15,12 +15,26 @@ import {
     resolvePresentation,
     type ResponsivePresentation,
 } from '../../src/components/ui/hooks/use-responsive-presentation';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../../');
-function read(rel: string): string {
-    return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
-}
-const EN = JSON.parse(read('messages/en.json'));
+const readRaw = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A.
+ *
+ * The 46 source-contract assertions below matched the bytes on disk,
+ * comments included. Measured before the conversion, six needles here match
+ * fewer times masked than raw, and one matched ZERO times in code:
+ * `direction="right"` survives in `sheet.tsx` only inside a comment, so the
+ * Sheet's side could have been changed with the note left behind and this
+ * suite would not have noticed. `codeOf` keeps string literals, so the
+ * class-name and `data-testid` assertions still bind.
+ *
+ * `readRaw` stays for `messages/en.json`: it is PARSED, not matched, and a
+ * catalogue is not a language `codeOf` lexes.
+ */
+const read = (rel: string): string => codeOf(readRaw(rel));
+const EN = JSON.parse(readRaw('messages/en.json'));
 
 // ─── 1. resolvePresentation — pure decision logic ─────────────────
 
@@ -153,9 +167,16 @@ describe('Modal — source contract', () => {
 describe('Sheet — source contract', () => {
     const src = read('src/components/ui/sheet.tsx');
 
-    it('is a client component using Vaul\'s right-directional Drawer', () => {
+    it('is a client component whose Drawer direction resolves to right on desktop', () => {
         expect(src).toMatch(/^"use client"/);
-        expect(src).toMatch(/direction="right"/);
+        // `direction="right"` appears in sheet.tsx ONLY in its docblock, as
+        // the opt-out offered to consumers — the default has been
+        // "responsive" since the sheet became mobile-aware, so the old
+        // assertion was satisfied by the sentence describing an API, not by
+        // the API (#2246 Class A). Assert the resolution that ships.
+        expect(src).toMatch(/direction = "responsive"/);
+        expect(src).toMatch(/const effectiveDirection: "right" \| "bottom"/);
+        expect(src).toMatch(/direction: effectiveDirection/);
         expect(src).toMatch(/handleOnly/);
     });
 

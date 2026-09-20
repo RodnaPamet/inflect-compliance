@@ -16,6 +16,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 // next-intl is ESM (jest can't parse its export); mock it to resolve real
 // en.json values so any component render under test yields the original English.
@@ -36,8 +37,23 @@ jest.mock('next-intl', () => {
 });
 
 const ROOT = path.resolve(__dirname, '../../');
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A.
+ *
+ * 48 whole-file assertions, three of them measured prose-inflated and one
+ * matching ZERO times in code: the submit-guard regex
+ * `form.title.trim().length > 0 … !submitting` survives in `NewRiskModal.tsx`
+ * only inside a comment, so the guard itself could be deleted with the note
+ * left behind. `codeOf` keeps string literals — the `data-testid` and form-id
+ * assertions are unaffected.
+ *
+ * `readRaw` serves `messages/en.json`, which is PARSED rather than matched:
+ * a catalogue is not a language `codeOf` lexes, and the right reader for a
+ * language is the point of the whole exercise.
+ */
+const readRaw = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 function read(rel: string): string {
-    return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+    return codeOf(readRaw(rel));
 }
 
 const MODAL_SRC = read(
@@ -52,6 +68,10 @@ const CLIENT_SRC = read(
 const NEW_PAGE_SRC = read(
     'src/app/t/[tenantSlug]/(app)/risks/new/page.tsx',
 );
+// The submit gate moved out of the component in B2-8; these two are where
+// its halves live now — the schema rule and the shared form hook.
+const SCHEMA_SRC = read('src/lib/schemas/risk-form.ts');
+const ZOD_FORM_SRC = read('src/lib/hooks/use-zod-form.ts');
 
 // ─── 1. Modal composition ────────────────────────────────────────
 
@@ -77,7 +97,7 @@ describe('NewRiskModal — shared Modal composition', () => {
 
     it('passes title + description for a11y naming', () => {
         // title/description migrated to next-intl; assert the keys + en value
-        const en = JSON.parse(read('messages/en.json'));
+        const en = JSON.parse(readRaw('messages/en.json'));
         expect(MODAL_SRC).toMatch(/title=\{tx\('new\.title'\)\}/);
         expect(en.risks.new.title).toBe('New risk');
         expect(MODAL_SRC).toMatch(/description=\{tx\('new\.desc[A-Za-z]+'\)\}/);
@@ -173,7 +193,7 @@ describe('NewRiskModal — scoring UX (shared RiskEvaluationFields)', () => {
         // the shared box renders t('eval.title'), which resolves to the
         // original English in en.json.
         expect(SHARED_SRC).toMatch(/t\(['"]eval\.title['"]\)/);
-        const en = JSON.parse(read('messages/en.json'));
+        const en = JSON.parse(readRaw('messages/en.json'));
         expect(en.risks.eval.title).toBe('Risk Evaluation');
     });
 
@@ -202,8 +222,17 @@ describe('NewRiskModal — scoring UX (shared RiskEvaluationFields)', () => {
     });
 
     it('gates submit behind non-empty title + not submitting', () => {
-        expect(MODAL_SRC).toMatch(
-            /form\.title\.trim\(\)\.length\s*>\s*0[\s\S]{0,60}!submitting/,
+        // B2-8 moved this gate out of the component: the literal
+        // `form.title.trim().length > 0 && !submitting` survives in
+        // NewRiskModal.tsx ONLY inside the comment recording its removal
+        // ("B2-8 — was `form.title.trim().length > 0`"), so the old
+        // whole-file assertion was green BECAUSE its subject had been
+        // deleted (#2246 Class A). Assert the two halves where they live now.
+        expect(MODAL_SRC).toMatch(/const canSubmit = riskForm\.canSubmit/);
+        expect(MODAL_SRC).toMatch(/if \(!canSubmit\) return/);
+        expect(SCHEMA_SRC).toMatch(/title: z\.string\(\)\.trim\(\)\.min\(1\)/);
+        expect(ZOD_FORM_SRC).toMatch(
+            /const canSubmit = parseResult\.success && !submitting/,
         );
     });
 

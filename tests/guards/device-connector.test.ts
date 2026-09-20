@@ -5,9 +5,24 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A.
+ *
+ * Nineteen whole-file assertions, three of them measured prose-inflated:
+ * `authorizeDeviceReport`, `runInTenantContext` and `NOT_APPLICABLE` each
+ * occur in the prose of the file they are asserted against as well as in its
+ * code — `NOT_APPLICABLE` four times raw and once masked, one deletion from
+ * green-on-prose.
+ *
+ * LANGUAGE SPLIT (#2644, #2679): the migration is SQL and takes `readSql`
+ * (`sqlCodeOf` lexes `--`); `codeOf` would blank nothing in it. The Prisma
+ * schema uses `//` and is masked by `codeOf` like any TypeScript read.
+ */
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+const readSql = (rel: string) => sqlCodeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 describe('device monitoring — registration + wiring', () => {
     it('DeviceProvider is registered in bootstrap', () => {
@@ -37,13 +52,13 @@ describe('device monitoring — registration + wiring', () => {
     });
 
     it('Device + TenantDeviceToken carry RLS + tenant indexes', () => {
-        const compliance = readPrismaSchema();
+        const compliance = codeOf(readPrismaSchema());
         expect(compliance).toMatch(/model Device \{/);
         expect(compliance).toMatch(/@@unique\(\[tenantId, serialNumber\]\)/);
         const auth = read('prisma/schema/auth.prisma');
         expect(auth).toMatch(/model TenantDeviceToken \{/);
         expect(auth).toMatch(/@@unique\(\[tokenHash\]\)/);
-        const mig = read('prisma/migrations/20260707120000_device/migration.sql');
+        const mig = readSql('prisma/migrations/20260707120000_device/migration.sql');
         expect(mig).toMatch(/CREATE POLICY tenant_isolation ON "Device"/);
         expect(mig).toMatch(/CREATE POLICY tenant_isolation ON "TenantDeviceToken"/);
         expect(mig).toMatch(/FORCE ROW LEVEL SECURITY/);

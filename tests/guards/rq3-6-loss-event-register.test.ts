@@ -20,7 +20,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { braceBlockAfter, codeOf } from '../helpers/source-blocks';
+import { braceBlockAfter, codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -33,17 +33,19 @@ const ROOT = path.resolve(__dirname, '../..');
  * five `it` blocks here that go red when the matched code is deleted and
  * green again when the same bytes return inside a comment.
  *
- * `readRaw` survives for the two reads whose language is not TypeScript:
- * the migration SQL (`--` comments; a bare apostrophe in one would open a
- * literal running to EOF) and `messages/en.json` (parsed, not matched —
+ * Two reads here are not TypeScript. The migration SQL takes `readSql`, the
+ * SQL lexer from the #2644 / #2679 language split — `codeOf` would blank
+ * nothing in it and leave every `--` comment able to satisfy the seven
+ * assertions below. `messages/en.json` keeps `readRaw` (parsed, not matched —
  * masking JSON is a no-op today and a silent hazard if it ever is not).
  */
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 const read = (rel: string) => codeOf(readRaw(rel));
+const readSql = (rel: string) => sqlCodeOf(readRaw(rel));
 
 const schema = codeOf(readPrismaSchema());
 const enums = read('prisma/schema/enums.prisma');
-const migration = readRaw(
+const migration = readSql(
     'prisma/migrations/20260612040000_rq3_6_loss_event_register/migration.sql',
 );
 const usecase = read('src/app-layer/usecases/loss-event.ts');

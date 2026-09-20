@@ -10,9 +10,15 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A. Thirteen whole-file assertions,
+ * three of them measured prose-inflated, over a sheet/route/repository chain
+ * whose comments name every symbol the assertions look for.
+ */
+const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
 const SHEET = 'src/components/processes/RuleDetailSheet.tsx';
