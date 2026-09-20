@@ -19,7 +19,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 import { computeAiGovCoverage, type AiGovScoredQuestion } from '@/app-layer/services/ai-gov-coverage';
 
@@ -31,6 +31,11 @@ const ROOT = path.resolve(__dirname, '../..');
 // YAML / JSON / Markdown — and masking would delete real text.
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const read = (rel: string) => codeOf(readRaw(rel));
+// LANGUAGE SPLIT (#2644, #2679). `codeOf` lexes `//`, so on a `.sql` file it
+// blanks nothing and a `--` comment reaches the assertion verbatim. The
+// migration goes through `sqlCodeOf`, which lexes `--` and `/* */`;
+// TypeScript keeps `read`, and the JSON fixture below keeps `readRaw`.
+const readSql = (rel: string) => sqlCodeOf(readRaw(rel));
 
 const fixture = JSON.parse(readRaw('prisma/fixtures/ai-governance-self-assessment.json')) as {
     questionSetVersion: number; attribution: string; disclaimer: string;
@@ -219,7 +224,7 @@ describe('AI-governance gap→finding + RLS/encryption/index', () => {
     });
 
     it('the tenant models carry RLS + an encrypted note', () => {
-        const migration = readRaw('prisma/migrations/20260629140000_add_ai_gov_self_assessment/migration.sql');
+        const migration = readSql('prisma/migrations/20260629140000_add_ai_gov_self_assessment/migration.sql');
         for (const t of ['AiGovSelfAssessment', 'AiGovSelfAssessmentAnswer']) {
             expect(migration).toContain(`ALTER TABLE "${t}" FORCE ROW LEVEL SECURITY`);
             expect(migration).toMatch(new RegExp(`CREATE POLICY tenant_isolation ON "${t}"`));

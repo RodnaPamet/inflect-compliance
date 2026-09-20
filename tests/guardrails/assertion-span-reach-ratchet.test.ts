@@ -140,8 +140,27 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 147;
  *     site and 13 `not.toMatch` sites (only 3 of the 13 were unbounded, which
  *     is why this number falls further than the one above). 191 of the 368
  *     are character-bounded.
+ *   • 330 (2026-09-20): −2 from the third #2246 Class A batch, and the two
+ *     are a Class C finding that only the Class A mask could surface. Both
+ *     were bounded interior spans, so `UNBOUNDED_INTERIOR_SPAN_BASELINE` did
+ *     not move (147 -> 147):
+ *       · `evidence-upload-modal.test.ts` asserted
+ *         `onAllSettled[\s\S]{0,400}allOk[\s\S]{0,200}close()` over the whole
+ *         of `UploadEvidenceModal.tsx`. Masking the read showed what the span
+ *         had really been anchored on: the shipped `onAllSettled` callback is
+ *         more than 400 characters from `allOk`, and the occurrence that
+ *         brought them within range is in the handler's own COMMENT. Now
+ *         `declarationOf(src, 'onAllSettled')` with four span-free
+ *         assertions inside it.
+ *       · `new-risk-modal.test.ts` asserted
+ *         `form.title.trim().length > 0[\s\S]{0,60}!submitting`, a phrase
+ *         that survives in `NewRiskModal.tsx` ONLY in the comment recording
+ *         its removal. Retargeted at the schema rule and the form hook that
+ *         own the gate now.
+ *     Both are the issue's own point that a span between two identifiers is
+ *     not a bound: each was satisfied by prose on one end.
  */
-const INTERIOR_SPAN_BASELINE = 332;
+const INTERIOR_SPAN_BASELINE = 330;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.

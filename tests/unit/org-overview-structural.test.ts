@@ -28,10 +28,18 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const PAGE_PATH = 'src/app/org/[orgSlug]/(app)/page.tsx';
-const read = () => fs.readFileSync(path.join(ROOT, PAGE_PATH), 'utf-8');
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A. 22 whole-file assertions against
+ * one page; three needles were measured prose-inflated, and this file's own
+ * header (point 8, "page does NOT reintroduce hardcoded sections") is the
+ * shape that goes wrong: a negative assertion that a COMMENT can redden and
+ * a positive one that a comment can satisfy. `codeOf` keeps string literals.
+ */
+const read = () => codeOf(fs.readFileSync(path.join(ROOT, PAGE_PATH), 'utf-8'));
 
 describe('Epic 41 — portfolio overview structural contract (post-rewire)', () => {
     it('page exists at the canonical (app)/page.tsx path', () => {

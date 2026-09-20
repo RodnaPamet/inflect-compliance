@@ -30,9 +30,16 @@
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { codeOf } from "../helpers/source-blocks";
 
 const ROOT = path.resolve(__dirname, "../..");
-const read = (p: string) => readFileSync(path.join(ROOT, p), "utf-8");
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A. 25 whole-file assertions, three
+ * of them measured prose-inflated — the diff/restore chain is exactly the
+ * kind of wiring a "simplify" PR deletes while leaving the paragraph that
+ * describes it. `codeOf` keeps string literals.
+ */
+const read = (p: string) => codeOf(readFileSync(path.join(ROOT, p), "utf-8"));
 
 describe("Epic P5-PR-B — visual diff + restore wiring", () => {
     describe("pure helper", () => {

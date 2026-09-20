@@ -29,6 +29,7 @@ import {
     callExpressionOf,
     codeOf,
     functionBodyOf,
+    sqlCodeOf,
 } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -43,18 +44,20 @@ const ROOT = path.resolve(__dirname, '../..');
  * matched code is deleted and green again when the same bytes come back
  * inside a comment.
  *
- * `readRaw` stays for the migration SQL only: `codeOf` lexes TypeScript, and
- * SQL's `--` comments plus a bare apostrophe inside one would make it answer
- * about the wrong language.
+ * The migration SQL is a different language and takes its own reader:
+ * `codeOf` lexes TypeScript, so on a `.sql` file it blanks nothing and every
+ * `--` comment reaches the assertion verbatim. `sqlCodeOf` lexes `--` and
+ * SQL block comments (#2644, #2679).
  */
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const read = (rel: string) => codeOf(readRaw(rel));
+const readSql = (rel: string) => sqlCodeOf(readRaw(rel));
 
 describe('B10 — advanced analytics', () => {
     describe('Schema + migration', () => {
         const compliance = codeOf(readPrismaSchema());
-        // Raw: SQL, not TypeScript — see the read-seam note above.
-        const migration = readRaw(
+        // SQL, not TypeScript — see the read-seam note above.
+        const migration = readSql(
             'prisma/migrations/20260524180000_b10_risk_quantitative/migration.sql',
         );
 

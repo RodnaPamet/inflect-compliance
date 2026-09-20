@@ -35,10 +35,20 @@ import {
     type ActiveFilterInput,
     type Filter,
 } from '../../src/components/ui/filter/types';
+import { codeOf } from '../helpers/source-blocks';
 
-const SELECT_SRC = fs.readFileSync(
-    path.resolve(__dirname, '../../src/components/ui/filter/filter-select.tsx'),
-    'utf-8',
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A. The 43 component-contract
+ * assertions below matched the bytes on disk, comments included; three of
+ * their needles were measured matching fewer times through the mask than raw
+ * (`onEscapeKeyDown`, `shouldFilter`, `range`). `codeOf` keeps string
+ * literals, so the `cmdk` prop and shortcut-key assertions still bind.
+ */
+const SELECT_SRC = codeOf(
+    fs.readFileSync(
+        path.resolve(__dirname, '../../src/components/ui/filter/filter-select.tsx'),
+        'utf-8',
+    ),
 );
 
 // ─── helpers ─────────────────────────────────────────────────────────

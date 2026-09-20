@@ -15,6 +15,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const MEMBERS = path.join(REPO_ROOT, 'src/app/t/[tenantSlug]/(app)/admin/members/page.tsx');
@@ -22,8 +23,17 @@ const ROLES = path.join(REPO_ROOT, 'src/app/t/[tenantSlug]/(app)/admin/roles/pag
 const API_KEYS = path.join(REPO_ROOT, 'src/app/t/[tenantSlug]/(app)/admin/api-keys/page.tsx');
 const SHELL_GUARD = path.join(REPO_ROOT, 'tests/guards/list-page-shell-coverage.test.ts');
 
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A. 22 whole-file assertions; three
+ * needles were measured prose-inflated. The file already knew: two `it`
+ * blocks hand-roll `src.replace(/\/\*[\s\S]*?\*\//g, '')` and one matches
+ * `<DataTable\s` rather than the bare name, both to stop a doc comment
+ * answering for the code. Masking at the seam does that for every assertion
+ * here instead of the three whose author happened to think of it; the local
+ * strippers stay, since a second mask over masked text is a no-op.
+ */
 function read(p: string): string {
-    return fs.readFileSync(p, 'utf-8');
+    return codeOf(fs.readFileSync(p, 'utf-8'));
 }
 
 // ─── Members page ─────────────────────────────────────────────────────

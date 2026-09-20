@@ -5,7 +5,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 // codeOf() masks comments at the READ SEAM (#2246): the enum and usecase
@@ -13,6 +13,12 @@ const ROOT = path.resolve(__dirname, '../..');
 // or a `//` note in evidence.ts must not satisfy them. Literals are preserved.
 const read = (rel: string) =>
     codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+// LANGUAGE SPLIT (#2644, #2679): `codeOf` lexes TypeScript, so on a `.sql`
+// file it blanks nothing and a `--` comment reaches the assertion verbatim —
+// masked at the call site, unmasked in fact. The migration goes through
+// `sqlCodeOf`, which lexes `--` and `/* */`. Absolute path, because the call
+// site already joins `migDir`.
+const readSqlAbs = (abs: string) => sqlCodeOf(fs.readFileSync(abs, 'utf8'));
 
 describe('Audit S3 — Evidence Management & Retention', () => {
     describe('schema', () => {
@@ -30,10 +36,7 @@ describe('Audit S3 — Evidence Management & Retention', () => {
                 'prisma/migrations/20260524120000_audit_s3_evidence_needs_review',
             );
             expect(fs.existsSync(migDir)).toBe(true);
-            const sql = fs.readFileSync(
-                path.join(migDir, 'migration.sql'),
-                'utf8',
-            );
+            const sql = readSqlAbs(path.join(migDir, 'migration.sql'));
             expect(sql).toMatch(/ADD VALUE IF NOT EXISTS 'NEEDS_REVIEW'/);
         });
     });

@@ -16,14 +16,30 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../../');
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A. 36 whole-file assertions on the
+ * Modal primitive's source; two needles were measured prose-inflated
+ * (`Modal.Confirm` and `preventDefaultClose`), each down to ONE surviving
+ * occurrence in code once the comments are blanked. `codeOf` keeps string
+ * literals, so the Tailwind class-width assertions still bind.
+ *
+ * The overlay RATCHET at the bottom of this file keeps its own raw
+ * `fs.readFileSync`: it COUNTS occurrences across the app tree to compare
+ * against a baseline, and that baseline was seated on raw text.
+ *
+ * `readRaw` serves `messages/en.json`: parsed, not matched, and not a
+ * language `codeOf` lexes.
+ */
+const readRaw = (rel: string): string => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 function read(rel: string): string {
-    return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+    return codeOf(readRaw(rel));
 }
 
 const MODAL_SRC = read('src/components/ui/modal.tsx');
-const EN = JSON.parse(read('messages/en.json'));
+const EN = JSON.parse(readRaw('messages/en.json'));
 
 // ─── 1. Size variants ────────────────────────────────────────────
 
@@ -207,7 +223,13 @@ describe('Modal — token drift sentinel', () => {
     });
 
     it('reaches the shared semantic token namespace', () => {
-        for (const token of ['bg-bg-default', 'bg-bg-overlay', 'border-border-subtle', 'text-content-emphasis']) {
+        // `bg-bg-default` was in this list and is NOT in modal.tsx: the flat
+        // background/border pair was replaced by `surface-popup-texture`, and
+        // the only occurrence left is the comment recording that swap. The
+        // assertion was green on that comment until the read seam was masked
+        // (#2246 Class A) — the loop variable makes the needle unscorable, so
+        // no ranking predicted it; running the converted suite did.
+        for (const token of ['surface-popup-texture', 'bg-bg-overlay', 'border-border-subtle', 'text-content-emphasis']) {
             expect(MODAL_SRC).toContain(token);
         }
     });

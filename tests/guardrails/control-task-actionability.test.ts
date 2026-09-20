@@ -224,6 +224,20 @@ const IMPERATIVE_VERBS = new Set([
     'Stamp',
     'State',
     'Timetable',
+
+    // ── ICFR monitoring vocabulary (COSO ICF 2D, the final batch) ────
+    // `Age` an open population — the aged-listing sense an auditor means,
+    // not the passage of time. `Despatch` a paper to a deadline, already
+    // this repo's spelling elsewhere. `Re-evaluate`, joining Re-perform,
+    // Re-trace, Re-read, Re-test and Re-approve.
+    //
+    // REFUSED: `Stand` ("stand up a log"), colloquial in the way `Fit` and
+    // `Seat` were, redrafted to `Establish`. Across four content batches the
+    // refusals are Fit, Fix (three separate attempts), Seat and Stand — a
+    // verb refused once stays refused, or the list grows by attrition.
+    'Age',
+    'Despatch',
+    'Re-evaluate',
 ]);
 
 /**

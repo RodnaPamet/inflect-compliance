@@ -14,10 +14,19 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../../');
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A. 34 whole-file assertions, two of
+ * them measured prose-inflated (`<UserCombobox` and `useTenantSWR`), each
+ * with exactly ONE surviving occurrence in code — and this file's own
+ * header shows why anchoring on `<Name` does not help: comments here write
+ * JSX inline. `codeOf` keeps string literals, so `#task-assignee-input` and
+ * the `/users/assignable` URL assertions still bind.
+ */
 function read(rel: string): string {
-    return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+    return codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 }
 
 const USER_COMBO_SRC = read('src/components/ui/user-combobox.tsx');

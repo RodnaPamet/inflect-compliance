@@ -19,6 +19,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const TOUR_COMPONENT = path.join(REPO_ROOT, 'src/components/ui/OnboardingTour.tsx');
@@ -28,8 +29,16 @@ const SIDEBAR = path.join(REPO_ROOT, 'src/components/layout/SidebarNav.tsx');
 const TENANT_LAYOUT = path.join(REPO_ROOT, 'src/app/t/[tenantSlug]/(app)/layout.tsx');
 const WIZARD_DIR = path.join(REPO_ROOT, 'src/components/onboarding');
 
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A. 27 whole-file assertions pinning
+ * the tour wiring; four needles were measured matching fewer times through
+ * the mask than raw (`driver.js`, `<OnboardingTour`, `onboarding-steps` and
+ * `data-tour`), so a comment naming a mount could answer for the mount.
+ * `codeOf` keeps string literals — the `data-tour` selector assertions are
+ * unaffected.
+ */
 function read(p: string): string {
-    return fs.readFileSync(p, 'utf-8');
+    return codeOf(fs.readFileSync(p, 'utf-8'));
 }
 
 // ─── Tour exists + correctly wired ────────────────────────────────────
