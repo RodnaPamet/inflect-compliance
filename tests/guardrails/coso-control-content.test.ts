@@ -53,19 +53,15 @@ const FIXTURE = path.join(ROOT, 'prisma/fixtures/coso-icf-2013-control-templates
 
 const catalog = loadCatalogFile(FIXTURE);
 
-/** 75 controls: 33 entity-level (2A) + 24 process CA (2B) + 18 ITGC (2C). 96 follows. */
+/**
+ * The COMPLETE COSO taxonomy: 96 controls across all five components.
+ *
+ * Asserted as a SET, not a count, so a typo'd, invented, renamed or silently
+ * dropped control fails naming itself — a count passes all four. The four
+ * content PRs extended this same set 33 -> 57 -> 75 -> 96, which is what made a
+ * control lost in one PR fail in the next rather than ship.
+ */
 const TAXONOMY = [
-    'COSO-CE-01.01', 'COSO-CE-01.02', 'COSO-CE-01.03',
-    'COSO-CE-02.01', 'COSO-CE-02.02', 'COSO-CE-02.03',
-    'COSO-CE-03.01', 'COSO-CE-03.02', 'COSO-CE-03.03',
-    'COSO-CE-04.01', 'COSO-CE-04.02', 'COSO-CE-04.03',
-    'COSO-CE-05.01', 'COSO-CE-05.02', 'COSO-CE-05.03', 'COSO-CE-05.04',
-    'COSO-CE-06.01', 'COSO-CE-06.02', 'COSO-CE-06.03',
-    'COSO-RA-01.01', 'COSO-RA-01.02', 'COSO-RA-01.03',
-    'COSO-RA-02.01', 'COSO-RA-02.02', 'COSO-RA-02.03', 'COSO-RA-02.04',
-    'COSO-RA-03.01', 'COSO-RA-03.02', 'COSO-RA-03.03', 'COSO-RA-03.04',
-    'COSO-RA-04.01', 'COSO-RA-04.02', 'COSO-RA-04.03',
-    // ── Control Activities: process-level (2B) + ITGC (2C) ─────────────
     'COSO-CA-01.01', 'COSO-CA-01.02', 'COSO-CA-01.03',
     'COSO-CA-01.04', 'COSO-CA-02.01', 'COSO-CA-02.02',
     'COSO-CA-02.03', 'COSO-CA-02.04', 'COSO-CA-03.01',
@@ -80,7 +76,25 @@ const TAXONOMY = [
     'COSO-CA-08.02', 'COSO-CA-08.03', 'COSO-CA-09.01',
     'COSO-CA-09.02', 'COSO-CA-09.03', 'COSO-CA-10.01',
     'COSO-CA-10.02', 'COSO-CA-10.03', 'COSO-CA-10.04',
-];
+    'COSO-CE-01.01', 'COSO-CE-01.02', 'COSO-CE-01.03',
+    'COSO-CE-02.01', 'COSO-CE-02.02', 'COSO-CE-02.03',
+    'COSO-CE-03.01', 'COSO-CE-03.02', 'COSO-CE-03.03',
+    'COSO-CE-04.01', 'COSO-CE-04.02', 'COSO-CE-04.03',
+    'COSO-CE-05.01', 'COSO-CE-05.02', 'COSO-CE-05.03',
+    'COSO-CE-05.04', 'COSO-CE-06.01', 'COSO-CE-06.02',
+    'COSO-CE-06.03', 'COSO-IC-01.01', 'COSO-IC-01.02',
+    'COSO-IC-01.03', 'COSO-IC-02.01', 'COSO-IC-02.02',
+    'COSO-IC-02.03', 'COSO-IC-03.01', 'COSO-IC-03.02',
+    'COSO-IC-03.03', 'COSO-MA-01.01', 'COSO-MA-01.02',
+    'COSO-MA-01.03', 'COSO-MA-01.04', 'COSO-MA-02.01',
+    'COSO-MA-02.02', 'COSO-MA-02.03', 'COSO-MA-02.04',
+    'COSO-MA-03.01', 'COSO-MA-03.02', 'COSO-MA-03.03',
+    'COSO-MA-03.04', 'COSO-RA-01.01', 'COSO-RA-01.02',
+    'COSO-RA-01.03', 'COSO-RA-02.01', 'COSO-RA-02.02',
+    'COSO-RA-02.03', 'COSO-RA-02.04', 'COSO-RA-03.01',
+    'COSO-RA-03.02', 'COSO-RA-03.03', 'COSO-RA-03.04',
+    'COSO-RA-04.01', 'COSO-RA-04.02', 'COSO-RA-04.03',
+]
 
 /** Finance and governance weighted, deliberately NOT the security set. */
 const ROLES = [
@@ -95,14 +109,14 @@ const BANDS = {
 } as const;
 
 describe('the COSO catalogue ships the taxonomy it declares', () => {
-    it('carries exactly the 75 controls authored so far, by set equality', () => {
+    it('carries exactly the 96 controls that complete the framework, by set equality', () => {
         expect(catalog.templates.map((t) => t.code).sort()).toEqual([...TAXONOMY].sort());
     });
 
-    it('splits them CE 19 / RA 14 / CA 42 across the components', () => {
+    it('splits them CE 19 / RA 14 / CA 42 / IC 9 / MA 12 across all five components', () => {
         const byCategory: Record<string, number> = {};
         for (const t of catalog.templates) byCategory[t.category] = (byCategory[t.category] ?? 0) + 1;
-        expect(byCategory).toEqual({ CE: 19, RA: 14, CA: 42 });
+        expect(byCategory).toEqual({ CE: 19, RA: 14, CA: 42, IC: 9, MA: 12 });
     });
 
     it('links every control to a principle the catalogue itself declares', () => {
@@ -118,7 +132,7 @@ describe('the COSO catalogue ships the taxonomy it declares', () => {
         expect(orphans.map((t) => t.code)).toEqual([]);
     });
 
-    it('names every one of its 75 templates in the pack', () => {
+    it('names every one of its 96 templates in the pack', () => {
         // Without this the pack can shrink while the catalogue does not, and a
         // tenant installs fewer controls than the file declares.
         expect([...(catalog.pack?.templateCodes ?? [])].sort()).toEqual([...TAXONOMY].sort());
@@ -179,13 +193,47 @@ describe('the content meets the bar the shipped frameworks set', () => {
     });
 });
 
+describe('the framework is closed — every principle answered, every control grounded', () => {
+    it('claims all seventeen principles, and prints the count so a thin one is visible', () => {
+        const per: Record<string, number> = {};
+        for (const t of catalog.templates) for (const c of t.requirementCodes ?? []) per[c] = (per[c] ?? 0) + 1;
+        const all = Array.from({ length: 17 }, (_, i) => `P${i + 1}`);
+        const unclaimed = all.filter((p) => !per[p]);
+        // The message carries the distribution because a both-directions
+        // coverage assertion passes identically at one control per principle
+        // and at twenty — and "covered" without a count hides exactly the
+        // principle nobody got round to.
+        expect({ unclaimed, distribution: all.map((p) => `${p}=${per[p] ?? 0}`).join(' ') }).toEqual({
+            unclaimed: [],
+            distribution:
+                'P1=6 P2=6 P3=3 P4=4 P5=3 P6=3 P7=4 P8=5 P9=4 ' +
+                'P10=21 P11=18 P12=5 P13=9 P14=5 P15=3 P16=8 P17=4',
+        });
+    });
+
+    it('grounds every control in at least one principle', () => {
+        const orphans = catalog.templates.filter((t) => (t.requirementCodes ?? []).length === 0);
+        expect(orphans.map((t) => t.code)).toEqual([]);
+    });
+
+    it('concentrates on Control Activities, which is where testable controls live', () => {
+        // P10 + P11 carry 39 of the claims. That is not an imbalance to fix:
+        // the other four components are largely entity-level, and a framework
+        // spreading controls evenly across them would be describing something
+        // other than how internal control is actually tested.
+        const per: Record<string, number> = {};
+        for (const t of catalog.templates) for (const c of t.requirementCodes ?? []) per[c] = (per[c] ?? 0) + 1;
+        expect(per.P10 + per.P11).toBeGreaterThan(30);
+    });
+});
+
 describe('frequency carries information rather than a default', () => {
-    it('spans at least three distinct values across the 33', () => {
+    it('spans at least four distinct values across the 96', () => {
         // The lazy failure is ANNUALLY everywhere, which passes every structural
         // check and throws away the reason this content is authored at one
         // control per frequency in the first place.
         const spread = new Set(catalog.templates.map((t) => t.defaultFrequency));
-        expect(spread.size).toBeGreaterThanOrEqual(3);
+        expect(spread.size).toBeGreaterThanOrEqual(4);
     });
 
     it('does not put the whole catalogue on one frequency', () => {
