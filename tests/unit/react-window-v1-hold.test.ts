@@ -313,13 +313,21 @@ describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', ()
             // This repo shares one node_modules across worktrees and it drifts
             // behind the lockfile. Majors are compared, not exact versions, so
             // ordinary drift inside v1 is not a false red.
-            const installed = JSON.parse(
-                fs.readFileSync(
-                    path.join(REPO_ROOT, 'node_modules', MODULE, 'package.json'),
-                    'utf8',
-                ),
-            ) as { version: string };
+            //
+            // ASK NODE'S RESOLVER, never a spelled path. A `.claude/worktrees/<id>/`
+            // checkout has no `node_modules` of its own and resolves UPWARD to the
+            // primary clone, so `path.join(REPO_ROOT, 'node_modules', …)` fails for
+            // worktree users while passing in CI — or skips itself green behind an
+            // `existsSync`. `dependency-paths-are-resolved` caught that here, on the
+            // first draft of this very file. Neither package declares an `exports`
+            // map, so the `<pkg>/package.json` subpath is reachable; that is a
+            // precondition of this shape, not a given.
+            const installed = require(`${MODULE}/package.json`) as { version: string };
+            const installedTypes = require(`@types/${MODULE}/package.json`) as {
+                version: string;
+            };
             expect(majorOf(installed.version)).toBe(1);
+            expect(majorOf(installedTypes.version)).toBe(1);
         });
     });
 
