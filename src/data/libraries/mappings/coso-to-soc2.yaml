@@ -1,0 +1,72 @@
+# Cross-Framework Mapping Set: COSO ICF 2013 → SOC 2 Trust Services Criteria
+#
+# The best-evidenced crosswalk this repo can carry, because the relationship is
+# stated by the target rather than inferred by us: AICPA built the TSC common
+# criteria on the COSO framework, and `soc2-2017.yaml` already annotates CC1.1
+# and CC4.1 as paraphrases of COSO Principles 1 and 16.
+#
+# Only factual identifiers are reproduced from either side. No COSO body text and
+# no points of focus appear here; rationales are our own words.
+#
+# DELIBERATELY INCOMPLETE, and the gaps are the honest part. This repo's SOC 2
+# library carries ONE assessable node per common-criteria series (CC1.1, CC1.2,
+# CC2.1, CC3.1, CC4.1, CC5.1 …) rather than the full published TSC. Principles
+# whose real TSC counterpart is a code this library does not contain — P3, P4 and
+# P5 against CC1.3/CC1.4/CC1.5, for instance — are LEFT OUT rather than mapped to
+# the nearest node that happens to exist. A mapping that resolves but misstates
+# the relationship is worse than an absent one: it is read as coverage.
+urn: urn:inflect:mappingset:coso-to-soc2
+name: "COSO ICF 2013 → SOC 2 Trust Services Criteria"
+description: >
+  Cross-framework traceability from the COSO Internal Control — Integrated
+  Framework (2013) principles to the SOC 2 Trust Services Criteria common
+  criteria. Structural traceability guidance, not a guarantee of compliance or
+  equivalence.
+version: 1
+source_framework_ref: COSO-ICF-2013
+target_framework_ref: SOC2-2017
+
+mapping_entries:
+  # ── Control Environment ──────────────────────────────────────────────
+  - source_ref: "P1"
+    target_ref: "CC1.1"
+    strength: EQUAL
+    rationale: "Both state the commitment to integrity and ethical values; the SOC 2 library annotates CC1.1 as a paraphrase of this principle."
+  - source_ref: "P2"
+    target_ref: "CC1.2"
+    strength: EQUAL
+    rationale: "Both require a governing body independent of management that exercises oversight of internal control."
+
+  # ── Risk Assessment ──────────────────────────────────────────────────
+  # CC3.1 combines objective-setting with risk identification, so it answers
+  # two COSO principles partially rather than either one fully.
+  - source_ref: "P6"
+    target_ref: "CC3.1"
+    strength: INTERSECT
+    rationale: "CC3.1 covers specifying objectives with sufficient clarity, which is the objective-setting half of this principle."
+  - source_ref: "P7"
+    target_ref: "CC3.1"
+    strength: INTERSECT
+    rationale: "CC3.1 covers identifying and assessing risks to stated objectives, which is the analysis half of this principle."
+
+  # ── Control Activities ───────────────────────────────────────────────
+  - source_ref: "P10"
+    target_ref: "CC5.1"
+    strength: EQUAL
+    rationale: "Both require control activities to be selected and developed so that risks to objectives are mitigated."
+
+  # ── Information and Communication ────────────────────────────────────
+  - source_ref: "P13"
+    target_ref: "CC2.1"
+    strength: EQUAL
+    rationale: "Both require relevant information of sufficient quality to support the functioning of internal control."
+
+  # ── Monitoring Activities ────────────────────────────────────────────
+  - source_ref: "P16"
+    target_ref: "CC4.1"
+    strength: EQUAL
+    rationale: "Both require ongoing and separate evaluations to establish whether the components of internal control are present and functioning; the SOC 2 library annotates CC4.1 as a paraphrase of this principle."
+  - source_ref: "P17"
+    target_ref: "CC4.1"
+    strength: INTERSECT
+    rationale: "CC4.1 reaches the evaluation of deficiencies but not their communication to those able to act, which this principle also requires."

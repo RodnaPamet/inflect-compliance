@@ -1,0 +1,360 @@
+# COSO Internal Control — Integrated Framework (2013)
+#
+# LICENSING POSITION — read before editing any string in this file.
+#
+# The Framework is copyrighted by the Committee of Sponsoring Organizations of
+# the Treadway Commission. What is reproduced here is the ENUMERATION only: the
+# names of the five components and the seventeen principles. That enumeration is
+# public, is cited by AICPA's Trust Services Criteria, and is already referenced
+# in this repo — `soc2-2017.yaml` annotates CC1.1 and CC4.1 as paraphrases of
+# COSO Principles 1 and 16.
+#
+# What is NOT reproduced, and must never be added here:
+#   * the Framework's body text;
+#   * the 87 "points of focus", which are the licensed elaboration of the
+#     principles and are the part an implementer is most tempted to paste.
+#
+# Every `description` below is written in our own words. They describe what an
+# organization must be able to DEMONSTRATE, so a reader can judge whether they
+# satisfy the principle — which is the job a description has to do here, and is
+# also why paraphrase is sufficient rather than a compromise.
+#
+# A legal review is advisable before this ships to customers. See the
+# implementation note accompanying this file.
+urn: urn:inflect:library:coso-icf-2013
+locale: en
+ref_id: COSO-ICF-2013
+name: "COSO Internal Control — Integrated Framework"
+description: >
+  The COSO Internal Control — Integrated Framework (2013) expressed as its five
+  components and seventeen principles. Descriptions are our own paraphrase of
+  what each principle requires an organization to demonstrate; no framework body
+  text or points of focus are reproduced.
+copyright: >
+  The COSO Internal Control — Integrated Framework is copyright the Committee of
+  Sponsoring Organizations of the Treadway Commission. Only the component and
+  principle enumeration is used here; all descriptive text is original.
+version: 1
+publication_date: "2013-05-14"
+provider: COSO
+packager: inflect
+kind: INDUSTRY_STANDARD
+
+objects:
+  framework:
+    urn: urn:inflect:framework:coso-icf-2013
+    ref_id: COSO-ICF-2013
+    name: COSO Internal Control — Integrated Framework
+    description: >
+      An internal control framework organised as five components and seventeen
+      principles. Unlike a control catalogue, it states what must be true of a
+      system of internal control rather than enumerating the controls that
+      achieve it — the design of those controls is left to the organization.
+
+    requirement_nodes:
+      # ─── CE — Control Environment ──────────────────────────────────────
+      - urn: urn:inflect:req:coso-icf-2013:ce
+        ref_id: CE
+        name: Control Environment
+        description: >
+          The standards, processes and structures that provide the basis for
+          carrying out internal control across the organization.
+        depth: 1
+        assessable: false
+        category: CE
+
+      - urn: urn:inflect:req:coso-icf-2013:p1
+        ref_id: P1
+        name: Commitment to integrity and ethical values
+        description: >
+          The organization must show that expected standards of conduct are
+          written down, endorsed at the top, and reinforced in practice. That
+          means a code of conduct people have actually seen and acknowledged,
+          visible adherence by leadership, a route for raising concerns that
+          does not depend on a person's own manager, and evidence that departures
+          from the standard are examined and answered rather than absorbed.
+        parent_urn: urn:inflect:req:coso-icf-2013:ce
+        depth: 2
+        assessable: true
+        category: CE
+
+      - urn: urn:inflect:req:coso-icf-2013:p2
+        ref_id: P2
+        name: Board oversight responsibility
+        description: >
+          The governing body must be independent of management and must actively
+          oversee the design and operation of internal control. Demonstrating it
+          requires a board or committee whose remit is written down, members whose
+          independence and relevant expertise are assessed rather than assumed,
+          and a reporting rhythm in which management is required to account for
+          control performance and the body is recorded as challenging it.
+        parent_urn: urn:inflect:req:coso-icf-2013:ce
+        depth: 2
+        assessable: true
+        category: CE
+
+      - urn: urn:inflect:req:coso-icf-2013:p3
+        ref_id: P3
+        name: Structures, authority and responsibility
+        description: >
+          Management, with board oversight, must establish reporting lines and
+          allocate authority so that responsibility for control is unambiguous.
+          The organization should be able to show its structure, say who may
+          approve what and to which limit, and demonstrate that those limits are
+          enforced where the work happens rather than existing only on paper.
+        parent_urn: urn:inflect:req:coso-icf-2013:ce
+        depth: 2
+        assessable: true
+        category: CE
+
+      - urn: urn:inflect:req:coso-icf-2013:p4
+        ref_id: P4
+        name: Commitment to competence
+        description: >
+          The organization must attract, develop and retain people capable of
+          performing the controls assigned to them. Evidence includes stated
+          competence expectations for control-relevant roles, screening
+          proportionate to the authority a role carries, induction that names the
+          control duties the role acquires, and continued development tracked
+          rather than assumed.
+        parent_urn: urn:inflect:req:coso-icf-2013:ce
+        depth: 2
+        assessable: true
+        category: CE
+
+      - urn: urn:inflect:req:coso-icf-2013:p5
+        ref_id: P5
+        name: Accountability enforcement
+        description: >
+          Individuals must be held answerable for their internal control
+          responsibilities. That requires those responsibilities to appear in the
+          objectives against which people are measured, to be assessed when
+          performance is reviewed, and for reward structures to be examined for
+          the pressures they create — since incentives that reward an outcome
+          regardless of how it was reached undermine every control beneath them.
+        parent_urn: urn:inflect:req:coso-icf-2013:ce
+        depth: 2
+        assessable: true
+        category: CE
+
+      # ─── RA — Risk Assessment ──────────────────────────────────────────
+      - urn: urn:inflect:req:coso-icf-2013:ra
+        ref_id: RA
+        name: Risk Assessment
+        description: >
+          The identification and analysis of risks to the achievement of
+          objectives, forming the basis for how those risks are managed.
+        depth: 1
+        assessable: false
+        category: RA
+
+      - urn: urn:inflect:req:coso-icf-2013:p6
+        ref_id: P6
+        name: Suitable objectives specified
+        description: >
+          Objectives must be stated clearly enough that the risks to achieving
+          them can be identified and assessed. For financial reporting this means
+          the organization can say what it is reporting and to what standard, what
+          level of misstatement would matter, and which accounts and disclosures
+          are consequential enough to be in scope — decided deliberately and
+          revisited, not inherited.
+        parent_urn: urn:inflect:req:coso-icf-2013:ra
+        depth: 2
+        assessable: true
+        category: RA
+
+      - urn: urn:inflect:req:coso-icf-2013:p7
+        ref_id: P7
+        name: Risk identification and analysis
+        description: >
+          Risks to the stated objectives must be identified across the
+          organization and analysed as a basis for deciding what to do about
+          them. Demonstrating it requires a maintained record of those risks with
+          someone accountable for each, criteria applied consistently rather than
+          case by case, and decisions to accept, reduce, transfer or avoid that
+          are recorded and approved by someone entitled to make them.
+        parent_urn: urn:inflect:req:coso-icf-2013:ra
+        depth: 2
+        assessable: true
+        category: RA
+
+      - urn: urn:inflect:req:coso-icf-2013:p8
+        ref_id: P8
+        name: Fraud risk assessment
+        description: >
+          The potential for fraud must be considered explicitly when assessing
+          risk, rather than folded into general risk work. The assessment should
+          address misappropriation, fraudulent reporting and corruption, and must
+          address the possibility that management overrides the controls it owns —
+          the one scenario a control framework cannot assume away, because the
+          people who would perpetrate it are the people who operate the controls.
+        parent_urn: urn:inflect:req:coso-icf-2013:ra
+        depth: 2
+        assessable: true
+        category: RA
+
+      - urn: urn:inflect:req:coso-icf-2013:p9
+        ref_id: P9
+        name: Significant change identification and analysis
+        description: >
+          Changes that could materially affect the system of internal control
+          must be identified and their consequences assessed. This covers changes
+          in the operating environment, the business model, leadership and
+          systems, and requires that the assessment actually reaches the control
+          design — a change noticed but not followed through to the controls it
+          disturbs has not been assessed.
+        parent_urn: urn:inflect:req:coso-icf-2013:ra
+        depth: 2
+        assessable: true
+        category: RA
+
+      # ─── CA — Control Activities ───────────────────────────────────────
+      - urn: urn:inflect:req:coso-icf-2013:ca
+        ref_id: CA
+        name: Control Activities
+        description: >
+          The actions established through policy and procedure that help ensure
+          management's risk responses are carried out.
+        depth: 1
+        assessable: false
+        category: CA
+
+      - urn: urn:inflect:req:coso-icf-2013:p10
+        ref_id: P10
+        name: Selection and development of control activities
+        description: >
+          Control activities must be selected and developed to reduce the
+          identified risks to an acceptable level. The organization should be able
+          to trace a risk to the control that answers it, show that duties which
+          should not sit with one person are divided, and distinguish the controls
+          it relies on from those it merely performs.
+        parent_urn: urn:inflect:req:coso-icf-2013:ca
+        depth: 2
+        assessable: true
+        category: CA
+
+      - urn: urn:inflect:req:coso-icf-2013:p11
+        ref_id: P11
+        name: General controls over technology
+        description: >
+          Where controls depend on technology, the technology itself must be
+          governed. That means access to systems and data is granted on approval
+          and withdrawn when it should be, changes are authorised and tested
+          before they reach production, and the operations the business depends on
+          are run and recovered reliably — because a business control inherits the
+          weaknesses of the system it runs on.
+        parent_urn: urn:inflect:req:coso-icf-2013:ca
+        depth: 2
+        assessable: true
+        category: CA
+
+      - urn: urn:inflect:req:coso-icf-2013:p12
+        ref_id: P12
+        name: Deployment through policies and procedures
+        description: >
+          Control activities must be carried into practice through policies that
+          state what is expected and procedures that put them into effect.
+          Demonstrating it requires named ownership of each policy, evidence that
+          those who must follow it have received it, and periodic re-approval so
+          that a policy nobody has revisited is visible as such.
+        parent_urn: urn:inflect:req:coso-icf-2013:ca
+        depth: 2
+        assessable: true
+        category: CA
+
+      # ─── IC — Information and Communication ────────────────────────────
+      - urn: urn:inflect:req:coso-icf-2013:ic
+        ref_id: IC
+        name: Information and Communication
+        description: >
+          The information needed to support internal control, and the internal and
+          external communication that carries it.
+        depth: 1
+        assessable: false
+        category: IC
+
+      - urn: urn:inflect:req:coso-icf-2013:p13
+        ref_id: P13
+        name: Use of relevant information
+        description: >
+          Internal control depends on information that is relevant and of
+          sufficient quality to rely on. The organization should know which
+          sources feed its reporting, be able to show that what arrives is
+          complete and accurate rather than merely plausible, and have definitions
+          and ownership settled so two parts of the business do not mean different
+          things by the same figure.
+        parent_urn: urn:inflect:req:coso-icf-2013:ic
+        depth: 2
+        assessable: true
+        category: IC
+
+      - urn: urn:inflect:req:coso-icf-2013:p14
+        ref_id: P14
+        name: Internal communication
+        description: >
+          Information about internal control must reach the people who act on it.
+          Those performing a control should have been told what they are
+          responsible for, there should be a route for reporting a control that
+          has failed which does not rely on goodwill, and changes to controls
+          should reach the people affected before they take effect rather than
+          after.
+        parent_urn: urn:inflect:req:coso-icf-2013:ic
+        depth: 2
+        assessable: true
+        category: IC
+
+      - urn: urn:inflect:req:coso-icf-2013:p15
+        ref_id: P15
+        name: External communication
+        description: >
+          The organization must communicate with outside parties on matters
+          affecting internal control. That means knowing who may speak for it and
+          on what, having an agreed way of dealing with regulators, auditors and
+          other external parties, and ensuring that what comes back — complaints,
+          findings, enquiries — is routed to someone and acted on rather than
+          received and filed.
+        parent_urn: urn:inflect:req:coso-icf-2013:ic
+        depth: 2
+        assessable: true
+        category: IC
+
+      # ─── MA — Monitoring Activities ────────────────────────────────────
+      - urn: urn:inflect:req:coso-icf-2013:ma
+        ref_id: MA
+        name: Monitoring Activities
+        description: >
+          The evaluations used to establish whether the components of internal
+          control are present and functioning, and the handling of what they find.
+        depth: 1
+        assessable: false
+        category: MA
+
+      - urn: urn:inflect:req:coso-icf-2013:p16
+        ref_id: P16
+        name: Ongoing and separate evaluations
+        description: >
+          The organization must evaluate whether its internal control is present
+          and functioning, through monitoring built into operations, through
+          evaluations conducted separately from the activity being examined, or
+          both. What matters is that the scope is planned against the controls
+          relied upon, and that an evaluation performed by those who own the
+          control is recognised as weaker evidence than one that is not.
+        parent_urn: urn:inflect:req:coso-icf-2013:ma
+        depth: 2
+        assessable: true
+        category: MA
+
+      - urn: urn:inflect:req:coso-icf-2013:p17
+        ref_id: P17
+        name: Evaluation and communication of deficiencies
+        description: >
+          Control deficiencies must be evaluated and communicated to those able to
+          act, including senior management and the board where severity warrants.
+          Demonstrating it requires deficiencies to be collected in one place,
+          assessed against stated criteria that separate a deficiency from a
+          significant one and from a material weakness, and remediated by a named
+          owner against a date that is tracked to closure.
+        parent_urn: urn:inflect:req:coso-icf-2013:ma
+        depth: 2
+        assessable: true
+        category: MA
