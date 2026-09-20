@@ -19,8 +19,22 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+// Applied here rather than per assertion so a new `expect(read(...))` inherits
+// it. String literals are KEPT: masking them would silently empty assertions
+// that harvest codes or ids from source. Every path this file reads is a
+// TypeScript-alike (re-derived per file, not assumed from the directory), so
+// `codeOf` is the right lexer and no language split is needed.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(readRaw(rel));
+// The user-facing copy lives in the i18n catalogue, not in the component, so it
+// is READ RAW and PARSED — `codeOf` lexes TypeScript and a JSON catalogue is not
+// that language. See the nudge assertion below for why this matters.
+const messages = JSON.parse(readRaw('messages/en.json')) as Record<string, any>;
 
 const lib = read('src/lib/risk-staleness.ts');
 const loader = read('src/app-layer/usecases/risk-staleness.ts');
@@ -65,7 +79,22 @@ describe('RQ3-7 — the loop surfaces in the UI', () => {
     test('the Assessment tab renders the re-assess nudge from the breach signal', () => {
         expect(assessmentPanel).toMatch(/kri-breaches/);
         expect(assessmentPanel).toMatch(/kri-reassess-nudge/);
-        expect(assessmentPanel).toMatch(/re-assess/i);
+        // The panel must REFERENCE the copy, and the copy must SAY to re-assess.
+        //
+        // This was one assertion, `expect(assessmentPanel).toMatch(/re-assess/i)`,
+        // and it was satisfied ONLY by comments (#2246 Class A). Every occurrence
+        // of "re-assess" in RiskAssessmentPanel.tsx is a comment — two `//` lines
+        // and one `{/* */}` block; the sole code artefact is the testid
+        // `kri-reassess-nudge`, which has no hyphen and so never matched. The copy
+        // is `t('assessment.kriNudge')`, i.e. it lives in the catalogue, so that
+        // assertion was structurally incapable of checking what it named. Masking
+        // the read seam is what surfaced it.
+        //
+        // Split in two so each half can fail for its own reason: unwire the nudge
+        // from the key and the first fails; reword the copy so it no longer tells
+        // the user to re-assess and the second fails.
+        expect(assessmentPanel).toMatch(/t\('assessment\.kriNudge'\)/);
+        expect(messages.risks.assessment.kriNudge).toMatch(/re-assess/i);
     });
 
     test('the KRI page deep-links a breached, risk-linked KRI to the assessment tab', () => {

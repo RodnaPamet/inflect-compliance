@@ -9,16 +9,36 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+// Applied here rather than per assertion so a new `expect(read(...))` inherits
+// it. String literals are KEPT: masking them would silently empty assertions
+// that harvest codes or ids from source. Every path this file reads is a
+// TypeScript-alike (re-derived per file, not assumed from the directory), so
+// `codeOf` is the right lexer and no language split is needed.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
+// `readDoc` is the DELIBERATE raw seam (#2246). Two assertions below are about
+// the DOCUMENTATION itself — a docblock header and a scope note — so masking
+// comments would empty the very text they name. Naming the reader is what keeps
+// that a stated choice rather than an oversight, and confines it to these two.
+//
+// It also matters for `.not.toMatch`: a NEGATIVE assertion over masked text is
+// trivially true, because the text it looks for has been blanked. Line ~116 is
+// exactly that shape, so reading it masked would have turned a real guard into
+// one that can never fail.
+const readDoc = (rel: string) => readRaw(rel);
 
 const REPORTS = read('src/app/t/[tenantSlug]/(app)/risks/reports/page.tsx');
 const IMPORT = read('src/app/t/[tenantSlug]/(app)/risks/import/page.tsx');
 const SCENARIOS = read('src/app/t/[tenantSlug]/(app)/risks/scenarios/page.tsx');
-const PLAN = read('src/app-layer/usecases/risk-treatment-plan.ts');
+const PLAN = readDoc('src/app-layer/usecases/risk-treatment-plan.ts');
 const PANEL = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/RiskAssessmentPanel.tsx');
 const DETAIL = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/page.tsx');
-const FAIR = read('src/app/t/[tenantSlug]/(app)/risks/[riskId]/FairAnalysisPanel.tsx');
+const FAIR = readDoc('src/app/t/[tenantSlug]/(app)/risks/[riskId]/FairAnalysisPanel.tsx');
 
 describe('1. scheduled deep-dive can be risk-scoped', () => {
     it('the schedule-create form picks a risk and sends parameters.riskId', () => {

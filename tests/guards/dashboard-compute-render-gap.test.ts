@@ -23,13 +23,31 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+// Applied here rather than per assertion so a new `expect(read(...))` inherits
+// it. String literals are KEPT: masking them would silently empty assertions
+// that harvest codes or ids from source. Every path this file reads is a
+// TypeScript-alike (re-derived per file, not assumed from the directory), so
+// `codeOf` is the right lexer and no language split is needed.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
+// `readDoc` is the DELIBERATE raw seam (#2246). Masking comments is the right
+// default, but an assertion whose SUBJECT is the prose inverts the defect: over
+// masked text a `.not.toMatch(/<some docstring>/)` is trivially true and can
+// never fail again, so the stale doc it forbids could come straight back with
+// nothing to catch it. Named, so the choice is visible and stays confined.
+const readDoc = (rel: string) => readRaw(rel);
 
 const REPO = read('src/app-layer/repositories/DashboardRepository.ts');
 const USECASE = read('src/app-layer/usecases/dashboard.ts');
 const CLIENT = read('src/app/t/[tenantSlug]/(app)/dashboard/DashboardClient.tsx');
 const CONTEXT = read('src/app/t/[tenantSlug]/(app)/dashboard/DashboardChartContext.tsx');
+// Same file, read RAW: the docstring test below asserts on prose, not code.
+const CONTEXT_DOC = readDoc('src/app/t/[tenantSlug]/(app)/dashboard/DashboardChartContext.tsx');
 const KPI_CARD = read('src/components/ui/KpiCard.tsx');
 const ACTIVITY_CARD = read('src/app/t/[tenantSlug]/(app)/dashboard/RecentActivityCard.tsx');
 const SWR_KEYS = read('src/lib/swr-keys.ts');
@@ -118,8 +136,10 @@ describe('3. chart interaction is honestly "focus", not "filter"', () => {
     });
 
     it('drops the aspirational "filter their data" docstring', () => {
-        expect(CONTEXT).not.toMatch(/filter their data/);
-        expect(CONTEXT).not.toMatch(/data filtered\s+to the selected/);
+        // CONTEXT_DOC, not CONTEXT: this test forbids a DOCSTRING, and over
+        // comment-masked text both assertions would pass unconditionally.
+        expect(CONTEXT_DOC).not.toMatch(/filter their data/);
+        expect(CONTEXT_DOC).not.toMatch(/data filtered\s+to the selected/);
     });
 });
 
