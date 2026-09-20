@@ -283,12 +283,22 @@ describe('catalogue requirements carry prose', () => {
      * count invites lowering the ceiling without knowing whether the
      * population moved under it."
      *
-     * Measured, not argued (2026-09-20). Delete SOC 2 `CC9.1` — a shipped
+     * Measured, not argued (2026-09-20). Delete ISO 27001 `8.34` — a shipped
      * requirement WITH an authored summary — from
-     * `soc2-control-templates.json`. The population moves 989 -> 988,
-     * `absent.length` stays at 405, and all six tests in this file stay GREEN.
-     * A customer lost a requirement and its prose, and the guard named for
-     * requirement prose said nothing.
+     * `iso27001-control-templates.json`. The population moves 989 -> 988,
+     * `absent.length` stays at 405, all six tests in this file stay GREEN, and
+     * so does every other suite that reads the fixture. A customer lost a
+     * requirement and its prose, and nothing said so.
+     *
+     * THE FIRST CANDIDATE WAS WRONG, AND THE CORRECTION IS THE POINT. This
+     * paragraph first named SOC 2 `CC9.1`. Deleting that reddens seven
+     * assertions in three other suites — four in
+     * `tests/guardrails/soc2-starter-pack-coverage.test.ts` (:137 pins
+     * `requirements.length` at 10), two in
+     * `library-obligations-reach-the-catalogue.test.ts`, one in
+     * `tests/unit/framework-representation.test.ts` — so SOC 2 demonstrates
+     * nothing. The blind spot is real but SMALLER than a single example
+     * suggests, and the table below says exactly how small.
      *
      * This is not a hypothetical shape. #2669 retired ISO 9001 / 39001 / 28000
      * and moved BOTH numbers by 80 — 485 of 1069 became 405 of 989. The
@@ -308,6 +318,55 @@ describe('catalogue requirements carry prose', () => {
      * Strip ten ISO 27001 summaries, author ten onto the NIS 2 rows that lack
      * them, and the total is still 405 with no pair rule to object. Per
      * fixture that is two red lines naming both frameworks.
+     *
+     * ═══ HOW MUCH OF THIS IS A SECOND COPY OF AN EXISTING PIN ═══
+     *
+     * Most of it, and a reader re-seating fifteen numbers deserves the figure
+     * rather than the argument. METHOD (2026-09-20, reproducible): the 59
+     * suites that read `prisma/fixtures` — directly or through
+     * `tests/helpers/applied-catalogue.ts` — 49 without a database and 10
+     * with; nothing in `tests/e2e` or `tests/regression` reads them. Mutate,
+     * run, record which suites redden, restore.
+     *
+     *   DELETE one summary-carrying requirement   14 of 15 fixtures are
+     *                                             already caught elsewhere.
+     *   ADD one summary-carrying requirement      10 of 15 are.
+     *
+     * The gaps, measured rather than reasoned:
+     *
+     *   blind to a DELETION   iso27001 (93)
+     *   blind to an ADDITION  iso27001 (93), iso27701 (44), dora (24),
+     *                         imda-mgf (19), owasp-asi (10)
+     *
+     * The asymmetry has one cause. Fourteen of the fifteen fixtures declare a
+     * pair in `library-obligations-reach-the-catalogue.test.ts`
+     * (internal-controls-catalog has no library), and that suite asks a
+     * ONE-WAY question: does every library obligation REACH the catalogue. A
+     * row that leaves is a missing obligation and reddens it; a row that
+     * arrives answers to no library and passes. That is the whole of the five
+     * fixtures blind to an addition.
+     *
+     * ISO 27001 escapes both halves, and not for want of a declaration — its
+     * join is real and `normalised`, stripping the library's `A.` prefix. The
+     * library is what is short: `src/data/libraries/iso27001-2022.yaml`
+     * selects 29 Annex A controls (`A.5.1` … `A.8.32`) against the fixture's
+     * 93, and `A.8.34` is not one of them, so deleting `8.34` removes no
+     * obligation and the pair stays green. On main that 93 is not pinned,
+     * floored or joined anywhere — the map below is its first reader.
+     *
+     * Six fixtures do carry a literal count equal to the denominator here —
+     * soc2 10 (`soc2-starter-pack-coverage.test.ts:137`), eu-ai-act 16
+     * (`eu-ai-act-framework-coverage.test.ts:153`), iso42001 62
+     * (`iso-42001-framework-coverage.test.ts:197`, `:273`), ssdf 42
+     * (`ssdf-framework-coverage.test.ts:167`), nist-privacy 100
+     * (`nist-privacy-framework-coverage.test.ts:223`), owasp-aisvs 191
+     * (`aisvs-framework-coverage.test.ts:195`) — and asvs-l1 128 is pinned as
+     * a set equality against the library's L1 tier
+     * (`asvs-starter-pack-coverage.test.ts:188`). Those seven entries buy a
+     * second re-seat point and no new detection. They stay because the value
+     * of this map is the WHOLE ROW read together: it is the only place the 989
+     * is decomposed, and dropping the covered seven would leave a map that
+     * sums to nothing checkable.
      *
      * DELIBERATELY SENSITIVE TO THE DENOMINATOR. Adding or retiring a
      * requirement reddens this, and that is the feature rather than the cost:
@@ -356,43 +415,61 @@ describe('catalogue requirements carry prose', () => {
                 return `  ${k}\n      pinned  : ${pinned}\n      measured: ${found}`;
             });
 
-        if (differences.length > 0) {
-            throw new Error(
-                [
-                    'Requirement summary coverage moved.',
-                    '',
-                    ...differences,
-                    '',
-                    'Each entry is "requirements with no summary" of "requirements in the',
-                    'fixture". BOTH halves are compared, which is the point — the total',
-                    'ceiling above cannot tell a summary being authored from a framework',
-                    'being retired.',
-                    '',
-                    'What to do, by which half moved:',
-                    '',
-                    '  numerator DOWN   summaries were authored or transcribed. Lower the',
-                    '                   entry here AND REQUIREMENTS_WITHOUT_SUMMARY_CEILING',
-                    '                   by the same amount, in this PR.',
-                    '  numerator UP     prose was destroyed. That is the defect #2615 is',
-                    '                   about; restore the summaries rather than re-seat.',
-                    '  denominator UP   requirements were added. Seat the new pair and say',
-                    '                   in the PR whether the new rows carry prose.',
-                    '  denominator DOWN requirements were retired (#2669 did this to three',
-                    '                   frameworks). Move BOTH numbers and write RETIRED, so',
-                    '                   a falling ceiling is not read as work done.',
-                    '  key added        a new CatalogFile fixture. Add it here.',
-                    '  key removed      the fixture stopped being CatalogFile-shaped. Check',
-                    '                   that was deliberate before deleting the line.',
-                    '',
-                    'WHICH summaries are right is governed by "a summary is present exactly',
-                    'where the library says more than the title" above. This only counts.',
-                ].join('\n'),
-            );
-        }
+        /**
+         * ONE assertion, and its failure message is built from `differences`.
+         *
+         * An earlier draft threw on `differences` and then ran
+         * `expect(measured).toEqual(SUMMARY_COVERAGE_BY_FIXTURE)` beneath it,
+         * commented as a backstop that "fires if the walk itself ever stops
+         * finding a real mismatch". No such input exists. `differences` walks
+         * the UNION of both key sets, and a key held by only one map compares
+         * a string against `undefined` and is itself a difference — so
+         * `differences.length === 0` already means the two objects have the
+         * same keys and the same values, which is exactly what `toEqual` then
+         * re-checked. It could not fail on any input, and a line that cannot
+         * fail is not a backstop; it is a second copy of the assertion's own
+         * precondition. Removed rather than demoted.
+         *
+         * `keys` is the union of fifteen literal keys and whatever
+         * `catalogFiles()` found, so it is never empty and this cannot pass
+         * over nothing — the vacuity that the denominator case at the top of
+         * this file exists to catch.
+         */
+        const AGREES = 'every fixture matches its pinned "absent of total"';
+        const report =
+            differences.length === 0
+                ? AGREES
+                : [
+                      'Requirement summary coverage moved.',
+                      '',
+                      ...differences,
+                      '',
+                      'Each entry is "requirements with no summary" of "requirements in the',
+                      'fixture". BOTH halves are compared, which is the point — the total',
+                      'ceiling above cannot tell a summary being authored from a framework',
+                      'being retired.',
+                      '',
+                      'What to do, by which half moved:',
+                      '',
+                      '  numerator DOWN   summaries were authored or transcribed. Lower the',
+                      '                   entry here AND REQUIREMENTS_WITHOUT_SUMMARY_CEILING',
+                      '                   by the same amount, in this PR.',
+                      '  numerator UP     prose was destroyed. That is the defect #2615 is',
+                      '                   about; restore the summaries rather than re-seat.',
+                      '  denominator UP   requirements were added. Seat the new pair and say',
+                      '                   in the PR whether the new rows carry prose.',
+                      '  denominator DOWN requirements were retired (#2669 did this to three',
+                      '                   frameworks). Move BOTH numbers and write RETIRED, so',
+                      '                   a falling ceiling is not read as work done.',
+                      '  key added        a new CatalogFile fixture. Add it here.',
+                      '  key removed      the fixture stopped being CatalogFile-shaped. Check',
+                      '                   that was deliberate before deleting the line.',
+                      '',
+                      'WHICH summaries are right is governed by "a summary is present exactly',
+                      'where the library says more than the title" above. This only counts.',
+                  ].join('\n');
 
-        // Backstop, not the detector. The walk above is what reports a move;
-        // this fires if the walk itself ever stops finding a real mismatch.
-        expect(measured).toEqual(SUMMARY_COVERAGE_BY_FIXTURE);
+        expect(report).toBe(AGREES);
     });
 
     it('the per-fixture pins sum to the ceiling and to the whole population', () => {
