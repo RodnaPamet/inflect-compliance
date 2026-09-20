@@ -142,24 +142,37 @@ export function describeRefusal(
     // and nothing on the write path consulted it, so the ladder happily climbed
     // a direction the warning underneath it called nonexistent.
     //
-    // The harm is state accumulation, not a live write: nothing DISPATCHES a
-    // joiner pass today, so a tenant that reached AUTOMATIC would simply BE at
-    // AUTOMATIC on the day a joiner trigger first looked — with the ladder's
-    // whole point already spent. The seven days bought nothing, because the dwell
-    // below fires only when LEAVING DRY_RUN, so once past that rung there is no
-    // further delay at all.
+    // The harm is state accumulation, not a live write. #2687 gave the joiner a
+    // dispatcher, so the old wording here — "nothing DISPATCHES a joiner pass
+    // today" — is no longer the reason; what a widened joiner would accumulate is
+    // a tenant sitting at AUTOMATIC while every nightly plan refuses
+    // `NO_DEPARTMENT_MAP`, with the ladder's whole point already spent by the day
+    // the map exists. The seven days bought nothing, because the dwell below
+    // fires only when LEAVING DRY_RUN, so once past that rung there is no further
+    // delay at all.
     //
-    // The clamp that rung would meet now EXISTS — `JOINER_MAX_MODE` (DRY_RUN) in
-    // `identity-joiner-pass`, which the admin route reports verbatim (#2638). So
-    // the ceiling half of the old trap is closed and only the runtime half is
-    // open, which is precisely what `DIRECTION_IMPLEMENTED.joiner` still being
-    // false says.
+    // The clamp that rung would meet EXISTS — `JOINER_MAX_MODE` (DRY_RUN) in
+    // `identity-joiner-pass`, which the admin route reports verbatim (#2638) —
+    // and so does the trigger (#2687). What is missing is the entitlement map:
+    // decision 10 puts the department→security-group map on
+    // `TenantSecuritySettings` and that column does not exist, so a joiner pass
+    // can run but cannot decide anything. That is the sole remaining reason
+    // `DIRECTION_IMPLEMENTED.joiner` is false; see the docblock on it.
     //
     // Placed BELOW the narrowing check on purpose. A tenant already sitting above
     // DISABLED — set before this gate existed, or after the joiner ships and is
     // later withdrawn — must still be able to come back down.
     if (!DIRECTION_IMPLEMENTED[direction]) {
-        return `The ${direction} direction has no implementation behind it — nothing schedules or triggers a ${direction} pass, so a rung above DISABLED would be recorded and would do nothing. It cannot be widened until the ${direction} runtime ships.`;
+        // THE SENTENCE IS RENDERED, so it has to stay true. It used to say
+        // "nothing schedules or triggers a <direction> pass", which #2687 made
+        // false the day it scheduled one — a refusal whose stated reason an
+        // operator can disprove by looking at the run route is worse than a
+        // vaguer one, because it invites them to conclude the gate is stale.
+        // What is true of an unimplemented direction in general, and of the
+        // joiner in particular, is that the pass cannot ACT on the mode: every
+        // joiner plan refuses `NO_DEPARTMENT_MAP` because decision 10's
+        // department→security-group map has no column to live in.
+        return `The ${direction} direction has no implementation behind it — a ${direction} pass cannot act on the mode it reads, so a rung above DISABLED would be recorded and would do nothing. It cannot be widened until the ${direction} runtime ships.`;
     }
 
     // Widening by more than one rung skips the step whose entire purpose is to

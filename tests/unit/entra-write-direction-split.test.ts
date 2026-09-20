@@ -23,11 +23,16 @@
  *
  * The joiner has NO production call site today, and that is a fact about the
  * product rather than a gap in this file: `DirectoryWriter` declares no create
- * verb, `JOINER_MAX_MODE` is `DRY_RUN`, nothing dispatches the joiner planner,
- * and the live arm waits on #2608. The gate is where the create verb will ask,
- * and it is exercised here directly. When that verb lands, its own call site
- * must pass `'joiner'` — a default was deliberately NOT given, so forgetting
- * the argument is a type error rather than an inherited grant.
+ * verb, `JOINER_MAX_MODE` is `DRY_RUN`, and the live arm waits on #2608. Note
+ * what is NO LONGER among those reasons — this sentence used to add "nothing
+ * dispatches the joiner planner", and #2687 shipped the dispatcher, the schedule
+ * and the run route. A joiner pass runs nightly; it reaches no WRITER, which is
+ * the narrower claim this file actually needs.
+ *
+ * The gate is where the create verb will ask, and it is exercised here
+ * directly. When that verb lands, its own call site must pass `'joiner'` — a
+ * default was deliberately NOT given, so forgetting the argument is a type
+ * error rather than an inherited grant.
  *
  * THE STORED-CONFIG DECISION THIS FILE PINS
  * ─────────────────────────────────────────

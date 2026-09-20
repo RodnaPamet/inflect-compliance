@@ -883,7 +883,13 @@ The subsystem that can **disable accounts in a customer's own directory**. It is
 the highest-blast-radius capability in the product, and it is deliberately
 throttled — though less than it was: the leaver clamp was raised to `AUTOMATIC`
 on 2026-08-30 (#2187), so the ladder alone now governs how far a tenant may go.
-The joiner is not implemented at all.
+The joiner RUNS but cannot provision: #2687 gave `planJoinerPass` a caller, a
+04:30 UTC schedule and an OWNER-only run route, so a joiner pass leaves an
+artefact like the leaver's — while `DIRECTION_IMPLEMENTED.joiner` stays FALSE,
+because `DirectoryProvisioner` declares no create verb and decision 10's
+department→security-group map has no column, so every plan refuses
+`NO_DEPARTMENT_MAP`. A joiner direction therefore cannot be widened past
+DISABLED, and the thing it is waiting for is the entitlement map, not a trigger.
 
 **There is no mover, and the M in JML has never stood for anything here.** This
 header carried the industry's three-letter expansion until #2487, and it was the
@@ -900,18 +906,24 @@ and a migration before it is a feature. The distinction matters when reading the
 joiner: the joiner is a direction that EXISTS and is switched off, which is a
 different kind of nothing.
 
-**The chain is three scheduled jobs, and the order is load-bearing.**
+**The chain is four scheduled jobs, and the order is load-bearing.**
 
 ```
 03:00 UTC  identity-sync-dispatch    per enabled okta / google-workspace / entra-id / active-directory connection
 04:00 UTC  hris-sync-dispatch        per enabled bamboohr / workday connection  (roster → Employee)
+04:30 UTC  identity-joiner-dispatch  per (tenant, provider) over WRITABLE_IDENTITY_PROVIDERS  (#2687)
 05:00 UTC  identity-leaver-dispatch  per (tenant, provider) over WRITABLE_IDENTITY_PROVIDERS
 ```
 
-The pass acts only on links a **complete** sync re-observed, so 05:00 sits after
-03:00 on purpose. **Declaration order in `SCHEDULED_JOBS` is NOT execution
-order** — only the cron pattern is; reading `schedules.ts` top-to-bottom gives
-the wrong sequence.
+Both passes act only on evidence a **complete** sync re-observed, so 04:30 and
+05:00 sit after 03:00 on purpose. The two JML halves are also given separate
+minutes on purpose — they read the same tables and write to the same execution
+log, so an incident in one must not arrive inside the other's window and be
+triaged as part of it — and 04:30 is off the hour because 04:00 already carries
+`retention-sweep`. `schedules.ts` states each of those reasons at the entry
+itself. **Declaration order in `SCHEDULED_JOBS` is NOT execution order** — only
+the cron pattern is; reading `schedules.ts` top-to-bottom gives the wrong
+sequence.
 
 **Each table has exactly one write seam. Do not add a second.**
 

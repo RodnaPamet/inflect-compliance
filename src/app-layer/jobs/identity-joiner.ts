@@ -40,9 +40,18 @@
  * the estate — directories this product has no writer for and no joiner story
  * about. Drop it and the pass runs for providers whose `observedAddresses` read
  * means something different, silently widening the population the artefact
- * claims to cover. `tests/unit/identity-joiner-dispatch.test.ts` fails on that
- * edit in two independent places — the shape of the `where`, and the set of
- * providers actually enqueued from a mixed population.
+ * claims to cover.
+ *
+ * ONE test fails on that edit, not two, and knowing which one matters: deleting
+ * the predicate reddens `reads only writable providers, and only enabled
+ * connections` in `tests/unit/identity-joiner-dispatch.test.ts` and nothing
+ * else (measured — 1 failed, 12 passed). The neighbouring case, `control — the
+ * WHERE predicate is the WHOLE scope`, is DESIGNED to stay green: it hands the
+ * fake an `okta` row the real predicate would never have returned and asserts it
+ * IS forwarded, which is what proves no second in-code filter exists. Its own
+ * comment says so. A reader who believed the old "two independent places" would
+ * find the first failure, assume the second was covered, and stop — so the
+ * sentence was worse than no sentence.
  *
  * @module jobs/identity-joiner
  */
