@@ -2,7 +2,7 @@
   "_meta": {
     "purpose": "DORA control catalogue in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
     "why": "These 24 templates and their 133 authored tasks reached no production database. The templates were created only by prisma/seed.ts, which is not run on production deploys, so the task seeder that names this fixture found nothing to attach to and reported \"24 template(s) absent\" on every run while exiting 0.",
-    "grounding": "Requirement codes, titles and sections are carried over verbatim from prisma/fixtures/dora_requirements.json. Task content is unchanged from the bare-array fixture it replaces \u2014 this file is a shape conversion, not a re-authoring.",
+    "grounding": "Requirement codes, titles and sections are carried over verbatim from prisma/fixtures/dora_requirements.json. Task content is unchanged from the bare-array fixture it replaces — this file is a shape conversion, not a re-authoring.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts",
     "join": "Every template.requirementCodes entry equals a requirement code exactly (24/24 resolve). The key rename matters: CatalogTemplateSchema reads requirementCodes and defaults it to [], so leaving the old `requirements` key would have parsed cleanly and produced 24 templates linked to nothing."
   },
@@ -20,7 +20,7 @@
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
       "sortOrder": 1,
-      "summary": "The management body defines, approves, oversees and is accountable for the ICT risk management framework, allocating clear roles and responsibilities for all ICT-related functions. (Paraphrase \u2014 Art. 5)"
+      "summary": "The management body defines, approves, oversees and is accountable for the ICT risk management framework, allocating clear roles and responsibilities for all ICT-related functions. (Paraphrase — Art. 5)"
     },
     {
       "code": "DORA.Art.6",
@@ -28,7 +28,7 @@
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
       "sortOrder": 2,
-      "summary": "Maintain a sound, comprehensive and well-documented ICT risk management framework as part of the overall risk management system, reviewed at least annually. (Paraphrase \u2014 Art. 6)"
+      "summary": "Maintain a sound, comprehensive and well-documented ICT risk management framework as part of the overall risk management system, reviewed at least annually. (Paraphrase — Art. 6)"
     },
     {
       "code": "DORA.Art.7",
@@ -36,7 +36,7 @@
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
       "sortOrder": 3,
-      "summary": "Use and maintain ICT systems, protocols and tools that are reliable, have sufficient capacity, and are technologically resilient. (Paraphrase \u2014 Art. 7)"
+      "summary": "Use and maintain ICT systems, protocols and tools that are reliable, have sufficient capacity, and are technologically resilient. (Paraphrase — Art. 7)"
     },
     {
       "code": "DORA.Art.8",
@@ -44,7 +44,7 @@
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
       "sortOrder": 4,
-      "summary": "Identify, classify and document all ICT-supported business functions, information assets and ICT assets, and map dependencies. (Paraphrase \u2014 Art. 8)"
+      "summary": "Identify, classify and document all ICT-supported business functions, information assets and ICT assets, and map dependencies. (Paraphrase — Art. 8)"
     },
     {
       "code": "DORA.Art.9",
@@ -52,7 +52,7 @@
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
       "sortOrder": 5,
-      "summary": "Continuously monitor and control ICT systems, and implement policies, procedures and tools (access control, encryption, network security) to protect against ICT risk. (Paraphrase \u2014 Art. 9)"
+      "summary": "Continuously monitor and control ICT systems, and implement policies, procedures and tools (access control, encryption, network security) to protect against ICT risk. (Paraphrase — Art. 9)"
     },
     {
       "code": "DORA.Art.10",
@@ -60,7 +60,7 @@
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
       "sortOrder": 6,
-      "summary": "Have mechanisms to promptly detect anomalous activities, including ICT network performance issues and ICT-related incidents, with multiple layers of control and defined alert thresholds. (Paraphrase \u2014 Art. 10)"
+      "summary": "Have mechanisms to promptly detect anomalous activities, including ICT network performance issues and ICT-related incidents, with multiple layers of control and defined alert thresholds. (Paraphrase — Art. 10)"
     },
     {
       "code": "DORA.Art.11",
@@ -68,7 +68,7 @@
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
       "sortOrder": 7,
-      "summary": "Put in place a comprehensive ICT business continuity policy and response-and-recovery plans to ensure continuity of critical functions and limit damage. (Paraphrase \u2014 Art. 11)"
+      "summary": "Put in place a comprehensive ICT business continuity policy and response-and-recovery plans to ensure continuity of critical functions and limit damage. (Paraphrase — Art. 11)"
     },
     {
       "code": "DORA.Art.12",
@@ -76,7 +76,7 @@
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
       "sortOrder": 8,
-      "summary": "Develop and document backup policies and restoration/recovery procedures, with backups stored securely and recovery tested periodically. (Paraphrase \u2014 Art. 12)"
+      "summary": "Develop and document backup policies and restoration/recovery procedures, with backups stored securely and recovery tested periodically. (Paraphrase — Art. 12)"
     },
     {
       "code": "DORA.Art.13",
@@ -84,7 +84,7 @@
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
       "sortOrder": 9,
-      "summary": "Gather information on vulnerabilities, ICT-related incidents and cyber threats, conduct post-incident reviews, and feed lessons learned back into the framework. (Paraphrase \u2014 Art. 13)"
+      "summary": "Gather information on vulnerabilities, ICT-related incidents and cyber threats, conduct post-incident reviews, and feed lessons learned back into the framework. (Paraphrase — Art. 13)"
     },
     {
       "code": "DORA.Art.14",
@@ -92,7 +92,7 @@
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
       "sortOrder": 10,
-      "summary": "Have crisis communication plans enabling responsible disclosure of major ICT-related incidents to clients, counterparts and the public as appropriate. (Paraphrase \u2014 Art. 14)"
+      "summary": "Have crisis communication plans enabling responsible disclosure of major ICT-related incidents to clients, counterparts and the public as appropriate. (Paraphrase — Art. 14)"
     },
     {
       "code": "DORA.Art.16",
@@ -100,7 +100,7 @@
       "section": "ICT Risk Management (Art 5-16)",
       "category": "ICT Risk Management (Art 5-16)",
       "sortOrder": 11,
-      "summary": "Certain smaller and non-interconnected entities apply a simplified but still sound ICT risk management framework proportionate to their risk profile. (Paraphrase \u2014 Art. 16)"
+      "summary": "Certain smaller and non-interconnected entities apply a simplified but still sound ICT risk management framework proportionate to their risk profile. (Paraphrase — Art. 16)"
     },
     {
       "code": "DORA.Art.17",
@@ -108,7 +108,7 @@
       "section": "ICT Incident Management & Reporting (Art 17-23)",
       "category": "ICT Incident Management & Reporting (Art 17-23)",
       "sortOrder": 12,
-      "summary": "Define, establish and implement an ICT-related incident management process to detect, manage, log and resolve ICT-related incidents. (Paraphrase \u2014 Art. 17)"
+      "summary": "Define, establish and implement an ICT-related incident management process to detect, manage, log and resolve ICT-related incidents. (Paraphrase — Art. 17)"
     },
     {
       "code": "DORA.Art.18",
@@ -116,7 +116,7 @@
       "section": "ICT Incident Management & Reporting (Art 17-23)",
       "category": "ICT Incident Management & Reporting (Art 17-23)",
       "sortOrder": 13,
-      "summary": "Classify ICT-related incidents and determine their impact using the criteria set out in DORA and the related RTS (clients affected, duration, geographical spread, data losses, criticality, economic impact). (Paraphrase \u2014 Art. 18)"
+      "summary": "Classify ICT-related incidents and determine their impact using the criteria set out in DORA and the related RTS (clients affected, duration, geographical spread, data losses, criticality, economic impact). (Paraphrase — Art. 18)"
     },
     {
       "code": "DORA.Art.19",
@@ -124,7 +124,7 @@
       "section": "ICT Incident Management & Reporting (Art 17-23)",
       "category": "ICT Incident Management & Reporting (Art 17-23)",
       "sortOrder": 14,
-      "summary": "Report major ICT-related incidents to the relevant competent authority through an initial notification, an intermediate report and a final report within the deadlines set by DORA and its RTS/ITS. (Paraphrase \u2014 Art. 19)"
+      "summary": "Report major ICT-related incidents to the relevant competent authority through an initial notification, an intermediate report and a final report within the deadlines set by DORA and its RTS/ITS. (Paraphrase — Art. 19)"
     },
     {
       "code": "DORA.Art.23",
@@ -132,7 +132,7 @@
       "section": "ICT Incident Management & Reporting (Art 17-23)",
       "category": "ICT Incident Management & Reporting (Art 17-23)",
       "sortOrder": 15,
-      "summary": "Credit institutions, payment institutions, account information service providers and electronic money institutions apply the incident provisions to operational or security payment-related incidents. (Paraphrase \u2014 Art. 23)"
+      "summary": "Credit institutions, payment institutions, account information service providers and electronic money institutions apply the incident provisions to operational or security payment-related incidents. (Paraphrase — Art. 23)"
     },
     {
       "code": "DORA.Art.24",
@@ -140,7 +140,7 @@
       "section": "Digital Operational Resilience Testing (Art 24-27)",
       "category": "Digital Operational Resilience Testing (Art 24-27)",
       "sortOrder": 16,
-      "summary": "Establish a risk-based digital operational resilience testing programme as an integral part of the ICT risk management framework. (Paraphrase \u2014 Art. 24)"
+      "summary": "Establish a risk-based digital operational resilience testing programme as an integral part of the ICT risk management framework. (Paraphrase — Art. 24)"
     },
     {
       "code": "DORA.Art.25",
@@ -148,7 +148,7 @@
       "section": "Digital Operational Resilience Testing (Art 24-27)",
       "category": "Digital Operational Resilience Testing (Art 24-27)",
       "sortOrder": 17,
-      "summary": "Perform an appropriate range of tests on ICT systems and tools \u2014 including vulnerability assessments, scans, gap analyses, penetration testing and scenario-based tests \u2014 at least yearly on critical systems. (Paraphrase \u2014 Art. 25)"
+      "summary": "Perform an appropriate range of tests on ICT systems and tools — including vulnerability assessments, scans, gap analyses, penetration testing and scenario-based tests — at least yearly on critical systems. (Paraphrase — Art. 25)"
     },
     {
       "code": "DORA.Art.26",
@@ -156,7 +156,7 @@
       "section": "Digital Operational Resilience Testing (Art 24-27)",
       "category": "Digital Operational Resilience Testing (Art 24-27)",
       "sortOrder": 18,
-      "summary": "Identified financial entities carry out threat-led penetration testing (TLPT) on live production systems covering critical functions at least every three years. (Paraphrase \u2014 Art. 26)"
+      "summary": "Identified financial entities carry out threat-led penetration testing (TLPT) on live production systems covering critical functions at least every three years. (Paraphrase — Art. 26)"
     },
     {
       "code": "DORA.Art.27",
@@ -164,7 +164,7 @@
       "section": "Digital Operational Resilience Testing (Art 24-27)",
       "category": "Digital Operational Resilience Testing (Art 24-27)",
       "sortOrder": 19,
-      "summary": "Use testers for TLPT that meet suitability, independence and professional-ethics requirements, with appropriate certification or accreditation. (Paraphrase \u2014 Art. 27)"
+      "summary": "Use testers for TLPT that meet suitability, independence and professional-ethics requirements, with appropriate certification or accreditation. (Paraphrase — Art. 27)"
     },
     {
       "code": "DORA.Art.28",
@@ -172,7 +172,7 @@
       "section": "ICT Third-Party Risk Management (Art 28-44)",
       "category": "ICT Third-Party Risk Management (Art 28-44)",
       "sortOrder": 20,
-      "summary": "Manage ICT third-party risk as part of the ICT risk framework, adopt a strategy on ICT third-party risk, and maintain a Register of Information on all contractual arrangements for the use of ICT services. (Paraphrase \u2014 Art. 28)"
+      "summary": "Manage ICT third-party risk as part of the ICT risk framework, adopt a strategy on ICT third-party risk, and maintain a Register of Information on all contractual arrangements for the use of ICT services. (Paraphrase — Art. 28)"
     },
     {
       "code": "DORA.Art.29",
@@ -180,7 +180,7 @@
       "section": "ICT Third-Party Risk Management (Art 28-44)",
       "category": "ICT Third-Party Risk Management (Art 28-44)",
       "sortOrder": 21,
-      "summary": "Assess ICT concentration risk when entering contractual arrangements for critical or important functions, including risks from sub-outsourcing and hard-to-substitute providers. (Paraphrase \u2014 Art. 29)"
+      "summary": "Assess ICT concentration risk when entering contractual arrangements for critical or important functions, including risks from sub-outsourcing and hard-to-substitute providers. (Paraphrase — Art. 29)"
     },
     {
       "code": "DORA.Art.30",
@@ -188,7 +188,7 @@
       "section": "ICT Third-Party Risk Management (Art 28-44)",
       "category": "ICT Third-Party Risk Management (Art 28-44)",
       "sortOrder": 22,
-      "summary": "Ensure ICT service contracts contain the mandatory key contractual provisions (service descriptions, locations, data protection, access and audit rights, termination, exit support, incident assistance). (Paraphrase \u2014 Art. 30)"
+      "summary": "Ensure ICT service contracts contain the mandatory key contractual provisions (service descriptions, locations, data protection, access and audit rights, termination, exit support, incident assistance). (Paraphrase — Art. 30)"
     },
     {
       "code": "DORA.Art.31",
@@ -196,7 +196,7 @@
       "section": "ICT Third-Party Risk Management (Art 28-44)",
       "category": "ICT Third-Party Risk Management (Art 28-44)",
       "sortOrder": 23,
-      "summary": "Recognise that certain ICT third-party providers are designated as critical by the ESAs and become subject to the Union Oversight Framework; account for this in third-party risk management. (Paraphrase \u2014 Art. 31)"
+      "summary": "Recognise that certain ICT third-party providers are designated as critical by the ESAs and become subject to the Union Oversight Framework; account for this in third-party risk management. (Paraphrase — Art. 31)"
     },
     {
       "code": "DORA.Art.45",
@@ -204,7 +204,7 @@
       "section": "Information Sharing (Art 45)",
       "category": "Information Sharing (Art 45)",
       "sortOrder": 24,
-      "summary": "Financial entities may exchange cyber threat information and intelligence within trusted communities under arrangements that protect confidentiality, personal data and competition-sensitive information. (Paraphrase \u2014 Art. 45)"
+      "summary": "Financial entities may exchange cyber threat information and intelligence within trusted communities under arrangements that protect confidentiality, personal data and competition-sensitive information. (Paraphrase — Art. 45)"
     }
   ],
   "templates": [
@@ -214,6 +214,9 @@
       "description": "Place every ICT function under a named owner and an accountable management body, and set out in policy how that body directs, approves and reviews ICT risk rather than delegating it away.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure the management body directs and answers for ICT risk itself, with every ICT-related function tied to a named owner and an accountable member.",
+      "successCriteria": "Every ICT-related function in the responsibilities matrix has an owning team and a named accountable management-body member.\nThe governance policy in force is the version the minutes record the management body as approving.\nEach approval and periodic review of the ICT risk framework is minuted against a named framework version.\nEvery management-body member has ICT risk training recorded within the cycle.",
+      "testingMethodology": "Evidence:\nObtain the responsibilities matrix showing the owning team and accountable management-body member per ICT function.\nRequest the approved ICT governance policy with its version, approval date and approving body.\nCollect the minute extracts recording management-body approval or review of the ICT risk framework.\nObtain the board ICT risk training records showing session, date and attendance per member.\n\nAnalysis:\nTrace each ICT function in the organisation structure to a matrix row and confirm both an owner and an accountable member are named.\nConfirm the policy version in force is the one the minutes approved, not a later revision issued without them.\nCheck each minuted item records a decision on a named framework version rather than noting the framework.\nCompare training attendance with the current membership list and identify members with no session in the cycle.\n\nOutput:\nAccountability coverage schedule marking each ICT function assigned, unassigned or disputed.\nFindings note on the approval trail between the policy in force and the minutes approving it.\nException list of management-body members without current ICT risk training, with each gap's age.",
       "requirementCodes": [
         "DORA.Art.5"
       ],
@@ -223,7 +226,7 @@
             "en": "Map every ICT-related function to its owning team and its management-body accountability"
           },
           "description": {
-            "en": "Take the list of ICT-related functions the entity runs \u2014 ICT operations, security, change, resilience and third-party management \u2014 and record for each the team that performs it, the executive who owns delivery, and where accountability for it sits within the management body. One row per function, and no row left blank or carrying an accountability that cannot be traced to a current role holder. This matrix is what shows the management body has allocated clear roles and responsibilities for its ICT-related functions rather than leaving them unassigned. Attach the completed responsibilities matrix, dated and version-marked."
+            "en": "Take the list of ICT-related functions the entity runs — ICT operations, security, change, resilience and third-party management — and record for each the team that performs it, the executive who owns delivery, and where accountability for it sits within the management body. One row per function, and no row left blank or carrying an accountability that cannot be traced to a current role holder. This matrix is what shows the management body has allocated clear roles and responsibilities for its ICT-related functions rather than leaving them unassigned. Attach the completed responsibilities matrix, dated and version-marked."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -278,7 +281,7 @@
             "en": "Record each management-body approval and periodic review of the ICT risk framework in the minutes"
           },
           "description": {
-            "en": "Every time the management body approves the ICT risk management framework or takes it back for periodic review, minute the version considered, the material it was given, the decision reached, and any actions raised with their owners and dates. A minute saying only that the framework was noted evidences neither approval nor review \u2014 the decision has to be named. Attach the minute extract covering the period together with the framework version it refers to."
+            "en": "Every time the management body approves the ICT risk management framework or takes it back for periodic review, minute the version considered, the material it was given, the decision reached, and any actions raised with their owners and dates. A minute saying only that the framework was noted evidences neither approval nor review — the decision has to be named. Attach the minute extract covering the period together with the framework version it refers to."
           },
           "phase": "OPERATE",
           "sortOrder": 2,
@@ -345,6 +348,9 @@
       "description": "Hold the ICT risk management framework as a single document with a stated scope and a declared link to the entity's overall risk management, so ICT risk is governed as part of the whole rather than beside it.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure ICT risk is governed within the entity's overall risk management, through one framework document and a resilience strategy that carries funding.",
+      "successCriteria": "The scope statement names the entities, functions and ICT services covered and its line into overall risk management.\nOne controlled framework document is in force, versioned and owned, with no competing copy in circulation.\nThe resilience strategy sets objectives with planned activities, a measure of progress and an approved budget against each.\nThe framework was reviewed within the year and again after each major ICT-related incident.",
+      "testingMethodology": "Evidence:\nObtain the scope statement listing covered entities, functions and ICT services and its reporting line into overall risk management.\nRequest the ICT risk management framework document with its version, owner and approval date.\nCollect the digital operational resilience strategy with its objectives, planned activities and progress measures.\nObtain the budget allocation record by activity and the annual and post-incident review records.\n\nAnalysis:\nCompare the scope statement with the entity's legal structure and ICT service list for functions covered by neither the framework nor an exclusion.\nSearch the policy store for competing or superseded framework copies still being relied on.\nCheck each strategy objective has a planned activity and a measure by which progress on it can be judged.\nReconcile budgeted activities with strategy activities and list those planned with no approved funding.\nRead the review record for the version reviewed, the changes made and the reasons given for items left unchanged.\n\nOutput:\nScope coverage table naming functions and ICT services attributed to no part of the framework.\nStrategy-to-budget reconciliation separating funded from unfunded resilience activities.\nReview timeliness record giving the interval since the last review and the status of each major incident.",
       "requirementCodes": [
         "DORA.Art.6"
       ],
@@ -354,7 +360,7 @@
             "en": "Define the scope of the ICT risk framework and its link to the overall risk management system"
           },
           "description": {
-            "en": "Write down what the ICT risk management framework covers \u2014 which legal entities, business functions and ICT services \u2014 and how it sits inside the entity's overall risk management system: the risk taxonomy it uses, where ICT risk is reported into enterprise risk, and which existing risk policies it inherits from rather than restates. Name what is deliberately out of scope and the reason. Attach the scope statement, issued with the framework document it governs."
+            "en": "Write down what the ICT risk management framework covers — which legal entities, business functions and ICT services — and how it sits inside the entity's overall risk management system: the risk taxonomy it uses, where ICT risk is reported into enterprise risk, and which existing risk policies it inherits from rather than restates. Name what is deliberately out of scope and the reason. Attach the scope statement, issued with the framework document it governs."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -450,7 +456,7 @@
             "en": "Record the resilience budget approved for the period against each planned activity"
           },
           "description": {
-            "en": "Take the activities the digital operational resilience strategy commits to for the period and record the budget approved against each one, alongside what has actually been spent or committed. Where a committed activity carries no budget, record that gap and where it was escalated \u2014 an unfunded commitment is the finding this task exists to surface. Attach the budget allocation record together with evidence of its approval."
+            "en": "Take the activities the digital operational resilience strategy commits to for the period and record the budget approved against each one, alongside what has actually been spent or committed. Where a committed activity carries no budget, record that gap and where it was escalated — an unfunded commitment is the finding this task exists to surface. Attach the budget allocation record together with evidence of its approval."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -475,7 +481,7 @@
           "steps": [
             {
               "text": {
-                "en": "Confirm which trigger applies \u2014 the annual cycle or a major ICT-related incident."
+                "en": "Confirm which trigger applies — the annual cycle or a major ICT-related incident."
               }
             },
             {
@@ -508,6 +514,9 @@
       "description": "State the capacity and reliability each ICT system must meet and the architecture standards its protocols and tools must satisfy, so a system's fitness is judged against a written expectation.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To hold each ICT system to a written capacity, reliability and architecture expectation, so unfit or out-of-support technology is found before it fails in service.",
+      "successCriteria": "Every in-scope ICT system has capacity and reliability requirements traceable to the function it serves and a stated volume source.\nArchitecture standards are published with a deviation route and a named authority who may grant one.\nObserved peak utilisation stays within each system's recorded headroom, or the exceedance is raised in the capacity plan.\nEvery ICT tool and protocol shows a running version and end-of-support date, with out-of-support entries owned.",
+      "testingMethodology": "Evidence:\nObtain the capacity and reliability requirements schedule with the function served and volume source per system.\nRequest the approved architecture standards with their deviation route and grant authority.\nCollect the capacity plan showing observed peak utilisation against each system's recorded headroom.\nObtain the technology currency record giving running version, supported version and end-of-support date per tool.\nObtain the latest architecture standards assessment with its deviation list and owners.\n\nAnalysis:\nSample the asset inventory and confirm each system appears in the schedule with a volume source that can be followed to origin.\nCompare observed peak utilisation with recorded headroom and list systems that ran beyond it with no action raised.\nTest the currency record against vendor support dates and identify tools still running past end-of-support.\nCheck each architecture deviation was granted by the named authority and carries an owner, not an open status alone.\n\nOutput:\nRequirements coverage list marking systems with no recorded capacity or reliability figure.\nOut-of-support technology register with an owner and remediation date per entry.\nDeviation ageing report drawn from successive architecture standards assessments.",
       "requirementCodes": [
         "DORA.Art.7"
       ],
@@ -661,6 +670,9 @@
       "description": "Keep one register of every ICT and information asset, classify each ICT-supported business function by criticality with the basis recorded, and map the dependencies each function relies on.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure the entity knows what ICT it holds, which business functions are critical, and what each of those functions actually depends on to keep running.",
+      "successCriteria": "One register holds every ICT and information asset, including those a third party operates on the entity's behalf.\nEach ICT-supported business function has a criticality rating with its basis recorded and the rater named.\nEvery critical function is mapped to the assets and providers it depends on, with unresolved dependencies listed rather than omitted.\nAdditions, changes and retirements appear in the change log, and discovery discrepancies are resolved in both directions.",
+      "testingMethodology": "Evidence:\nObtain the dated ICT asset inventory covering ICT and information assets, including third-party operated ones.\nRequest the criticality mapping showing the rating, its stated basis and who set it per business function.\nCollect the dependency map linking critical functions to their assets and third-party providers.\nObtain the inventory change log for the period and the register-to-discovery comparison.\n\nAnalysis:\nCompare the register with network discovery or the procurement ledger and quantify assets present in one and missing from the other.\nSample service-provider contracts and check whether the assets they operate appear in the register at all.\nTest a sample of criticality ratings to see whether the rating follows from the basis recorded for it.\nTrace each critical function to its dependency entry and identify mapping that stops at the application layer.\n\nOutput:\nInventory completeness measure naming the populations compared and discrepancies found in each direction.\nCriticality sampling results listing ratings unsupported by their stated basis.\nDependency gap list naming critical functions with incomplete or unresolved mapping.",
       "requirementCodes": [
         "DORA.Art.8"
       ],
@@ -670,7 +682,7 @@
             "en": "Inventory every ICT asset and information asset in a single register"
           },
           "description": {
-            "en": "Build one register covering ICT assets and information assets alike: what the asset is, who owns it, which business function it supports, where it runs, and \u2014 for information assets \u2014 the class of data it holds. Include assets operated on the entity's behalf by an ICT third-party provider: an asset is in scope because the entity depends on it, not because the entity hosts it. Attach the register, dated and version-marked."
+            "en": "Build one register covering ICT assets and information assets alike: what the asset is, who owns it, which business function it supports, where it runs, and — for information assets — the class of data it holds. Include assets operated on the entity's behalf by an ICT third-party provider: an asset is in scope because the entity depends on it, not because the entity hosts it. Attach the register, dated and version-marked."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -711,7 +723,7 @@
             "en": "Classify each ICT-supported business function by criticality and record the basis for the rating"
           },
           "description": {
-            "en": "Apply one criticality scale to every ICT-supported business function and record, per function, the rating given and the reasoning behind it \u2014 the impact of losing the function, who is affected, and the tolerance the business itself states. A rating with no stated basis cannot be challenged or reused by anyone else, so the reasoning is part of the deliverable rather than a note. Attach the criticality mapping, recording who set each rating and when."
+            "en": "Apply one criticality scale to every ICT-supported business function and record, per function, the rating given and the reasoning behind it — the impact of losing the function, who is affected, and the tolerance the business itself states. A rating with no stated basis cannot be challenged or reused by anyone else, so the reasoning is part of the deliverable rather than a note. Attach the criticality mapping, recording who set each rating and when."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -802,7 +814,7 @@
             "en": "Verify the asset register against an independent discovery source and record the discrepancies"
           },
           "description": {
-            "en": "Compare the register against an independent view of what is actually running \u2014 a discovery scan, a cloud account listing, or a provider's own inventory \u2014 and record what appears in one and not the other, in both directions. An asset present in the register but absent in reality is as much a finding as the reverse. Assign every discrepancy an owner and record how it was resolved. Attach the comparison with its discrepancy list."
+            "en": "Compare the register against an independent view of what is actually running — a discovery scan, a cloud account listing, or a provider's own inventory — and record what appears in one and not the other, in both directions. An asset present in the register but absent in reality is as much a finding as the reverse. Assign every discrepancy an owner and record how it was resolved. Attach the comparison with its discrepancy list."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -846,6 +858,9 @@
       "description": "Record which protection controls apply to each ICT system and data holding, and publish the access control policy governing how ICT access is granted, approved and withdrawn.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure each ICT system and data holding has stated protection controls, and that deployed access, encryption and segmentation match the published standards.",
+      "successCriteria": "Every ICT and information asset sits in the protection control coverage table, and each exclusion carries a written reason.\nThe access control policy names the systems it binds, the approver for each grant type and the record kept per grant.\nEncryption standards fix algorithm, key length and key custody by data class, with departures on the deviation list.\nCritical systems sit in segments with defined permitted flows, and every release carries its risk assessment and required approval.",
+      "testingMethodology": "Evidence:\nObtain the protection control coverage table mapping each asset to the controls applied, with reasons for exclusions.\nRequest the access control policy and the encryption standards with their current deviation list.\nCollect the network configuration export showing segments, permitted flows and the function each segment serves.\nObtain the ICT change records for the period and the latest configuration conformance check.\n\nAnalysis:\nReconcile the coverage table with the asset inventory and identify assets in neither the covered nor the excluded population.\nSample access grants and test that the approver matched the grant type the policy requires and the record was kept.\nCompare deployed cipher settings on sampled systems against the algorithm and key length the standards fix.\nInspect segment rules for flows reaching a critical system from general traffic with no defined permission behind them.\nTest sampled releases for a risk assessment and named approval, and search for releases with no change record.\n\nOutput:\nCoverage reconciliation naming unmapped assets and exclusions recorded without a reason.\nCryptographic and segmentation conformance findings against the published standards.\nChange-approval exception schedule with an owner and remediation date per deviation.",
       "requirementCodes": [
         "DORA.Art.9"
       ],
@@ -946,7 +961,7 @@
             "en": "Segment the network so critical ICT systems are isolated from general traffic"
           },
           "description": {
-            "en": "Place the systems supporting critical business functions into their own network segments and restrict what may reach them to the flows those functions actually need. Capture the resulting arrangement as an exported configuration \u2014 segment definitions, permitted flows and the rules enforcing them \u2014 rather than a hand-drawn diagram, so it can be compared against what is deployed. Attach the network security configuration export with the segment-to-function mapping."
+            "en": "Place the systems supporting critical business functions into their own network segments and restrict what may reach them to the flows those functions actually need. Capture the resulting arrangement as an exported configuration — segment definitions, permitted flows and the rules enforcing them — rather than a hand-drawn diagram, so it can be compared against what is deployed. Attach the network security configuration export with the segment-to-function mapping."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
@@ -1001,7 +1016,7 @@
             "en": "Verify that deployed access, encryption and segmentation settings match the published standards"
           },
           "description": {
-            "en": "Sample the systems in the coverage table and check what is actually configured against the access control policy, the encryption standards and the segmentation export \u2014 reading the live configuration, not the previous review's findings. Record every deviation with the system, the clause it fails, the owner and the remediation date. Attach the conformance check with its deviation list and the sample it was drawn from."
+            "en": "Sample the systems in the coverage table and check what is actually configured against the access control policy, the encryption standards and the segmentation export — reading the live configuration, not the previous review's findings. Record every deviation with the system, the clause it fails, the owner and the remediation date. Attach the conformance check with its deviation list and the sample it was drawn from."
           },
           "phase": "REVIEW",
           "sortOrder": 5,
@@ -1045,6 +1060,9 @@
       "description": "Name the log sources and network segments detection must cover and the layer it operates at, and set an alert threshold and escalation trigger for each class of anomalous activity.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure anomalous activity on in-scope systems and segments is detected at a defined threshold and reaches a named receiver, rather than resting in unread logs.",
+      "successCriteria": "Every in-scope system and segment names a log or telemetry source and control layer, with uncollected sources marked as gaps.\nEach anomaly type monitored has a firing value, a receiver and an escalation trigger in the threshold register.\nCollection and an alerting rule are live for every row of the detection coverage list.\nAlerts raised in the period each carry a triage outcome, and simulated events fire their rule and reach the recorded receiver.",
+      "testingMethodology": "Evidence:\nObtain the detection coverage list naming the log or telemetry source and control layer per system and segment.\nRequest the threshold register giving the firing value, receiver and escalation trigger per anomaly type.\nCollect the monitoring and alerting configuration export mapped to the coverage rows it satisfies.\nObtain the log review procedure with the completed reviews, the alert triage record and the detection test results.\n\nAnalysis:\nCompare the coverage list with the asset inventory and count systems and segments naming no collection source.\nSelect register rows and confirm a deployed rule exists at the same firing value in the configuration export.\nTrace sampled alerts back to the threshold that fired them and forward to the escalation the register requires.\nTest whether reviews recorded as finding nothing were performed, using reviewer identity and timestamps in the platform.\nRead the detection test results for rules that failed to fire, fired late or reached the wrong receiver.\n\nOutput:\nDetection coverage gap list naming the sources and segments not collected.\nThreshold-to-rule reconciliation showing registered thresholds with no deployed rule.\nDetection test summary stating the rules exercised and those that raised no alert.",
       "requirementCodes": [
         "DORA.Art.10"
       ],
@@ -1054,7 +1072,7 @@
             "en": "Record the log sources and network segments detection must cover, and at which layer"
           },
           "description": {
-            "en": "List the systems, network segments and applications where anomalous activity has to be detectable, and against each name the log or telemetry source that would carry the evidence and the layer of control it sits at \u2014 endpoint, network, application or platform. Where a listed source is not currently collected, keep the row and mark it as a gap rather than dropping it. Attach the detection coverage list with its gaps identified."
+            "en": "List the systems, network segments and applications where anomalous activity has to be detectable, and against each name the log or telemetry source that would carry the evidence and the layer of control it sits at — endpoint, network, application or platform. Where a listed source is not currently collected, keep the row and mark it as a gap rather than dropping it. Attach the detection coverage list with its gaps identified."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -1095,7 +1113,7 @@
             "en": "Define the alert threshold and escalation trigger for each anomaly type monitored"
           },
           "description": {
-            "en": "For every anomaly type in scope \u2014 including ICT network performance degradation, not only security events \u2014 record the condition that raises an alert, the value it fires at, who receives it, and the point at which it escalates into the incident process. Record thresholds as values rather than descriptions, so a later reviewer can tell whether one was changed and when. Attach the threshold register with an owner named per entry."
+            "en": "For every anomaly type in scope — including ICT network performance degradation, not only security events — record the condition that raises an alert, the value it fires at, who receives it, and the point at which it escalates into the incident process. Record thresholds as values rather than descriptions, so a later reviewer can tell whether one was changed and when. Attach the threshold register with an owner named per entry."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -1222,6 +1240,9 @@
       "description": "Identify the critical functions ICT continuity must sustain and the services each depends on, estimate the impact of their disruption, and hold response and recovery plans written against those figures.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure every critical business function has a recovery objective grounded in its estimated loss and a plan that testing has shown can reach it.",
+      "successCriteria": "Each critical function names its business owner, the ICT and third-party services it depends on, and the outage it can absorb.\nRecovery time and point objectives follow from a recorded impact and loss estimate whose assumptions are stated.\nThe continuity policy states who may activate it, the stand-down route, the test cycle and its review owner.\nEach function's plan names its activation trigger, recovery sequence and restoration criteria, and was exercised within the test cycle.",
+      "testingMethodology": "Evidence:\nObtain the critical function register with owners, ICT and third-party dependencies and absorbable outage.\nRequest the impact and loss estimates with their assumptions and the recovery objectives agreed per function.\nCollect the ICT business continuity policy with its activation authority, stand-down route and test cycle.\nObtain the response and recovery plans and the BCP test results and post-test reviews for the period.\n\nAnalysis:\nConfirm each function rated critical elsewhere has a register entry whose dependencies reach third-party services, not internal systems alone.\nTest whether the agreed recovery objectives sit consistently with the loss estimate and absorbable outage for the same function.\nCheck each plan names an activation trigger observable during an incident and a restoration criterion a responder could judge.\nCompare the recovery time and point achieved in each test with that function's objectives and quantify the shortfall.\nVerify steps recorded as not completed became amendments with owners and that the plan was re-issued.\n\nOutput:\nPlan coverage schedule listing critical functions with no current response and recovery plan.\nObjective-versus-achieved table for every plan exercised in the period.\nAmendment tracker showing shortfalls closed, shortfalls open and the plan versions re-issued.",
       "requirementCodes": [
         "DORA.Art.11"
       ],
@@ -1272,7 +1293,7 @@
             "en": "Estimate the impact and losses a disruption of each critical function would cause and set its recovery objectives"
           },
           "description": {
-            "en": "For every row of the critical function register, estimate what a disruption costs \u2014 operational, financial and client impact \u2014 and how that cost grows with the length of the outage. Use those estimates to set a recovery time objective and a recovery point objective for the function, so the plans have a target that a test can be measured against rather than an aspiration. Record the assumptions each estimate rests on and who agreed them, so the figures can be challenged, re-used and revised when the function changes. Attach the impact estimate together with the recovery objectives it produced."
+            "en": "For every row of the critical function register, estimate what a disruption costs — operational, financial and client impact — and how that cost grows with the length of the outage. Use those estimates to set a recovery time objective and a recovery point objective for the function, so the plans have a target that a test can be measured against rather than an aspiration. Record the assumptions each estimate rests on and who agreed them, so the figures can be challenged, re-used and revised when the function changes. Attach the impact estimate together with the recovery objectives it produced."
           },
           "phase": "SCOPE",
           "sortOrder": 1,
@@ -1286,7 +1307,7 @@
             "en": "Issue the ICT business continuity policy stating who may activate it and what it commits the organisation to"
           },
           "description": {
-            "en": "Turn the register and the recovery objectives into the policy this control requires. State the scope \u2014 which critical functions and ICT services it covers \u2014 who holds the authority to declare a disruption and activate the plans, how activation is escalated and stood down, the recovery objectives the organisation commits to, the cycle on which the plans are tested, and how continuity work connects to incident handling so the two do not run separate accounts of the same event. Name the review owner, date and version the document, and record the approval it was issued under. Attach the approved policy."
+            "en": "Turn the register and the recovery objectives into the policy this control requires. State the scope — which critical functions and ICT services it covers — who holds the authority to declare a disruption and activate the plans, how activation is escalated and stood down, the recovery objectives the organisation commits to, the cycle on which the plans are tested, and how continuity work connects to incident handling so the two do not run separate accounts of the same event. Name the review owner, date and version the document, and record the approval it was issued under. Attach the approved policy."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -1341,7 +1362,7 @@
             "en": "Test each response and recovery plan at least annually and record what the test achieved against its objectives"
           },
           "description": {
-            "en": "Exercise the plans on the cycle the policy sets, and at least annually as this control requires. For each test record the scenario used, the plan and critical function exercised, who took part, the recovery time and recovery point actually achieved, every step that could not be completed and the reason it could not. A test that met its objective and a test that did not are both results, and both are filed \u2014 a plan only exercised successfully is a plan never stressed. Attach the test results for the period."
+            "en": "Exercise the plans on the cycle the policy sets, and at least annually as this control requires. For each test record the scenario used, the plan and critical function exercised, who took part, the recovery time and recovery point actually achieved, every step that could not be completed and the reason it could not. A test that met its objective and a test that did not are both results, and both are filed — a plan only exercised successfully is a plan never stressed. Attach the test results for the period."
           },
           "phase": "OPERATE",
           "sortOrder": 4,
@@ -1399,6 +1420,9 @@
       "description": "Record every system and data set in backup scope with its frequency and retention, decide which warrant redundant ICT capacity, and hold restoration procedures that have been exercised rather than assumed.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure every system in backup scope can actually be restored at the frequency, retention and separation the policy fixes, rather than assumed from a job that runs.",
+      "successCriteria": "Each system and data set in backup scope records an owner, a frequency, a retention period and the job producing the copy.\nCopies are held with the separation from their source system that the policy requires, confirmed row by row.\nEvery in-scope system has a restoration procedure giving restore steps, dependency order and post-restore verification checks.\nA restore has been performed on the policy's cycle for each system, and any system without a successful restore is owned and dated.",
+      "testingMethodology": "Evidence:\nObtain the backup scope register with owner, frequency, retention and producing job per system or data set.\nRequest the redundant capacity records stating whether redundancy is warranted, what stands behind each system and how it is switched to.\nCollect the backup policy with its frequency and retention bands, separation requirement, restore authority and test cycle.\nObtain the restoration procedures, the recovery test logs for the period and the backup coverage reconciliation.\n\nAnalysis:\nCompare job schedules in the backup platform with the frequency recorded in the register and list jobs running less often.\nConfirm configured retention matches the policy bands and that copies sit apart from the system they protect.\nCheck each redundancy decision gives a reason and, where warranted, a switchover method that has been exercised.\nWalk one restoration procedure through with its owner to test whether the steps and dependency order can be followed as written.\nReconcile the test logs with the register, count systems marked untested or failed, and read the deviations recorded.\n\nOutput:\nRegister-to-platform comparison showing frequency and retention mismatches by system.\nRestore results table giving the copy used, elapsed time and verification outcome per system.\nUntested and failed-restore list with an owner and remediation date against each row.",
       "requirementCodes": [
         "DORA.Art.12"
       ],
@@ -1444,7 +1468,7 @@
             "en": "Record which in-scope systems warrant redundant ICT capacity and what capacity stands behind each"
           },
           "description": {
-            "en": "The framework asks for redundant ICT capacity where it is appropriate, so decide where that is and write the decision down rather than leaving it to inference. Against each row of the scope register, record whether redundant capacity is warranted, the reasoning behind that answer, and \u2014 where it is warranted \u2014 the capacity actually in place, where it runs, and how a switch to it is made and by whom. Systems judged not to warrant redundancy carry their reason too, so the judgement can be revisited when the system's role changes. Attach the redundant capacity record."
+            "en": "The framework asks for redundant ICT capacity where it is appropriate, so decide where that is and write the decision down rather than leaving it to inference. Against each row of the scope register, record whether redundant capacity is warranted, the reasoning behind that answer, and — where it is warranted — the capacity actually in place, where it runs, and how a switch to it is made and by whom. Systems judged not to warrant redundancy carry their reason too, so the judgement can be revisited when the system's role changes. Attach the redundant capacity record."
           },
           "phase": "SCOPE",
           "sortOrder": 1,
@@ -1513,7 +1537,7 @@
             "en": "Restore from backup on the cycle the policy sets and log the outcome for every system tested"
           },
           "description": {
-            "en": "Run the restoration tests the policy schedules, following the written procedure rather than the knowledge of whoever happens to run them \u2014 an untested procedure is the thing being tested. Log each test with the system, the backup copy restored and its date, who ran it, how long the restore took, whether the verification checks passed, and every deviation from the procedure that was needed to finish. Failed and partial restores are logged in the same place as successes, because they are the results that carry the most information. Attach the recovery test log for the period."
+            "en": "Run the restoration tests the policy schedules, following the written procedure rather than the knowledge of whoever happens to run them — an untested procedure is the thing being tested. Log each test with the system, the backup copy restored and its date, who ran it, how long the restore took, whether the verification checks passed, and every deviation from the procedure that was needed to finish. Failed and partial restores are logged in the same place as successes, because they are the results that carry the most information. Attach the recovery test log for the period."
           },
           "phase": "OPERATE",
           "sortOrder": 4,
@@ -1544,6 +1568,9 @@
       "description": "Draw on named sources of vulnerability, incident and cyber-threat information, and run post-incident review to a published procedure so what an incident taught becomes a change to the framework.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To turn what incidents and threat intelligence reveal into named changes to the ICT risk framework and into the awareness staff actually receive.",
+      "successCriteria": "Each vulnerability, incident and cyber-threat source records its category, delivery route, named reader and reading cadence.\nEvery major incident has a filed review report giving its timeline, contributing causes and actions with owners and dates.\nEach lessons-learned entry names the framework element it changes, not only the incident it came from.\nThe awareness programme reached its audience, with completion recorded per participant and follow-up for those outstanding.",
+      "testingMethodology": "Evidence:\nObtain the intake records naming each intelligence source, its category, route, named reader and cadence.\nRequest the post-incident review procedure with the incidents in scope and the contents a report must carry.\nCollect the lessons-learned register with the framework element, owner, due date and status per entry.\nObtain the review reports filed for the period, the awareness programme records and the closure review.\n\nAnalysis:\nCompare major incidents logged in the period with the reports filed and identify those reviewed late or not at all.\nTest whether each report separates contributing causes from the triggering event as the procedure requires.\nTrace sampled register entries to the document, policy or procedure they name and confirm the change was made there.\nAsk each named reader for the items last considered from their source and compare the interval with the recorded cadence.\nMeasure awareness completion against the intended audience and examine the follow-up taken for non-completions.\n\nOutput:\nIncident-to-review coverage table giving the review interval per major incident.\nClosure results separating entries closed by a traceable framework change from those still open, with their age.\nAwareness completion rate by audience, naming the population still outstanding.",
       "requirementCodes": [
         "DORA.Art.13"
       ],
@@ -1553,7 +1580,7 @@
             "en": "Record the sources of vulnerability, incident and cyber-threat information the framework draws on"
           },
           "description": {
-            "en": "List where information actually reaches the organisation from \u2014 vendor and product advisories, national or sector CERT feeds, threat-intelligence subscriptions, information-sharing arrangements, and the organisation's own incident and vulnerability findings \u2014 and for each record the feed, how it arrives, the named person who reads it and how often. Record any of the three categories this control names (vulnerabilities, ICT-related incidents, cyber threats) for which no source exists, so the gap is visible rather than presumed covered by the others. Attach the intake register, dated and version-marked."
+            "en": "List where information actually reaches the organisation from — vendor and product advisories, national or sector CERT feeds, threat-intelligence subscriptions, information-sharing arrangements, and the organisation's own incident and vulnerability findings — and for each record the feed, how it arrives, the named person who reads it and how often. Record any of the three categories this control names (vulnerabilities, ICT-related incidents, cyber threats) for which no source exists, so the gap is visible rather than presumed covered by the others. Attach the intake register, dated and version-marked."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -1589,7 +1616,7 @@
             "en": "Publish the post-incident review procedure setting which incidents it covers and what its report must record"
           },
           "description": {
-            "en": "Write the procedure that makes reviews happen without a fresh decision each time: which incidents trigger a review \u2014 major ICT-related incidents at minimum, as this control requires \u2014 the point after closure at which it is held, who must attend, what the report has to record (timeline, contributing causes, how detection and response performed, and the actions arising with owners), and where reports are filed so they can be found later. Name the procedure owner and version it. Attach the published procedure."
+            "en": "Write the procedure that makes reviews happen without a fresh decision each time: which incidents trigger a review — major ICT-related incidents at minimum, as this control requires — the point after closure at which it is held, who must attend, what the report has to record (timeline, contributing causes, how detection and response performed, and the actions arising with owners), and where reports are filed so they can be found later. Name the procedure owner and version it. Attach the published procedure."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -1603,7 +1630,7 @@
             "en": "Open a lessons-learned register that routes each finding to the framework element it changes"
           },
           "description": {
-            "en": "Stand up the register the control's feedback loop runs on. One row per lesson, carrying its source (post-incident review, threat notification, test or audit finding), the lesson itself, the element of the ICT risk management framework it changes \u2014 policy, plan, control, training or tooling \u2014 the named owner, the due date and the current status. A lesson with no framework element named against it is not filed until it has one, because that link is the whole point of the register rather than a field on it. Attach the register with its structure and current contents."
+            "en": "Stand up the register the control's feedback loop runs on. One row per lesson, carrying its source (post-incident review, threat notification, test or audit finding), the lesson itself, the element of the ICT risk management framework it changes — policy, plan, control, training or tooling — the named owner, the due date and the current status. A lesson with no framework element named against it is not filed until it has one, because that link is the whole point of the register rather than a field on it. Attach the register with its structure and current contents."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -1689,6 +1716,9 @@
       "description": "Name the audiences a major ICT incident must reach and the channel held for each, and hold a crisis communication plan that states who may activate it.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure every audience owed information in a major ICT incident is reached over a held channel by a named spokesperson with a message someone authorised.",
+      "successCriteria": "Each audience on the communication map states why it is in scope, the channel that reaches it and who holds its contact list.\nThe crisis plan sets its activation trigger, the order audiences are addressed, the approval path and the holding statement.\nEvery audience has a named spokesperson and deputy with their speaking authority recorded.\nMessages issued in an incident are logged with audience, channel, release time, approver and the version actually sent.",
+      "testingMethodology": "Evidence:\nObtain the stakeholder communication map with each audience, its channel, contact-list holder and any commitment made.\nRequest the crisis communication plan with its activation trigger, audience sequence, approval path and holding statement.\nCollect the spokesperson records naming spokesperson, deputy, contact routes and authority to speak unaided.\nObtain the internal and external notification procedures, the crisis communications log and the review record.\n\nAnalysis:\nCheck the audience list against regulatory notification duties, contractual commitments and clients affected by past incidents.\nTest sampled contact routes for reachability and compare the last verification date with the plan's refresh cycle.\nConfirm the notification procedures name a drafter, the facts to confirm, an approver and a channel for each route.\nCompare logged messages with the plan's audience sequence, noting releases made without the approval recorded.\n\nOutput:\nAudience coverage table naming audiences with no held channel or no contact-list holder.\nSpokesperson schedule showing vacancies, missing deputies and unverified contact routes.\nCommunications conformance findings for the period's incidents, with unapproved releases listed.",
       "requirementCodes": [
         "DORA.Art.14"
       ],
@@ -1698,7 +1728,7 @@
             "en": "Record the audiences a major ICT incident must be communicated to and the channel held for each"
           },
           "description": {
-            "en": "Map the audiences this control names \u2014 clients, counterparts and the public \u2014 alongside the internal audiences a crisis needs reached: staff, the management body, the service teams. For each, record what puts them in scope for a given incident, the channel that actually reaches them (status page, account manager, email, press contact), who holds the contact list and where it lives, and any contractual or arrangement-based commitment already made about informing them. Legal/DPO confirms the commitments that create a duty to inform. Attach the map, dated and version-marked."
+            "en": "Map the audiences this control names — clients, counterparts and the public — alongside the internal audiences a crisis needs reached: staff, the management body, the service teams. For each, record what puts them in scope for a given incident, the channel that actually reaches them (status page, account manager, email, press contact), who holds the contact list and where it lives, and any contractual or arrangement-based commitment already made about informing them. Legal/DPO confirms the commitments that create a duty to inform. Attach the map, dated and version-marked."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -1740,7 +1770,7 @@
             "en": "Write the internal and external disclosure procedures covering who drafts, who approves and who releases"
           },
           "description": {
-            "en": "Turn the plan into the step-by-step procedures this control names \u2014 one for internal notification, one for external disclosure. Each states what triggers a notification, who drafts it, which facts must be confirmed before release and by whom, who approves it, the channel used, and the record kept of what was sent and when. Where an audience carries a commitment recorded in the communication map, the procedure follows that commitment rather than restating a general rule over the top of it. Legal/DPO owns the wording; Management approves. Attach both procedures with owner and version."
+            "en": "Turn the plan into the step-by-step procedures this control names — one for internal notification, one for external disclosure. Each states what triggers a notification, who drafts it, which facts must be confirmed before release and by whom, who approves it, the channel used, and the record kept of what was sent and when. Where an audience carries a commitment recorded in the communication map, the procedure follows that commitment rather than restating a general rule over the top of it. Legal/DPO owns the wording; Management approves. Attach both procedures with owner and version."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
@@ -1795,7 +1825,7 @@
             "en": "Review the communications issued against the plan and refresh the contact and spokesperson records"
           },
           "description": {
-            "en": "After each incident that triggered external communication \u2014 and at the plan's review point where none occurred \u2014 compare what was issued with what the plan and procedures said would be issued: audiences reached and missed, approvals obtained, and timing against the sequence set. Record each divergence with the amendment it requires and the owner of that amendment. In the same pass re-verify the contact routes and spokesperson names, correct what has changed, and note the date checked so staleness is measurable. Attach the review."
+            "en": "After each incident that triggered external communication — and at the plan's review point where none occurred — compare what was issued with what the plan and procedures said would be issued: audiences reached and missed, approvals obtained, and timing against the sequence set. Record each divergence with the amendment it requires and the owner of that amendment. In the same pass re-verify the contact routes and spokesperson names, correct what has changed, and note the date checked so staleness is measurable. Attach the review."
           },
           "phase": "REVIEW",
           "sortOrder": 5,
@@ -1812,6 +1842,9 @@
       "description": "Determine eligibility for the simplified regime against each criterion it turns on, and record the proportionality assessment linking the framework actually operated to that determination.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure reliance on the simplified regime rests on a recorded eligibility determination and a proportionality judgement revisited as the entity's profile changes.",
+      "successCriteria": "The eligibility determination covers every criterion the regime turns on, with the entity's figures and the date recorded.\nThe proportionality assessment states the depth chosen for each framework element and the reasoning for what is left out.\nThe simplified framework names the critical functions it protects, the measures in place and an owner per part.\nEach cycle records the ICT risk position and its movement, the period's incidents and every critical function's continuity status.",
+      "testingMethodology": "Evidence:\nObtain the eligibility determination with the entity's position and figures against each criterion of the regime.\nRequest the proportionality assessment with the risk profile, the depth chosen per element and the reasoning for omissions.\nCollect the simplified ICT risk framework document with its critical functions, measures and named owners.\nObtain the monitoring records for each cycle and the latest re-verification of eligibility and proportionality.\n\nAnalysis:\nRecalculate each eligibility criterion from the entity's own financial and staffing records and compare with the determination.\nTest whether elements omitted under proportionality are reasoned from the risk profile rather than from resource constraints.\nCompare the critical functions named in the framework with those the business identifies as critical elsewhere.\nCheck a monitoring record exists for every cycle and shows movement rather than a position repeated unchanged.\nConfirm the re-verification used current figures and concluded on whether the regime still applies.\n\nOutput:\nEligibility recalculation showing the determined and recalculated position per criterion.\nProportionality findings listing elements omitted without a risk-based reason.\nMonitoring completeness record with the continuity status reported for each critical function.",
       "requirementCodes": [
         "DORA.Art.16"
       ],
@@ -1835,7 +1868,7 @@
             "en": "Write the proportionality assessment linking each part of the framework to the entity's risk profile"
           },
           "description": {
-            "en": "Set out the entity's ICT risk profile \u2014 its size, the nature and complexity of the ICT services it runs, its interconnections, and the critical functions it carries \u2014 and then, against each part of the ICT risk framework it will operate, record what it does, why that depth is proportionate to the profile, and what was deliberately not done and on what reasoning. This assessment is what makes a simplified framework defensible rather than merely smaller, so the omissions are the part worth writing carefully. Attach it with its date and its author."
+            "en": "Set out the entity's ICT risk profile — its size, the nature and complexity of the ICT services it runs, its interconnections, and the critical functions it carries — and then, against each part of the ICT risk framework it will operate, record what it does, why that depth is proportionate to the profile, and what was deliberately not done and on what reasoning. This assessment is what makes a simplified framework defensible rather than merely smaller, so the omissions are the part worth writing carefully. Attach it with its date and its author."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -1921,6 +1954,9 @@
       "description": "Define what counts as an ICT-related incident and the detection sources that raise one, and document the management procedure that carries it from detection to closure.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure an event recognised as an ICT-related incident enters a defined process, reaches the people named to handle it, and closes on a recorded resolution.",
+      "successCriteria": "The detection-source list states, per source, what it reports, who receives it and how it enters the incident process.\nThe issued procedure is versioned and covers detection, registration, handling, logging and resolution with no stage unowned.\nEvery incident-handling role has a named holder and deputy who confirmed the assignment, with a contact route recorded.\nEach logged incident shows its detection source, handling times, handler, escalations sent and how it was resolved.",
+      "testingMethodology": "Evidence:\nObtain the incident scope definition and detection-source list with each source's recipient and entry route.\nRequest the issued ICT-related incident management procedure with its version and date.\nCollect the role assignment table with holders, deputies, contact routes and confirmation dates.\nObtain the early-warning procedure with its templates and trigger-to-recipient list, and the incident log for the period.\n\nAnalysis:\nCompare the listed detection sources with the monitoring and service-desk channels in use and find any entering no route.\nWalk one closed incident end to end against the procedure and note stages performed outside it or left unrecorded.\nConfirm named holders and deputies were in post throughout the period and that each assignment was confirmed.\nCheck incidents meeting an early-warning trigger produced the notification to the recipient listed against it.\nRead the conformance check for incidents marked partial or missed and test whether a cause and correction were recorded.\n\nOutput:\nDetection-source routing table naming sources whose output reaches no incident route.\nRole coverage schedule listing unconfirmed, vacant or deputy-less incident-handling roles.\nEscalation conformance results with each deviation and the correction recorded against it.",
       "requirementCodes": [
         "DORA.Art.17"
       ],
@@ -1930,7 +1966,7 @@
             "en": "Define what counts as an ICT-related incident and list the detection sources that raise one"
           },
           "description": {
-            "en": "Write down the criteria that make an event an ICT-related incident for this entity, so the process has a decidable entry point, and list every source that can raise one \u2014 monitoring and alerting tools, service desk tickets, staff reports, and notifications from ICT third-party providers. For each source record what it sends, who receives it, and how that report reaches the incident process. Attach the completed definition and source list; it is the scope that the incident procedure, the incident log and the escalation path are all built against."
+            "en": "Write down the criteria that make an event an ICT-related incident for this entity, so the process has a decidable entry point, and list every source that can raise one — monitoring and alerting tools, service desk tickets, staff reports, and notifications from ICT third-party providers. For each source record what it sends, who receives it, and how that report reaches the incident process. Attach the completed definition and source list; it is the scope that the incident procedure, the incident log and the escalation path are all built against."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -2007,7 +2043,7 @@
             "en": "Record the named holder and deputy for every incident-handling role the procedure defines"
           },
           "description": {
-            "en": "The procedure names roles; this task names people. Build a table with one row per role the incident procedure relies on \u2014 the coordinator, the technical responders, communications, and whoever decides escalation \u2014 giving the current holder, a deputy covering absence, and the contact route for each. Confirm with each named person that they know they hold the role, since an unstaffed role is indistinguishable from a staffed one on paper. Attach the table with the date it was last confirmed."
+            "en": "The procedure names roles; this task names people. Build a table with one row per role the incident procedure relies on — the coordinator, the technical responders, communications, and whoever decides escalation — giving the current holder, a deputy covering absence, and the contact route for each. Confirm with each named person that they know they hold the role, since an unstaffed role is indistinguishable from a staffed one on paper. Attach the table with the date it was last confirmed."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -2071,7 +2107,7 @@
             "en": "Verify that the incidents closed in the period followed the escalation and notification path"
           },
           "description": {
-            "en": "Take the closed incidents from the log and check each against the escalation procedure: for every trigger an incident met, was the notification it requires sent, to the recipients named, and recorded. Mark each incident as followed, partially followed or missed, and for every deviation record the cause \u2014 a recipient nobody could reach, a trigger the procedure does not cover, a notification sent but never logged \u2014 and the correction it calls for. Attach the completed check with its findings."
+            "en": "Take the closed incidents from the log and check each against the escalation procedure: for every trigger an incident met, was the notification it requires sent, to the recipients named, and recorded. Mark each incident as followed, partially followed or missed, and for every deviation record the cause — a recipient nobody could reach, a trigger the procedure does not cover, a notification sent but never logged — and the correction it calls for. Attach the completed check with its findings."
           },
           "phase": "REVIEW",
           "sortOrder": 5,
@@ -2110,6 +2146,9 @@
       "description": "Hold the DORA classification criteria and the data each one needs as a matrix, and record the materiality thresholds that turn an ICT-related incident into a major one.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure each ICT-related incident is measured against the classification criteria and declared major or not by a named decider working from recorded figures.",
+      "successCriteria": "Each classification criterion carries a measurement, a unit, a data source and the role supplying it in an incident.\nMateriality thresholds are recorded per criterion, citing the provision taken or the entity's own value with its reasoning.\nThe workflow holds a major-incident determination step with its inputs, a named deciding role and a record kept either way.\nClassification records show the value measured per criterion and the decider, and reported cyber threats carry a significance assessment.",
+      "testingMethodology": "Evidence:\nObtain the classification matrix with the measurement, unit, data source and supplying role per criterion.\nRequest the materiality thresholds document with the provision cited or the reasoning for each entity-set value.\nCollect the workflow section showing the major-incident determination step, its inputs and deciding role.\nObtain the classification decision records, the cyber threat significance assessments and the validation record.\n\nAnalysis:\nTrace one criterion to the system holding its figure and test whether it could supply the measurement while an incident is live.\nCompare each recorded threshold with the provision cited, and check entity-set values carry reasoning rather than a bare number.\nRe-apply the matrix to sampled incidents and compare the result reached with the classification recorded at the time.\nIdentify incidents classified with no measured value against a criterion, and those where the decider is unnamed.\nReview the threat significance assessments for conclusions that produced no recorded follow-up decision.\n\nOutput:\nFindings on whether each criterion's data source can supply its measurement during a live incident.\nRe-classification sampling results showing agreement and disagreement per incident examined.\nRecord of corrections raised against the classification matrix or the materiality thresholds.",
       "requirementCodes": [
         "DORA.Art.18"
       ],
@@ -2119,7 +2158,7 @@
             "en": "Record the DORA classification criteria and the data each one needs in a classification matrix"
           },
           "description": {
-            "en": "Build the classification matrix as one row per criterion the classification rules set \u2014 clients affected, duration, geographical spread, data losses, criticality, and economic impact. For each row record what has to be measured, the unit it is expressed in, the system or team that supplies the measurement during an incident, and who produces it. Transcribe the criteria from DORA and the related RTS rather than paraphrasing them into new ones. Attach the completed matrix."
+            "en": "Build the classification matrix as one row per criterion the classification rules set — clients affected, duration, geographical spread, data losses, criticality, and economic impact. For each row record what has to be measured, the unit it is expressed in, the system or team that supplies the measurement during an incident, and who produces it. Transcribe the criteria from DORA and the related RTS rather than paraphrasing them into new ones. Attach the completed matrix."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -2183,7 +2222,7 @@
             "en": "Classify each ICT-related incident against the matrix and record the decision with its measurements"
           },
           "description": {
-            "en": "For every incident registered in the period, record the measured value for each criterion in the matrix, how it compared against the threshold, the resulting classification, whether the incident was determined major, who decided and when. An incident found not to be major is recorded in the same detail as one that is \u2014 the record of the decision is what makes it reviewable later. The classification records for the period are the artifact attached."
+            "en": "For every incident registered in the period, record the measured value for each criterion in the matrix, how it compared against the threshold, the resulting classification, whether the incident was determined major, who decided and when. An incident found not to be major is recorded in the same detail as one that is — the record of the decision is what makes it reviewable later. The classification records for the period are the artifact attached."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -2211,7 +2250,7 @@
             "en": "Validate a sample of the period's classification decisions against the recorded thresholds"
           },
           "description": {
-            "en": "Take a sample of the period's classification records \u2014 including every incident determined major and a selection of those determined not major \u2014 and re-apply the matrix and the thresholds document that were in force at the time of each. Record whether each classification stands, and where it does not, name the criterion at fault and whether the cause was a missing measurement, a misread threshold or a matrix row with no usable data source. Attach the validation with its findings and the corrections raised."
+            "en": "Take a sample of the period's classification records — including every incident determined major and a selection of those determined not major — and re-apply the matrix and the thresholds document that were in force at the time of each. Record whether each classification stands, and where it does not, name the criterion at fault and whether the cause was a missing measurement, a misread threshold or a matrix row with no usable data source. Attach the validation with its findings and the corrections raised."
           },
           "phase": "REVIEW",
           "sortOrder": 5,
@@ -2250,6 +2289,9 @@
       "description": "Know the competent authority, its reporting channel and its templates, and hold a regulatory reporting procedure that meets each deadline the Regulation sets.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure every major ICT-related incident reaches the entity's competent authority on the prescribed template, through the right channel and inside each reporting deadline.",
+      "successCriteria": "The competent authority, its channel and the credential holder and deputy are recorded and current.\nEach report stage carries a tracked due date computed from a cited counting event.\nEvery major incident in the period has all three reports submitted on the harmonised templates, with proof of submission.\nEach significant cyber threat carries a notify-or-not decision with its reasoning and its decision-maker.",
+      "testingMethodology": "Evidence:\nObtain the reporting requirements record naming the competent authority, its submission channel, and the credential holder and deputy.\nCollect the issued regulatory reporting procedure covering the initial, intermediate and final report stages.\nExport the reporting deadline tracker configuration showing the counting event and cited provision behind each stage.\nRetrieve the submitted reports for every major incident in the period with the acknowledgement or authority reference held against each.\nGather the voluntary threat-notification decision records for the period.\n\nAnalysis:\nConfirm the harmonised templates on file are those the named authority currently requires, and that the credential holder and deputy are still in post.\nRecompute each stage's due date from its counting event and compare it with the timestamp on the proof of submission.\nTrace every incident classified major in the period into the reconciliation and confirm no stage is left unaccounted for.\nExamine each significant cyber threat for a stated reasoning and an identified decision-maker, whether or not a notification followed.\nRead the cause and correction recorded against every stage marked late or outstanding.\n\nOutput:\nA schedule of major incidents marking each report stage on time, late or outstanding against its recomputed deadline.\nA findings note on the currency of the authority record, its channel and its templates.\nA summary of voluntary threat notifications made and of the decisions not to notify.",
       "requirementCodes": [
         "DORA.Art.19"
       ],
@@ -2309,7 +2351,7 @@
             "en": "Configure the reporting deadline tracker to open a due date for each report stage"
           },
           "description": {
-            "en": "Set the tracker up so a major-incident determination opens the initial, intermediate and final entries for that incident automatically. Enter the deadline the applicable RTS and ITS set for each stage and the event that deadline is counted from, taking both from the rules and citing the provision beside each \u2014 an assumed period must not be entered. Configure the tracker so the outstanding stage and its owner are visible for every open incident. Attach the configuration and one worked entry."
+            "en": "Set the tracker up so a major-incident determination opens the initial, intermediate and final entries for that incident automatically. Enter the deadline the applicable RTS and ITS set for each stage and the event that deadline is counted from, taking both from the rules and citing the provision beside each — an assumed period must not be entered. Configure the tracker so the outstanding stage and its owner are visible for every open incident. Attach the configuration and one worked entry."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -2345,7 +2387,7 @@
             "en": "Issue the initial notification, intermediate report and final report for every major incident"
           },
           "description": {
-            "en": "For each incident determined major, prepare each report on the harmonised template, have it approved as the procedure requires, submit it through the recorded channel, and keep whatever proof of submission the channel yields \u2014 the acknowledgement, receipt or reference the authority returns where one is given, and the channel's own submission record where it is not. File the submitted copy alongside that proof against the incident record, and enter the submission time on the tracker entry. The submitted reports with the proof of submission filed against each are the evidence for the period."
+            "en": "For each incident determined major, prepare each report on the harmonised template, have it approved as the procedure requires, submit it through the recorded channel, and keep whatever proof of submission the channel yields — the acknowledgement, receipt or reference the authority returns where one is given, and the channel's own submission record where it is not. File the submitted copy alongside that proof against the incident record, and enter the submission time on the tracker entry. The submitted reports with the proof of submission filed against each are the evidence for the period."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -2359,7 +2401,7 @@
             "en": "Determine for each significant cyber threat whether to notify the authority, and record the decision"
           },
           "description": {
-            "en": "Notifying a significant cyber threat is voluntary, so what has to exist afterwards is the decision, not necessarily a notification. For each threat assessed as significant, record who considered notifying the competent authority, the reasoning, the decision reached, and \u2014 where the decision was to notify \u2014 the submission made and its acknowledgement. A decision not to notify is recorded in the same detail as a decision to notify. Attach the decision record for the period."
+            "en": "Notifying a significant cyber threat is voluntary, so what has to exist afterwards is the decision, not necessarily a notification. For each threat assessed as significant, record who considered notifying the competent authority, the reasoning, the decision reached, and — where the decision was to notify — the submission made and its acknowledgement. A decision not to notify is recorded in the same detail as a decision to notify. Attach the decision record for the period."
           },
           "phase": "OPERATE",
           "sortOrder": 4,
@@ -2373,7 +2415,7 @@
             "en": "Verify that every major incident in the period produced each report within its tracked deadline"
           },
           "description": {
-            "en": "Take the tracker entries for the period and check each against the filed submissions: was every stage submitted, was each within the deadline recorded for it, and is the proof of submission on file. Mark each stage as submitted on time, submitted late, or outstanding, and for every late or outstanding stage record the cause and the correction \u2014 a determination made too late for the clock, an owner who never saw the entry, a channel that rejected the submission. Attach the reconciliation with the tracker export it was made from."
+            "en": "Take the tracker entries for the period and check each against the filed submissions: was every stage submitted, was each within the deadline recorded for it, and is the proof of submission on file. Mark each stage as submitted on time, submitted late, or outstanding, and for every late or outstanding stage record the cause and the correction — a determination made too late for the clock, an owner who never saw the entry, a channel that rejected the submission. Attach the reconciliation with the tracker export it was made from."
           },
           "phase": "REVIEW",
           "sortOrder": 5,
@@ -2390,6 +2432,9 @@
       "description": "Determine whether the payment-related incident provisions apply to the entity and record the assessment, extending incident handling to operational and security payment incidents where they do.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure operational and security payment-related incidents are brought inside ICT incident handling wherever the payment provisions apply to the entity.",
+      "successCriteria": "A dated assessment records the entity's regulatory status and the payment services it places in scope.\nIntake flags incidents against those in-scope services and notifies the owners the procedure names.\nPayment incidents are logged with the service affected, how it was recognised and the classification reached.\nPayment-flagged incidents follow the same classification and reporting path as any other ICT incident.",
+      "testingMethodology": "Evidence:\nObtain the scope-applicability assessment together with the authorisation evidencing the entity's regulatory status.\nCollect the versioned payment-incident handling procedure showing the intake flag and the owners it notifies.\nExport the incident log filtered to payment-related incidents for the period.\nRetrieve the payment-incident conformance check covering the same period.\n\nAnalysis:\nCompare the payment services named in scope against the services the entity's authorisation actually permits it to provide.\nRead the procedure for the point at which the payment flag is set, and confirm classification and reporting continue unchanged from there.\nSample logged payment incidents for the service affected, the recognition route and a recorded classification decision.\nSearch the wider incident log for incidents that touched an in-scope payment service yet carry no payment flag.\nCheck that every step marked deficient in the conformance check has a cause and a correction against it.\n\nOutput:\nA statement of the applicability conclusion and the payment services and systems it brings into scope.\nA conformance table marking each payment-flagged incident complete or deficient.\nA list of incidents flagged wrongly or never flagged, with the correction proposed for each.",
       "requirementCodes": [
         "DORA.Art.23"
       ],
@@ -2399,7 +2444,7 @@
             "en": "Determine whether the payment-related incident provisions apply to the entity and record the assessment"
           },
           "description": {
-            "en": "Record the scope-applicability assessment: the entity's regulatory status \u2014 credit institution, payment institution, account information service provider, electronic money institution, or none of these \u2014 the authorisation or registration evidencing it, the conclusion on whether the payment-related incident provisions apply, and who reached that conclusion. Where they apply, list the payment services in scope and the ICT systems supporting each, since that list is what the incident procedure has to recognise. Attach the assessment with its date."
+            "en": "Record the scope-applicability assessment: the entity's regulatory status — credit institution, payment institution, account information service provider, electronic money institution, or none of these — the authorisation or registration evidencing it, the conclusion on whether the payment-related incident provisions apply, and who reached that conclusion. Where they apply, list the payment services in scope and the ICT systems supporting each, since that list is what the incident procedure has to recognise. Attach the assessment with its date."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -2463,7 +2508,7 @@
             "en": "Verify that the period's payment-related incidents were classified and reported like other ICT incidents"
           },
           "description": {
-            "en": "Take the payment-flagged entries from the log and check each carries the same artefacts any other ICT-related incident of that classification would: a classification record, a major determination, and where major, the report submissions with their acknowledgements. Record every entry where a step is missing, with its cause and the correction. Where an incident was flagged as payment-related in error, or should have been flagged and was not, record that too \u2014 the flag is what routes the provisions, so a wrong flag is the failure, not a clerical detail. Attach the completed check."
+            "en": "Take the payment-flagged entries from the log and check each carries the same artefacts any other ICT-related incident of that classification would: a classification record, a major determination, and where major, the report submissions with their acknowledgements. Record every entry where a step is missing, with its cause and the correction. Where an incident was flagged as payment-related in error, or should have been flagged and was not, record that too — the flag is what routes the provisions, so a wrong flag is the failure, not a clerical detail. Attach the completed check."
           },
           "phase": "REVIEW",
           "sortOrder": 3,
@@ -2480,6 +2525,9 @@
       "description": "Record which ICT systems the testing programme covers and the risk rating that sets each one's test priority, and document the programme that follows from it.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure resilience testing is aimed by risk across the entity's ICT systems, performed by an independent party, and carried through to the remediation of what it finds.",
+      "successCriteria": "Every system in the testing scope register carries a risk rating and the test priority that follows from it.\nThe programme names its test types, how priority is set and its place in the ICT risk management framework.\nEach in-scope system holds a test type, a test window and a named performing party.\nNo engagement began before its signed independence confirmation was accepted.\nFindings run from prioritisation to the verification that closed them.",
+      "testingMethodology": "Evidence:\nObtain the testing scope register with each system's critical marking, risk rating and resulting test priority.\nCollect the versioned resilience testing programme and the ICT risk management framework it points to.\nRetrieve the test plan and schedule with its coverage view across the programme cycle.\nGather the signed tester independence confirmations accepted for the tests performed in the period.\nExport the remediation tracker for findings raised in the period.\n\nAnalysis:\nJudge whether the reasoning behind each risk rating supports the test priority assigned, and that every excluded system states why.\nTrace the programme's prioritisation rule into the schedule and confirm the highest-priority systems hold the earlier windows.\nCompare the date each independence confirmation was accepted with the start date of the engagement it covers.\nFollow a sample of findings from the test report into the tracker and on to the verification recorded at closure.\nRead the coverage review for critical systems marked not reached and confirm each carries a cause and a plan change.\n\nOutput:\nA programme-cycle coverage statement marking each critical system tested, scheduled or not reached.\nA note on any engagement that began before its independence confirmation was accepted.\nAn ageing list of findings still open past their agreed remediation date.",
       "requirementCodes": [
         "DORA.Art.24"
       ],
@@ -2581,7 +2629,7 @@
             "en": "Verify the programme's coverage of critical ICT systems and record the systems not yet tested"
           },
           "description": {
-            "en": "Compare the tests actually performed against the scope register, to see whether coverage of critical systems is being achieved across the cycle rather than only planned. Mark every critical system as tested, scheduled or not reached, and for each not reached record the cause and what changes in the plan. Where a system was tested but its findings remain open past the date agreed in the tracker, record that too \u2014 coverage without remediation leaves the risk exactly where the test found it. Attach the coverage review with its conclusions."
+            "en": "Compare the tests actually performed against the scope register, to see whether coverage of critical systems is being achieved across the cycle rather than only planned. Mark every critical system as tested, scheduled or not reached, and for each not reached record the cause and what changes in the plan. Where a system was tested but its findings remain open past the date agreed in the tracker, record that too — coverage without remediation leaves the risk exactly where the test found it. Attach the coverage review with its conclusions."
           },
           "phase": "REVIEW",
           "sortOrder": 5,
@@ -2598,6 +2646,9 @@
       "description": "Map each ICT system and tool to the test types it must undergo, and schedule at least one test within the year for every critical system in the matrix.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure each ICT system and tool undergoes the test types appropriate to it, and that no critical system passes a year without being tested.",
+      "successCriteria": "The matrix gives every ICT system and tool its test types, their prerequisites and the owner who supplies them.\nThe schedule places at least one test inside the year for every critical ICT system.\nScan reports state the scope actually tested, the tool version, whether the run was authenticated, and findings by severity.\nPenetration and scenario-based reports name any in-scope area that could not be tested.",
+      "testingMethodology": "Evidence:\nObtain the test-type matrix covering ICT systems and tools with their critical markings and assigned test types.\nCollect the dated test schedule for the year with the performing party and agreed window against each test.\nRetrieve the vulnerability assessment and scan reports produced in the period.\nGather the penetration test reports and scenario-based test results for every engagement in the schedule.\nObtain the annual coverage check marking each critical system tested, reduced-scope or untested.\n\nAnalysis:\nReconcile the matrix against the ICT asset inventory to surface systems and tools carrying no assigned test type at all.\nConfirm the scope each scan report says it tested matches the system's matrix entry rather than a narrower slice of it.\nNote where a scan ran unauthenticated against a system whose assigned test type calls for credentialled coverage.\nRead the penetration and scenario reports for areas recorded as untestable and check whether the obstacle was carried back into the schedule.\nVerify the test dates behind each tested marking in the coverage check fall inside the year being claimed.\n\nOutput:\nAn inventory-to-matrix reconciliation naming systems and tools with no assigned test type.\nA per-system record of test dates, report references and the test types actually performed.\nA gap list of critical systems untested or tested in reduced scope, with the cause and remedy against each.",
       "requirementCodes": [
         "DORA.Art.25"
       ],
@@ -2607,7 +2658,7 @@
             "en": "Map each ICT system and tool to the test types it must undergo"
           },
           "description": {
-            "en": "Build the matrix that says what kind of testing each system gets \u2014 vulnerability assessment, scan, gap analysis, penetration test, scenario-based test \u2014 and which combination applies where. Mark the critical ICT systems, which are the ones to be tested at least yearly, and record for each assigned test what it needs in order to run: environment, access, data, and the owner who provides them. A test with no named prerequisite owner is the one that slips. Attach the completed matrix."
+            "en": "Build the matrix that says what kind of testing each system gets — vulnerability assessment, scan, gap analysis, penetration test, scenario-based test — and which combination applies where. Mark the critical ICT systems, which are the ones to be tested at least yearly, and record for each assigned test what it needs in order to run: environment, access, data, and the owner who provides them. A test with no named prerequisite owner is the one that slips. Attach the completed matrix."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -2657,7 +2708,7 @@
             "en": "Test each scheduled system with a vulnerability assessment or scan and file the resulting report"
           },
           "description": {
-            "en": "Run the vulnerability assessments and scans the schedule calls for, and file the report each produces against the system it covers. A usable report carries the scope actually tested, the date, the tool and its signature or plugin version, whether the scan was authenticated, and the findings with their severity. Where a scheduled scan did not run, or covered less than planned, record that on the report rather than filing nothing \u2014 an absent report and a clean one look identical in a folder. The reports for the period are the artifact attached."
+            "en": "Run the vulnerability assessments and scans the schedule calls for, and file the report each produces against the system it covers. A usable report carries the scope actually tested, the date, the tool and its signature or plugin version, whether the scan was authenticated, and the findings with their severity. Where a scheduled scan did not run, or covered less than planned, record that on the report rather than filing nothing — an absent report and a clean one look identical in a folder. The reports for the period are the artifact attached."
           },
           "phase": "OPERATE",
           "sortOrder": 2,
@@ -2671,7 +2722,7 @@
             "en": "Collect the penetration test and scenario-based test reports for every engagement in the schedule"
           },
           "description": {
-            "en": "For each penetration test and scenario-based test performed, obtain the tester's report and file it against the systems in scope. Check on receipt that it states the scope and the dates tested, the method or scenario used, the findings with their severity, and anything in scope that could not be tested \u2014 a report missing those cannot support the conclusion drawn from it, and the time to say so is on receipt. Register the findings so they reach the remediation tracker. Attach the reports for the period."
+            "en": "For each penetration test and scenario-based test performed, obtain the tester's report and file it against the systems in scope. Check on receipt that it states the scope and the dates tested, the method or scenario used, the findings with their severity, and anything in scope that could not be tested — a report missing those cannot support the conclusion drawn from it, and the time to say so is on receipt. Register the findings so they reach the remediation tracker. Attach the reports for the period."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -2702,6 +2753,9 @@
       "description": "Record whether threat-led penetration testing applies to the entity, and scope each exercise to the critical or important functions it must cover.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure threat-led penetration testing, where it binds the entity, exercises critical or important functions on live production systems and ends in an authority attestation.",
+      "successCriteria": "A signed determination records whether threat-led testing binds the entity, on what basis and by whom.\nThe approved scope names the critical or important functions, their live production systems and the previous test date.\nEach completed test has a filed report carrying its completion date and the functions exercised.\nAn attestation by authorities is held per test, with its request and receipt dates.\nEvery finding sits in the remediation plan with an owner and a closure status.",
+      "testingMethodology": "Evidence:\nObtain the signed in-scope determination with the decision-maker and date recorded on it.\nCollect the approved TLPT scope document for each exercise in the period.\nRetrieve the report filed for every completed threat-led test.\nGather the attestations by authorities held against those reports.\nExport the TLPT remediation plan.\n\nAnalysis:\nTest the determination's stated basis against the entity's own profile rather than accepting the conclusion on its own.\nCompare the functions listed in the scope document with the entity's register of critical or important functions and note any omission.\nConfirm the systems named in scope are live production systems and not a staging or mirrored equivalent.\nRead each report's covered functions against the approved scope and identify where the test delivered less than it was scoped for.\nMeasure the interval between the previous test date and this one, and check each attestation's receipt date follows the completion it certifies.\n\nOutput:\nA scope-to-coverage comparison for each completed test.\nA register of tests with completion dates and attestation request and receipt dates.\nAn open-findings list drawn from the remediation plan with the owner named against each.",
       "requirementCodes": [
         "DORA.Art.26"
       ],
@@ -2766,7 +2820,7 @@
             "en": "File the TLPT report for each completed test with its completion date and the functions covered"
           },
           "description": {
-            "en": "When a test completes, file the TLPT report together with the start and completion dates and the list of critical or important functions the test actually exercised \u2014 which can differ from the scoped list. Those dates are what lets anyone read the interval between successive tests against the at-least-every-three-years frequency the article sets, so record them on the report itself and not only in a calendar."
+            "en": "When a test completes, file the TLPT report together with the start and completion dates and the list of critical or important functions the test actually exercised — which can differ from the scoped list. Those dates are what lets anyone read the interval between successive tests against the at-least-every-three-years frequency the article sets, so record them on the report itself and not only in a calendar."
           },
           "phase": "OPERATE",
           "sortOrder": 2,
@@ -2811,6 +2865,9 @@
       "description": "Set the suitability, independence, certification and indemnity criteria a TLPT tester must meet, and hold the due-diligence evidence showing a given tester meets them.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure every tester engaged on a threat-led penetration test is demonstrably suitable, independent of what is being tested, certified and covered by indemnity.",
+      "successCriteria": "The criteria set says what counts as meeting each suitability, independence, certification and indemnity requirement.\nThe evidence request maps every criterion to the document that proves it.\nEach engaged tester holds a due-diligence record against every criterion, with its conclusion and author.\nIndependence records name each tester's relationships to the in-scope teams and systems, plus any restriction imposed.\nCertification and indemnity cover are on file with periods spanning the test dates.",
+      "testingMethodology": "Evidence:\nObtain the versioned tester criteria set.\nCollect the due-diligence evidence request showing the criterion-to-document mapping.\nRetrieve the due-diligence record completed for each tester engaged in the period.\nGather the independence assessments raised for each engagement.\nObtain the certification or accreditation documents and the professional indemnity evidence held per tester.\n\nAnalysis:\nCheck that each criterion carries a stated threshold rather than a bare requirement, and that the evidence request reaches all of them.\nInspect the documents received for a sample of criteria and confirm their dates precede the engagement they support.\nExamine criteria marked met only in part for a recorded conclusion explaining why the tester was engaged regardless.\nTest each independence record against the teams and systems the scope document places inside the test, and confirm any restriction imposed was carried into the engagement.\nCompare the period of each indemnity policy and certification with the test dates it is relied on to cover.\n\nOutput:\nA per-tester file completeness table set against the criteria.\nA note on criteria met in part and the reasoning accepted for each.\nA list of engagements where a document was missing, expired or received only after the test began.",
       "requirementCodes": [
         "DORA.Art.27"
       ],
@@ -2861,7 +2918,7 @@
             "en": "Build the due-diligence evidence request that maps each tester criterion to the document proving it"
           },
           "description": {
-            "en": "Turn the criteria set into the pack that goes to a prospective TLPT tester. For each criterion name the document that would prove it \u2014 the certification or accreditation certificate, the professional indemnity policy or certificate of cover, the statement of the code of conduct or ethical framework adhered to, and the references or engagement history supporting reputation \u2014 and state what the assessor checks on each: that it names the tester being engaged, that it is current, and that it covers the work in question. Record who assesses the returned pack and where the completed record is filed against the engagement. Attach the issued request with its version."
+            "en": "Turn the criteria set into the pack that goes to a prospective TLPT tester. For each criterion name the document that would prove it — the certification or accreditation certificate, the professional indemnity policy or certificate of cover, the statement of the code of conduct or ethical framework adhered to, and the references or engagement history supporting reputation — and state what the assessor checks on each: that it names the tester being engaged, that it is current, and that it covers the work in question. Record who assesses the returned pack and where the completed record is filed against the engagement. Attach the issued request with its version."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -2897,7 +2954,7 @@
             "en": "Complete a due-diligence record for every tester engaged on a TLPT and file it with the engagement"
           },
           "description": {
-            "en": "For each TLPT tester engaged in the period, run the evidence request, record the assessment against each criterion, note the documents received and their dates, and record the conclusion reached and who reached it. Where a criterion is met only in part, or the document supplied does not cover the work being engaged, record that against the criterion rather than folding it into the overall conclusion \u2014 a partial answer absorbed into a pass is the one nobody can find afterwards. File the completed record against the engagement so the tester file can be reached from the TLPT report. The due-diligence records for the period are the evidence attached."
+            "en": "For each TLPT tester engaged in the period, run the evidence request, record the assessment against each criterion, note the documents received and their dates, and record the conclusion reached and who reached it. Where a criterion is met only in part, or the document supplied does not cover the work being engaged, record that against the criterion rather than folding it into the overall conclusion — a partial answer absorbed into a pass is the one nobody can find afterwards. File the completed record against the engagement so the tester file can be reached from the TLPT report. The due-diligence records for the period are the evidence attached."
           },
           "phase": "OPERATE",
           "sortOrder": 2,
@@ -2911,7 +2968,7 @@
             "en": "Assess each TLPT tester's independence from the teams and systems inside the test scope"
           },
           "description": {
-            "en": "Independence is specific to what is being tested, so it is assessed against the scope of the engagement rather than settled once for the tester. For each TLPT engagement record the testing provider and the individuals proposed, the relationship each has to the teams that build, run or defend the systems in the TLPT scope \u2014 prior engagements on those systems, group ownership, and any advisory work \u2014 the criteria applied from the criteria set, the conclusion reached, and who reached it. Where a relationship exists and the engagement proceeds anyway, record the reasoning and any restriction placed on the tester, so the decision is legible later. Attach the independence assessment for each engagement."
+            "en": "Independence is specific to what is being tested, so it is assessed against the scope of the engagement rather than settled once for the tester. For each TLPT engagement record the testing provider and the individuals proposed, the relationship each has to the teams that build, run or defend the systems in the TLPT scope — prior engagements on those systems, group ownership, and any advisory work — the criteria applied from the criteria set, the conclusion reached, and who reached it. Where a relationship exists and the engagement proceeds anyway, record the reasoning and any restriction placed on the tester, so the decision is legible later. Attach the independence assessment for each engagement."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -2961,7 +3018,7 @@
             "en": "Re-check that each TLPT run in the period was performed by a tester with a complete and current file"
           },
           "description": {
-            "en": "Take the TLPTs performed in the period and pair each with its tester file. For every one, confirm that a due-diligence record, an independence assessment and the certification and indemnity evidence are all present, that each was made against the criteria set in force at the time, and that nothing on file had lapsed before the test finished. Mark each engagement complete or deficient, and for every deficiency record the cause \u2014 a document never chased, an independence assessment made against a different scope, a criterion the set does not in fact make decidable \u2014 and the correction it calls for. Attach the completed check with the engagement list it was made from."
+            "en": "Take the TLPTs performed in the period and pair each with its tester file. For every one, confirm that a due-diligence record, an independence assessment and the certification and indemnity evidence are all present, that each was made against the criteria set in force at the time, and that nothing on file had lapsed before the test finished. Mark each engagement complete or deficient, and for every deficiency record the cause — a document never chased, an independence assessment made against a different scope, a criterion the set does not in fact make decidable — and the correction it calls for. Attach the completed check with the engagement list it was made from."
           },
           "phase": "REVIEW",
           "sortOrder": 5,
@@ -3000,6 +3057,9 @@
       "description": "Compile the Register of Information covering every contractual arrangement for the use of ICT services, and adopt the third-party risk strategy governing how such arrangements are entered and exited.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure every arrangement for the use of ICT services is registered and kept current, and that entering and leaving such arrangements follows an adopted strategy.",
+      "successCriteria": "The Register of Information carries every ICT arrangement with its provider, service, function and dates.\nAn approved third-party risk strategy is in force, multi-vendor position included, with a dated approval record.\nEach ICT service behind a critical or important function has an exit plan with triggers, data return and owner.\nNo arrangement was entered or renewed without a pre-contract risk assessment carrying a decision to proceed.\nSignatures, amendments and closures reach the register change log on the date they happen.",
+      "testingMethodology": "Evidence:\nObtain the Register of Information as it stands at the review date.\nCollect the adopted third-party risk strategy and multi-vendor strategy with their approval records.\nRetrieve the exit plan held for each ICT service supporting a critical or important function.\nGather the pre-contract ICT risk assessments for arrangements entered or renewed in the period.\nExport the register change log and the reconciliation record raised against contracts and spend.\n\nAnalysis:\nReconcile the register against the contract repository and the ICT supplier spend ledger, looking both ways.\nConfirm every critical or important function named in the register has an exit plan whose owner is still in post.\nCheck each pre-contract assessment carries an explicit decision to proceed and an author, and predates the arrangement it approved.\nCheck that arrangements signed, amended or ended in the period show up in the change log rather than only in the register.\nRead the multi-vendor position in the strategy against the provider spread the register actually shows.\n\nOutput:\nA reconciliation listing arrangements held but unregistered and registered but no longer held.\nA coverage table of exit plans against ICT services supporting critical or important functions.\nA list of arrangements entered without a pre-contract risk assessment, or ahead of one.",
       "requirementCodes": [
         "DORA.Art.28"
       ],
@@ -3009,7 +3069,7 @@
             "en": "Compile the Register of Information covering every contractual arrangement for the use of ICT services"
           },
           "description": {
-            "en": "Build the register this article requires: one row per contractual arrangement for the use of ICT services, whatever its size or label \u2014 cloud service, software subscription, managed service, intra-group arrangement. For each, record the provider, the ICT service supplied, the business function it supports, whether that function is critical or important, the contract dates and the internal owner. Source the population from procurement and finance records rather than from team recall, so an arrangement nobody sponsors still appears. Attach the register."
+            "en": "Build the register this article requires: one row per contractual arrangement for the use of ICT services, whatever its size or label — cloud service, software subscription, managed service, intra-group arrangement. For each, record the provider, the ICT service supplied, the business function it supports, whether that function is critical or important, the contract dates and the internal owner. Source the population from procurement and finance records rather than from team recall, so an arrangement nobody sponsors still appears. Attach the register."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -3050,7 +3110,7 @@
             "en": "Adopt the ICT third-party risk strategy, including the multi-vendor position"
           },
           "description": {
-            "en": "Take the ICT third-party risk strategy through the entity's own approval route and record who adopted it and when \u2014 the article requires the strategy, not a particular approver. It should state how ICT third-party risk is managed as part of the wider ICT risk framework, the entity's position on using more than one vendor for the same ICT service, and the conditions under which an ICT service supporting a critical or important function may be placed with a provider at all. Attach the adopted strategy together with the approval record."
+            "en": "Take the ICT third-party risk strategy through the entity's own approval route and record who adopted it and when — the article requires the strategy, not a particular approver. It should state how ICT third-party risk is managed as part of the wider ICT risk framework, the entity's position on using more than one vendor for the same ICT service, and the conditions under which an ICT service supporting a critical or important function may be placed with a provider at all. Attach the adopted strategy together with the approval record."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -3078,7 +3138,7 @@
             "en": "Record the pre-contract ICT risk assessment for each new or renewed ICT arrangement"
           },
           "description": {
-            "en": "Before an ICT contractual arrangement is entered or renewed, complete and file the risk assessment this article expects: the ICT service, the function it supports, the risks identified, the mitigations relied on, and the decision to proceed with the name of whoever took it. Where an assessment is not performed because the arrangement is judged out of scope, record that judgement in the same place \u2014 an absent assessment and a considered exclusion must be told apart. Attach the period's assessments."
+            "en": "Before an ICT contractual arrangement is entered or renewed, complete and file the risk assessment this article expects: the ICT service, the function it supports, the risks identified, the mitigations relied on, and the decision to proceed with the name of whoever took it. Where an assessment is not performed because the arrangement is judged out of scope, record that judgement in the same place — an absent assessment and a considered exclusion must be told apart. Attach the period's assessments."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -3123,6 +3183,9 @@
       "description": "Group the ICT arrangements supporting critical or important functions by provider, and assess concentration risk by a stated method before contracting rather than after.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure the entity knows where dependence on a single ICT provider or supply chain concentrates, and judges that concentration by a stated method before it contracts.",
+      "successCriteria": "The provider-to-function view shows what each ICT provider supports and the arrangements behind it.\nAn approved method names the factors examined, the evidence requested from providers and the sign-off.\nEvery critical-function arrangement holds a concentration assessment dated ahead of contract signature.\nEach critical provider's declared sub-contractors are recorded against the part of the service they perform.\nEach critical-function provider carries a current view of whether an alternative exists.",
+      "testingMethodology": "Evidence:\nObtain the provider-to-function view covering critical and important functions.\nCollect the approved concentration-risk assessment method with its sign-off.\nRetrieve the concentration assessments completed for arrangements entered in the period.\nGather the sub-outsourcing analyses declared by providers of critical or important functions.\nObtain the substitutability analysis held per critical-function provider.\n\nAnalysis:\nPick out providers supporting several critical functions and confirm the concentration this creates was assessed rather than assumed.\nCheck each assessment applied the factors the approved method names, and record any factor left unexamined.\nEstablish whether the concentration view was available when the decision to sign was taken, rather than compiled after the fact.\nFollow one sub-outsourcing chain to its furthest declared link and confirm the part of the service performed there is recorded.\nWeigh the substitutability conclusions against what a move would actually demand in time, data and cost.\n\nOutput:\nA concentration view by provider and by declared sub-contractor.\nA list of critical-function arrangements assessed after signature or not assessed at all.\nA substitutability summary naming the providers for which no alternative was identified.",
       "requirementCodes": [
         "DORA.Art.29"
       ],
@@ -3132,7 +3195,7 @@
             "en": "Group the ICT arrangements supporting critical or important functions by provider"
           },
           "description": {
-            "en": "Before concentration risk can be assessed it has to be visible. Take the arrangements supporting critical or important functions and group them by provider, showing how many functions each provider sits behind and where separate contracts resolve to the same underlying provider. Attach the resulting provider-to-function view \u2014 it is the input every assessment below reads."
+            "en": "Before concentration risk can be assessed it has to be visible. Take the arrangements supporting critical or important functions and group them by provider, showing how many functions each provider sits behind and where separate contracts resolve to the same underlying provider. Attach the resulting provider-to-function view — it is the input every assessment below reads."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -3146,7 +3209,7 @@
             "en": "Set the method used to assess ICT concentration risk before contracting"
           },
           "description": {
-            "en": "Write down how a concentration-risk assessment is performed, so two assessors reach comparable answers: what is examined \u2014 existing arrangements already held with the same provider, the provider's own sub-outsourcing chain, and how readily the provider could be substituted \u2014 what evidence is requested from the provider, and who signs the assessment off. Attach the method, approved and version-marked."
+            "en": "Write down how a concentration-risk assessment is performed, so two assessors reach comparable answers: what is examined — existing arrangements already held with the same provider, the provider's own sub-outsourcing chain, and how readily the provider could be substituted — what evidence is requested from the provider, and who signs the assessment off. Attach the method, approved and version-marked."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -3174,7 +3237,7 @@
             "en": "Document the sub-outsourcing chain declared by each provider of a critical or important function"
           },
           "description": {
-            "en": "Ask each provider supporting a critical or important function to declare the sub-contractors it relies on to deliver that service, and record the chain: the sub-contractor and the part of the service it performs. Record refusals and non-answers explicitly \u2014 an undeclared chain is a finding, not an empty field. Attach the sub-outsourcing analysis."
+            "en": "Ask each provider supporting a critical or important function to declare the sub-contractors it relies on to deliver that service, and record the chain: the sub-contractor and the part of the service it performs. Record refusals and non-answers explicitly — an undeclared chain is a finding, not an empty field. Attach the sub-outsourcing analysis."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -3205,6 +3268,9 @@
       "description": "Turn the mandatory ICT contract provisions into a clause checklist and carry each one into the standard contract template, so a missing provision is visible at signature.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure each mandatory ICT contractual provision has a clause that carries it, so a provision a contract lacks becomes visible at signature rather than at audit.",
+      "successCriteria": "A version-marked checklist carries one line for every mandatory ICT contractual provision.\nThe standard template maps each checklist line to the clause carrying it, with none unmapped.\nEvery ICT contract signed or renewed in the period has its completed checklist on file.\nAccepted departures are recorded with the person who approved them.\nThe access-rights register states, per contract, the rights secured and the conditions on using them.",
+      "testingMethodology": "Evidence:\nObtain the version-marked ICT contract clause checklist.\nCollect the standard contractual template together with its clause-to-checklist mapping.\nRetrieve the completed checklists filed against contracts signed or renewed in the period.\nExport the audit and access-rights register.\nObtain the gap log raised over contracts predating the checklist.\n\nAnalysis:\nRead the template clause named for each checklist line and judge whether it carries the provision or merely gestures at it.\nSample executed contracts and set their clauses against the checklist completed for them.\nIdentify lines marked as accepted departures and confirm the named approver held the authority to accept them.\nCross-check the rights recorded in the access-rights register against the clauses in the sampled contracts.\nConfirm each legacy contract in the gap log carries a remediation route and a named owner rather than an open note.\n\nOutput:\nA template-to-checklist mapping report naming unmapped or thinly drafted provisions.\nA sample results table of executed contracts against their completed checklists.\nA departures schedule with approvers, and the legacy gap log with remediation owners.",
       "requirementCodes": [
         "DORA.Art.30"
       ],
@@ -3214,7 +3280,7 @@
             "en": "Turn the mandatory ICT contract provisions into a clause checklist"
           },
           "description": {
-            "en": "List the provisions this article requires an ICT service contract to carry \u2014 the service description, the locations where the service is provided and data is processed, data protection commitments, access, inspection and audit rights, termination rights, exit support, and assistance during ICT incidents \u2014 and turn each into a checklist line a reviewer can mark present or absent against a draft contract. Attach the checklist, version-marked."
+            "en": "List the provisions this article requires an ICT service contract to carry — the service description, the locations where the service is provided and data is processed, data protection commitments, access, inspection and audit rights, termination rights, exit support, and assistance during ICT incidents — and turn each into a checklist line a reviewer can mark present or absent against a draft contract. Attach the checklist, version-marked."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -3297,7 +3363,7 @@
             "en": "Re-check ICT contracts predating the clause checklist and log the provisions they lack"
           },
           "description": {
-            "en": "Run the checklist across the ICT contracts that were signed before it existed and are still in force. Record, per contract, which mandatory provisions are missing, the route to fixing it \u2014 amendment, renegotiation at renewal, or replacement \u2014 and the owner of that route. Attach the gap log; a contract assessed as complete gets a row too, so the population assessed is visible rather than inferred."
+            "en": "Run the checklist across the ICT contracts that were signed before it existed and are still in force. Record, per contract, which mandatory provisions are missing, the route to fixing it — amendment, renegotiation at renewal, or replacement — and the owner of that route. Attach the gap log; a contract assessed as complete gets a row too, so the population assessed is visible rather than inferred."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -3314,6 +3380,9 @@
       "description": "Know which ICT third-party providers to check against the ESAs' critical-designation list, where that list is obtained and who checks it, so a designation does not pass unnoticed.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure the designation of an ICT provider as critical by the ESAs is noticed by the entity, assessed for what it changes, and fed into contingency and exit planning.",
+      "successCriteria": "The watchlist names each provider by contracted legal name, group parent and identifiers.\nA dated arrangement fixes the list source, the check point, the named checker and the matching rule.\nContingency and exit planning treats designation as a trigger and says what it reopens.\nEach check records its date, who ran it, the list version consulted and the outcome per provider.\nEvery designated provider holds an impact assessment stating what changes, what does not, and what follows.",
+      "testingMethodology": "Evidence:\nObtain the designation watchlist with contracted legal names, group parents and identifiers.\nCollect the versioned designation tracking arrangement.\nRetrieve the amended contingency and exit planning procedure carrying the designation trigger.\nGather the identification records for each check performed in the period.\nObtain the oversight-framework impact assessment for every provider designated critical.\n\nAnalysis:\nApply the matching rule to the current designation list yourself and set your result beside the outcome of the last recorded check.\nLook for providers whose contracted legal name differs from the group parent the list publishes, and judge whether the matching rule would still catch them.\nSet the recorded checks against the stated check point for gaps in frequency and for matches left unresolved.\nRead each impact assessment for the reasoning behind what it says the designation does not change.\nMatch the watchlist against the Register of Information both ways and list what either side holds alone.\n\nOutput:\nA comparison naming providers in the Register of Information but absent from the watchlist, and the reverse.\nA check history showing dates, checkers, list versions consulted and outcomes.\nA status note per designated provider covering its impact assessment and its revised contingency and exit plans.",
       "requirementCodes": [
         "DORA.Art.31"
       ],
@@ -3395,7 +3464,7 @@
             "en": "Add the designation trigger to contingency and exit planning for ICT third-party providers"
           },
           "description": {
-            "en": "Amend the contingency and exit planning procedure so that a provider being designated critical is one of the events that causes its plans to be revisited, rather than a status noted in a register and acted on nowhere. Record what is reconsidered when the trigger fires \u2014 the exit plan for the services that provider supplies, the contingency arrangements relied on if it becomes unavailable, and what the provider's subjection to the Union Oversight Framework changes, if anything, in how the entity manages it \u2014 who does that work, and where the revised plans are filed. Attach the amended procedure section showing the trigger."
+            "en": "Amend the contingency and exit planning procedure so that a provider being designated critical is one of the events that causes its plans to be revisited, rather than a status noted in a register and acted on nowhere. Record what is reconsidered when the trigger fires — the exit plan for the services that provider supplies, the contingency arrangements relied on if it becomes unavailable, and what the provider's subjection to the Union Oversight Framework changes, if anything, in how the entity manages it — who does that work, and where the revised plans are filed. Attach the amended procedure section showing the trigger."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -3409,7 +3478,7 @@
             "en": "Record each designation-status check against the watchlist with its date and outcome"
           },
           "description": {
-            "en": "Each time the check is performed, write it down: the date, who performed it, the version or date of the list consulted, and the outcome for every provider on the watchlist \u2014 designated, not designated, or matched through a group or sub-outsourced entity with the reasoning for that match. A check that found no change is recorded in the same detail as one that found a designation, because otherwise it is indistinguishable from a check that never ran. Where a provider could not be matched with confidence, record it as unresolved together with what would settle it. The identification records for the period are the artifact attached."
+            "en": "Each time the check is performed, write it down: the date, who performed it, the version or date of the list consulted, and the outcome for every provider on the watchlist — designated, not designated, or matched through a group or sub-outsourced entity with the reasoning for that match. A check that found no change is recorded in the same detail as one that found a designation, because otherwise it is indistinguishable from a check that never ran. Where a provider could not be matched with confidence, record it as unresolved together with what would settle it. The identification records for the period are the artifact attached."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -3423,7 +3492,7 @@
             "en": "Complete an oversight-framework impact assessment for every provider designated critical"
           },
           "description": {
-            "en": "When a provider on the watchlist is designated, record what that designation means for the entity's own management of it. Cover the ICT services that provider supplies and the functions they support, what the entity concludes changes because the provider is subject to the Union Oversight Framework and what does not, what will be done differently in monitoring, contingency and exit planning as a result, and \u2014 where the conclusion is that nothing changes \u2014 the reasoning behind it. Record who made the assessment and when. Attach the assessment for each designated provider."
+            "en": "When a provider on the watchlist is designated, record what that designation means for the entity's own management of it. Cover the ICT services that provider supplies and the functions they support, what the entity concludes changes because the provider is subject to the Union Oversight Framework and what does not, what will be done differently in monitoring, contingency and exit planning as a result, and — where the conclusion is that nothing changes — the reasoning behind it. Record who made the assessment and when. Attach the assessment for each designated provider."
           },
           "phase": "OPERATE",
           "sortOrder": 4,
@@ -3459,7 +3528,7 @@
             "en": "Reconcile the designation watchlist against the Register of Information and close what the checks left open"
           },
           "description": {
-            "en": "Compare the watchlist against the Register of Information to find ICT third-party providers under contract that the watchlist does not carry, and watchlist entries whose contracts have ended. Then take the period's identification records and confirm that every provider found to be designated has an impact assessment and the revised contingency and exit plans the trigger calls for, and that every match left unresolved was settled. Record each gap with its cause \u2014 a provider added to the register after the watchlist was built, an unresolved match nobody returned to, an assessment raised but never filed \u2014 and the correction it calls for. Attach the reconciliation with the register export it was made from."
+            "en": "Compare the watchlist against the Register of Information to find ICT third-party providers under contract that the watchlist does not carry, and watchlist entries whose contracts have ended. Then take the period's identification records and confirm that every provider found to be designated has an impact assessment and the revised contingency and exit plans the trigger calls for, and that every match left unresolved was settled. Record each gap with its cause — a provider added to the register after the watchlist was built, an unresolved match nobody returned to, an assessment raised but never filed — and the correction it calls for. Attach the reconciliation with the register export it was made from."
           },
           "phase": "REVIEW",
           "sortOrder": 5,
@@ -3498,6 +3567,9 @@
       "description": "Record which trusted cyber-threat communities the entity takes part in and the decision to join each, under a signed arrangement setting out what may be shared.",
       "category": "DORA",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure cyber threat intelligence is exchanged only inside trusted communities the entity has decided to join, on signed terms, and stripped of what must not leave.",
+      "successCriteria": "Every community joined is recorded with the decision behind joining it and its current status.\nA signed arrangement per community states the parties, the information exchanged and the confidentiality terms.\nHandling rules exist for stripping personal and competition-sensitive data before intelligence leaves.\nEvery outbound disclosure appears in the sharing log with its handling check and its releaser.\nThe notification of participation is on file, or the basis for not notifying is recorded.",
+      "testingMethodology": "Evidence:\nObtain the membership records for every cyber-threat community the entity takes part in.\nCollect the signed information-sharing arrangement held for each community.\nRetrieve the data protection safeguards document setting the pre-disclosure handling rules.\nExport the outbound cyber-threat sharing log for the period.\nObtain the notification of participation submitted to the competent authority, or the recorded basis for not notifying.\n\nAnalysis:\nCheck that every community appearing in the sharing log also appears in the membership records with a live status.\nCompare the information categories each arrangement permits with what the log shows was actually released.\nRe-read a sample of released material against the handling rules, hunting for personal data or competition-sensitive detail that survived the check.\nConfirm the releaser named on each entry was entitled to release, and that the handling check preceded rather than followed the disclosure.\nTest the notification position against the participation the membership records show, and check the acknowledgement where one was expected.\n\nOutput:\nA membership and arrangement coverage table by community.\nA sampled disclosure review naming any release that fell outside the handling rules, with the correction taken.\nA statement of the notification position with its date and acknowledgement reference.",
       "requirementCodes": [
         "DORA.Art.45"
       ],
@@ -3507,7 +3579,7 @@
             "en": "Record which trusted cyber-threat communities the entity takes part in, and the decision to join each"
           },
           "description": {
-            "en": "Information sharing under this article is something a financial entity may do, not must, so the record starts with the decision. For each trusted community the entity participates in \u2014 a sector information-sharing community, a national CERT arrangement, a bilateral one \u2014 record the decision to join, who took it, the date, and the membership status today. Include communities considered and declined, so a later reader can see the choice was made rather than missed. Attach the membership records."
+            "en": "Information sharing under this article is something a financial entity may do, not must, so the record starts with the decision. For each trusted community the entity participates in — a sector information-sharing community, a national CERT arrangement, a bilateral one — record the decision to join, who took it, the date, and the membership status today. Include communities considered and declined, so a later reader can see the choice was made rather than missed. Attach the membership records."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -3535,7 +3607,7 @@
             "en": "Write the pre-disclosure handling rules that keep shared intelligence free of personal and competition-sensitive data"
           },
           "description": {
-            "en": "Turn the arrangement's protections into rules an analyst can apply before pressing send: what must be removed or masked \u2014 personal data, customer identifiers, pricing and other competition-sensitive detail \u2014 what may be shared as it stands, the confidentiality marking the arrangement requires, and who approves a disclosure that falls outside the rules. Legal/DPO owns the data-protection position; Security engineering applies it. Attach the handling rules."
+            "en": "Turn the arrangement's protections into rules an analyst can apply before pressing send: what must be removed or masked — personal data, customer identifiers, pricing and other competition-sensitive detail — what may be shared as it stands, the confidentiality marking the arrangement requires, and who approves a disclosure that falls outside the rules. Legal/DPO owns the data-protection position; Security engineering applies it. Attach the handling rules."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,

@@ -2,7 +2,7 @@
   "_meta": {
     "purpose": "OWASP AISVS v1.0 in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
     "why": "Built inline in prisma/seed.ts, which is not run on production deploys. Extracted from a database seeded by that block, so the shape is carried over exactly rather than re-derived from grouping logic that ran at seed time.",
-    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here \u2014 every template carries the generic five, as it did inline.",
+    "grounding": "Requirement codes, titles and sections, and the template titles, categories, frequencies and requirement links, are exactly those the inline block produced. Task content is NOT authored here — every template carries the generic five, as it did inline.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts"
   },
   "framework": {
@@ -10,7 +10,7 @@
     "name": "OWASP AISVS v1.0",
     "version": "1.0",
     "kind": "INDUSTRY_STANDARD",
-    "description": "OWASP AI Security Verification Standard v1.0 \u2014 AI-security controls for AI-enabled systems.",
+    "description": "OWASP AI Security Verification Standard v1.0 — AI-security controls for AI-enabled systems.",
     "sourceUrn": "urn:inflect:library:owasp-aisvs-1.0",
     "metadata": {
       "locale": "en",
@@ -20,7 +20,7 @@
       "license": "CC-BY-SA-4.0",
       "sourceUrl": "https://github.com/OWASP/AISVS",
       "referenceIndexOnly": true,
-      "copyright": "OWASP AISVS v1.0 \u00a9 OWASP Foundation, licensed CC-BY-SA-4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Source: https://github.com/OWASP/AISVS. Inflect stores a reference index (IDs, levels, paraphrased titles) and links to the canonical text."
+      "copyright": "OWASP AISVS v1.0 © OWASP Foundation, licensed CC-BY-SA-4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Source: https://github.com/OWASP/AISVS. Inflect stores a reference index (IDs, levels, paraphrased titles) and links to the canonical text."
     }
   },
   "requirements": [
@@ -1370,6 +1370,9 @@
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "ML Platform Engineering / Data Owner",
+      "objective": "To ensure every corpus reaching a training run has a known originator and permitting licence, carries only the attributes a stated objective needs, and remains unaltered end to end.",
+      "successCriteria": "Every corpus a training run consumes is listed in the source register with originator, acquisition route, licence and confidentiality class.\nEach retained attribute traces to a stated training objective, and the fields dropped are recorded beside it.\nSnapshot digests still verify on re-check, and copies leaving the training boundary carry their issued watermark identifier.\nNo training run in the period consumed a corpus absent from the register.",
+      "testingMethodology": "Evidence:\nObtain the training source register and the list of training runs executed in the period.\nCollect the field-justification matrix for each corpus, showing retained columns and the objective behind each.\nGather the snapshot manifests carrying signed digests, transport settings and issued watermark identifiers.\nRetrieve the quarterly integrity sweep reports and the reconciliation record for the period's runs.\n\nAnalysis:\nTrace a sample of runs back to the corpora they read and confirm each appears in the register with an originator and a permitting licence.\nCheck retained attributes against the stated objective and query any field carried without one.\nRecompute a digest from the stored corpus and compare it with the signed manifest value.\nReview the mismatches the sweeps raised and confirm each was resolved by the date agreed.\n\nOutput:\nA run-to-corpus trace separating registered, unregistered and unattributable sources.\nAn attribute exception list naming fields retained without a justifying objective.\nDigest recomputation results, with watermark identifiers confirmed on the released copies.",
       "requirementCodes": [
         "C1.1.1",
         "C1.1.2",
@@ -1593,10 +1596,13 @@
     {
       "code": "AISVS-C1.2",
       "title": "Data Labeling & Annotation Security",
-      "description": "Implements AISVS-C1.2: secures the labelling and annotation stage of the training-data pipeline \u2014 role-scoped access to every platform where annotation happens, cryptographic integrity over the label artefacts handed on to training, and redaction of sensitive values before they reach an annotator or come to rest inside a label.",
+      "description": "Implements AISVS-C1.2: secures the labelling and annotation stage of the training-data pipeline — role-scoped access to every platform where annotation happens, cryptographic integrity over the label artefacts handed on to training, and redaction of sensitive values before they reach an annotator or come to rest inside a label.",
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "ML Data Operations / Security Engineering",
+      "objective": "To ensure annotation work happens only within scoped access, with sensitive values redacted before an annotator sees them and label artefacts proven intact where training reads them.",
+      "successCriteria": "Each labelling platform is registered with its operator, the datasets it serves and the authentication route annotators take.\nAnnotator, reviewer and administrator roles bind to named dataset scopes, and an out-of-scope dataset open is refused.\nItems entering an annotation queue carry no sensitive values, and none come to rest inside a label record.\nLabelling exports verify against their batch manifest where the pipeline reads them, and mismatches are quarantined.",
+      "testingMethodology": "Evidence:\nObtain the labelling estate register and the current account list exported from each platform.\nCollect the role-to-permission matrix together with the platform access configuration it produced.\nGather the redaction design note and the planted-identifier test run covering both the annotation interface and the stored labels.\nRetrieve per-batch export manifests, the pipeline verification log and the access recertification record.\n\nAnalysis:\nCompare platform accounts against the recertification decisions and confirm each revocation actually took effect.\nOpen a dataset outside an annotator's bound scope and read the refusal the platform recorded.\nSearch the annotation interface and the label store for the seeded identifiers to confirm the redaction pass held.\nCheck the period's signature verifications and confirm every quarantined mismatch raised its alert.\n\nOutput:\nAn account disposition list per platform, with the labels sampled behind each revocation.\nA scope-enforcement test record naming the dataset attempted and the refusal returned.\nA batch verification summary giving signatures checked, mismatches held and alerts raised.",
       "requirementCodes": [
         "C1.2.1",
         "C1.2.2",
@@ -1608,7 +1614,7 @@
             "en": "Inventory every labelling platform in use and the annotator populations it admits"
           },
           "description": {
-            "en": "Labelling rarely happens in one place \u2014 an in-house tool, a vendor's annotation SaaS, a spreadsheet one team stood up for a single dataset, and an offshore crowd workforce nobody in engineering holds a list of. Record one row per platform giving who operates it, which datasets sit on it, how annotators authenticate into it, and whether the records it serves carry personal, health, payment or commercially confidential fields. The row for the spreadsheet is the point of the exercise: until a platform is named here, none of the access rules, redaction passes or signing below reaches it. Attach the register dated at the point it was compiled."
+            "en": "Labelling rarely happens in one place — an in-house tool, a vendor's annotation SaaS, a spreadsheet one team stood up for a single dataset, and an offshore crowd workforce nobody in engineering holds a list of. Record one row per platform giving who operates it, which datasets sit on it, how annotators authenticate into it, and whether the records it serves carry personal, health, payment or commercially confidential fields. The row for the spreadsheet is the point of the exercise: until a platform is named here, none of the access rules, redaction passes or signing below reaches it. Attach the register dated at the point it was compiled."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -1690,7 +1696,7 @@
             "en": "Build the redaction pass that strips sensitive values before an item reaches an annotation queue"
           },
           "description": {
-            "en": "What the annotator opens is the raw record: a support transcript carrying a card number, a scan with a patient name in the corner, a log line holding a live session token. Masking has to happen on the way into the queue rather than on the way out, because once a human has read the value the exposure has already happened \u2014 and the label is the second leak, since a free-text label field invites an annotator to retype the very value they were asked to mark. Mask or encrypt the fields the register flagged, constrain free-text inputs to a closed vocabulary on sensitive datasets, and prove the pass with a fixture of planted identifiers that must surface nowhere."
+            "en": "What the annotator opens is the raw record: a support transcript carrying a card number, a scan with a patient name in the corner, a log line holding a live session token. Masking has to happen on the way into the queue rather than on the way out, because once a human has read the value the exposure has already happened — and the label is the second leak, since a free-text label field invites an annotator to retype the very value they were asked to mark. Mask or encrypt the fields the register flagged, constrain free-text inputs to a closed vocabulary on sensitive datasets, and prove the pass with a fixture of planted identifiers that must surface nowhere."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -1731,7 +1737,7 @@
             "en": "Sign each labelling export and verify that signature where the training pipeline reads it"
           },
           "description": {
-            "en": "A labelled dataset crosses a platform, a bucket and a training job, and nothing along that path tells you whether the file being loaded is the file the annotators produced \u2014 a re-uploaded batch, a truncated export and a swapped label column all arrive looking like ordinary data. Compute a digest over each export, sign it with a key the labelling platform's own operators cannot reach, publish the manifest beside the batch, and have the pipeline verify before it loads anything: a mismatch quarantines the batch and pages someone rather than logging a warning and training anyway."
+            "en": "A labelled dataset crosses a platform, a bucket and a training job, and nothing along that path tells you whether the file being loaded is the file the annotators produced — a re-uploaded batch, a truncated export and a swapped label column all arrive looking like ordinary data. Compute a digest over each export, sign it with a key the labelling platform's own operators cannot reach, publish the manifest beside the batch, and have the pipeline verify before it loads anything: a mismatch quarantines the batch and pages someone rather than logging a warning and training anyway."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -1772,7 +1778,7 @@
             "en": "Recertify every labelling-platform account and sample the work behind the ones you revoke"
           },
           "description": {
-            "en": "Annotation workforces turn over quickly and vendor rosters change without anybody telling the platform owner, so the account list silently fills with people who left months ago and contractors whose engagement ended mid-batch. Take each account against the current roster and the contract register, decide keep, downscope or revoke, then pull a sample of completed labels behind every revocation \u2014 an account that should have closed was producing work the whole time it stayed open, and that work is where unredacted values and unexplained label edits show up. Anything the sample turns up becomes a finding with a named owner."
+            "en": "Annotation workforces turn over quickly and vendor rosters change without anybody telling the platform owner, so the account list silently fills with people who left months ago and contractors whose engagement ended mid-batch. Take each account against the current roster and the contract register, decide keep, downscope or revoke, then pull a sample of completed labels behind every revocation — an account that should have closed was producing work the whole time it stayed open, and that work is where unredacted values and unexplained label edits show up. Anything the sample turns up becomes a finding with a named owner."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -1817,6 +1823,9 @@
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "ML Platform Engineering / Security Engineering",
+      "objective": "To ensure a training corpus is proven fit to learn from before a run consumes it, and that the model it yields is checked for disparate decisions across the slices its data covers.",
+      "successCriteria": "Every corpus carries a quality profile giving class balance, duplicate rates, sampled label noise and per-slice row counts.\nThe pre-training gate strips disallowed content and holds anomalous batches rather than passing them through.\nAuto-generated labels below their per-class confidence cut never reach training, and each cut has measured precision behind it.\nCandidate models are scored slice by slice, and a gap beyond the stated threshold stops the release.",
+      "testingMethodology": "Evidence:\nObtain the per-corpus quality profiles and the slice definitions they were computed over.\nCollect the screening stage configuration and a pipeline run in which a batch was quarantined.\nGather the threshold table naming each auto-labeller, its per-class cut and the hand-adjudicated sample behind it.\nRetrieve per-slice evaluation reports for the recent candidate versions and the clean-label seeding write-up.\n\nAnalysis:\nRecompute duplicate and class-balance figures on a sampled corpus and compare them with the published profile.\nReplay disallowed content through the gate and confirm the rows were dropped and counted.\nCheck that labels scored below the stated cut are absent from the training set the run actually consumed.\nRead the seeding exercise for which detectors fired, which missed the planted poison, and what changed afterwards.\n\nOutput:\nA profile verification record placing recomputed statistics beside the published ones.\nA gate replay result listing rows dropped and batches held back.\nA slice evaluation summary carrying the release decision taken on each candidate version.",
       "requirementCodes": [
         "C1.3.1",
         "C1.3.2",
@@ -1871,7 +1880,7 @@
             "en": "Build the pre-training gate that removes disallowed content and quarantines anomalous batches"
           },
           "description": {
-            "en": "A screen that runs when somebody remembers to run it is not a control, so the filters belong in the training pipeline as a stage a run cannot start without. It needs three kinds of check: classifiers and match lists for the content categories that may never be trained on, near-duplicate collapse, and outlier detectors that compare the incoming batch against the corpus profile. Decide the consequence of a hit up front \u2014 a held batch must stop the run rather than warn into a log nobody reads \u2014 and be explicit about which detectors block and which only flag."
+            "en": "A screen that runs when somebody remembers to run it is not a control, so the filters belong in the training pipeline as a stage a run cannot start without. It needs three kinds of check: classifiers and match lists for the content categories that may never be trained on, near-duplicate collapse, and outlier detectors that compare the incoming batch against the corpus profile. Decide the consequence of a hit up front — a held batch must stop the run rather than warn into a log nobody reads — and be explicit about which detectors block and which only flag."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -1917,7 +1926,7 @@
             "en": "Set the confidence floor below which an auto-generated label never reaches training"
           },
           "description": {
-            "en": "Weak supervision, distillation from a larger model and heuristic labellers all emit a score, and shipping everything they emit is how a plausible wrong label becomes a learned rule. Derive the floor rather than picking one: score a hand-adjudicated reference sample, read precision at each candidate cut, and choose per labeller and per class, because classes are not equally hard and a single global number is usually wrong somewhere. The rejected rows need a destination too \u2014 discarded, queued for human adjudication, or admitted at a reduced sample weight."
+            "en": "Weak supervision, distillation from a larger model and heuristic labellers all emit a score, and shipping everything they emit is how a plausible wrong label becomes a learned rule. Derive the floor rather than picking one: score a hand-adjudicated reference sample, read precision at each candidate cut, and choose per labeller and per class, because classes are not equally hard and a single global number is usually wrong somewhere. The rejected rows need a destination too — discarded, queued for human adjudication, or admitted at a reduced sample weight."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -1958,7 +1967,7 @@
             "en": "Evaluate each candidate model for disparate decisions across the slices before it ships"
           },
           "description": {
-            "en": "A corpus can clear every filter and still teach the model to decide differently about one group than another, and that only surfaces when somebody measures the decisions rather than the data. Run the held-out evaluation per slice, report the metric the decision actually turns on \u2014 selection rate, false-negative rate, calibration error \u2014 and compare slices with one another rather than with the aggregate, which hides the small ones. Declare the gap that refuses a release, since a number with no threshold beside it will be read as informational."
+            "en": "A corpus can clear every filter and still teach the model to decide differently about one group than another, and that only surfaces when somebody measures the decisions rather than the data. Run the held-out evaluation per slice, report the metric the decision actually turns on — selection rate, false-negative rate, calibration error — and compare slices with one another rather than with the aggregate, which hides the small ones. Declare the gap that refuses a release, since a number with no threshold beside it will be read as informational."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -1999,7 +2008,7 @@
             "en": "Retest the detectors against clean-label poison seeded into a copy of the corpus"
           },
           "description": {
-            "en": "A detection stage that has never fired is indistinguishable from a clean pipeline, and the poisoning worth worrying about carries a correct label, so it passes every check looking for a mismatch between sample and label. Take a copy of a corpus, plant known perturbations in it \u2014 a trigger pattern on a small fraction of one class, correctly labelled samples drifted toward a target class \u2014 and push it through the pipeline unchanged. Where a plant survives, the finding is against the detector, not the corpus, and the fix belongs in the screening stage."
+            "en": "A detection stage that has never fired is indistinguishable from a clean pipeline, and the poisoning worth worrying about carries a correct label, so it passes every check looking for a mismatch between sample and label. Take a copy of a corpus, plant known perturbations in it — a trigger pattern on a small fraction of one class, correctly labelled samples drifted toward a target class — and push it through the pipeline unchanged. Where a plant survives, the finding is against the detector, not the corpus, and the fix belongs in the screening stage."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -2044,6 +2053,9 @@
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "Platform Engineering / AppSec",
+      "objective": "To ensure only allowlisted MCP servers from verified publishers can be reached, and that every session, tool call and server response is checked at the client boundary.",
+      "successCriteria": "Every MCP server and client in use is registered with publisher, package coordinates, pinned digest and owner.\nConnections outside the allowlist are refused, and locally launched servers run under a confining sandbox profile.\nEach tool call carries a verified caller token, and downstream access uses an exchanged credential rather than the caller's.\nTool results that break schema, exceed size limits or carry embedded instructions are rejected before reaching the model.",
+      "testingMethodology": "Evidence:\nObtain the dated MCP endpoint register and the loaded allowlist configuration with its pinned digests.\nCollect the refusal log from a blocked connection and the sandbox profile applied to locally launched servers.\nGather a request trace showing per-call claim checks, channel binding and the downstream credential exchange.\nRetrieve the period's tool-result rejection log, the hostile-fixture replay and the quarterly per-server tool diffs.\n\nAnalysis:\nCompare the MCP components actually running against the register and query any endpoint reached but unlisted.\nPoint the client at a server outside the allowlist and confirm the runtime refused the connection.\nReplay a tool call with a missing or mismatched token and confirm the server declined to act.\nRead the diff packs for tools advertised since installation approval, and check each suspension or re-approval.\n\nOutput:\nA register-to-runtime reconciliation naming unlisted endpoints and unpinned digests.\nA boundary test record covering the blocked connection, the refused token and the rejected tool result.\nA tool-drift summary listing changes detected, suspensions raised and dormant entries withdrawn.",
       "requirementCodes": [
         "C10.1.1",
         "C10.1.2",
@@ -2300,10 +2312,13 @@
     {
       "code": "AISVS-C11",
       "title": "C11 Adversarial Robustness",
-      "description": "Implements AISVS-C11: make the model itself hard to subvert before anything is deployed \u2014 alignment safety training against the catalogued disallowed content, a version-controlled adversarial corpus that every weight, prompt and adapter change is evaluated against, hardening so a refusal survives paraphrase, and defences that keep the served model from being mined for its training data or cloned by systematic querying.",
+      "description": "Implements AISVS-C11: make the model itself hard to subvert before anything is deployed — alignment safety training against the catalogued disallowed content, a version-controlled adversarial corpus that every weight, prompt and adapter change is evaluated against, hardening so a refusal survives paraphrase, and defences that keep the served model from being mined for its training data or cloned by systematic querying.",
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "ML Engineering Lead / Security Engineering",
+      "objective": "To ensure a released model resists jailbreak and paraphrased attack, and that the served endpoint cannot be mined for its training data or cloned by systematic querying.",
+      "successCriteria": "The adversarial corpus is version-tagged, pinned to a model commit, and covers every catalogued refusal category.\nNo weight, prompt or adapter change is promoted without a scored run of the pinned suite and a diff against the previous release.\nPer-principal harvesting ceilings hold, and requests the anomaly score flags are held pending a disposition.\nMembership-inference accuracy against the deployed model stays within the stated margin of the random-guess baseline.",
+      "testingMethodology": "Evidence:\nObtain the version-tagged adversarial corpus and the disallowed-content category list it was built from.\nCollect training-run records giving corpus version, hardening mix, privacy budget applied and artefact fingerprint.\nGather the endpoint configuration for per-principal ceilings and shielded response fields, with the gate decision log.\nRetrieve the per-release evaluation reports and the most recent leakage assessment.\n\nAnalysis:\nConfirm the corpus version pinned in each evaluation is the one the candidate was actually scored against.\nPut refusals through paraphrase and compare the score by attack family with the previous release.\nDrive one principal past its harvesting ceiling and confirm the responses were throttled or held.\nPlace membership-inference accuracy beside the random-guess baseline and read the results for attacks published since the last cycle.\n\nOutput:\nA promotion record per release giving suite scores, family-level diffs and the decision taken.\nA harvesting gate log listing held requests and their dispositions.\nA leakage assessment naming the techniques run and the margin above baseline measured.",
       "requirementCodes": [
         "C11.1.1",
         "C11.1.2",
@@ -2329,7 +2344,7 @@
             "en": "Assemble the refusal categories and the versioned attack library each release is tested against"
           },
           "description": {
-            "en": "An alignment test is only as good as the material it is run against, so the corpus comes first: the categories of content the model must refuse, and the techniques it must keep refusing under \u2014 role-play framings, encoded and obfuscated prompts, many-shot priming, multi-turn escalation, adversarial suffixes. Hold both in the same version control as the model code, so a test set can be named by commit and a run repeated exactly a year later. A corpus kept in a spreadsheet on one engineer's laptop cannot be pinned to a release, and every evaluation that cites it becomes an anecdote. Attach the tagged corpus together with the category list it covers."
+            "en": "An alignment test is only as good as the material it is run against, so the corpus comes first: the categories of content the model must refuse, and the techniques it must keep refusing under — role-play framings, encoded and obfuscated prompts, many-shot priming, multi-turn escalation, adversarial suffixes. Hold both in the same version control as the model code, so a test set can be named by commit and a run repeated exactly a year later. A corpus kept in a spreadsheet on one engineer's laptop cannot be pinned to a release, and every evaluation that cites it becomes an anecdote. Attach the tagged corpus together with the category list it covers."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -2370,7 +2385,7 @@
             "en": "Train the release candidate on the attack library and fingerprint the weights it produces"
           },
           "description": {
-            "en": "Safety training is the part of robustness no downstream filter can supply: a model never trained to refuse will be talked into compliance by the first paraphrase of a blocked prompt. Fine-tune the candidate on the refusal categories, then fold perturbed and obfuscated variants of those same prompts into the run so a refusal survives rewording instead of matching a string. Where the corpus contains sensitive records, train under a stated privacy budget, and fingerprint the artefact that ships so weights found on somebody else's endpoint can be attributed. The record kept is the training run itself \u2014 which corpus version, which hardening mix, which epsilon."
+            "en": "Safety training is the part of robustness no downstream filter can supply: a model never trained to refuse will be talked into compliance by the first paraphrase of a blocked prompt. Fine-tune the candidate on the refusal categories, then fold perturbed and obfuscated variants of those same prompts into the run so a refusal survives rewording instead of matching a string. Where the corpus contains sensitive records, train under a stated privacy budget, and fingerprint the artefact that ships so weights found on somebody else's endpoint can be attributed. The record kept is the training run itself — which corpus version, which hardening mix, which epsilon."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -2411,7 +2426,7 @@
             "en": "Restrict what one caller may harvest from the served model and hold what the anomaly score flags"
           },
           "description": {
-            "en": "Everything an external caller can pull out of the endpoint is raw material for rebuilding the model or mining what it memorised, and an unmetered API hands it over politely \u2014 enough boundary queries reconstruct a decision surface, and raw probabilities make that cheap. Cap what a single principal may draw, return calibrated bands rather than raw scores, stop the model volunteering sensitive attributes nobody supplied, and give the extraction detector both the query-pattern features it needs and a response it is permitted to take. The same boundary carries the anomaly gate, which must stop the action an untrusted input would have triggered rather than note it afterwards. The evidence is the endpoint configuration plus the gate's own decision log."
+            "en": "Everything an external caller can pull out of the endpoint is raw material for rebuilding the model or mining what it memorised, and an unmetered API hands it over politely — enough boundary queries reconstruct a decision surface, and raw probabilities make that cheap. Cap what a single principal may draw, return calibrated bands rather than raw scores, stop the model volunteering sensitive attributes nobody supplied, and give the extraction detector both the query-pattern features it needs and a response it is permitted to take. The same boundary carries the anomaly gate, which must stop the action an untrusted input would have triggered rather than note it afterwards. The evidence is the endpoint configuration plus the gate's own decision log."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -2457,7 +2472,7 @@
             "en": "Run the pinned suite against every model, prompt and adapter change before it is promoted"
           },
           "description": {
-            "en": "An update that skips the suite ships an unmeasured refusal boundary, and prompt or adapter edits do this more often than weight changes because they feel small. Every candidate \u2014 new weights, a changed system prompt, a swapped adapter, a widened tool grant \u2014 runs the corpus version pinned for that release, scored per attack family, with promotion waiting on the outcome. Comparison against the previous release is what turns a score into a regression signal: a single category whose refusal rate fell is a failure even when the aggregate looks healthy, and the pipeline should say so without anyone opening a dashboard. File each release's report with the promotion decision it drove."
+            "en": "An update that skips the suite ships an unmeasured refusal boundary, and prompt or adapter edits do this more often than weight changes because they feel small. Every candidate — new weights, a changed system prompt, a swapped adapter, a widened tool grant — runs the corpus version pinned for that release, scored per attack family, with promotion waiting on the outcome. Comparison against the previous release is what turns a score into a regression signal: a single category whose refusal rate fell is a failure even when the aggregate looks healthy, and the pipeline should say so without anyone opening a dashboard. File each release's report with the promotion decision it drove."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -2543,6 +2558,9 @@
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "Platform Engineering / Security Engineering",
+      "objective": "To ensure every model interaction leaves a structured, versioned record of the request, the retrieval that grounded it, the safety verdict that gated it and the response served.",
+      "successCriteria": "Every inference path in the inventory writes to a named store under a stated retention period.\nEntries that do not fit the versioned schema are refused at the write seam rather than stored partial.\nAllowed, blocked and redacted interactions each record the rule that fired, its threshold and the action that followed.\nRequests served in the period reconcile to the entries held for them, including the retrieval set behind each grounded answer.",
+      "testingMethodology": "Evidence:\nObtain the dated inventory of model-calling paths with the fields, destination store and retention of each.\nCollect the versioned schema file and the build log showing a malformed entry refused.\nGather log extracts for an allowed, a blocked and a redacted request.\nRetrieve a retrieval-event export for one grounded answer and the period coverage report.\n\nAnalysis:\nIssue a request down each inventoried path and locate the entry it wrote.\nSubmit an entry missing a required field and confirm the write seam rejected it.\nCheck that the blocked request names its firing rule and threshold, and that the redacted one shows what was withheld.\nRead the retrieval export for the query as issued, the snapshot searched and the chunks placed in the prompt.\n\nOutput:\nA path coverage table pairing each inference route with the record it produced.\nA schema conformance result naming rejected writes and the fields at fault.\nA reconciliation summary giving requests served, conforming entries held and defects opened.",
       "requirementCodes": [
         "C12.1.1",
         "C12.1.2",
@@ -2764,6 +2782,9 @@
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "Security Engineering / Detection and Response",
+      "objective": "To ensure attempts to jailbreak, inject into or systematically probe the model are visible in telemetry and reach on-call with the context needed to act on them.",
+      "successCriteria": "Every catalogued attack behaviour names the log stream that would reveal it, with unobservable ones marked as such.\nDeployed detections carry a measured catch rate on known attacks and a false-positive rate on benign traffic.\nToken consumption and call sequences attribute to the caller behind them, against thresholds derived from measured baselines.\nAlerts reach on-call carrying the offending prompt, the caller and the firing rule, and each closes with a recorded verdict.",
+      "testingMethodology": "Evidence:\nObtain the attack-behaviour catalogue and the detection rule definitions currently deployed.\nCollect the scored run giving per-rule catch and false-positive rates over the labelled corpus.\nGather the caller attribution schema and the threshold table, each limit beside the baseline it came from.\nRetrieve the period alert export and the most recent detection retest report.\n\nAnalysis:\nSend a known jailbreak string down a production path and confirm the detection fired.\nCheck the alert payload named the prompt, the caller and the rule, and that a verdict was recorded against it.\nFollow a probing sequence across sessions and confirm correlation attributed it to a single caller.\nRead the retest results for samples that got through and the disposition recorded against each miss.\n\nOutput:\nA rule inventory with catch and false-positive rates, naming any rule dormant for the period.\nAn alert sample assessed for payload completeness and time to acknowledgement.\nA miss register listing the samples that evaded production rules and the fix agreed for each.",
       "requirementCodes": [
         "C12.2.1",
         "C12.2.2",
@@ -2778,7 +2799,7 @@
             "en": "Catalogue the attack behaviours the detection layer must catch and the telemetry each one shows up in"
           },
           "description": {
-            "en": "Name the adversary moves before buying or building anything to spot them: instruction-override phrasings, role-play escalation, injected instructions arriving inside retrieved documents or tool output, slow multi-turn probing that maps the system prompt and the guardrails around it, encoded payloads used to smuggle data past an output filter, and automated loops that burn tokens. Against each one record where it would actually be observable \u2014 the prompt field, the retrieved chunk, the tool-call arguments, the response body, the per-key request stream. A behaviour no stream carries cannot be detected however good the rule is, and marking those is the point of doing this first. Attach the catalogue with the unobservable behaviours marked."
+            "en": "Name the adversary moves before buying or building anything to spot them: instruction-override phrasings, role-play escalation, injected instructions arriving inside retrieved documents or tool output, slow multi-turn probing that maps the system prompt and the guardrails around it, encoded payloads used to smuggle data past an output filter, and automated loops that burn tokens. Against each one record where it would actually be observable — the prompt field, the retrieved chunk, the tool-call arguments, the response body, the per-key request stream. A behaviour no stream carries cannot be detected however good the rule is, and marking those is the point of doing this first. Attach the catalogue with the unobservable behaviours marked."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -2819,7 +2840,7 @@
             "en": "Write the jailbreak and prompt-injection detections and score them against a labelled corpus"
           },
           "description": {
-            "en": "Build a detector for each single-turn behaviour the catalogue names, and add the rules no bought classifier can know: your own system-prompt wording appearing back in a user turn, your internal tool names, your hostnames, the encodings your stack decodes. Then measure what you built \u2014 run a corpus of known attack prompts and a same-sized sample of ordinary production traffic through the rules and record, per rule, how many attacks it caught and how many normal requests it flagged. A detector shipped without that second number gets muted during the first busy week and nobody restores it. The evidence is the rule set together with the scored run that produced both figures."
+            "en": "Build a detector for each single-turn behaviour the catalogue names, and add the rules no bought classifier can know: your own system-prompt wording appearing back in a user turn, your internal tool names, your hostnames, the encodings your stack decodes. Then measure what you built — run a corpus of known attack prompts and a same-sized sample of ordinary production traffic through the rules and record, per rule, how many attacks it caught and how many normal requests it flagged. A detector shipped without that second number gets muted during the first busy week and nobody restores it. The evidence is the rule set together with the scored run that produced both figures."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -2860,7 +2881,7 @@
             "en": "Correlate calls per caller and session to expose probing sequences, token burn and covert-channel traffic"
           },
           "description": {
-            "en": "One request in a probing campaign looks unremarkable; the campaign only appears once turns are joined to the identity driving them. Tag every inference call with tenant, end user, API key or service principal, agent run and model version, then derive per-actor series from it: prompt and completion tokens, request rate, refusal and filter-hit share, similarity between consecutive prompts where someone is walking a guardrail one word at a time, and response shape \u2014 encoded blobs, entropy or size sitting well above that caller's normal. Derive each threshold from a measured week of real usage instead of a round number somebody liked, and keep the measurement next to the threshold. File the attribution schema alongside the threshold table showing where every figure came from."
+            "en": "One request in a probing campaign looks unremarkable; the campaign only appears once turns are joined to the identity driving them. Tag every inference call with tenant, end user, API key or service principal, agent run and model version, then derive per-actor series from it: prompt and completion tokens, request rate, refusal and filter-hit share, similarity between consecutive prompts where someone is walking a guardrail one word at a time, and response shape — encoded blobs, entropy or size sitting well above that caller's normal. Derive each threshold from a measured week of real usage instead of a round number somebody liked, and keep the measurement next to the threshold. File the attribution schema alongside the threshold table showing where every figure came from."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -2901,7 +2922,7 @@
             "en": "Route each detection to on-call carrying the offending prompt, the caller and the rule that fired"
           },
           "description": {
-            "en": "An alert reading only \"rule 14 fired at 03:12\" sends the responder back into production logs to rebuild what happened, and that reconstruction is where the response time goes. Every firing leaves with the triggering prompt excerpt redacted to whatever the logging standard allows, the caller and session identifiers, the model and version that served it, the rule and its score, and what the system actually did \u2014 answered, refused or filtered. Triage then runs against the alert itself: each one is closed as a real attempt, benign traffic or a rule defect, with the action taken written down. The period's alert export, verdicts included, is what shows the loop ran rather than fired into an unread channel."
+            "en": "An alert reading only \"rule 14 fired at 03:12\" sends the responder back into production logs to rebuild what happened, and that reconstruction is where the response time goes. Every firing leaves with the triggering prompt excerpt redacted to whatever the logging standard allows, the caller and session identifiers, the model and version that served it, the rule and its score, and what the system actually did — answered, refused or filtered. Triage then runs against the alert itself: each one is closed as a real attempt, benign traffic or a rule defect, with the action taken written down. The period's alert export, verdicts included, is what shows the loop ran rather than fired into an unread channel."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -2942,7 +2963,7 @@
             "en": "Retest the deployed detections against fresh attack samples and report what got through"
           },
           "description": {
-            "en": "Detections rot quietly. A model upgrade rewrites refusal wording a rule matched on, a vendor classifier changes behind its API, a noisy rule is muted during an incident and never restored, and nothing goes red because a detector that never fires looks exactly like a system under no attack. Replay the attack corpus through the pipeline as deployed \u2014 not a copy of the rules in a branch \u2014 extended with samples published since the last pass and any attempt that reached a full response in the period. Every miss ends as a new or amended rule, or as a written acceptance naming who accepted it. Report caught, missed and dormant counts beside the previous review's numbers so decay shows up as a trend."
+            "en": "Detections rot quietly. A model upgrade rewrites refusal wording a rule matched on, a vendor classifier changes behind its API, a noisy rule is muted during an incident and never restored, and nothing goes red because a detector that never fires looks exactly like a system under no attack. Replay the attack corpus through the pipeline as deployed — not a copy of the rules in a branch — extended with samples published since the last pass and any attempt that reached a full response in the period. Every miss ends as a new or amended rule, or as a written acceptance naming who accepted it. Report caught, missed and dormant counts beside the previous review's numbers so decay shows up as a trend."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -2983,10 +3004,13 @@
     {
       "code": "AISVS-C12.3",
       "title": "Model, Data & Performance Drift Detection",
-      "description": "Implements AISVS-C12.3: monitor the input distribution a deployed model actually sees, flag outputs whose claims their retrieved sources do not support, and follow both as a time series per model version, so degradation shows up as a trend rather than as one bad day \u2014 with the reference baseline moved only when the change beneath it was deliberate.",
+      "description": "Implements AISVS-C12.3: monitor the input distribution a deployed model actually sees, flag outputs whose claims their retrieved sources do not support, and follow both as a time series per model version, so degradation shows up as a trend rather than as one bad day — with the reference baseline moved only when the change beneath it was deliberate.",
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "ML Platform Engineering / Security Engineering",
+      "objective": "To ensure degradation in a deployed model surfaces as a trend in input drift and unsupported-claim rate, with the reference baseline moved only where the change beneath it was deliberate.",
+      "successCriteria": "Each model version has a reference window giving its feature statistics, the sample size behind them and its starting rate.\nEvery drift threshold in use was replayed over past traffic, with the false-alarm count it produced recorded.\nResponses whose claims the retrieved sources do not support are flagged by a detector of measured precision and recall.\nExcursions are triaged to a cause before any reference window moves, and each move names the change that justified it.",
+      "testingMethodology": "Evidence:\nObtain the reference-window record held for each deployed model version.\nCollect the method-validation record showing each distribution statistic replayed with the cut-off chosen.\nGather the detector calibration report and the adjudicated response sample behind it.\nRetrieve the period series export and the excursion triage record.\n\nAnalysis:\nRecompute a distribution distance over a traffic window and compare it with the published point.\nConfirm every series point carries its denominator and is split by model version.\nRe-adjudicate a sample of flagged and unflagged responses against the sources retrieved for them.\nTrace each excursion to the cause recorded and look for a baseline moved without one.\n\nOutput:\nA per-version series with each deployment marked where it landed.\nA detector accuracy result drawn from the re-adjudicated sample.\nAn excursion register giving cause, disposition and any reference window moved.",
       "requirementCodes": [
         "C12.3.1",
         "C12.3.2",
@@ -2999,7 +3023,7 @@
             "en": "Baseline the input distribution and hallucination rate each model version is measured against"
           },
           "description": {
-            "en": "Every drift signal in this control is a comparison, and this task fixes what it compares to. Take a window of real production traffic for each deployed model version \u2014 not the evaluation set the model was released against, which was curated and is not what users send \u2014 and summarise what it holds: the distribution of each input feature, embedding-space statistics, request length and language mix, plus the hallucination rate measured on a scored sample of that same window. Note the sample size behind every figure: a baseline built from a quiet fortnight reports drift against every ordinary week that follows. Attach the baseline record, one per model version in service."
+            "en": "Every drift signal in this control is a comparison, and this task fixes what it compares to. Take a window of real production traffic for each deployed model version — not the evaluation set the model was released against, which was curated and is not what users send — and summarise what it holds: the distribution of each input feature, embedding-space statistics, request length and language mix, plus the hallucination rate measured on a scored sample of that same window. Note the sample size behind every figure: a baseline built from a quiet fortnight reports drift against every ordinary week that follows. Attach the baseline record, one per model version in service."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -3035,7 +3059,7 @@
             "en": "Select the distribution-distance methods and validate the threshold each one calls drift at"
           },
           "description": {
-            "en": "A drift alarm is worth no more than the threshold behind it, and a threshold chosen by intuition either fires every day or never at all. Pick a distance measure suited to each kind of input \u2014 a population-stability or chi-square style statistic for categorical fields, a two-sample test for numeric ones, a distance in embedding space for free text \u2014 then test the pick by replaying history: windows where the input population is known to have moved should cross the line, quiet windows should not. Settle the comparison window, the minimum sample count below which no comparison is made, and the number that divides noise from a real move. Skip this and nobody can say why the number is the number, so the first noisy fortnight ends with someone quietly raising it."
+            "en": "A drift alarm is worth no more than the threshold behind it, and a threshold chosen by intuition either fires every day or never at all. Pick a distance measure suited to each kind of input — a population-stability or chi-square style statistic for categorical fields, a two-sample test for numeric ones, a distance in embedding space for free text — then test the pick by replaying history: windows where the input population is known to have moved should cross the line, quiet windows should not. Settle the comparison window, the minimum sample count below which no comparison is made, and the number that divides noise from a real move. Skip this and nobody can say why the number is the number, so the first noisy fortnight ends with someone quietly raising it."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -3076,7 +3100,7 @@
             "en": "Build the output check that flags claims the retrieved sources do not support"
           },
           "description": {
-            "en": "Hallucinations cannot be counted before somebody has written down what counts as one, so this task produces the judgement and the machine that applies it together. Begin with an adjudicated sample of real responses, each marked by a person as supported or unsupported by the material the system retrieved for it; then implement the automated check \u2014 claim-to-source matching, self-consistency across resampled generations, or both \u2014 and measure it against that sample until its precision and recall are known numbers rather than hopes. The verdict and its score belong on the stored response, since a detector whose output goes nowhere can never be totalled by the task after this one. An uncalibrated check reports a falling rate that is only the detector going blind."
+            "en": "Hallucinations cannot be counted before somebody has written down what counts as one, so this task produces the judgement and the machine that applies it together. Begin with an adjudicated sample of real responses, each marked by a person as supported or unsupported by the material the system retrieved for it; then implement the automated check — claim-to-source matching, self-consistency across resampled generations, or both — and measure it against that sample until its precision and recall are known numbers rather than hopes. The verdict and its score belong on the stored response, since a detector whose output goes nowhere can never be totalled by the task after this one. An uncalibrated check reports a falling rate that is only the detector going blind."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -3163,7 +3187,7 @@
             "en": "Triage every drift excursion into expected change or genuine degradation before moving the baseline"
           },
           "description": {
-            "en": "Not every movement is trouble: a campaign launched in a new country moves the input distribution with nothing degrading, while a slow climb in unsupported claims degrades badly with the distribution sitting still. Work through the period's excursions one at a time and name what caused each \u2014 a release, a seasonal pattern, an upstream data source that changed shape, or a fall in output quality nobody can account for \u2014 then let the cause decide the disposition. Rebaselining is the half that does damage: moving the reference window is right after a change the organisation chose and made, and is a way of hiding a problem while the cause is still unknown. An excursion nobody explained stays open into the next period."
+            "en": "Not every movement is trouble: a campaign launched in a new country moves the input distribution with nothing degrading, while a slow climb in unsupported claims degrades badly with the distribution sitting still. Work through the period's excursions one at a time and name what caused each — a release, a seasonal pattern, an upstream data source that changed shape, or a fall in output quality nobody can account for — then let the cause decide the disposition. Rebaselining is the half that does damage: moving the reference window is right after a change the organisation chose and made, and is a way of hiding a problem while the cause is still unknown. An excursion nobody explained stays open into the next period."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -3208,6 +3232,9 @@
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "AI Platform Engineering / Security Engineering",
+      "objective": "To ensure an agent's proposed action is judged while it can still be stopped, that a named approver stands behind each security-critical one, and that every halt and resumption is recorded.",
+      "successCriteria": "Every agent-invocable operation is registered, the security-critical set marked and a named approver held against each.\nThe gate analyses a proposed action before the tool is called and defaults to refusal when no verdict is available.\nSecurity-critical executions carry the approving identity, with approval and execution timestamped separately.\nEach kill-switch activation names its trigger, the work in flight and the authority that resumed the agent.",
+      "testingMethodology": "Evidence:\nObtain the register of agent-invocable operations with its security-critical marking and named approvers.\nCollect the design note and deployed code path for the interception point, showing the fail-closed default.\nGather audit rows for one high-risk operation carrying approver, gate verdict and both timestamps.\nRetrieve the period log of agent halts and the most recent gate exercise report.\n\nAnalysis:\nSubmit an action the policy forbids and confirm the gate refused it before any tool was invoked.\nInspect the downstream systems for side effects left by the refused actions.\nVerify each security-critical execution in the sample carries an approver drawn from the register.\nRead every halt entry for its trigger, the disposition of the blocked calls and the restart authority.\n\nOutput:\nAn injected-action test record giving the verdict returned and whether the downstream system was touched.\nAn approver coverage result naming executions that ran without a recorded approval.\nA halt and override summary for the period, one line per activation.",
       "requirementCodes": [
         "C12.4.1",
         "C12.4.2",
@@ -3219,7 +3246,7 @@
             "en": "List the agent actions classed as security-critical and the approver each one requires"
           },
           "description": {
-            "en": "Go through every tool, integration and API call the agent is able to invoke and decide, one invocation at a time, which of them can move money, grant access, delete data, deploy code or touch a production system \u2014 those form the security-critical set and the rest do not. For each member of that set, name the human or service identity entitled to approve it and state whether a kill switch can halt it mid-flight. Without this list the pre-execution check has nothing to fire on and the audit record has no field to populate, so every action is logged alike and the severe ones disappear into the volume. Attach the classified action register."
+            "en": "Go through every tool, integration and API call the agent is able to invoke and decide, one invocation at a time, which of them can move money, grant access, delete data, deploy code or touch a production system — those form the security-critical set and the rest do not. For each member of that set, name the human or service identity entitled to approve it and state whether a kill switch can halt it mid-flight. Without this list the pre-execution check has nothing to fire on and the audit record has no field to populate, so every action is logged alike and the severe ones disappear into the volume. Attach the classified action register."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -3260,7 +3287,7 @@
             "en": "Build the pre-execution gate that analyses a proposed agent action while it can still be stopped"
           },
           "description": {
-            "en": "Put an interception point between the agent deciding on an action and the action reaching the system that carries it out, so the proposed call \u2014 target, parameters and the reasoning trace that produced it \u2014 is scored against the behaviour policy before anything happens. A verdict computed after execution is a post-mortem: the money has already moved. Decide what the gate does with each verdict, allow, hold for approval or block, and make an unavailable analyser block rather than pass, because an outage that lets calls through converts a control into a bypass. A reviewer reads the design note next to the code path it describes."
+            "en": "Put an interception point between the agent deciding on an action and the action reaching the system that carries it out, so the proposed call — target, parameters and the reasoning trace that produced it — is scored against the behaviour policy before anything happens. A verdict computed after execution is a post-mortem: the money has already moved. Decide what the gate does with each verdict, allow, hold for approval or block, and make an unavailable analyser block rather than pass, because an outage that lets calls through converts a control into a bypass. A reviewer reads the design note next to the code path it describes."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -3342,7 +3369,7 @@
             "en": "Log every kill-switch activation, its trigger and the override that resumed the agent"
           },
           "description": {
-            "en": "Each time an agent is halted \u2014 an operator pulling the switch, the gate tripping, an automated breaker firing \u2014 write a record naming what caused it, the actions in flight at that instant and what became of them. The resumption carries equal weight: who turned the agent back on, on whose authority, and whether the stopped action was afterwards re-run or abandoned. Halts happen rarely and in a hurry, which is precisely why nobody can reconstruct one a week later unless it was written down as it happened. Hold the period's log, and where the switch was never pulled say so explicitly instead of leaving the period blank."
+            "en": "Each time an agent is halted — an operator pulling the switch, the gate tripping, an automated breaker firing — write a record naming what caused it, the actions in flight at that instant and what became of them. The resumption carries equal weight: who turned the agent back on, on whose authority, and whether the stopped action was afterwards re-run or abandoned. Halts happen rarely and in a hurry, which is precisely why nobody can reconstruct one a week later unless it was written down as it happened. Hold the period's log, and where the switch was never pulled say so explicitly instead of leaving the period blank."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -3383,7 +3410,7 @@
             "en": "Exercise the gate with actions that must be refused and trace what actually reached the tools"
           },
           "description": {
-            "en": "Once a quarter, put deliberately disallowed actions in front of the agent \u2014 a payment over the ceiling, a permission grant with no ticket behind it, a deletion outside the retention rule \u2014 and follow each one through to the system that would have performed it. Whether the gate produced a block verdict is the easy half; the question that matters is whether the downstream system stayed untouched, because a verdict that is logged and then ignored looks identical on a dashboard to one that was enforced. In the same pass, take the period's executed security-critical actions and check that each carries an approver who was in fact entitled to give it. Findings return to the gate's owners with a remediation date against each."
+            "en": "Once a quarter, put deliberately disallowed actions in front of the agent — a payment over the ceiling, a permission grant with no ticket behind it, a deletion outside the retention rule — and follow each one through to the system that would have performed it. Whether the gate produced a block verdict is the easy half; the question that matters is whether the downstream system stayed untouched, because a verdict that is logged and then ignored looks identical on a dashboard to one that was enforced. In the same pass, take the period's executed security-critical actions and check that each carries an approver who was in fact entitled to give it. Findings return to the gate's owners with a remediation date against each."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -3428,6 +3455,9 @@
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "ML Platform Engineering / Security Engineering",
+      "objective": "To ensure a deployed model can be traced back through every dataset, transformation and labelling decision behind it, on records no engineer is able to rewrite afterwards.",
+      "successCriteria": "Each deployed model version maps to its upstream datasets, jobs and ingested corpora, with unrecorded hops marked.\nPipeline jobs emit input and output digests, and ingested documents carry provenance fields from their batch.\nModel-change and labelling records sit hash-chained in append-only storage, and a tamper attempt is denied and logged.\nEach label applied, overridden or re-adjudicated is attributed to an annotator and the guideline revision then in force.",
+      "testingMethodology": "Evidence:\nObtain the lineage map held for a sampled released model version.\nCollect the records emitted by one full pipeline run, with digests per job and provenance per document batch.\nGather the append-only storage configuration, the hash chain and the denied tamper attempt.\nRetrieve the labelling ledger for the period and the reconciliation write-up.\n\nAnalysis:\nWalk the lineage from the released artefact back to an ingested corpus and note where the chain breaks.\nRecompute one job's output digest and compare it with the lineage record written for that job.\nAttempt to alter a stored model-change entry and confirm the write was refused and the attempt recorded.\nVerify ledger entries name the annotator and the guideline revision current when the label was applied.\n\nOutput:\nA lineage trace for the sampled version naming each missing entry and the stage that owed it.\nA digest comparison result across the sampled pipeline run.\nAn immutability test record holding the denial captured and the hash chain checked.",
       "requirementCodes": [
         "C12.5.1",
         "C12.5.2",
@@ -3645,10 +3675,13 @@
     {
       "code": "AISVS-C2",
       "title": "C2 Input Validation",
-      "description": "Implements AISVS-C2: validates what arrives at the model \u2014 Unicode normalisation before tokenization, decoding of encoding and representation smuggling, a character allowlist and a context-window ceiling, instruction-hierarchy separation of untrusted content, and injection, many-shot and harmful-content screening across every modality a request carries.",
+      "description": "Implements AISVS-C2: validates what arrives at the model — Unicode normalisation before tokenization, decoding of encoding and representation smuggling, a character allowlist and a context-window ceiling, instruction-hierarchy separation of untrusted content, and injection, many-shot and harmful-content screening across every modality a request carries.",
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "Security engineering",
+      "objective": "To ensure untrusted content is normalised, decoded and bounded before tokenization, and screened for injection and flooding in every modality a request can carry.",
+      "successCriteria": "Every untrusted input path is inventoried with its origin, modality, destination prompt and current checking.\nText reaching the tokenizer is Unicode-normalised, stripped of invisible characters, fully decoded and under the token ceiling.\nA planted override inside untrusted content does not displace the system directive above it in the instruction hierarchy.\nRejected inputs are held in both their arriving and normalised form with the screening step that acted on them.",
+      "testingMethodology": "Evidence:\nObtain the dated inventory of untrusted input paths, each with its modality and destination prompt.\nCollect the sanitiser code path and its unit tests for Unicode form, invisible characters, nested decoding, allowlisted characters and the token ceiling.\nGather the screening configuration: classifiers per modality, blocking and review scores, and unsupported-language behaviour.\nRetrieve the period's input-validation decision log and the latest smuggling corpus run report.\n\nAnalysis:\nSend homoglyph, zero-width and multiply-encoded payloads down each path and read the normalised form recorded.\nPlant an override instruction inside untrusted content and confirm the system directive survived it.\nSubmit a many-shot flooding prompt and check that both the token ceiling and the flooding screen acted.\nReview the corpus run for payload families that reached the model and the rule that missed each one.\n\nOutput:\nA path-by-path sanitisation result placing arriving text beside its normalised form.\nAn instruction-hierarchy test record showing which directive held.\nA corpus run report naming families blocked, families through, and the re-run result after each fix.",
       "requirementCodes": [
         "C2.1.1",
         "C2.1.2",
@@ -3669,7 +3702,7 @@
             "en": "Inventory every untrusted input path that reaches a prompt, with the modality it carries"
           },
           "description": {
-            "en": "Validation gets installed where the product is most visible \u2014 the chat box \u2014 while retrieved document chunks, tool results, uploaded files, image captions and third-party API responses reach the same tokenizer through code that never calls it. Trace each caller of prompt assembly and write one row per path giving where the content comes from, the modality it arrives as, the prompt it lands in and whatever checking it meets today. Mark the paths carrying text an earlier model turn produced, because that re-enters the window looking like the system's own words. Attach the inventory dated at the point it was compiled."
+            "en": "Validation gets installed where the product is most visible — the chat box — while retrieved document chunks, tool results, uploaded files, image captions and third-party API responses reach the same tokenizer through code that never calls it. Trace each caller of prompt assembly and write one row per path giving where the content comes from, the modality it arrives as, the prompt it lands in and whatever checking it meets today. Mark the paths carrying text an earlier model turn produced, because that re-enters the window looking like the system's own words. Attach the inventory dated at the point it was compiled."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -3710,7 +3743,7 @@
             "en": "Build the pre-tokenizer stage that normalises, decodes and bounds untrusted text"
           },
           "description": {
-            "en": "Everything downstream compares strings whose encoding the sender chose, so this stage runs once, on the single path all prompt assembly goes through, before any tokenizer or classifier sees the text. Normalise to one Unicode form, take out the invisible and direction-changing characters, and decode layered encodings until the text stops changing \u2014 a payload wrapped twice in base64 and once in percent-encoding is inert to a screen that decodes a single round. Hold each field to the characters it legitimately needs, rewrite the chat template's own delimiters as literals so a caller cannot open a system turn inside their own message, and take the token count after all of that, refusing an oversized request instead of truncating it into something nobody wrote. Attach the stage's code path with the unit tests covering each rule."
+            "en": "Everything downstream compares strings whose encoding the sender chose, so this stage runs once, on the single path all prompt assembly goes through, before any tokenizer or classifier sees the text. Normalise to one Unicode form, take out the invisible and direction-changing characters, and decode layered encodings until the text stops changing — a payload wrapped twice in base64 and once in percent-encoding is inert to a screen that decodes a single round. Hold each field to the characters it legitimately needs, rewrite the chat template's own delimiters as literals so a caller cannot open a system turn inside their own message, and take the token count after all of that, refusing an oversized request instead of truncating it into something nobody wrote. Attach the stage's code path with the unit tests covering each rule."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -3756,7 +3789,7 @@
             "en": "Enforce the instruction hierarchy and screen untrusted segments for injection and flooding"
           },
           "description": {
-            "en": "A normalised string is still a string that can say 'ignore the above'. Wrap retrieved and user-supplied content in a segment the system prompt names as data, keep the system directive above anything that segment asserts, and prove it with a test that plants an override inside the data and asserts the directive still governs. Then screen before the call goes out: an injection classifier over each untrusted segment, a ceiling on repeated exemplar pairs so a many-shot flood is caught by its shape rather than its wording, harmful-content categories with the block and review scores written beside them, and a stated outcome \u2014 refuse, strip the segment, or send to a person \u2014 for each. A language the screen does not cover fails closed instead of passing unscored, non-text attachments get checks of their own, and the request is scored as one whole so a payload split between an image and its caption is not waved through in halves. File the screening configuration with the thresholds and the routing beside each outcome."
+            "en": "A normalised string is still a string that can say 'ignore the above'. Wrap retrieved and user-supplied content in a segment the system prompt names as data, keep the system directive above anything that segment asserts, and prove it with a test that plants an override inside the data and asserts the directive still governs. Then screen before the call goes out: an injection classifier over each untrusted segment, a ceiling on repeated exemplar pairs so a many-shot flood is caught by its shape rather than its wording, harmful-content categories with the block and review scores written beside them, and a stated outcome — refuse, strip the segment, or send to a person — for each. A language the screen does not cover fails closed instead of passing unscored, non-text attachments get checks of their own, and the request is scored as one whole so a payload split between an image and its caption is not waved through in halves. File the screening configuration with the thresholds and the routing beside each outcome."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -3802,7 +3835,7 @@
             "en": "Capture each rejected or flagged input in both its raw and normalised form"
           },
           "description": {
-            "en": "Keep one entry for every input the stage rejected, rewrote or let through carrying a suspicion marker, holding the text as it arrived \u2014 bytes and encoding intact, stored as an inert literal \u2014 beside the text the normaliser produced, and which screening step acted on it. The pair is the whole value: a homoglyph string or a nested base64 wrapper reads as innocent once decoded and as unreadable noise before, so an entry carrying only one side cannot settle whether a real attempt was stopped or a French surname was eaten by the character allowlist. Mark each entry on review as a genuine attempt or a false positive, and let those markings drive the next change to thresholds and allowlists. Without the record the stage's settings can only be argued about, never measured, and the usual outcome is that they are loosened after one loud complaint. Attach the input-validation decision log for the period."
+            "en": "Keep one entry for every input the stage rejected, rewrote or let through carrying a suspicion marker, holding the text as it arrived — bytes and encoding intact, stored as an inert literal — beside the text the normaliser produced, and which screening step acted on it. The pair is the whole value: a homoglyph string or a nested base64 wrapper reads as innocent once decoded and as unreadable noise before, so an entry carrying only one side cannot settle whether a real attempt was stopped or a French surname was eaten by the character allowlist. Mark each entry on review as a genuine attempt or a false positive, and let those markings drive the next change to thresholds and allowlists. Without the record the stage's settings can only be argued about, never measured, and the usual outcome is that they are loosened after one loud complaint. Attach the input-validation decision log for the period."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -3893,6 +3926,9 @@
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "ML Platform Lead / Engineering Manager",
+      "objective": "To ensure only signed model artefacts of known provenance serve traffic, and that every model change is re-tested, released in stages and reversible to a complete earlier state.",
+      "successCriteria": "Every artefact serving production traces to the build run that produced it, with unidentifiable builds flagged.\nCheckpoints and quantised copies are signed as their build stage completes, against published verification keys.\nA tampered artefact is refused at deployment admission and again when a process loads the weights.\nCandidate builds clear the safety suite and reach production in staged traffic, with a rollback that restores every component.",
+      "testingMethodology": "Evidence:\nObtain the dated register of loaded artefacts with digest, build run, environment, endpoint and owning team.\nCollect the signing configuration for each pipeline stage and a signature payload binding a digest to its run.\nGather the admission-controller and model-loader verification settings with the refusal log for a tampered artefact.\nRetrieve per-release records covering suite results, quantisation re-test and rollout timeline, plus the rollback drill record.\n\nAnalysis:\nCompare the digests the serving fleet reports against the register and query anything unmatched.\nPresent an altered artefact at admission and again at load, confirming both points refused it.\nCheck that a quantised copy was re-tested rather than inheriting its parent build's result.\nRead the drill record for components missed on restore and the shared-state findings it raised.\n\nOutput:\nA fleet-to-register reconciliation naming artefacts that cannot be traced to a build.\nA two-point verification result covering admission and load.\nA release record per candidate giving suite outcome, rollout stages and the rollback completeness finding.",
       "requirementCodes": [
         "C3.1.1",
         "C3.1.2",
@@ -4085,7 +4121,7 @@
             "en": "Exercise a rollback of a live model version and confirm the restored state is complete"
           },
           "description": {
-            "en": "Rollback is the one path here that goes unused until the day it has to work, and a partial restore is the usual outcome: weights revert while the tokenizer, the adapter set, the prompt template, the feature schema or a warm cache stay on the new version, leaving a hybrid nobody has ever tested. Pick a model currently taking traffic, trigger the reversal the way the automated trigger would, and compare every component of the restored deployment against the register row for the version being returned to. While both versions are briefly live, look for state the older one reads that the newer one wrote \u2014 cached entries, session memory, embeddings \u2014 and close the review by reconciling the register against the digests the serving fleet reports."
+            "en": "Rollback is the one path here that goes unused until the day it has to work, and a partial restore is the usual outcome: weights revert while the tokenizer, the adapter set, the prompt template, the feature schema or a warm cache stay on the new version, leaving a hybrid nobody has ever tested. Pick a model currently taking traffic, trigger the reversal the way the automated trigger would, and compare every component of the restored deployment against the register row for the version being returned to. While both versions are briefly live, look for state the older one reads that the newer one wrote — cached entries, session memory, embeddings — and close the review by reconciling the register against the digests the serving fleet reports."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -4131,10 +4167,13 @@
     {
       "code": "AISVS-C4",
       "title": "C4 Infrastructure, Configuration & Deployment Security",
-      "description": "Implements AISVS-C4: run model workloads inside isolated sandboxes on attested hardware, restrict the serialization formats a loader will accept, and keep weights protected wherever they execute \u2014 cluster accelerators, edge boxes and mobile devices.",
+      "description": "Implements AISVS-C4: run model workloads inside isolated sandboxes on attested hardware, restrict the serialization formats a loader will accept, and keep weights protected wherever they execute — cluster accelerators, edge boxes and mobile devices.",
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "Platform Engineering / Infrastructure Security",
+      "objective": "To ensure model workloads execute only inside confined sandboxes on attested hardware, and that weights stay protected on cluster accelerators, edge boxes and handsets alike.",
+      "successCriteria": "Every runtime, accelerator and device executing a model is registered with its firmware level and confidential-computing capability.\nA workload cannot read beyond its own sandbox, and accelerator memory reads back as zero once a job ends.\nLoaders accept only signed artefacts in serialization formats that execute no code as they load.\nA host or device serves only after its attestation is verified, and jobs are held back where verification fails.",
+      "testingMethodology": "Evidence:\nObtain the execution-environment register covering hosts, accelerators, firmware levels and accepted formats.\nCollect the per-runtime sandbox profiles and the accelerator partitioning settings in force.\nGather the loader configuration naming accepted formats and signing keys, with a rejected-checkpoint transcript.\nRetrieve the period admission record of measured firmware, enclave quotes, verdicts and jobs held back.\n\nAnalysis:\nAttempt a read outside a workload's sandbox and confirm the runtime denied it.\nRead device memory back after a job completes and check it returns zero.\nOffer the loader a code-bearing serialization format and confirm it refused to load.\nCompare the nodes currently serving against the admission record and query any that served without a verified quote.\n\nOutput:\nAn environment reconciliation naming hosts and devices serving unattested.\nA negative-test record listing each forbidden action attempted, the response received, and a ticket where nothing refused.\nA memory residue measurement alongside the loader rejection transcript.",
       "requirementCodes": [
         "C4.1.1",
         "C4.1.2",
@@ -4198,7 +4237,7 @@
             "en": "Configure each inference runtime so a workload cannot read beyond its own sandbox"
           },
           "description": {
-            "en": "Give every runtime a profile that states the syscalls it may make, mounts the weights read-only and denies egress to anything outside the allowlisted endpoints, then carry the same discipline down to the accelerator: one tenant per device slice, device memory zeroed between jobs, peer-to-peer links limited to the interconnect topology that was approved. On-device inference gets the same process and memory separation as the fleet. Shared device memory is the leak that leaves no trace in application logs \u2014 the next tenant simply reads what the last one left behind, which is why the scrub has to be demonstrated rather than assumed."
+            "en": "Give every runtime a profile that states the syscalls it may make, mounts the weights read-only and denies egress to anything outside the allowlisted endpoints, then carry the same discipline down to the accelerator: one tenant per device slice, device memory zeroed between jobs, peer-to-peer links limited to the interconnect topology that was approved. On-device inference gets the same process and memory separation as the fleet. Shared device memory is the leak that leaves no trace in application logs — the next tenant simply reads what the last one left behind, which is why the scrub has to be demonstrated rather than assumed."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -4244,7 +4283,7 @@
             "en": "Restrict the loader to signed artefacts in formats that execute no code"
           },
           "description": {
-            "en": "Pickle-backed checkpoints run attacker code at the moment of deserialisation, before a single token is generated, so the loader \u2014 not a scanner sitting downstream of it \u2014 is where the format decision has to be enforced. Set the accepted list, close the paths that rebuild arbitrary objects, convert whatever remains in a rejected format and re-hash it, and make signature verification a precondition of mapping weights into memory. Weights bound for a phone or an edge box travel encrypted under a key the device's secure element holds, and are unwrapped there rather than into a readable file on disk."
+            "en": "Pickle-backed checkpoints run attacker code at the moment of deserialisation, before a single token is generated, so the loader — not a scanner sitting downstream of it — is where the format decision has to be enforced. Set the accepted list, close the paths that rebuild arbitrary objects, convert whatever remains in a rejected format and re-hash it, and make signature verification a precondition of mapping weights into memory. Weights bound for a phone or an edge box travel encrypted under a key the device's secure element holds, and are unwrapped there rather than into a readable file on disk."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -4386,6 +4425,9 @@
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "Identity and Access Management / AI Platform Engineering",
+      "objective": "To ensure that access to models, indexes and tools is decided outside the agent that acts on it, on the end user's own entitlements, and never across a tenant boundary.",
+      "successCriteria": "Every model, index, tool endpoint and fine-tuning job an identity can reach carries a sensitivity label.\nAuthorisation is answered outside the agent runtime, denies by default and reads the end user's entitlements.\nAgent credentials expire in minutes, bind to one audience, and elevated roles lapse without anyone revoking them.\nPer-account query runs return only passages that account is cleared for, and no tenant's work is visible to another.",
+      "testingMethodology": "Evidence:\nObtain the dated register of AI resources with its sensitivity labels and high-risk operations.\nCollect the policy decision point's configuration, deny default and allow-listed identifiers.\nRequest the token and elevation policy with one federated agent's issuance trace.\nGather the per-account query run record and the passages returned to each account.\nObtain the tenant isolation write-up for the fine-tuning, cache and batching attempts.\n\nAnalysis:\nTrace register entries to the allow-list and confirm an unlisted resource identifier is refused, not defaulted open.\nConfirm the decision service runs apart from agent runtimes and that no agent writes its own entitlement records.\nCheck token lifetime, audience and scope, and that an expired token is refused at the resource rather than the client.\nCompare the passages each account received against its entitlements, and follow the isolation defects to their fixes.\n\nOutput:\nA coverage finding on the register against the AI resources production exposes.\nAn allow-list and deny-default test result with the refusals observed.\nA token and elevation conformance summary per agent identity.\nA defect list from the retrieval run and the tenant boundary exercise.",
       "requirementCodes": [
         "C5.1.1",
         "C5.1.2",
@@ -4609,6 +4651,9 @@
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "ML Platform / Security Engineering",
+      "objective": "To ensure that model weights, adapters, tokenizers and inference images obtained from outside are judged, scanned and pinned before any serving system can load them.",
+      "successCriteria": "Every imported artefact is recorded against its publisher, its fetch location and a ruling on that source.\nNothing reaches a serving system until a serialisation-aware scan has cleared it and its hash is on record.\nEach release emits a signed bill of materials, and a build carrying a blank component field stops.\nAn adopted upstream version is put through the behavioural baseline before it leaves development.",
+      "testingMethodology": "Evidence:\nObtain the dated import catalogue of artefacts the organisation acquired rather than trained.\nCollect the import gate configuration together with the quarantine scan log for the period.\nRequest the signed AI bill of materials from the latest release and the build log behind it.\nGather the promotion reports naming the digest exercised and the probes run against it.\nObtain the reconciliation of files loaded on production inference hosts.\n\nAnalysis:\nCheck each row names the publisher's own fetch location, and single out artefacts that came by mirror or re-upload.\nVerify the scan log gives a verdict, scanner version and hash for everything admitted, and names what stopped each rejection.\nTrace bill-of-materials entries back to catalogue rows, and confirm the build log shows an incomplete entry halting a run.\nRead the promotion reports for trigger and refusal probes, then match production's loaded files to a BOM entry and hash.\n\nOutput:\nAn exception list of unruled and mirror-sourced import sources.\nA scan and digest coverage figure against the artefacts admitted in the period.\nAn assessment of bill-of-materials completeness and signature validity for the release examined.\nA register of production artefacts matching no bill-of-materials entry, with their disposition.",
       "requirementCodes": [
         "C6.1.1",
         "C6.1.2",
@@ -4665,7 +4710,7 @@
             "en": "Scan each incoming artefact for executable payloads and pin the digest it was admitted under"
           },
           "description": {
-            "en": "Serialised model formats execute code the moment they are loaded, so an artefact that opens cleanly in a notebook has not been checked \u2014 it has been run. Stand up an import path that holds arriving files in quarantine, examines them for embedded scripts and unsafe deserialisation before any serving system can reach them, and writes down the hash of whatever passed. That hash is what keeps a third-party artefact verifiable afterwards: without it nobody can say whether the weights in production are the ones the scanner cleared. The evidence is the gate configuration together with the quarantine log for the period."
+            "en": "Serialised model formats execute code the moment they are loaded, so an artefact that opens cleanly in a notebook has not been checked — it has been run. Stand up an import path that holds arriving files in quarantine, examines them for embedded scripts and unsafe deserialisation before any serving system can reach them, and writes down the hash of whatever passed. That hash is what keeps a third-party artefact verifiable afterwards: without it nobody can say whether the weights in production are the ones the scanner cleared. The evidence is the gate configuration together with the quarantine log for the period."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -4752,7 +4797,7 @@
             "en": "Test every adopted upstream version against the behavioural baseline before it leaves development"
           },
           "description": {
-            "en": "Scanning proves no code runs on load; it says nothing whatever about what the weights do once they are loaded. Each time an upstream version is taken up, put that exact artefact through the probe suite in development \u2014 trigger phrases, refusal behaviour, task quality \u2014 and set the results beside what the version currently in service scored. Publishers re-train and republish under a tag that has not changed, so a model that behaved well a month ago is no evidence about the file pulled this morning. Hand in the report produced for each promotion made in the period."
+            "en": "Scanning proves no code runs on load; it says nothing whatever about what the weights do once they are loaded. Each time an upstream version is taken up, put that exact artefact through the probe suite in development — trigger phrases, refusal behaviour, task quality — and set the results beside what the version currently in service scored. Publishers re-train and republish under a tag that has not changed, so a model that behaved well a month ago is no evidence about the file pulled this morning. Hand in the report produced for each promotion made in the period."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -4793,7 +4838,7 @@
             "en": "Reconcile the artefacts loaded on production inference hosts against the signed BOM and approved sources"
           },
           "description": {
-            "en": "An import gate only sees what passes through it, and an engineer copying weights straight onto a GPU host leaves no trace in the catalogue at all. Take what production has actually loaded and try to match each file against a bill-of-materials entry and the hash captured at import; anything that matches nothing entered outside the control, and surfacing it is the point of the pass. Use the same sweep to ask whether the sources still listed as approved deserve to be \u2014 a project that changed hands or moved to a new host is no longer the source that was judged. Attach the reconciliation, including the disposition of everything that matched nothing."
+            "en": "An import gate only sees what passes through it, and an engineer copying weights straight onto a GPU host leaves no trace in the catalogue at all. Take what production has actually loaded and try to match each file against a bill-of-materials entry and the hash captured at import; anything that matches nothing entered outside the control, and surfacing it is the point of the pass. Use the same sweep to ask whether the sources still listed as approved deserve to be — a project that changed hands or moved to a new host is no longer the source that was judged. Attach the reconciliation, including the disposition of everything that matched nothing."
           },
           "phase": "REVIEW",
           "sortOrder": 4,
@@ -4834,10 +4879,13 @@
     {
       "code": "AISVS-C7",
       "title": "C7 Model Behavior, Output Control & Safety Assurance",
-      "description": "Implements AISVS-C7: governs what the model emits \u2014 a schema, length and termination contract for every response surface, egress scanning for leaked context, hidden payloads and call-out markup, citations that resolve to the retrieved chunk plus provenance marks on generated media, and confidence-based holds that stop unreliable or policy-flagged answers reaching the caller.",
+      "description": "Implements AISVS-C7: governs what the model emits — a schema, length and termination contract for every response surface, egress scanning for leaked context, hidden payloads and call-out markup, citations that resolve to the retrieved chunk plus provenance marks on generated media, and confidence-based holds that stop unreliable or policy-flagged answers reaching the caller.",
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "Security engineering",
+      "objective": "To ensure that generated content leaves the system only within a stated contract, free of leaked context and active markup, and traceable to the source it claims.",
+      "successCriteria": "Each surface emitting generated content has a declared type, length ceiling and stop condition.\nMalformed or runaway generations are replaced by the declared fallback rather than delivered.\nNo released response carries a prompt canary, an encoded payload or remote-loading markup.\nClaims drawn from retrieval resolve to the chunk behind them, and generated media is marked.\nAnswers under the surface threshold are held, and flagged ones await a named approver.",
+      "testingMethodology": "Evidence:\nObtain the response-surface catalogue with the contract recorded against each surface.\nCollect the schema file for each response type and the validator's rejection log.\nRequest the egress filter configuration and the blocked-response samples kept for the period.\nGather a worked answer with its citations and a media file said to carry a provenance mark.\nObtain the period register of held and escalated answers with the reviewer decisions.\n\nAnalysis:\nCompare the catalogue with the endpoints, channels and tool results production returns, and list surfaces holding no contract.\nConfirm the rejection log shows a malformed response and one stopped at its ceiling, each replaced by that surface's fallback.\nSubmit encoded, zero-width and homoglyph text, then follow the worked answer's citations to the chunk each one names.\nRe-score a sample of the period's answers against correctness and judge whether threshold moves followed that evidence.\n\nOutput:\nA list of response surfaces operating without a declared contract.\nValidator and egress filter test results, naming any payload that got through.\nA citation resolution rate for the answers sampled, with the media mark read.\nAn opinion on threshold calibration supported by the held-answer outcomes reviewed.",
       "requirementCodes": [
         "C7.1.1",
         "C7.1.2",
@@ -4859,7 +4907,7 @@
             "en": "Catalogue each response surface and the output contract it must meet"
           },
           "description": {
-            "en": "Find every place model-generated content leaves the system \u2014 chat replies, JSON returned to another service, tool-call results, generated files and media \u2014 and write down what each one is allowed to emit: the response type, its maximum length, the condition that ends generation, whether the answer owes citations, and how much harm a wrong or unsafe answer would do there. A surface nobody has written down is a surface shipped without a limit, and a filter can only be applied where somebody named the exit. Attach the catalogue."
+            "en": "Find every place model-generated content leaves the system — chat replies, JSON returned to another service, tool-call results, generated files and media — and write down what each one is allowed to emit: the response type, its maximum length, the condition that ends generation, whether the answer owes citations, and how much harm a wrong or unsafe answer would do there. A surface nobody has written down is a surface shipped without a limit, and a filter can only be applied where somebody named the exit. Attach the catalogue."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -5084,10 +5132,13 @@
     {
       "code": "AISVS-C8",
       "title": "C8 Memory, Embeddings & Vector Database Security",
-      "description": "Implements AISVS-C8: keeps embeddings, RAG indices and agent memory isolated per tenant \u2014 vector identifiers unique within a tenant, document metadata frozen once written, content masked and screened before it is vectorized, and every retrieval confined to live, in-scope rows with expiry and erasure honoured at query time.",
+      "description": "Implements AISVS-C8: keeps embeddings, RAG indices and agent memory isolated per tenant — vector identifiers unique within a tenant, document metadata frozen once written, content masked and screened before it is vectorized, and every retrieval confined to live, in-scope rows with expiry and erasure honoured at query time.",
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "Platform Engineering / Security Engineering",
+      "objective": "To ensure that embeddings and agent memory stay confined to the tenant owning them and that retrieval returns only live, in-scope content that passed the ingestion gate.",
+      "successCriteria": "Every embedding and memory store has a named owner, a tenant key and a known identifier scheme.\nThe store itself refuses a colliding vector identifier and any tag edit made after insert.\nContent is masked and screened before embedding, with outliers held where retrieval cannot read them.\nExpired vectors, erased subjects and quarantined rows appear in no result set.",
+      "testingMethodology": "Evidence:\nObtain the register of embedding and memory stores, evaluation copies included.\nCollect the schema migration carrying the tenant-scoped uniqueness constraint and immutable tags.\nRequest the ingestion configuration and a sample run showing a masked field and a held outlier.\nGather the query-layer filter code with the saved lookup replayed after expiry and erasure.\nObtain the period's cross-tenant probe report with the row identifiers each query returned.\n\nAnalysis:\nCheck the register against the vector stores actually deployed and mark collections holding rows for more than one tenant.\nRead the refused-write output to confirm a duplicate identifier and a tag edit were rejected by the store, not the client.\nEstablish whether masking precedes the embedding call and whether expiry is a query predicate rather than a sweeper's job.\nVerify the probes ran against the deployed configuration and follow every unexpected hit to the ticket raised with its owner.\n\nOutput:\nA gap list naming collections with no recorded identifier scheme or tenant key.\nUniqueness and immutability test results with the refusals captured.\nAn assessment of the pre-vectorization gate across masking, screening and quarantine.\nA cross-tenant probe outcome with the leakage defects still open.",
       "requirementCodes": [
         "C8.1.1",
         "C8.1.2",
@@ -5107,7 +5158,7 @@
             "en": "Inventory every vector collection, its tenant key and its identifier scheme"
           },
           "description": {
-            "en": "Find every store holding embeddings or agent memory \u2014 the production vector database, per-team indices, caches that outlive a session, and any evaluation copy carrying real documents \u2014 and record for each how a vector identifier is formed, who supplies it, which tenants own rows in it, what metadata travels with each vector, and whether an expiry timestamp is written at all. What usually surfaces here is one collection shared by several customers with the identifier chosen by the ingesting client, which is the condition the rest of this control assumes has been found. Attach the register."
+            "en": "Find every store holding embeddings or agent memory — the production vector database, per-team indices, caches that outlive a session, and any evaluation copy carrying real documents — and record for each how a vector identifier is formed, who supplies it, which tenants own rows in it, what metadata travels with each vector, and whether an expiry timestamp is written at all. What usually surfaces here is one collection shared by several customers with the identifier chosen by the ingesting client, which is the condition the rest of this control assumes has been found. Attach the register."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -5194,7 +5245,7 @@
             "en": "Build the pre-vectorization gate that masks, screens and quarantines new content"
           },
           "description": {
-            "en": "Everything on its way into the index passes one gate, whatever wrote it. The gate masks fields that must never become an embedding \u2014 account numbers, credentials, special-category personal data \u2014 before text reaches the embedding model, screens that text for instruction-shaped and retrieval-manipulation phrasing, scores the resulting vector against the collection's existing distribution, and compares the claims it carries against what is already stored so a contradiction is surfaced instead of silently merged. Memory an agent wrote about its own run takes the same path as an uploaded document: trusting it because it came from inside is how a poisoned fact becomes permanent. Anything held goes to a quarantine store the retrieval path cannot read."
+            "en": "Everything on its way into the index passes one gate, whatever wrote it. The gate masks fields that must never become an embedding — account numbers, credentials, special-category personal data — before text reaches the embedding model, screens that text for instruction-shaped and retrieval-manipulation phrasing, scores the resulting vector against the collection's existing distribution, and compares the claims it carries against what is already stored so a contradiction is surfaced instead of silently merged. Memory an agent wrote about its own run takes the same path as an uploaded document: trusting it because it came from inside is how a poisoned fact becomes permanent. Anything held goes to a quarantine store the retrieval path cannot read."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -5240,7 +5291,7 @@
             "en": "Restrict what a retrieval may return to live, in-scope vectors"
           },
           "description": {
-            "en": "A retrieval is the moment isolation either holds or does not, so the constraint belongs in the query the store executes and not in a prompt asking the model to ignore rows it should never have received. Assemble the filter from the caller's authenticated scope, refuse any query arriving without one, and evaluate expiry as a predicate inside the query rather than leaving it to a sweeper that may not have run \u2014 an expired vector still in the index is an expired vector still returned. This layer is also where erasure becomes real: once a subject's memory is reset, their vectors stop appearing, and quarantined or tombstoned rows appear to nobody."
+            "en": "A retrieval is the moment isolation either holds or does not, so the constraint belongs in the query the store executes and not in a prompt asking the model to ignore rows it should never have received. Assemble the filter from the caller's authenticated scope, refuse any query arriving without one, and evaluate expiry as a predicate inside the query rather than leaving it to a sweeper that may not have run — an expired vector still in the index is an expired vector still returned. This layer is also where erasure becomes real: once a subject's memory is reset, their vectors stop appearing, and quarantined or tombstoned rows appear to nobody."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
@@ -5332,10 +5383,13 @@
     {
       "code": "AISVS-C9",
       "title": "C9 Orchestration & Agentic Security",
-      "description": "Implements AISVS-C9: keeps agent workflows inside limits somebody actually set \u2014 a quota and a timeout on every tool call, a ceiling on what one run may spend, an approval gate in front of actions that cannot be undone, scoped delegation between agents, and a kill-switch that stops a whole swarm from outside the platform it runs on.",
+      "description": "Implements AISVS-C9: keeps agent workflows inside limits somebody actually set — a quota and a timeout on every tool call, a ceiling on what one run may spend, an approval gate in front of actions that cannot be undone, scoped delegation between agents, and a kill-switch that stops a whole swarm from outside the platform it runs on.",
       "category": "OWASP AISVS",
       "defaultFrequency": "QUARTERLY",
       "defaultOwnerHint": "AI Platform Engineering / Security Engineering",
+      "objective": "To ensure that an agent run stays inside limits somebody set: bounded in calls, time and spend, haltable on demand, and irreversible only on a human release.",
+      "successCriteria": "Every workflow in which a model picks its own tool calls is rated for reversibility, call by call and chain by chain.\nThe runtime turns away a call that passes its quota, timeout or spend ceiling and withdraws that tool from the run.\nAn irreversible action proceeds only on a release bound to the parameters shown in full to a named approver.\nA stop triggered out of band brings every agent in the swarm to a halt within a measured time.",
+      "testingMethodology": "Evidence:\nObtain the workflow catalogue listing the tools each run can reach and their reversibility ratings.\nCollect the per-tool and per-run limit configuration with a log extract of a call turned away.\nRequest the approval gate configuration and a worked release record for an irreversible action.\nGather the stop-exercise record with the elapsed time to the last agent ceasing work.\nObtain the periodic reconciliation of agent credentials, delegations and consumption.\n\nAnalysis:\nCheck that each chain carries the worst rating among its steps and that workflows able to edit their own tools are flagged.\nConfirm the logged refusal came from the runtime rather than a warning, and that a tool breaching a limit left the run.\nInspect the release record for untruncated parameters, a binding to that one request, and a credential kept out of context.\nRead the stop timing and the out-of-band attempt, then set consumption and delegated scopes against each recorded ceiling.\n\nOutput:\nA completeness view of the workflow catalogue against the agent runs in production.\nEnforcement evidence for quotas, timeouts and spend ceilings, with the refusals observed.\nAn approval gate assessment covering the expired-window case.\nA stop capability timing result alongside the delegation and credential findings.",
       "requirementCodes": [
         "C9.1.1",
         "C9.1.2",
@@ -5465,7 +5519,7 @@
             "en": "Build the gate that holds an irreversible action until a named person releases it"
           },
           "description": {
-            "en": "An approver shown a truncated parameter list rubber-stamps whatever was hidden, and an approval that is not bound to the exact parameters can be replayed against a different call. Route everything rated irreversible through a gate that shows the full request, ties the release to that request alone, and keeps the approving credential somewhere the agent cannot read \u2014 an approval secret sitting in the model's context is an agent approving itself. Where the approver does not answer in time, the action fails rather than proceeds. Hand over the gate configuration with one worked example."
+            "en": "An approver shown a truncated parameter list rubber-stamps whatever was hidden, and an approval that is not bound to the exact parameters can be replayed against a different call. Route everything rated irreversible through a gate that shows the full request, ties the release to that request alone, and keeps the approving credential somewhere the agent cannot read — an approval secret sitting in the model's context is an agent approving itself. Where the approver does not answer in time, the action fails rather than proceeds. Hand over the gate configuration with one worked example."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -5511,7 +5565,7 @@
             "en": "Exercise the swarm kill-switch and time how long the last agent takes to stop"
           },
           "description": {
-            "en": "A stop control that has never been pulled is a belief, not a capability, and one reachable only through the orchestration platform is unreachable during the incident it exists for. Pull it against a workflow that is genuinely running: measure the gap between the decision and the last agent falling silent, then pull it again over the out-of-band route with the platform console treated as unavailable. Tool calls already in flight when the stop landed are the interesting part \u2014 write down which of them completed anyway and what state they left behind."
+            "en": "A stop control that has never been pulled is a belief, not a capability, and one reachable only through the orchestration platform is unreachable during the incident it exists for. Pull it against a workflow that is genuinely running: measure the gap between the decision and the last agent falling silent, then pull it again over the out-of-band route with the platform console treated as unavailable. Tool calls already in flight when the stop landed are the interesting part — write down which of them completed anyway and what state they left behind."
           },
           "phase": "OPERATE",
           "sortOrder": 3,

@@ -2,7 +2,7 @@
   "_meta": {
     "purpose": "NIS2 control catalogue in CatalogFile shape, so applyCatalogFile creates the framework, its requirements, the templates, their requirement links and the pack together.",
     "why": "These 20 templates were created only by prisma/seed.ts, which is not run on production deploys, so a fresh database or a restore gets none of them and the task seeder that names this fixture reports \"20 template(s) absent\" while exiting 0. seed.ts also wrote GENERIC_TEMPLATE_TASKS over these controls, so a fresh dev database held 100 placeholder tasks while the 105 authored ones here reached nothing.",
-    "grounding": "Requirement codes, titles and sections are carried over verbatim from prisma/fixtures/nis2_requirements.json. Task content is unchanged from the bare-array fixture it replaces \u2014 a shape conversion, not a re-authoring.",
+    "grounding": "Requirement codes, titles and sections are carried over verbatim from prisma/fixtures/nis2_requirements.json. Task content is unchanged from the bare-array fixture it replaces — a shape conversion, not a re-authoring.",
     "deliveredBy": "scripts/seed-framework-catalogs.ts",
     "join": "Template requirement refs are the Art.21(2)(x) codes and match requirement keys exactly, 20/20. Note this is NOT the join prisma/fixtures/nis2-library-map.json describes: that maps template codes (NIS2-RA) to library node ids (NIS2-RM) for AUTHORING grounding, and is unrelated to delivery.",
     "packScope": "NIS2_BASELINE covers the 20 NIS2- templates only. Production also links 140 ICN- internal controls to NIS2 requirements as cross-framework traceability; applyCatalogFile only ADDS links, so those are untouched."
@@ -21,7 +21,7 @@
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
       "sortOrder": 1,
-      "summary": "Entities must take appropriate technical, operational, and organizational measures to manage cybersecurity risks to network and information systems. This includes policies on risk analysis and information system security. (Paraphrase \u2014 Art. 21(2)(a))"
+      "summary": "Entities must take appropriate technical, operational, and organizational measures to manage cybersecurity risks to network and information systems. This includes policies on risk analysis and information system security. (Paraphrase — Art. 21(2)(a))"
     },
     {
       "code": "Art.21(2)(b)",
@@ -29,7 +29,7 @@
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
       "sortOrder": 2,
-      "summary": "Establish processes to prevent, detect, and respond to cybersecurity incidents, including clear escalation and notification procedures. (Paraphrase \u2014 Art. 21(2)(b))"
+      "summary": "Establish processes to prevent, detect, and respond to cybersecurity incidents, including clear escalation and notification procedures. (Paraphrase — Art. 21(2)(b))"
     },
     {
       "code": "Art.21(2)(c)",
@@ -37,7 +37,7 @@
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
       "sortOrder": 3,
-      "summary": "Ensure continuity of essential services including backup management, disaster recovery, and crisis management. (Paraphrase \u2014 Art. 21(2)(c))"
+      "summary": "Ensure continuity of essential services including backup management, disaster recovery, and crisis management. (Paraphrase — Art. 21(2)(c))"
     },
     {
       "code": "Art.21(2)(d)",
@@ -45,7 +45,7 @@
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
       "sortOrder": 4,
-      "summary": "Address security aspects of relationships with direct suppliers and service providers, including supply chain risk assessments. (Paraphrase \u2014 Art. 21(2)(d))"
+      "summary": "Address security aspects of relationships with direct suppliers and service providers, including supply chain risk assessments. (Paraphrase — Art. 21(2)(d))"
     },
     {
       "code": "Art.21(2)(e)",
@@ -53,7 +53,7 @@
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
       "sortOrder": 5,
-      "summary": "Apply security in the acquisition, development, and maintenance of network and information systems, including vulnerability handling and disclosure. (Paraphrase \u2014 Art. 21(2)(e))"
+      "summary": "Apply security in the acquisition, development, and maintenance of network and information systems, including vulnerability handling and disclosure. (Paraphrase — Art. 21(2)(e))"
     },
     {
       "code": "Art.21(2)(f)",
@@ -61,7 +61,7 @@
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
       "sortOrder": 6,
-      "summary": "Implement policies and procedures to assess the effectiveness of cybersecurity risk management measures. (Paraphrase \u2014 Art. 21(2)(f))"
+      "summary": "Implement policies and procedures to assess the effectiveness of cybersecurity risk management measures. (Paraphrase — Art. 21(2)(f))"
     },
     {
       "code": "Art.21(2)(g)",
@@ -69,7 +69,7 @@
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
       "sortOrder": 7,
-      "summary": "Establish basic cyber hygiene practices and security awareness training for all personnel. (Paraphrase \u2014 Art. 21(2)(g))"
+      "summary": "Establish basic cyber hygiene practices and security awareness training for all personnel. (Paraphrase — Art. 21(2)(g))"
     },
     {
       "code": "Art.21(2)(h)",
@@ -77,7 +77,7 @@
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
       "sortOrder": 8,
-      "summary": "Apply policies and procedures for the use of cryptography and, where appropriate, encryption to protect information. (Paraphrase \u2014 Art. 21(2)(h))"
+      "summary": "Apply policies and procedures for the use of cryptography and, where appropriate, encryption to protect information. (Paraphrase — Art. 21(2)(h))"
     },
     {
       "code": "Art.21(2)(i)",
@@ -85,7 +85,7 @@
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
       "sortOrder": 9,
-      "summary": "Apply appropriate security measures for human resources including access control policies and asset management. (Paraphrase \u2014 Art. 21(2)(i))"
+      "summary": "Apply appropriate security measures for human resources including access control policies and asset management. (Paraphrase — Art. 21(2)(i))"
     },
     {
       "code": "Art.21(2)(j)",
@@ -93,7 +93,7 @@
       "section": "Article 21 - Cybersecurity risk-management measures",
       "category": "Article 21 - Cybersecurity risk-management measures",
       "sortOrder": 10,
-      "summary": "Use multi-factor authentication, secure communication, and identity management solutions as appropriate. (Paraphrase \u2014 Art. 21(2)(j))"
+      "summary": "Use multi-factor authentication, secure communication, and identity management solutions as appropriate. (Paraphrase — Art. 21(2)(j))"
     },
     {
       "code": "Art.23(1)",
@@ -173,6 +173,9 @@
       "description": "Catalogue the network and information systems in scope with each one's classification, and document the risk assessment methodology applied to them.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure risk to the network and information systems the organisation depends on is measured by one repeatable method and carried into owned, prioritised treatment.",
+      "successCriteria": "Every system on the in-scope inventory carries a classification and a named owning team.\nRisk ratings in the register are reproducible from the published likelihood and impact scales.\nEach rated risk holds a treatment decision, a named owner and a priority.\nThe security policy in force is the issued version, and its recipients have acknowledged receipt.",
+      "testingMethodology": "Evidence:\nObtain the inventory of in-scope network and information systems with classifications and classification dates.\nObtain the versioned risk assessment methodology carrying the likelihood and impact scales and the rating rule.\nCollect the issued security policy with its distribution and acknowledgement record.\nExport the cybersecurity risk register and the risk treatment plan for the period.\n\nAnalysis:\nTrace sampled register rows back to a system on the inventory and to the classification the rating relied on.\nRe-derive each sampled rating from the published scales and confirm it follows the stated rating rule.\nCheck every open risk for a treatment decision, a named owner, a priority and an expected completion date.\nCompare the acknowledgement record against the current personnel list to find recipients who never confirmed.\n\nOutput:\nA coverage table of inventory systems against the risks assessed on them.\nA rating reproducibility schedule for the sampled risks, with the divergences named.\nA list of open risks lacking an owner, a priority or a treatment decision.",
       "requirementCodes": [
         "Art.21(2)(a)"
       ],
@@ -362,6 +365,9 @@
       "description": "Define the classification and severity levels used to triage a cybersecurity incident, and document the response plan with the escalation path it follows.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure every cybersecurity incident is triaged to a severity, escalated to the role accountable for it and contained under a plan the response team has rehearsed.",
+      "successCriteria": "Each logged incident carries a severity the classification matrix's conditions justify.\nThe escalation recorded against an incident matches the path its severity triggers.\nConfigured detection sources deliver their alerts into the response team's queue.\nEvery incident closed in the period has a post-incident review naming corrective actions and owners.",
+      "testingMethodology": "Evidence:\nObtain the incident classification matrix and the versioned response plan with its contact annex.\nExport the detection configuration per source, showing alerting rules, destination queue and severity mapping.\nExport the incident log for the period with detection times, severities, escalations and containment actions.\nCollect the response team training record and the post-incident reviews for incidents closed in the period.\n\nAnalysis:\nRe-triage sampled incidents against the matrix conditions and compare the result with the severity assigned.\nFollow each sampled escalation against the path and the accountable role the plan names for that severity.\nConfirm each configured source routes to the response queue, and identify sources alerting nowhere.\nCheck training attendance against plan roles and confirm the exercised scenario's corrections reached the plan in force.\n\nOutput:\nA severity re-triage schedule separating agreed from disputed classifications.\nA list of incidents escalated outside the documented path, naming the step skipped.\nA register of post-incident corrective actions with owner and current status.",
       "requirementCodes": [
         "Art.21(2)(b)"
       ],
@@ -551,6 +557,9 @@
       "description": "Identify the essential services that must continue and the systems each one depends on, and hold a continuity plan for each alongside the crisis management arrangements that invoke it.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure each essential service can be brought back inside its recovery objective, from backups and plans an exercise has actually shown to work.",
+      "successCriteria": "Every essential service has a current continuity plan with a recovery objective and a restoration order.\nBackups run for each system an essential service depends on, at the frequency and retention the procedure sets.\nCrisis roles have named holders and deputies reachable through the convening channel.\nThe most recent exercise restored the services it covered within their stated recovery objectives.",
+      "testingMethodology": "Evidence:\nObtain the essential-service list with the systems, suppliers and people each service depends on.\nCollect the continuity plan for each essential service and the backup procedure with its current schedule.\nObtain the crisis management procedure with its named roles, convening channel and dated contact list.\nRetrieve the continuity exercise report and the review note recording the plan updates it produced.\n\nAnalysis:\nCheck that each essential service has a plan whose restoration order covers its recorded dependencies.\nCompare the backup schedule against the dependency list to find systems copied at no frequency or held nowhere.\nCompare the exercise's elapsed restoration times against each service's recovery objective.\nTrace every exercise finding into the review note and on to the document version carrying the change.\n\nOutput:\nA dependency-to-plan coverage matrix across the essential services.\nA restoration timing schedule against recovery objectives, marking each assumed or failed step.\nA finding-to-version traceability list naming the owner of every item left open.",
       "requirementCodes": [
         "Art.21(2)(c)"
       ],
@@ -745,6 +754,9 @@
       "description": "Register every direct supplier and service provider with the service it delivers and its criticality, and assess supplier security by a defined process rather than by reputation.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "Ensure the security of each direct supplier is judged by a defined assessment and secured in contract, in proportion to how critical the service it delivers is.",
+      "successCriteria": "Every direct supplier is registered with its service, internal owner and a recorded basis for its criticality.\nEach vendor risk entry shows a score derived from the published question set and scoring rule.\nContracts and renewals issued in the period carry the security clause set from the amended template.\nEvery critical supplier holds an unexpired third-party audit report or certificate on file.",
+      "testingMethodology": "Evidence:\nExport the supplier register with service delivered, internal owner, systems or data reachable and criticality.\nObtain the versioned supplier security assessment process with its question set and scoring rule.\nObtain the amended contract and renewal templates showing the security clauses they now carry.\nExport the vendor risk register for the period and the third-party audit reports and certificates collected.\n\nAnalysis:\nReconcile the register against payables or the contract list to find suppliers never registered.\nRecompute sampled scores from the answered question set and compare them with the recorded result.\nCheck each critical supplier for a certificate whose coverage period and expiry span the period under test.\nCompare previous and current ratings in the review summary and confirm a reason is recorded for each change.\n\nOutput:\nA list of unregistered or unassessed suppliers naming the service each delivers.\nA score recomputation schedule for the sampled assessments.\nA critical-supplier assurance table showing certificate coverage, expiry and recorded exceptions.",
       "requirementCodes": [
         "Art.21(2)(d)"
       ],
@@ -912,6 +924,9 @@
       "description": "Register every application the organisation develops and every third-party component it acquires, and document the secure development lifecycle each passes through.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure software the organisation builds or acquires passes a defined security check before it runs, and that weaknesses found in it are closed to a published timescale.",
+      "successCriteria": "Every developed application and acquired component is registered with its maintainer, version and internet exposure.\nEach registered repository runs the security tests its lifecycle stage requires, and a failing result blocks the change.\nRegister findings are remediated within the timescale their severity carries in the disclosure procedure.\nAn external reporter has a published address, and reports received were triaged under the published rules.",
+      "testingMethodology": "Evidence:\nExport the register of developed applications and acquired third-party components with versions and exposure.\nObtain the versioned secure development lifecycle policy naming the check required at each stage.\nExport the pipeline configuration of each registered repository showing its security test stages.\nCollect the published vulnerability handling procedure, the vulnerability register and the scan and penetration test reports.\n\nAnalysis:\nMatch registered repositories against exported pipelines to find repositories with no security testing configured.\nConfirm each test runs at the stage the lifecycle policy requires and that a failure blocks rather than warns.\nMeasure discovery-to-closure time for register findings against the timescale set for their severity.\nRead the acquisition review for each third-party product taken into service and what was verified before it ran.\n\nOutput:\nA repository coverage table naming pipelines missing a required security stage.\nAn ageing report of open vulnerabilities against their remediation timescales.\nA list of components taken into service with no recorded pre-service check.",
       "requirementCodes": [
         "Art.21(2)(e)"
       ],
@@ -1123,6 +1138,9 @@
       "description": "Name each cybersecurity measure to be assessed, the method and the cadence, and define an effectiveness metric with the data source that feeds it.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure the organisation can state from measurement and audit, rather than assumption, whether each of its cybersecurity measures is actually working.",
+      "successCriteria": "Each measure named in the assessment policy has a metric, a data source and an acceptable value.\nThe dashboard reads current values from the defined sources and shows when each was last refreshed.\nThe internal audit reached a verdict on every control it tested and gave a reason for each one left untested.\nTracked findings carry an owner and a due date, and closure rests on a passed retest.",
+      "testingMethodology": "Evidence:\nObtain the issued assessment policy listing each measure with its method, assessor and cadence.\nObtain the metric definition sheet and a dated export of the effectiveness metrics dashboard.\nCollect the internal audit report for the period with the evidence examined behind each verdict.\nExtract the remediation tracker and the assessment results report issued to management.\n\nAnalysis:\nCheck each policy measure for a defined metric and for a dashboard value refreshed within its cadence.\nRecalculate sampled metric values from the named data source and compare them with the dashboard figure.\nConfirm each audit verdict rests on evidence the report lists, and read the reason given for untested controls.\nAge open tracker findings against their due dates and confirm closed ones carry retest evidence.\n\nOutput:\nA measure-to-metric coverage table naming the measures recorded as unmeasurable.\nA metric recalculation schedule with the variances found.\nAn ageing list of open findings and a note of the measures reported as too thinly evidenced to judge.",
       "requirementCodes": [
         "Art.21(2)(f)"
       ],
@@ -1168,7 +1186,7 @@
             "en": "Define a control-effectiveness metric and its data source for each measure in the assessment policy"
           },
           "description": {
-            "en": "An assessment that reports only 'implemented' cannot show whether a measure works, so give each measure in the policy at least one metric that moves when it stops working \u2014 coverage, failure rate, time to remediate. For each metric record the exact data source it is read from, who reads it, and the value that counts as an acceptable result. Where no data source exists yet, record the metric as unmeasurable and name what would have to be instrumented, so the gap is visible rather than the metric silently going unreported. Attach the metric definition sheet with the measure each metric belongs to."
+            "en": "An assessment that reports only 'implemented' cannot show whether a measure works, so give each measure in the policy at least one metric that moves when it stops working — coverage, failure rate, time to remediate. For each metric record the exact data source it is read from, who reads it, and the value that counts as an acceptable result. Where no data source exists yet, record the metric as unmeasurable and name what would have to be instrumented, so the gap is visible rather than the metric silently going unreported. Attach the metric definition sheet with the measure each metric belongs to."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -1237,7 +1255,7 @@
             "en": "Log each assessment finding in the remediation tracker with an owner and a due date"
           },
           "description": {
-            "en": "Every finding \u2014 from an internal audit, from a commissioned external assessment, or from a metric breaching its acceptable value \u2014 gets a row carrying the finding itself, where it came from, the measure it affects, the accountable owner, the agreed remediation and the date it is due. Update the row's status as the work proceeds and, on closure, record what was produced that shows the finding is fixed. The tracker is what turns an assessment report into remediation rather than a filed document, and its extract is the evidence that findings are being worked rather than accumulating."
+            "en": "Every finding — from an internal audit, from a commissioned external assessment, or from a metric breaching its acceptable value — gets a row carrying the finding itself, where it came from, the measure it affects, the accountable owner, the agreed remediation and the date it is due. Update the row's status as the work proceeds and, on closure, record what was produced that shows the finding is fixed. The tracker is what turns an assessment report into remediation rather than a filed document, and its extract is the evidence that findings are being worked rather than accumulating."
           },
           "phase": "OPERATE",
           "sortOrder": 4,
@@ -1251,7 +1269,7 @@
             "en": "Report the assessment results and the state of open findings to management"
           },
           "description": {
-            "en": "Bring the period's assessment results together into the report management receives: what was assessed, the verdicts from the internal audit, each metric against its acceptable value, and the findings raised, closed and still open. Before a finding is reported as fixed, repeat the test that raised it \u2014 a finding is remediated when the measure passes the test that failed it, not when the owner reports the work is done \u2014 and where that retest does not pass, reopen the tracker row and report the finding as open. State the conclusion the results support about whether the measures are working, and name the measures where the evidence was too thin to reach one, so an unproven measure is not reported as an effective one. Attach the issued report with the date it went to management and who received it."
+            "en": "Bring the period's assessment results together into the report management receives: what was assessed, the verdicts from the internal audit, each metric against its acceptable value, and the findings raised, closed and still open. Before a finding is reported as fixed, repeat the test that raised it — a finding is remediated when the measure passes the test that failed it, not when the owner reports the work is done — and where that retest does not pass, reopen the tracker row and report the finding as open. State the conclusion the results support about whether the measures are working, and name the measures where the evidence was too thin to reach one, so an unproven measure is not reported as an effective one. Attach the issued report with the date it went to management and who received it."
           },
           "phase": "REVIEW",
           "sortOrder": 5,
@@ -1295,6 +1313,9 @@
       "description": "Write down the baseline cyber hygiene practices every member of personnel must follow, and run a security awareness programme that covers them.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure every member of personnel is taught the baseline behaviours expected of them, and that the teaching is corrected by how people actually behave.",
+      "successCriteria": "Each baseline hygiene practice in the policy is taught by a named module on the coverage map.\nNew joiners complete the awareness training as an assigned step of the onboarding checklist.\nThe current training round holds a completion, or a chased non-completion, for every member of personnel.\nThe latest phishing simulation reports click, submission and report rates broken down by department.",
+      "testingMethodology": "Evidence:\nObtain the issued cyber hygiene policy and the coverage map linking each baseline practice to a module.\nObtain the amended onboarding checklist showing the training step and where completion is recorded.\nExport the attendance record for the current round with assignment and completion dates.\nCollect the phishing simulation results report and the dated training revision record.\n\nAnalysis:\nCheck every baseline practice for a module that teaches it, and every module for a practice it serves.\nSample joiners of the period and confirm each completed the training the checklist assigned them.\nReconcile attendance against the personnel list to identify non-completions and the chase outcome for each.\nTrace the simulation's weakest departments and the period's incidents into the changes the revision made.\n\nOutput:\nA practice-to-module coverage map with the untaught practices named.\nA completion rate for the round, listing outstanding personnel by department.\nA change log tying each content revision to the simulation result or incident that prompted it.",
       "requirementCodes": [
         "Art.21(2)(g)"
       ],
@@ -1304,7 +1325,7 @@
             "en": "Write down the baseline cyber hygiene practices every member of personnel must follow"
           },
           "description": {
-            "en": "Set out, in the cyber hygiene policy the control names, the practices expected of everyone regardless of role \u2014 the ones a person can actually perform, such as how credentials are handled, what is done with an unexpected attachment or link, how devices are locked and kept updated, and how a suspected incident is reported and to whom. Keep each practice to one observable behaviour, because the training programme and the simulations later in this control are built directly from this list and a vague practice cannot be taught or tested. Agree any practice that depends on a technical control with IT Operations before issue. Attach the issued policy with its version and date."
+            "en": "Set out, in the cyber hygiene policy the control names, the practices expected of everyone regardless of role — the ones a person can actually perform, such as how credentials are handled, what is done with an unexpected attachment or link, how devices are locked and kept updated, and how a suspected incident is reported and to whom. Keep each practice to one observable behaviour, because the training programme and the simulations later in this control are built directly from this list and a vague practice cannot be taught or tested. Agree any practice that depends on a technical control with IT Operations before issue. Attach the issued policy with its version and date."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -1354,7 +1375,7 @@
             "en": "Add the awareness training to the onboarding checklist for every new joiner"
           },
           "description": {
-            "en": "Wire the programme into joining so the training happens at onboarding rather than at the next campaign: put the module on the standard onboarding checklist, name the role that assigns it, and record where a new starter's completion is captured. Cover every type of joiner the organisation onboards \u2014 employees, contractors and anyone else issued an account \u2014 since the hygiene policy applies to all personnel. Attach the amended onboarding checklist showing the training step and the completion field."
+            "en": "Wire the programme into joining so the training happens at onboarding rather than at the next campaign: put the module on the standard onboarding checklist, name the role that assigns it, and record where a new starter's completion is captured. Cover every type of joiner the organisation onboards — employees, contractors and anyone else issued an account — since the hygiene policy applies to all personnel. Attach the amended onboarding checklist showing the training step and the completion field."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -1368,7 +1389,7 @@
             "en": "Deliver the periodic awareness training and record attendance for every member of personnel"
           },
           "description": {
-            "en": "Run the training round the programme schedules and capture the attendance records the control names: who it was assigned to, who completed it, the date, and the version of the module they took. Chase the non-completions and record the outcome of the chase rather than leaving the row blank \u2014 an unexplained gap in the register is the finding an assessor raises. Report completion by department so a team that is not attending is visible to its manager. Attach the attendance record for the round."
+            "en": "Run the training round the programme schedules and capture the attendance records the control names: who it was assigned to, who completed it, the date, and the version of the module they took. Chase the non-completions and record the outcome of the chase rather than leaving the row blank — an unexplained gap in the register is the finding an assessor raises. Report completion by department so a team that is not attending is visible to its manager. Attach the attendance record for the round."
           },
           "phase": "OPERATE",
           "sortOrder": 3,
@@ -1382,7 +1403,7 @@
             "en": "Send the scheduled phishing simulation and record the click and report rates"
           },
           "description": {
-            "en": "Run the simulation exercise the control calls for against the population the programme defines, using a scenario drawn from what the organisation actually receives rather than a generic template. Record for each run the date, the scenario, the population targeted, and the three numbers that matter: who clicked, who submitted anything, and who reported it through the channel the hygiene policy names \u2014 the report rate is the one that shows the training working. Break the result down by department so remedial training can be aimed. Attach the simulation results report, keeping the identification of individuals out of the reported figures unless a follow-up requires it."
+            "en": "Run the simulation exercise the control calls for against the population the programme defines, using a scenario drawn from what the organisation actually receives rather than a generic template. Record for each run the date, the scenario, the population targeted, and the three numbers that matter: who clicked, who submitted anything, and who reported it through the channel the hygiene policy names — the report rate is the one that shows the training working. Break the result down by department so remedial training can be aimed. Attach the simulation results report, keeping the identification of individuals out of the reported figures unless a follow-up requires it."
           },
           "phase": "OPERATE",
           "sortOrder": 4,
@@ -1418,7 +1439,7 @@
             "en": "Revise the training content against the simulation results and the incidents of the period"
           },
           "description": {
-            "en": "Read the last simulation results and the incidents recorded since the previous revision, and change the material where the evidence says the message is not landing \u2014 a scenario people fall for and a behaviour that keeps causing incidents both belong in the next version. Record for each change what prompted it, and record explicitly where the review concluded no change was needed, so a review that happened is distinguishable from one that did not. Reissue the material under a new version number and tell the assigning role which modules changed. Attach the revision record with the reissued content."
+            "en": "Read the last simulation results and the incidents recorded since the previous revision, and change the material where the evidence says the message is not landing — a scenario people fall for and a behaviour that keeps causing incidents both belong in the next version. Record for each change what prompted it, and record explicitly where the review concluded no change was needed, so a review that happened is distinguishable from one that did not. Reissue the material under a new version number and tell the assigning role which modules changed. Attach the revision record with the reissued content."
           },
           "phase": "REVIEW",
           "sortOrder": 5,
@@ -1435,6 +1456,9 @@
       "description": "Record every data store and transmission path requiring encryption at rest or in transit, and issue the cryptography policy stating the algorithms and key handling that apply.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure data the organisation stores and transmits is protected by algorithms and key lengths it has approved, with the keys themselves governed for their whole life.",
+      "successCriteria": "Every data store and transmission path needing protection is on the scope register with its at-rest or in-transit requirement.\nConfigured algorithms, key lengths and protocol versions match the standard or hold an approved exception with a review date.\nEach key type has a recorded generation method, storage location, access holders and rotation interval.\nNo deprecated method found by the last scan remains in use without an owning team and a remediation action.",
+      "testingMethodology": "Evidence:\nObtain the encryption scope register with the at-rest or in-transit requirement against each store and path.\nObtain the approved cryptography policy with its algorithm and key length table and its deprecated list.\nObtain the key management procedure and the cryptographic configuration export for each in-scope system.\nCollect the scan report for deprecated or weak methods and the conformance comparison with its exception list.\n\nAnalysis:\nCompare each system's exported algorithm, key length and protocol version against the standard value for its use.\nCheck every deviation for an exception granted by the named authority and still inside its review date.\nTest the key management procedure for a rotation interval and a logging location covering each key type in use.\nReconcile scan findings against the conformance comparison to find weak methods observed but never carried forward.\n\nOutput:\nA conformance schedule per register row with a pass, exception or breach verdict.\nAn exception list with granting authority and review date, marking the lapsed entries.\nA remediation list of deprecated methods still in use, naming the owning team for each.",
       "requirementCodes": [
         "Art.21(2)(h)"
       ],
@@ -1485,7 +1509,7 @@
             "en": "Issue the cryptography and encryption policy with the approved algorithms and minimum key lengths"
           },
           "description": {
-            "en": "Produce the policy and the encryption standard the control's artifacts name. The policy states which categories of data must be encrypted at rest and which in transit, who may authorise an exception and for how long, and who owns the document. The standard states, for each use the scope register produces \u2014 data at rest, data in transit, backups, remote access \u2014 the algorithms approved, the minimum key length or equivalent strength, and the permitted modes and protocol versions, and names the deprecated algorithms explicitly so the scan later in this control has something concrete to look for. Cite the source used to select each value so it can be revised when that source moves. Attach both documents with their versions and approval dates."
+            "en": "Produce the policy and the encryption standard the control's artifacts name. The policy states which categories of data must be encrypted at rest and which in transit, who may authorise an exception and for how long, and who owns the document. The standard states, for each use the scope register produces — data at rest, data in transit, backups, remote access — the algorithms approved, the minimum key length or equivalent strength, and the permitted modes and protocol versions, and names the deprecated algorithms explicitly so the scan later in this control has something concrete to look for. Cite the source used to select each value so it can be revised when that source moves. Attach both documents with their versions and approval dates."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 1,
@@ -1499,7 +1523,7 @@
             "en": "Write the key management procedure covering generation, storage and rotation for each key type"
           },
           "description": {
-            "en": "For every type of key the encryption standard requires \u2014 disk encryption keys, TLS private keys, application data keys, backup keys \u2014 record how it is generated and by whom, where it is stored and who can reach it, and the interval and method by which it is rotated. Record where each key type's activity is logged, so a rotation that has happened leaves a trace that can be produced later without console access. Where a key is held by a service provider, name the provider and the recovery arrangement. Security engineering owns the values in the procedure; IT Operations executes it. Attach the issued procedure with its version."
+            "en": "For every type of key the encryption standard requires — disk encryption keys, TLS private keys, application data keys, backup keys — record how it is generated and by whom, where it is stored and who can reach it, and the interval and method by which it is rotated. Record where each key type's activity is logged, so a rotation that has happened leaves a trace that can be produced later without console access. Where a key is held by a service provider, name the provider and the recovery arrangement. Security engineering owns the values in the procedure; IT Operations executes it. Attach the issued procedure with its version."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -1513,7 +1537,7 @@
             "en": "Configure each system in the encryption scope register to the approved algorithms and key lengths"
           },
           "description": {
-            "en": "Work the register row by row and change the systems that do not meet the standard: enable encryption where the row requires it and it is absent, replace algorithms and key lengths below the approved minimum, and disable the protocol versions and cipher suites the standard deprecates. Where a system cannot be brought to the standard \u2014 an appliance that supports nothing stronger, an interface outside the organisation's control \u2014 record it as an exception under the policy's exception authority with a review date, rather than leaving the row silently non-conforming. Export each changed system's cryptographic configuration after the change. Attach the exports with the exception list."
+            "en": "Work the register row by row and change the systems that do not meet the standard: enable encryption where the row requires it and it is absent, replace algorithms and key lengths below the approved minimum, and disable the protocol versions and cipher suites the standard deprecates. Where a system cannot be brought to the standard — an appliance that supports nothing stronger, an interface outside the organisation's control — record it as an exception under the policy's exception authority with a review date, rather than leaving the row silently non-conforming. Export each changed system's cryptographic configuration after the change. Attach the exports with the exception list."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
@@ -1568,7 +1592,7 @@
             "en": "Compare the algorithms and key lengths in use against the encryption standard and record the exceptions"
           },
           "description": {
-            "en": "Take the encryption scope register row by row, read the cryptographic settings each system is actually running rather than what its documentation claims, and record a conformance verdict per row against the published standard. For every deviation, name the observed value, the standard value, the accountable owner, and whether an approved exception covers it \u2014 a deviation with no exception is a finding, not a note. Include the rows the register marks as not currently meeting the requirement so they are counted rather than skipped, and carry the unresolved ones into the conclusion. Attach the comparison with the raw configuration output behind it."
+            "en": "Take the encryption scope register row by row, read the cryptographic settings each system is actually running rather than what its documentation claims, and record a conformance verdict per row against the published standard. For every deviation, name the observed value, the standard value, the accountable owner, and whether an approved exception covers it — a deviation with no exception is a finding, not a note. Include the rows the register marks as not currently meeting the requirement so they are counted rather than skipped, and carry the unresolved ones into the conclusion. Attach the comparison with the raw configuration output behind it."
           },
           "phase": "REVIEW",
           "sortOrder": 5,
@@ -1607,6 +1631,9 @@
       "description": "Classify the security-sensitive roles and the background check each requires, and hold every issued device and account against the person who holds it.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure people are vetted before they hold security-sensitive duties, hold only the access those duties need, and surrender both access and assets when they leave.",
+      "successCriteria": "Each security-sensitive role names the background check required and the party that performs it.\nAppointments into those roles in the period have a completed check with a recorded decision and decision-maker.\nAccess held by a person sits within the level the access control matrix grants their role.\nLeavers have accounts disabled and registered assets returned, or an open recovery action against each item outstanding.",
+      "testingMethodology": "Evidence:\nObtain the security-sensitive role schedule with the check required and any legal limit on it.\nExport the asset management register of issued devices and accounts against their holders.\nObtain the access control matrix with its per-system approvers, and the job descriptions carrying security responsibilities.\nCollect the background check register for the period and the offboarding record for each leaver.\n\nAnalysis:\nSample appointments into sensitive roles and confirm a completed check dated no later than the appointment.\nCompare live entitlements on sampled systems against the level the matrix grants the holder's role.\nTrace each leaver's accounts to a disable date and each registered asset to a return or an open recovery action.\nReconcile the asset register against the issuing sources to find devices and accounts no source accounts for.\n\nOutput:\nA vetting schedule for the period's appointments, showing any acceptance recorded for a missing check.\nAn entitlement exception list naming the holdings that exceed the matrix.\nA leaver closure table with revocation dates and the assets still unrecovered.",
       "requirementCodes": [
         "Art.21(2)(i)"
       ],
@@ -1616,7 +1643,7 @@
             "en": "List the roles classified as security-sensitive and the background check each requires"
           },
           "description": {
-            "en": "Go through the organisation's roles with HR and record which ones the HR security policy treats as security-sensitive \u2014 typically those holding privileged system access, handling personal or confidential data, or carrying authority over payments or hiring \u2014 and against each one the check that applies, who performs it, and what the check covers. Record the basis for each classification so a role's presence or absence from the list can be explained later, and note where local law limits what may be checked. This schedule is what the hiring task in this control works from, so a role missing here is a role hired without a check. Attach the schedule with its approval date."
+            "en": "Go through the organisation's roles with HR and record which ones the HR security policy treats as security-sensitive — typically those holding privileged system access, handling personal or confidential data, or carrying authority over payments or hiring — and against each one the check that applies, who performs it, and what the check covers. Record the basis for each classification so a role's presence or absence from the list can be explained later, and note where local law limits what may be checked. This schedule is what the hiring task in this control works from, so a role missing here is a role hired without a check. Attach the schedule with its approval date."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -1652,7 +1679,7 @@
             "en": "Record every issued device and account against its holder in the asset management register"
           },
           "description": {
-            "en": "Populate the asset management register the control names with one row per issued asset \u2014 laptops, phones, removable media, tokens \u2014 and per account each person holds, giving the holder, the issue date, and whether the asset carries organisational data. Build the rows from the systems that issue the assets (the directory, the device management console, the procurement record) rather than from a survey, and keep the assets that no issuing source accounts for as their own rows so the gap is visible rather than absent. This register is what the leaver task recovers against. Attach the register export with the date it was taken."
+            "en": "Populate the asset management register the control names with one row per issued asset — laptops, phones, removable media, tokens — and per account each person holds, giving the holder, the issue date, and whether the asset carries organisational data. Build the rows from the systems that issue the assets (the directory, the device management console, the procurement record) rather than from a survey, and keep the assets that no issuing source accounts for as their own rows so the gap is visible rather than absent. This register is what the leaver task recovers against. Attach the register export with the date it was taken."
           },
           "phase": "SCOPE",
           "sortOrder": 1,
@@ -1716,7 +1743,7 @@
             "en": "Record the completed background check for each hire into a security-sensitive role"
           },
           "description": {
-            "en": "Whenever somebody is appointed to a role on the security-sensitive schedule, run the check that schedule names and file the outcome: the role, the check performed, who performed it, the date it completed, the decision taken and who took it. Record the result rather than the underlying material, keeping the personal data to the minimum the decision needed and handling it as Legal/DPO directs. Where a check could not be completed \u2014 a jurisdiction that does not permit it, a record that does not exist \u2014 record what was done instead and who accepted the residual risk. Attach the background check register for the period."
+            "en": "Whenever somebody is appointed to a role on the security-sensitive schedule, run the check that schedule names and file the outcome: the role, the check performed, who performed it, the date it completed, the decision taken and who took it. Record the result rather than the underlying material, keeping the personal data to the minimum the decision needed and handling it as Legal/DPO directs. Where a check could not be completed — a jurisdiction that does not permit it, a record that does not exist — record what was done instead and who accepted the residual risk. Attach the background check register for the period."
           },
           "phase": "OPERATE",
           "sortOrder": 4,
@@ -1769,6 +1796,9 @@
       "description": "List the critical systems in scope for multi-factor authentication and the privileged accounts on each, and publish the policy naming where it is required.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure a second factor stands between an account and every critical system it can reach, and that remote access and external correspondence travel over encrypted channels.",
+      "successCriteria": "Every system the scope register marks capable enforces an accepted second factor on its privileged accounts.\nSystems left unenforced hold an approved exception carrying a review interval.\nRemote access and external correspondence run over an approved channel, with a documented route for recipients who cannot use one.\nEach privilege kept at the last recertification has a dated owner decision, and every withdrawal it called for was applied.",
+      "testingMethodology": "Evidence:\nObtain the authentication scope register with each system's criticality basis, current method and privileged accounts.\nObtain the approved MFA policy naming accepted and rejected factor types and the enrolment and recovery route.\nExport the per-system authentication configuration and the configuration of each approved communication channel.\nCollect the authentication log review record and the completed access recertification for the period.\n\nAnalysis:\nCompare the factor enforced on each system against the factor types the policy accepts.\nList capable systems without enforcement and check each against the exception register and its review interval.\nConfirm remote access and external correspondence terminate on the approved encrypted services, and walk the fallback route.\nSample recertification decisions and confirm the withdrawals they called for are absent from the live entitlement export.\n\nOutput:\nAn enforcement table of in-scope systems with factor type and accounts covered.\nAn exception list for unenforced systems, marking those past their review date.\nA recertification closure schedule naming withdrawals not applied and systems delivering no events.",
       "requirementCodes": [
         "Art.21(2)(j)"
       ],
@@ -1778,7 +1808,7 @@
             "en": "List the critical systems in scope for multi-factor authentication and the accounts privileged on each"
           },
           "description": {
-            "en": "Decide and record what counts as critical here \u2014 systems whose compromise would interrupt the essential service, hold the most sensitive data, or grant administrative reach into other systems \u2014 then list each one with how it authenticates today, whether it can accept the organisation's second factor, and which accounts hold privileged access to it. Include the remote-access and externally reachable entry points, because that is where a stolen password gets used. Mark the systems that cannot support a second factor so they are handled as exceptions rather than quietly skipped. Attach the register with the basis recorded for each criticality judgement."
+            "en": "Decide and record what counts as critical here — systems whose compromise would interrupt the essential service, hold the most sensitive data, or grant administrative reach into other systems — then list each one with how it authenticates today, whether it can accept the organisation's second factor, and which accounts hold privileged access to it. Include the remote-access and externally reachable entry points, because that is where a stolen password gets used. Mark the systems that cannot support a second factor so they are handled as exceptions rather than quietly skipped. Attach the register with the basis recorded for each criticality judgement."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -1828,7 +1858,7 @@
             "en": "Enable multi-factor authentication on every system the scope register marks as capable"
           },
           "description": {
-            "en": "Turn the policy into configuration. Where a system authenticates through the central identity provider, enforce the requirement there so it covers every account at once; where it authenticates locally, enable it on the system itself and confirm no local bypass account is left outside the requirement \u2014 a break-glass account excluded by design is recorded as such, not forgotten. Enrol the privileged accounts on the register first, then the remainder. Export each system's authentication configuration after the change so enforcement can be shown without console access. Attach the exports with the list of systems left unenforced under an approved exception."
+            "en": "Turn the policy into configuration. Where a system authenticates through the central identity provider, enforce the requirement there so it covers every account at once; where it authenticates locally, enable it on the system itself and confirm no local bypass account is left outside the requirement — a break-glass account excluded by design is recorded as such, not forgotten. Enrol the privileged accounts on the register first, then the remainder. Export each system's authentication configuration after the change so enforcement can be shown without console access. Attach the exports with the list of systems left unenforced under an approved exception."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 2,
@@ -1869,7 +1899,7 @@
             "en": "Route remote access and external correspondence over the approved encrypted channels"
           },
           "description": {
-            "en": "The control covers secured communication as well as authentication, so record which channels are approved \u2014 the remote-access service or equivalent for reaching internal systems, and encrypted email or a secure transfer service for correspondence carrying confidential data \u2014 and configure access so those are the channels actually in use: remote administration reachable only over the approved path, and the transfer route available to the people expected to use it. Name the alternative for recipients who cannot receive encrypted email, so the requirement does not push people onto an unapproved workaround. Attach the channel list with the configuration export for each."
+            "en": "The control covers secured communication as well as authentication, so record which channels are approved — the remote-access service or equivalent for reaching internal systems, and encrypted email or a secure transfer service for correspondence carrying confidential data — and configure access so those are the channels actually in use: remote administration reachable only over the approved path, and the transfer route available to the people expected to use it. Name the alternative for recipients who cannot receive encrypted email, so the requirement does not push people onto an unapproved workaround. Attach the channel list with the configuration export for each."
           },
           "phase": "IMPLEMENT",
           "sortOrder": 3,
@@ -1883,7 +1913,7 @@
             "en": "Review the authentication event log for failed and anomalous multi-factor challenges"
           },
           "description": {
-            "en": "Authentication events are only useful if somebody reads them, so work the log for the period: repeated failed second-factor challenges against one account, successful sign-ins from unexpected locations or at unexpected hours, factor enrolments and resets that did not come through the enrolment route, and privileged sign-ins by accounts not on the scope register. Record what was examined, what was found and what was done about each item. Confirm that every system in the register is still delivering its events to the log store \u2014 a system that stopped sending looks identical to a system with nothing to report. Attach the review record for the period."
+            "en": "Authentication events are only useful if somebody reads them, so work the log for the period: repeated failed second-factor challenges against one account, successful sign-ins from unexpected locations or at unexpected hours, factor enrolments and resets that did not come through the enrolment route, and privileged sign-ins by accounts not on the scope register. Record what was examined, what was found and what was done about each item. Confirm that every system in the register is still delivering its events to the log store — a system that stopped sending looks identical to a system with nothing to report. Attach the review record for the period."
           },
           "phase": "OPERATE",
           "sortOrder": 4,
@@ -1924,7 +1954,7 @@
             "en": "Recertify the access rights held on each system with its owner and withdraw what is no longer needed"
           },
           "description": {
-            "en": "Give each system owner the list of accounts and privileges currently held on their system \u2014 including the privileged accounts on the scope register and any service accounts \u2014 and ask them to confirm, reduce or revoke each one. Record the owner's decision per account with the date, then carry the revocations through to the systems rather than stopping at the sign-off: the withdrawn access is the outcome, the signed list is only the record of it. Note the accounts nobody claims, because an unclaimed privileged account is the finding this task exists to surface. Attach the completed recertification with the evidence that each revocation was applied."
+            "en": "Give each system owner the list of accounts and privileges currently held on their system — including the privileged accounts on the scope register and any service accounts — and ask them to confirm, reduce or revoke each one. Record the owner's decision per account with the date, then carry the revocations through to the systems rather than stopping at the sign-off: the withdrawn access is the outcome, the signed list is only the record of it. Note the accounts nobody claims, because an unclaimed privileged account is the finding this task exists to surface. Attach the completed recertification with the evidence that each revocation was applied."
           },
           "phase": "REVIEW",
           "sortOrder": 5,
@@ -1941,6 +1971,9 @@
       "description": "Define what makes an incident significant enough to start the 24-hour clock, and hold the CSIRT and competent-authority contacts the early warning must reach.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure an incident meeting the significance criteria reaches the CSIRT or competent authority within twenty-four hours of the organisation becoming aware of it.",
+      "successCriteria": "The significance criteria state observable conditions and name the event that starts the twenty-four-hour period.\nContacts and submission channels for each jurisdiction have a credential holder and a recent verification date.\nEach submitted warning records the time awareness began, the time it was sent and the authority's receipt.\nStaff who detect and escalate incidents were briefed on the criteria version currently in force.",
+      "testingMethodology": "Evidence:\nObtain the versioned significance criteria and the authority contact register with its last-verified dates.\nObtain the early-warning template and the submission route naming the drafting, submitting and fallback roles.\nCollect the briefing attendance record showing the criteria version taught and the roles present.\nExport the early-warning submission log with the content submitted and each authority receipt.\n\nAnalysis:\nCompute awareness-to-submission time for every logged warning and compare it against twenty-four hours.\nRe-test the period's incidents against the significance criteria to find any that qualified but produced no warning.\nCheck the contact register against the authority's published channel and the credential holder's current employment.\nConfirm the briefed population covers the detecting and escalating roles and was taught the version in force.\n\nOutput:\nAn elapsed-time schedule for the period's warnings, marking each breach of the deadline.\nA reconciliation naming qualifying incidents with no warning submitted and the cause of each miss.\nA contact verification list flagging stale entries and unstaffed credentials.",
       "requirementCodes": [
         "Art.23(1)"
       ],
@@ -2113,6 +2146,9 @@
       "description": "Map each field of the 72-hour notification to the incident record that supplies it, and document the procedure and template that produce it inside the deadline.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure the fuller account of a significant incident reaches the authority within seventy-two hours, populated from records the organisation already keeps.",
+      "successCriteria": "Each notification field is mapped to a record that supplies it, and any field with no source today is named.\nIncident records carry a seventy-two-hour due date and raise a reminder to the incident owner before it lapses.\nEvery notification submitted in the period is filed against its incident with its channel and the authority's reference.\nNotifications submitted in the period went out inside seventy-two hours of the organisation becoming aware.",
+      "testingMethodology": "Evidence:\nObtain the field-to-source map for the seventy-two-hour notification, including the fields it records as unsourced.\nObtain the versioned notification procedure and blank template with its drafting, checking and submitting roles.\nExport the incident tool configuration showing the due date and reminder, or a test incident demonstrating both.\nCollect each submitted notification with its date and time, the channel used and the authority's acknowledgement.\n\nAnalysis:\nTake a submitted notification field by field and trace each populated value to the record the map names.\nConfirm the due date the tool computes runs from the awareness timestamp the incident record holds.\nMeasure awareness-to-submission time for every notification and compare it against seventy-two hours.\nIdentify fields left unpopulated across submissions and check whether the map had already declared them unsourced.\n\nOutput:\nA field traceability schedule for the sampled notifications.\nAn elapsed-time table recording the acknowledgement reference returned for each submission.\nA list of unpopulated fields with the action raised against each one the map did not excuse.",
       "requirementCodes": [
         "Art.23(2)"
       ],
@@ -2261,6 +2297,9 @@
       "description": "Record every incident notified to the authority and the date its final report falls due, and hold the template each section of that report is written into.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "Ensure every incident notified to an authority is closed out with a final report delivered by its one-month due date and filed against the incident it concerns.",
+      "successCriteria": "Every notified incident is on the final-report register with a due date derived from its notification date.\nThe report template maps each section to the record it is drawn from and names the compiler and the checker.\nRows marked submitted hold the report, the submission date and the reference the authority returned.\nRows that lapsed carry a recorded reason and a correction raised against them.",
+      "testingMethodology": "Evidence:\nObtain the final-report register with notification dates, due dates, compilers and current states.\nObtain the versioned report template with its section-to-source map and the compilation and submission procedure.\nCollect the final reports submitted in the period with submission dates, channels and authority references.\nRetrieve the register confirmation for the period showing rows due, rows submitted and rows lapsed.\n\nAnalysis:\nReconcile the register against the notifications actually made to find notified incidents never registered.\nRecompute each due date one month from its notification date and compare it with the register's figure.\nRead sampled reports section by section against the source records the map names for each section.\nCheck every lapsed row for a recorded reason and for a correction carrying an owner.\n\nOutput:\nA register completeness reconciliation naming notified incidents absent from it.\nA due-date and submission-date schedule marking every report delivered late.\nA section sourcing note for the sampled reports, with the lapsed rows and their reasons listed.",
       "requirementCodes": [
         "Art.23(3)"
       ],
@@ -2414,6 +2453,9 @@
       "description": "Record the management body accountable for cybersecurity and what each of its roles answers for, and have it approve the risk-management measures rather than merely receive them.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure cybersecurity decisions carry a named owner at the top of the entity, so the measures in force are ones the body chose and continues to answer for.",
+      "successCriteria": "A governance record names the body accountable for cybersecurity and states what each role on it answers for.\nThe measures in force are the version named in a dated resolution of that body, with attendance recorded.\nOversight reviews happen at the stated cadence, each minuted with the pack presented and the decisions taken.\nDifferences between the measures operating and the approved set are taken back to the body or covered by a recorded delegation.",
+      "testingMethodology": "Evidence:\nObtain the governance record naming the management body, its roles and the cybersecurity accountability of each.\nObtain the resolution approving the risk-management measures, with its date, minute reference and attendance.\nCollect the terms of reference or standing agenda setting the oversight cadence and the contents of the pack.\nGather the oversight log and the packs presented for each review held in the period.\nRequest the latest comparison of the measures in force against the approved version.\n\nAnalysis:\nConfirm the body named in the governance record is the one that actually took the approval resolution.\nCheck the version of the measures cited in the resolution against the version currently operating.\nCompare the dates of reviews held against the stated cadence and identify any interval missed.\nTrace each decision and deferral in the oversight log to an owner and a due date, following open actions into the next pack.\nExamine the comparison for differences neither approved by the body nor covered by a delegation.\n\nOutput:\nA schedule of oversight reviews held against those due, with dates and attendance.\nA statement of whether the measures in force match the approved version, itemising each difference.\nA list of decisions and actions of the body still outstanding past their due dates.",
       "requirementCodes": [
         "Art.20(1)"
       ],
@@ -2562,6 +2604,9 @@
       "description": "Register the management members required to complete cybersecurity training and their current status, against a syllabus written for the decisions they take.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure those who approve the entity's cybersecurity measures understand the risks and obligations they approve, rather than relying wholly on advice given.",
+      "successCriteria": "The roster carries one row per current member of the body, drawn from the governance record of its membership.\nA versioned syllabus covers the entity's own risks, approved measures and reporting timelines, with its material attached.\nEach completion record states the date taught and the syllabus version, and matches the member's row on the roster.\nMembers untrained or taught a superseded version appear on a gap list reported to the body with a booked date.",
+      "testingMethodology": "Evidence:\nObtain the training roster with, per member, the role, the date they joined the body, the completion date and the syllabus version.\nObtain the syllabus and its teaching material, with the version number and the topics covered.\nCollect the induction checklist amended to carry the cybersecurity training item, with its effective date.\nGather the attendance or completion records issued by the presenter or training platform for the period.\nRequest the gap list and the review it was presented at.\n\nAnalysis:\nReconcile the roster against the current membership of the body and identify members appointed but not listed.\nCheck that the syllabus version on each completion record is the version in force when that member was taught.\nCompare partial attendance entries against rows the roster marks complete.\nVerify members appointed since the checklist took effect were trained by the point of induction it states.\nConfirm each name on the gap list carries a reason and a booked date, and trace it to the minute of the review.\n\nOutput:\nA coverage figure: members trained against members currently sitting on the body.\nA list of members holding training against a superseded syllabus version.\nAn assessment of whether the induction route closes the gap for new appointees.",
       "requirementCodes": [
         "Art.20(2)"
       ],
@@ -2693,6 +2738,9 @@
       "description": "Determine whether any Member State the entity operates in mandates certified ICT products, and record that determination with the legal basis behind it.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure a certification obligation in any Member State is discovered by the entity in advance rather than raised against it by a supervisory authority.",
+      "successCriteria": "Every jurisdiction on the entity's list carries a determination naming the provision consulted and its date.\nDeterminations finding no applicable requirement cite the national provision supporting them rather than standing unsupported.\nWhere a requirement applies, each in-scope product holds a certificate record with scheme, level, identifier, issuer and expiry.\nNo determination rests on a provision amended since it was consulted without being re-dated.",
+      "testingMethodology": "Evidence:\nObtain the list of Member States in which the entity is established or provides services.\nObtain the certification determination recorded for each of those jurisdictions.\nCollect the national transposition provision cited by each determination and the date it was consulted.\nWhere a requirement was found to apply, obtain the certificate register for the products it covers.\nRequest the most recent re-check of the determinations against amended implementing law.\n\nAnalysis:\nCheck every jurisdiction on the list has a determination and identify any left unexamined.\nRead the cited provision to confirm it supports the conclusion drawn, conclusions of no requirement included.\nFor in-scope products, verify the certificate identifier resolves at the issuing body and the expiry has not passed.\nCompare the date of each determination against the date of the latest amendment to the provision it rests on.\n\nOutput:\nA per-jurisdiction table of determination, provision cited and date reached.\nA list of certificates expiring before the next scheduled review.\nA list of determinations now older than the law they rely on.",
       "requirementCodes": [
         "Art.24(1)"
       ],
@@ -2752,6 +2800,9 @@
       "description": "List the European and international standards the entity relies on for its security measures, and map each Article 21 measure to the clause that evidences it.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure the entity can answer an assessor's question of 'against what?' for each security measure, and knows which measures have no standard to point to.",
+      "successCriteria": "Each standard on the list carries its version and the scope it is applied to, including those used only as a design reference.\nAll ten Article 21(2) measures appear in the mapping, whether or not a standard clause backs them.\nMeasures with no standard behind them are listed as such rather than left blank or omitted.\nThe mapping cites where the evidence for each clause lives, not only the clause number.",
+      "testingMethodology": "Evidence:\nObtain the list of European and international standards relied on, with versions and the scope of each.\nObtain any certificates or statements of applicability supporting the listed standards.\nObtain the mapping of the ten Article 21(2) measures to standard clauses and evidence locations.\nCollect the latest comparison of adopted versions against the versions currently published.\n\nAnalysis:\nCount the Article 21(2) measures present in the mapping and identify those missing from it.\nFor a sample of mapped clauses, open the evidence at the location cited and judge whether it evidences that measure.\nConfirm standards used only informally appear on the list alongside the certified ones.\nCheck whether any listed standard has been superseded and whether the change touches a clause the mapping relies on.\n\nOutput:\nA mapping coverage count: measures backed by a clause against the ten.\nA list of measures resting on a clause from a superseded version.\nA note on measures evidenced by reference alone, with no artefact at the location cited.",
       "requirementCodes": [
         "Art.25"
       ],
@@ -2761,7 +2812,7 @@
             "en": "List the European and international standards the entity relies on for its security measures"
           },
           "description": {
-            "en": "Name each standard with its version and the scope it is applied to \u2014 the certificate or statement of applicability where one exists. Include standards used informally as a design reference, since they will be cited in an assessment whether or not they are certified. Attach the list."
+            "en": "Name each standard with its version and the scope it is applied to — the certificate or statement of applicability where one exists. Include standards used informally as a design reference, since they will be cited in an assessment whether or not they are certified. Attach the list."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -2793,10 +2844,13 @@
     },
     {
       "code": "NIS2-DN",
-      "title": "Domain registration data \u2014 applies to TLD registries and DNS providers only (Article 28)",
+      "title": "Domain registration data — applies to TLD registries and DNS providers only (Article 28)",
       "description": "Determine whether the entity operates a TLD registry or provides domain registration services, and where it does, hold registration data that is accurate and kept so.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure an Article 28 obligation is not missed because the entity classified itself by its own description rather than by the services it actually runs.",
+      "successCriteria": "The scope determination is reasoned against the services the entity actually runs, reseller and hosting arrangements included.\nA recorded out-of-scope conclusion names the services examined and who reached it.\nIn scope, the database description states the data held per domain and how registrant identity is verified.\nSampled registration records carry an identifiable registrant, and every incomplete entry found has a dated correction.",
+      "testingMethodology": "Evidence:\nObtain the current service catalogue and the scope determination made against it.\nObtain the record naming the services examined, the conclusion reached and its author.\nWhere in scope, obtain the description of the registration data held and the identity-verification method.\nObtain the accuracy check for the period, listing the records sampled and the corrections made.\n\nAnalysis:\nTest the determination against the service catalogue rather than the self-description, looking for reseller, hosting or DNS offerings.\nJudge whether the sample size and its selection give a fair view of the registration database.\nFor each sampled record, confirm the registrant is identifiable from the data held.\nCheck every inaccuracy found was corrected and the correction dated, not merely noted.\nCompare the date of the determination against the date of the latest change to the service catalogue.\n\nOutput:\nA statement of the scope conclusion and the services it was tested against.\nSample results: records checked, records incomplete, corrections applied.\nA note where a service added since the determination has not been re-tested.",
       "requirementCodes": [
         "Art.28(1)"
       ],
@@ -2806,7 +2860,7 @@
             "en": "Determine whether the entity operates a TLD registry or provides domain registration services"
           },
           "description": {
-            "en": "Test the entity's actual services against the two categories, not against its self-description \u2014 a hosting or reseller arrangement can amount to providing registration services. Record the conclusion, the services examined, and who reached it. For most entities the answer is no, and that recorded no is a complete and correct outcome."
+            "en": "Test the entity's actual services against the two categories, not against its self-description — a hosting or reseller arrangement can amount to providing registration services. Record the conclusion, the services examined, and who reached it. For most entities the answer is no, and that recorded no is a complete and correct outcome."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -2856,6 +2910,9 @@
       "description": "Determine whether the entity will join a cybersecurity information-sharing arrangement, and record its terms together with the authority notified of it.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure the entity's stance on cybersecurity information sharing is a deliberate choice it can defend, and that anything shared leaves under controlled terms.",
+      "successCriteria": "The participation decision records the arrangements weighed, the reasoning and the date, whichever way it went.\nWhere the entity joined, the terms state what may be shared, under what marking, and who may release it on its behalf.\nThe notification of the arrangement to the competent authority is held alongside those terms.\nEach exchange in the period appears in the log with counterparty, direction, marking and releaser.",
+      "testingMethodology": "Evidence:\nObtain the recorded participation decision with the arrangements weighed and the reasoning given.\nWhere the entity joined, obtain the arrangement's terms and the notification sent to the competent authority.\nObtain the information-sharing log covering the period under review.\nCollect the review that re-took the participation decision and the account of what the arrangement delivered.\n\nAnalysis:\nCheck the decision names arrangements actually open to the entity rather than a generic set.\nVerify releases in the log were authorised by a person the terms permit to release.\nCheck each logged item carries a confidentiality marking consistent with those terms.\nWhere the entity does not participate, confirm the standing decision is dated and current rather than inherited.\nWeigh the review's account of value received and contributed against the decision it reached.\n\nOutput:\nA count of exchanges by direction and counterparty for the period.\nA list of releases lacking a named authoriser or a marking.\nA statement of whether the participation decision is still supported by what the arrangement delivered.",
       "requirementCodes": [
         "Art.29(1)"
       ],
@@ -2865,7 +2922,7 @@
             "en": "Determine whether the entity will join a cybersecurity information-sharing arrangement"
           },
           "description": {
-            "en": "Weigh the arrangements actually open to the entity \u2014 sectoral ISACs, national CSIRT communities, trust groups \u2014 against what it can contribute and consume. Record the decision either way with its reasoning and the date. A recorded decision not to participate is a complete outcome, not a gap."
+            "en": "Weigh the arrangements actually open to the entity — sectoral ISACs, national CSIRT communities, trust groups — against what it can contribute and consume. Record the decision either way with its reasoning and the date. A recorded decision not to participate is a complete outcome, not a gap."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
@@ -2915,6 +2972,9 @@
       "description": "Identify the competent authority and CSIRT for each jurisdiction the entity operates in, and hold the notification channel and format each of them requires.",
       "category": "NIS2",
       "defaultFrequency": "QUARTERLY",
+      "objective": "To ensure an incident-reporting deadline is never spent finding out where and how to report, in any Member State the entity operates in.",
+      "successCriteria": "Every Member State where the entity is established or provides services appears on the jurisdiction list with its source.\nEach entry names the competent authority, the CSIRT and the national law transposing NIS2.\nEach entry records the submission channel, the language accepted, and any registration required before a first report.\nRequired registrations are active and were confirmed within the period, with any correction made in the same pass.",
+      "testingMethodology": "Evidence:\nObtain the jurisdiction list with the authority, the CSIRT and the transposing law recorded per Member State.\nObtain the channel record: portal or address, form, language accepted and pre-registration requirement per entry.\nObtain the verification record for the period, with the source consulted and the date checked per entry.\nCollect the entity's establishment and service footprint for the same period.\n\nAnalysis:\nCompare the jurisdiction list against that footprint and identify Member States absent from it.\nFor a sample of entries, open the authority's published details and compare them with the recorded channel.\nConfirm pre-registration requirements are recorded as complete rather than pending.\nCheck each contact found to have changed carries its correction and the date the correction was applied.\nReview whether entering a new Member State prompted a fresh assessment of essential or important status there.\n\nOutput:\nA per-jurisdiction table of authority, CSIRT, channel and date last verified.\nA list of entries not verified within the period.\nA list of jurisdictions in the footprint but missing from the list.",
       "requirementCodes": [
         "Art.7(1)"
       ],
@@ -2924,7 +2984,7 @@
             "en": "Identify the competent authority and CSIRT for each jurisdiction the entity operates in"
           },
           "description": {
-            "en": "Work from where the entity is actually established and provides services, not from where it is headquartered \u2014 NIS2 attaches per Member State. For each, name the competent authority, the CSIRT, and the national law transposing NIS2. Attach the list with the source consulted for each entry."
+            "en": "Work from where the entity is actually established and provides services, not from where it is headquartered — NIS2 attaches per Member State. For each, name the competent authority, the CSIRT, and the national law transposing NIS2. Attach the list with the source consulted for each entry."
           },
           "phase": "SCOPE",
           "sortOrder": 0,
