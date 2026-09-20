@@ -1,7 +1,7 @@
 import { PageHeader } from '@/components/layout/PageHeader';
 import { AgentsViewsMenu } from '../AgentsViewsMenu';
+import { ReceiptVerificationBadge } from './ReceiptVerificationBadge';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { BadgeCheck, TriangleWarning } from '@/components/ui/icons/nucleo';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 import { getTenantCtx } from '@/app-layer/context';
 import { listReceipts } from '@/app-layer/usecases/agent-action-receipt';
@@ -104,23 +104,13 @@ export default async function AgentReceiptsPage({
                                 </span>
                             </div>
                             <div className="flex items-center gap-compact">
-                                {r.verified ? (
-                                    <StatusBadge
-                                        variant="success"
-                                        icon={BadgeCheck}
-                                        tooltip={t('mcp.signatureVerifiedTooltip')}
-                                    >
-                                        {t('mcp.signatureVerified')}
-                                    </StatusBadge>
-                                ) : (
-                                    <StatusBadge
-                                        variant="warning"
-                                        icon={TriangleWarning}
-                                        tooltip={t('mcp.unverifiedTooltip')}
-                                    >
-                                        {t('mcp.unverified')}
-                                    </StatusBadge>
-                                )}
+                                <ReceiptVerificationBadge
+                                    verified={r.verified}
+                                    verifiedLabel={t('mcp.signatureVerified')}
+                                    verifiedTooltip={t('mcp.signatureVerifiedTooltip')}
+                                    unverifiedLabel={t('mcp.unverified')}
+                                    unverifiedTooltip={t('mcp.unverifiedTooltip')}
+                                />
                                 <a
                                     href={`/api/t/${tenantSlug}/agent-receipts/${r.id}/export`}
                                     className="text-sm text-content-info hover:underline"
