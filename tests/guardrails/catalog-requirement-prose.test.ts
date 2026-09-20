@@ -328,15 +328,29 @@ describe('catalogue requirements carry prose', () => {
      * with; nothing in `tests/e2e` or `tests/regression` reads them. Mutate,
      * run, record which suites redden, restore.
      *
-     *   DELETE one summary-carrying requirement   14 of 15 fixtures are
+     *   DELETE one summary-carrying requirement   13 of 15 fixtures are
      *                                             already caught elsewhere.
      *   ADD one summary-carrying requirement      10 of 15 are.
      *
      * The gaps, measured rather than reasoned:
      *
-     *   blind to a DELETION   iso27001 (93)
+     *   blind to a DELETION   iso27001 (93), iso27701 (44)
      *   blind to an ADDITION  iso27001 (93), iso27701 (44), dora (24),
      *                         imda-mgf (19), owasp-asi (10)
+     *
+     * The DELETION row said 14 and named only iso27001 until adversarial
+     * review produced the counterexample: delete code `6` from
+     * `iso27701-control-templates.json` — a shipped row WITH an authored
+     * summary — and the 59-suite sweep reddens only this file's own two new
+     * assertions. The cause is the same filter that explains the rest of the
+     * table: `library-obligations-reach-the-catalogue.test.ts:130` selects
+     * `n.assessable !== false`, and the iso27701 library node for ref_id `6`
+     * ("PIMS-specific guidance") carries `assessable: false`. It is not an
+     * obligation, so its disappearance answers to no library and passes.
+     *
+     * Worth stating because the number is the whole argument for these pins:
+     * a reader re-seating fifteen constants is owed a count that survives
+     * being checked, and this one did not on the first attempt.
      *
      * The asymmetry has one cause. Fourteen of the fifteen fixtures declare a
      * pair in `library-obligations-reach-the-catalogue.test.ts`
@@ -351,8 +365,17 @@ describe('catalogue requirements carry prose', () => {
      * library is what is short: `src/data/libraries/iso27001-2022.yaml`
      * selects 29 Annex A controls (`A.5.1` … `A.8.32`) against the fixture's
      * 93, and `A.8.34` is not one of them, so deleting `8.34` removes no
-     * obligation and the pair stays green. On main that 93 is not pinned,
-     * floored or joined anywhere — the map below is its first reader.
+     * obligation and the pair stays green. On main the 93 rows OF THIS
+     * FIXTURE are not pinned or floored anywhere, and only 29 of them are
+     * joined — the map below is the first reader of the other 64.
+     *
+     * Both qualifiers are load-bearing against a grep.
+     * `framework-coverage.test.ts:47` does assert `toBe(93)`, but on the
+     * SIBLING representation `prisma/fixtures/iso27001_2022_annexA.json`,
+     * which also carries 8.34 — so it does not protect this file, confirmed
+     * by that suite passing under the 8.34 deletion. And "not joined" would
+     * contradict the paragraph above, which correctly says the join IS real
+     * for the 29 the library selects.
      *
      * Six fixtures do carry a literal count equal to the denominator here —
      * soc2 10 (`soc2-starter-pack-coverage.test.ts:137`), eu-ai-act 16
