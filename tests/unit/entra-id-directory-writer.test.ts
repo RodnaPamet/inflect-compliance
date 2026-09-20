@@ -1344,7 +1344,14 @@ describe('construction refuses a half-built connection before the batch starts',
         // The affirmative-looking paragraph tells an operator that the checkbox
         // they ticked is the problem. Printing it for a value nobody would read
         // as a grant sends them hunting a UI bug that is not there.
-        expect(err?.message).not.toMatch(/reads as ON in the admin UI/);
+        //
+        // The needle is the SAME one the affirmative case above asserts
+        // positively, so this negative cannot go vacuous the way its
+        // predecessor did: it was anchored on "reads as ON in the admin UI",
+        // a phrase that moved into per-direction copy when the flag split, and
+        // a `not.toMatch` for a phrase the module no longer emits ANYWHERE
+        // passes for every input.
+        expect(err?.message).not.toMatch(/Re-save the connection/);
     });
 
     it('builds its own bounded transport when none is injected, and still refuses pre-network', async () => {
