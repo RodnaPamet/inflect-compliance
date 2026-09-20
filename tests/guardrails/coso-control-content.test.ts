@@ -53,7 +53,7 @@ const FIXTURE = path.join(ROOT, 'prisma/fixtures/coso-icf-2013-control-templates
 
 const catalog = loadCatalogFile(FIXTURE);
 
-/** The 33 entity-level controls. Extended to 57 / 75 / 96 by the later PRs. */
+/** 57 controls: 33 entity-level (2A) + 24 process-level CA (2B). 75 / 96 follow. */
 const TAXONOMY = [
     'COSO-CE-01.01', 'COSO-CE-01.02', 'COSO-CE-01.03',
     'COSO-CE-02.01', 'COSO-CE-02.02', 'COSO-CE-02.03',
@@ -65,6 +65,15 @@ const TAXONOMY = [
     'COSO-RA-02.01', 'COSO-RA-02.02', 'COSO-RA-02.03', 'COSO-RA-02.04',
     'COSO-RA-03.01', 'COSO-RA-03.02', 'COSO-RA-03.03', 'COSO-RA-03.04',
     'COSO-RA-04.01', 'COSO-RA-04.02', 'COSO-RA-04.03',
+    // ── PR 2B: process-level Control Activities (24) ───────────────────
+    'COSO-CA-01.01', 'COSO-CA-01.02', 'COSO-CA-01.03',
+    'COSO-CA-01.04', 'COSO-CA-02.01', 'COSO-CA-02.02',
+    'COSO-CA-02.03', 'COSO-CA-02.04', 'COSO-CA-03.01',
+    'COSO-CA-03.02', 'COSO-CA-03.03', 'COSO-CA-04.01',
+    'COSO-CA-04.02', 'COSO-CA-04.03', 'COSO-CA-04.04',
+    'COSO-CA-04.05', 'COSO-CA-04.06', 'COSO-CA-09.01',
+    'COSO-CA-09.02', 'COSO-CA-09.03', 'COSO-CA-10.01',
+    'COSO-CA-10.02', 'COSO-CA-10.03', 'COSO-CA-10.04',
 ];
 
 /** Finance and governance weighted, deliberately NOT the security set. */
@@ -80,14 +89,14 @@ const BANDS = {
 } as const;
 
 describe('the COSO catalogue ships the taxonomy it declares', () => {
-    it('carries exactly the 33 entity-level controls, by set equality', () => {
+    it('carries exactly the 57 controls authored so far, by set equality', () => {
         expect(catalog.templates.map((t) => t.code).sort()).toEqual([...TAXONOMY].sort());
     });
 
-    it('splits them CE 19 / RA 14 across the two components', () => {
+    it('splits them CE 19 / RA 14 / CA 24 across the components', () => {
         const byCategory: Record<string, number> = {};
         for (const t of catalog.templates) byCategory[t.category] = (byCategory[t.category] ?? 0) + 1;
-        expect(byCategory).toEqual({ CE: 19, RA: 14 });
+        expect(byCategory).toEqual({ CE: 19, RA: 14, CA: 24 });
     });
 
     it('links every control to a principle the catalogue itself declares', () => {
@@ -103,7 +112,7 @@ describe('the COSO catalogue ships the taxonomy it declares', () => {
         expect(orphans.map((t) => t.code)).toEqual([]);
     });
 
-    it('names every one of its 33 templates in the pack', () => {
+    it('names every one of its 57 templates in the pack', () => {
         // Without this the pack can shrink while the catalogue does not, and a
         // tenant installs fewer controls than the file declares.
         expect([...(catalog.pack?.templateCodes ?? [])].sort()).toEqual([...TAXONOMY].sort());

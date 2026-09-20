@@ -201,6 +201,29 @@ const IMPERATIVE_VERBS = new Set([
     'Sweep',
     'Table',
     'Time',
+
+    // ── ICFR process-level vocabulary (COSO ICF 2B) ──────────────────
+    // The second COSO batch, and the same structural reason as the first:
+    // `Recompute` a completion rate, `Re-trace` a transaction, `Contest` a
+    // non-key designation, `Conclude` on a policy falling due — audit verbs
+    // with no security analogue already listed.
+    //
+    // Two candidates were REFUSED rather than admitted: `Fix`, already
+    // refused in 2A as ambiguous between settle and repair, and `Seat`,
+    // unusual in the way `Fit` was. Their titles moved to `Determine` and
+    // `Assign`, both already curated. A verb refused once must stay refused,
+    // or the list grows by attrition rather than by decision.
+    'Bind',
+    'Conclude',
+    'Contest',
+    'Contrast',
+    'Pair',
+    'Recompute',
+    'Request',
+    'Re-trace',
+    'Stamp',
+    'State',
+    'Timetable',
 ]);
 
 /**
