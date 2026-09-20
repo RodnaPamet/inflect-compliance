@@ -84,10 +84,20 @@ const EXPECTED_BINDINGS: Readonly<Record<string, readonly string[]>> = {
 const SCANNED_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'] as const;
 
 /**
- * POSITIVE CONTROL floor. An empty or broken scan satisfies every set
- * comparison below by vacuity, which is the failure mode the guard exists to
- * avoid. Measured at 5,238; the floor sits well under it so ordinary growth
- * or deletion never trips it, and a scan that collapses does.
+ * POSITIVE CONTROL floor, for PARTIAL collapse specifically.
+ *
+ * This comment used to claim the floor stopped an empty scan passing "by
+ * vacuity". That was false, and the falsehood is worth leaving recorded: an
+ * EMPTY scan makes `liveSeams()` return nothing, and comparing nothing against
+ * a two-element `DOCUMENTED_SEAMS` FAILS. The set assertions already fail
+ * closed, so the floor buys nothing there.
+ *
+ * What it does buy is the partial case, which does not fail closed: a scan
+ * that still reaches `src/components/ui`, where both seams live, but has lost
+ * most of the tree — a broken `under:` filter, a git population that came back
+ * truncated. Every assertion below still passes while the guard has gone blind
+ * everywhere else. Measured at 5,238 files; the floor sits under it with room
+ * for ordinary deletion.
  */
 const MIN_FILES_SCANNED = 4000;
 
@@ -188,11 +198,25 @@ export function importedBindings(
     return found ? [...names].sort() : null;
 }
 
-/** True when the file passes a JSX attribute of this name anywhere. */
-export function usesJsxAttribute(
+/**
+ * True when the file passes a prop of this name — as a JSX attribute OR as an
+ * object-literal property.
+ *
+ * THE SECOND HALF IS NOT DECORATION. The first draft matched only
+ * `ts.isJsxAttribute`, and the sibling seam `virtualized-list.tsx:193-224`
+ * already hoists its props into `const commonProps = {...} as const` and
+ * spreads them into both list components. So unifying the two seams' call
+ * shapes — ordinary tidying that keeps react-window on v1 and keeps the prop —
+ * would have turned this guard red. A guard that reddens on innocent work gets
+ * routed around, so matching the PROP rather than the SYNTAX is the fix.
+ *
+ * An object-literal property cannot be written in a comment either, so the
+ * Class A immunity this file depends on is preserved.
+ */
+export function passesProp(
     sourceText: string,
     fileLabel: string,
-    attribute: string,
+    prop: string,
 ): boolean {
     const sf = ts.createSourceFile(
         fileLabel,
@@ -202,14 +226,13 @@ export function usesJsxAttribute(
         ts.ScriptKind.TSX,
     );
     let seen = false;
+    const named = (n: ts.Node): boolean =>
+        (ts.isIdentifier(n) || ts.isStringLiteral(n)) && n.text === prop;
+
     const visit = (node: ts.Node): void => {
-        if (
-            ts.isJsxAttribute(node) &&
-            ts.isIdentifier(node.name) &&
-            node.name.text === attribute
-        ) {
-            seen = true;
-        }
+        if (ts.isJsxAttribute(node) && named(node.name)) seen = true;
+        if (ts.isPropertyAssignment(node) && named(node.name)) seen = true;
+        if (ts.isShorthandPropertyAssignment(node) && named(node.name)) seen = true;
         ts.forEachChild(node, visit);
     };
     visit(sf);
@@ -341,11 +364,21 @@ describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', ()
             expect([...liveSeams().keys()].sort()).toEqual([...DOCUMENTED_SEAMS]);
         });
 
+        it('has a binding expectation for every documented seam', () => {
+            // WITHOUT THIS, the binding check below is vacuous. It used to
+            // iterate `Object.entries(EXPECTED_BINDINGS)`, so emptying or
+            // thinning that table deleted the assertion silently and left a
+            // green suite — the precise defect this file claims to close,
+            // sitting inside it. Pin the table's key set so thinning is red.
+            expect(Object.keys(EXPECTED_BINDINGS).sort()).toEqual([...DOCUMENTED_SEAMS]);
+        });
+
         it('imports only v1 identifiers, every one of which v2 removed', () => {
-            const seams = liveSeams();
-            for (const [rel, expected] of Object.entries(EXPECTED_BINDINGS)) {
-                expect(seams.get(rel)).toEqual([...expected]);
-            }
+            // One whole-map comparison rather than a loop: a map equality
+            // cannot go vacuous the way a loop over a table can, and it
+            // reports the seam set and the bindings in a single diff.
+            const live = Object.fromEntries([...liveSeams()].sort());
+            expect(live).toEqual(EXPECTED_BINDINGS);
         });
 
         it('still hosts the sticky header through outerElementType, which v2 cannot express', () => {
@@ -356,7 +389,7 @@ describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', ()
             // sticky-header contract changed — both need the section re-argued.
             const rel = 'src/components/ui/table/virtual-table-body.tsx';
             const text = fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
-            expect(usesJsxAttribute(text, rel, 'outerElementType')).toBe(true);
+            expect(passesProp(text, rel, 'outerElementType')).toBe(true);
         });
     });
 
@@ -449,10 +482,25 @@ describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', ()
             ).toBeNull();
         });
 
-        it('the outerElementType detector distinguishes an attribute from a mention', () => {
-            expect(usesJsxAttribute(`<L outerElementType={O} />`, TSX, 'outerElementType')).toBe(true);
-            expect(usesJsxAttribute(`// outerElementType={O}`, TSX, 'outerElementType')).toBe(false);
-            expect(usesJsxAttribute(`<L tagName="div" />`, TSX, 'outerElementType')).toBe(false);
+        it('the outerElementType detector distinguishes a prop from a mention', () => {
+            expect(passesProp(`<L outerElementType={O} />`, TSX, 'outerElementType')).toBe(true);
+            expect(passesProp(`// outerElementType={O}`, TSX, 'outerElementType')).toBe(false);
+            expect(passesProp(`/* outerElementType: O */`, TSX, 'outerElementType')).toBe(false);
+            expect(passesProp(`<L tagName="div" />`, TSX, 'outerElementType')).toBe(false);
+        });
+
+        it('the prop detector survives the props-hoist the sibling seam already uses', () => {
+            // virtualized-list.tsx builds `const commonProps = {...} as const`
+            // and spreads it. Unifying the seams must not redden this guard.
+            expect(
+                passesProp(`const p = { outerElementType: O }; <L {...p} />`, TSX, 'outerElementType'),
+            ).toBe(true);
+            expect(
+                passesProp(`const outerElementType = O; const p = { outerElementType };`, TSX, 'outerElementType'),
+            ).toBe(true);
+            expect(
+                passesProp(`const p = { "outerElementType": O };`, TSX, 'outerElementType'),
+            ).toBe(true);
         });
 
         it('majorOf reads a range, a plain version and a v2 bump', () => {
