@@ -94,6 +94,7 @@ import { randomUUID } from 'crypto';
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 import { hashForLookup } from '@/lib/security/encryption';
 import { eraseUser } from '@/app-layer/jobs/dsar-erasure';
+import { ERASURE_EXECUTED_ACTION } from '@/lib/audit/erasure-record';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -139,6 +140,24 @@ async function attributionOf(auditId: string): Promise<string | null> {
         auditId,
     );
     return rows[0]?.userId ?? null;
+}
+
+/**
+ * The `ERASURE_EXECUTED` entries this tenant's chain holds (#2682).
+ *
+ * The owner decision requires the erasure record to be written IN THE SAME
+ * TRANSACTION as the pseudonymization, because a record that could commit
+ * separately from the erasure it describes reintroduces the bug it exists to
+ * fix — and the mirror case is this file's subject: a record that SURVIVES a
+ * rolled-back erasure would name rows whose `userId` was put back, handing a
+ * chain tolerance to attributions that still exist.
+ */
+async function erasureRecordIds(): Promise<string[]> {
+    const rows = await globalPrisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT "id" FROM "AuditLog" WHERE "tenantId" = $1 AND "action" = $2`,
+        TENANT, ERASURE_EXECUTED_ACTION,
+    );
+    return rows.map((r) => r.id);
 }
 
 describeFn('#2651 — DSAR erasure rolls back against a real RESTRICT refusal', () => {
@@ -201,6 +220,25 @@ describeFn('#2651 — DSAR erasure rolls back against a real RESTRICT refusal', 
         await expect(attributionOf(AUDIT_BLOCKED)).resolves.toBe(USER_BLOCKED);
     });
 
+    it('leaves NO erasure record behind either — it is INSIDE the transaction (#2682)', async () => {
+        // The "same transaction" half of the owner decision, checked against a
+        // real rollback rather than argued from the source. `recordErasure`
+        // runs between the `updateMany` and the hard delete, so a refused
+        // delete must take it back too.
+        //
+        // If it did not: the surviving entry would name `AUDIT_BLOCKED` and
+        // commit to the hash that row has once `userId` is NULL — but the
+        // rollback put `userId` back, so the row now recomputes to its stored
+        // hash and needs no tolerance. The record would sit in the chain
+        // holding a standing excuse for a future nulling of that exact row,
+        // which is precisely the licence the tolerance must not grant.
+        //
+        // The POSITIVE CONTROL below is what stops this passing vacuously: it
+        // runs an erasure that SUCCEEDS on the same tenant and requires a
+        // record to appear.
+        await expect(erasureRecordIds()).resolves.toEqual([]);
+    });
+
     it('leaves the subject in place after the refusal', async () => {
         const user = await globalPrisma.user.findUnique({ where: { id: USER_BLOCKED } });
         expect(user).not.toBeNull();
@@ -218,5 +256,20 @@ describeFn('#2651 — DSAR erasure rolls back against a real RESTRICT refusal', 
 
         const gone = await globalPrisma.user.findUnique({ where: { id: USER_FREE } });
         expect(gone).toBeNull();
+
+        // …and the erasure record DID land this time (#2682) — the control
+        // for the empty-set assertion above, which an implementation that
+        // never writes a record at all would otherwise satisfy.
+        const records = await erasureRecordIds();
+        expect(records).toEqual(receipt.erasureRecordIds);
+        expect(records).toHaveLength(1);
+
+        // The rows this fixture seeds are raw INSERTs with a NULL `entryHash`
+        // (see `mkAuditRow`), so the pre-erasure control in `recordErasure`
+        // refuses them a tolerance — an unhashed row is outside the chain the
+        // verifier walks and has nothing to be excused of. Asserted rather
+        // than left implicit, because "a record was written" and "the record
+        // named something" are different claims.
+        expect(receipt.auditRowsTolerated).toBe(0);
     });
 });

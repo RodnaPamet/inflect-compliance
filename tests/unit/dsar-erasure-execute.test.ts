@@ -31,6 +31,7 @@
  * the source.
  */
 import { eraseUser } from '@/app-layer/jobs/dsar-erasure';
+import { ERASURE_EXECUTED_ACTION } from '@/lib/audit/erasure-record';
 import { runInGlobalContext } from '@/lib/db-context';
 
 // Holder rather than a closed-over binding: a jest.mock factory may only
@@ -84,6 +85,32 @@ function makeFakeDb(
             },
         },
         auditLog: {
+            async findMany(args: { where: { userId: string } }) {
+                calls.push(`auditLog:findMany:${JSON.stringify(args)}`);
+                // The rows the ERASURE_EXECUTED record (#2682) has to name.
+                // Their `entryHash` is deliberately a literal that cannot be
+                // the real canonical hash, so `recordErasure`'s pre-erasure
+                // control REJECTS every one of them and no tolerance is
+                // recorded. That is the honest outcome for a fake that does
+                // not hash: the record still gets written (it is evidence of
+                // the erasure) and `auditRowsTolerated` is 0. The DB-backed
+                // `dsar-erasure-audit-survival.test.ts` is where real
+                // tolerances are produced and graded.
+                return Array.from({ length: auditRows }, (_, i) => ({
+                    id: `audit-${i}`,
+                    tenantId: i % 2 === 0 ? 'tenant-a' : 'tenant-b',
+                    userId: args.where.userId,
+                    actorType: 'USER',
+                    entity: 'Control',
+                    entityId: `ctrl-${i}`,
+                    action: 'CONTROL_UPDATED',
+                    detailsJson: { category: 'custom' },
+                    previousHash: null,
+                    entryHash: 'not-a-real-hash',
+                    version: 1,
+                    createdAt: new Date('2026-09-20T00:00:00.000Z'),
+                }));
+            },
             async updateMany(args: { where: { userId: string }; data: { userId: null } }) {
                 calls.push(`auditLog:updateMany:${JSON.stringify(args)}`);
                 staged.auditRowsNulled = auditRows;
@@ -94,6 +121,18 @@ function makeFakeDb(
 
     const db = {
         ...delegates,
+        // The erasure record goes through `appendAuditEntryWithin`, which
+        // issues raw SQL against "AuditLog" — recorded here so the ordering
+        // assertions can see it, and answered with the shapes that writer
+        // expects (an array for the chain-tip read, a row count otherwise).
+        async $queryRawUnsafe(sql: string, ...values: unknown[]) {
+            calls.push(`$raw:$queryRawUnsafe:${JSON.stringify([sql, ...values])}`);
+            return [] as unknown[];
+        },
+        async $executeRawUnsafe(sql: string, ...values: unknown[]) {
+            calls.push(`$raw:$executeRawUnsafe:${JSON.stringify([sql, ...values])}`);
+            return 1;
+        },
         async $transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
             calls.push('$transaction');
             staged = { auditRowsNulled: 0, userDeleted: false };
@@ -120,12 +159,82 @@ describe('eraseUser — the cascade', () => {
         // The order is the assertion. Reversing these two lines in the
         // implementation leaves the probe oracle green and makes the receipt
         // lie on a real database, where AuditLog.userId is ON DELETE SET NULL.
+        //
+        // #2682 ADDED THREE THINGS TO THIS SEQUENCE, and each one's POSITION
+        // is the claim, not its presence:
+        //
+        //   auditLog:findMany BEFORE updateMany — `updateMany` returns a
+        //     count, not ids, and afterwards the subject's rows are no longer
+        //     findable by `userId`. Read it later and the erasure record
+        //     names nothing.
+        //   the $raw block AFTER updateMany — the ERASURE_EXECUTED entry
+        //     asserts these rows HAVE been pseudonymized. Written first it
+        //     would be a prediction.
+        //   the $raw block BEFORE user:delete — it is inside the same
+        //     transaction as the delete, so a refused delete rolls the record
+        //     back along with the pseudonymization it describes. That is the
+        //     "same transaction" constraint of the owner decision, and this
+        //     line is where a future refactor that moves the record outside
+        //     the transaction reddens.
+        //
+        // The fixture spans TWO tenants (see `findMany` above), so the $raw
+        // block repeats per tenant — the chain is per-tenant and one record
+        // in one tenant would leave the other's verifier still reporting
+        // tampering.
+        const RAW_APPEND = [
+            '$raw:$executeRawUnsafe',   // pg_advisory_xact_lock for this tenant
+            '$raw:$queryRawUnsafe',     // chain tip
+            '$raw:$executeRawUnsafe',   // INSERT the ERASURE_EXECUTED row
+        ];
         expect(fake.calls.map((c) => c.split(':').slice(0, 2).join(':'))).toEqual([
             '$transaction',
             'user:findUnique',
+            'auditLog:findMany',
             'auditLog:updateMany',
+            ...RAW_APPEND,
+            ...RAW_APPEND,
             'user:delete',
         ]);
+    });
+
+    it('writes the erasure record through the sanctioned AuditLog writer, per tenant', async () => {
+        const fake = makeFakeDb();
+        const receipt = await eraseUser(SUBJECT, { db: fake.db });
+
+        // One ERASURE_EXECUTED entry per tenant the erasure touched. The
+        // fixture's three rows span two tenants, so two records — an
+        // implementation that wrote one (or wrote it for the "current"
+        // tenant only) leaves the other chain unexplained.
+        expect(receipt.erasureRecordIds).toHaveLength(2);
+        expect(new Set(receipt.erasureRecordIds).size).toBe(2);
+
+        const inserts = fake.calls.filter((c) => c.includes('INSERT INTO \\"AuditLog\\"'));
+        expect(inserts).toHaveLength(2);
+
+        // COUNTED rather than asserted per-iteration with `toContain`. The
+        // loop form read `for (const insert of inserts) expect(insert)
+        // .toContain(...)`, and `assertion-needle-uniqueness-ratchet`'s
+        // `UNANALYSABLE_READ_BASELINE` went up by exactly 3 for it — a
+        // loop binding is a subject its analyser cannot resolve
+        // (`binding-not-resolvable`), which is a blind spot whether or not
+        // this particular assertion is sound. Filtering says the same thing
+        // with a denominator the ratchet can read, and a failure names how
+        // many of the two inserts satisfied it rather than stopping at the
+        // first.
+        //
+        // The entry's actor is the JOB and its userId is NULL. Naming the
+        // subject would re-identify them in their own erasure record — and
+        // the record would then be pseudonymized by the very `updateMany` it
+        // describes, leaving it outside its own named set.
+        expect(inserts.filter((c) => c.includes(ERASURE_EXECUTED_ACTION))).toHaveLength(2);
+        expect(inserts.filter((c) => c.includes('JOB'))).toHaveLength(2);
+        expect(inserts.filter((c) => c.includes(SUBJECT))).toEqual([]);
+
+        // This fake cannot produce a real canonical hash, so the pre-erasure
+        // control in `recordErasure` rejects every row and NO tolerance is
+        // recorded. Asserted rather than left implicit: it is the difference
+        // between "the record was written" and "the record excuses anything".
+        expect(receipt.auditRowsTolerated).toBe(0);
     });
 
     it('nulls userId for the subject ONLY, and writes no other column', async () => {
@@ -152,7 +261,12 @@ describe('eraseUser — the cascade', () => {
             auditRowsPseudonymized: 7,
             auditRowsDeleted: 0,
             userDeleted: true,
+            // #2682 — two tenants in the fixture, so two records. Ids are
+            // generated, so the shape is asserted rather than the values.
+            erasureRecordIds: expect.arrayContaining([expect.any(String)]),
+            auditRowsTolerated: 0,
         });
+        expect(receipt.erasureRecordIds).toHaveLength(2);
         expect(fake.committed).toEqual({ auditRowsNulled: 7, userDeleted: true });
     });
 

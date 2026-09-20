@@ -31,6 +31,15 @@
  * @module app-layer/jobs/dsar-erasure
  */
 import { DSAR_COOLING_OFF_HOURS } from '@/lib/dsar';
+import { appendAuditEntryWithin } from '@/lib/audit/audit-writer';
+import { computeEntryHash, toCanonicalTimestamp } from '@/lib/audit/canonical-hash';
+import {
+    ERASURE_EXECUTED_ACTION,
+    ERASURE_RECORD_ENTITY,
+    ERASURE_RECORD_ENTITY_ID,
+    buildErasureRecordDetails,
+} from '@/lib/audit/erasure-record';
+import type { ErasureRecordRow } from '@/lib/audit/erasure-record';
 
 /** Hours that must elapse after VERIFIED before erasure may fire. */
 export const COOLING_OFF_HOURS = DSAR_COOLING_OFF_HOURS;
@@ -60,16 +69,47 @@ export function coolingOffElapsed(verifiedAt: Date, now: Date = new Date()): boo
  */
 export interface ErasureDb {
     $transaction<T>(fn: (tx: ErasureDb) => Promise<T>): Promise<T>;
+    /**
+     * Raw access, required because the ERASURE_EXECUTED record goes through
+     * `appendAuditEntryWithin` — the ONLY sanctioned writer of an `AuditLog`
+     * row, and it issues raw SQL (advisory lock, chain-tip read, INSERT).
+     * Nothing in THIS file writes raw SQL; these exist to hand the open
+     * transaction to that writer.
+     */
+    $executeRawUnsafe(sql: string, ...values: unknown[]): Promise<number>;
+    $queryRawUnsafe<T = unknown>(sql: string, ...values: unknown[]): Promise<T>;
     user: {
         findUnique(args: { where: { id: string } }): Promise<{ id: string } | null>;
         delete(args: { where: { id: string } }): Promise<unknown>;
     };
     auditLog: {
+        findMany(args: { where: { userId: string } }): Promise<ErasureAuditRow[]>;
         updateMany(args: {
             where: { userId: string };
             data: { userId: null };
         }): Promise<{ count: number }>;
     };
+}
+
+/**
+ * The `AuditLog` columns the erasure record has to reason about — exactly the
+ * ten hashed fields (`HASH_FIELDS`) plus `id` and the stored `entryHash` the
+ * pre-erasure control compares against. Read through the delegate rather than
+ * raw SQL so the DB-free probe can serve it.
+ */
+export interface ErasureAuditRow {
+    id: string;
+    tenantId: string;
+    userId: string | null;
+    actorType: string;
+    entity: string;
+    entityId: string;
+    action: string;
+    detailsJson: unknown;
+    previousHash: string | null;
+    entryHash: string | null;
+    version: number;
+    createdAt: Date | string;
 }
 
 /** What an erasure did. No PII — this is the compliance evidence. */
@@ -81,6 +121,21 @@ export interface ErasureReceipt {
     auditRowsDeleted: 0;
     /** The subject's own `User` row, hard-deleted. */
     userDeleted: true;
+    /**
+     * The `AuditLog.id` of each `ERASURE_EXECUTED` entry written — one per
+     * tenant whose chain this erasure touched (#2682). Empty means the
+     * erasure pseudonymized nothing, which is the only case where writing no
+     * record is correct.
+     */
+    erasureRecordIds: string[];
+    /**
+     * Pseudonymized rows the records granted a chain tolerance to. Reported
+     * because it can legitimately be LOWER than `auditRowsPseudonymized`: a
+     * row whose stored hash did not recompute BEFORE the erasure gets no
+     * tolerance (see `recordErasure`), so it keeps reporting broken — an
+     * already-broken chain must not be laundered by an erasure.
+     */
+    auditRowsTolerated: number;
 }
 
 /**
@@ -171,6 +226,148 @@ export async function eraseUser(
     return runInGlobalContext((db) => eraseUserWithin(db as unknown as ErasureDb, userId));
 }
 
+/**
+ * Write one `ERASURE_EXECUTED` entry per affected tenant, inside `tx`.
+ *
+ * ── WHY THIS EXISTS (#2682) ────────────────────────────────────────
+ *
+ * `actorUserId` is a hashed field, so nulling `userId` makes every chain
+ * verifier's RECOMPUTED hash disagree with the stored one — and a lawful
+ * erasure then produced the exact signature the product uses to prove
+ * tampering. The owner decision (2026-09-20) is to record the erasure IN the
+ * chain and teach the verifiers to consult it.
+ *
+ * ── WHAT IS RECORDED, AND WHAT DELIBERATELY IS NOT ─────────────────
+ *
+ * For each row: its `id`, and `postErasureHash` — the hash that row will
+ * recompute to once `userId` is NULL. NOT the subject's id, NOT their old
+ * `userId`, NOT anything derived from it: `postErasureHash` is computed with
+ * `actorUserId: null`, so it is a function of the POST-erasure row alone and
+ * carries no information that could re-identify anybody. Writing the subject
+ * id into the entry that records their erasure would undo the erasure.
+ *
+ * ── THE PRE-ERASURE CONTROL, WHICH IS TWO CHECKS AT ONCE ───────────
+ *
+ * Before recording a tolerance for a row, this recomputes that row's hash
+ * WITH the subject still attached and requires it to equal the stored
+ * `entryHash`. That single comparison does two jobs:
+ *
+ *   1. SECURITY. A row whose hash already failed to recompute is already
+ *      broken — by tampering, or by a bug. Recording a tolerance for it would
+ *      make the erasure LAUNDER that break into a clean bill of health. Such
+ *      rows are counted (`rowsWithoutTolerance`) and named by nothing.
+ *   2. DERIVATION. It proves this function reconstructs the writer's hash
+ *      inputs EXACTLY — in particular `occurredAt`, which the writer stores as
+ *      `to_char(createdAt, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` and this code
+ *      reproduces from a `Date` via `toCanonicalTimestamp`. If that
+ *      reconstruction were wrong, every control would fail and every
+ *      tolerance would be silently absent — so the wrongness shows up as
+ *      "no row was excused", loudly, in the integration test, rather than as
+ *      a tolerance computed from the wrong bytes.
+ *
+ * ── PER TENANT, BECAUSE THE CHAIN IS PER TENANT ────────────────────
+ *
+ * A subject can have acted in several tenants and each has an independent
+ * chain. One record in one tenant would leave every OTHER tenant's verifier
+ * with no record naming its rows — i.e. still reporting tampering. So the
+ * affected rows are grouped by `tenantId` and each group gets its own entry
+ * in its own chain, naming only its own rows.
+ *
+ * ── ORDERING, ESTABLISHED RATHER THAN ASSUMED ──────────────────────
+ *
+ * The entry is appended at the TAIL of each tenant's chain, chaining off
+ * whatever row `appendAuditEntryWithin` finds last. That is unaffected by the
+ * pseudonymization: the immutability trigger permits `userId` value -> NULL
+ * and nothing else, so no `entryHash` or `previousHash` anywhere in the chain
+ * moves, and the tip this entry chains onto is the same row with the same
+ * hash it had before the erasure. The entry's own hash therefore does not
+ * depend on whether it is written before or after the `updateMany`.
+ *
+ * It IS written after, for a different reason: the entry asserts that these
+ * rows HAVE been pseudonymized, and an assertion made before the statement
+ * that makes it true is a prediction. The rows it names are read BEFORE, of
+ * course — `updateMany` returns a count, not ids, and after it runs the
+ * subject's rows are no longer findable by `userId`.
+ *
+ * The entry names no row but the ones erased in this transaction, and it
+ * carries `userId: null` itself — if it carried the subject, the `updateMany`
+ * (or the FK's ON DELETE SET NULL) would pseudonymize the record too, and the
+ * record is not in its own named set.
+ */
+async function recordErasure(
+    tx: ErasureDb,
+    rowsBefore: ErasureAuditRow[],
+): Promise<{ erasureRecordIds: string[]; auditRowsTolerated: number }> {
+    const byTenant = new Map<string, ErasureAuditRow[]>();
+    for (const row of rowsBefore) {
+        const bucket = byTenant.get(row.tenantId);
+        if (bucket) bucket.push(row);
+        else byTenant.set(row.tenantId, [row]);
+    }
+
+    const erasureRecordIds: string[] = [];
+    let auditRowsTolerated = 0;
+
+    // Sorted so a multi-tenant erasure writes its records in a deterministic
+    // order — the chains are independent, but a stable order makes a test's
+    // expectations stable too.
+    for (const tenantId of [...byTenant.keys()].sort()) {
+        const rows = byTenant.get(tenantId)!;
+        const named: ErasureRecordRow[] = [];
+        let rowsWithoutTolerance = 0;
+
+        for (const row of rows) {
+            const occurredAt = toCanonicalTimestamp(row.createdAt);
+            const shared = {
+                tenantId: row.tenantId,
+                actorType: row.actorType,
+                eventType: row.action,
+                entityType: row.entity,
+                entityId: row.entityId,
+                occurredAt,
+                detailsJson: row.detailsJson,
+                previousHash: row.previousHash,
+                version: row.version,
+            };
+
+            // THE CONTROL. See this function's docblock — a row that does not
+            // recompute to its stored hash right now is already broken, and
+            // an erasure must not be able to hide that.
+            const preErasure = computeEntryHash({ ...shared, actorUserId: row.userId });
+            if (row.entryHash === null || preErasure !== row.entryHash) {
+                rowsWithoutTolerance++;
+                continue;
+            }
+
+            named.push({
+                id: row.id,
+                postErasureHash: computeEntryHash({ ...shared, actorUserId: null }),
+            });
+        }
+
+        const entry = await appendAuditEntryWithin(tx, {
+            tenantId,
+            // NOT the subject. The actor is the erasure job; naming the
+            // subject would re-identify them in their own erasure record.
+            userId: null,
+            actorType: 'JOB',
+            entity: ERASURE_RECORD_ENTITY,
+            entityId: ERASURE_RECORD_ENTITY_ID,
+            action: ERASURE_EXECUTED_ACTION,
+            details: `DSAR erasure pseudonymized ${rows.length} audit row(s) in this tenant.`,
+            detailsJson: buildErasureRecordDetails(named, {
+                auditRowsPseudonymized: rows.length,
+                rowsWithoutTolerance,
+            }),
+        });
+
+        erasureRecordIds.push(entry.id);
+        auditRowsTolerated += named.length;
+    }
+
+    return { erasureRecordIds, auditRowsTolerated };
+}
+
 /** The cascade itself, in one transaction. See {@link eraseUser}. */
 async function eraseUserWithin(db: ErasureDb, userId: string): Promise<ErasureReceipt> {
     return db.$transaction(async (tx) => {
@@ -204,10 +401,29 @@ async function eraseUserWithin(db: ErasureDb, userId: string): Promise<ErasureRe
         // nothing else moves and `to_jsonb(NEW) - 'userId' = to_jsonb(OLD) -
         // 'userId'` holds. Adding a second field here is how the hash chain
         // gets rewritten inside something called a pseudonymization.
+        //
+        // READ FIRST (#2682). `updateMany` returns a count, not ids, and once
+        // it has run the subject's rows are no longer findable by `userId` —
+        // so the set the erasure record has to name is captured here, while
+        // the link still exists. This is a READ; it writes nothing and the
+        // `where` is the same subject-only clause.
+        const rowsBefore = await tx.auditLog.findMany({ where: { userId } });
+
         const { count } = await tx.auditLog.updateMany({
             where: { userId },
             data: { userId: null },
         });
+
+        // ── RECORD THE ERASURE, IN THIS TRANSACTION (#2682) ────────
+        //
+        // SAME TRANSACTION is the whole point, not an optimisation. A record
+        // written separately could be lost while the pseudonymization
+        // committed, and the state that leaves behind — de-attributed rows
+        // that no record names — is indistinguishable from tampering, which
+        // is the bug this is fixing. It is also the state a rollback must not
+        // leave: if the hard delete below is refused, this entry goes back
+        // with the pseudonymization it describes.
+        const { erasureRecordIds, auditRowsTolerated } = await recordErasure(tx, rowsBefore);
 
         // ── HARD-DELETE THE SUBJECT ────────────────────────────────
         try {
@@ -229,6 +445,8 @@ async function eraseUserWithin(db: ErasureDb, userId: string): Promise<ErasureRe
             auditRowsPseudonymized: count,
             auditRowsDeleted: 0,
             userDeleted: true,
+            erasureRecordIds,
+            auditRowsTolerated,
         };
     });
 }

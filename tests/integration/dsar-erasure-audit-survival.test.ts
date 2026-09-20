@@ -43,24 +43,48 @@
  *     NULL. Measured on this fixture: `valid: true` before erasure,
  *     `valid: false` after, breaking at the FIRST pseudonymized row.
  *
- * So, today, **a GDPR erasure is indistinguishable from tampering to the
- * only chain verifier this product has.** `tamperAuditRow` + a failed
- * `verifyAuditChain` is exactly the signature
- * `tests/integration/audit-hash-chain.test.ts` uses to PROVE tampering is
- * detectable — a lawful erasure now produces that same signature.
+ * That was the finding this file was written to PIN: a GDPR erasure was
+ * indistinguishable from tampering to the only chain verifier the product
+ * had. `tamperAuditRow` + a failed `verifyAuditChain` is exactly the
+ * signature `tests/integration/audit-hash-chain.test.ts` uses to PROVE
+ * tampering is detectable, and a lawful erasure produced that same signature.
  *
- * That is a finding, not a defect this file is entitled to fix. Every
- * available repair is a decision somebody has to take on the record:
- * dropping `actorUserId` from the hash would blind the chain to an actor
- * swap and invalidate every hash already written; re-hashing the
- * pseudonymized row is precisely the forgery the trigger exists to refuse;
- * teaching the verifier to accept a NULL `userId` would accept it from a
- * tamperer too, unless erasures are recorded somewhere it can check.
+ * ═══════════════════════════════════════════════════════════════════
+ * THE FIX, AND WHICH ASSERTIONS IT FLIPPED (#2682, 2026-09-20)
+ * ═══════════════════════════════════════════════════════════════════
  *
- * SO THIS FILE PINS THE TRUTH RATHER THAN PAPERING OVER IT. The assertions
- * below state what erasure actually does today, including the broken
- * recomputation. A fix must come through here and flip an assertion
- * deliberately; a silent regression in either direction reddens.
+ * The four available repairs were a decision somebody had to take on the
+ * record, which is why the original version of this file asserted the broken
+ * behaviour instead of repairing it. The owner took it on 2026-09-20, on the
+ * issue: **record the erasure, and have the verifier consult the record.**
+ * The three rejected options and why are in issue #2682; the mechanism and
+ * its security argument are in `src/lib/audit/erasure-record.ts`.
+ *
+ * In one line: the erasure writes an `ERASURE_EXECUTED` entry — in the SAME
+ * transaction — naming each row it pseudonymized together with the hash that
+ * row will recompute to once `userId` is NULL, and the verifiers excuse a
+ * mismatch only for a named row whose recomputation equals that committed
+ * value. Any OTHER change to a named row, and any `userId` nulled on a row no
+ * record names, still breaks the chain.
+ *
+ * TWO ASSERTIONS BELOW WERE FLIPPED DELIBERATELY, which is what this file
+ * exists for:
+ *
+ *   `CHAIN, RECOMPUTED` (was `FINDING`) — `valid` went `false` -> `true`, and
+ *     now also asserts `toleratedPseudonymizations`, so "the chain verifies"
+ *     cannot quietly come to mean "nothing was erased".
+ *   `TABLE SURFACE` — the cascade legitimately widened. It now issues
+ *     `auditLog.findMany` (the rows the record must name: `updateMany`
+ *     returns a count, and afterwards they are unfindable by `userId`) and
+ *     raw SQL, because `appendAuditEntryWithin` is the one sanctioned
+ *     `AuditLog` writer and it is raw by construction. The surface test keeps
+ *     its teeth by grading the raw statements' VERBS and TABLES rather than
+ *     by counting them.
+ *
+ * AND THE NEW ASSERTIONS ARE THE ONES THAT MATTER MOST: the three at the end
+ * of this file tamper with live rows to show the tolerance is not a blanket
+ * one. If those ever go green while asserting a broken chain, the fix has
+ * become worse than the bug it replaced.
  *
  * ═══════════════════════════════════════════════════════════════════
  * WHY THE TABLE SURFACE IS DERIVED, NOT LISTED
@@ -72,7 +96,7 @@
  * child tables. So the surface is RECORDED from the run: the client handed
  * to `eraseUser` is a proxy that logs every `(delegate, method)` pair the
  * function issues, against real Postgres. The denominator is whatever that
- * run touched — 2 tables — and each one is then checked against the
+ * run touched — 2 delegate tables — and each one is then checked against the
  * disposition declared for it in `ERASURE_DISPOSITIONS`. A cascade that
  * widened to a third table would fail the surface test rather than slip
  * past a per-table check that never knew to look.
@@ -86,11 +110,26 @@
  * (recursed into, above) and `$connect` / `$disconnect` (lifecycle — they
  * reach no table) is recorded as `table: '$raw'` and then executed unchanged,
  * the way the sibling probe records it
- * (`tests/helpers/dsar-erasure-probe.ts:314`). `$raw` is not a key of
- * `ERASURE_DISPOSITIONS`, so it reddens the surface test on arrival rather
- * than needing a disposition invented for it. Proven by mutation: an
- * `$executeRawUnsafe` UPDATE added to `eraseUserWithin` turns TABLE SURFACE
- * red (`['$raw', 'auditLog', 'user']`); removed again, green.
+ * (`tests/helpers/dsar-erasure-probe.ts:314`).
+ *
+ * HOW `$raw` IS GRADED CHANGED WITH #2682, and this is the half worth reading
+ * before touching the surface test. `$raw` used to be graded by PRESENCE: it
+ * is not a key of `ERASURE_DISPOSITIONS`, so its arrival reddened the test.
+ * That was the right rule while the cascade issued none, and it stopped being
+ * available when erasure had to write its record through
+ * `appendAuditEntryWithin` — the ONE sanctioned `AuditLog` writer, which is
+ * raw by construction (it controls `createdAt` as a timestamp string, and
+ * `tests/guards/audit-structured-events.test.ts` forbids a raw INSERT into
+ * `AuditLog` anywhere else). So raw presence and the owner's decision cannot
+ * both be satisfied.
+ *
+ * The teeth move to the STATEMENTS. Every recorded `$raw` call now carries its
+ * args, and the surface test asserts that no raw statement names a table other
+ * than "AuditLog" and that none of them carries a mutating verb
+ * (UPDATE / DELETE / TRUNCATE / ALTER / DROP). A raw widening to another table
+ * still reddens; so does a hand-rolled `UPDATE "AuditLog" SET "userId" = NULL`
+ * that dodges the `updateMany` — which is the thing presence-grading was
+ * actually protecting against.
  *
  * WHAT IS STILL OUTSIDE THE NET, said plainly rather than left to be
  * discovered: a cascade that reached a client this proxy never wrapped — a
@@ -125,10 +164,11 @@ import { hashForLookup } from '@/lib/security/encryption';
 import { appendAuditEntry, verifyAuditChain } from '@/lib/audit/audit-writer';
 import type { ChainVerificationResult } from '@/lib/audit/audit-writer';
 import { HASH_FIELDS } from '@/lib/audit/canonical-hash';
+import { ERASURE_EXECUTED_ACTION, parseErasureRecordRows } from '@/lib/audit/erasure-record';
 import { eraseUser } from '@/app-layer/jobs/dsar-erasure';
 import type { ErasureDb, ErasureReceipt } from '@/app-layer/jobs/dsar-erasure';
 import { ERASURE_DISPOSITIONS } from '../helpers/dsar-erasure-probe';
-import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
+import { deleteAuditRowsForTenants, tamperAuditRow } from '../helpers/audit-cleanup';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -156,6 +196,15 @@ interface RecordedOp {
     table: string;
     /** Delegate method, e.g. `updateMany`, or the `$`-method for a raw call. */
     method: string;
+    /**
+     * The arguments, so a `$raw` call can be graded by what it SAYS rather
+     * than merely counted. Added with #2682: erasure now legitimately issues
+     * raw SQL (the audit record goes through the one sanctioned writer), so
+     * "zero raw calls" stopped being an available assertion and the surface
+     * test had to start reading the statements instead. Recorded for delegate
+     * calls too — same reason the sibling probe records them.
+     */
+    args: unknown[];
 }
 
 const recordedOps: RecordedOp[] = [];
@@ -203,7 +252,7 @@ function recordingProxy<T extends object>(client: T, ops: RecordedOp[]): T {
                 // unchanged, because this proxy changes what is OBSERVED and
                 // never what runs.
                 return (...args: unknown[]) => {
-                    ops.push({ table: RAW_TABLE, method: prop });
+                    ops.push({ table: RAW_TABLE, method: prop, args });
                     return bound(...args);
                 };
             }
@@ -216,7 +265,7 @@ function recordingProxy<T extends object>(client: T, ops: RecordedOp[]): T {
                     const fn = Reflect.get(delegate, method, delegateReceiver) as unknown;
                     if (typeof fn !== 'function') return fn;
                     return (...args: unknown[]) => {
-                        ops.push({ table: prop, method });
+                        ops.push({ table: prop, method, args });
                         return (fn as (...a: unknown[]) => unknown).apply(delegate, args);
                     };
                 },
@@ -233,6 +282,10 @@ interface AuditSnapshotRow {
     userId: string | null;
     entryHash: string | null;
     previousHash: string | null;
+    /** Needed to find the `ERASURE_EXECUTED` record the fix appends (#2682). */
+    action: string;
+    /** Its payload: the named rows and their committed post-erasure hashes. */
+    detailsJson: unknown;
     /** `to_jsonb(row) - 'userId'` — EVERY other column, as stored. */
     rest: unknown;
 }
@@ -254,6 +307,7 @@ async function snapshotAudit(): Promise<AuditSnapshotRow[]> {
     // inside the comparison automatically.
     return globalPrisma.$queryRawUnsafe<AuditSnapshotRow[]>(
         `SELECT a."id", a."userId", a."entryHash", a."previousHash",
+                a."action", a."detailsJson",
                 to_jsonb(a) - 'userId' AS "rest"
            FROM "AuditLog" a
           WHERE a."tenantId" = $1
@@ -389,17 +443,14 @@ describeFn('#2287 Stage 3 — erasure pseudonymizes the audit trail, per table, 
 
     // ── The per-table split: the surface first, then each table ──
 
-    it('TABLE SURFACE — the erasure touches exactly 2 tables, each with a declared disposition', () => {
+    it('TABLE SURFACE — the erasure touches exactly 2 delegate tables, each with a declared disposition', () => {
         // Recorded from the run, not listed here. This is the denominator for
         // the two per-table tests that follow: if the cascade ever reaches a
         // third table, this fails rather than the new table going unchecked.
-        // A raw-SQL widening lands in here as `$raw` (see the proxy above), so
-        // it fails this line too rather than bypassing the delegate surface.
         const touched = [...new Set(recordedOps.map((op) => op.table))].sort();
-        expect(touched).toEqual(['auditLog', 'user']);
-        expect(touched).not.toContain(RAW_TABLE);
+        expect(touched).toEqual([RAW_TABLE, 'auditLog', 'user']);
 
-        for (const table of touched) {
+        for (const table of touched.filter((t) => t !== RAW_TABLE)) {
             expect(Object.keys(ERASURE_DISPOSITIONS)).toContain(table);
         }
         expect(ERASURE_DISPOSITIONS.auditLog).toBe('PSEUDONYMIZE');
@@ -408,21 +459,76 @@ describeFn('#2287 Stage 3 — erasure pseudonymizes the audit trail, per table, 
         // And the VERBS, per table — the split is not only which tables but
         // which operation each one received. `auditLog` must never see a
         // delete verb; that is the invariant in one line.
+        //
+        // `findMany` joined `updateMany` with #2682: the erasure record has
+        // to NAME the rows it pseudonymized, `updateMany` returns a count,
+        // and after it runs those rows are no longer findable by `userId`.
         const methodsOf = (table: string) =>
             [...new Set(recordedOps.filter((op) => op.table === table).map((op) => op.method))].sort();
-        expect(methodsOf('auditLog')).toEqual(['updateMany']);
+        expect(methodsOf('auditLog')).toEqual(['findMany', 'updateMany']);
         expect(methodsOf('user')).toEqual(['delete', 'findUnique']);
     });
 
-    it('TABLE 1 of 2 — auditLog is PSEUDONYMIZED: every row survives, same ids, none deleted', () => {
-        expect(snapshotAfter).toHaveLength(snapshotBefore.length);
-        expect(snapshotAfter.map((r) => r.id).sort()).toEqual(snapshotBefore.map((r) => r.id).sort());
-        // The subject's own rows specifically — "4 rows survive" would also
-        // hold if the erasure had deleted both of theirs and something else
-        // had inserted two.
-        for (const id of subjectRowIdsBefore) {
-            expect(snapshotAfter.some((r) => r.id === id)).toBe(true);
+    it('TABLE SURFACE — the raw SQL only APPENDS, and reaches no table but AuditLog', () => {
+        // THIS REPLACES `expect(touched).not.toContain('$raw')`. See the
+        // header: presence-grading and "route the record through the one
+        // sanctioned AuditLog writer" cannot both hold, so the teeth move
+        // from counting raw calls to reading them.
+        const rawOps = recordedOps.filter((op) => op.table === RAW_TABLE);
+
+        // Non-vacuous first: an empty selection satisfies every `for` below.
+        // Three statements per tenant — advisory lock, chain tip, INSERT —
+        // and this fixture has one tenant.
+        expect(rawOps.length).toBe(3);
+
+        for (const op of rawOps) {
+            const sql = typeof op.args[0] === 'string' ? (op.args[0] as string) : '';
+            // A statement with no SQL string at all would pass the two checks
+            // below vacuously.
+            expect(sql.length).toBeGreaterThan(0);
+
+            // No verb that can change or remove a row that already exists.
+            // A hand-rolled `UPDATE "AuditLog" SET "userId" = NULL` dodging
+            // the delegate reddens here.
+            expect(sql).not.toMatch(/\b(update|delete|truncate|alter|drop)\b/i);
+
+            // And no table but the audit trail. Prisma quotes table names
+            // capitalised and columns lower-camel, so the capital filter
+            // makes this a statement about TABLES.
+            const tables = [...sql.matchAll(/"([A-Z][A-Za-z0-9_]*)"/g)].map((m) => m[1]);
+            expect([...new Set(tables)].filter((t) => t !== 'AuditLog')).toEqual([]);
         }
+
+        // POSITIVE CONTROL for the two `not` assertions above: at least one of
+        // these statements really is the audit INSERT, so the loop graded a
+        // population that contains the thing it is about.
+        expect(rawOps.some((op) => String(op.args[0]).includes('INSERT INTO "AuditLog"'))).toBe(true);
+    });
+
+    it('TABLE 1 of 2 — auditLog is PSEUDONYMIZED: every row survives, none deleted, one APPENDED', () => {
+        // Every pre-erasure row is still here, by id.
+        const afterIds = new Set(snapshotAfter.map((r) => r.id));
+        for (const before of snapshotBefore) {
+            expect(afterIds.has(before.id)).toBe(true);
+        }
+        // The subject's own rows specifically — "every row survives" would
+        // also hold if the erasure had deleted both of theirs and something
+        // else had inserted two.
+        for (const id of subjectRowIdsBefore) {
+            expect(afterIds.has(id)).toBe(true);
+        }
+
+        // And EXACTLY ONE row is new: the ERASURE_EXECUTED record (#2682).
+        // This used to be `toHaveLength(snapshotBefore.length)`, which the
+        // fix necessarily flips — the record is an audit row like any other.
+        // Asserting the exact surplus rather than `>=` keeps the old test's
+        // real claim: an erasure that appended something ELSE, or appended
+        // several, reddens here instead of hiding behind "the chain is fine".
+        const beforeIds = new Set(snapshotBefore.map((r) => r.id));
+        const appended = snapshotAfter.filter((r) => !beforeIds.has(r.id));
+        expect(appended).toHaveLength(1);
+        expect(appended[0].action).toBe(ERASURE_EXECUTED_ACTION);
+        expect(appended[0].id).toBe(receipt?.erasureRecordIds[0]);
     });
 
     it('ATTRIBUTION SOURCE — the app pseudonymizes BEFORE the delete, and the FK would null it anyway', () => {
@@ -514,27 +620,187 @@ describeFn('#2287 Stage 3 — erasure pseudonymizes the audit trail, per table, 
         expect(snapshotAfter[0].previousHash).toBeNull();
     });
 
-    it('FINDING — verifyAuditChain REPORTS THE CHAIN BROKEN after erasure, at the first pseudonymized row', () => {
-        // Pinned, not endorsed. See this file's header: the stored chain is
-        // intact (test above) but recomputation is not, because `actorUserId`
-        // feeds the hash and erasure changes it. A lawful erasure therefore
-        // produces the same signal as a forged row.
+    it('CHAIN, RECOMPUTED — a lawful erasure NO LONGER reports as tampering (#2682)', () => {
+        // ── THE FLIPPED ASSERTION ──────────────────────────────────
         //
-        // The break INDEX is derived from the fixture rather than written as
-        // a literal: the first row whose attribution the erasure removed.
-        const expectedBreakId = subjectRowIdsBefore[0];
-        const expectedBreakAt = snapshotAfter.findIndex((r) => r.id === expectedBreakId);
-
+        // This test was `FINDING — verifyAuditChain REPORTS THE CHAIN BROKEN
+        // after erasure, at the first pseudonymized row`, and it asserted
+        // `valid: false` with a `firstBreakAt` derived from the first
+        // pseudonymized row. It was pinning a defect, not endorsing it — see
+        // this file's header — and the owner decision on #2682 is what
+        // entitles it to be flipped.
+        //
+        // What makes `valid: true` honest here rather than a verifier taught
+        // to look away: the chain contains an `ERASURE_EXECUTED` entry naming
+        // these exact rows and committing to the hash each one must recompute
+        // to. The next three tests break that commitment three different ways
+        // and require the chain to report broken each time.
         expect(chainAfter).toMatchObject({
-            totalEntries: 4,
-            hashedEntries: 4,
-            valid: false,
-            firstBreakAt: expectedBreakAt,
-            firstBreakId: expectedBreakId,
+            // 5, not 4: the erasure record is an audit row like any other.
+            totalEntries: 5,
+            hashedEntries: 5,
+            unhashedEntries: 0,
+            valid: true,
         });
-        // The row BEFORE it still recomputes — so the break is at the
-        // pseudonymized row, not a chain that was broken from the start.
-        expect(expectedBreakAt).toBeGreaterThan(0);
+        expect(chainAfter?.firstBreakAt).toBeUndefined();
+        expect(chainAfter?.firstBreakId).toBeUndefined();
+
+        // THE SECOND NUMBER, printed next to the green one. `valid: true`
+        // alone would also be produced by an erasure that pseudonymized
+        // NOTHING, or by a verifier that stopped recomputing at all. The
+        // tolerance count says how many mismatches were excused, and it must
+        // equal the rows the erasure actually de-attributed.
+        expect(chainAfter?.toleratedPseudonymizations).toBe(subjectRowIdsBefore.length);
+        expect(receipt?.auditRowsTolerated).toBe(subjectRowIdsBefore.length);
+    });
+
+    it('THE RECORD — is hash-chained, names exactly the erased rows, and identifies nobody', () => {
+        const record = snapshotAfter.find((r) => r.action === ERASURE_EXECUTED_ACTION)!;
+        expect(record).toBeDefined();
+
+        // It is IN the chain, which is the property the owner decision turns
+        // on — "no second source of truth outside the chain's protection".
+        expect(record.entryHash).not.toBeNull();
+        expect(record.previousHash).toBe(snapshotAfter[snapshotAfter.length - 2].entryHash);
+
+        // It names exactly the rows this erasure pseudonymized. Not more —
+        // a record naming a row the erasure did not touch would hand that
+        // row a tolerance it has not earned.
+        const named = parseErasureRecordRows(record);
+        expect(named.map((n) => n.id).sort()).toEqual([...subjectRowIdsBefore].sort());
+        for (const n of named) {
+            expect(n.postErasureHash).toMatch(/^[0-9a-f]{64}$/);
+        }
+
+        // AND IT RE-IDENTIFIES NOBODY. The one thing this entry must not
+        // contain is the subject, which is the natural thing to put in an
+        // entry about their erasure — and would undo the erasure. Checked
+        // against the whole stored row, not just `detailsJson`.
+        expect(record.userId).toBeNull();
+        expect(JSON.stringify(record.rest)).not.toContain(SUBJECT);
+    });
+
+    // ── THE TOLERANCE IS NOT A BLANKET ONE ──────────────────────────
+    //
+    // Each of the three below MUTATES a live row, verifies, and restores.
+    // They run after the read-only tests above, which read captured snapshots
+    // and are unaffected either way.
+    //
+    // THE RESTORE IS IN A `finally`, AND THAT IS NOT DEFENSIVE STYLING. The
+    // first version restored on the happy path only. The un-named-row test
+    // then failed on an assertion BEFORE its restore, left the bystander's
+    // `userId` NULL, and the NEXT test — which forges the erasure record —
+    // broke at the bystander row instead, reporting a `firstBreakId` that had
+    // nothing to do with what it had just done. One stale row turned a
+    // precise failure into a misleading one, which is exactly the cascade
+    // this file's header refuses elsewhere.
+    //
+    // The restore is then VERIFIED against a fresh read rather than assumed:
+    // a restore that silently failed would make the following test's red mean
+    // nothing.
+    async function withTamper(
+        apply: () => Promise<unknown>,
+        restore: () => Promise<unknown>,
+        assertions: () => Promise<void>,
+    ): Promise<void> {
+        await apply();
+        try {
+            await assertions();
+        } finally {
+            await restore();
+        }
+        expect((await verifyAuditChain(TENANT, globalPrisma)).valid).toBe(true);
+    }
+
+    it('TOLERANCE IS userId-ONLY — editing another hashed field on a NAMED row still breaks the chain', async () => {
+        // THE MUTATION THIS WHOLE FIX LIVES OR DIES BY. A general "ignore
+        // mismatches for rows the erasure named" would pass every other test
+        // in this file and let a tamperer hide arbitrary edits behind a
+        // lawful erasure. `action` is one of the ten HASH_FIELDS and is NOT
+        // `userId`, so a named row carrying a forged `action` must not be
+        // excused.
+        const target = subjectRowIdsBefore[0];
+        const original = snapshotAfter.find((r) => r.id === target)!;
+        const originalAction = (original.rest as { action: string }).action;
+
+        await withTamper(
+            () => tamperAuditRow(globalPrisma, target, 'action', `${originalAction}_FORGED`),
+            () => tamperAuditRow(globalPrisma, target, 'action', originalAction),
+            async () => {
+                const tampered = await verifyAuditChain(TENANT, globalPrisma);
+                expect(tampered.valid).toBe(false);
+                expect(tampered.firstBreakId).toBe(target);
+                // The row IS named — so this is the tolerance REFUSING, not
+                // the tolerance never being consulted. Without this line a
+                // fix that simply stopped recording the row would pass.
+                const record = snapshotAfter.find((r) => r.action === ERASURE_EXECUTED_ACTION)!;
+                expect(parseErasureRecordRows(record).map((n) => n.id)).toContain(target);
+            },
+        );
+
+        const restored = await snapshotAudit();
+        expect(restored.find((r) => r.id === target)!.rest).toEqual(original.rest);
+    });
+
+    it('AN UN-NAMED ROW — a userId nulled outside an erasure still breaks the chain', async () => {
+        // The attack the owner decision names explicitly: the immutability
+        // trigger PERMITS `userId` value -> NULL and nothing else, so nulling
+        // a `userId` is precisely the one mutation an attacker CAN make
+        // through the database's own rules. The bystander is not in the
+        // erasure record, so their row gets no tolerance.
+        const target = snapshotAfter.find((r) => r.userId === BYSTANDER)!;
+
+        await withTamper(
+            () => tamperAuditRow(globalPrisma, target.id, 'userId', null),
+            () => tamperAuditRow(globalPrisma, target.id, 'userId', BYSTANDER),
+            async () => {
+                const tampered = await verifyAuditChain(TENANT, globalPrisma);
+                expect(tampered.valid).toBe(false);
+                expect(tampered.firstBreakId).toBe(target.id);
+                // THE DISCRIMINATOR, and it is not a zero. Earlier rows in
+                // this chain ARE named, so the walk legitimately excuses them
+                // before reaching the bystander — asserting `0` here failed,
+                // and it failed because the expectation was wrong, not the
+                // verifier. What actually distinguishes "refused" from "never
+                // consulted" is that the break lands on a row the record does
+                // not name.
+                const record = snapshotAfter.find((r) => r.action === ERASURE_EXECUTED_ACTION)!;
+                expect(parseErasureRecordRows(record).map((n) => n.id)).not.toContain(target.id);
+                // …and the walk stopped EARLY: fewer rows were excused than
+                // on the untampered chain, because it never got that far.
+                expect(tampered.toleratedPseudonymizations)
+                    .toBeLessThan(chainAfter!.toleratedPseudonymizations);
+            },
+        );
+
+        const restored = await snapshotAudit();
+        expect(restored.find((r) => r.id === target.id)!.userId).toBe(BYSTANDER);
+    });
+
+    it('A FORGED RECORD — tampering with the erasure entry itself breaks the chain at the entry', async () => {
+        // The record is not privileged. It sits inside the protection it
+        // helps interpret, so an entry whose own hash does not recompute
+        // breaks the chain where it stands — which is what "no second source
+        // of truth outside the chain's protection" means operationally.
+        const record = snapshotAfter.find((r) => r.action === ERASURE_EXECUTED_ACTION)!;
+        const originalHash = record.entryHash!;
+
+        await withTamper(
+            () => tamperAuditRow(globalPrisma, record.id, 'entryHash', 'f'.repeat(64)),
+            () => tamperAuditRow(globalPrisma, record.id, 'entryHash', originalHash),
+            async () => {
+                const tampered = await verifyAuditChain(TENANT, globalPrisma);
+                expect(tampered.valid).toBe(false);
+                expect(tampered.firstBreakId).toBe(record.id);
+                // The rows it names are still excused — the break is at the
+                // record, not a cascade that would make this test
+                // indistinguishable from the two above.
+                expect(tampered.toleratedPseudonymizations).toBe(subjectRowIdsBefore.length);
+            },
+        );
+
+        const restored = await snapshotAudit();
+        expect(restored.find((r) => r.id === record.id)!.entryHash).toBe(originalHash);
     });
 
     it('MECHANISM — actorUserId is one of the hashed fields, which is WHY the recomputation fails', () => {

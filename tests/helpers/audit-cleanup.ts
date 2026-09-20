@@ -196,7 +196,14 @@ export async function deleteOrgAuditRowsForOrganizations(
  * fixture).
  */
 const TAMPERABLE: Record<AuditTable, readonly string[]> = {
-    AuditLog: ['action', 'details', 'entryHash'],
+    // `userId` is here for #2682. It is the one column the immutability
+    // trigger ALLOWS an attacker to change (value -> NULL is the shape DSAR
+    // pseudonymization needs), so "a userId nulled on a row no erasure record
+    // names still breaks the chain" is a property that has to be provable —
+    // and proving it needs to put the value back afterwards, which the
+    // trigger refuses and this module's `session_replication_role` bypass
+    // allows. It is the only tamperable column whose value may be NULL.
+    AuditLog: ['action', 'details', 'entryHash', 'userId'],
     OrgAuditLog: ['actorType', 'entryHash'],
 };
 
@@ -205,7 +212,7 @@ async function tamper(
     table: AuditTable,
     id: string,
     column: string,
-    value: string,
+    value: string | null,
 ): Promise<number> {
     if (!TAMPERABLE[table].includes(column)) {
         throw new Error(
@@ -232,8 +239,8 @@ async function tamper(
 export function tamperAuditRow(
     db: RawSqlClient,
     id: string,
-    column: 'action' | 'details' | 'entryHash',
-    value: string,
+    column: 'action' | 'details' | 'entryHash' | 'userId',
+    value: string | null,
 ): Promise<number> {
     return tamper(db, 'AuditLog', id, column, value);
 }

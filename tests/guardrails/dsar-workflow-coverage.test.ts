@@ -173,7 +173,7 @@ describe('erasure pseudonymizes the audit trail, it does not delete it', () => {
         expect(after.map((r) => r.previousHash)).toEqual(before.map((r) => r.previousHash));
     });
 
-    it('B3 — it never ISSUES a delete or raw SQL against the audit trail', async () => {
+    it('B3 — it never ISSUES a delete against the audit trail, and its raw SQL only APPENDS', async () => {
         const run = await driveErasure();
         // INTENT, not outcome, and that is the point of reading `ops`. The
         // before/after diff reports AUDIT_ROW_DELETED only for rows that were
@@ -181,8 +181,50 @@ describe('erasure pseudonymizes the audit trail, it does not delete it', () => {
         // on this fixture would pass it. "An empty selection is a PASS" is the
         // exact shape that let 21 audit-deleting teardowns survive (#2510).
         const auditOps = run.ops.filter((op) => op.table === 'auditLog');
-        expect(auditOps.map((op) => op.method)).toEqual(['updateMany']);
-        expect(run.ops.filter((op) => op.table === '$raw')).toEqual([]);
+        expect(auditOps.map((op) => op.method)).toEqual(['findMany', 'updateMany']);
+
+        // ── THIS LINE FLIPPED, DELIBERATELY (#2682) ────────────────
+        //
+        // It read `expect(run.ops.filter(op => op.table === '$raw')).toEqual([])`
+        // — no raw SQL at all. Erasure must now write an `ERASURE_EXECUTED`
+        // entry in the SAME transaction (owner decision, 2026-09-20), and the
+        // only sanctioned `AuditLog` writer is `appendAuditEntryWithin`, which
+        // is raw by construction: it controls `createdAt` as a timestamp
+        // string to avoid the driver's timezone conversion, and
+        // `tests/guards/audit-structured-events.test.ts` forbids a raw INSERT
+        // into `AuditLog` anywhere ELSE. So "zero raw SQL" and "route the
+        // record through the one writer" cannot both hold.
+        //
+        // What replaces it is the invariant the old line was PROXYING for:
+        // raw SQL must not be a way around the delegate surface to change or
+        // remove an existing audit row. Verbs, not counts — an implementation
+        // that hand-rolled `UPDATE "AuditLog" SET "userId" = NULL` to dodge
+        // the `updateMany` above reddens here, and C6 proves that mutation is
+        // still caught by the oracle itself.
+        const rawOps = run.ops.filter((op) => op.table === '$raw');
+        expect(rawOps.length).toBeGreaterThan(0);
+        for (const op of rawOps) {
+            const sql = JSON.stringify(op.args);
+            expect(sql).not.toMatch(/\b(update|delete|truncate|alter|drop)\b/i);
+        }
+        // And the raw statements reach NO table but "AuditLog" — a raw
+        // widening to some other table would otherwise hide inside the
+        // allowance this test just granted.
+        //
+        // Read from `args[0]` (the SQL) and NOT from the whole `args` array,
+        // which was the first version of this line and was wrong: bind values
+        // are JSON strings too, so `JSON.stringify(op.args)` put the
+        // ERASURE_EXECUTED *value* in the same syntactic bucket as a quoted
+        // identifier and the assertion reported a table named after an action.
+        const quotedIdents = rawOps.flatMap((op) => {
+            const first = Array.isArray(op.args) ? (op.args as unknown[])[0] : undefined;
+            const sql = typeof first === 'string' ? first : '';
+            return [...sql.matchAll(/"([A-Za-z_][A-Za-z0-9_]*)"/g)].map((m) => m[1]);
+        });
+        // Prisma quotes table names capitalised and column names lower-camel;
+        // the capital filter keeps this a statement about TABLES.
+        expect([...new Set(quotedIdents)].filter((t) => /^[A-Z]/.test(t))).toEqual(['AuditLog']);
+
         // Non-vacuous: `auditOps` being empty would satisfy neither line
         // above, and the run really did reach more than the audit table.
         expect(run.ops.length).toBeGreaterThan(auditOps.length);
