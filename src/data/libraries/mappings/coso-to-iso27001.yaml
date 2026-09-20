@@ -1,0 +1,77 @@
+# Cross-Framework Mapping Set: COSO ICF 2013 → ISO/IEC 27001:2022
+#
+# A NARROWER crosswalk than the SOC 2 one, on purpose. The two frameworks answer
+# different questions: COSO is about a system of internal control over reporting
+# and operations; ISO 27001 is an information security management system. They
+# genuinely meet in three places — technology general controls, policy and
+# responsibility, and the monitoring/improvement clauses — and nowhere else
+# without stretching.
+#
+# Only factual identifiers are reproduced. No COSO body text and no points of
+# focus appear here; rationales are our own words.
+#
+# P11 is the load-bearing row set and is deliberately left THIN here: the ITGC
+# control content (COSO-CA-05..08) is where the detailed A.5/A.8 correspondence
+# belongs, one row per control rather than one row per principle. Mapping every
+# access and change clause onto P11 at this level would assert that the principle
+# is satisfied by Annex A, which it is not — Annex A governs security, P11
+# governs the reliability of the systems financial controls depend on, and the
+# overlap is real but partial.
+urn: urn:inflect:mappingset:coso-to-iso27001
+name: "COSO ICF 2013 → ISO/IEC 27001:2022"
+description: >
+  Cross-framework traceability from the COSO Internal Control — Integrated
+  Framework (2013) principles to ISO/IEC 27001:2022 clauses and Annex A
+  references. Structural traceability guidance, not a guarantee of compliance or
+  equivalence.
+version: 1
+source_framework_ref: COSO-ICF-2013
+target_framework_ref: ISO27001-2022
+
+mapping_entries:
+  # ── Policy and responsibility ────────────────────────────────────────
+  - source_ref: "P1"
+    target_ref: "A.5.1"
+    strength: INTERSECT
+    rationale: "A.5.1 requires approved, published and periodically reviewed policies, which is the documented half of demonstrating a commitment to stated standards of conduct."
+  - source_ref: "P5"
+    target_ref: "A.5.2"
+    strength: INTERSECT
+    rationale: "A.5.2 requires security roles and responsibilities to be defined and allocated; accountability for control responsibilities depends on that allocation being explicit."
+
+  # ── Technology general controls ──────────────────────────────────────
+  - source_ref: "P11"
+    target_ref: "A.5.15"
+    strength: INTERSECT
+    rationale: "A.5.15 requires access control rules based on business requirements, which is the provisioning and authorisation half of general controls over technology."
+  - source_ref: "P11"
+    target_ref: "A.8.2"
+    strength: INTERSECT
+    rationale: "A.8.2 restricts and manages privileged access rights, the access class whose misuse most directly defeats a dependent business control."
+  - source_ref: "P11"
+    target_ref: "A.8.32"
+    strength: INTERSECT
+    rationale: "A.8.32 requires changes to be subject to change management procedures, which is the change-control half of general controls over technology."
+
+  # ── Monitoring and improvement — DELIBERATELY ABSENT ─────────────────
+  #
+  # P16 (ongoing and separate evaluations) and P17 (evaluation and
+  # communication of deficiencies) have their obvious ISO counterparts in
+  # clause 9 (performance evaluation) and clause 10 (improvement), and those
+  # rows were written here and then removed.
+  #
+  # The reason is mechanical, not editorial. In this repo's ISO 27001 library
+  # the clauses "4".."10" are NON-ASSESSABLE grouping nodes; only the Annex A
+  # controls are assessable. `library-importer.ts` writes a RequirementMapping
+  # only for assessable targets, so a clause-9 row reaches no database at all —
+  # it renders nowhere, contributes nothing to coverage, and exists only to look
+  # like the mapping is more complete than it is.
+  # `tests/guardrails/mapping-targets-exist.test.ts` caps exactly this with a
+  # DOWNWARD ratchet, which the removed rows raised.
+  #
+  # There is no assessable Annex A node for independent review or corrective
+  # action in this library (no A.5.35/A.5.36), so the correspondence cannot be
+  # expressed here at all rather than being expressed weakly. If those controls
+  # are added to the library later, these two rows become writable and should be
+  # added then.
+

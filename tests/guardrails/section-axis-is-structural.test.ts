@@ -126,6 +126,12 @@ describe('the section axis is structural, not a tier (#2619)', () => {
         expect(counts).toEqual({
             'AISVS-1.0': 44,
             'CIS-CONTROLS-V8': 18,
+            // The five COSO components. They are the section axis for this
+            // framework because COSO has no other structural grouping — the
+            // principles sit directly under a component, and the component is
+            // what `ControlTemplate.category` will carry when the control
+            // content lands.
+            'COSO-ICF-2013': 5,
             'DORA-2022': 5,
             'EU-AI-ACT-2024': 5,
             GDPR: 4,

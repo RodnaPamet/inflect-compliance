@@ -178,7 +178,16 @@ describe('every library obligation reaches the catalogue that ships it', () => {
             .filter((f) => !declaredLibs.has(f))
             // gdpr and nist-csf ship no catalogue of their own; they are
             // crosswalk targets. If either gains a fixture, declare it here.
-            .filter((f) => !['gdpr.yaml', 'nist-csf-2.0.yaml'].includes(f));
+            //
+            // coso-icf-2013 is a THIRD kind and is excluded for a different
+            // reason: it will gain a fixture, in the content PRs that follow the
+            // framework one. Its 17 principles exist so controls can link to
+            // them; until those controls are authored there is no catalogue for
+            // this guard to compare against. The moment the fixture lands, this
+            // entry must be DELETED rather than left — leaving it would hide the
+            // very comparison the fixture makes possible, which is the failure
+            // mode of every "temporary" exclusion.
+            .filter((f) => !['gdpr.yaml', 'nist-csf-2.0.yaml', 'coso-icf-2013.yaml'].includes(f));
         expect(undeclared).toEqual([]);
     });
 

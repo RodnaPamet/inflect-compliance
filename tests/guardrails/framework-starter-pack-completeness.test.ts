@@ -86,6 +86,15 @@ const BARE_FRAMEWORKS: Record<string, string> = {
         'GDPR articles are the obligations that ISO 27701 and other controls map ' +
         'TO (via mappings/iso27701-to-gdpr.yaml); the framework carries no control ' +
         'templates by design, so it ships without a starter pack.',
+    'COSO-ICF-2013':
+        'BARE FOR NOW, AND ONLY FOR NOW — unlike the two above, which are bare by ' +
+        'design. COSO ships its 5 components and 17 principles first; the control ' +
+        'content is authored in follow-up PRs, because COSO enumerates no controls ' +
+        'itself (its nearest equivalent, the 87 points of focus, is the copyrighted ' +
+        'part) so every template is an authored ICFR baseline rather than a port. ' +
+        'When that pack lands this entry MOVES to STARTER_PACKS rather than being ' +
+        'deleted — a framework that quietly stayed bare is the thing this registry ' +
+        'exists to make visible.',
 };
 
 /** Every framework ref_id discovered in the library directory. */
