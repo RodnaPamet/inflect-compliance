@@ -196,6 +196,15 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     'src/app-layer/usecases/agent-tool-exposure.ts — identifier bound elsewhere',
     'src/app-layer/usecases/workflow-runs.ts — identifier bound elsewhere',
     'src/lib/agentic/agent-authority.ts — identifier bound elsewhere',
+    // The driver gate's two fallback log lines. Every value at both sinks is an
+    // id (`tenantId`, `requestId`), a workflow key, or a member of a closed
+    // union (`driver`, `reason`) — plus one `err.message`. The rule does no
+    // data-flow analysis, so a plain local named `tenantId` is indistinguishable
+    // to it from one named `prompt`; that is the whole `identifier bound
+    // elsewhere` class. The fields ARE named at the sink. What cannot be shown
+    // structurally is that no prompt-shaped value exists in that module to
+    // name — it holds no model call, no transcript and no tool arguments.
+    'src/lib/agentic/agent-driver-policy.ts — identifier bound elsewhere',
     'src/lib/agentic/agent-registration-gate.ts — identifier bound elsewhere',
     'src/lib/agentic/policy-card-store.ts — identifier bound elsewhere',
     'src/lib/mcp/auth.ts — identifier bound elsewhere',
@@ -329,7 +338,19 @@ const SINK_FLOOR = 30;
 // and all wrong here. Taking any one of them would have produced a green ratchet
 // describing a codebase that does not exist, which is the failure this ratchet is
 // for. Re-derived by zeroing both and reading the failure message.
-const MEASURED_HOLES = 143;
+// Re-MEASURED 2026-09-20, when the agent driver seam added its two log calls:
+// 143 / 78 became 146 / 83. Taken the prescribed way — both constants floated
+// and the failure message read — never by picking a pair that passes.
+//
+// The sinks figure moved further than this change did, and the gap is worth
+// recording rather than quietly absorbing: measured on an UNMODIFIED main the
+// real sink count was already 81, three above the stored 78. `sinkSeen` is a
+// FLOOR, so the slack was invisible — three sinks had been added by earlier
+// work without the constant following, and nothing failed, because a floor only
+// notices a fall. This diff contributes +2 (the two `logger.warn` calls in
+// `agent-driver-policy.ts`) and the constant is set to the measured 83 rather
+// than to 80, closing the inherited slack in the same move.
+const MEASURED_HOLES = 146;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -342,7 +363,7 @@ const MEASURED_HOLES = 143;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 78;
+const MEASURED_SINKS = 83;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

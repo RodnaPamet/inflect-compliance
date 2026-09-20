@@ -307,6 +307,20 @@ export const env = createEnv({
         AI_ASSISTANT_ENABLED: z.string().default('true'),
         AI_QUESTIONNAIRE_ENABLED: z.string().default('true'),
 
+        // The operator's half of the agent DRIVER gate. OPT-IN, and
+        // deliberately the opposite default to the AI_*_ENABLED flags above:
+        // those govern features this repo implements and are read as "not
+        // disabled", while this one governs whether an EXTERNAL agent runtime
+        // executes a run, so it is read as "not enabled". Unset means static.
+        //
+        // A plain string rather than z.enum(['0','1']) because the parser in
+        // `src/lib/agentic/agent-driver.ts` accepts '1' and 'true' and rejects
+        // everything else — and a schema that 500s the whole process on
+        // AGENT_DRIVER_FLUE=yes would turn a typo in a feature flag into an
+        // outage. The strictness belongs at the read, where the answer is
+        // "off", not at boot, where the answer is "nothing starts".
+        AGENT_DRIVER_FLUE: z.string().optional(),
+
         // AI Compliance-Posture Summary (dashboard hero, daily cron).
         // 'stub' (default) is fully functional with zero config; 'anthropic'
         // / 'openrouter' opt in to a real LLM narrative (keys below).
@@ -478,6 +492,7 @@ export const env = createEnv({
         AI_RISK_PLAN_REQUIRED: process.env.AI_RISK_PLAN_REQUIRED,
         AI_RISK_SUGGESTIONS_ENABLED: process.env.AI_RISK_SUGGESTIONS_ENABLED,
         AI_ASSISTANT_ENABLED: process.env.AI_ASSISTANT_ENABLED,
+        AGENT_DRIVER_FLUE: process.env.AGENT_DRIVER_FLUE,
         AI_QUESTIONNAIRE_ENABLED: process.env.AI_QUESTIONNAIRE_ENABLED,
         AI_POSTURE_PROVIDER: process.env.AI_POSTURE_PROVIDER,
         ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,

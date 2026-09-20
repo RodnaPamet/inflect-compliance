@@ -70,6 +70,7 @@ import {
     type ContentProvenance,
 } from '@/lib/agentic/content-provenance';
 import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
+import { resolveDriverForRun } from '@/lib/agentic/agent-driver-policy';
 import {
     estimateTokens,
     type WorkflowContext,
@@ -157,6 +158,22 @@ export async function startWorkflowRun(
     // under.
     const policyCardVersion = await resolvePolicyCardPin(ctx.tenantId, ctx.agentId);
 
+    // WHICH ENGINE executes this run. Resolved here, beside the card pin,
+    // because both are properties of the run's OPENING — the question is "what
+    // did this run start under", and both answers stop being recoverable once
+    // the configuration moves on.
+    //
+    // Today every answer is `static`: `DRIVER_IMPLEMENTED.flue` is false, so
+    // even a tenant with both switches on falls back with a named reason. The
+    // decision is resolved and recorded anyway, and that is deliberate — a seam
+    // whose first exercise is the diff that also makes it load-bearing has
+    // never been observed working. This one is observable from the run's audit
+    // entry before it can change any behaviour.
+    const driverDecision = await resolveDriverForRun(ctx.tenantId, {
+        requestId: ctx.requestId,
+        workflowKey,
+    });
+
     // Row + first chain link (seq 0, prev null), one transaction. An `input`
     // already over the size cap fails here and no run is created.
     //
@@ -180,6 +197,13 @@ export async function startWorkflowRun(
             // The pin, in the trail as well as on the row. The row can be
             // deleted with its tenant; the hash-chained entry is what survives.
             policyCardVersion,
+            // Which engine walked this run, and — when it was not the one
+            // configured — why not. In the hash-chained trail rather than only
+            // in a log line, because "which engine executed this" is a question
+            // an incident review asks about a run that has long since finished,
+            // and log retention is not the audit trail's retention.
+            driver: driverDecision.driver,
+            driverReason: driverDecision.reason,
         },
         metadataJson: { apiKeyId: ctx.apiKeyId ?? null, agentId: ctx.agentId ?? null },
     }).catch(() => undefined);
