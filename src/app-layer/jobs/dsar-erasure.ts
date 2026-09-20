@@ -414,6 +414,41 @@ async function eraseUserWithin(db: ErasureDb, userId: string): Promise<ErasureRe
             data: { userId: null },
         });
 
+        // ── THE READ AND THE WRITE MUST HAVE SEEN THE SAME SET ─────
+        //
+        // The two statements above run at READ COMMITTED, so each takes its
+        // own snapshot. A row for this subject that COMMITS between them is
+        // invisible to the `findMany` and updated by the `updateMany` — which
+        // is precisely the state this whole change exists to prevent: a
+        // pseudonymized row no erasure record names, indistinguishable from
+        // tampering at the next verification.
+        //
+        // The obvious repair — take the named set from `updateMany` instead
+        // of the pre-read — is not available, twice over. `updateMany`
+        // returns a COUNT, not ids; and `updateManyAndReturn` would hand back
+        // POST-update rows, whose `userId` is already NULL, so `recordErasure`
+        // could no longer compute the pre-erasure control hash that stops an
+        // erasure laundering an already-broken chain.
+        //
+        // What IS available is the count, and comparing it closes the window
+        // without touching the isolation level: a divergence can only mean
+        // the set moved under us, and the whole transaction rolls back rather
+        // than committing an erasure whose record under-names it. Raising the
+        // isolation level to REPEATABLE READ would prevent the divergence
+        // instead of detecting it, but that is a change to how every erasure
+        // contends, and it is a separate decision.
+        if (count !== rowsBefore.length) {
+            throw new Error(
+                `dsar-erasure: the audit rows for ${JSON.stringify(userId)} changed between the read `
+                    + `(${rowsBefore.length} row(s)) and the pseudonymization (${count} row(s)). `
+                    + 'Rolling the whole erasure back rather than writing an erasure record that '
+                    + 'names a different set than was pseudonymized — a row nulled but unnamed '
+                    + 'reads as tampering at the next chain verification. Re-run the erasure; '
+                    + 'if it keeps diverging, something is still writing audit entries for this '
+                    + 'subject.',
+            );
+        }
+
         // ── RECORD THE ERASURE, IN THIS TRANSACTION (#2682) ────────
         //
         // SAME TRANSACTION is the whole point, not an optimisation. A record

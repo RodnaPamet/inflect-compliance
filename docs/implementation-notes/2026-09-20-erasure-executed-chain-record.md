@@ -133,6 +133,20 @@ own entry in its own chain, naming only its own rows.
   source of truth. `verifyTenantChain` issues the extra lookup only when a
   date range was asked for, and issues it AFTER the main query so callers that
   inspect `mock.calls[0]` still find the chain query there.
+- **…and from the HASHED rows only.** The first cut read the tolerances off
+  ALL rows, on the reasoning that a dishonest record breaks the chain at
+  itself. It does not, if it carries no hash: both walks iterate the hashed
+  subset, so a record with a NULL `entryHash` is never recomputed and never
+  breaks anything, while still granting tolerances for rows the verifier DOES
+  check — an unverified row excusing verified ones. That is not hypothetical:
+  `entryHash` is nullable and `logAudit` plus the lifecycle jobs still
+  `auditLog.create` rows with a caller-supplied `action` and no hash, which is
+  why `unhashedEntries` is a counter rather than an impossibility. Both call
+  sites now pass `hashedRows`, and the ranged lookup in `verify.ts` adds
+  `AND "entryHash" IS NOT NULL`. `collectPseudonymizationTolerances` cannot
+  enforce this itself — a `ChainRowForTolerance` carries no hash — so the
+  restriction lives at the call sites and `tests/unit/audit-trail-verify.test.ts`
+  pins each one against a hashed positive control.
 - **A row named twice with different hashes is dropped entirely** rather than
   resolved to one of them. Two records disagreeing is not a state a lawful
   erasure can produce, and picking a winner would let a later forged entry

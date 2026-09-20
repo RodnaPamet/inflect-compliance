@@ -427,11 +427,21 @@ export async function verifyAuditChain(tenantId: string, client?: PrismaClient):
 
     // Every tolerance the tenant's own ERASURE_EXECUTED entries declare,
     // built from the rows ALREADY fetched above — no second query, and no
-    // second source of truth. Scanning all rows (not just hashed ones) is
-    // deliberate: the map is keyed by the row a record NAMES, and whether the
-    // record itself is honest is settled by the walk below, which reaches it
-    // like any other row and breaks there if its own hash does not recompute.
-    const tolerances = collectPseudonymizationTolerances(rows);
+    // second source of truth.
+    //
+    // HASHED ROWS ONLY, and that is the whole safety argument. What makes a
+    // record trustworthy is that the walk below reaches it like any other row
+    // and breaks there if its own hash does not recompute — but the walk
+    // iterates `hashedRows`. A record with a NULL `entryHash` is never
+    // reached by it, so reading tolerances off `rows` would let an
+    // UNVERIFIED row excuse mismatches on rows the verifier then does check.
+    // Unhashed rows are not hypothetical: `logAudit` (src/lib/audit-log.ts)
+    // and the lifecycle jobs still `auditLog.create` with a caller-supplied
+    // `action` and no hash, and pre-chain rows have none either — which is
+    // why `unhashedEntries` is a counter rather than an impossibility.
+    // Granting tolerances only from the subset the walk grades is what makes
+    // "settled by the walk" a true statement instead of an intention.
+    const tolerances = collectPseudonymizationTolerances(hashedRows);
 
     // Verify the hashed subset
     let valid = true;

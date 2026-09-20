@@ -63,9 +63,26 @@ interface FakeDb {
  * half-run one is the failure this file exists to catch.
  */
 function makeFakeDb(
-    options: { subjectVisible?: boolean; auditRows?: number; deleteError?: unknown } = {},
+    options: {
+        subjectVisible?: boolean;
+        auditRows?: number;
+        deleteError?: unknown;
+        /**
+         * Rows for this subject that COMMIT between the pre-read and the
+         * `updateMany` — the READ COMMITTED race (#2682). The read cannot see
+         * them, the update touches them anyway, so the erasure record would
+         * name fewer rows than were actually pseudonymized.
+         */
+        rowsCommittedMidTransaction?: number;
+    } = {},
 ): FakeDb {
-    const { subjectVisible = true, auditRows = 3, deleteError } = options;
+    const {
+        subjectVisible = true,
+        auditRows = 3,
+        deleteError,
+        rowsCommittedMidTransaction = 0,
+    } = options;
+    const updatedRows = auditRows + rowsCommittedMidTransaction;
 
     const calls: string[] = [];
     const committed = { auditRowsNulled: 0, userDeleted: false };
@@ -113,8 +130,10 @@ function makeFakeDb(
             },
             async updateMany(args: { where: { userId: string }; data: { userId: null } }) {
                 calls.push(`auditLog:updateMany:${JSON.stringify(args)}`);
-                staged.auditRowsNulled = auditRows;
-                return { count: auditRows };
+                // NOT necessarily `auditRows`: a second snapshot can see rows
+                // the `findMany` above could not. Defaults to agreeing.
+                staged.auditRowsNulled = updatedRows;
+                return { count: updatedRows };
             },
         },
     };
@@ -363,5 +382,57 @@ describe('eraseUser — the default client', () => {
         const fake = makeFakeDb();
         await eraseUser(SUBJECT, { db: fake.db });
         expect(runInGlobalContext).not.toHaveBeenCalled();
+    });
+});
+
+
+describe('eraseUser — the read and the write must have seen the same rows (#2682)', () => {
+    // The pre-read and the `updateMany` are two statements at READ COMMITTED,
+    // so each takes its own snapshot. A row for this subject that commits
+    // between them is invisible to the read and pseudonymized by the write —
+    // leaving a de-attributed row no ERASURE_EXECUTED entry names, which is
+    // exactly the false positive this whole change removes.
+    //
+    // It cannot be closed by taking the named set from the write instead:
+    // `updateMany` returns a count and no ids, and `updateManyAndReturn` would
+    // hand back POST-update rows whose `userId` is already NULL — so
+    // `recordErasure` could no longer compute the PRE-erasure control hash
+    // that stops an erasure laundering an already-broken chain. What the count
+    // does support is detection, and a divergence rolls the whole thing back.
+
+    it('refuses, and rolls back, when a row appears between the read and the update', async () => {
+        const fake = makeFakeDb({ auditRows: 3, rowsCommittedMidTransaction: 1 });
+
+        await expect(eraseUser(SUBJECT, { db: fake.db })).rejects.toThrow(
+            /changed between the read \(3 row\(s\)\) and the pseudonymization \(4 row\(s\)\)/,
+        );
+
+        // A refusal that still committed would be worse than no check at all:
+        // the rows are nulled, the subject is gone, and the record under-names.
+        expect(fake.committed.auditRowsNulled).toBe(0);
+        expect(fake.committed.userDeleted).toBe(false);
+    });
+
+    it('POSITIVE CONTROL — the identical fake with no interleaved row succeeds', async () => {
+        // Same construction, same 3 rows; the ONLY difference is that the two
+        // snapshots agree. Without this pair, the red above could just mean
+        // the fake never worked.
+        const fake = makeFakeDb({ auditRows: 3 });
+
+        const receipt = await eraseUser(SUBJECT, { db: fake.db });
+
+        expect(receipt.auditRowsPseudonymized).toBe(3);
+        expect(fake.committed.auditRowsNulled).toBe(3);
+        expect(fake.committed.userDeleted).toBe(true);
+    });
+
+    it('the refusal is raised BEFORE the subject is deleted', async () => {
+        // Ordering matters for what the rollback has to undo — and on a real
+        // database the hard delete is the irreversible half.
+        const fake = makeFakeDb({ auditRows: 2, rowsCommittedMidTransaction: 3 });
+
+        await expect(eraseUser(SUBJECT, { db: fake.db })).rejects.toThrow(/dsar-erasure/);
+
+        expect(fake.calls).not.toContain('user:delete');
     });
 });

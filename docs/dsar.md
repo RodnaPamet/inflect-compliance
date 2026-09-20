@@ -142,7 +142,12 @@ each is asserted by a live-tampering test in
   row no erasure entry names still breaks the chain.
 - **The record is not privileged.** It is an `AuditLog` row inside the same
   chain, so forging it breaks the chain at the record — there is no second
-  source of truth outside the chain's protection.
+  source of truth outside the chain's protection. That argument holds only for
+  a HASHED record, so both verifiers read tolerances only from the hashed rows
+  they actually walk: `AuditLog.entryHash` is nullable, `logAudit` and the
+  lifecycle jobs still write unhashed rows with a caller-supplied `action`, and
+  an unhashed record is one the walk never recomputes — it could never break,
+  so it may never excuse.
 
 The record identifies nobody: the entry carries `userId: null` and `actorType:
 JOB`, and the hashes it stores are computed with `actorUserId: null`, so they

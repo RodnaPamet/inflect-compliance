@@ -20,6 +20,7 @@
  * verifier uses, so a "clean" fixture is genuinely clean.
  */
 import { verifyTenantChain, verifyAllTenants } from '@/lib/audit/verify';
+import { verifyAuditChain } from '@/lib/audit/audit-writer';
 import { computeEntryHash } from '@/lib/audit/canonical-hash';
 
 interface SeedRow {
@@ -96,9 +97,21 @@ function fakeClient(opts: {
                 }
                 // AuditLog query — $1 is the tenantId.
                 const tenantId = params[0] as string;
-                return opts.auditRows.filter(
+                let out = opts.auditRows.filter(
                     (r) => r.tenantId === tenantId,
                 );
+                // The RANGE-FILTERED tolerance lookup carries its own WHERE
+                // clauses, and this fake honours them. Without that, a change
+                // to that SQL is invisible here — the double would return the
+                // same rows whatever the query said, which is exactly the
+                // shape that makes a mutation-proof meaningless.
+                if (sql.includes('"action" = $2')) {
+                    out = out.filter((r) => r.action === (params[1] as string));
+                }
+                if (sql.includes('"entryHash" IS NOT NULL')) {
+                    out = out.filter((r) => r.entryHash !== null);
+                }
+                return out;
             },
         ),
     } as never;
@@ -487,5 +500,164 @@ describe('verifyTenantChain — DSAR erasure tolerance (#2682)', () => {
         expect(calls[0][0]).toContain('"createdAt" >=');
         expect(calls[1][0]).not.toContain('"createdAt" >=');
         expect(calls[1]).toContain('ERASURE_EXECUTED');
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// #2682 follow-up — a tolerance may come only from a row the walk VERIFIES
+// ═══════════════════════════════════════════════════════════════════
+//
+// `erasure-record.ts` states the safety argument in one sentence: a tamperer
+// "who forges the record's own hash breaks the chain at the record". That is
+// true only for a record the walk reaches, and both verifiers walk the HASHED
+// subset. `AuditLog.entryHash` is nullable and unhashed rows are ordinary —
+// `logAudit` (src/lib/audit-log.ts) and the lifecycle jobs `auditLog.create`
+// with a caller-supplied `action` and no hash — so a record with a NULL
+// `entryHash` is never recomputed, never breaks anything, and (before this
+// fix) still granted tolerances for rows the verifier then DOES check. An
+// unverified row excusing verified ones is the tolerance inverted.
+//
+// Each case below is paired with the SAME record, hashed and chained, as its
+// positive control: without that pair a red could just mean the payload was
+// malformed, rather than that the null hash was what disqualified it.
+
+/**
+ * Append an ERASURE_EXECUTED entry with NO `entryHash` — the row a
+ * `auditLog.create` path writes, and the row the chain walk never reaches.
+ * Payload-identical to `appendErasureRecord`'s, so the ONLY difference
+ * between this and the control is the missing hash.
+ */
+function appendUnhashedErasureRecord(
+    rows: SeedRow[],
+    named: Array<{ id: string; postErasureHash: string }>,
+): SeedRow {
+    const record: SeedRow = {
+        id: 'row-erasure-record-unhashed',
+        tenantId: rows[0].tenantId,
+        userId: null,
+        actorType: 'USER',
+        entity: 'AuditLog',
+        entityId: 'pseudonymization',
+        action: 'ERASURE_EXECUTED',
+        detailsJson: {
+            category: 'custom',
+            event: 'ERASURE_EXECUTED',
+            schema: 1,
+            auditRowsPseudonymized: named.length,
+            pseudonymizedRows: named,
+            rowsWithoutTolerance: 0,
+        },
+        previousHash: null,
+        entryHash: null,
+        version: 1,
+        createdAtIso: '2026-03-09T00:00:00.000Z',
+    };
+    rows.push(record);
+    return record;
+}
+
+describe('a tolerance comes only from a row the walk verifies (#2682)', () => {
+    it('verifyTenantChain — an UNHASHED erasure record grants NO tolerance', async () => {
+        const rows = buildChain('t1', 3);
+        const postErasureHash = pseudonymize(rows, 1);
+        appendUnhashedErasureRecord(rows, [{ id: 'row-t1-1', postErasureHash }]);
+
+        const result = await verifyTenantChain('t1', {
+            client: fakeClient({ auditRows: rows }),
+        });
+
+        // The record is present and names the row with the RIGHT hash — and
+        // it is still refused, because nothing ever graded the record.
+        expect(result.valid).toBe(false);
+        expect(result.breaks[0].rowId).toBe('row-t1-1');
+        expect(result.breaks[0].breakType).toBe('hash_mismatch');
+        expect(result.toleratedPseudonymizations).toBe(0);
+        // The record is in the chain but outside the walk — which is the
+        // whole point: it can never break, so it can never be trusted.
+        expect(result.unhashedEntries).toBe(1);
+    });
+
+    it('POSITIVE CONTROL — the same payload, HASHED and chained, IS honoured', async () => {
+        // Identical named set and identical postErasureHash; the only
+        // difference from the case above is that this record carries a hash
+        // the walk recomputes. A green here is what makes the red above a
+        // statement about the missing hash rather than about the payload.
+        const rows = buildChain('t1', 3);
+        const postErasureHash = pseudonymize(rows, 1);
+        appendErasureRecord(rows, [{ id: 'row-t1-1', postErasureHash }]);
+
+        const result = await verifyTenantChain('t1', {
+            client: fakeClient({ auditRows: rows }),
+        });
+
+        expect(result.valid).toBe(true);
+        expect(result.toleratedPseudonymizations).toBe(1);
+        expect(result.unhashedEntries).toBe(0);
+    });
+
+    it('verifyTenantChain RANGED — the ranged lookup excludes an unhashed record', async () => {
+        // The ranged arm is a SECOND query with its own WHERE clause, so the
+        // unranged fix does not reach it. `from` is what selects that arm.
+        const rows = buildChain('t1', 3);
+        const postErasureHash = pseudonymize(rows, 1);
+        appendUnhashedErasureRecord(rows, [{ id: 'row-t1-1', postErasureHash }]);
+
+        const client = fakeClient({ auditRows: rows });
+        const result = await verifyTenantChain('t1', {
+            client,
+            from: new Date('2026-03-01T00:00:00.000Z'),
+        });
+
+        expect(result.valid).toBe(false);
+        expect(result.breaks[0].rowId).toBe('row-t1-1');
+        expect(result.toleratedPseudonymizations).toBe(0);
+
+        // …and the ranged arm really was the one that ran, carrying the
+        // NULL-exclusion in its own SQL. Without this, the assertion above
+        // could be satisfied by the unranged path.
+        const calls = (client as unknown as { $queryRawUnsafe: jest.Mock }).$queryRawUnsafe.mock.calls;
+        expect(calls).toHaveLength(2);
+        expect(calls[1][0]).toContain('"entryHash" IS NOT NULL');
+    });
+
+    it('POSITIVE CONTROL, RANGED — a hashed record is still found by that lookup', async () => {
+        const rows = buildChain('t1', 3);
+        const postErasureHash = pseudonymize(rows, 1);
+        appendErasureRecord(rows, [{ id: 'row-t1-1', postErasureHash }]);
+
+        const result = await verifyTenantChain('t1', {
+            client: fakeClient({ auditRows: rows }),
+            from: new Date('2026-03-01T00:00:00.000Z'),
+        });
+
+        expect(result.valid).toBe(true);
+        expect(result.toleratedPseudonymizations).toBe(1);
+    });
+
+    it('verifyAuditChain — an UNHASHED erasure record grants NO tolerance', async () => {
+        // The OTHER verifier, with its own copy of the tolerance read. A
+        // shared predicate is only proven at the call site you exercise.
+        const rows = buildChain('t1', 3);
+        const postErasureHash = pseudonymize(rows, 1);
+        appendUnhashedErasureRecord(rows, [{ id: 'row-t1-1', postErasureHash }]);
+
+        const verdict = await verifyAuditChain('t1', fakeClient({ auditRows: rows }));
+
+        expect(verdict.valid).toBe(false);
+        expect(verdict.firstBreakId).toBe('row-t1-1');
+        expect(verdict.toleratedPseudonymizations).toBe(0);
+        expect(verdict.unhashedEntries).toBe(1);
+    });
+
+    it('POSITIVE CONTROL — verifyAuditChain honours the same record once hashed', async () => {
+        const rows = buildChain('t1', 3);
+        const postErasureHash = pseudonymize(rows, 1);
+        appendErasureRecord(rows, [{ id: 'row-t1-1', postErasureHash }]);
+
+        const verdict = await verifyAuditChain('t1', fakeClient({ auditRows: rows }));
+
+        expect(verdict.valid).toBe(true);
+        expect(verdict.toleratedPseudonymizations).toBe(1);
+        expect(verdict.firstBreakId).toBeUndefined();
     });
 });

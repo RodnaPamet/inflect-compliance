@@ -62,6 +62,19 @@
  * the chain; one who forges the record's own hash breaks the chain at the
  * record.
  *
+ * THAT LAST SENTENCE IS THE LOAD-BEARING ONE, AND IT ONLY HOLDS FOR A HASHED
+ * RECORD. `AuditLog.entryHash` is nullable and unhashed rows are ordinary —
+ * `logAudit` (src/lib/audit-log.ts) and the lifecycle jobs `auditLog.create`
+ * with a caller-supplied `action` and no hash, and pre-chain rows have none.
+ * Both verifiers walk only the hashed subset, so a record with a NULL
+ * `entryHash` is never recomputed and never breaks anything: it would be a
+ * tolerance grantor that nothing grades. Both therefore build this map from
+ * hashed rows ONLY (`audit-writer.ts` passes `hashedRows`; `verify.ts` passes
+ * `hashedRows` and adds `AND "entryHash" IS NOT NULL` to its ranged lookup).
+ * The collector below cannot enforce that itself — it is handed rows and a
+ * `ChainRowForTolerance` carries no hash — so the restriction lives at both
+ * call sites, and `audit-trail-verify.test.ts` pins each one.
+ *
  * ═══════════════════════════════════════════════════════════════════
  * WHAT THIS DOES NOT CLAIM
  * ═══════════════════════════════════════════════════════════════════

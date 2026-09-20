@@ -183,19 +183,31 @@ export async function verifyTenantChain(
     // would report `hash_mismatch` — the false positive this fixes, back
     // again for exactly the queries an auditor narrows. So an unfiltered
     // lookup runs when (and only when) a range was asked for; the
-    // unrestricted case already has every record in `rows`.
+    // unrestricted case already has every record in `hashedRows`.
     //
     // It is issued AFTER the main query on purpose, so callers that inspect
     // `$queryRawUnsafe.mock.calls[0]` still see the chain query there.
+    //
+    // BOTH ARMS ARE RESTRICTED TO HASHED ROWS, for one reason. A record is
+    // trustworthy only because the walk below recomputes its hash and breaks
+    // there if it does not match — and the walk iterates `hashedRows`. A
+    // record with a NULL `entryHash` is never graded by anything, so letting
+    // one into this set would let an UNVERIFIED row excuse mismatches on rows
+    // the verifier does check. Unhashed rows exist in quantity (that is what
+    // `unhashedEntries` counts): `logAudit` and the lifecycle jobs still
+    // write `auditLog.create` rows with a caller-supplied `action` and no
+    // hash. Hence `IS NOT NULL` in the ranged lookup and `hashedRows` — not
+    // `rows` — in the unranged one.
     const toleranceRows: ChainRowForTolerance[] = (opts.from || opts.to)
         ? (await db.$queryRawUnsafe<AuditRow[]>(
             `SELECT "id", "userId", "action", "detailsJson"
                FROM "AuditLog"
-              WHERE "tenantId" = $1 AND "action" = $2`,
+              WHERE "tenantId" = $1 AND "action" = $2
+                AND "entryHash" IS NOT NULL`,
             tenantId,
             ERASURE_EXECUTED_ACTION,
         ))
-        : rows;
+        : hashedRows;
     const tolerances = collectPseudonymizationTolerances(toleranceRows);
     let toleratedPseudonymizations = 0;
 
