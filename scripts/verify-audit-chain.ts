@@ -96,6 +96,18 @@ Exit codes:
 
 // ─── Output Formatting ──────────────────────────────────────────────
 
+/**
+ * Hash mismatches the whole report excused as lawful DSAR erasures (#2682).
+ *
+ * Summed here rather than read off `VerificationReport`, which carries no
+ * such aggregate — `toleratedPseudonymizations` is per tenant. Deriving it at
+ * the print site keeps one source of truth (the per-tenant results) instead of
+ * adding a second total that could disagree with the rows printed above it.
+ */
+function totalTolerated(report: VerificationReport): number {
+    return report.results.reduce((sum, r) => sum + r.toleratedPseudonymizations, 0);
+}
+
 function printHumanReport(report: VerificationReport) {
     console.log('');
     console.log('═══════════════════════════════════════════════════════════');
@@ -105,6 +117,7 @@ function printHumanReport(report: VerificationReport) {
     console.log(`  Duration:        ${report.durationMs}ms`);
     console.log(`  Tenants checked: ${report.tenantsVerified}`);
     console.log(`  Total entries:   ${report.totalEntriesVerified}`);
+    console.log(`  Erasure-excused: ${totalTolerated(report)}`);
     console.log('');
 
     for (const result of report.results) {
@@ -113,7 +126,11 @@ function printHumanReport(report: VerificationReport) {
 
     console.log('───────────────────────────────────────────────────────────');
     if (report.allValid) {
-        console.log('  🎉 RESULT: ALL CHAINS VALID');
+        // THE SECOND NUMBER, beside the green one (#2682). `allValid` on its
+        // own is also what a chain nothing ever happened to reports; an
+        // operator asking "did the erasures we ran leave the trail intact"
+        // needs to see that some mismatches were EXCUSED, and how many.
+        console.log(`  🎉 RESULT: ALL CHAINS VALID (${totalTolerated(report)} erasure-excused mismatch(es))`);
     } else {
         console.log(`  ⚠️  RESULT: ${report.tenantsWithBreaks} TENANT(S) WITH INTEGRITY ISSUES`);
         console.log(`     Total breaks found: ${report.totalBreaks}`);
@@ -128,10 +145,20 @@ function printTenantResult(result: TenantVerificationResult) {
 
     console.log(`  ${icon} Tenant: ${result.tenantId}${name}`);
     console.log(`     Entries:   ${result.totalEntries} total, ${result.hashedEntries} hashed, ${result.unhashedEntries} legacy`);
+    // #2682 — ALWAYS printed, including the zero. The count exists so a green
+    // verification cannot quietly come to mean "nothing was ever erased", and
+    // a number printed only when it is interesting cannot carry that: the
+    // operator would have no way to tell "no erasures" from "this build does
+    // not report them".
+    console.log(`     Erasures:  ${result.toleratedPseudonymizations} hash mismatch(es) excused as lawful DSAR erasure`);
     console.log(`     Duration:  ${result.durationMs}ms`);
 
     if (result.valid) {
-        console.log(`     Status:    VALID`);
+        console.log(
+            result.toleratedPseudonymizations > 0
+                ? `     Status:    VALID (${result.toleratedPseudonymizations} pseudonymized row(s) excused — see Erasures above)`
+                : `     Status:    VALID`,
+        );
     } else {
         console.log(`     Status:    BROKEN — ${result.breaks.length} break(s) detected`);
         console.log('');
@@ -168,7 +195,7 @@ function printSingleTenantHuman(result: TenantVerificationResult) {
 
     console.log('───────────────────────────────────────────────────────────');
     if (result.valid) {
-        console.log('  🎉 RESULT: CHAIN VALID');
+        console.log(`  🎉 RESULT: CHAIN VALID (${result.toleratedPseudonymizations} erasure-excused mismatch(es))`);
     } else {
         console.log(`  ⚠️  RESULT: CHAIN BROKEN — ${result.breaks.length} break(s) detected`);
     }

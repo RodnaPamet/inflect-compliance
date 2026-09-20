@@ -48,9 +48,12 @@
  *     is `UNOBSERVED`, and the guard FAILS on it (the probe is not wired to
  *     whatever seam the implementation chose — fix the wiring, do not relax
  *     the assertion);
- *   - raw SQL against AuditLog is recorded and flagged `UNVERIFIABLE_RAW_SQL`
- *     rather than ignored — an in-memory store cannot execute SQL, so its
- *     unchanged contents are not evidence of anything;
+ *   - raw SQL that could CHANGE OR REMOVE an AuditLog row is recorded and
+ *     flagged `UNVERIFIABLE_RAW_SQL` rather than ignored — an in-memory store
+ *     cannot execute SQL, so its unchanged contents are not evidence of
+ *     anything. Narrowed from "any raw SQL naming AuditLog" on 2026-09-20
+ *     (#2682), when erasure began APPENDING an `ERASURE_EXECUTED` entry
+ *     through the sanctioned writer; the reasoning is on the violation code;
  *   - a write against a table whose disposition is not declared in
  *     `ERASURE_DISPOSITIONS` is `UNDECLARED_TABLE_TOUCHED`: the cascade may
  *     not widen silently.
@@ -181,8 +184,24 @@ export type ViolationCode =
     | 'AUDIT_HISTORY_MUTATED'
     /** A row belonging to another subject was modified or removed. */
     | 'FOREIGN_ROW_TOUCHED'
-    /** Raw SQL touching AuditLog: the in-memory store cannot execute it, so
-     *  its unchanged contents prove nothing. */
+    /** Raw SQL that could CHANGE OR REMOVE an existing AuditLog row: the
+     *  in-memory store cannot execute it, so its unchanged contents prove
+     *  nothing about what the statement did to history.
+     *
+     *  NARROWED 2026-09-20 (#2682), and the narrowing is the load-bearing
+     *  part. It used to fire on ANY raw statement whose text mentioned
+     *  AuditLog. Erasure now writes an `ERASURE_EXECUTED` entry through
+     *  `appendAuditEntryWithin` — the ONE sanctioned `AuditLog` writer, whose
+     *  three statements are an advisory lock, a chain-tip `SELECT` and an
+     *  `INSERT` — so the old predicate reported the required behaviour as a
+     *  violation.
+     *
+     *  What survives is the invariant the code names: SELECT and INSERT
+     *  cannot touch a row that already exists, and this trail's whole promise
+     *  is that existing rows do not change. UPDATE / DELETE / TRUNCATE /
+     *  ALTER / DROP still fire — proved by C6, which issues the exact raw
+     *  `UPDATE "AuditLog" SET "userId" = NULL` an implementation might reach
+     *  for to bypass the delegate, and must stay red. */
     | 'UNVERIFIABLE_RAW_SQL'
     /** A write against a table with no declared disposition. */
     | 'UNDECLARED_TABLE_TOUCHED'
@@ -204,6 +223,19 @@ const WRITE_METHODS = new Set([
 ]);
 
 const DELETE_METHODS = new Set(['delete', 'deleteMany']);
+
+/**
+ * Raw-SQL verbs that can CHANGE OR REMOVE a row that already exists. See
+ * `UNVERIFIABLE_RAW_SQL` above for why the predicate is this and not "mentions
+ * AuditLog".
+ *
+ * An allowlist would be the stronger form in general, but not here: the thing
+ * being graded is an arbitrary SQL string, and the set of ways to phrase a
+ * harmless read is open while the set of destructive verbs is closed. So the
+ * denylist is the closed side. `\b` on both ends so a column called
+ * `updatedAt` or a table called `DROPBOX_SYNC` does not read as a verb.
+ */
+const MUTATING_SQL = /\b(update|delete|truncate|alter|drop)\b/i;
 
 /** Evaluates the subset of a Prisma `where` an erasure cascade would build. */
 function matches(row: ProbeRow, where: unknown): boolean {
@@ -310,9 +342,21 @@ export function makeErasureClient(store: ProbeStore, ops: ProbeOp[]): unknown {
                     return async () => undefined;
                 }
                 // $executeRaw / $queryRaw / …: recorded, never executed.
+                //
+                // The RETURN SHAPE matters, and getting it wrong is silent.
+                // A `$queryRaw*` caller expects an array; returning `0` made
+                // `rows.length` throw a TypeError deep inside the callee, the
+                // erasure was graded `ERRORED`, and the resulting failure
+                // named the probe's own fake rather than anything about the
+                // implementation. An empty array is the honest answer here —
+                // "this store has no rows to give you" — and it is what
+                // `appendAuditEntryWithin`'s chain-tip read treats as "no
+                // predecessor", which is exactly true of a store that holds
+                // no committed chain.
+                const isQuery = prop.startsWith('$queryRaw');
                 return async (...args: unknown[]) => {
                     ops.push({ table: '$raw', method: prop, args, matched: 0 });
-                    return 0;
+                    return isQuery ? [] : 0;
                 };
             }
             if (!(prop in target)) target[prop] = delegate(prop);
@@ -480,7 +524,7 @@ export function erasureViolations(run: ErasureRun): Violation[] {
     for (const op of run.ops) {
         if (op.table === '$raw') {
             const sql = JSON.stringify(op.args);
-            if (/auditlog/i.test(sql)) {
+            if (/auditlog/i.test(sql) && MUTATING_SQL.test(sql)) {
                 add('UNVERIFIABLE_RAW_SQL', `${op.method}: ${sql.slice(0, 200)}`);
             }
             continue;

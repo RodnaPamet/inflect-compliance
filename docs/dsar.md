@@ -109,6 +109,54 @@ table would satisfy it row by row. Not over-anonymizing is an APPLICATION
 obligation — it lives in the `where` clause of the single `updateMany` inside
 `eraseUser`.
 
+### The erasure is recorded IN the chain, and the verifier consults it
+
+"Hash chain intact" names two properties, and pseudonymization splits them.
+The STORED chain survives byte-for-byte — that is the trigger's doing. The
+RECOMPUTED chain does not: both verifiers rebuild each `entryHash` from the
+row's current columns with `actorUserId: row.userId`, and `actorUserId` is one
+of the ten `HASH_FIELDS`, so a row hashed while `userId` held the subject no
+longer recomputes once `userId` is NULL. A lawful erasure produced `valid:
+false` at the first pseudonymized row — the exact signature the product uses to
+prove tampering (issue #2682).
+
+The repair, decided by the repo owner on 2026-09-20: **record the erasure in
+the chain, and have the verifier consult the record.** `eraseUser` writes an
+`ERASURE_EXECUTED` audit entry — one per tenant whose chain it touched, in the
+SAME transaction as the pseudonymization — naming each affected `AuditLog.id`
+together with the hash that row recomputes to once `userId` is NULL.
+`verifyAuditChain` and `verifyTenantChain` excuse a mismatch only for a named
+row whose recomputation equals that committed value, and both report the count
+in `toleratedPseudonymizations` so a green verification still says how many
+rows were erased.
+
+Three properties make that safe rather than a verifier taught to look away, and
+each is asserted by a live-tampering test in
+`tests/integration/dsar-erasure-audit-survival.test.ts`:
+
+- **The tolerance is `userId`-only.** The recorded hash commits to the row's
+  nine other hashed fields, so any other edit to a named row changes the
+  recomputation and the tolerance refuses it.
+- **An un-named row gets nothing.** The trigger permits `userId` value → NULL,
+  which is precisely the mutation an attacker can make; a `userId` nulled on a
+  row no erasure entry names still breaks the chain.
+- **The record is not privileged.** It is an `AuditLog` row inside the same
+  chain, so forging it breaks the chain at the record — there is no second
+  source of truth outside the chain's protection. That argument holds only for
+  a HASHED record, so both verifiers read tolerances only from the hashed rows
+  they actually walk: `AuditLog.entryHash` is nullable, `logAudit` and the
+  lifecycle jobs still write unhashed rows with a caller-supplied `action`, and
+  an unhashed record is one the walk never recomputes — it could never break,
+  so it may never excuse.
+
+The record identifies nobody: the entry carries `userId: null` and `actorType:
+JOB`, and the hashes it stores are computed with `actorUserId: null`, so they
+are a function of the post-erasure row alone. Rows whose stored hash did not
+recompute BEFORE the erasure get no tolerance recorded, so an already-broken
+chain stays broken through an erasure rather than being laundered by one; the
+count of those appears in the entry as `rowsWithoutTolerance`. The mechanism
+and its security argument live in `src/lib/audit/erasure-record.ts`.
+
 **How this is enforced.** Behaviourally, in the `erasure pseudonymizes the audit
 trail` block of `tests/guardrails/dsar-workflow-coverage.test.ts`: it RUNS
 `eraseUser` against the in-memory probe in `tests/helpers/dsar-erasure-probe.ts`

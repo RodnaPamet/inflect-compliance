@@ -17,6 +17,12 @@
 import { PrismaClient } from '@prisma/client';
 import { prisma } from '../prisma';
 import { computeEntryHash } from './canonical-hash';
+import {
+    ERASURE_EXECUTED_ACTION,
+    collectPseudonymizationTolerances,
+    isToleratedPseudonymization,
+} from './erasure-record';
+import type { ChainRowForTolerance } from './erasure-record';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -58,6 +64,13 @@ export interface TenantVerificationResult {
     unhashedEntries: number;
     valid: boolean;
     breaks: ChainBreak[];
+    /**
+     * Hash mismatches EXCUSED as lawful DSAR erasures (#2682) — counted, not
+     * hidden. `valid: true` with a non-zero value here is a different claim
+     * from `valid: true` with zero, and the operator reading the verify
+     * endpoint is entitled to both numbers.
+     */
+    toleratedPseudonymizations: number;
     verifiedAt: string;
     durationMs: number;
 }
@@ -162,6 +175,55 @@ export async function verifyTenantChain(
     const unhashedEntries = totalEntries - hashedEntries;
     const breaks: ChainBreak[] = [];
 
+    // #2682 — the DSAR erasure records this tenant's chain carries.
+    //
+    // A RANGE-FILTERED verification is why this is not simply read off
+    // `rows`: the erasure entry sits at the tail of the chain, so any window
+    // that ends before it would not contain it, and every row it excuses
+    // would report `hash_mismatch` — the false positive this fixes, back
+    // again for exactly the queries an auditor narrows. So an unfiltered
+    // lookup runs when (and only when) a range was asked for; the
+    // unrestricted case already has every record in `hashedRows`.
+    //
+    // It is issued AFTER the main query on purpose, so callers that inspect
+    // `$queryRawUnsafe.mock.calls[0]` still see the chain query there.
+    //
+    // BOTH ARMS ARE RESTRICTED TO HASHED ROWS. A record with a NULL
+    // `entryHash` is never graded by anything, so letting one into this set
+    // would let an entirely UNVERIFIED row excuse mismatches on rows the
+    // verifier does check.
+    //
+    // ONE ASYMMETRY, STATED BECAUSE IT IS EASY TO READ PAST. In the RANGED
+    // arm the tolerance query is deliberately NOT range-filtered — it asks for
+    // every hashed `ERASURE_EXECUTED` in the tenant. That is correct: an
+    // erasure recorded before the window still lawfully explains a
+    // pseudonymized row inside it, and range-filtering the records would make
+    // a narrow verification report tampering on a compliant trail.
+    //
+    // The cost is that a ranged run may accept a tolerance from a record its
+    // OWN walk does not recompute, because the walk covers only the rows in
+    // range. So a ranged verification is not self-contained: a forged record
+    // outside the window would be caught by an unranged run, which recomputes
+    // every hashed row including the records themselves, but not by this one.
+    // Unranged verification remains the authority; ranged is a filter over it,
+    // not an equivalent. Unhashed rows exist in quantity (that is what
+    // `unhashedEntries` counts): `logAudit` and the lifecycle jobs still
+    // write `auditLog.create` rows with a caller-supplied `action` and no
+    // hash. Hence `IS NOT NULL` in the ranged lookup and `hashedRows` — not
+    // `rows` — in the unranged one.
+    const toleranceRows: ChainRowForTolerance[] = (opts.from || opts.to)
+        ? (await db.$queryRawUnsafe<AuditRow[]>(
+            `SELECT "id", "userId", "action", "detailsJson"
+               FROM "AuditLog"
+              WHERE "tenantId" = $1 AND "action" = $2
+                AND "entryHash" IS NOT NULL`,
+            tenantId,
+            ERASURE_EXECUTED_ACTION,
+        ))
+        : hashedRows;
+    const tolerances = collectPseudonymizationTolerances(toleranceRows);
+    let toleratedPseudonymizations = 0;
+
     let expectedPreviousHash: string | null = null;
 
     for (let i = 0; i < hashedRows.length; i++) {
@@ -219,6 +281,14 @@ export async function verifyTenantChain(
         });
 
         if (recomputed !== row.entryHash) {
+            // #2682 — a lawful erasure is not tampering. Same predicate and
+            // same module as `verifyAuditChain`; see `erasure-record.ts` for
+            // why the tolerance is `userId`-only rather than row-wide.
+            if (isToleratedPseudonymization(row, recomputed, tolerances)) {
+                toleratedPseudonymizations++;
+                expectedPreviousHash = row.entryHash;
+                continue;
+            }
             breaks.push({
                 position: i,
                 rowId: row.id,
@@ -244,6 +314,7 @@ export async function verifyTenantChain(
         unhashedEntries,
         valid: breaks.length === 0,
         breaks,
+        toleratedPseudonymizations,
         verifiedAt: new Date().toISOString(),
         durationMs: Date.now() - startTime,
     };
