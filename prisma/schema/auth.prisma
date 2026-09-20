@@ -1358,6 +1358,26 @@ model TenantSecuritySettings {
   /// yields FLUE by accident. `src/lib/agentic/agent-driver.ts` owns the
   /// resolution and is the only place that reads this column.
   agentDriver                  AgentDriverMode   @default(STATIC)
+
+  /// THE TENANT'S MONTHLY TOKEN CEILING for agentic runs, or NULL for "no
+  /// budget configured".
+  ///
+  /// NULL IS UNLIMITED, and that is the opposite reading from every other
+  /// absence on this table — deliberately. The others (`requireRegisteredAgent`,
+  /// `identity*Mode`, `agentDriver`) guard an AUTHORITY, where the safe end of
+  /// the switch is "no". This is a LIMIT on something already authorised, so
+  /// reading its absence as zero would refuse every run for every tenant on the
+  /// day it ships: an outage wearing the costume of a control. Same convention
+  /// as `null` in `PLAN_LIMITS` (lib/billing/entitlements.ts).
+  ///
+  /// Checked ONCE, pre-flight, at `startWorkflowRun` — never mid-run. The
+  /// comparison uses the run's own resolved TOKENS cap as a hard upper bound,
+  /// so "would exceed" is a statement rather than a guess. See
+  /// `src/lib/agentic/monthly-budget.ts`.
+  ///
+  /// A CHECK refuses a negative value: a limit whose surprising value is the
+  /// permissive one is how a typo becomes a bypass.
+  agentMonthlyTokenBudget      Int?
   /// When the current DRY_RUN period began, per direction. The gate to
   /// AUTOMATIC reads this: dry-run is time-boxed and mandatory, so a tenant
   /// cannot enable unattended writes the same afternoon it enables the feature.
