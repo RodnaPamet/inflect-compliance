@@ -71,6 +71,31 @@ model AgentProposal {
   /// moment later" are different claims, and only the first is evidence.
   policyCardVersion    Int?
 
+  /// WHICH RUN AND WHICH STEP PRODUCED THIS PROPOSAL.
+  ///
+  /// Propose-not-commit is the only write path an agent has, so this pair is
+  /// what makes a queued write traceable back to the reasoning that produced it:
+  /// `(runId, stepSeq)` addresses one `WorkflowStep` row, whose `inputJson` /
+  /// `outputJson` / `toolCalled` are the narrative, and whose run carries the
+  /// sealed context chain. Without it a proposal is attributable to an AGENT and
+  /// a CARD VERSION — both already pinned above — but not to a moment, and
+  /// "which step decided this" is the question an incident review asks second.
+  ///
+  /// BOTH NULLABLE, AND NULL IS A REAL ANSWER: a proposal made outside a run.
+  /// That is not a legacy state to be backfilled away — the propose tools are
+  /// callable directly by an agent that is not executing a workflow, and such a
+  /// proposal genuinely has no step. Reading NULL as "unknown run" would invent
+  /// a run that never existed.
+  ///
+  /// `stepSeq` is a plain Int with NO foreign key, and that is forced rather
+  /// than chosen: `WorkflowStep` is keyed `(runId, seq)` as an INDEX, not a
+  /// unique constraint — one step may record several proposals — so there is no
+  /// unique target for Postgres to point at. The CHECK below carries the half
+  /// that IS enforceable: a step ordinal naming no run addresses nothing, so it
+  /// must not be storable.
+  runId                String?
+  stepSeq              Int?
+
   /// ─── The agentic OUTPUT GUARD verdict (see ai/guard/proposal-guard.ts) ───
   ///
   /// Written on EVERY proposal, not only refused ones, because "the guard ran
@@ -139,6 +164,12 @@ model AgentProposal {
   updatedAt            DateTime             @updatedAt
   tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   agent                RegisteredAgent?     @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  /// Composite FK so a proposal can never point at another tenant's run, the
+  /// shape every tenant-scoped child here uses. `Restrict` matches the `agent`
+  /// relation directly above: a run is the evidence for the proposals it
+  /// produced, so deleting one out from under them has to be refused rather
+  /// than silently nulling the link that made them reviewable.
+  run                  WorkflowRun?         @relation(fields: [runId, tenantId], references: [id, tenantId], onDelete: Restrict)
   approvals            AgentProposalApproval[]
 
   /// Composite parent key, so an approval can never point cross-tenant. Same
@@ -184,6 +215,11 @@ model AgentProposal {
   /// so do not pre-commit to one here.
   @@index([tenantId, status, createdAt])
   @@index([tenantId, agentId])
+  /// Layer B: `runId` is an FK scalar, indexed here as the second column of a
+  /// tenant-leading composite. It also serves the read this pair exists for —
+  /// "every proposal this run produced" — which is tenant-scoped by
+  /// construction.
+  @@index([tenantId, runId])
   /// The expiry sweep's query, and the ONE index here that is deliberately not
   /// tenant-leading: the sweep runs system-wide over every tenant at once
   /// (`status = PENDING AND expiresAt <= now`), so a tenantId-leading composite
@@ -407,6 +443,7 @@ model WorkflowRun {
   tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   agent             RegisteredAgent?  @relation(fields: [agentId, tenantId], references: [id, tenantId], onDelete: Restrict)
   steps             WorkflowStep[]
+  proposals         AgentProposal[]
 
   @@index([tenantId, status, startedAt])
   @@index([tenantId, agentId])

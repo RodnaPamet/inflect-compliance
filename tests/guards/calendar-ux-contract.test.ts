@@ -19,8 +19,24 @@ import * as fs from 'node:fs';
 import { readCalendarUsecase } from '../helpers/calendar-usecase-source';
 import * as path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+// Applied here rather than per assertion so a new `expect(read(...))` inherits
+// it. String literals are KEPT: masking them would silently empty assertions
+// that harvest codes or ids from source. Every path this file reads is a
+// TypeScript-alike (re-derived per file, not assumed from the directory), so
+// `codeOf` is the right lexer and no language split is needed.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
+// `readDoc` is the DELIBERATE raw seam (#2246). Masking comments is the right
+// default, but an assertion whose SUBJECT is the prose inverts the defect: over
+// masked text a `.not.toMatch(/<some docstring>/)` is trivially true and can
+// never fail again, so the stale doc it forbids could come straight back with
+// nothing to catch it. Named, so the choice is visible and stays confined.
+const readDoc = (rel: string) => readRaw(rel);
 
 const CLIENT = 'src/app/t/[tenantSlug]/(app)/calendar/CalendarClient.tsx';
 const MONTH = 'src/app/t/[tenantSlug]/(app)/calendar/_components/CalendarMonth.tsx';
@@ -269,9 +285,11 @@ describe('7 — off-screen deadlines are signposted', () => {
     it('the stale "Time" naming is gone from the badge surfaces', () => {
         // The usecase is a directory, so it comes from the helper rather than
         // a path in this list.
+        // RAW on purpose: the forbidden text is a stale doc reference, so over
+        // comment-masked source this assertion could never fail again.
         const sources = [
             readCalendarUsecase(),
-            read('src/app/api/t/[tenantSlug]/calendar/upcoming-count/route.ts'),
+            readDoc('src/app/api/t/[tenantSlug]/calendar/upcoming-count/route.ts'),
         ];
         for (const src of sources) {
             expect(src).not.toMatch(/"Time" nav badge/);

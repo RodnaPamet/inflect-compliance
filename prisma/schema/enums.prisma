@@ -907,11 +907,51 @@ enum WorkflowRunStatus {
 /// A workflow step's kind. READ = call an MCP read tool; PROPOSE = call an MCP
 /// propose tool (queues a proposal, never commits); HUMAN_CHECKPOINT = pause for
 /// a human; SYNTHESIS = reason over accumulated context to produce a summary.
+///
+/// MODEL_CALL and TOOL_CALL were added for the agent DRIVER seam, so that a run
+/// executed by an external agent runtime lands the same narrative in this table
+/// as a hand-written one. `WorkflowRun` stays the system of record either way —
+/// the driver reports into it, it does not keep its own.
+///
+/// ── MODEL_CALL IS PER RESPONSE, NOT PER MODEL CALL, AND THE NAME OVERSTATES IT ──
+///
+/// Read this before using the value as evidence. The Flue runtime's public API
+/// exposes model activity through `useResponseFinish`, whose context carries
+/// `response.usage` — documented as "the response's aggregate usage across all
+/// turns and re-attempts" — and `response.toolCalls`. There is no per-call hook:
+/// `useModel(model, options)` takes only `thinkingLevel` and `compaction`, and
+/// the response lifecycle callbacks are typed `ResponseMetadataCallback` and
+/// carry neither the prompt nor the output text.
+///
+/// So ONE MODEL_CALL row covers a whole response, and its token figures are a
+/// SUM over however many turns that response took. Counting these rows gives
+/// responses, never model invocations, and a cost attributed to one row cannot
+/// be attributed to one prompt. A per-invocation row is reachable only by
+/// registering a provider through `@flue/runtime/internal` + `setProvider`,
+/// which binds to a non-public export and to a pre-1.0 `@earendil-works/pi-ai`
+/// three minors ahead of Flue's own pin. That trade was taken deliberately —
+/// see docs/implementation-notes/2026-09-20-flue-2-1-0-api-verification.md for
+/// the surface that was read and what it does and does not offer.
+///
+/// The value is named MODEL_CALL rather than RESPONSE so that taking the
+/// provider seam later changes row DENSITY and nothing else — no enum value
+/// retires, no rows are rewritten, and no migration is needed for the
+/// granularity to improve. The cost of that choice is this paragraph, which is
+/// the only thing standing between the name and a wrong reading of the count.
+///
+/// TOOL_CALL carries no such caveat: it comes from `response.toolCalls`, "every
+/// tool call the response made, from the durable record log", and every tool
+/// call this product admits also passes through `runReadTool`, which audits it
+/// independently. Two records of the same event, written by different paths —
+/// so a TOOL_CALL row with no matching `MCP_TOOL_INVOKED` audit row is a signal,
+/// not a gap.
 enum WorkflowStepKind {
   READ
   PROPOSE
   HUMAN_CHECKPOINT
   SYNTHESIS
+  MODEL_CALL
+  TOOL_CALL
 }
 
 enum WorkflowStepStatus {
