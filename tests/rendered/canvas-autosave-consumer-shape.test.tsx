@@ -30,6 +30,13 @@ import * as React from 'react';
 import { renderHook, act } from '@testing-library/react';
 import { useCanvasAutosave } from '@/lib/processes/use-canvas-autosave';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// String literals are KEPT, so assertions that harvest codes or ids from source
+// still see them. Every path this file reads is a TypeScript-alike, re-derived
+// per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
+
 jest.useFakeTimers();
 
 /** The consumer's shape: hook + the markClean-on-load effect. */
@@ -172,10 +179,10 @@ describe('autosave fires from the consumer shape', () => {
 describe('the canvas consumes the hook the way the harness does', () => {
     const fs = require('node:fs') as typeof import('node:fs');
     const path = require('node:path') as typeof import('node:path');
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.resolve(__dirname, '../../src/components/processes/PersistedProcessCanvas.tsx'),
         'utf8',
-    );
+    ));
 
     it('the markClean effect depends on the CALLBACK, not the hook object', () => {
         // `[loading, activeId, autosave]` re-runs every time status changes and

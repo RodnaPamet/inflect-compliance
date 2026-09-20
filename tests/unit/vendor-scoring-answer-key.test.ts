@@ -20,6 +20,13 @@ import {
     riskPointsFor,
 } from '@/app-layer/services/vendor-scoring';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// String literals are KEPT, so assertions that harvest codes or ids from source
+// still see them. Every path this file reads is a TypeScript-alike, re-derived
+// per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
+
 describe('answerPointsKey', () => {
     it.each([
         ['yes', 'YES'],
@@ -89,10 +96,10 @@ describe('the submit path scores the same as the review path', () => {
 describe('computeProvisionalPoints uses the shared normalisation', () => {
     const fs = require('node:fs') as typeof import('node:fs');
     const path = require('node:path') as typeof import('node:path');
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.resolve(__dirname, '../../src/app-layer/usecases/vendor-assessment-response.ts'),
         'utf8',
-    );
+    ));
 
     it('imports the shared lookup', () => {
         expect(src).toMatch(/import \{ riskPointsFor \} from '@\/app-layer\/services\/vendor-scoring'/);

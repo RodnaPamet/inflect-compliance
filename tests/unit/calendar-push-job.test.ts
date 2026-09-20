@@ -51,6 +51,13 @@ import { SCHEDULED_JOBS } from '@/app-layer/jobs/schedules';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// String literals are KEPT, so assertions that harvest codes or ids from source
+// still see them. Every path this file reads is a TypeScript-alike, re-derived
+// per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
+
 beforeEach(() => {
     jest.clearAllMocks();
     enqueue.mockResolvedValue({ id: 'job-1' });
@@ -185,10 +192,10 @@ describe('the two-job shape is what makes attempts:1 real', () => {
         // tenant-isolation guard, with no exemption list: an unused payload
         // parameter is how a cross-tenant job acquires a tenantId nobody
         // notices.
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/app-layer/jobs/executor-registry.ts'),
             'utf8',
-        );
+        ));
         expect(src).toMatch(/register\('calendar-push-dispatch',\s*async \(\)\s*=>/);
     });
 });

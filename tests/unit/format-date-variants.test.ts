@@ -37,6 +37,13 @@ import {
     formatWeekdayShort,
 } from '@/lib/format-date';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// String literals are KEPT, so assertions that harvest codes or ids from source
+// still see them. Every path this file reads is a TypeScript-alike, re-derived
+// per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
+
 /** The locale + timezone the module docblock commits to. */
 const LOCALE = 'en-GB';
 const TZ = 'UTC';
@@ -215,10 +222,10 @@ describe('every Intl.DateTimeFormat in format-date.ts is pinned to en-GB + UTC',
      * fires on every host: each formatter constant must literally carry
      * the locale and the timezone.
      */
-    const SOURCE = fs.readFileSync(
+    const SOURCE = codeOf(fs.readFileSync(
         path.join(__dirname, '..', '..', 'src', 'lib', 'format-date.ts'),
         'utf8',
-    );
+    ));
 
     /** Each `new Intl.DateTimeFormat(...)` call, sliced to its closing `})`. */
     function formatterBlocks(source: string): string[] {

@@ -16,6 +16,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// String literals are KEPT, so assertions that harvest codes or ids from source
+// still see them. Every path this file reads is a TypeScript-alike, re-derived
+// per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const CONFIG = path.join(ROOT, 'eslint.config.mjs');
 
@@ -29,7 +36,7 @@ const LOCAL_RULES = [
 ] as const;
 
 describe('local ESLint rules are wired at error', () => {
-    const config = fs.readFileSync(CONFIG, 'utf8');
+    const config = codeOf(fs.readFileSync(CONFIG, 'utf8'));
 
     it('the config exists and registers a `local` plugin (positive control)', () => {
         // Without this, a renamed or deleted config would make every assertion
