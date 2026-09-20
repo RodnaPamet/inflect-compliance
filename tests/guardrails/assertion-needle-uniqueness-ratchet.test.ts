@@ -11,7 +11,10 @@
  *   · `audit-s5-readiness-scoring.test.ts:21` — `/frameworkKey\s+String/`
  *     against `prisma/schema/audit-workflow.prisma`, where Audit, AuditCycle
  *     and ReadinessSnapshot each declare that field. Detector: 3 occurrences.
- *     Line 22's `/auditCycleId\s+String\?/`: 2.
+ *     Line 22's `/auditCycleId\s+String\?/`: 2. (Those are the line numbers
+ *     AS PROVED in #2246; two later seam edits have moved the same two
+ *     assertions to :30 and :31 — the live citation is the `it` block at the
+ *     bottom of this file, which is asserted rather than written down.)
  *   · `entra-ei2-group-mapping.test.ts:18` — a test named "the
  *     TenantEntraGroupMapping model is TENANT-SCOPED + uniquely keyed"
  *     asserting `@@index([tenantId])` against the whole of `auth.prisma`.
@@ -245,7 +248,24 @@ const HIGH_MULTIPLICITY = 5;
 //   beside it, and any of them that also masks a read will lower it further —
 //   so whoever merges second re-measures on the merged tree rather than
 //   keeping this figure.
-const AMBIGUOUS_NEEDLE_BASELINE = 1365;
+//   1365 -> 1333 (2026-09-20, the second #2246 Class A batch — 22 read
+//   seams, 18 of which leave the Class A population). Same mechanism as the
+//   1419 -> 1365 note above: masking comments at the READ removes comment
+//   occurrences from what each needle is counted against, so 32 needles that
+//   were ambiguous only THROUGH PROSE became unique. One of the 22 masks
+//   `readPrismaSchema()` (`ai-system-registry`), which is again where a
+//   disproportionate share comes from.
+//
+//   Five assertions in this batch were not merely ambiguous but green ON the
+//   prose — the whole point of the Class A campaign — and were retargeted at
+//   the construct that ships; that is recorded in the sibling ratchet's
+//   history rather than here, because it moves THAT number.
+//
+//   SHARED STATE, MEASURED ON THIS TREE ONLY. Zero-headroom and shared with
+//   every open PR: 1333 is the live count of main@70369107d + this branch. A
+//   sibling Class A batch was in flight beside it, so whoever merges second
+//   re-measures on the merged tree rather than keeping this figure.
+const AMBIGUOUS_NEEDLE_BASELINE = 1333;
 // 237 (2026-09-18, #2622): −1 on the merge, for the same reason and by the same
 // method as the 1420 above — re-measured on the merged tree, not carried over
 // from either branch. It surfaced only after the other end was re-seated,
@@ -256,7 +276,13 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1365;
 // once the read is masked. It surfaced only after the other end was re-seated,
 // because the drift sentinel reports one end at a time. Shared state with
 // every open PR: re-measure on the merged tree.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 230;
+// 226 (2026-09-20): −4 from the second #2246 Class A batch, by the same
+// mechanism as the −7 above — a needle whose five-plus satisfying positions
+// were partly comment occurrences drops below the high-multiplicity threshold
+// once the read is masked. It surfaced only after the other end was re-seated,
+// because the drift sentinel reports one end at a time. Shared state with
+// every open PR: re-measure on the merged tree.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 226;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -425,6 +451,14 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 230;
 // literal. What made the site unanalysable was its READ PATH:
 // `read(`${AI}/feature-gate.ts`)` is a template literal, so the subject
 // could not be resolved to a constant path.
+// 1454 (2026-09-20): UNCHANGED by the second #2246 Class A batch, and that
+// is worth a line because the FIRST batch moved it. Masking at the read seam
+// is invisible to the skip buckets — a masked read still resolves to content.
+// The only retarget in this batch that could have moved a bucket is
+// `dashboard-widgets`, which replaced an inline
+// `fs.readFileSync(path.join(UI_DIR, file), 'utf-8')` with a `readWidget(file)`
+// helper: both are keyed by a variable, so both sit in `path-not-constant`,
+// measured at 917 before and 917 after. Left where it is rather than touched.
 const UNANALYSABLE_READ_BASELINE = 1454;
 
 /**
@@ -471,7 +505,12 @@ function report(): ClassDReport {
  * of which the diff touched: appending a single COMMENT mentioning
  * `MAX_STEPS` to `src/lib/agentic/workflow-types.ts` turned this red with
  * `delta: +1` and a list headed by `/OWASP/ ×54`, while the actual culprit
- * (`agentic-engine-coverage.test.ts:56`, freshly at 2) appeared nowhere.
+ * (`agentic-engine-coverage.test.ts`, freshly at 2) appeared nowhere.
+ * That citation carried a line number and the line moved: it was :56 when
+ * written, :59 on main before this batch, and :64 after the language split
+ * added a `readSql` seam above it. Dropped rather than re-pinned — the file
+ * and the needle identify the site, and a number that rots every time an
+ * unrelated line is inserted above teaches a reader to distrust the note.
  *
  * Firing on a diff that touches no test is correct here and is the point of
  * the class — a source change had just hollowed out an existing guard.
@@ -674,17 +713,25 @@ describe('Class D — needles that match more than the thing they name', () => {
                 (a) => a.site.file.endsWith(file) && a.site.line === line,
             );
 
-        // Lines 24/25, not 21/22: the #2246 Class A conversion added the
-        // `codeOf` import and the read-seam comment above the assertions,
-        // shifting them down three. The OCCURRENCE counts are unchanged —
-        // all three `frameworkKey String` and both `auditCycleId String?`
-        // are real fields in audit-workflow.prisma, none in a comment.
-        it('audit-s5-readiness-scoring.test.ts:24 — frameworkKey is in three models', () => {
-            expect(at('audit-s5-readiness-scoring.test.ts', 24)?.occurrences).toBe(3);
+        // Lines 30/31, not 24/25 and not the original 21/22. Two seam edits
+        // above the assertions have pushed them down: the #2246 Class A
+        // conversion added the `codeOf` import and the read-seam comment
+        // (+3), and the #2644 language split added the `readSqlAbs` reader
+        // and its docblock (+6). The OCCURRENCE counts are unchanged through
+        // both — all three `frameworkKey String` and both
+        // `auditCycleId String?` are real fields in audit-workflow.prisma,
+        // none of them in a comment, and neither edit touched the `.prisma`
+        // read these two assertions bind to.
+        //
+        // A rotted line number here proves the CITATION moved, not the
+        // claim. Re-derive it by running this suite and reading the
+        // reported site, rather than adding the diff's line count by hand.
+        it('audit-s5-readiness-scoring.test.ts:30 — frameworkKey is in three models', () => {
+            expect(at('audit-s5-readiness-scoring.test.ts', 30)?.occurrences).toBe(3);
         });
 
-        it('audit-s5-readiness-scoring.test.ts:25 — auditCycleId is in two', () => {
-            expect(at('audit-s5-readiness-scoring.test.ts', 25)?.occurrences).toBe(2);
+        it('audit-s5-readiness-scoring.test.ts:31 — auditCycleId is in two', () => {
+            expect(at('audit-s5-readiness-scoring.test.ts', 31)?.occurrences).toBe(2);
         });
 
         it('entra-ei2-group-mapping.test.ts:18 — @@index([tenantId]) is satisfied by fifteen models', () => {

@@ -13,11 +13,17 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) =>
     codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+/**
+ * LANGUAGE SPLIT (#2644). `read` lexes TypeScript, so on a `.sql` file it
+ * blanks nothing and a `--` comment reaches the assertion verbatim — masked
+ * at the call site, unmasked in fact. `.sql` goes through `sqlCodeOf`.
+ */
+const readSqlAbs = (abs: string) => sqlCodeOf(fs.readFileSync(abs, 'utf8'));
 
 describe('Audit S7 — Access Review Campaigns', () => {
     describe('schema', () => {
@@ -35,10 +41,7 @@ describe('Audit S7 — Access Review Campaigns', () => {
                 'prisma/migrations/20260524150000_audit_s7_access_review_escalation',
             );
             expect(fs.existsSync(migDir)).toBe(true);
-            const sql = codeOf(fs.readFileSync(
-                path.join(migDir, 'migration.sql'),
-                'utf8',
-            ));
+            const sql = readSqlAbs(path.join(migDir, 'migration.sql'));
             expect(sql).toMatch(
                 /ADD VALUE IF NOT EXISTS 'ACCESS_REVIEW_OVERDUE_ESCALATION'/,
             );
