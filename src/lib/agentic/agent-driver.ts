@@ -142,9 +142,16 @@ export interface AgentDriverTerms {
     /**
      * The operator's process-wide switch, already read through
      * `flueEnvEnabled`. A boolean rather than the raw string so a call site
-     * cannot pass `'0'` and have it count as truthy — which is what a bare
-     * `Boolean(process.env.AGENT_DRIVER_FLUE)` would do, and is the single most
+     * cannot pass `'0'` and have it count as truthy — which is what wrapping the
+     * raw environment value in `Boolean(...)` would do, and is the single most
      * likely way this gate would have been defeated.
+     *
+     * (That sentence named the environment accessor literally until CI
+     * objected: `tests/unit/no-fallbacks.test.ts` scans `src/` as TEXT and does
+     * not mask comments, so prose describing the anti-pattern reads to it as
+     * the anti-pattern. Worth knowing before writing about it again — and the
+     * same comment-blindness this repo has recorded in the other direction,
+     * where a comment SATISFIED a guard whose subject had been deleted.)
      */
     readonly envEnabled: boolean;
     /**
