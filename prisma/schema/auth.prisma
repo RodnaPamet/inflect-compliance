@@ -175,6 +175,7 @@ model Tenant {
   agentActionReceipts               AgentActionReceipt[]
   notifications                     Notification[]
   notificationOutbox                NotificationOutbox[]
+  auditOutbox                       AuditOutbox[]
   policies                          Policy[]
   policyVersions                    PolicyVersion[]
   policyApprovals                   PolicyApproval[]

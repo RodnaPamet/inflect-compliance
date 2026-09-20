@@ -23,14 +23,14 @@
  */
 import * as fs from "fs";
 import * as path from "path";
+import { codeOf } from "../helpers/source-blocks";
 
 const ROOT = path.resolve(__dirname, "../..");
+// #2246 Class A — comments blanked at the read, string literals kept.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), "utf8"));
 
 describe("v2-PR-5 PageHeader primitive contract", () => {
-    const src = fs.readFileSync(
-        path.join(ROOT, "src/components/layout/PageHeader.tsx"),
-        "utf8",
-    );
+    const src = read("src/components/layout/PageHeader.tsx");
 
     it("exports the PageHeader component + props interface", () => {
         expect(src).toMatch(/export\s+function\s+PageHeader/);
@@ -92,10 +92,7 @@ describe("v2-PR-5 PageHeader primitive contract", () => {
 
 describe("v2-PR-5 layout shells consume PageHeader", () => {
     it("EntityListPage imports + renders <PageHeader>", () => {
-        const src = fs.readFileSync(
-            path.join(ROOT, "src/components/layout/EntityListPage.tsx"),
-            "utf8",
-        );
+        const src = read("src/components/layout/EntityListPage.tsx");
         expect(src).toMatch(
             /import\s+\{\s*PageHeader\s*\}\s+from\s+["']@\/components\/layout\/PageHeader["']/,
         );
@@ -107,10 +104,7 @@ describe("v2-PR-5 layout shells consume PageHeader", () => {
     });
 
     it("EntityDetailLayout imports + renders <PageHeader>", () => {
-        const src = fs.readFileSync(
-            path.join(ROOT, "src/components/layout/EntityDetailLayout.tsx"),
-            "utf8",
-        );
+        const src = read("src/components/layout/EntityDetailLayout.tsx");
         expect(src).toMatch(
             /import\s+\{\s*PageHeader\s*\}\s+from\s+["']@\/components\/layout\/PageHeader["']/,
         );

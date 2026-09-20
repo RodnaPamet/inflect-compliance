@@ -117,6 +117,11 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     // The evidence chain — receipts and decision records become artefacts
     // attached to the agentic controls they discharge.
     'agentic-evidence-emission',
+    // #2657 — replays audit entries that could not reach the hash chain.
+    // Scheduled, not enqueued: a queued entry is durable but not yet
+    // evidence, so the drain is what completes the fix rather than an
+    // optimisation on top of it.
+    'audit-outbox-flush',
     'automation-runner',
     // C-roadmap — cross-tenant fan-out for the per-user calendar
     // push. The child (calendar-push-tenant) is enqueued, not

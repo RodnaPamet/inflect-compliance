@@ -33,6 +33,15 @@ jest.mock('@/app-layer/context', () => ({
 // The AUTHZ_DENIED row `requirePermission` writes on denial must not reach a
 // real DB in a unit test.
 jest.mock('@/lib/audit', () => ({
+    // #2657 — `permission-middleware` now records AUTHZ_DENIED through
+    // `appendAuditEntryOrQueue`, which falls back to a durable AuditOutbox
+    // row instead of swallowing a failed write. Routed to the SAME spy as
+    // `appendAuditEntry` on purpose: these tests assert the ENTRY'S SHAPE,
+    // which the change does not alter, so they keep testing what they tested.
+    appendAuditEntryOrQueue: jest.fn(async () => ({
+        recorded: 'chain' as const,
+        auditId: 'audit-x',
+    })),
     appendAuditEntry: jest.fn(async () => ({
         id: 'audit-x',
         entryHash: 'hash-x',

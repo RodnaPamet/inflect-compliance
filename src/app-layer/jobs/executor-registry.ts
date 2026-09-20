@@ -684,6 +684,41 @@ executorRegistry.register('notification-outbox-flush', async (payload) => {
     );
 });
 
+// ── audit-outbox-flush ───────────────────────────────────────────────
+//
+// #2657. When the hash chain cannot take an AUTHZ_DENIED entry, the write
+// goes to `AuditOutbox` instead so the record is durable before the response.
+// This is the out-of-band half that turns those rows back into chain entries.
+//
+// IT MUST BE SCHEDULED FOR THE FIX TO BE A FIX. A queued entry is durable but
+// not yet evidence; without a drain the outbox is a table that only ever
+// grows, and the denial still never reaches the trail. The cadence is five
+// minutes because the failure it backs up is lock contention, which clears in
+// seconds — the queue should be short-lived, not a parking lot.
+//
+// `tenantId` and `limit` are NAMED rather than spread, for the same reason as
+// the notification drain: a payload forwarded opaquely is how a tenant-scoped
+// operator re-run silently becomes an all-tenant pass.
+
+executorRegistry.register('audit-outbox-flush', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runAuditOutboxFlush } = await import('./audit-outbox-flush');
+    const r = await runAuditOutboxFlush({
+        tenantId: payload.tenantId,
+        limit: payload.limit,
+    });
+    // `applied` is the only one that means an entry reached the chain.
+    // `skipped` covers a row another pass had already claimed and a row whose
+    // replay failed but has attempts left — neither is an incident, and
+    // counting either as a failure would make ordinary overlap look like one.
+    return makeResult(
+        'audit-outbox-flush', startedAt, startMs,
+        r.applied + r.failed + r.skipped, r.applied, r.skipped,
+        { applied: r.applied, failed: r.failed, skipped: r.skipped },
+    );
+});
+
 // ── notification-dispatch ────────────────────────────────────────────
 
 executorRegistry.register('notification-dispatch', async (payload) => {

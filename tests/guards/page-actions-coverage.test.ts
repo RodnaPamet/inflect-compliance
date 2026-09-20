@@ -34,23 +34,24 @@
  */
 import * as fs from "fs";
 import * as path from "path";
+import { codeOf } from "../helpers/source-blocks";
 
 const ROOT = path.resolve(__dirname, "../..");
+// Comments blanked at the READ, string literals kept (#2246 Class A):
+// every geometry class below (`gap-tight`, `min-h-9`, `justify-end`)
+// also appears in this primitive's own docblock, so a raw read is
+// satisfied by the prose that DESCRIBES the recipe after the recipe
+// itself is gone.
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), "utf8"));
 
 describe("page-actions primitive coverage", () => {
     it("PageActions primitive exists and exports the expected API", () => {
-        const src = fs.readFileSync(
-            path.join(ROOT, "src/components/layout/PageActions.tsx"),
-            "utf8",
-        );
+        const src = read("src/components/layout/PageActions.tsx");
         expect(src).toMatch(/export\s+function\s+PageActions/);
     });
 
     it("PageActions geometry contract is locked", () => {
-        const src = fs.readFileSync(
-            path.join(ROOT, "src/components/layout/PageActions.tsx"),
-            "utf8",
-        );
+        const src = read("src/components/layout/PageActions.tsx");
         // The recipe lives in the primitive's outer wrapper. A
         // future PR that drops `flex-wrap-reverse` (which keeps
         // primary visually rightmost when the cluster wraps) or
@@ -63,18 +64,12 @@ describe("page-actions primitive coverage", () => {
     });
 
     it("ActionCluster primitive exists and exports the typed cap", () => {
-        const src = fs.readFileSync(
-            path.join(ROOT, "src/components/ui/ActionCluster.tsx"),
-            "utf8",
-        );
+        const src = read("src/components/ui/ActionCluster.tsx");
         expect(src).toMatch(/export\s+function\s+ActionCluster/);
     });
 
     it("ActionCluster prop shape preserves the ≤1 primary + ≤1 secondary cap", () => {
-        const src = fs.readFileSync(
-            path.join(ROOT, "src/components/ui/ActionCluster.tsx"),
-            "utf8",
-        );
+        const src = read("src/components/ui/ActionCluster.tsx");
         // The TypeScript prop shape is the cap — `primary?: ActionItem`
         // (singular) means the compiler rejects two primaries. A
         // future PR widening to `primary?: ActionItem | ActionItem[]`
@@ -96,10 +91,7 @@ describe("page-actions primitive coverage", () => {
         // geometry without changing. A future PR that bypasses
         // PageActions in PageHeader would silently re-fragment the
         // cluster recipe.
-        const src = fs.readFileSync(
-            path.join(ROOT, "src/components/layout/PageHeader.tsx"),
-            "utf8",
-        );
+        const src = read("src/components/layout/PageHeader.tsx");
         expect(src).toMatch(/PageActions/);
     });
 });
