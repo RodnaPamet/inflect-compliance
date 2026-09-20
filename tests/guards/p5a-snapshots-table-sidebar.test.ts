@@ -25,9 +25,25 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { codeOf, sqlCodeOf } from "../helpers/source-blocks";
 
 const ROOT = path.resolve(__dirname, "../..");
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A.
+ *
+ * The 36 whole-file assertions here asserted on raw bytes, so a comment
+ * naming the thing satisfied an assertion meant to be about code. Measured
+ * before the conversion, two needles matched fewer times masked than raw —
+ * `graphJson Json` in `processes.prisma` and `FORCE ROW LEVEL SECURITY` in
+ * the migration — each leaving exactly ONE surviving occurrence in code.
+ *
+ * LANGUAGE SPLIT (#2644, #2679): the migration is SQL, and `codeOf` lexes
+ * TypeScript, so on a `.sql` file it blanks nothing while READING as masked.
+ * `readSql` applies `sqlCodeOf`, which lexes `--` and SQL block comments;
+ * `.ts`, `.tsx` and `.prisma` keep `read`.
+ */
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), "utf8"));
+const readSql = (rel: string) => sqlCodeOf(fs.readFileSync(path.join(ROOT, rel), "utf8"));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 describe("Epic P5-PR-A — process map snapshots + version-history sidebar", () => {
@@ -78,7 +94,7 @@ describe("Epic P5-PR-A — process map snapshots + version-history sidebar", () 
             expect(exists(migrationPath)).toBe(true);
         });
 
-        const src = read(migrationPath);
+        const src = readSql(migrationPath);
 
         it("creates the table + the unique constraint + indexes", () => {
             expect(src).toMatch(/CREATE TABLE "ProcessMapSnapshot"/);

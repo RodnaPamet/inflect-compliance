@@ -21,10 +21,24 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { EVIDENCE_MAX_FILE_MB } from '@/lib/evidence-upload-limits';
+import { codeOf, declarationOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../../');
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A.
+ *
+ * The 75 whole-file `expect(SRC).toMatch(...)` sites below asserted on the
+ * bytes on disk, comments included, so "delete the mount, keep the note
+ * naming it" passed. `codeOf` blanks comments and KEEPS string literals, so
+ * assertions on `inputId="file-input"` and the E2E form ids still bind.
+ * Measured before the conversion: eight needles here match fewer times
+ * through the mask than raw — `<FileDropzone`, `inputId="file-input"`,
+ * `useTenantMutation`, `swrMutate`, `CACHE_KEYS.evidence.list()`,
+ * `type="file"`, `startAll` and the close-on-success regex, which already
+ * matched ONLY in prose.
+ */
 function read(rel: string): string {
-    return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+    return codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 }
 
 const UPLOAD_MODAL_SRC = read(
@@ -211,14 +225,19 @@ describe('UploadEvidenceModal — business contract preserved', () => {
     });
 
     it('closes the modal once every queued file uploaded successfully', () => {
-        // FileDropzone-era shape — closing happens in `onAllSettled`
-        // (when the entire queue of N files has reached terminal
-        // states), gated on `every(e => e.status === 'success')`.
-        // The legacy single-file `onSuccess: ... close()` pattern
-        // also matches if the modal hasn't migrated yet.
-        expect(UPLOAD_MODAL_SRC).toMatch(
-            /(onAllSettled[\s\S]{0,400}allOk[\s\S]{0,200}close\(\)|onSuccess:[\s\S]{0,800}close\(\))/,
-        );
+        // BOUND TO THE DECLARATION, not to a whole-file span (#2246).
+        // The old form was `onAllSettled[\s\S]{0,400}allOk…` over the whole
+        // file, and masking the read seam showed what it had really been
+        // matching: the only `onAllSettled` within 400 characters of
+        // `allOk` is the one in a COMMENT four lines INSIDE the callback —
+        // the declaration itself is further away than the span reaches.
+        // Bound to the declaration, each half of the contract is asserted
+        // against code that has to exist.
+        const handler = declarationOf(UPLOAD_MODAL_SRC, 'onAllSettled');
+        expect(handler).toMatch(/settled\.every\(/);
+        expect(handler).toMatch(/e\.status === 'success'/);
+        expect(handler).toMatch(/allOk/);
+        expect(handler).toContain('close()');
     });
 });
 

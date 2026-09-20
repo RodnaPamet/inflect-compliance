@@ -14,6 +14,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const EXPLORER = path.resolve(
     __dirname,
@@ -28,8 +29,16 @@ const USECASE = path.resolve(
     '../../src/app-layer/usecases/traceability-graph.ts',
 );
 
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A. The twenty whole-file assertions
+ * below are about the COMPOSITION that ships, and six of their needles were
+ * measured matching fewer times through the mask than raw: `<MiniMap`,
+ * `data-graph-explorer`, `fitView`, `nodeTypes`, `RoleGuard` and
+ * `traceability-graph` all appear in this file's own prose as well as its
+ * code. `codeOf` keeps string literals, so the `data-*` hooks still bind.
+ */
 function read(p: string): string {
-    return fs.readFileSync(p, 'utf-8');
+    return codeOf(fs.readFileSync(p, 'utf-8'));
 }
 
 describe('GraphExplorer — structural composition', () => {

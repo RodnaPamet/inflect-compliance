@@ -28,6 +28,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const SCAN_DIR = 'src/app/t/[tenantSlug]/(app)';
@@ -203,8 +204,15 @@ describe('columns-dropdown gear coverage (R10-PR8)', () => {
 // share ONE primitive: <ChecklistGearButton>. This locks that delegation
 // so a future PR can't fork the checklist UI back into two copies.
 describe('R-filter-gear — both gears mount the shared ChecklistGearButton', () => {
-    const read = (rel: string) =>
-        fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    // MASKED AT THE READ SEAM — #2246 Class A. All four needles asserted
+    // through this reader were measured prose-inflated: `ChecklistGearButton`,
+    // `Columns3`, `Settings` and the `data-testid` pair occur in these files'
+    // own comments as well as their JSX. `codeOf` keeps string literals, so
+    // the `data-testid="toggle-columns-button"` assertions still bind.
+    // `readRaw` keeps `messages/en.json`, which is parsed rather than
+    // matched — a catalogue is not a language `codeOf` lexes.
+    const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    const read = (rel: string) => codeOf(readRaw(rel));
 
     it('columns gear delegates to ChecklistGearButton (Columns3, toggle-columns-button)', () => {
         const src = read('src/components/ui/table/columns-dropdown.tsx');
@@ -214,7 +222,7 @@ describe('R-filter-gear — both gears mount the shared ChecklistGearButton', ()
         // i18n: title now flows through the catalog. Assert the wiring +
         // that the key still resolves to the canonical English label.
         expect(src).toMatch(/title=\{t\("table\.toggleColumns"\)\}/);
-        const en = JSON.parse(read('messages/en.json'));
+        const en = JSON.parse(readRaw('messages/en.json'));
         expect(en.common.table.toggleColumns).toBe('Toggle columns');
     });
 
@@ -228,7 +236,7 @@ describe('R-filter-gear — both gears mount the shared ChecklistGearButton', ()
         // WRONG NAME — the gear edits the KPI strip, not the Filter dropdown's
         // categories, on all eight list pages.
         expect(src).toMatch(/title=\{t\('table\.editKpiCards'\)\}/);
-        const enCat = JSON.parse(read('messages/en.json'));
+        const enCat = JSON.parse(readRaw('messages/en.json'));
         expect(enCat.common.table.editKpiCards).toBe('Edit KPI cards');
     });
 });

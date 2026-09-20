@@ -7,9 +7,26 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/**
+ * MASKED AT THE READ SEAM — #2246 Class A. 27 whole-file assertions, four of
+ * them measured prose-inflated. The license tripwire below is the reason to
+ * be careful rather than to skip the conversion: `codeOf` KEEPS string
+ * literals, so the "no ported HCL/SQL" assertions still see every literal
+ * they are about, while a comment quoting the banned text no longer answers
+ * for the code.
+ *
+ * `readRaw` serves the two reads whose language `codeOf` cannot lex: the
+ * control-template JSON fixture (parsed, not matched) and the NIST CSF
+ * YAML library. Neither carries a `//` today, so masking them is a no-op
+ * today — and would stop being one the moment a URL lands in either, which
+ * is exactly how the `.sql` seams in #2679 read as masked while masking
+ * nothing.
+ */
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
 
 const PROVIDER = 'src/app-layer/integrations/aws-posture-provider.ts';
 const USECASE = 'src/app-layer/usecases/aws-posture.ts';
@@ -79,7 +96,7 @@ describe('aws-posture — mapping validity', () => {
         // convergence it is no source at all.
         const icSoc2 = new Set(
             (
-                JSON.parse(read('prisma/fixtures/soc2-control-templates.json')) as {
+                JSON.parse(readRaw('prisma/fixtures/soc2-control-templates.json')) as {
                     requirements: Array<{ code: string }>;
                 }
             ).requirements.map((r) => r.code),
@@ -94,7 +111,7 @@ describe('aws-posture — mapping validity', () => {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { allMappedRequirementCodes } = require('@/data/integrations/aws-posture-control-map');
         // NIST CSF 2.0 is an installable YAML library — resolve against its ref_ids.
-        const yaml = read('src/data/libraries/nist-csf-2.0.yaml');
+        const yaml = readRaw('src/data/libraries/nist-csf-2.0.yaml');
         const icCsf = new Set(
             [...yaml.matchAll(/ref_id:\s*([A-Z]{2}\.[A-Z]{2}-\d+)/g)].map((m) => m[1]),
         );

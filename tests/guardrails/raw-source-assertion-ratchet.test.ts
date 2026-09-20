@@ -224,6 +224,99 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     `file-not-found` 1), because `LEXABLE_EXTENSIONS` has no importer
  *     outside this pair of files and Classes C and D contain no extension
  *     filter of any kind.
+ *   • 322 (2026-09-20): the THIRD Class A batch — 22 files converted at the
+ *     read seam, all 22 leaving this population. Two halves in one diff
+ *     because they move the same constant and splitting them would produce
+ *     two PRs that each look right alone and collide on the union.
+ *
+ *     PART A — the six files the `.sql` widening above put here, converted
+ *     with `sqlCodeOf` and NOT `codeOf`: `ai-gov-self-assessment-coverage`,
+ *     `audit-s1-residual-and-mitigated`, `audit-s3-evidence-mgmt`,
+ *     `cve-integration-coverage`, `risk-quantitative-analytics`,
+ *     `rq3-6-loss-event-register` (18 raw `.sql` sites between them). Each
+ *     gains a separately named reader — `readSql(rel)`, or `readSqlAbs(abs)`
+ *     where the call site already joins `migDir` — the language split #2679
+ *     established; `read` stays on `codeOf` for the 76 `.ts` / `.tsx` /
+ *     `.prisma` sites in the same six files, and the JSON fixture in
+ *     `ai-gov` keeps its raw reader. WHICH EXTENSIONS FLOW THROUGH EACH
+ *     HELPER WAS RE-DERIVED PER FILE rather than assumed: all six read
+ *     exactly one migration each and every non-`.sql` read in them was
+ *     already masked, which is why converting these six alone returns this
+ *     count to 338 — measured, not predicted from the +6 above.
+ *
+ *     PART B — 16 further files chosen by the measured prose-exposure
+ *     ranking the 356 and 338 entries describe. FOURTEEN read only
+ *     TypeScript-alikes and take `codeOf` alone; TWO also read a migration
+ *     and therefore get Part A's treatment in the same diff —
+ *     `p5a-snapshots-table-sidebar` (7 `.sql` sites beside 29 `.prisma` /
+ *     `.ts` / `.tsx`) and `device-connector` (3 beside 16). Pointing one
+ *     helper at both languages is the defect #2679 closed, so the extension
+ *     inventory was re-derived for these sixteen too rather than assumed
+ *     from the directory they live in. For every raw site the
+ *     needle was counted in its target TWICE, once raw and once masked, and
+ *     a file was a candidate only where some needle matched FEWER times
+ *     masked. Over the 338 files: 3574 raw sites, 220 carrying a needle the
+ *     analyser cannot score, 200 prose-inflated across 126 files, 31 of them
+ *     already matching ZERO times in code across 24 files.
+ *
+ *     THOSE 24 WERE TRIAGED ONE BY ONE rather than taken off the top, which
+ *     is what the previous two entries mean by the ranking being a search
+ *     order and not a work queue. TEN are the files this list already names
+ *     as deliberate — the six in the 381 entry below that assert a COMMENT
+ *     is present, plus the four the 338 entry names as keeping a second raw
+ *     reader; masking those would delete the thing being asserted. ELEVEN
+ *     more assert a sentence on purpose (`/deliberate/`,
+ *     `/optimistic-concurrency/`, `"Risk matrix configuration"`,
+ *     `/NOT a simulated loss distribution/` — each a section header or a
+ *     rationale in the target's own comments). The remaining THREE were real
+ *     defects and are in this batch. Beyond the 24, the sixteen were chosen
+ *     by how much raw exposure each removes: they carry 501 of the 3574 raw
+ *     sites, the largest single block left.
+ *
+ *     ONE LEAD IS LEFT FOR THE NEXT BATCH, recorded rather than fixed:
+ *     `mobile-canvas-fallback`'s `it("tells the user editing is a desktop
+ *     affordance")` asserts `/larger screen|desktop/i`, and all three
+ *     occurrences in `ProcessesClient.tsx` are comments — the signature of
+ *     user-visible copy that migrated to next-intl, the same shape
+ *     `org-shell-structural` had in the 338 entry.
+ *
+ *     FOUR GUARDS WERE ALREADY GREEN ON PROSE, and the ranking predicted
+ *     three of them:
+ *       · `new-risk-modal` — `it('gates submit behind non-empty title + not
+ *         submitting')` matched `form.title.trim().length > 0 …
+ *         !submitting`, a phrase that survives in `NewRiskModal.tsx` ONLY
+ *         inside the comment recording its removal ("B2-8 — was …"). The
+ *         canonical shape of this issue: green BECAUSE the subject was
+ *         deleted. Retargeted at the schema rule and the form hook that own
+ *         the gate now.
+ *       · `responsive-modal-sheet` — `direction="right"` occurs in
+ *         `sheet.tsx` only in the docblock offering it as a consumer
+ *         opt-out; the shipped default is `"responsive"`, resolved per
+ *         viewport. Retargeted at the resolution.
+ *       · `evidence-upload-modal` — the close-on-success span reached
+ *         `onAllSettled` in a COMMENT because the shipped callback is more
+ *         than the span's 400 characters from `allOk`. Bound to
+ *         `declarationOf(src, 'onAllSettled')`.
+ *       · `modal-primitive` — `it('reaches the shared semantic token
+ *         namespace')` asserted `bg-bg-default`, which is NOT in
+ *         `modal.tsx`: the flat background/border pair was replaced by
+ *         `surface-popup-texture` and the only occurrence left is the
+ *         comment recording the swap. THE RANKING COULD NOT SEE THIS ONE —
+ *         the needle is a loop variable (`for (const token of [...])
+ *         expect(src).toContain(token)`), so `recoverNeedle` returns
+ *         `needle-not-literal` and the site sits in the unscorable bucket,
+ *         211 of 3574 here. Third distinct reason the ranking under-counts,
+ *         after the flagged regex (356 entry) and the loop variable in
+ *         `org-shell-structural` (338 entry) — and the remedy has been the
+ *         same all three times: run the converted suites.
+ *
+ *     FOUR READS WERE MOVED OFF `codeOf` RATHER THAN ONTO IT, for the same
+ *     reason the `.sql` half exists: `messages/en.json` in three files and
+ *     `src/data/libraries/nist-csf-2.0.yaml` in `aws-posture-connector` are
+ *     not languages `codeOf` lexes. Neither carries a `//` today, so the
+ *     mask is a no-op today — and would stop being one the moment a URL
+ *     lands in either, which is exactly how twelve `.sql` seams read as
+ *     masked while masking nothing until #2679.
  *   • 381 (2026-09-17): seated when this ratchet landed. Measured by AST walk
  *     over every `.ts`/`.tsx` file git lists under `tests/` — 2402 files,
  *     12301 `toMatch`/`toContain` sites, of which 5937 resolve to the whole
@@ -271,10 +364,16 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     So a file's presence in this list is NOT an accusation, and this ratchet
  *     is a cap rather than a work queue: it says the population may not grow.
  */
-const RAW_ASSERTING_FILE_BASELINE = 344;
+const RAW_ASSERTING_FILE_BASELINE = 322;
 
 /**
- * The 356 files themselves, sorted, in a sibling JSON.
+ * The files themselves, sorted, in a sibling JSON — the same population the
+ * constant above counts, spelled out.
+ *
+ * DELIBERATELY UNNUMBERED. This line read "the 356 files" while the constant
+ * above said 344, and then 322: a count repeated beside its own source rots
+ * the moment the source moves, and nothing makes prose follow. The set
+ * equality below is the check; the number lives in one place.
  *
  * WHY A LIST AND NOT ONLY A NUMBER. A count-only ceiling can say "one more
  * than yesterday" and nothing else, and on a population this size that is not
@@ -509,9 +608,23 @@ describe('Class A — assertions satisfied by prose', () => {
         const r = report();
         expect(r.unlexableByExtension['.sql']).toBeUndefined();
 
-        const sqlRaw = r.rawSites.filter((s) => s.readLabel.endsWith('.sql'));
-        expect(sqlRaw.length).toBeGreaterThan(50);
-        expect(new Set(sqlRaw.map((s) => s.site.file)).size).toBeGreaterThan(20);
+        // COUNT WHAT THE GATE ADMITS, NOT WHAT THE CAMPAIGN DRAINS.
+        //
+        // This clause read `rawSites.filter(… '.sql').length > 50`, and it
+        // was the one assertion in this file that a CORRECT Class A
+        // conversion could redden: masking a migration's read seam moves its
+        // sites from raw to masked without removing a single read. The #2246
+        // batch that converted the six uncredited `.sql` seams took raw
+        // `.sql` 66 → 48 and tripped the floor, while the number of `.sql`
+        // reads the analyser admits did not move at all — 122 before and
+        // after. Raw + masked is invariant under the fix this ratchet exists
+        // to encourage, which is the property a liveness control needs.
+        //
+        // Both halves still say what they said: the first that `.sql` reads
+        // EXIST in quantity, the second that they are spread across real
+        // files rather than concentrated in one fixture.
+        expect(r.lexableByExtension['.sql']).toBeGreaterThan(50);
+        expect(r.lexableFilesByExtension['.sql']).toBeGreaterThan(20);
 
         // …and the languages that are STILL excluded are, so this is a gate
         // that opened for one language rather than a filter that stopped

@@ -188,6 +188,22 @@ export interface ClassAReport {
     /** `.md` → 215, `.yml` → 85 … over `unlexableLanguageSites`. */
     readonly unlexableByExtension: Readonly<Record<string, number>>;
 
+    /**
+     * Whole-file reads of a LEXABLE language — raw AND masked together — per
+     * extension, and the distinct test files holding at least one.
+     *
+     * WHY BOTH HALVES TOGETHER, rather than filtering `rawSites` by
+     * extension. Converting a read seam MOVES a site from raw to masked; the
+     * read is still there and the gate still admits it. So a liveness check
+     * for "this extension is inside the gate" has to count what the gate
+     * admits, not what the conversion campaign drains. The `.sql` control in
+     * `raw-source-assertion-ratchet` was written on the raw count and went
+     * red the first time somebody took this ratchet's advice on a migration
+     * seam — raw `.sql` 66 → 48 while admitted `.sql` stayed at 122.
+     */
+    readonly lexableByExtension: Readonly<Record<string, number>>;
+    readonly lexableFilesByExtension: Readonly<Record<string, number>>;
+
     /** Why the remaining sites are not whole-file reads. */
     readonly subjectSkips: Readonly<Record<SubjectSkipReason, number>>;
 
@@ -217,6 +233,8 @@ export function analyseClassA(absFiles: readonly string[]): ClassAReport {
     const rawSites: RawAssertionSite[] = [];
     const subjectSkips = { ...EMPTY_SUBJECT_SKIPS };
     const unlexableByExtension: Record<string, number> = {};
+    const lexableByExtension: Record<string, number> = {};
+    const lexableFiles: Record<string, Set<string>> = {};
     const rawFiles = new Set<string>();
     const maskedFiles = new Set<string>();
 
@@ -247,6 +265,9 @@ export function analyseClassA(absFiles: readonly string[]): ClassAReport {
                 continue;
             }
 
+            lexableByExtension[ext] = (lexableByExtension[ext] ?? 0) + 1;
+            (lexableFiles[ext] ??= new Set<string>()).add(rel);
+
             if (masked) {
                 maskedSites++;
                 maskedFiles.add(rel);
@@ -274,6 +295,10 @@ export function analyseClassA(absFiles: readonly string[]): ClassAReport {
         maskedSites,
         unlexableLanguageSites,
         unlexableByExtension,
+        lexableByExtension,
+        lexableFilesByExtension: Object.fromEntries(
+            Object.entries(lexableFiles).map(([ext, files]) => [ext, files.size]),
+        ),
         subjectSkips,
         rawFiles: [...rawFiles].sort(),
         maskedOnlyFiles: [...maskedFiles].sort(),
