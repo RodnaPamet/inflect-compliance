@@ -434,6 +434,17 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 226;
 // there). The way to bring this seven back down is a constant read path for
 // those two tests, which is a real change to how they resolve "the migration
 // that is actually running" and is not smuggled in here.
+//
+//   THE PARENTHETICAL ABOVE IS HISTORY, NOT THE CURRENT RULE. `.sql` joined
+//   `LEXABLE_EXTENSIONS` on 2026-09-20 (#2644), so masking a migration DOES
+//   move `RAW_ASSERTING_FILE_BASELINE` now — with `sqlCodeOf`, which is the
+//   only masker that lexes one. The measurement above still stands as what
+//   was true on its own diff; it is annotated rather than rewritten because
+//   deleting a measurement because the world moved is how a history entry
+//   stops being evidence. The three ceilings in THIS file were re-measured
+//   across the gate opening and none of them moved — `LEXABLE_EXTENSIONS`
+//   has no importer outside the Class A pair, and Class D holds no extension
+//   filter at all.
 // 1454 (2026-09-19): −1, and the one site is nameable. The #2246 Class A
 // batch retargeted `ai-aisvs-hardening-coverage`'s AISVS C5.2.1 assertion
 // from `expect(gate).toMatch(/default-deny/i)` onto
