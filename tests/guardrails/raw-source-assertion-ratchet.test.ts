@@ -58,12 +58,17 @@ import * as path from 'node:path';
 
 import { testFilesUnder } from '../helpers/assertion-reach';
 import { analyseClassA, type ClassAReport } from '../helpers/raw-source-assertions';
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 /**
  * Test files holding at least one `expect(<whole source file>)` that no
  * comment mask touched.
  *
- * History — only edit DOWNWARD, one line per change.
+ * History — one line per change, and it moves DOWN except where a WIDENING
+ * of the population is recorded as such (there is exactly one, the 344 entry
+ * below). A widening is not a re-seat: the ceiling is being asked to cover
+ * files it never covered, so the entry must name which files enter and why
+ * they were not countable before.
  *   • 379 (2026-09-17): masked the read seam in the two files that imported
  *     `codeOf` and still asserted raw on CODE — `identity-log-identifier-scrub`
  *     (4 sites, `read` at :195) and `audit-immutability-guardrails` (1 site,
@@ -147,6 +152,78 @@ import { analyseClassA, type ClassAReport } from '../helpers/raw-source-assertio
  *     label)`), so `recoverNeedle` returns `needle-not-literal` and the site
  *     is unscorable — 236 of the 4062 sites are. A ranking built on literal
  *     needles cannot see them; running the converted suite can.
+ *   • 344 (2026-09-20): **+6, and the only UPWARD entry in this list.** The
+ *     `.sql` extension gate opened — `'.sql'` joins `LEXABLE_EXTENSIONS` in
+ *     `tests/helpers/raw-source-assertions.ts` — so every guard that reads a
+ *     migration raw is counted for the first time (#2644, owner decision
+ *     2026-09-20). Nothing was converted in that diff; six files that were
+ *     always in this defect class became VISIBLE, which is what a widening
+ *     is. They are, all six reading exactly one migration each:
+ *     `ai-gov-self-assessment-coverage` (2 raw sites),
+ *     `audit-s1-residual-and-mitigated` (2), `audit-s3-evidence-mgmt` (1),
+ *     `cve-integration-coverage` (4), `risk-quantitative-analytics` (2),
+ *     `rq3-6-loss-event-register` (7).
+ *
+ *     MEASURED 344, PREDICTED 353, and the 9 is the finding rather than
+ *     drift. The measurement behind the decision
+ *     (`docs/implementation-notes/2026-09-19-sql-exclusion-delta-measurement.md`)
+ *     offered three states: `.sql` uncounted (base), counted with `codeOf`
+ *     accepted as its mask (+6), counted with only a SQL-aware mask accepted
+ *     (+15). The +15 row existed because at the time NO `.sql` read in the
+ *     tree used `sqlCodeOf` — all 46 masked `.sql` sites spelled `codeOf`,
+ *     the TypeScript lexer, which blanks nothing in a migration while
+ *     READING as masked. #2679 converted all twelve of those files to a
+ *     separately named `sqlCodeOf` seam on 2026-09-20, before this diff. So
+ *     states 2 and 3 are now the SAME state and both measure 344: the twelve
+ *     are masked under either rule because they genuinely carry the
+ *     SQL-aware mask, mutation-proved 12/12 in #2679 (comment out the DDL,
+ *     twelve named tests redden).
+ *
+ *     353 IS REACHABLE, AND THE BASELINE STAYS 344 BY DECISION RATHER THAN
+ *     BY NECESSITY. An earlier draft of this entry said no defensible change
+ *     reached 353. That was false, and measuring it is what turned this from
+ *     an arithmetic accident into a judgement somebody made. ONE condition
+ *     does it — `if (masked && ext !== '.sql')` in `analyseClassA`, i.e.
+ *     refusing masked credit on a `.sql` read whichever masker produced it —
+ *     and it lands on exactly 353, with `wholeFileReads` unchanged at 5938
+ *     and `subjectSkips` byte-identical. The +9 is the nine of the twelve
+ *     `sqlCodeOf` seams not already in this list for their TypeScript reads;
+ *     the other three (`bia-coverage`, `incident-containment-forensic-
+ *     coverage`, `scanner-ingestion-coverage`) are already among the 344, so
+ *     twelve reclassified files move the count by nine.
+ *
+ *     WHAT THAT CONDITION COSTS IS THE OWNER'S OWN PRINCIPLE. "Nobody is
+ *     credited for a mask they do not have" excludes a seam whose mask is
+ *     absent, or wrong for the language it reads — which is exactly what
+ *     `codeOf`-on-`.sql` was before #2679. These twelve have a real one that
+ *     works, proved 12/12. Counting them raw would refuse credit for a mask
+ *     that does its job: the inversion of the rule, not its application. So
+ *     353 is reachable and not desirable, which is a different sentence from
+ *     the one this entry used to carry, and the only one the measurement
+ *     supports.
+ *
+ *     A SECOND ROUTE TO 353 GENUINELY DOES NOT EXIST, and that half of the
+ *     old claim survives: unregistering `['sqlCodeOf', sqlCodeOf]` from
+ *     `SOURCE_BLOCKS_MASKERS` leaves this count at 344, because it drops
+ *     those 46 sites out of the whole-file population entirely — into
+ *     `not-a-file-read` (5437 → 5495) and out of `path-not-constant`
+ *     (917 → 905), i.e. into the bucket nothing caps, which is the evasion
+ *     route these ratchets exist to close.
+ *
+ *     THE OWNER'S CONDITION IS THE ONE THAT HELD, not the arithmetic:
+ *     "nobody is credited for a mask they do not have". Measured on this
+ *     tree, the 122 previously-invisible `.sql` sites split 76 raw across 29
+ *     files and 46 masked across 12, with NO file in both buckets — so the
+ *     six that enter are exactly the files whose migration reads carry no
+ *     mask at all, and no file enters credited.
+ *
+ *     WHAT DID NOT MOVE, measured rather than predicted: the six sibling
+ *     zero-allowance constants. `subjectSkips` is byte-identical across the
+ *     change (`not-a-file-read` 5437, `path-not-constant` 917,
+ *     `binding-not-resolvable` 101, `content-transformed` 73,
+ *     `file-not-found` 1), because `LEXABLE_EXTENSIONS` has no importer
+ *     outside this pair of files and Classes C and D contain no extension
+ *     filter of any kind.
  *   • 381 (2026-09-17): seated when this ratchet landed. Measured by AST walk
  *     over every `.ts`/`.tsx` file git lists under `tests/` — 2402 files,
  *     12301 `toMatch`/`toContain` sites, of which 5937 resolve to the whole
@@ -194,7 +271,7 @@ import { analyseClassA, type ClassAReport } from '../helpers/raw-source-assertio
  *     So a file's presence in this list is NOT an accusation, and this ratchet
  *     is a cap rather than a work queue: it says the population may not grow.
  */
-const RAW_ASSERTING_FILE_BASELINE = 338;
+const RAW_ASSERTING_FILE_BASELINE = 344;
 
 /**
  * The 356 files themselves, sorted, in a sibling JSON.
@@ -300,14 +377,27 @@ const FIX_ADVICE = [
     `  everything else through the masked one — do not make the whole file raw`,
     `  for one assertion.`,
     ``,
-    `  Reading .sql / .yml / .json? Those are excluded here because codeOf`,
-    `  lexes TypeScript — handing it a .sql file leaves every -- comment in`,
-    `  place while READING as masked. Write a reader per language, as`,
-    `  tests/guards/rq2-6-appetite-lec.test.ts does.`,
+    `  READING A MIGRATION? .sql is IN this population (#2644) and codeOf`,
+    `  is the wrong masker for it — codeOf lexes TypeScript, so on a .sql`,
+    `  file it leaves every -- comment in place while READING as masked.`,
+    `  Use sqlCodeOf, and give it its OWN named reader beside the codeOf`,
+    `  one rather than repointing the shared helper — most of these files`,
+    `  read .ts and .prisma through the same seam:`,
+    ``,
+    `      import { codeOf, sqlCodeOf } from '../helpers/source-blocks';`,
+    `      const read    = (rel: string) => codeOf(fs.readFileSync(…));`,
+    `      const readSql = (rel: string) => sqlCodeOf(fs.readFileSync(…));`,
+    ``,
+    `  .yml / .json / .md / .css are still excluded — no masker lexes them`,
+    `  yet. Write a reader per language, as`,
+    `  tests/guards/rq2-6-appetite-lec.test.ts does, and add the extension`,
+    `  to LEXABLE_EXTENSIONS only AFTER every seam reading it uses the new`,
+    `  masker. Adding it first credits every one of them as masked.`,
     ``,
     `  If the diff genuinely converted files, lower the baseline in this`,
-    `  file in the same PR with a one-line History entry. It only ever`,
-    `  moves down.`,
+    `  file in the same PR with a one-line History entry. It moves down on`,
+    `  conversions; it has moved UP exactly once, when the .sql gate opened`,
+    `  and six always-defective files became visible for the first time.`,
 ].join('\n');
 
 describe('Class A — assertions satisfied by prose', () => {
@@ -403,6 +493,30 @@ describe('Class A — assertions satisfied by prose', () => {
         // while every count above still looked healthy.
         expect(r.maskedSites).toBeGreaterThan(100);
         expect(r.maskedOnlyFiles.length).toBeGreaterThan(20);
+    });
+
+    it('the .sql gate is open over the LIVE tree, not only over a fixture', () => {
+        // The detector proofs below run over synthetic files, where `.sql`
+        // behaves however `LEXABLE_EXTENSIONS` says. This one asserts the
+        // same thing about the population the ceiling is actually taken
+        // over — the difference between "the analyser can count migrations"
+        // and "migrations are counted here".
+        //
+        // Both halves are needed and neither implies the other: the first
+        // says no `.sql` read is still being excluded, the second that the
+        // reads exist to be excluded in the first place. An empty selection
+        // satisfies the first on its own.
+        const r = report();
+        expect(r.unlexableByExtension['.sql']).toBeUndefined();
+
+        const sqlRaw = r.rawSites.filter((s) => s.readLabel.endsWith('.sql'));
+        expect(sqlRaw.length).toBeGreaterThan(50);
+        expect(new Set(sqlRaw.map((s) => s.site.file)).size).toBeGreaterThan(20);
+
+        // …and the languages that are STILL excluded are, so this is a gate
+        // that opened for one language rather than a filter that stopped
+        // filtering. `.md` is the largest of them.
+        expect(r.unlexableByExtension['.md']).toBeGreaterThan(100);
     });
 
     it('the comparison itself can fail, in both directions', () => {
@@ -533,10 +647,40 @@ describe('Class A — assertions satisfied by prose', () => {
             expect(r.subjectSkips['not-a-file-read']).toBe(1);
         });
 
-        it('excludes a language codeOf cannot lex, and says which', () => {
-            const sql = path.join(dir, 'migration.sql');
-            fs.writeFileSync(sql, '-- ADD COLUMN "x" TEXT\nSELECT 1;\n', 'utf8');
-            const abs = write('sql.test.ts', [
+        it('excludes a language no masker can lex, and says which', () => {
+            // `.yml` and not `.sql`: the SQL gate opened in #2644, so a
+            // migration is now IN the population (proved by the two tests
+            // below). This assertion needs a language that is still out, or
+            // it silently stops testing exclusion at all.
+            const yml = path.join(dir, 'workflow.yml');
+            fs.writeFileSync(yml, '# runs-on: ubuntu-latest\njobs: {}\n', 'utf8');
+            const abs = write('yml.test.ts', [
+                "const src = fs.readFileSync('" + yml + "', 'utf8');",
+                "it('a', () => {",
+                '    expect(src).toMatch(/runs-on: ubuntu-latest/);',
+                '});',
+            ]);
+            const r = analyseClassA([abs]);
+            expect(r.wholeFileReads).toBe(1);
+            expect(r.rawSites).toHaveLength(0);
+            expect(r.unlexableLanguageSites).toBe(1);
+            expect(r.unlexableByExtension['.yml']).toBe(1);
+        });
+
+        it('COUNTS an unmasked migration read — the .sql gate is open', () => {
+            // The #2644 change in miniature. On the pre-gate tree this same
+            // fixture landed in `unlexableLanguageSites` with `rawSites`
+            // empty, so a guard reading a migration raw was uncounted and
+            // uncapped. The `--` comment is the point: delete the DDL, leave
+            // the note, and the assertion stays green — now a countable
+            // defect rather than an invisible one.
+            const sql = path.join(dir, 'counted.sql');
+            fs.writeFileSync(
+                sql,
+                '-- ADD COLUMN "x" TEXT\nALTER TABLE "T" ADD COLUMN "x" TEXT;\n',
+                'utf8',
+            );
+            const abs = write('sql-raw.test.ts', [
                 "const src = fs.readFileSync('" + sql + "', 'utf8');",
                 "it('a', () => {",
                 '    expect(src).toMatch(/ADD COLUMN "x"/);',
@@ -544,9 +688,86 @@ describe('Class A — assertions satisfied by prose', () => {
             ]);
             const r = analyseClassA([abs]);
             expect(r.wholeFileReads).toBe(1);
-            expect(r.rawSites).toHaveLength(0);
-            expect(r.unlexableLanguageSites).toBe(1);
-            expect(r.unlexableByExtension['.sql']).toBe(1);
+            expect(r.unlexableLanguageSites).toBe(0);
+            expect(r.rawSites).toHaveLength(1);
+            expect(r.rawFiles).toHaveLength(1);
+            expect(/counted\.sql$/.test(r.rawSites[0].readLabel)).toBe(true);
+
+            // …and the exposure on this fixture is executed, not asserted in
+            // prose: the needle survives once every line of DDL is gone.
+            const raw = fs.readFileSync(sql, 'utf8');
+            const ddlDeleted = raw
+                .split('\n')
+                .filter((l) => l.trimStart().startsWith('--'))
+                .join('\n');
+            expect(/ADD COLUMN "x"/.test(ddlDeleted)).toBe(true);
+        });
+
+        it('a migration masked with sqlCodeOf is masked — and with codeOf it still reads as masked', () => {
+            // The asymmetry that decided the seat (#2644). `codeOf` lexes
+            // `//`, so on a migration it blanks nothing; crediting it would
+            // put a file in `maskedSites` — the FIXED state — while a `--`
+            // comment could still satisfy its assertion. Both halves are
+            // asserted, because only the pair distinguishes "a masker ran"
+            // from "the right masker ran".
+            const sql = path.join(dir, 'masked.sql');
+            fs.writeFileSync(
+                sql,
+                '-- ADD COLUMN "y" TEXT\nALTER TABLE "T" ADD COLUMN "y" TEXT;\n',
+                'utf8',
+            );
+
+            const sqlMasked = analyseClassA([
+                write('sql-sqlcodeof.test.ts', [
+                    "import { sqlCodeOf } from '" + repoHelper() + "';",
+                    "const readSql = (p: string) => sqlCodeOf(fs.readFileSync(p, 'utf8'));",
+                    "it('a', () => {",
+                    "    const src = readSql('" + sql + "');",
+                    '    expect(src).toMatch(/ADD COLUMN "y"/);',
+                    '});',
+                ]),
+            ]);
+            expect(sqlMasked.wholeFileReads).toBe(1);
+            expect(sqlMasked.rawSites).toHaveLength(0);
+            expect(sqlMasked.maskedSites).toBe(1);
+
+            const tsMasked = analyseClassA([
+                write('sql-codeof.test.ts', [
+                    "import { codeOf } from '" + repoHelper() + "';",
+                    "const read = (p: string) => codeOf(fs.readFileSync(p, 'utf8'));",
+                    "it('a', () => {",
+                    "    const src = read('" + sql + "');",
+                    '    expect(src).toMatch(/ADD COLUMN "y"/);',
+                    '});',
+                ]),
+            ]);
+            // KNOWN AND DELIBERATE, asserted so it is not discovered: the
+            // analyser records "a masker ran", not "a masker that lexes this
+            // language ran", so `codeOf` on a migration still counts as
+            // masked. That is exactly why the twelve such seams were
+            // converted in #2679 BEFORE `.sql` joined `LEXABLE_EXTENSIONS`,
+            // and why FIX_ADVICE says convert first, widen after. The day
+            // somebody teaches the analyser about languages, this line tells
+            // them what they changed.
+            expect(tsMasked.maskedSites).toBe(1);
+            expect(tsMasked.rawSites).toHaveLength(0);
+
+            // The gap that tolerance leaves, executed: `codeOf` keeps the
+            // `--` comment and `sqlCodeOf` blanks it, so the guard above
+            // reads as masked while its needle survives in prose.
+            //
+            // `.includes()` + `toBe`, NOT `toContain` — for the same reason
+            // the `satisfied by the COMMENT alone` proof above spells itself
+            // that way: a `toContain` whose subject is a `readFileSync` down
+            // a tmpdir path fixed in `beforeAll` resolves to
+            // `path-not-constant` and spends `UNANALYSABLE_READ_BASELINE`,
+            // which has zero headroom and is shared with every open PR.
+            const raw = fs.readFileSync(sql, 'utf8');
+            expect(codeOf(raw).includes('-- ADD COLUMN "y" TEXT')).toBe(true);
+            expect(sqlCodeOf(raw).includes('-- ADD COLUMN "y" TEXT')).toBe(false);
+            expect(
+                sqlCodeOf(raw).includes('ALTER TABLE "T" ADD COLUMN "y" TEXT;'),
+            ).toBe(true);
         });
 
         it('counts a negated raw assertion, and reports it as negated', () => {

@@ -61,15 +61,24 @@
  *
  * TWO POPULATIONS ARE EXCLUDED, AND THEY ARE REPORTED, NOT DROPPED
  * ────────────────────────────────────────────────────────────────
- *   · A read of a file whose language `codeOf` does not lex — `.sql`, `.yml`,
- *     `.json`, `.md`, `.env`. Handing `codeOf` a `.sql` file produces the
- *     worst outcome available: a view that still carries every `--` comment
- *     while READING as masked. JSON has no comments at all, so there is no
- *     defect to close. These land in `unlexableLanguageSites` with a
+ *   · A read of a file whose language NO registered masker lexes — `.yml`,
+ *     `.json`, `.md`, `.css`, `.env`. JSON has no comments at all, so there
+ *     is no defect to close. These land in `unlexableLanguageSites` with a
  *     per-extension histogram, so the exclusion is arguable rather than
  *     invisible. (`tests/guards/rq2-6-appetite-lec.test.ts` shows the shape
  *     the excluded languages need: one reader per language, each with its own
  *     masker.)
+ *
+ *     `.sql` WAS on that list and is not any more (#2644, 2026-09-20). The
+ *     exclusion existed because the only masker was `codeOf`, which lexes
+ *     TypeScript: handing it a migration produces the worst outcome
+ *     available, a view still carrying every `--` comment while READING as
+ *     masked. `sqlCodeOf` (#2643) removed that reason, and the twelve seams
+ *     that had been spelling `codeOf` on a migration were converted to it
+ *     (#2679) before the gate opened — so no file entered this population
+ *     credited with a mask it does not have. The 29 files that mask their
+ *     migration reads with nothing entered as raw, uncredited, which is the
+ *     whole point of opening the gate: they are now countable and capped.
  *   · A subject the analyser cannot resolve to a whole file. Those are
  *     reported per reason in `subjectSkips` and are NOT counted as raw —
  *     counting a blind spot as a finding is how a detector comes to report
@@ -109,11 +118,22 @@ import {
 import { repoRelative } from './repo-files';
 
 /**
- * Extensions `codeOf` actually lexes: `//`, `/* … *\/`, and quoted strings.
+ * Extensions a registered masker actually lexes.
  *
  * `.prisma` is in the list because Prisma's comment syntax IS `//` and its
- * strings are double-quoted — the same lexer is correct there, and the
+ * strings are double-quoted — so `codeOf` is the correct lexer there, and the
  * concatenated schema is the single most-read file in `tests/`.
+ *
+ * `.sql` is in the list for a DIFFERENT masker: `sqlCodeOf`, which blanks
+ * `--` and `/* … *\/` and treats a dollar-quoted body as code (#2643). The
+ * set is therefore "languages SOME masker in `SOURCE_BLOCKS_MASKERS` lexes",
+ * not "languages `codeOf` lexes" — and the analyser does not check that the
+ * masker a file used matches the language it read. That gap is closed by
+ * convention and by review, not by this set: see the note above on why the
+ * twelve `codeOf`-on-SQL seams were converted BEFORE `.sql` was added here.
+ * Adding an extension whose seams still spell the wrong masker would credit
+ * every one of them as masked, which is strictly worse than leaving the
+ * language out.
  */
 export const LEXABLE_EXTENSIONS: ReadonlySet<string> = new Set([
     '.ts',
@@ -123,6 +143,7 @@ export const LEXABLE_EXTENSIONS: ReadonlySet<string> = new Set([
     '.mjs',
     '.cjs',
     '.prisma',
+    '.sql',
 ]);
 
 /**
@@ -164,7 +185,7 @@ export interface ClassAReport {
     readonly maskedSites: number;
     /** Whole-file reads of a language `codeOf` cannot lex. */
     readonly unlexableLanguageSites: number;
-    /** `.sql` → 12, `.yml` → 4 … over `unlexableLanguageSites`. */
+    /** `.md` → 215, `.yml` → 85 … over `unlexableLanguageSites`. */
     readonly unlexableByExtension: Readonly<Record<string, number>>;
 
     /** Why the remaining sites are not whole-file reads. */
