@@ -13,13 +13,18 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
+// LANGUAGE SPLIT (#2644). `read` lexes TypeScript, so on a `.sql` file it
+// blanks nothing and a `--` comment reaches the assertion verbatim — masked
+// at the call site, unmasked in fact. Migrations go through `sqlCodeOf`,
+// which lexes `--` and `/* */`; TypeScript keeps `read`.
+const readSql = (p: string) => sqlCodeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 
 const VENDOR_SCHEMA = read('prisma/schema/vendor.prisma');
-const MIGRATION = read('prisma/migrations/20260701140000_vendor_doc_extraction/migration.sql');
+const MIGRATION = readSql('prisma/migrations/20260701140000_vendor_doc_extraction/migration.sql');
 const AI = read('src/app-layer/ai/vendor-doc/index.ts');
 const USECASE = read('src/app-layer/usecases/vendor-doc-extraction.ts');
 const MAP = read('src/app-layer/services/soc2-question-map.ts');

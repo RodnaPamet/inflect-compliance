@@ -2,6 +2,24 @@
 
 **Issue:** #2644. **Refs:** #2643 (`sqlCodeOf`), #2246 (the Class A ratchet), #2287.
 
+> **Two things in this note were true on 2026-09-19 and are not true now.**
+> Read it as the measurement it is, and take the current state from
+> `2026-09-20-sql-seam-language-split.md`:
+>
+> 1. **§5b/§6's twelve `codeOf`-on-SQL seams have been converted** to a
+>    `sqlCodeOf` language split (#2644, 2026-09-20). §8's second open
+>    question — "whether the twelve should instead be converted" — is
+>    therefore closed, which also collapses states 2 and 3 of §4 onto each
+>    other. The extension gate is still SHUT and §8's first question (open it,
+>    and at which state) is still the owner's.
+> 2. **Every ratchet figure below has since moved**, not by this issue's work
+>    but by #2671 merging the same evening: `RAW_ASSERTING_FILE_BASELINE`
+>    376 → 356, `AMBIGUOUS_NEEDLE_BASELINE` 1419 → 1365,
+>    `HIGHLY_AMBIGUOUS_NEEDLE_BASELINE` 237 → 230, `UNANALYSABLE_READ_BASELINE`
+>    1455 → 1454. The DELTAS this note measures are unaffected — they were
+>    measured against the population, not against the constants — but do not
+>    quote an absolute from here.
+
 **No ratchet constant moves in this diff, and that is the point.** The owner's decision on
 #2644 was *measure first*:
 

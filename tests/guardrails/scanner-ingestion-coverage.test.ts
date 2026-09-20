@@ -19,7 +19,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 /**
@@ -29,9 +29,14 @@ const ROOT = path.resolve(__dirname, '../..');
  * every positive assertion here names an identifier a comment could spell.
  */
 const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
+// LANGUAGE SPLIT (#2644). `read` lexes TypeScript, so on a `.sql` file it
+// blanks nothing and a `--` comment reaches the assertion verbatim — masked
+// at the call site, unmasked in fact. Migrations go through `sqlCodeOf`,
+// which lexes `--` and `/* */`; TypeScript keeps `read`.
+const readSql = (p: string) => sqlCodeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 
 const COMPLIANCE_SCHEMA = readPrismaSchema();
-const MIGRATION = read('prisma/migrations/20260701120000_scanner_ingestion/migration.sql');
+const MIGRATION = readSql('prisma/migrations/20260701120000_scanner_ingestion/migration.sql');
 const ENCRYPTED_FIELDS = read('src/lib/security/encrypted-fields.ts');
 const SARIF = read('src/app-layer/services/sarif.ts');
 const USECASE = read('src/app-layer/usecases/scanner-ingestion.ts');

@@ -22,10 +22,15 @@ import { readPrismaSchema } from '../helpers/prisma-schema';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
 import { computeDeadlines, PHASE_ORDER, suggestsReportable } from '@/lib/incidents/deadlines';
 
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8'));
+// LANGUAGE SPLIT (#2644). `read` lexes TypeScript, so on a `.sql` file it
+// blanks nothing and a `--` comment reaches the assertion verbatim — masked
+// at the call site, unmasked in fact. Migrations go through `sqlCodeOf`,
+// which lexes `--` and `/* */`; TypeScript keeps `read`.
+const readSql = (rel: string) => sqlCodeOf(fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8'));
 const exists = (rel: string) => fs.existsSync(path.join(REPO_ROOT, rel));
 
 const SCHEMA_DIR = 'prisma/schema';
@@ -77,7 +82,7 @@ describe('NIS2 incident-response — RLS migration', () => {
     });
 
     it('applies the Class-A RLS policy set to all three tables', () => {
-        const sql = read(migration);
+        const sql = readSql(migration);
         for (const m of INCIDENT_MODELS) {
             expect(sql).toMatch(new RegExp(`ALTER TABLE "${m}" ENABLE ROW LEVEL SECURITY`));
             expect(sql).toMatch(new RegExp(`ALTER TABLE "${m}" FORCE ROW LEVEL SECURITY`));

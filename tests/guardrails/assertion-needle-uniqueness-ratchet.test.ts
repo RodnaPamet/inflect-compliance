@@ -11,7 +11,10 @@
  *   · `audit-s5-readiness-scoring.test.ts:21` — `/frameworkKey\s+String/`
  *     against `prisma/schema/audit-workflow.prisma`, where Audit, AuditCycle
  *     and ReadinessSnapshot each declare that field. Detector: 3 occurrences.
- *     Line 22's `/auditCycleId\s+String\?/`: 2.
+ *     Line 22's `/auditCycleId\s+String\?/`: 2. (Those are the line numbers
+ *     AS PROVED in #2246; two later seam edits have moved the same two
+ *     assertions to :30 and :31 — the live citation is the `it` block at the
+ *     bottom of this file, which is asserted rather than written down.)
  *   · `entra-ei2-group-mapping.test.ts:18` — a test named "the
  *     TenantEntraGroupMapping model is TENANT-SCOPED + uniquely keyed"
  *     asserting `@@index([tenantId])` against the whole of `auth.prisma`.
@@ -674,17 +677,25 @@ describe('Class D — needles that match more than the thing they name', () => {
                 (a) => a.site.file.endsWith(file) && a.site.line === line,
             );
 
-        // Lines 24/25, not 21/22: the #2246 Class A conversion added the
-        // `codeOf` import and the read-seam comment above the assertions,
-        // shifting them down three. The OCCURRENCE counts are unchanged —
-        // all three `frameworkKey String` and both `auditCycleId String?`
-        // are real fields in audit-workflow.prisma, none in a comment.
-        it('audit-s5-readiness-scoring.test.ts:24 — frameworkKey is in three models', () => {
-            expect(at('audit-s5-readiness-scoring.test.ts', 24)?.occurrences).toBe(3);
+        // Lines 30/31, not 24/25 and not the original 21/22. Two seam edits
+        // above the assertions have pushed them down: the #2246 Class A
+        // conversion added the `codeOf` import and the read-seam comment
+        // (+3), and the #2644 language split added the `readSqlAbs` reader
+        // and its docblock (+6). The OCCURRENCE counts are unchanged through
+        // both — all three `frameworkKey String` and both
+        // `auditCycleId String?` are real fields in audit-workflow.prisma,
+        // none of them in a comment, and neither edit touched the `.prisma`
+        // read these two assertions bind to.
+        //
+        // A rotted line number here proves the CITATION moved, not the
+        // claim. Re-derive it by running this suite and reading the
+        // reported site, rather than adding the diff's line count by hand.
+        it('audit-s5-readiness-scoring.test.ts:30 — frameworkKey is in three models', () => {
+            expect(at('audit-s5-readiness-scoring.test.ts', 30)?.occurrences).toBe(3);
         });
 
-        it('audit-s5-readiness-scoring.test.ts:25 — auditCycleId is in two', () => {
-            expect(at('audit-s5-readiness-scoring.test.ts', 25)?.occurrences).toBe(2);
+        it('audit-s5-readiness-scoring.test.ts:31 — auditCycleId is in two', () => {
+            expect(at('audit-s5-readiness-scoring.test.ts', 31)?.occurrences).toBe(2);
         });
 
         it('entra-ei2-group-mapping.test.ts:18 — @@index([tenantId]) is satisfied by fifteen models', () => {
