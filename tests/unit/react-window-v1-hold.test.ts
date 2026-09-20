@@ -31,12 +31,13 @@
  * budget.
  *
  * That is NOT a trick played on the ratchet — it is the fix the ratchet asks
- * for, and here it is also the only CORRECT implementation. Measured in this
- * tree: FOUR files under `src/` contain the string `react-window`, and only
- * TWO import it. `combobox/virtualized-options.tsx` and `table/data-table.tsx`
- * name it in prose. A grep-shaped guard would report four seams and be wrong;
- * a `not.toMatch` form would be satisfied by a comment. An `ImportDeclaration`
- * cannot be written in a comment, so the AST answers the question asked.
+ * for, and here it is also the only CORRECT implementation. Measured over the
+ * whole repository: NINE files contain the string `react-window` and only TWO
+ * depend on it. The other seven name it in prose — two sibling components,
+ * three rendered tests, and this file. A grep-shaped guard would report nine
+ * seams and be wrong by seven; a `not.toMatch` form would be satisfied by any
+ * one of those comments. An `ImportDeclaration` cannot be written in a
+ * comment, so the AST answers the question that was actually asked.
  *
  * WHAT THIS DOES NOT CLAIM. It does not check that the decision is still a
  * good one, and it must not: CLAUDE.md's "never gate CI on prose" is the rule
@@ -74,12 +75,21 @@ const EXPECTED_BINDINGS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
+ * The scan is REPO-WIDE, not `src/`-scoped, and covers every extension a
+ * module can be imported from. Scoping it to `src/**\/*.{ts,tsx}` would have
+ * left three ways to add a seam invisibly: a `.js`/`.mjs` file, a file outside
+ * `src/`, and a script or test that imports the module directly. The text
+ * prefilter keeps the whole-repo walk at ~230ms for 5,238 files.
+ */
+const SCANNED_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'] as const;
+
+/**
  * POSITIVE CONTROL floor. An empty or broken scan satisfies every set
  * comparison below by vacuity, which is the failure mode the guard exists to
- * avoid. Measured at 2,682; the floor is set well under it so ordinary growth
+ * avoid. Measured at 5,238; the floor sits well under it so ordinary growth
  * or deletion never trips it, and a scan that collapses does.
  */
-const MIN_SRC_FILES_SCANNED = 2000;
+const MIN_FILES_SCANNED = 4000;
 
 // ───────────────────────── primitives, unit-testable in memory ─────────────
 //
@@ -132,6 +142,14 @@ export function importedBindings(
         }
         // `export { X } from 'react-window'` re-exports the surface just as
         // an import does, and would otherwise be an invisible third seam.
+        //
+        // NOTE the aliasing orientation differs from an import and it is easy
+        // to get backwards. `import { A as B }` and `export { A as B } from`
+        // both put the MODULE's name in `propertyName` and the local/exported
+        // alias in `name`, so `propertyName ?? name` is right for both — but
+        // only because the re-export carries a `from` clause. A local
+        // `export { local as Public }` has no module specifier and never
+        // reaches this branch.
         if (
             ts.isExportDeclaration(node) &&
             node.moduleSpecifier &&
@@ -143,6 +161,24 @@ export function importedBindings(
                 for (const el of node.exportClause.elements) {
                     names.add((el.propertyName ?? el.name).text);
                 }
+            } else {
+                // `export * from 'react-window'` re-exports the entire surface.
+                names.add('* (star re-export)');
+            }
+        }
+
+        // A dynamic `import('react-window')` or a `require('react-window')` is
+        // a real runtime dependency on the module and is NOT an
+        // `ImportDeclaration` — so a guard that only walked import statements
+        // would call this file clean while it pulled the whole package in.
+        if (ts.isCallExpression(node) && node.arguments.length > 0) {
+            const callee = node.expression;
+            const dynamic = callee.kind === ts.SyntaxKind.ImportKeyword;
+            const req = ts.isIdentifier(callee) && callee.text === 'require';
+            const arg = node.arguments[0];
+            if ((dynamic || req) && ts.isStringLiteral(arg) && arg.text === spec) {
+                found = true;
+                names.add(dynamic ? '(dynamic import)' : '(require)');
             }
         }
         ts.forEachChild(node, visit);
@@ -182,14 +218,32 @@ export function usesJsxAttribute(
 
 // ───────────────────────────── the live scan ───────────────────────────────
 
-/** Leading major of a semver or a range (`^1.8.11` -> 1). */
-function majorOf(version: string): number {
-    const m = /(\d+)\s*\./.exec(version);
+/**
+ * Leading major of a semver or a range (`^1.8.11` -> 1).
+ *
+ * ANCHORED on purpose. An unanchored `(\d+)\.` reads a major out of whatever
+ * digit it meets first, so `npm:react-window@2.3.1` or a git URL could yield a
+ * number from the wrong part of the string — a silent wrong answer in the one
+ * function every version assertion depends on. Anchoring makes those throw
+ * instead, and `expectPinnedToV1` below refuses the range shapes that this
+ * function alone cannot judge.
+ */
+export function majorOf(version: string): number {
+    const m = /^[\s^~=v]*(\d+)\./.exec(version);
     if (m === null) throw new Error(`cannot read a major version from "${version}"`);
     return Number(m[1]);
 }
 
-const SRC_FILES = repoFiles({ under: 'src', extensions: ['.ts', '.tsx'] });
+/**
+ * True only for a range that CANNOT install a different major: an exact
+ * version, or a caret/tilde on one. `>=1.0.0` reads as major 1 and admits
+ * 2.x, which is precisely the hole a major-only check leaves open.
+ */
+export function isSingleMajorPin(range: string): boolean {
+    return /^[\^~]?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(range.trim());
+}
+
+const ALL_FILES = repoFiles({ extensions: [...SCANNED_EXTENSIONS] });
 
 /**
  * Repo-relative paths that really import `MODULE`, with their bindings.
@@ -200,7 +254,7 @@ const SRC_FILES = repoFiles({ under: 'src', extensions: ['.ts', '.tsx'] });
  */
 const liveSeams = (): Map<string, string[]> => {
     const out = new Map<string, string[]>();
-    for (const abs of SRC_FILES) {
+    for (const abs of ALL_FILES) {
         const text = fs.readFileSync(abs, 'utf8');
         if (!text.includes(MODULE)) continue;
         const rel = repoRelative(abs);
@@ -212,7 +266,11 @@ const liveSeams = (): Map<string, string[]> => {
 
 const pkg = JSON.parse(
     fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'),
-) as { dependencies: Record<string, string>; devDependencies: Record<string, string> };
+) as {
+    dependencies: Record<string, string>;
+    devDependencies: Record<string, string>;
+    overrides?: Record<string, unknown>;
+};
 
 const lock = JSON.parse(
     fs.readFileSync(path.join(REPO_ROOT, 'package-lock.json'), 'utf8'),
@@ -223,6 +281,21 @@ describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', ()
         it('declares a v1 range for react-window and its v1-era types', () => {
             expect(majorOf(pkg.dependencies[MODULE])).toBe(1);
             expect(majorOf(pkg.devDependencies[`@types/${MODULE}`])).toBe(1);
+        });
+
+        it('declares a range that CANNOT reach another major', () => {
+            // A major-only check passes `>=1.0.0`, which installs 2.x the day
+            // it publishes. A caret or tilde on a 1.x version provably cannot.
+            expect(isSingleMajorPin(pkg.dependencies[MODULE])).toBe(true);
+            expect(isSingleMajorPin(pkg.devDependencies[`@types/${MODULE}`])).toBe(true);
+        });
+
+        it('has no override or resolution redirecting the package elsewhere', () => {
+            // `overrides` can install a different major under an untouched
+            // range — the shape #2545 exists to catch. An entry here is not
+            // forbidden, but it must be argued rather than arrive silently.
+            expect(pkg.overrides?.[MODULE]).toBeUndefined();
+            expect(pkg.overrides?.[`@types/${MODULE}`]).toBeUndefined();
         });
 
         it('RESOLVES to v1 in the lockfile, which the range alone does not promise', () => {
@@ -253,10 +326,10 @@ describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', ()
     describe('the blast radius — exactly two seams, deliberately independent', () => {
         it('scans a population large enough to be meaningful', () => {
             // Without this, every set comparison below passes on an empty scan.
-            expect(SRC_FILES.length).toBeGreaterThan(MIN_SRC_FILES_SCANNED);
+            expect(ALL_FILES.length).toBeGreaterThan(MIN_FILES_SCANNED);
         });
 
-        it('is imported by exactly the two documented seams', () => {
+        it('is depended on by exactly the two documented seams, repo-wide', () => {
             expect([...liveSeams().keys()].sort()).toEqual([...DOCUMENTED_SEAMS]);
         });
 
@@ -322,6 +395,46 @@ describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', ()
             ).toEqual(['FixedSizeList']);
         });
 
+        it('sees a DYNAMIC import, which is not an ImportDeclaration', () => {
+            expect(
+                importedBindings(`const m = await import("react-window");`, TSX, MODULE),
+            ).toEqual(['(dynamic import)']);
+        });
+
+        it('sees a require(), which is not an ImportDeclaration either', () => {
+            expect(
+                importedBindings(`const { FixedSizeList } = require("react-window");`, TSX, MODULE),
+            ).toEqual(['(require)']);
+        });
+
+        it('sees a star re-export, which names no bindings to compare', () => {
+            expect(importedBindings(`export * from "react-window";`, TSX, MODULE)).toEqual([
+                '* (star re-export)',
+            ]);
+        });
+
+        it('sees a side-effect-only import', () => {
+            expect(importedBindings(`import "react-window";`, TSX, MODULE)).toEqual([]);
+        });
+
+        it('sees a namespace import', () => {
+            expect(importedBindings(`import * as RW from "react-window";`, TSX, MODULE)).toEqual([
+                '* as RW',
+            ]);
+        });
+
+        it('pins the MODULE name on a re-export alias too, not the exported one', () => {
+            expect(
+                importedBindings(`export { FixedSizeList as Rows } from "react-window";`, TSX, MODULE),
+            ).toEqual(['FixedSizeList']);
+        });
+
+        it('is not fooled by a require of a DIFFERENT module', () => {
+            expect(
+                importedBindings(`const x = require("react-window-fake");`, TSX, MODULE),
+            ).toBeNull();
+        });
+
         it('returns null for a file that imports something else entirely', () => {
             expect(
                 importedBindings(`import { AutoSizer } from "react-virtualized-auto-sizer";`, TSX, MODULE),
@@ -336,9 +449,29 @@ describe('react-window is held on v1 (#2552, docs/dependency-governance.md)', ()
 
         it('majorOf reads a range, a plain version and a v2 bump', () => {
             expect(majorOf('^1.8.11')).toBe(1);
+            expect(majorOf('~1.8.11')).toBe(1);
             expect(majorOf('1.8.11')).toBe(1);
             expect(majorOf('^2.3.1')).toBe(2);
+        });
+
+        it('majorOf REFUSES a string it cannot anchor, rather than guessing', () => {
+            // Each of these would yield a plausible wrong number under an
+            // unanchored `(\d+)\.` — which is why the pattern is anchored.
             expect(() => majorOf('latest')).toThrow();
+            expect(() => majorOf('npm:react-window@2.3.1')).toThrow();
+            expect(() => majorOf('github:bvaughn/react-window#1.8.11')).toThrow();
+            expect(() => majorOf('')).toThrow();
+        });
+
+        it('isSingleMajorPin admits only ranges that cannot cross a major', () => {
+            expect(isSingleMajorPin('^1.8.11')).toBe(true);
+            expect(isSingleMajorPin('~1.8.8')).toBe(true);
+            expect(isSingleMajorPin('1.8.11')).toBe(true);
+            // Reads as major 1 and installs 2.x the day it publishes.
+            expect(isSingleMajorPin('>=1.0.0')).toBe(false);
+            expect(isSingleMajorPin('*')).toBe(false);
+            expect(isSingleMajorPin('1.x')).toBe(false);
+            expect(isSingleMajorPin('>=1.0.0 <3.0.0')).toBe(false);
         });
     });
 });
