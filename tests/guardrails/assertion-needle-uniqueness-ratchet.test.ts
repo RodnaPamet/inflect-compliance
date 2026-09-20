@@ -245,7 +245,24 @@ const HIGH_MULTIPLICITY = 5;
 //   beside it, and any of them that also masks a read will lower it further —
 //   so whoever merges second re-measures on the merged tree rather than
 //   keeping this figure.
-const AMBIGUOUS_NEEDLE_BASELINE = 1365;
+//   1365 -> 1333 (2026-09-20, the second #2246 Class A batch — 22 read
+//   seams, 18 of which leave the Class A population). Same mechanism as the
+//   1419 -> 1365 note above: masking comments at the READ removes comment
+//   occurrences from what each needle is counted against, so 32 needles that
+//   were ambiguous only THROUGH PROSE became unique. One of the 22 masks
+//   `readPrismaSchema()` (`ai-system-registry`), which is again where a
+//   disproportionate share comes from.
+//
+//   Five assertions in this batch were not merely ambiguous but green ON the
+//   prose — the whole point of the Class A campaign — and were retargeted at
+//   the construct that ships; that is recorded in the sibling ratchet's
+//   history rather than here, because it moves THAT number.
+//
+//   SHARED STATE, MEASURED ON THIS TREE ONLY. Zero-headroom and shared with
+//   every open PR: 1333 is the live count of main@70369107d + this branch. A
+//   sibling Class A batch was in flight beside it, so whoever merges second
+//   re-measures on the merged tree rather than keeping this figure.
+const AMBIGUOUS_NEEDLE_BASELINE = 1333;
 // 237 (2026-09-18, #2622): −1 on the merge, for the same reason and by the same
 // method as the 1420 above — re-measured on the merged tree, not carried over
 // from either branch. It surfaced only after the other end was re-seated,
@@ -256,7 +273,13 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1365;
 // once the read is masked. It surfaced only after the other end was re-seated,
 // because the drift sentinel reports one end at a time. Shared state with
 // every open PR: re-measure on the merged tree.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 230;
+// 226 (2026-09-20): −4 from the second #2246 Class A batch, by the same
+// mechanism as the −7 above — a needle whose five-plus satisfying positions
+// were partly comment occurrences drops below the high-multiplicity threshold
+// once the read is masked. It surfaced only after the other end was re-seated,
+// because the drift sentinel reports one end at a time. Shared state with
+// every open PR: re-measure on the merged tree.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 226;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -425,6 +448,14 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 230;
 // literal. What made the site unanalysable was its READ PATH:
 // `read(`${AI}/feature-gate.ts`)` is a template literal, so the subject
 // could not be resolved to a constant path.
+// 1454 (2026-09-20): UNCHANGED by the second #2246 Class A batch, and that
+// is worth a line because the FIRST batch moved it. Masking at the read seam
+// is invisible to the skip buckets — a masked read still resolves to content.
+// The only retarget in this batch that could have moved a bucket is
+// `dashboard-widgets`, which replaced an inline
+// `fs.readFileSync(path.join(UI_DIR, file), 'utf-8')` with a `readWidget(file)`
+// helper: both are keyed by a variable, so both sit in `path-not-constant`,
+// measured at 917 before and 917 after. Left where it is rather than touched.
 const UNANALYSABLE_READ_BASELINE = 1454;
 
 /**

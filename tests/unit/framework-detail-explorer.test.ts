@@ -18,6 +18,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const PAGE = path.resolve(
     __dirname,
     '../../src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/page.tsx',
@@ -27,8 +29,11 @@ const EXPLORER = path.resolve(
     '../../src/components/frameworks/FrameworkExplorer.tsx',
 );
 
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
 function read(p: string): string {
-    return fs.readFileSync(p, 'utf-8');
+    return codeOf(fs.readFileSync(p, 'utf-8'));
 }
 
 describe('framework detail page — Epic 46 explorer wiring', () => {

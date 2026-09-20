@@ -16,6 +16,8 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const POLICIES_CLIENT = path.resolve(
     __dirname,
     '../../src/app/t/[tenantSlug]/(app)/policies/PoliciesClient.tsx',
@@ -25,8 +27,11 @@ const FILTER_DEFS = path.resolve(
     '../../src/app/t/[tenantSlug]/(app)/policies/filter-defs.ts',
 );
 
-const clientSrc = readFileSync(POLICIES_CLIENT, 'utf8');
-const filterDefsSrc = readFileSync(FILTER_DEFS, 'utf8');
+// Masked at the READ seam (#2246 Class A): comments blanked, string
+// literals kept, offsets preserved — so a token that survives only in
+// a comment can no longer satisfy an assertion below.
+const clientSrc = codeOf(readFileSync(POLICIES_CLIENT, 'utf8'));
+const filterDefsSrc = codeOf(readFileSync(FILTER_DEFS, 'utf8'));
 // Search placeholder + column headers migrated to next-intl; resolve keys
 // against the en catalog.
 const EN_POLICIES = JSON.parse(
@@ -126,8 +131,15 @@ describe('Policies list — Epic 45.1 shell + column wiring', () => {
         expect(clientSrc).not.toMatch(/\{p\.owner\.email\}/);
     });
 
-    it('Status column reads labels from POLICY_STATUS_LABELS (single source of truth)', () => {
-        expect(clientSrc).toContain('POLICY_STATUS_LABELS');
+    it('Status column reads labels from the shared label builder (single source of truth)', () => {
+        // #2246 Class A — this asserted the string 'POLICY_STATUS_LABELS',
+        // which no longer exists in the component: the labels moved behind
+        // `buildPolicyStatusLabels()` in filter-defs.ts and the old name
+        // survives only in three comments. Pin the import AND the call, so
+        // deleting either fails.
+        expect(clientSrc).toContain('buildPolicyStatusLabels');
+        expect(clientSrc).toContain('policyStatusLabels[status]');
+        expect(filterDefsSrc).toContain('export function buildPolicyStatusLabels');
         // STATUS_BADGE in the page maps every PolicyStatus enum
         // value — drift here would render an unstyled badge for any
         // missing key.
