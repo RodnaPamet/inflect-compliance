@@ -190,7 +190,16 @@ const RENDERED_TEST_FLOOR = 289;
 // measured in this tree with `ls tests/e2e/*.spec.ts | wc -l` = 49 (the extra
 // one over the previous floor arrived from another branch, which is why this
 // takes the MEASURED count rather than 48).
-const E2E_SPEC_FLOOR = 49;
+// 49 → 54 (2026-09-20): `agentic-surface-with-data.spec.ts`. The suite reached
+// exactly ONE agentic route (`/agents`) and posted to two endpoints, so every
+// other agentic page had only ever rendered EMPTY — in CI and in production
+// alike. The new spec seeds an agent, a run and a receipt through the real APIs
+// and walks the rest, and found `/agents/receipts` throwing an RSC boundary
+// error on its first row: a defect no layer could see, because the offending
+// prop renders only when the list is non-empty. MEASURED at 54, not 50 — four
+// of the five arrived from other branches, which is exactly why this comment
+// records the measurement rather than the arithmetic.
+const E2E_SPEC_FLOOR = 54;
 const REGISTRY_FLOOR = 5;
 
 /** Max a live count may exceed its floor before the floor must rise. */
