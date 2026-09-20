@@ -199,7 +199,14 @@ export interface ClassAReport {
      * admits, not what the conversion campaign drains. The `.sql` control in
      * `raw-source-assertion-ratchet` was written on the raw count and went
      * red the first time somebody took this ratchet's advice on a migration
-     * seam — raw `.sql` 66 → 48 while admitted `.sql` stayed at 122.
+     * seam — the #2246 third batch took raw `.sql` 76 → 48 across its two
+     * halves while admitted `.sql` stayed at 122. Both figures are per-scope
+     * and neither substitutes for the other: converting the six Part A seams
+     * ALONE reaches 58, which is still above the floor, so the control did
+     * not actually cross it until Part B's two migration-reading files
+     * (`p5a-snapshots-table-sidebar` 7 sites, `device-connector` 3) landed in
+     * the same diff. A floor under a draining population is one conversion
+     * away from red whichever half spends the last of its headroom.
      */
     readonly lexableByExtension: Readonly<Record<string, number>>;
     readonly lexableFilesByExtension: Readonly<Record<string, number>>;

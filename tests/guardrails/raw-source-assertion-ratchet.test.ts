@@ -57,7 +57,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { testFilesUnder } from '../helpers/assertion-reach';
-import { analyseClassA, type ClassAReport } from '../helpers/raw-source-assertions';
+import {
+    analyseClassA,
+    LEXABLE_EXTENSIONS,
+    type ClassAReport,
+} from '../helpers/raw-source-assertions';
 import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 /**
@@ -236,8 +240,9 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     `rq3-6-loss-event-register` (18 raw `.sql` sites between them). Each
  *     gains a separately named reader — `readSql(rel)`, or `readSqlAbs(abs)`
  *     where the call site already joins `migDir` — the language split #2679
- *     established; `read` stays on `codeOf` for the 76 `.ts` / `.tsx` /
- *     `.prisma` sites in the same six files, and the JSON fixture in
+ *     established; `read` stays on `codeOf` for the 116 `.ts` / `.tsx` /
+ *     `.prisma` sites in the same six files — 86 `.ts`, 21 `.tsx`,
+ *     9 `.prisma` — and the JSON fixture in
  *     `ai-gov` keeps its raw reader. WHICH EXTENSIONS FLOW THROUGH EACH
  *     HELPER WAS RE-DERIVED PER FILE rather than assumed: all six read
  *     exactly one migration each and every non-`.sql` read in them was
@@ -582,6 +587,51 @@ describe('Class A — assertions satisfied by prose', () => {
             Object.values(r.unlexableByExtension).reduce((a, b) => a + b, 0),
         ).toBe(r.unlexableLanguageSites);
 
+        // THE LEXABLE HALF OF THE SAME PARTITION, and it was outside this sum
+        // for exactly one diff. `lexableByExtension` /
+        // `lexableFilesByExtension` were added so the `.sql` liveness control
+        // below could stand on a conversion-invariant quantity, and nothing
+        // here counted them. Measured on that tree: wrapping the two
+        // bookkeeping lines in `analyseClassA` in `if (ext !== '.prisma')`
+        // dropped 155 sites out of the histogram entirely and left this file
+        // 16/16 GREEN — the one test whose stated purpose is catching an
+        // unaccounted site could not see 155 of them. A per-extension
+        // histogram nobody sums is a denominator nobody checks, which is the
+        // same defect one level up from the one this ratchet polices.
+        expect(
+            Object.values(r.lexableByExtension).reduce((a, b) => a + b, 0),
+        ).toBe(r.rawSites.length + r.maskedSites);
+
+        // …and the two histograms range over the SAME extensions. The site
+        // counter and the file counter are separate statements, so one can be
+        // skipped while the other is not, and the sum above sees only the
+        // first of them.
+        expect(Object.keys(r.lexableFilesByExtension).sort()).toEqual(
+            Object.keys(r.lexableByExtension).sort(),
+        );
+
+        // Per extension, a file count is bounded by its own site count: a
+        // counted extension holds at least one file, and cannot hold more
+        // distinct files than the sites they were counted from.
+        for (const [ext, siteCount] of Object.entries(r.lexableByExtension)) {
+            expect(r.lexableFilesByExtension[ext]).toBeGreaterThan(0);
+            expect(r.lexableFilesByExtension[ext]).toBeLessThanOrEqual(siteCount);
+        }
+
+        // The partition is taken over ONE set, so no extension may sit on
+        // both sides of it. The sums above already catch a dropped `continue`
+        // (it double-counts against `wholeFileReads`); what this adds is the
+        // domain — a second extension set, or a bucket keyed off something
+        // other than `LEXABLE_EXTENSIONS`, balances every sum above and still
+        // files a language under the wrong exclusion story.
+        for (const ext of Object.keys(r.lexableByExtension)) {
+            expect(LEXABLE_EXTENSIONS.has(ext)).toBe(true);
+            expect(r.unlexableByExtension[ext]).toBeUndefined();
+        }
+        for (const ext of Object.keys(r.unlexableByExtension)) {
+            expect(LEXABLE_EXTENSIONS.has(ext)).toBe(false);
+        }
+
         // Positive control on the scan itself: an empty selection is also
         // what a broken walk returns, so assert the denominator is real.
         expect(r.filesExamined).toBeGreaterThan(2000);
@@ -614,11 +664,23 @@ describe('Class A — assertions satisfied by prose', () => {
         // was the one assertion in this file that a CORRECT Class A
         // conversion could redden: masking a migration's read seam moves its
         // sites from raw to masked without removing a single read. The #2246
-        // batch that converted the six uncredited `.sql` seams took raw
-        // `.sql` 66 → 48 and tripped the floor, while the number of `.sql`
-        // reads the analyser admits did not move at all — 122 before and
-        // after. Raw + masked is invariant under the fix this ratchet exists
-        // to encourage, which is the property a liveness control needs.
+        // third batch took raw `.sql` 76 → 48 ACROSS BOTH ITS HALVES and
+        // tripped the floor, while the number of `.sql` reads the analyser
+        // admits did not move at all — 122 before and after. Raw + masked is
+        // invariant under the fix this ratchet exists to encourage, which is
+        // the property a liveness control needs.
+        //
+        // WHICH HALF SPENT THE HEADROOM IS NOT WHICH HALF NAMED THE SEAMS,
+        // and the two figures are separately measured rather than one
+        // rounded to the other. The six uncredited `.sql` seams (Part A)
+        // carry 18 raw `.sql` sites, so converting them ALONE lands on 58 —
+        // above this floor, which would still have passed. 48 is reached only
+        // once Part B's two migration-reading files convert as well
+        // (`p5a-snapshots-table-sidebar` 7 raw `.sql` sites,
+        // `device-connector` 3). A floor over a draining population does not
+        // record which conversion crossed it; it just goes red for whoever is
+        // holding it, which is the argument for not standing on that
+        // population at all.
         //
         // Both halves still say what they said: the first that `.sql` reads
         // EXIST in quantity, the second that they are spread across real

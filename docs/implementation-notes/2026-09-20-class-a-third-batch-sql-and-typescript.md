@@ -37,8 +37,8 @@ const readSqlAbs = (abs: string) => sqlCodeOf(fs.readFileSync(abs, 'utf8'));
 (`audit-s1`, `audit-s3`), keeping the call-site shape #2679 settled on.
 
 **Which extensions flow through each helper was re-derived per file, not
-assumed.** Across the six: **18 `.sql` sites (all raw), 76 non-`.sql` sites
-(all already masked)** — 54 `.ts`, 13 `.tsx`, 9 `.prisma`. That is why
+assumed.** Across the six: **18 `.sql` sites (all raw), 116 non-`.sql` sites
+(all already masked)** — 86 `.ts`, 21 `.tsx`, 9 `.prisma`. That is why
 converting these six alone returns the count to 338: they carry no other raw
 read. Measured, not inferred from the +6.
 
@@ -141,9 +141,15 @@ that shape requires, and this diff is already four retargets deep.
 - **One guard went red on a correct conversion, and the guard was wrong.**
   `raw-source-assertion-ratchet`'s liveness control for the `.sql` gate
   asserted `rawSites.filter(… '.sql').length > 50`. But masking a migration's
-  read seam MOVES its sites from raw to masked — it removes no read — so Part
-  A took raw `.sql` 66 → 48 and tripped the floor while the count of `.sql`
-  reads the analyser ADMITS stayed at 122. A liveness control that stands on
+  read seam MOVES its sites from raw to masked — it removes no read — so this
+  batch took raw `.sql` 76 → 48 and tripped the floor while the count of `.sql`
+  reads the analyser ADMITS stayed at 122. **Part A alone is 76 → 58, which
+  clears the floor**; 48 needs Part B's two migration-reading files as well
+  (`p5a-snapshots-table-sidebar` 7 raw `.sql` sites, `device-connector` 3), so
+  the half that named the seams is not the half that spent the headroom. Each
+  figure is measured in its own scope — the whole-batch number and the Part A
+  number are different quantities and neither stands in for the other. A
+  liveness control that stands on
   the population its own campaign drains reddens when somebody takes its
   advice, and the tempting fix (lower 50 to 40) buys one batch and re-arms the
   same trap. It now counts raw **+** masked through two additive
