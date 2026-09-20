@@ -214,6 +214,23 @@ export const CatalogTemplateSchema = z.object({
      *  Every curated fixture has carried this key since it was written; there
      *  was no column, so the seeder read it and dropped it. */
     defaultOwnerHint: z.string().optional(),
+    /**
+     * The three fields that PROJECT onto an installed Control.
+     *
+     * `ControlTemplateProjectionSource` carries code/title/category/objective/
+     * successCriteria/testingMethodology/defaultFrequency — and notably NOT
+     * `description`, because `Control` has no such column. So these three are
+     * the only prose a control can inherit, and until now the CatalogFile
+     * schema did not declare them: Zod strips unknown keys, so a fixture that
+     * carried them had them silently dropped before the applier ever saw them.
+     *
+     * `prisma/fixtures/internal-controls.json` fills all three on 151 of 151
+     * templates and reaches Controls through a different seeder, which is why
+     * the fields looked populated while every framework catalogue's were empty.
+     */
+    objective: z.string().optional(),
+    successCriteria: z.string().optional(),
+    testingMethodology: z.string().optional(),
     tasks: z.array(CatalogTaskSchema).default([]),
 });
 

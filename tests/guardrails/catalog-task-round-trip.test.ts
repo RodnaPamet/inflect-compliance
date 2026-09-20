@@ -20,6 +20,7 @@ import {
     CatalogTaskSchema,
     canonicalJson,
     taskContentHash,
+    CatalogTemplateSchema,
 } from '../../prisma/catalog-loader';
 import { REPO_ROOT } from '../helpers/repo-files';
 
@@ -85,6 +86,71 @@ describe('catalog task round trip', () => {
         // 205 on the day this was written. A floor, not an equality: content
         // PRs add tasks, and this must not need editing every time they do.
         expect(total).toBeGreaterThanOrEqual(200);
+    });
+});
+
+describe('the three projecting fields survive the whole chain', () => {
+    /**
+     * `objective`, `successCriteria` and `testingMethodology` are the ONLY prose
+     * a Control can inherit from its template — `ControlTemplateProjectionSource`
+     * declares exactly those three and not `description`, because `Control` has
+     * no description column.
+     *
+     * Every link in that chain was independently broken until #2664:
+     *
+     *   fixture   -> CatalogTemplateSchema   did not declare them, and Zod
+     *                                        STRIPS unknown keys, so they were
+     *                                        gone before anything saw them
+     *   schema    -> catalog-applier         never wrote them, on create or
+     *                                        on an existing row
+     *   template  -> Control                 projection was fine, and had
+     *                                        nothing to carry
+     *
+     * The middle two are visible in a diff. The first is not: a fixture author
+     * would have added the fields, seen green, and shipped nothing. That is what
+     * this asserts.
+     */
+    it('the loader schema preserves them rather than silently stripping them', () => {
+        const parsed = CatalogTemplateSchema.parse({
+            code: 'RT-1',
+            title: 'Round trip',
+            category: 'Test',
+            objective: 'To establish the thing the control exists to establish.',
+            successCriteria: 'The register exists and every row carries an owner.',
+            testingMethodology: 'Evidence:\nObtain the register and sample ten rows.',
+        });
+        expect(parsed.objective).toBe('To establish the thing the control exists to establish.');
+        expect(parsed.successCriteria).toBe('The register exists and every row carries an owner.');
+        expect(parsed.testingMethodology).toContain('Evidence:');
+    });
+
+    it('the applier writes them on create and one-way fills them on an existing row', () => {
+        // Source-level, because the DB round trip lives in
+        // tests/integration/framework-catalog-delivery.test.ts. Comments are
+        // stripped first: this file's own prose names all three fields, so a
+        // raw match would pass on the explanation rather than the code.
+        const src = fs.readFileSync(path.join(REPO_ROOT, 'prisma/catalog-applier.ts'), 'utf-8');
+        const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+        for (const field of ['objective', 'successCriteria', 'testingMethodology']) {
+            // written on create
+            expect(code).toContain(`${field}: t.${field} ?? null`);
+            // and filled on an existing row, only when it is empty
+            expect(code).toContain(`existing.${field} == null && t.${field}`);
+        }
+    });
+
+    it('the projection still carries exactly these three', () => {
+        // If a fourth prose field is ever added to Control, this is where the
+        // omission shows up — the projection is the single seam and this list
+        // is the claim about it.
+        const src = fs.readFileSync(
+            path.join(REPO_ROOT, 'src/app-layer/usecases/control/template-projection.ts'),
+            'utf-8',
+        );
+        const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+        expect(code).toContain('objective: template.objective');
+        expect(code).toContain('successCriteria: template.successCriteria');
+        expect(code).toContain('testingMethodology: template.testingMethodology');
     });
 });
 
