@@ -77,6 +77,31 @@ async function main() {
            AND (t.objective IS NOT NULL OR t."successCriteria" IS NOT NULL OR t."testingMethodology" IS NOT NULL)
     `);
 
+    // POSITIVE CONTROL. `Control` carries FORCE ROW LEVEL SECURITY, so a
+    // connection as `app_user` with no tenant context set sees ZERO rows —
+    // and this script would then print a confident "Nothing to fill" and exit
+    // 0, which is indistinguishable from a job that had nothing to do. That is
+    // the worst available outcome: it reads as success and leaves every
+    // control blank.
+    //
+    // The distinction is between "no rows match" and "no rows are VISIBLE", so
+    // the denominator has to be measured separately from the selection. Run
+    // this as a role the `superuser_bypass` policy exempts, or wrap it in a
+    // tenant context; do not make it pass by lowering this check.
+    const [{ n: visibleControls }] = await prisma.$queryRawUnsafe<{ n: number }[]>(
+        `SELECT count(*)::int AS n FROM "Control"`,
+    );
+    if (visibleControls === 0) {
+        console.error('REFUSING TO REPORT A ZERO: no Control rows are visible at all.');
+        console.error('');
+        console.error('This is a blind run, not an empty one. `Control` has FORCE ROW LEVEL');
+        console.error('SECURITY, so a connection without tenant context or superuser bypass');
+        console.error('sees nothing and every count below would read 0 — like success.');
+        console.error('Check which role DATABASE_URL connects as before trying again.');
+        await prisma.$disconnect();
+        process.exit(1);
+    }
+
     const perTenant = new Map<string, number>();
     const perField = { objective: 0, successCriteria: 0, testingMethodology: 0 };
     let touched = 0;
@@ -118,9 +143,14 @@ async function main() {
     console.log(`  testingMethodology    ${perField.testingMethodology}`);
     console.log(`tenants affected        ${perTenant.size}`);
     for (const [t, n] of [...perTenant].sort((a, b) => b[1] - a[1])) console.log(`  ${t}  ${n}`);
+    // Print the denominator beside the answer: "0 to change" means something
+    // completely different at 0 visible controls than at 893, and the line
+    // above cannot tell you which you are looking at.
+    console.log(`controls visible        ${visibleControls}  (denominator)`);
     if (touched === 0) {
-        console.log('\nNothing to fill. If that is unexpected, check the TEMPLATE rows carry the');
-        console.log('fields — they only do after a deploy re-seeds the catalogue (step 3 above).');
+        console.log('\nNothing to fill, over a non-empty population. If that is unexpected,');
+        console.log('check the TEMPLATE rows carry the fields — they only do after a deploy');
+        console.log('re-seeds the catalogue (step 3 above).');
     }
     await prisma.$disconnect();
 }
