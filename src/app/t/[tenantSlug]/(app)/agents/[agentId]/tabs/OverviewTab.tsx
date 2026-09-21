@@ -56,6 +56,28 @@ interface AgentDetail {
     status: 'DRAFT' | 'ACTIVE' | 'SUSPENDED' | 'RETIRED';
     riskTier: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL' | null;
     riskTierScoredAt: string | null;
+    /**
+     * WHICH ENGINE this agent's runs would use, and why it is not the
+     * configured one when it is not.
+     *
+     * A TENANT-level fact arriving on an agent payload, like
+     * `registrationEnforced` beside it — the register's GET resolves both in
+     * the same breath precisely so a tab that owns its own fetch does not need
+     * a second endpoint for one enum.
+     *
+     * `driverReason: null` means the configured driver IS in force. Every
+     * other value names the term that narrowed it, which is the difference
+     * between "static by choice" and "static because this build has no flue
+     * driver" — and an operator who has switched flue on deserves to be told
+     * which of those they are looking at.
+     */
+    driver: 'static' | 'flue';
+    driverReason:
+        | 'ENV_DISABLED'
+        | 'TENANT_NOT_OPTED_IN'
+        | 'UNRECOGNISED_SETTING'
+        | 'DRIVER_NOT_IMPLEMENTED'
+        | null;
     vendorId: string | null;
     /**
      * The supplier, now that the register's select carries
@@ -364,6 +386,22 @@ export function OverviewTab({
                         unreadability. */}
                     <Fact label={t('agentDetail.overview.autonomyLabel')} wide>
                         <AutonomyScale level={agent.autonomyLevel} />
+                    </Fact>
+
+                    {/* THE ENGINE, and the reason when it was narrowed. Placed
+                        beside the model reference rather than in the header
+                        strip: both answer "what actually runs this", and an
+                        operator comparing a configured driver against the one
+                        in force is reading them together. */}
+                    <Fact label={t('agentDetail.overview.driverLabel')}>
+                        <span className="flex flex-wrap items-center gap-tight">
+                            {t(`agentDetail.overview.driverValue.${agent.driver}`)}
+                            {agent.driverReason && (
+                                <span className="text-xs text-content-muted">
+                                    {t(`agentDetail.overview.driverReason.${agent.driverReason}`)}
+                                </span>
+                            )}
+                        </span>
                     </Fact>
 
                     <Fact label={t('agentDetail.overview.modelRefLabel')}>

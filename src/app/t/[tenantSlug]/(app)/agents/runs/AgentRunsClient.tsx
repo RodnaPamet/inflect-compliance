@@ -21,6 +21,8 @@ export interface RunRow {
     status: string;
     stepCount: number;
     costTokens: number;
+    /** The engine that walked this run, as recorded on the row at its start. */
+    driver: 'STATIC' | 'FLUE';
     startedAt: string;
     completedAt: string | null;
     summary: string | null;
@@ -31,6 +33,19 @@ interface WorkflowOption {
     name: string;
     description: string;
 }
+
+/**
+ * The driver chip is rendered on EVERY row, including `STATIC`.
+ *
+ * Showing it only for `FLUE` would make "this run used the static engine" and
+ * "this row predates the column" look identical, which is the one distinction
+ * the chip exists to make. `neutral` for static and `info` for flue: the
+ * engine is not a health signal, so neither reads as good or bad.
+ */
+const DRIVER_VARIANT: Record<string, 'info' | 'neutral'> = {
+    STATIC: 'neutral',
+    FLUE: 'info',
+};
 
 const STATUS_VARIANT: Record<string, 'info' | 'success' | 'warning' | 'error' | 'neutral'> = {
     RUNNING: 'info',
@@ -196,6 +211,9 @@ export function AgentRunsClient({
                             <div className="flex items-center justify-between gap-default">
                                 <div className="flex items-center gap-tight">
                                     <StatusBadge variant={STATUS_VARIANT[r.status] ?? 'neutral'}>{r.status}</StatusBadge>
+                                    <StatusBadge variant={DRIVER_VARIANT[r.driver] ?? 'neutral'}>
+                                        {t(`runs.driver.${r.driver}`)}
+                                    </StatusBadge>
                                     <span className="text-sm font-medium text-content-emphasis">{r.workflowKey}</span>
                                     <span className="text-xs text-content-subtle">
                                         {t('runs.stepMeta', {

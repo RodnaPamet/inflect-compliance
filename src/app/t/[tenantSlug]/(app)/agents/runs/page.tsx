@@ -42,6 +42,12 @@ export default async function AgentRunsPage({
         status: r.status,
         stepCount: r.stepCount,
         costTokens: r.costTokens,
+        // WHICH ENGINE walked it. Read off the row rather than re-resolved
+        // here: `WorkflowRun.driver` records the driver `selectRunDriver`
+        // actually chose at the run's start, and the tenant's configuration
+        // may have moved since. A list that re-resolved would relabel finished
+        // runs every time an operator flipped a switch.
+        driver: r.driver,
         startedAt: r.startedAt.toISOString(),
         completedAt: r.completedAt ? r.completedAt.toISOString() : null,
         summary: r.summary,

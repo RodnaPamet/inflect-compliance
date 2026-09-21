@@ -746,4 +746,36 @@ describe('the detail read reports live credentials, the supplier, and the enforc
         const again = await getRegisteredAgent(ctxFor(T1), agentId);
         expect(again.registrationEnforced).toBe(true);
     });
+
+    it('carries the run-engine decision down with the agent', async () => {
+        // WIRING, not logic. `resolveAgentDriver`'s four reasons are exercised
+        // against the pure function in `tests/unit/agent-driver-gate.test.ts`;
+        // duplicating them here would need the env switch flipped mid-suite and
+        // would test the same branch twice.
+        //
+        // What is only observable HERE is that the detail read surfaces the
+        // decision at all. The Overview tab owns its own fetch and reads
+        // `driver` / `driverReason` off this payload, so a read that dropped
+        // them would leave the chip rendering a translation key — visible to a
+        // person, invisible to every backend test.
+        const agent = await getRegisteredAgent(ctxFor(T1), agentId);
+
+        // `static` is a fact while `DRIVER_IMPLEMENTED.flue` is false, not a
+        // default: no configuration reachable from this suite can produce
+        // anything else.
+        expect(agent.driver).toBe('static');
+
+        // NOT NULL, and that is the assertion with teeth. `null` means "the
+        // configured driver IS in force" — the one thing that cannot be true
+        // here — so a field defaulted to null rather than resolved would pass
+        // an `toBeDefined()` check and read, on the page, as "nothing narrowed
+        // this".
+        expect(agent.driverReason).not.toBeNull();
+        expect([
+            'ENV_DISABLED',
+            'TENANT_NOT_OPTED_IN',
+            'UNRECOGNISED_SETTING',
+            'DRIVER_NOT_IMPLEMENTED',
+        ]).toContain(agent.driverReason);
+    });
 });

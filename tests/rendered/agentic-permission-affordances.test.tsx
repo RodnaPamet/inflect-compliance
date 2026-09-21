@@ -88,6 +88,7 @@ const RUN: RunRow = {
     status: 'RUNNING',
     stepCount: 3,
     costTokens: 1200,
+    driver: 'STATIC',
     startedAt: '2026-09-01T10:00:00.000Z',
     completedAt: null,
     summary: null,
