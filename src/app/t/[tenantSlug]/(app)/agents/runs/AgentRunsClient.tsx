@@ -214,7 +214,18 @@ export function AgentRunsClient({
                                     <StatusBadge variant={DRIVER_VARIANT[r.driver] ?? 'neutral'}>
                                         {t(`runs.driver.${r.driver}`)}
                                     </StatusBadge>
-                                    <span className="text-sm font-medium text-content-emphasis">{r.workflowKey}</span>
+                                    {/* The row's way into the step ledger. Until
+                                        this link existed the timeline was served
+                                        by the API and reachable from nowhere —
+                                        `agentic-route-inbound-links` exists
+                                        because two agentic pages shipped in
+                                        exactly that state. */}
+                                    <a
+                                        className="text-sm font-medium text-content-emphasis underline"
+                                        href={tenantHref(`/agents/runs/${r.id}`)}
+                                    >
+                                        {r.workflowKey}
+                                    </a>
                                     <span className="text-xs text-content-subtle">
                                         {t('runs.stepMeta', {
                                             steps: r.stepCount,
