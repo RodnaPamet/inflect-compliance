@@ -4947,7 +4947,8 @@
           "REVERSIBILITY_WORSENED": "Действията му станаха по-трудни за отмяна.",
           "PROVENANCE_WIDENED": "Вече зависи от външен доставчик.",
           "MODEL_CHANGED": "Моделът зад него е сменен."
-        }
+        },
+        "aboveCeilingBadge": "Над тавана · изисква {required}, ограничен до {ceiling}"
       },
       "coverage": {
         "summaryHeading": "Покритие на агентните рискове",
@@ -8180,6 +8181,28 @@
       "driver": {
         "STATIC": "Статичен двигател",
         "FLUE": "Двигател Flue"
+      },
+      "detail": {
+        "crumbAgents": "Агенти",
+        "loadingAria": "Зареждане на детайлите за изпълнението",
+        "emptyTitle": "Няма записани стъпки",
+        "emptyDesc": "Това изпълнение още не е записало стъпка.",
+        "seq": "Стъпка {seq}",
+        "inputLabel": "Вход",
+        "outputLabel": "Изход",
+        "kind": {
+          "READ": "Четене",
+          "PROPOSE": "Предложение",
+          "HUMAN_CHECKPOINT": "Човешка контролна точка",
+          "SYNTHESIS": "Синтез",
+          "MODEL_CALL": "Извикване на модел",
+          "TOOL_CALL": "Извикване на инструмент"
+        },
+        "metaStatus": "Статус",
+        "metaDriver": "Двигател",
+        "metaSteps": "Стъпки",
+        "metaTokens": "Токени",
+        "metaStarted": "Започнато"
       }
     },
     "quarantine": {

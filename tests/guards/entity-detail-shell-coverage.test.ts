@@ -41,6 +41,7 @@ interface Adopter {
  */
 const ADOPTED_PAGES: ReadonlyArray<Adopter> = [
   // Wave 1 (PR-4)
+  { page: "src/app/t/[tenantSlug]/(app)/agents/runs/[runId]/AgentRunDetailClient.tsx", entity: "WorkflowRun" },
   { page: "src/app/t/[tenantSlug]/(app)/controls/[controlId]/page.tsx", entity: "Control" },
   { page: "src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx", entity: "Asset" },
   { page: "src/app/t/[tenantSlug]/(app)/frameworks/[frameworkKey]/page.tsx", entity: "Framework" },
