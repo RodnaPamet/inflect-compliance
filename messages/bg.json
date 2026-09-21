@@ -4947,7 +4947,8 @@
           "REVERSIBILITY_WORSENED": "Действията му станаха по-трудни за отмяна.",
           "PROVENANCE_WIDENED": "Вече зависи от външен доставчик.",
           "MODEL_CHANGED": "Моделът зад него е сменен."
-        }
+        },
+        "aboveCeilingBadge": "Над тавана · изисква {required}, ограничен до {ceiling}"
       },
       "coverage": {
         "summaryHeading": "Покритие на агентните рискове",
