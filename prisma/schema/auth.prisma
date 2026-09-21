@@ -225,6 +225,7 @@ model Tenant {
   identityProviders                 TenantIdentityProvider[]
   entraGroupMappings                TenantEntraGroupMapping[]
   identityDepartmentGroupRules      IdentityDepartmentGroupRule[]
+  preHires                          PreHire[]
   invites                           TenantInvite[]
   memberships                       TenantMembership[]
   notificationSettings              TenantNotificationSettings?

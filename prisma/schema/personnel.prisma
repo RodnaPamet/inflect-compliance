@@ -240,6 +240,61 @@ model Device {
 /// training/background attach here. Synced from an HRIS or entered manually;
 /// idempotent by (tenantId, workEmail). TERMINATED employees whose identity
 /// account is still ACTIVE are the offboarded_access_removed gap signal.
+/// JML JOINER — the PRE-HIRE surface (#2715). Owner decision 2, reaffirmed
+/// 2026-09-21: pre-hires live OUTSIDE `Employee`, in their own model, with a
+/// pending-state surface. The column is NOT migrated.
+///
+/// WHY NOT A NULLABLE `Employee.workEmail`. That was considered and rejected:
+/// `workEmail` is `String` NOT NULL with `@@unique([tenantId, workEmail])`, and
+/// that constraint is LOAD-BEARING for the HRIS upsert path — it is the key the
+/// idempotent per-employee upsert addresses rows by. Relaxing a guarantee the
+/// ingest relies on, to serve a feature that does not exist yet, trades a
+/// certainty for a convenience.
+///
+/// HOW A PRE-HIRE ACTUALLY GETS DROPPED TODAY, re-derived rather than taken
+/// from the issue: the provider coerces a missing address to the EMPTY STRING
+/// (`providers/hris/index.ts:343`, `workEmail: r.workEmail || ''`), and
+/// `hris-sync.ts:241` then skips it with `if (!e.workEmail) continue`. So the
+/// NOT NULL column is not even the operative blocker at ingest — a falsy check
+/// is. That skip is left INTACT by this work: pre-hires do not enter through
+/// it.
+///
+/// THE SHORTCUT THIS EXISTS TO PREVENT. Having the joiner write
+/// `Employee.workEmail` directly makes the next HRIS upsert miss its
+/// `tenantId_workEmail` key and mint a DUPLICATE employee row. The address
+/// reaches the system of record through the HRIS write-back (#2716), never by
+/// this product writing the column.
+model PreHire {
+  id                    String        @id @default(cuid())
+  tenantId              String
+  /// The HRIS's own identifier — the anchor that survives the person having no
+  /// address. This is what reconciliation matches on, NOT a name and not an
+  /// email, because neither is stable or present.
+  externalId            String
+  fullName              String
+  department            String?
+  startDate             DateTime?
+  /// The address the joiner PLANNED or created, once it has one. Recorded here
+  /// so a pass that created an account and failed its HRIS write-back leaves
+  /// the derived identity somewhere recoverable — that is what makes
+  /// PARTIAL_NO_HRIS_WRITEBACK retryable rather than lost.
+  intendedAddress       String?
+  status                PreHireStatus @default(PENDING)
+  /// Set when this pre-hire becomes an `Employee`. Nullable because the whole
+  /// point of the row is the window before that is true.
+  reconciledEmployeeId  String?
+  reconciledAt          DateTime?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  tenant                Tenant        @relation(fields: [tenantId], references: [id])
+
+  /// One pre-hire per HRIS identifier per tenant. A second row for the same
+  /// person is the duplicate this model exists to avoid, arriving by another
+  /// door.
+  @@unique([tenantId, externalId])
+  @@index([tenantId])
+}
+
 model Employee {
   id                String           @id @default(cuid())
   tenantId          String
