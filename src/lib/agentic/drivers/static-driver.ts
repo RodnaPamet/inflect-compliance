@@ -355,6 +355,42 @@ async function executeSteps(
                 context.outputs[step.label] = syn;
                 costTokens += estimateTokens(syn);
                 await recordStep(ctx, runId, seq, 'SYNTHESIS', { output: syn, status: 'DONE', label: step.label }, chainSeq);
+            } else {
+                // EXHAUSTIVE, and fail-closed — point 5 of the integration
+                // plan, which asks that `costTokens` accumulate across all
+                // kinds "so a loop cannot escape the cap by spending in a kind
+                // the counter ignores".
+                //
+                // The escape it names is not a missing addition; it is this
+                // chain having no final arm. `costTokens` only accumulates
+                // INSIDE the branches above, so a step kind matching none of
+                // them records nothing, charges nothing — and still advances
+                // `stepCount` and commits the context. A run could therefore
+                // report itself complete having executed a step it silently
+                // skipped, and the token delta charged below would be zero.
+                //
+                // Unreachable today: `WorkflowStepDef` is a closed four-member
+                // union and `HUMAN_CHECKPOINT` returned above, so TypeScript
+                // narrows `step` to `never` here. That is exactly the value —
+                // a FIFTH member cannot be added without this line failing to
+                // compile, which is what turns "somebody will remember to
+                // charge it" into a build error.
+                //
+                // `MODEL_CALL` and `TOOL_CALL` are not in that union: they are
+                // `WorkflowStepKind` values a driver RECORDS, not step shapes a
+                // definition declares, so this driver cannot meet them. The
+                // driver that does record them owes its own charging, and
+                // `tests/unit/workflow-step-kind-coverage.test.ts` is where
+                // that relationship is written down.
+                const unhandled: never = step;
+                void unhandled;
+                const status = await failRun(
+                    ctx,
+                    runId,
+                    `unsupported_step_kind: the static driver cannot execute ` +
+                        `${String((step as { kind?: unknown }).kind)} steps`,
+                );
+                return { status, stepFailures };
             }
 
             stepCount = seq + 1;
