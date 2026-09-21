@@ -53,6 +53,7 @@ import {
 import { reassessAgentAfterChangeInTx } from './agent-risk-assessment';
 import { ceilingForRiskTier, DENY_CEILING } from '@/lib/agentic/autonomy-ceiling';
 import { isAgentRegistrationEnforced } from '@/lib/agentic/agent-registration-gate';
+import { resolveDriverForTenant } from '@/lib/agentic/agent-driver-policy';
 import { KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
 import { listKillSwitches } from './agent-kill-switch';
 import { authorAiSystemEntry } from './ai-system';
@@ -625,15 +626,30 @@ function hasMcpCapability(scopes: unknown): boolean {
  */
 export async function getRegisteredAgent(ctx: RequestContext, id: string) {
     assertCanRead(ctx);
-    const [agent, registrationEnforced] = await Promise.all([
+    const [agent, registrationEnforced, driverDecision] = await Promise.all([
         runInTenantContext(ctx, (db) => RegisteredAgentRepository.getById(db, ctx, id)),
         isAgentRegistrationEnforced(ctx.tenantId),
+        // WHICH ENGINE this agent's runs would use, resolved the same way and in
+        // the same breath as the registration flag above. Both are tenant-level
+        // governance facts rather than columns on the agent, and the Overview
+        // tab needs them together — a tab owns its own fetch, so the
+        // alternative is a second endpoint for one enum.
+        resolveDriverForTenant(ctx.tenantId),
     ]);
-    // AFTER the pair resolves, not before the flag read is started: a 404 pays
-    // for one extra settings lookup, and the alternative — awaiting the agent
+    // AFTER the trio resolves, not before the flag reads are started: a 404 pays
+    // for two extra settings lookups, and the alternative — awaiting the agent
     // first — makes every successful read a second round trip.
     if (!agent) throw notFound('Registered agent not found');
-    return { ...agent, registrationEnforced };
+    return {
+        ...agent,
+        registrationEnforced,
+        driver: driverDecision.driver,
+        // WHY it is not what was configured, when it is not. `null` means the
+        // configured driver IS the one in force; every other value names the
+        // term that narrowed it, so the chip can say "static, because this
+        // build has no flue driver" rather than just "static".
+        driverReason: driverDecision.reason,
+    };
 }
 
 export async function createRegisteredAgent(ctx: RequestContext, input: unknown) {

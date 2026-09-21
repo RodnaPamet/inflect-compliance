@@ -191,6 +191,13 @@ interface Agent {
     aiSystem: { id: string; riskTier: 'PROHIBITED' | 'HIGH' | 'LIMITED' | 'MINIMAL' | null } | null;
     _count: { apiKeys: number };
     registrationEnforced: boolean;
+    driver: 'static' | 'flue';
+    driverReason:
+        | 'ENV_DISABLED'
+        | 'TENANT_NOT_OPTED_IN'
+        | 'UNRECOGNISED_SETTING'
+        | 'DRIVER_NOT_IMPLEMENTED'
+        | null;
 }
 
 function makeAgent(overrides: Partial<Agent> = {}): Agent {
@@ -211,6 +218,11 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
         // `TenantSecuritySettings` row reads as ENFORCING — so every test that
         // is not about the flag renders the enforcing copy.
         registrationEnforced: true,
+        // The state every tenant is in today: `DRIVER_IMPLEMENTED.flue` is
+        // false, so even a workspace with both switches on resolves to static
+        // with a named reason.
+        driver: 'static',
+        driverReason: 'TENANT_NOT_OPTED_IN',
         ...overrides,
     };
 }
@@ -742,5 +754,72 @@ describe('one lever, one word — this tab suspends, it does not kill', () => {
         expect(KILL.engagePrompt).toMatch(/workspace-wide or platform-wide/i);
         expect(KILL.engagePrompt).not.toMatch(/which suspending it does not/i);
         expect(JSON.stringify(EN)).not.toMatch(/kill[\s-]?switch/i);
+    });
+});
+
+/**
+ * WHICH ENGINE this agent's runs would use — and, when it is not the one
+ * configured, WHY NOT.
+ *
+ * Point 1 asks for "a driver chip on the Overview tab". The reason half is the
+ * part worth testing: `driverReason: null` means the configured driver is in
+ * force, and every other value names the term that narrowed it. Rendering the
+ * engine without the reason would tell an operator who has switched Flue on
+ * that they are running static, and not that the build has no Flue driver —
+ * which is the only actionable half of that sentence.
+ */
+describe('the Overview tab names the run engine, and why it was narrowed', () => {
+    const OV = (
+        jest.requireActual('../../messages/en.json') as {
+            admin: {
+                agentDetail: {
+                    overview: {
+                        driverLabel: string;
+                        driverValue: Record<string, string>;
+                        driverReason: Record<string, string>;
+                    };
+                };
+            };
+        }
+    ).admin.agentDetail.overview;
+
+    it('renders the engine', () => {
+        renderTab(makeAgent());
+        expect(screen.getByText(OV.driverLabel)).toBeInTheDocument();
+        expect(screen.getByText(OV.driverValue.static)).toBeInTheDocument();
+    });
+
+    it('names the reason when the configured driver is NOT the one in force', () => {
+        renderTab(makeAgent({ driver: 'static', driverReason: 'DRIVER_NOT_IMPLEMENTED' }));
+        expect(
+            screen.getByText(OV.driverReason.DRIVER_NOT_IMPLEMENTED),
+        ).toBeInTheDocument();
+    });
+
+    it('shows NO reason when the configured driver IS in force', () => {
+        // `null` is not "unknown" — it is the affirmative statement that
+        // nothing narrowed the choice. Rendering a reason here would invent a
+        // caveat that does not exist.
+        renderTab(makeAgent({ driver: 'flue', driverReason: null }));
+        expect(screen.getByText(OV.driverValue.flue)).toBeInTheDocument();
+        for (const reason of Object.values(OV.driverReason)) {
+            expect(screen.queryByText(reason)).toBeNull();
+        }
+    });
+
+    it('distinguishes the four reasons from each other', () => {
+        // A chip that rendered one hardcoded sentence would pass the case
+        // above. Each reason must reach the surface as its own copy.
+        const seen = new Set<string>();
+        for (const key of Object.keys(OV.driverReason)) {
+            const { unmount } = renderTab(
+                makeAgent({ driverReason: key as 'ENV_DISABLED' }),
+            );
+            const text = OV.driverReason[key];
+            expect(screen.getByText(text)).toBeInTheDocument();
+            seen.add(text);
+            unmount();
+        }
+        expect(seen.size).toBe(Object.keys(OV.driverReason).length);
     });
 });

@@ -4635,7 +4635,18 @@
         "retireBlockedLink": "Open the proposal queue",
         "retireIrreversible": "Suspension stops this agent just as completely and can be lifted. Retirement cannot.",
         "retireTypeToConfirm": "Type {name} to confirm",
-        "retireError": "Could not retire this agent."
+        "retireError": "Could not retire this agent.",
+        "driverLabel": "Run engine",
+        "driverValue": {
+          "static": "Static",
+          "flue": "Flue"
+        },
+        "driverReason": {
+          "ENV_DISABLED": "Flue is off for this deployment",
+          "TENANT_NOT_OPTED_IN": "this workspace has not opted in",
+          "UNRECOGNISED_SETTING": "the stored setting was not recognised",
+          "DRIVER_NOT_IMPLEMENTED": "this build has no Flue driver"
+        }
       },
       "risk": {
         "standingHeading": "Standing assessment",
@@ -8165,7 +8176,11 @@
       "awaitingApprovalPost": " queue, then Resume.",
       "needsWrite": "You have read access to this workspace but not write access, so this action is not yours to take. An administrator can grant it.",
       "abortConfirmTitle": "Abort this run?",
-      "abortConfirmBody": "This stops the {workflow} run mid-execution. Work already completed is not rolled back, and the run cannot be resumed afterwards — a new run starts from the beginning."
+      "abortConfirmBody": "This stops the {workflow} run mid-execution. Work already completed is not rolled back, and the run cannot be resumed afterwards — a new run starts from the beginning.",
+      "driver": {
+        "STATIC": "Static engine",
+        "FLUE": "Flue engine"
+      }
     },
     "quarantine": {
       "crumb": "Quarantine",
