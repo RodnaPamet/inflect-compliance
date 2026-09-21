@@ -339,7 +339,7 @@ describe('OI-3 — external uptime contract', () => {
             // One region failing is a network partition to that region; two is
             // the service. Verified live: sa-brazil-sao_paulo times out against
             // app.inflect.bg while the other five pass, so a `> 0` threshold
-            // would page continuously for a reachability quirk. See #2751.
+            // would page continuously for a reachability quirk. See #2752.
             expect(m.on_failure.condition).toMatch(/COUNT_FALSE > 1/);
         }
     });
