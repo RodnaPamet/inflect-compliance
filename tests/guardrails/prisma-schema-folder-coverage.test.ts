@@ -37,6 +37,7 @@ import * as path from 'path';
 import { REPO_ROOT, repoFiles, repoRelative } from '../helpers/repo-files';
 
 import { codeOf } from '../helpers/source-blocks';
+import { readPrismaSchema, readPrismaSchemaRaw } from '../helpers/prisma-schema';
 
 const SCHEMA_DIR = path.resolve(REPO_ROOT, 'prisma/schema');
 
@@ -115,6 +116,42 @@ describe('GAP-09 — multi-file Prisma schema layout', () => {
         const src = fs.readFileSync(entrypointPath, 'utf-8');
         expect(src).toMatch(/--schema=\.\/prisma\/schema(\b|\s|$)/);
         expect(src).not.toMatch(/--schema=\.\/prisma\/schema\.prisma/);
+    });
+
+    // #2246 Class A. `readPrismaSchema` masks at the seam, and
+    // `assertion-reach.ts` MIRRORS that: its `readPrismaSchema()` arm sets
+    // `trace.masked` and resolves the subject to `codeOf(schema)`. The two
+    // are separate code paths with no compiler link between them, and the
+    // failure is silent and one-directional — if the helper stopped masking,
+    // the analyser would keep crediting all 77 schema sites as masked and the
+    // Class A ratchet would report a clean population that isn't one. Nothing
+    // pinned them together, so this does.
+    it('readPrismaSchema masks at the seam, which the Class A analyser mirrors', () => {
+        const raw = readPrismaSchemaRaw();
+        const masked = readPrismaSchema();
+
+        // Counted, not matched. `expect(raw).toMatch(/^\s*\/\/\//m)` would say
+        // the same thing, but it is a whole-file read whose needle matches 3438
+        // times — a Class D ambiguous needle, and this ratchet's own population.
+        // Asserting on the COUNT keeps the teeth and stays out of it.
+        const docCommentLines = (s: string) =>
+            s.split('\n').filter((l) => /^\s*\/\//.test(l)).length;
+
+        // Positive control FIRST: with no comments to blank, everything below
+        // passes vacuously.
+        expect(docCommentLines(raw)).toBeGreaterThan(1000);
+        expect(masked).not.toEqual(raw);
+
+        // The contract the analyser encodes, stated once here.
+        expect(masked).toEqual(codeOf(raw));
+
+        // Offsets agree, so every indexOf/slice and /^…$/m anchor in the
+        // calling files lines up against either text.
+        expect(masked.length).toEqual(raw.length);
+        expect(masked.split('\n').length).toEqual(raw.split('\n').length);
+
+        // The raw twin really is raw — the other direction of the same pin.
+        expect(docCommentLines(masked)).toBe(0);
     });
 
     it('no test reads the legacy monolith path as a real file (only doc comments are allowed)', () => {

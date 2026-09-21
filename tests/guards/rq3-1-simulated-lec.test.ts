@@ -23,15 +23,32 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
-const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+// #2246 Class A / #2679 LANGUAGE SPLIT — comments are masked at the READ SEAM,
+// and WHICH masker depends on the language of the file being read.
+//
+// `codeOf` lexes TypeScript. Handing it a `.sql` file is the single worst
+// outcome available: every `--` comment survives verbatim while the call site
+// READS as masked. Migrations therefore go through `readSql`, which lexes
+// `--` and `/* */` (and nests, as Postgres does). TypeScript keeps `read`.
+// Which extension flows through which helper was re-derived in this file, not
+// assumed from the directory it lives in.
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
+const ROOT = path.resolve(__dirname, '../..');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(readRaw(rel));
+const readSql = (rel: string) => sqlCodeOf(readRaw(rel));
 const dashboard = read('src/app/t/[tenantSlug]/(app)/risks/dashboard/page.tsx');
 const mcPanel = read('src/app/t/[tenantSlug]/(app)/risks/dashboard/MonteCarloPanel.tsx');
 const analytics = read('src/app-layer/usecases/risk-analytics.ts');
+// The DELIBERATE raw twin (#2246). This file's own test draws the line:
+// "the docstring may reference the history; the SHAPE may not" — so the shape
+// assertions read MASKED and the demotion disclaimer, whose entire subject is
+// the docstring, reads RAW. Masked, that disclaimer could never pass again.
+const analyticsDoc = readRaw('src/app-layer/usecases/risk-analytics.ts');
 const engine = read('src/app-layer/usecases/monte-carlo.ts');
 const schema = readPrismaSchema();
-const migration = read('prisma/migrations/20260612000000_rq3_1_simulation_p80/migration.sql');
+const migration = readSql('prisma/migrations/20260612000000_rq3_1_simulation_p80/migration.sql');
 
 describe('RQ3-1 — the simulated curve is the only dashboard LEC', () => {
     test('the dashboard page renders no rank-based curve', () => {
@@ -57,7 +74,7 @@ describe('RQ3-1 — the simulated curve is the only dashboard LEC', () => {
         expect(analytics).not.toMatch(/lecPoints:/);
         // The demotion disclaimer — a future "simplify the docstring"
         // PR must not erase the reason the sketch is not an LEC.
-        expect(analytics).toMatch(/NOT a\s+\*?\s*simulated loss distribution/);
+        expect(analyticsDoc).toMatch(/NOT a\s+\*?\s*simulated loss distribution/);
         expect(analytics).toMatch(/CoverageSketchPoint/);
     });
 });
