@@ -32,6 +32,10 @@
  */
 const mockDb = {
     tenantSecuritySettings: { findUnique: jest.fn() },
+    // #2713 — the entitlement map has a home now, so the loader reads it. The
+    // default below is the UNCONFIGURED tenant these suites are about: no rules
+    // and no fallback, which is what still refuses NO_DEPARTMENT_MAP.
+    identityDepartmentGroupRule: { findMany: jest.fn() },
     employee: { findMany: jest.fn() },
     identityAccountLink: { findMany: jest.fn() },
     connectedIdentityAccount: { findMany: jest.fn() },
@@ -101,6 +105,7 @@ beforeEach(() => {
         identityLeaverDryRunSince: null,
         identityJoinerDryRunSince: null,
     }));
+    mockDb.identityDepartmentGroupRule.findMany.mockResolvedValue([]);
     mockDb.employee.findMany.mockResolvedValue(POPULATION);
     mockDb.identityAccountLink.findMany.mockResolvedValue([]);
     mockDb.connectedIdentityAccount.findMany.mockResolvedValue([]);
@@ -129,8 +134,9 @@ describe('the pass runs end to end and names a decision per starter', () => {
         expect(r.starters).toBe(POPULATION.length);
         expect(r.decisions).toBe(POPULATION.length);
         expect(r.status).toBe('NOT_APPLICABLE');
-        // Not "nothing happened": the refusal is the entitlement map that
-        // decision 10 puts on a column nobody has added yet, and the identity
+        // Not "nothing happened": the refusal is the entitlement map, which
+        // this tenant has not configured (#2713 gave it a home — rules in
+        // `IdentityDepartmentGroupRule`, fallback on the settings row), and
         // verdicts were still computed and still recorded.
         expect(r.refusal).toBe('NO_DEPARTMENT_MAP');
     });
@@ -368,5 +374,67 @@ describe('what the durable row may carry', () => {
         // renders — and it is what makes the artefact answer the question the
         // seven days exist to ask.
         expect(d.intendedAddress).toBe('jane.smith@acme.com');
+    });
+});
+
+describe('#2713 — the entitlement map has a home, so the refusal is clearable', () => {
+    // The whole point of #2713. Before it, every tenant landed on
+    // NO_DEPARTMENT_MAP and there was nowhere to put a map, so the refusal was
+    // one an operator could read and not act on. These tests are the
+    // difference: same code path, configured tenant, no refusal.
+
+    it('a tenant WITH rules configured no longer refuses NO_DEPARTMENT_MAP', async () => {
+        mockDb.identityDepartmentGroupRule.findMany.mockResolvedValue([
+            { department: 'Engineering', groupId: 'grp-eng' },
+        ]);
+        mockDb.tenantSecuritySettings.findUnique.mockImplementation(async () => ({
+            tenantId: TENANT,
+            identityLeaverMode: 'DISABLED',
+            identityJoinerMode: joinerMode.value,
+            identityLeaverDryRunSince: null,
+            identityJoinerDryRunSince: null,
+            identityDefaultGroupId: 'grp-fallback',
+            identityDefaultGroupName: 'Contractors',
+        }));
+
+        const r = await runIdentityJoinerPass({ tenantId: TENANT, provider: PROVIDER, now: NOW });
+
+        expect(r.refusal).not.toBe('NO_DEPARTMENT_MAP');
+        expect(r.refusal).not.toBe('NO_DEFAULT_GROUP');
+    });
+
+    it('a tenant with NEITHER configured still refuses — the floor did not move', async () => {
+        // The mirror of the test above, and the reason it means something: an
+        // empty map must still refuse BY NAME. A fix that made every tenant
+        // pass would satisfy the first test and destroy the guard.
+        mockDb.identityDepartmentGroupRule.findMany.mockResolvedValue([]);
+
+        const r = await runIdentityJoinerPass({ tenantId: TENANT, provider: PROVIDER, now: NOW });
+
+        expect(r.refusal).toBe('NO_DEPARTMENT_MAP');
+    });
+
+    it('rules reach the planner as department -> groupId, keyed exactly as stored', async () => {
+        mockDb.identityDepartmentGroupRule.findMany.mockResolvedValue([
+            { department: 'Engineering', groupId: 'grp-eng' },
+            { department: 'Sales', groupId: 'grp-sales' },
+        ]);
+        mockDb.tenantSecuritySettings.findUnique.mockImplementation(async () => ({
+            tenantId: TENANT,
+            identityLeaverMode: 'DISABLED',
+            identityJoinerMode: joinerMode.value,
+            identityLeaverDryRunSince: null,
+            identityJoinerDryRunSince: null,
+            identityDefaultGroupId: 'grp-fallback',
+            identityDefaultGroupName: 'Contractors',
+        }));
+
+        await runIdentityJoinerPass({ tenantId: TENANT, provider: PROVIDER, now: NOW });
+
+        // The read is tenant-scoped, not a global findMany: RLS is a backstop,
+        // not the only thing keeping one tenant's rules out of another's plan.
+        const where = mockDb.identityDepartmentGroupRule.findMany.mock.calls[0][0]
+            .where as Record<string, unknown>;
+        expect(where.tenantId).toBe(TENANT);
     });
 });

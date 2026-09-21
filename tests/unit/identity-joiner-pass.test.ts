@@ -71,6 +71,7 @@ function input(over: Partial<JoinerPlanInput> = {}): JoinerPlanInput {
         observedAddresses: [],
         departmentGroups: { Engineering: 'grp-eng' },
         defaultGroupId: 'grp-everyone',
+        defaultGroupName: 'Contractors',
         timeZone: 'Europe/Sofia',
         ...over,
     };

@@ -516,9 +516,21 @@ returns a snapshot *reader* below AUTOMATIC (`:397-404`), and that return sits *
 **Creation is three writes, not one — and the write-back makes four.** A disable is one PATCH. A
 create is user + credential + group, so `PARTIAL_NO_CREDENTIAL` and `PARTIAL_NO_GROUP` are real
 terminal states with no leaver analogue. Sequence so the recoverable half is last: create the
-account blocked, mint the TAP, assign the group, then enable. A failure at any step leaves an account
-nobody can sign into (recoverable) rather than one anyone can sign into with no entitlements (not
-observable).
+account blocked, **assign the group, then mint the credential**, then enable. A failure at any step
+leaves an account nobody can sign into (recoverable) rather than one anyone can sign into with no
+entitlements (not observable).
+
+> **CORRECTED 2026-09-21 (#2714).** An earlier revision of this paragraph read *"create the account
+> blocked, mint the TAP, assign the group, then enable"* — credential BEFORE group. That contradicted
+> **owner decision 3 (2026-09-19)**: *"the pass is issued through Entra — after adding the user to the
+> security group. after that it's SSO login."* The owner's wording governs; the design predated it.
+>
+> The two orderings are not cosmetic variants: they decide whether a credential can exist for an
+> account that has no entitlements yet. Note that the safety argument in this paragraph did not have
+> to change to accommodate the decision — it **agrees** with it. Sequencing so the recoverable half is
+> last puts the credential last, because an account nobody can sign into is recoverable while one
+> anyone can sign into with no entitlements is not observable. The design's own reasoning pointed at
+> decision 3's order; only the sketch in the sentence above was wrong.
 
 **Then the HRIS write-back, which is a fourth write to a different vendor** and is the one with no
 prior art in this repo at all. Its terminal state — `PARTIAL_NO_HRIS_WRITEBACK` — is the orphan case

@@ -51,7 +51,8 @@ are one value.
   the setting *and* an operator can see what it did. Nothing dispatches the
   planner (decision 9 wants per-tenant-timezone dispatch and nothing stores a
   timezone; `dispatchJobId` floors on UTC buckets), and decision 10's
-  department→group map has no column, so every plan today refuses
+  department→group map had no column until #2713 gave it one, so a plan for a
+  tenant that has not configured it still refuses
   `NO_DEPARTMENT_MAP` — a refusal an operator cannot clear. Flipping the flag now
   would enable the widen control over a direction that produces nothing: the same
   settable-and-inert defect the issue exists to close, one layer along. The

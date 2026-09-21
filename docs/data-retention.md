@@ -116,6 +116,7 @@ a `userId` but stores no contact PII).
 | `FrameworkPack` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `FrameworkRequirement` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `FrameworkRequirementOrder` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
+| `IdentityDepartmentGroupRule` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion. One row per department→security-group rule for the JML joiner (#2713); holds no personal data — a department string and a directory group id. |
 | `Incident` | Regulatory artefact | maybe | None today — indefinite while tenant active; `description` encrypted | NIS2 Article 23 record — retention is a **legal** decision (incident records often have multi-year statutory retention); **needs legal input** |
 | `IncidentNotification` | Regulatory artefact | maybe | None today — cascade on parent incident delete only; `submissionNote` encrypted | The filed Article 23 report + authority case ref — retention tracks the parent incident; **needs legal input** |
 | `IncidentTimelineEntry` | Regulatory artefact | maybe | None today — cascade on parent incident delete only; `entry` encrypted | Forensic incident narrative — retention tracks the parent incident; **needs legal input** |
@@ -164,6 +165,7 @@ a `userId` but stores no contact PII).
 | `Organization` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `PackTemplateLink` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `PasswordResetToken` | Security ephemeral | No | `expiresAt` expiry (security) | DEFINED — expiry-driven |
+| `PreHire` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion. The JML joiner's pre-hire surface (#2715): a person the HRIS has hired who has no mailbox yet. Holds a name, department and start date — personal data, but the same fields the `Employee` row will carry once reconciled, and for a strictly shorter window. |
 | `Policy` | Business record | No | Soft-delete purge only (90-day `data-lifecycle` sweep) | Indefinite while tenant active. The `retentionUntil` column exists but has NO writer anywhere in the product — no schema field, no DTO, no API field, no UI, no job — so it was removed from `RETENTION_MODELS` on 2026-08-12 rather than left as a sweep that could never match. |
 | `PolicyAcknowledgement` | Business record | maybe | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `PolicyAcknowledgementAssignment` | Business record | maybe | None today — cascade on parent policy-version/tenant delete only | Indefinite while tenant active — review w/ compliance |

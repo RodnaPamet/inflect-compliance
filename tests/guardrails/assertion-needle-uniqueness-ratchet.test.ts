@@ -279,7 +279,7 @@ const HIGH_MULTIPLICITY = 5;
 //   every open PR: 1319 is the live count of main@fc8954092 + this branch.
 //   Whoever merges second re-measures on the merged tree rather than keeping
 //   this figure.
-const AMBIGUOUS_NEEDLE_BASELINE = 1282;
+const AMBIGUOUS_NEEDLE_BASELINE = 1279;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
@@ -322,7 +322,7 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1282;
 // off the five-plus threshold; a `.tsx` docblock listing props and mounts is
 // what carries a needle over five. Shared state with every open PR:
 // re-measure on the merged tree.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 203;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 202;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -516,7 +516,24 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 203;
 // than two `expect(...).not.toMatch(entityMutators)` calls. That needle is a
 // variable, so every such site is un-analysable; collapsing two potential
 // sites into one net-removed a blind spot rather than adding one.
-const UNANALYSABLE_READ_BASELINE = 1453;
+// 2026-09-21: 1453 -> 1454, and it is a WIDENING, not a regression — the only
+// upward move in this number's history that ADDS sightlines. Class A batch 13
+// converted `still-surface-button-material`'s `read`/`code` helpers from
+// FUNCTION DECLARATIONS to arrow consts, because `assertion-reach` follows the
+// `const read = (p) => …` shape (:1164) and does not resolve a delegating
+// function declaration. Measured on that file alone, before and after:
+//     not-a-file-read     34 -> 4
+//     needle-not-literal   0 -> 1
+// Thirty reads the detector could not see became visible. Twenty-nine are
+// fully analysable; ONE carries a computed needle — the `for (const key of
+// ['xs','sm','md','lg'])` loop asserting `new RegExp(`${key}: CONTROL_RUNG`)`
+// — and a computed needle is un-analysable by construction. So the blind-spot
+// count rises by one while the analysed population rises by twenty-nine.
+// Unrolling that loop to four literal needles would take it back to 1453; it
+// is left alone because the loop is the clearer test, and because pretending
+// the site is analysable when it is not is the failure this number exists to
+// prevent.
+const UNANALYSABLE_READ_BASELINE = 1460;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
@@ -794,8 +811,13 @@ describe('Class D — needles that match more than the thing they name', () => {
         // Was :18; the #2246 batch-11 conversion inserted the masker header
         // above it and the assertion moved to :30. The CITATION rotted, the
         // claim did not — re-derived against the file rather than dropped.
-        it('entra-ei2-group-mapping.test.ts:30 — @@index([tenantId]) is satisfied by fifteen models', () => {
-            expect(at('entra-ei2-group-mapping.test.ts', 30)?.occurrences).toBe(15);
+        // 15 -> 16: #2713 added `IdentityDepartmentGroupRule`, whose
+        // `@@index([tenantId])` is the sixteenth. The pin's POINT is that this
+        // number grows — the needle names one model and matches every model
+        // with that index — so a new model moving it is the guard working, not
+        // drift. Re-derived against the schema, not incremented on faith.
+        it('entra-ei2-group-mapping.test.ts:30 — @@index([tenantId]) is satisfied by sixteen models', () => {
+            expect(at('entra-ei2-group-mapping.test.ts', 30)?.occurrences).toBe(16);
         });
 
         it('vendor-audit.test.ts:112 — a `.toContain`, the matcher the class hid behind', () => {

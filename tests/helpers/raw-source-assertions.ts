@@ -144,6 +144,15 @@ export const LEXABLE_EXTENSIONS: ReadonlySet<string> = new Set([
     '.cjs',
     '.prisma',
     '.sql',
+    // #2727. Added in the same order the `.sql` half used: the seams that
+    // spelled the WRONG masker were corrected FIRST, then the extension was
+    // admitted. Three did — two `.css` reads and one `.md` read routed through
+    // `codeOf` by an earlier batch, each reading as masked while lexing a
+    // language it is not for. Admitting the extension over those would have
+    // credited them as masked, which is strictly worse than leaving the
+    // language out.
+    '.md',
+    '.css',
 ]);
 
 /**

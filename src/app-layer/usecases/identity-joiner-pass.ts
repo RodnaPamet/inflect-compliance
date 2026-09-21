@@ -190,6 +190,17 @@ export interface JoinerDecision {
     readonly groupId: string | null;
     readonly groupIsDefaultFallback: boolean;
     /**
+     * The fallback group's NAME, and only when the fallback was actually taken.
+     *
+     * Decision 5 binds this: "a typo'd or brand-new department is otherwise
+     * indistinguishable from a mapped one". `groupIsDefaultFallback` says THAT
+     * a fallback happened; without the name it does not say TO WHAT, which is
+     * the difference between an operator reading "fell back to Contractors,
+     * deliberately" and "fell back to something, cause unknown". Null on a
+     * MAPPED decision, because there was no fallback to name.
+     */
+    readonly defaultGroupName: string | null;
+    /**
      * Which namespaces the collision read actually covered. A literal list, so
      * widening it later is a visible diff and an old artefact cannot be re-read
      * as having promised more.
@@ -228,6 +239,12 @@ export interface JoinerPlanInput {
     readonly departmentGroups: Readonly<Record<string, string>> | null;
     /** Decision 5's configured fallback. Null is a refusal, not a silent skip. */
     readonly defaultGroupId: string | null;
+    /**
+     * The fallback's display name, stored beside its id rather than resolved
+     * at display time — a directory lookup is absent exactly when the
+     * directory call fails, which is when this most needs to be readable.
+     */
+    readonly defaultGroupName: string | null;
     /**
      * The tenant's IANA zone, for decision 9.
      *
@@ -401,6 +418,7 @@ function decide(
         readonly observed: ReadonlySet<string>;
         readonly departmentGroups: Readonly<Record<string, string>> | null;
         readonly defaultGroupId: string | null;
+        readonly defaultGroupName: string | null;
     },
 ): JoinerDecision {
     const base = {
@@ -410,6 +428,7 @@ function decide(
         department: candidate.department,
         groupId: null,
         groupIsDefaultFallback: false,
+        defaultGroupName: null,
         namespacesChecked: NAMESPACES_CHECKED,
     } as const;
 
@@ -593,10 +612,13 @@ function decide(
         outcome: 'PLANNED',
         reason: null,
         groupId: groupId ?? null,
-        // Decision 5's binding mitigation: a row recording only the department
-        // says a fallback happened but not TO WHAT, which is the mitigation
-        // stated and not implemented. Both names travel together.
+        // Decision 5's binding mitigation, now IMPLEMENTED (#2713): a row
+        // recording only the department says a fallback happened but not TO
+        // WHAT. Both names travel together — the department verbatim above,
+        // and the fallback group's name here, populated only when the fallback
+        // was actually taken.
         groupIsDefaultFallback: mapped === undefined,
+        defaultGroupName: mapped === undefined ? ctx.defaultGroupName : null,
     };
 }
 
@@ -669,6 +691,7 @@ export function planJoinerPass(input: JoinerPlanInput): JoinerPlan {
             observed,
             departmentGroups: input.departmentGroups,
             defaultGroupId: input.defaultGroupId,
+            defaultGroupName: input.defaultGroupName,
         }),
     );
     const planned = decisions.filter((d) => d.outcome === 'PLANNED');
@@ -694,17 +717,20 @@ export function planJoinerPass(input: JoinerPlanInput): JoinerPlan {
 
     // ── 5. Decisions 10 and 5 — the entitlement configuration.
     //
-    // Group membership is the privilege half of a create, which is why decision
-    // 10 puts the map on `TenantSecuritySettings`, behind the same OWNER gate as
-    // the ladder itself. Neither refusal is reachable-and-fixable today: the
-    // column does not exist, so every tenant lands on NO_DEPARTMENT_MAP. That is
-    // the honest state of the capability and it is reported as a refusal rather
-    // than as a plan with an empty group field.
+    // Group membership is the privilege half of a create, which is why both
+    // halves sit behind the OWNER gate. Decision 10 was REVISED 2026-09-21
+    // (#2713): the RULES live in `IdentityDepartmentGroupRule`, one row each
+    // so a rule carries its own provenance, and the SINGULAR fallback lives
+    // on `TenantSecuritySettings` as `identityDefaultGroupId` +
+    // `identityDefaultGroupName`. Both refusals below are now
+    // reachable-and-FIXABLE: a tenant that has configured neither still
+    // lands here, and an operator can clear it.
     if (!input.departmentGroups || Object.keys(input.departmentGroups).length === 0) {
         return refuse(
             'NO_DEPARTMENT_MAP',
-            'No department → security-group map is configured for this tenant (decision 10 puts ' +
-                'it on TenantSecuritySettings, behind the OWNER gate). Without it a create cannot ' +
+            'No department → security-group map is configured for this tenant (decision 10, as ' +
+                'revised 2026-09-21, puts the rules in IdentityDepartmentGroupRule and the singular ' +
+                'fallback on TenantSecuritySettings, both behind the OWNER gate). Without it a create cannot ' +
                 'say which group it would add the person to, and a create that grants no ' +
                 'entitlement is an account nobody can work from. The identity decisions below were ' +
                 'still computed.',

@@ -1,3 +1,4 @@
+import { codeOf } from '../helpers/source-blocks';
 /* eslint-disable @typescript-eslint/no-explicit-any -- test
  * mocks, fixtures, and adapter shims that mirror runtime contracts
  * (Prisma extensions, NextRequest mocks, JSON-loaded fixtures,
@@ -341,7 +342,7 @@ describe('Audit Readiness', () => {
             ];
             for (const file of routeFiles) {
                 if (!fs.existsSync(file)) continue;
-                const content = fs.readFileSync(file, 'utf8');
+                const content = codeOf(fs.readFileSync(file, 'utf8'));
                 expect(content).not.toMatch(/from\s+['"]@\/lib\/prisma['"]/);
                 expect(content).toMatch(/from\s+['"]@\/app-layer\/usecases\/audit-readiness['"]/);
             }
@@ -352,7 +353,7 @@ describe('Audit Readiness', () => {
             const path = require('path');
             const file = path.resolve(__dirname, '../../src/app/api/t/[tenantSlug]/audits/packs/[packId]/route.ts');
             if (!fs.existsSync(file)) return;
-            const content = fs.readFileSync(file, 'utf8');
+            const content = codeOf(fs.readFileSync(file, 'utf8'));
             expect(content).not.toMatch(/from\s+['"]@\/lib\/prisma['"]/);
         });
     });

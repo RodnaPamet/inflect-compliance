@@ -1217,6 +1217,23 @@ enum ConnectedAccountStatus {
 
 /// Employment lifecycle for a personnel record (PR-4). TERMINATED drives
 /// the offboarded-access check against ConnectedIdentityAccount.
+/// JML JOINER — where a pre-hire sits relative to becoming an `Employee` (#2715).
+///
+/// A PENDING-STATE SURFACE, which is owner decision 2's actual requirement. A
+/// pre-hire is not an Employee with missing fields; it is a person the HRIS has
+/// hired and not yet given a mailbox. Modelling that as a state on its own row
+/// is what keeps `Employee.workEmail` NOT NULL and its
+/// `@@unique([tenantId, workEmail])` intact.
+enum PreHireStatus {
+  /// The HRIS has the person, no work address exists yet.
+  PENDING
+  /// An `Employee` now exists for this person; `reconciledEmployeeId` names it.
+  RECONCILED
+  /// The start was withdrawn. Kept rather than deleted so a joiner pass that
+  /// already planned against this row can explain why it no longer acts.
+  CANCELLED
+}
+
 enum EmploymentStatus {
   ACTIVE
   ONBOARDING

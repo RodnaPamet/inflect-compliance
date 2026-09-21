@@ -379,6 +379,43 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     spelling, `expect(raw).toMatch(/^\s*\/\/\//m)`, is a whole-file read
  *     whose needle matches 3438 times, so writing the pin the natural way
  *     cost this repo's Class D ceiling +1 and its own ratchet caught it.
+ *   • 52 (2026-09-21): **+30, and the SECOND upward entry in this list.** A
+ *     WIDENING, not a regression: `.md` and `.css` joined LEXABLE_EXTENSIONS
+ *     (#2727), so 209 markdown and 23 CSS assertion sites that had been
+ *     leaving the population through the EXCLUDED door are now counted. The
+ *     number went up because the gate got wider, and the 30 files it admits
+ *     were always raw — they were simply invisible.
+ *
+ *     THE SEAMS THAT SPELLED THE WRONG MASKER WERE FIXED FIRST, in the order
+ *     the `.sql` half used and for the reason this file's own note gives:
+ *     admitting an extension whose seams spell the wrong masker credits every
+ *     one of them as masked, which is strictly worse than leaving the language
+ *     out. Three did — `p6b-touch-mobile` and `p4b-clipboard-tab-feedback`
+ *     each read `src/app/globals.css` through `codeOf`, and
+ *     `epic55-hardening` read a `.md` through it. All three were introduced by
+ *     batches 11 and 12 of this same campaign: wrapping a shared reader in
+ *     `codeOf` swept up its non-TypeScript reads too.
+ *
+ *     TWO NEW MASKERS, and `mdCodeOf` works the other way round from its
+ *     siblings. `codeOf` and `sqlCodeOf` blank the COMMENTS out of code;
+ *     markdown is prose containing code, so `mdCodeOf` blanks the PROSE and
+ *     keeps fenced blocks and inline code spans. Measured across six docs it
+ *     removes 66.4% of distinct tokens (2590 of 3898) from the searchable
+ *     surface. `cssCodeOf` blanks `/* … *\/` only, because that is the only
+ *     comment form CSS has — which is exactly why `codeOf` was the wrong tool
+ *     rather than merely an unnecessary one.
+ *
+ *     AND A CORRECTION TO WHAT #2727 CLAIMED. The issue asserted that a
+ *     markdown mask would turn the two known false greens RED. Measured
+ *     against the real documents it turns NEITHER red: the offending tokens
+ *     are backticked CODE SPANS, which any masker worth having keeps. Those
+ *     two guards were fixed by NARROWING the assertion instead —
+ *     `sub-processor-coverage` now reads the `## Inventory` section rather
+ *     than the whole document, and `k8s-runbook-coverage`'s command
+ *     assertions read the FENCED blocks. Both mutation-proved; the
+ *     versionId case is the sharp one, where deleting the fenced
+ *     `aws s3api copy-object` block leaves the old whole-document assertion
+ *     matching prose and the new fence-scoped one correctly failing.
  *   • 381 (2026-09-17): seated when this ratchet landed. Measured by AST walk
  *     over every `.ts`/`.tsx` file git lists under `tests/` — 2402 files,
  *     12301 `toMatch`/`toContain` sites, of which 5937 resolve to the whole
@@ -426,7 +463,7 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     So a file's presence in this list is NOT an accusation, and this ratchet
  *     is a cap rather than a work queue: it says the population may not grow.
  */
-const RAW_ASSERTING_FILE_BASELINE = 37;
+const RAW_ASSERTING_FILE_BASELINE = 52;
 
 /**
  * The files themselves, sorted, in a sibling JSON — the same population the
@@ -746,9 +783,22 @@ describe('Class A — assertions satisfied by prose', () => {
         expect(r.lexableFilesByExtension['.sql']).toBeGreaterThan(20);
 
         // …and the languages that are STILL excluded are, so this is a gate
+        // …and the languages that are STILL excluded are, so this is a gate
         // that opened for one language rather than a filter that stopped
-        // filtering. `.md` is the largest of them.
-        expect(r.unlexableByExtension['.md']).toBeGreaterThan(100);
+        // filtering.
+        //
+        // The control was `.md` until #2727 admitted it, at which point this
+        // assertion read `undefined` — the control had moved INSIDE the gate
+        // it was meant to stand outside of. That is the failure working: a
+        // liveness check whose subject joins the population it is contrasted
+        // with stops being a check. `.yml` is the largest language still
+        // excluded and is the control now, and it will need the same
+        // treatment on the day YAML is admitted.
+        expect(r.unlexableByExtension['.yml']).toBeGreaterThan(50);
+        // And the newly-admitted languages ARE inside — the other half of
+        // "the gate opened" rather than "the filter broke".
+        expect(r.lexableByExtension['.md']).toBeGreaterThan(100);
+        expect(r.lexableByExtension['.css']).toBeGreaterThan(10);
     });
 
     it('the comparison itself can fail, in both directions', () => {

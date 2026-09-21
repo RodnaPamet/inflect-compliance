@@ -116,6 +116,39 @@ export type IdentifierProbe =
  * create → TAP → group → enable, which puts the group AFTER; the owner's
  * wording governs and the design predates it.
  */
+/**
+ * The result of ONE of a create's writes.
+ *
+ * Three arms, not two, and the third is the point. `refused` positively
+ * asserts the directory did NOT change; `indeterminate` says we do not know.
+ * Collapsing them would make a timeout look like a rejection, and the
+ * rollback decision is different for each: a refusal has nothing to undo, an
+ * indeterminate result may.
+ */
+export type ProvisionStep =
+    | { readonly kind: 'applied'; readonly detail?: string }
+    | { readonly kind: 'refused'; readonly detail: string }
+    | { readonly kind: 'indeterminate'; readonly detail: string };
+
+/** What a create needs to know about the person it is provisioning. */
+export interface CreateAccountInput {
+    /** The identifier the plan derived and probed. */
+    readonly identifier: string;
+    readonly displayName: string;
+    /** The employee this account answers to, for the journal's anchor. */
+    readonly employeeId: string;
+}
+
+/** `applied` carries the directory's own id — everything after needs it. */
+export type CreateAccountStep =
+    | {
+          readonly kind: 'applied';
+          readonly externalUserId: string;
+          readonly detail?: string;
+      }
+    | { readonly kind: 'refused'; readonly detail: string }
+    | { readonly kind: 'indeterminate'; readonly detail: string };
+
 export interface DirectoryProvisioner {
     readonly provider: string;
     /**
@@ -129,6 +162,46 @@ export interface DirectoryProvisioner {
     readonly collisionNamespaces: readonly string[];
     /** Never throws for a free identifier. See {@link IdentifierProbe}. */
     probeIdentifier(candidate: string): Promise<IdentifierProbe>;
+
+    /**
+     * Create the account SIGN-IN BLOCKED. #2714.
+     *
+     * Blocked, not enabled, and that is the whole safety argument: the
+     * sequence exists so the recoverable half is last. An account nobody can
+     * sign into is recoverable by a human; one anyone can sign into with no
+     * entitlements is not observable.
+     */
+    createBlockedAccount(input: CreateAccountInput): Promise<CreateAccountStep>;
+
+    /**
+     * Add the account to its entitlement group. #2713 decides WHICH group.
+     *
+     * SECOND, before the credential — owner decision 3 (2026-09-19): "the pass
+     * is issued through Entra — after adding the user to the security group.
+     * after that it's SSO login." The design doc sketched the opposite order
+     * and was corrected in the same PR that added this method.
+     */
+    assignGroup(externalUserId: string, groupId: string): Promise<ProvisionStep>;
+
+    /**
+     * Mint the joining credential. THIRD, after the group.
+     *
+     * Entra: a Temporary Access Pass, then SSO. Never a password, and never a
+     * password FALLBACK — if TAP policy is disabled this refuses, because a
+     * silent downgrade to a password is a different security posture than the
+     * one the tenant configured. AD keeps its own password arm, which is a
+     * different provisioner, not a fallback inside this one.
+     */
+    issueCredential(externalUserId: string): Promise<ProvisionStep>;
+
+    /**
+     * Unblock sign-in. LAST.
+     *
+     * By this point the account exists, is entitled, and has a credential. It
+     * is the last step precisely because everything before it is the half that
+     * is not observable if left half-done.
+     */
+    enableAccount(externalUserId: string): Promise<ProvisionStep>;
 }
 
 /** Why no provisioner could be resolved. Shares the writer's vocabulary. */
@@ -171,6 +244,43 @@ export function createSnapshotProvisioner(
                 `${collisionNamespaces.join(', ')}, and this product persists the roster's ` +
                 `stored address rather than those namespaces. Reported as UNKNOWN rather ` +
                 `than free — "we did not look" must not read as "it is available".`,
+        }),
+
+        // THE FOUR MUTATING VERBS REFUSE, and that is this arm being correct
+        // rather than unfinished. The snapshot provisioner is what every mode
+        // below AUTOMATIC resolves to; a DRY_RUN plan must be drivable end to
+        // end WITHOUT the directory changing. A no-op that returned `applied`
+        // would make a dry run indistinguishable from a real one in the
+        // journal, which is the one outcome this seam exists to prevent.
+        //
+        // `refused`, not `indeterminate`: nothing was attempted, so we can
+        // positively assert the directory did not change. There is nothing to
+        // roll back, and the caller can say so.
+        createBlockedAccount: async (input: CreateAccountInput): Promise<CreateAccountStep> => ({
+            kind: 'refused',
+            detail:
+                `The snapshot provisioner cannot create ${JSON.stringify(input.identifier)}: it ` +
+                `reads a stored enumeration and holds no write path to ${provider}. This is the ` +
+                `arm every mode below AUTOMATIC resolves to, so a plan reaching here is a DRY_RUN ` +
+                `behaving correctly, not a create that failed.`,
+        }),
+        assignGroup: async (externalUserId: string, groupId: string): Promise<ProvisionStep> => ({
+            kind: 'refused',
+            detail:
+                `The snapshot provisioner cannot add ${externalUserId} to group ${groupId}: no ` +
+                `write path to ${provider}.`,
+        }),
+        issueCredential: async (externalUserId: string): Promise<ProvisionStep> => ({
+            kind: 'refused',
+            detail:
+                `The snapshot provisioner cannot mint a credential for ${externalUserId}: no ` +
+                `write path to ${provider}. Never a password fallback — see the interface.`,
+        }),
+        enableAccount: async (externalUserId: string): Promise<ProvisionStep> => ({
+            kind: 'refused',
+            detail:
+                `The snapshot provisioner cannot enable ${externalUserId}: no write path to ` +
+                `${provider}.`,
         }),
     };
 }

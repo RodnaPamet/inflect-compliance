@@ -301,6 +301,136 @@ export function sqlCodeOf(sql: string): string {
 }
 
 /**
+ * The MARKDOWN sibling of `codeOf` — and it works the other way round.
+ *
+ * `codeOf` and `sqlCodeOf` blank the COMMENTS out of a file that is otherwise
+ * code. A markdown file is the inverse: it is prose that happens to contain
+ * code, so this blanks the PROSE and keeps the code. What survives is:
+ *
+ *   · fenced blocks — ``` … ``` and ~~~ … ~~~, fence markers included, so an
+ *     assertion naming the language (/```bash/) still matches
+ *   · inline code spans — `like this`, backticks included
+ *
+ * Everything else becomes spaces. Length and line count are preserved, so
+ * every `indexOf`/`slice` and `/^…$/m` anchor still lines up (#2246).
+ *
+ * WHY THIS IS THE RIGHT SPLIT, measured rather than assumed. The dominant
+ * population of markdown assertions in this repo is IDENTIFIERS — env var
+ * names, provider slugs, Helm values keys, AWS CLI invocations — and in this
+ * repo's docs every one of them is written inside a code span or a fence.
+ * An identifier TABLE needs no special handling for the same reason: its cells
+ * are backticked. So keeping spans and fences keeps the assertions that are
+ * about code, and blanking the rest removes exactly the prose that was
+ * satisfying assertions it had no business satisfying.
+ *
+ * THIS IS NOT A NO-OP MASK. Two guards were green for the wrong reason before
+ * it existed: `sub-processor-coverage` passed for three providers BECAUSE the
+ * document says they are NOT sub-processors, and `k8s-runbook-coverage`
+ * survived deleting the very `aws s3api` block it exists to pin. Both go red
+ * under this mask, which is the point.
+ */
+export function mdCodeOf(md: string): string {
+    const out: string[] = md.split('').map((c) => (c === '\n' ? '\n' : ' '));
+    const keep = (from: number, to: number) => {
+        for (let k = from; k < to && k < md.length; k++) out[k] = md[k];
+    };
+
+    const lines: { start: number; end: number; text: string }[] = [];
+    let at = 0;
+    for (const text of md.split('\n')) {
+        lines.push({ start: at, end: at + text.length, text });
+        at += text.length + 1;
+    }
+
+    // Pass 1 — fenced blocks, line-oriented because a fence is a line.
+    const fenced = new Array<boolean>(lines.length).fill(false);
+    let open: string | null = null;
+    for (let i = 0; i < lines.length; i++) {
+        const t = lines[i].text.trimStart();
+        const m = /^(`{3,}|~{3,})/.exec(t);
+        if (open === null && m) {
+            open = m[1][0];
+            fenced[i] = true;
+            continue;
+        }
+        if (open !== null) {
+            fenced[i] = true;
+            if (m && m[1][0] === open) open = null;
+        }
+    }
+    for (let i = 0; i < lines.length; i++) {
+        if (fenced[i]) keep(lines[i].start, lines[i].end);
+    }
+
+    // Pass 2 — inline code spans, on the lines that are NOT fenced. Runs of
+    // backticks delimit: `` a ` b `` is one span, which is why the opening run
+    // length has to be matched rather than assumed to be one.
+    for (let i = 0; i < lines.length; i++) {
+        if (fenced[i]) continue;
+        const { start, text } = lines[i];
+        let j = 0;
+        while (j < text.length) {
+            if (text[j] !== '`') {
+                j++;
+                continue;
+            }
+            let run = 0;
+            while (j + run < text.length && text[j + run] === '`') run++;
+            const close = text.indexOf('`'.repeat(run), j + run);
+            if (close < 0) {
+                j += run;
+                continue;
+            }
+            keep(start + j, start + close + run);
+            j = close + run;
+        }
+    }
+
+    return out.join('');
+}
+
+/**
+ * The CSS sibling. Blanks `/* … *\/` and nothing else, because that is the
+ * only comment form CSS has — no `//`, which is exactly why handing a
+ * stylesheet to `codeOf` is wrong rather than merely unnecessary.
+ *
+ * String literals are kept and are NOT scanned for comment openers, so a
+ * `content: "/*"` cannot start one.
+ */
+export function cssCodeOf(css: string): string {
+    const out = css.split('');
+    const blank = (from: number, to: number) => {
+        for (let k = from; k < to && k < css.length; k++) {
+            if (css[k] !== '\n') out[k] = ' ';
+        }
+    };
+
+    let i = 0;
+    while (i < css.length) {
+        const c = css[i];
+        if (c === '"' || c === "'") {
+            let j = i + 1;
+            while (j < css.length && css[j] !== c) {
+                if (css[j] === '\\') j++;
+                j++;
+            }
+            i = j + 1;
+            continue;
+        }
+        if (c === '/' && css[i + 1] === '*') {
+            const end = css.indexOf('*/', i + 2);
+            const stop = end < 0 ? css.length : end + 2;
+            blank(i, stop);
+            i = stop;
+            continue;
+        }
+        i++;
+    }
+
+    return out.join('');
+}
+
+/**
  * Return the whole `const <name> = …;` declaration, from the keyword to the
  * semicolon that closes it at nesting depth zero.
  *

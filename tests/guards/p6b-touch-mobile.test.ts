@@ -24,14 +24,20 @@ const ROOT = path.resolve(__dirname, "../..");
 // #2246 Class A — comments are masked at the READ SEAM, so an assertion cannot
 // be satisfied by a comment instead of the code it names. Every read below is
 // TypeScript/TSX, re-derived in this file rather than assumed from the paths.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, cssCodeOf } from '../helpers/source-blocks';
 
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 const read = (rel: string) => codeOf(readRaw(rel));
+// #2727 — CSS needs its OWN masker. Batch 11/12 routed this file's
+// `globals.css` read through `codeOf`, which lexes TypeScript: the call site
+// then READ as masked while `/* … */` was the only comment form present and
+// `//` inside a url() would have been eaten. Same defect as handing `codeOf` a
+// `.sql` file, different language.
+const readCss = (rel: string) => cssCodeOf(readRaw(rel));
 
 describe("Epic P6-PR-B — touch / mobile ergonomics", () => {
     describe("globals.css — coarse-pointer rules", () => {
-        const src = read("src/app/globals.css");
+        const src = readCss("src/app/globals.css");
 
         it("scopes the rules to the Processes canvas (not GraphExplorer)", () => {
             expect(src).toMatch(

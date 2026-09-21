@@ -31,6 +31,41 @@ function readRepoFile(rel: string): string {
     return fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
 }
 
+/**
+ * Only the FENCED blocks — the runnable half of the runbook (#2727).
+ *
+ * An assertion that a runbook "gives the operator the actual invocation" has
+ * to read the place invocations live. Against the whole document it did not:
+ * `/versionId/i` matched the PROSE sentence "The output shows `IsLatest`,
+ * `VersionId`, ..." at `docs/deployment.md:841`, so the fenced
+ * `aws s3api copy-object` block the test exists to pin could be deleted and
+ * that flag would still read as documented.
+ *
+ * Masking cannot fix it, and #2727's first framing was wrong to claim it
+ * could: the surviving token is a backticked CODE SPAN, which any masker worth
+ * having keeps. The defect is the assertion reading the wrong REGION.
+ *
+ * Fence markers are excluded, so a needle cannot be satisfied by the ```bash
+ * line itself.
+ */
+function fencedCommands(md: string): string {
+    const out: string[] = [];
+    let open: string | null = null;
+    for (const line of md.split('\n')) {
+        const m = /^\s*(`{3,}|~{3,})/.exec(line);
+        if (open === null) {
+            if (m) open = m[1][0];
+            continue;
+        }
+        if (m && m[1][0] === open) {
+            open = null;
+            continue;
+        }
+        out.push(line);
+    }
+    return out.join('\n');
+}
+
 describe('GAP-12 step 10 ratchet — docs/deployment.md K8s runbook', () => {
     const DOC = 'docs/deployment.md';
 
@@ -116,15 +151,15 @@ describe('GAP-12 step 10 ratchet — docs/deployment.md K8s runbook', () => {
         // bad query. The runbook must give operators the actual AWS
         // CLI invocation, not just hand-wave "use PITR".
         expect(src).toMatch(/PITR|point-in-time/i);
-        expect(src).toMatch(/aws rds restore-db-instance-to-point-in-time/);
+        expect(fencedCommands(src)).toMatch(/aws rds restore-db-instance-to-point-in-time/);
     });
 
     it('documents manual snapshot + restore-from-snapshot commands', () => {
         const src = readRepoFile(DOC);
         // The pre-migration safety net. Same load-bearing as the
         // PITR commands; same regression class if removed.
-        expect(src).toMatch(/aws rds create-db-snapshot/);
-        expect(src).toMatch(/aws rds restore-db-instance-from-db-snapshot/);
+        expect(fencedCommands(src)).toMatch(/aws rds create-db-snapshot/);
+        expect(fencedCommands(src)).toMatch(/aws rds restore-db-instance-from-db-snapshot/);
     });
 
     it('documents S3 versioning + file restore via versionId', () => {
@@ -132,9 +167,9 @@ describe('GAP-12 step 10 ratchet — docs/deployment.md K8s runbook', () => {
         // S3 file recovery is fundamentally different from DB
         // restore: list versions → copy-object back to canonical
         // key. Both halves must be visible.
-        expect(src).toMatch(/aws s3api list-object-versions/);
-        expect(src).toMatch(/aws s3api copy-object/);
-        expect(src).toMatch(/versionId/i);
+        expect(fencedCommands(src)).toMatch(/aws s3api list-object-versions/);
+        expect(fencedCommands(src)).toMatch(/aws s3api copy-object/);
+        expect(fencedCommands(src)).toMatch(/versionId/i);
     });
 
     it('documents the delete-marker restore path (deleted-file recovery)', () => {

@@ -402,6 +402,30 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 // curated composite index is needed."
 
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // #2713 — the JML joiner's department→security-group entitlement map.
+    //
+    // ONE findMany, in `identity-joiner-run.ts`'s entitlement loader: filters by
+    // `tenantId` ALONE, selects two columns, no sort, no additional predicate.
+    // `@@index([tenantId])` covers it completely, so a curated composite would
+    // be a second B-tree over a column already indexed.
+    //
+    // The bound is structural rather than a guessed number: `@@unique([tenantId,
+    // department])` means the row count is the tenant's DISTINCT DEPARTMENT
+    // COUNT — an org-chart-sized set a human types into an admin form, not a
+    // volume that grows with usage. There is no arrangement of this table that
+    // makes the list query expensive.
+    IdentityDepartmentGroupRule:
+        'Filtered by tenantId alone with no sort, and @@unique([tenantId, department]) caps the row count at the tenant\'s distinct department count — a human-maintained set, not a usage-growing one. @@index([tenantId]) is sufficient.',
+    // #2715 — the JML joiner's pre-hire surface.
+    //
+    // One findMany, listing PENDING rows for a tenant: filters (tenantId,
+    // status) and orders by startDate. @@index([tenantId]) carries the
+    // selective half, and the bound is structural — a tenant's pre-hires are
+    // the people starting in the near future who have no mailbox yet, a set
+    // that DRAINS as each one reconciles. It cannot accumulate the way an
+    // event or execution table does.
+    PreHire:
+        'Filtered by (tenantId, status) and ordered by startDate over a set that drains as each row reconciles to an Employee — never an accumulating table. @@index([tenantId]) is sufficient.',
     // ASI08 run caps — `proposedItemsSoFar` counts what a run has already
     // proposed, so a resumed segment cannot restart the PROPOSALS budget at zero
     // and hand one run a fresh cap per human checkpoint.
