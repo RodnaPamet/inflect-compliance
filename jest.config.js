@@ -191,6 +191,10 @@ const nodeProject = {
         '<rootDir>/.claude/',
         '<rootDir>/tests/e2e/',
         '<rootDir>/tests/rendered/',
+        // Runs under the `flue` project below, which resolves ESM-only
+        // packages. Left here it fails at RESOLUTION ("Cannot find module
+        // '@flue/runtime'"), not at transform.
+        '<rootDir>/tests/flue/',
         '<rootDir>/dub-reference/',
         // ── Ratchets, when the caller opts out (JEST_SKIP_RATCHETS=1) ──
         //
@@ -478,8 +482,99 @@ const jsdomProject = {
     coveragePathIgnorePatterns: ['/node_modules/', '/.next/', '/tests/'],
 };
 
+/**
+ * The THIRD project: the Flue runtime, which is ESM-only.
+ *
+ * `@flue/runtime` publishes an `exports` map with an `import` condition and no
+ * `require` one, so jest's CJS resolver fails on it with "Cannot find module"
+ * — a RESOLUTION failure. `ESM_TRANSFORM_ALLOW_LIST` above addresses TRANSFORM
+ * and does nothing for it, and the `moduleNameMapper` + `require.resolve`
+ * trick used for `react-grid-layout` cannot work either: `require.resolve` on
+ * this package throws `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+ *
+ * SCOPED, NOT GLOBAL, and that is the design. Setting `customExportConditions`
+ * on the node project would change module resolution for all 2040 test files
+ * at once — every package shipping BOTH conditions could start resolving to a
+ * different entry point, silently, with no diff to point at. This project
+ * matches `tests/flue/**` and nothing else.
+ *
+ * No `globalSetup`: nothing here touches Postgres, which is also what makes it
+ * cheap enough to run on every PR.
+ */
+/**
+ * Resolve a file inside a package that does NOT export it.
+ *
+ * `@flue/runtime` publishes `{".": {"import": "./dist/index.mjs"}}` and no
+ * `require` condition and no `./package.json` entry, so `require.resolve`
+ * throws `ERR_PACKAGE_PATH_NOT_EXPORTED` for every specifier — the package is
+ * unreachable from a CJS resolver by design.
+ *
+ * `require.resolve.paths()` is not blocked by an exports map: it returns the
+ * `node_modules` directories Node WOULD search, walking up the tree. Finding
+ * the manifest there and joining the file gives the same answer Node's own
+ * resolver would, and keeps working from a `.claude/worktrees/<id>/` checkout
+ * that has no `node_modules` of its own — which a spelled `<rootDir>/…` path
+ * does not, and which broke the rendered suites for worktree users once
+ * already (see the `react-grid-layout` note above).
+ */
+const resolveInPackage = (pkg, subpath) => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    for (const base of require.resolve.paths(pkg) || []) {
+        if (fs.existsSync(path.join(base, pkg, 'package.json'))) {
+            return path.join(base, pkg, subpath);
+        }
+    }
+    throw new Error(`jest.config: cannot locate ${pkg} — is it installed?`);
+};
+
+/**
+ * The THIRD project: the Flue runtime, which is ESM-only.
+ *
+ * ── WHY NOT `customExportConditions` ────────────────────────────────────────
+ *
+ * The obvious fix is to prefer the `import` condition. It was tried, and it
+ * breaks the project it is scoped to: a package's OWN exports map decides
+ * priority, not the order of this array, so activating `import` re-points
+ * every dependency that ships both conditions. `dedent` — pulled in by the
+ * test harness itself — immediately resolved to `dedent.mjs` and died on
+ * `Unexpected token 'export'`. That is the same hazard, one scope down, that
+ * makes setting this on the node project unthinkable for 2040 files.
+ *
+ * So the conditions are left alone and the three ESM-only entries are mapped
+ * explicitly. Every other package in this project resolves exactly as it does
+ * everywhere else.
+ *
+ * `transformIgnorePatterns` then lets ts-jest compile those `.mjs` files (and
+ * pi-ai, which is `"type": "module"`) down to CJS. No `globalSetup`: nothing
+ * here touches Postgres, which is what makes it cheap enough to run per PR.
+ */
+const flueProject = {
+    displayName: 'flue',
+    preset: 'ts-jest',
+    testEnvironment: 'node',
+    testMatch: ['<rootDir>/tests/flue/**/*.test.ts'],
+    testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/.claude/'],
+    extensionsToTreatAsEsm: ['.ts'],
+    moduleNameMapper: {
+        '^@/env$': '<rootDir>/tests/mocks/env.ts',
+        '^@/(.*)$': '<rootDir>/src/$1',
+    },
+    testEnvironmentOptions: { customExportConditions: ['node', 'import'] },
+    transform: {
+        '^.+\\.tsx?$': ['ts-jest', { useESM: true }],
+    },
+    transformIgnorePatterns: ['node_modules/'],
+    collectCoverageFrom: sharedCollectCoverageFrom,
+    // A PROJECT option: at the top level it is dropped and the project falls
+    // back to `['/node_modules/']`, which would put the test files themselves
+    // in the coverage denominator. `coverage-config-resolution` asserts every
+    // project carries it.
+    coveragePathIgnorePatterns: ['/node_modules/', '/tests/'],
+};
+
 module.exports = {
-    projects: [nodeProject, jsdomProject],
+    projects: [nodeProject, jsdomProject, flueProject],
     // Recycle a worker once its heap crosses this after a suite. Over a
     // ~1400-suite run a long-lived worker accumulates module + mock state
     // until GC stalls (or it OOMs), which surfaces as NON-deterministic

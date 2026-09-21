@@ -686,6 +686,51 @@ jobs:
   #  this job aggregates the matrix shards into one. A future
   #  shard-count change here keeps the required check name the same.
   # ═══════════════════════════════════════════════════════════════
+  # ═══════════════════════════════════════════════════════════════
+  #  The `flue` Jest project — the one that proves the agent loop RUNS.
+  #
+  #  Its own job for one reason: `@flue/runtime` is ESM-only with no
+  #  `require` condition, so it needs jest's native ESM mode, and that
+  #  mode needs `--experimental-vm-modules`. That flag CANNOT go in the
+  #  workflow-level `NODE_OPTIONS`: measured on this branch, adding it
+  #  there makes five node-project suites fail to run outright with
+  #  "ReferenceError: exports is not defined" on `sanitize-html` — the
+  #  ESM_TRANSFORM_ALLOW_LIST packages resolve differently under it.
+  #  So the flag is scoped to the only project that wants it.
+  #
+  #  DB-free, like `ratchets`: the provider is pi-ai's faux, scripted in
+  #  the test, so there is no credential, no network and no Postgres.
+  #  That is what makes it cheap enough to run on every PR, which is the
+  #  point — the loop is the one claim here that cannot be made by
+  #  reading source.
+  # ═══════════════════════════════════════════════════════════════
+  flue:
+    name: Flue runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SKIP_ENV_VALIDATION: '1'
+      # The workflow default PLUS the ESM flag. Spelled in full rather
+      # than appended, because `env:` at job level replaces the key.
+      NODE_OPTIONS: "--max-old-space-size=8192 --experimental-vm-modules"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node + Prisma client
+        uses: ./.github/actions/setup-node-prisma
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: "Run tests: the Flue runtime loop"
+        run: npx jest --selectProjects flue --coverage --coverageReporters=json --ci
+
+      - name: Upload shard coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-shard-flue
+          path: coverage/coverage-final.json
+          retention-days: 1
+
   test-summary:
     name: Test
     # Gates on `ratchets` as well as `test`, and that is load-bearing:
@@ -770,7 +815,7 @@ jobs:
   coverage-gate:
     name: "Coverage (≥60%)"
     runs-on: ubuntu-latest
-    needs: [test, ratchets]
+    needs: [test, ratchets, flue]
     # `needs` alone would skip this job when any shard fails, and a
     # skipped required check reads as "not failing". Run whenever the
     # producing jobs were not cancelled, so a failed shard still
@@ -802,7 +847,7 @@ jobs:
       # make the gate stricter-looking while measuring less.
       # Semantics are pinned by tests/unit/scripts/check-merged-coverage.test.ts.
       - name: "Gate: test coverage thresholds"
-        run: npx tsx scripts/check-merged-coverage.ts coverage-shards jest.thresholds.json 5
+        run: npx tsx scripts/check-merged-coverage.ts coverage-shards jest.thresholds.json 6
 
       # Only kept for post-mortem on a RED run.
       - name: Upload merged coverage inputs
