@@ -36,6 +36,13 @@ const createRisk = jest.fn();
 const appendAuditEntry = jest.fn(async () => undefined);
 
 jest.mock('@/lib/db/rls-middleware', () => ({
+    // The usecase now reaches `circuit-breaker-store`, which imports
+    // `@/lib/prisma` — and that module calls `withRlsTripwireExtension` at
+    // LOAD time. A partial mock of this module therefore stops being a mock of
+    // the bits this suite uses and becomes a missing export at import time.
+    // Stubbed to identity rather than `requireActual`, because the point of
+    // mocking here is to keep the real database layer out entirely.
+    withRlsTripwireExtension: <T,>(client: T): T => client,
     runInTenantContext: (_ctx: unknown, fn: (d: unknown) => unknown) => fn(db),
 }));
 jest.mock('@/app-layer/usecases/risk', () => ({ createRisk: (...a: unknown[]) => createRisk(...a) }));

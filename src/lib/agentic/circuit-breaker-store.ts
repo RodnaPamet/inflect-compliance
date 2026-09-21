@@ -51,6 +51,8 @@ import type { McpCapabilityClass } from './autonomy-ceiling';
 import {
     BASELINE_WINDOW_LIMIT,
     evaluateCircuitBreaker,
+    GUARD_BLOCK_TRIP,
+    shouldLatchOnGuardBlocks,
     windowKeyFor,
     windowStartFor,
     type BreakerObservation,
@@ -396,7 +398,7 @@ async function applyVerdict(
         // shut — and a bell announcing a stop that did not happen is exactly
         // the wrong thing to send about a stop control.
         if (latched.count > 0) {
-            await notifyBreakerTrip({ tenantId, agentId, verdict, now });
+            await notifyBreakerTrip({ tenantId, agentId, signals: verdict.streakSignals, now });
         }
         return;
     }
@@ -447,7 +449,14 @@ async function applyVerdict(
 async function notifyBreakerTrip(trip: {
     tenantId: string;
     agentId: string;
-    verdict: BreakerVerdict;
+    /**
+     * What latched it. Taken directly rather than as a `BreakerVerdict`,
+     * because this function only ever read `streakSignals` from one — and a
+     * guard-block trip has no verdict to hand over. Constructing a synthetic
+     * one would put a statistical judgement in the record that was never
+     * computed.
+     */
+    signals: readonly string[];
     now: Date;
 }): Promise<void> {
     try {
@@ -462,7 +471,7 @@ async function notifyBreakerTrip(trip: {
                 select: { slug: true },
             }),
         ]);
-        const signals = [...trip.verdict.streakSignals];
+        const signals = [...trip.signals];
         await createAgenticNotification(
             prisma,
             'AGENT_CIRCUIT_BREAKER_TRIPPED',
@@ -556,5 +565,87 @@ export async function recordAuthorizedCall(
             agentId,
             error: err instanceof Error ? err.message : String(err),
         });
+    }
+}
+
+
+/**
+ * Latch the breaker when an agent's guard blocks pile up inside one window.
+ *
+ * ## Not a new counter
+ *
+ * The count comes from rows that already exist: `AgentProposal` carries
+ * `guardVerdict` and an `agentId`, so "how many of this agent's proposals did
+ * the guard quarantine this hour" is a question the schema can already answer.
+ * A dedicated column would be a second record of the same fact, free to
+ * disagree with the first — and the one that disagrees is always the one
+ * nothing reads.
+ *
+ * ## Why this writes the latch directly rather than feeding the evaluator
+ *
+ * See `GUARD_BLOCK_TRIP` in `circuit-breaker.ts`: blocks have no baseline to
+ * depart from, and routing them through the statistical path would let the
+ * first block define the normal that later ones are judged against.
+ *
+ * ## The write is the SAME write `evaluateWindow` makes
+ *
+ * Conditional on `state: 'CLOSED'`, so a human close that landed between the
+ * count and this update leaves `count: 0` and the latch shut; and the bell is
+ * gated on that count rather than on the decision, because a notification
+ * announcing a stop that did not happen is exactly the wrong thing to send
+ * about a stop control.
+ *
+ * Never throws. It runs after a proposal has already been written and
+ * quarantined; an exception here would turn a successful quarantine — the guard
+ * working — into a 500.
+ */
+export async function latchOnGuardBlock(
+    tenantId: string,
+    agentId: string,
+    now: Date,
+): Promise<{ blocksInWindow: number; latched: boolean }> {
+    try {
+        const since = windowStartFor(now);
+        const blocksInWindow = await prisma.agentProposal.count({
+            where: {
+                tenantId,
+                agentId,
+                guardVerdict: 'QUARANTINED',
+                createdAt: { gte: since },
+            },
+        });
+
+        if (!shouldLatchOnGuardBlocks(blocksInWindow)) {
+            return { blocksInWindow, latched: false };
+        }
+
+        const latched = await prisma.agentCircuitBreaker.updateMany({
+            where: { tenantId, agentId, state: 'CLOSED' },
+            data: {
+                state: 'OPEN',
+                trippedAt: now,
+                trippedWindow: windowKeyFor(now),
+                trippedSignals: [GUARD_BLOCK_TRIP],
+                lastVerdict: 'TRIP',
+                lastVerdictAt: now,
+            },
+        });
+
+        if (latched.count > 0) {
+            await notifyBreakerTrip({
+                tenantId,
+                agentId,
+                signals: [GUARD_BLOCK_TRIP],
+                now,
+            });
+        }
+        return { blocksInWindow, latched: latched.count > 0 };
+    } catch (err) {
+        logger.warn('circuit-breaker: guard-block latch failed', {
+            tenantId,
+            agentId,
+            error: err instanceof Error ? err.message : 'non-Error thrown',
+        });
+        return { blocksInWindow: 0, latched: false };
     }
 }
