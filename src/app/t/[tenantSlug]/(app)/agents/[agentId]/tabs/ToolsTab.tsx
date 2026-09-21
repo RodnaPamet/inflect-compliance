@@ -533,6 +533,18 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
                                             )}
                                             {aboveCeiling(row.toolName) === true && (
                                                 /*
+                                                  INLINE TEXT, not a badge. The
+                                                  row already carries a loud
+                                                  primary — the capability or
+                                                  the inert warning — and a
+                                                  refusing manifest adds a second
+                                                  in red. A third competing badge
+                                                  is what `badge-density` exists
+                                                  to stop, and its advice is the
+                                                  design advice too: one loud
+                                                  badge per row, secondaries
+                                                  quietened into the chrome.
+
                                                   THE THIRD WAY A GRANT IS DEAD.
                                                   `inert` means the tool is gone
                                                   and `blocked` means the manifest
@@ -550,9 +562,8 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
                                                   deliberately passes every grant
                                                   on an unscored agent.
                                                 */
-                                                <StatusBadge
-                                                    variant="warning"
-                                                    size="sm"
+                                                <span
+                                                    className="text-xs text-content-warning"
                                                     data-testid={`agent-tool-above-ceiling-${row.toolName}`}
                                                 >
                                                     {t('agentDetail.tools.aboveCeilingBadge', {
@@ -562,7 +573,7 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
                                                         // unless this is a number.
                                                         ceiling: ceiling ?? 0,
                                                     })}
-                                                </StatusBadge>
+                                                </span>
                                             )}
                                             {blocked && (
                                                 <StatusBadge
