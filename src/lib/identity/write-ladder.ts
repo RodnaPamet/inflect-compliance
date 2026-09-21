@@ -171,26 +171,42 @@ export type IdentityDirection = 'leaver' | 'joiner';
  *
  * `joiner` is nevertheless still FALSE, and the reason changed with it. It is no
  * longer "nothing reads `identityJoinerMode`" — `planJoinerPass` reads it at its
- * own gate 1. It is that nothing DISPATCHES that planner, and that a plan it
- * produced could not be acted on yet:
+ * own gate 1. It is that a plan it produces cannot be acted on yet. This list
+ * held TWO reasons; #2687 closed the first, and the second alone is enough:
  *
- *   • NO TRIGGER. There is no joiner job, no schedule and no run route, so a
- *     tenant moved to DRY_RUN would get no artefact and no report. Owner
- *     decision 9 of 2026-09-19 says dispatch fires on the tenant's own timezone,
- *     and nothing stores one — `dispatchJobId` floors on UTC buckets and
- *     `schedules.ts` records why a zoned cron breaks that. So the trigger is a
- *     capability gap, not an oversight to paper over with a UTC fan-out.
- *   • NO ENTITLEMENT MAP. Owner decision 10 puts the department→security-group
- *     map on `TenantSecuritySettings`, so it inherits the OWNER gate. That column
- *     does not exist, so every plan refuses `NO_DEPARTMENT_MAP` — a refusal an
- *     operator cannot clear, because there is nowhere to put the map.
+ *   • NO TRIGGER — MOSTLY CLOSED BY #2687. This used to read "there is no joiner
+ *     job, no schedule and no run route". TWO of those three now exist:
+ *     `identity-joiner-pass` and its `identity-joiner-dispatch` fan-out in
+ *     `jobs/identity-joiner.ts`, and the 04:30 UTC entry in `jobs/schedules.ts`.
+ *     The OWNER-only run route is NOT in this diff: it ships in the route half of
+ *     #2687, split out because two new API routes push the CI Build over the
+ *     runner's memory ceiling (#2698) and the engine should not wait on that.
+ *     So a joiner pass fires on schedule today and cannot yet be fired off it.
+ *     Owner decision 9 of 2026-09-19 — dispatch
+ *     on the TENANT's timezone — is not satisfied and is not pretended to be:
+ *     `dispatchJobId` floors on UTC buckets and `schedules.ts` records why a
+ *     zoned cron breaks that, so the fan-out is deliberately UTC and the zoned
+ *     dispatch remains owed. That is a scheduling refinement, though, not the
+ *     absence of a runtime, and it is no longer what holds this flag down.
+ *   • NO ENTITLEMENT MAP — STILL TRUE, AND NOW THE SOLE REASON. Owner decision
+ *     10 puts the department→security-group map on `TenantSecuritySettings`, so
+ *     it inherits the OWNER gate. That column does not exist, so every plan
+ *     refuses `NO_DEPARTMENT_MAP` — a refusal an operator cannot clear, because
+ *     there is nowhere to put the map.
  *
- * Flipping `joiner` to `true` before those exist would reproduce the very thing
- * this comment was written about, one layer along: the widen control would
- * enable, the ladder would accept the climb, and the tenant would sit at DRY_RUN
- * watching nothing happen. `implemented` means a RUNTIME reads this setting AND
- * an operator can see what it did. When the trigger lands, this flips in the same
- * diff and nothing else has to move.
+ * SO THE TRIGGER LANDING IS NOT THE CONDITION FOR FLIPPING THIS. That is what
+ * this paragraph used to say — "when the trigger lands, this flips in the same
+ * diff" — and #2687 is precisely the diff that would have been read as
+ * permission. It is not, because the rule stated below is a conjunction and only
+ * one half moved. Flipping `joiner` to `true` while every plan refuses
+ * `NO_DEPARTMENT_MAP` would reproduce the very thing this comment was written
+ * about, one layer along: the widen control would enable, the ladder would accept
+ * the climb, and the tenant would sit at DRY_RUN watching a nightly pass refuse —
+ * an artefact per day, none of them a provisioning decision. `implemented` means
+ * a RUNTIME reads this setting AND an operator can see what it did; a run whose
+ * every outcome is "I could not look up your groups" fails the second half while
+ * looking like it satisfies the first. This flips when the map has somewhere to
+ * live, in the diff that gives it one.
  */
 export const DIRECTION_IMPLEMENTED: Readonly<Record<IdentityDirection, boolean>> = {
     leaver: true,

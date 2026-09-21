@@ -153,6 +153,13 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     // PR-4 — daily cross-tenant fan-out: an hris-sync per enabled HRIS
     // connection (BambooHR, Workday).
     'hris-sync-dispatch',
+    // #2687 — daily joiner pass fan-out, one per (tenant, writable directory
+    // provider), at 04:30 UTC: after identity-sync-dispatch refreshes the link
+    // and account evidence the pass reads, and before the leaver's 05:00 so the
+    // two halves of JML do not share a minute. Sorts BEFORE identity-leaver-
+    // dispatch, which is the only reason its entry sits here: this list is
+    // asserted sorted, and 'identity-joiner-' < 'identity-leaver-'.
+    'identity-joiner-dispatch',
     // Daily leaver pass fan-out, one per (tenant, writable directory
     // provider). This job enqueues and never touches a directory itself — the
     // pass it dispatches is what writes, and THAT chain writes for real: #2187

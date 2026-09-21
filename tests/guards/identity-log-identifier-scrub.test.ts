@@ -74,6 +74,12 @@ const IDENTITY_WRITE_PATH: readonly string[] = [
     'src/app-layer/integrations/providers/active-directory/writer.ts',
     'src/app-layer/usecases/identity-disable-account.ts',
     'src/app-layer/usecases/identity-leaver-pass.ts',
+    // #2687. The joiner's IO half opens no socket and resolves no writer, so no
+    // PROVIDER prose reaches its logs — but it reads the account enumeration
+    // (`ConnectedIdentityAccount.email`) and derives addresses from the roster,
+    // so a directory identifier IS in scope on every error path here. Listed on
+    // the day it landed rather than after the first leak.
+    'src/app-layer/usecases/identity-joiner-run.ts',
     'src/app-layer/integrations/bounded-fetch.ts',
 ];
 

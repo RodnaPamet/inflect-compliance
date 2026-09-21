@@ -72,12 +72,21 @@
  *
  * The reasoning is `providers/hris/write-back.ts`'s, one vendor along: *"A
  * checkbox is a question put to a customer."* There is no create verb
- * behind this direction — `JOINER_MAX_MODE` is `DRY_RUN`, no dispatcher
- * calls the planner, and the live arm waits on #2608 — so a box ticked
+ * behind this direction — `JOINER_MAX_MODE` is `DRY_RUN` and the live arm
+ * waits on #2608 — so a box ticked
  * today would authorise nothing today and would ALREADY BE TICKED on the
  * day the create verb makes it mean something. A grant collected before
  * the capability exists is not a grant to that capability; it is the same
  * accidental consent read across time instead of across directions.
+ *
+ * This paragraph used to add "no dispatcher calls the planner" as a third
+ * reason. #2687 landed the dispatcher and the schedule (the run route ships in its
+ * route half, held back by the CI memory ceiling #2698), so
+ * that clause is gone rather than left to rot. The argument is unaffected:
+ * what makes a joiner-writes checkbox premature is the absent CREATE VERB,
+ * not the absent trigger. A DRY_RUN pass that plans and stops authorises
+ * nothing, so the box would still be a grant to a capability that does not
+ * exist yet.
  *
  * So the joiner's switch arrives in the diff that ships the joiner's write,
  * and until then this direction refuses for everyone — which is the narrow

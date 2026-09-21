@@ -1270,6 +1270,53 @@ executorRegistry.register('agentic-evidence-emission', async (payload) => {
     return runAgenticEvidenceEmissionJob({ tenantId: payload.tenantId, asOf: payload.asOf });
 });
 
+// identity-joiner-pass: one joiner pass for one (tenant, provider).
+//
+// The mode is the tenant's own identityJoinerMode, and what it may reach is
+// additionally held by JOINER_MAX_MODE — a source constant in
+// `usecases/identity-joiner-pass.ts`, not a setting. Read the constant rather
+// than this comment: the leaver's equivalent comment asserted a ceiling for four
+// days after #2187 moved it, which is the failure mode a static sentence about a
+// value in another file has.
+//
+// "Actioned" is `wouldCreate` — how many starters the pass says it WOULD
+// provision. Nothing is created and nothing is sent to any directory: the pass
+// opens no socket and resolves no writer.
+executorRegistry.register('identity-joiner-pass', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runIdentityJoinerPassJob } = await import('./identity-joiner');
+    // `tenantId` and `provider` NAMED rather than the payload spread. A payload
+    // forwarded opaquely is how a scoped job silently becomes an unscoped one,
+    // and both fields are gates here: the tenant bounds every read, and the
+    // provider bounds the link-freshness and collision reads.
+    const r = await runIdentityJoinerPassJob({
+        tenantId: payload.tenantId,
+        provider: payload.provider,
+    });
+    return makeResult(
+        'identity-joiner-pass',
+        startedAt,
+        startMs,
+        r.starters,
+        r.wouldCreate,
+        r.starters - r.wouldCreate,
+        { mode: r.mode, refusal: r.refusal, detail: r.detail, decisions: r.decisions },
+        { status: r.status, errorMessage: r.errorMessage },
+    );
+});
+
+// identity-joiner-dispatch: fan out a pass per (tenant, writable provider).
+executorRegistry.register('identity-joiner-dispatch', async () => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runIdentityJoinerDispatch } = await import('./identity-joiner');
+    const r = await runIdentityJoinerDispatch();
+    return makeResult('identity-joiner-dispatch', startedAt, startMs, r.units, r.dispatched, 0, {
+        units: r.units,
+    });
+});
+
 // identity-leaver-dispatch: fan out a pass per (tenant, writable provider).
 executorRegistry.register('identity-leaver-dispatch', async () => {
     const startedAt = new Date().toISOString();
