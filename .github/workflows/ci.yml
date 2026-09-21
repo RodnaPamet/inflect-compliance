@@ -580,7 +580,15 @@ jobs:
         env:
           JEST_SKIP_RATCHETS: '1'
         run: |
+          # `--selectProjects node jsdom` EXCLUDES the `flue` project, which
+          # has its own job. Without it `--shard` spreads all three projects
+          # across these four legs, and the flue suite runs here WITHOUT
+          # `--experimental-vm-modules` — measured: "SyntaxError: Unexpected
+          # token 'export'", shard 4/4, cascading to `Test` and `Coverage`.
+          # The flag cannot simply be added here either: it breaks five
+          # node-project suites (see the `flue` job for that measurement).
           npx jest --runInBand --coverage --coverageReporters=json \
+            --selectProjects node jsdom \
             --shard=${{ matrix.shard }}/${{ matrix.total }}
 
       # One of the FIVE artifacts the merged gate expects. The other four
