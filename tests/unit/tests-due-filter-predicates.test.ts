@@ -1,3 +1,4 @@
+import { codeOf } from '../helpers/source-blocks';
 /**
  * The /tests due filter, executed.
  *
@@ -229,9 +230,8 @@ describe('KPI counts are filter-aware', () => {
 describe('the filter memo depends on the hydrated clock', () => {
     const fs = require('node:fs') as typeof import('node:fs');
     const path = require('node:path') as typeof import('node:path');
-    const src = fs.readFileSync(
-        path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)/tests/page.tsx'),
-        'utf8',
+    const src = codeOf(
+        fs.readFileSync(path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)/tests/page.tsx'), 'utf8'),
     );
 
     it('`hydratedNow` is in the filtered-plans dependency array', () => {
@@ -266,9 +266,8 @@ describe('the filter memo depends on the hydrated clock', () => {
     });
 
     it('the due filter offers both buckets', () => {
-        const defs = fs.readFileSync(
-            path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)/tests/filter-defs.ts'),
-            'utf8',
+        const defs = codeOf(
+            fs.readFileSync(path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)/tests/filter-defs.ts'), 'utf8'),
         );
         expect(defs).toMatch(/TEST_DUE_KEYS = \['overdue', 'next7d'\]/);
     });

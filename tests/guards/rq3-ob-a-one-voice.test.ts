@@ -20,7 +20,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+// #2246 Class A — comments are masked at the READ SEAM, so an assertion cannot
+// be satisfied by a comment instead of the code it names. Every read below is
+// TypeScript/TSX, re-derived in this file rather than assumed from the paths.
+import { codeOf } from '../helpers/source-blocks';
+
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
 
 /**
  * `execFileSync` (not `execSync`) — argv array bypasses the shell so

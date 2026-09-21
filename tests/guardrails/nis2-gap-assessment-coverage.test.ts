@@ -21,7 +21,17 @@ import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
 const ROOT = path.resolve(__dirname, '../..');
+import { sqlCodeOf } from '../helpers/source-blocks';
+
+// #2246 Class A / #2679 LANGUAGE SPLIT. `read` deliberately stays RAW here and
+// has exactly two callers, neither of them code: the fixture read is handed to
+// JSON.parse, where JSON is DATA and masking has no meaning, and the LICENCE
+// read is markdown, which `codeOf` does not lex. The ONE code read in this file
+// is the migration, and it is SQL — so it goes through `readSql`, which lexes
+// `--` and `/* */`. Handing a `.sql` file to `codeOf` would leave every `--`
+// comment intact while the call site READS as masked.
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const readSql = (rel: string) => sqlCodeOf(read(rel));
 
 const FIXTURE_PATH = 'prisma/fixtures/nis2-gap-assessment.json';
 const LICENSE_PATH = 'prisma/fixtures/nis2-gap-assessment.LICENSE.md';
@@ -79,7 +89,7 @@ describe('NIS2 gap-assessment — data integrity', () => {
 
 describe('NIS2 gap-assessment — schema + RLS + encryption wiring', () => {
     const compliance = readPrismaSchema();
-    const migration = read(MIGRATION_PATH);
+    const migration = readSql(MIGRATION_PATH);
 
     it('defines the four models (2 global reference, 2 tenant-scoped)', () => {
         for (const m of [

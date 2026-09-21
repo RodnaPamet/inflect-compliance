@@ -1,3 +1,4 @@
+import { codeOf } from '../helpers/source-blocks';
 /**
  * Elevation PR-3 — sidebar state-language ratchet.
  *
@@ -28,7 +29,11 @@ describe('Sidebar state-language ratchet (Elevation PR-3)', () => {
     it('SidebarNav.tsx does not reference the retired nav-link / nav-link-label CSS classes', () => {
         const abs = path.resolve(ROOT, SIDEBAR);
         expect(fs.existsSync(abs)).toBe(true);
-        const content = fs.readFileSync(abs, 'utf8');
+        // #2246 — masked at the READ SEAM. This suite already wanted exactly
+        // that: its own note below says `nav-link` may appear in JSDoc and is
+        // banned only as a className. Masking enforces that by construction
+        // instead of by a regex that tries to spot comments.
+        const content = codeOf(fs.readFileSync(abs, 'utf8'));
         // Allow `nav-link` to appear in JSDoc comments; ban only
         // className attribute uses.
         const usagePatterns = [
@@ -41,15 +46,21 @@ describe('Sidebar state-language ratchet (Elevation PR-3)', () => {
     });
 
     it('globals.css does not redefine `.nav-link`', () => {
-        const abs = path.resolve(ROOT, GLOBALS);
-        const content = fs.readFileSync(abs, 'utf8');
+        // #2246 — named `cssAbs`, not `abs`, on purpose. The Class A analyser
+        // resolves a read's target by VARIABLE NAME, and it does not honour
+        // block scope: with three sibling `const abs` bindings in this file it
+        // credited THIS css read with a `.tsx` path and counted it as a raw
+        // read of lexable source. The read is CSS and stays raw deliberately —
+        // `codeOf` lexes TypeScript, not CSS.
+        const cssAbs = path.resolve(ROOT, GLOBALS);
+        const content = fs.readFileSync(cssAbs, 'utf8');
         // The retired ruleset shape: `.nav-link {` or `.nav-link.active {`.
         expect(content).not.toMatch(/^\s*\.nav-link\b[^*]/m);
     });
 
     it('the mobile drawer close button has a focus-visible ring', () => {
         const abs = path.resolve(ROOT, SIDEBAR);
-        const content = fs.readFileSync(abs, 'utf8');
+        const content = codeOf(fs.readFileSync(abs, 'utf8'));
         // Find the close button block by its data-testid.
         const closeBlockMatch = content.match(
             /data-testid="nav-drawer-close"[\s\S]{0,400}/,
@@ -88,9 +99,11 @@ describe('Sidebar state-language ratchet (Elevation PR-3)', () => {
         // Both assertions are now relaxed to accept the R12 or
         // R13+ form; the load-bearing contracts (gradient + wash
         // + opacity transitions) stay locked.
-        const navItem = fs.readFileSync(
-            path.resolve(ROOT, 'src/components/layout/nav-item.tsx'),
-            'utf8',
+        const navItem = codeOf(
+            fs.readFileSync(
+                path.resolve(ROOT, 'src/components/layout/nav-item.tsx'),
+                'utf8',
+            ),
         );
         // The brand-gradient band recipe — Tailwind utility form
         // (2-stop or 3-stop) OR R15-PR1 comprehensive arbitrary-

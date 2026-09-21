@@ -16,8 +16,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '../../');
-function read(rel: string): string {
+import { codeOf } from '../helpers/source-blocks';
+
+// #2246 Class A — the mask goes at the READ SEAM, so an assertion cannot be
+// satisfied by a comment instead of the code it names. Every read here is TSX.
+function readRaw(rel: string): string {
     return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+}
+function read(rel: string): string {
+    return codeOf(readRaw(rel));
 }
 
 // The severity + type Comboboxes moved from the inline FindingsClient

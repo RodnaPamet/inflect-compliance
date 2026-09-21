@@ -38,6 +38,7 @@ import {
     type AgentProposalGuardResult,
 } from '@/app-layer/ai/guard/proposal-guard';
 import { logAiDecision, recordDecisionOutcomeForDigest } from '@/app-layer/ai/decision-log';
+import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
 import { NO_POLICY_CARD, narrowApprovalRung, type ApprovalRung } from '@/lib/agentic/policy-card';
 import {
     resolveApprovalRequirement,
@@ -740,6 +741,30 @@ export async function createAgentProposal(
                 // kill-switch bell.
                 error: err instanceof Error ? err.message : 'non-Error thrown',
             });
+        }
+
+        // ═══ REPEATED BLOCKS LATCH THE BREAKER ═══
+        //
+        // The bell above tells a human. This stops the agent.
+        //
+        // A single quarantine is the guard working and must not stop anything —
+        // making every successful defence an outage would be a control nobody
+        // keeps switched on. Three inside one window is a pattern, and the
+        // agent is better read as the vector than as the victim.
+        //
+        // The EXISTING breaker, not a new counter: `latchOnGuardBlock` counts
+        // the `AgentProposal` rows that are already there and writes the same
+        // conditional latch `evaluateWindow` writes, so an OPEN breaker refuses
+        // the agent's next tool call through `assertCircuitBreakerClosed` —
+        // the mechanism that already exists — rather than through a second stop
+        // control the register does not know about.
+        //
+        // Best-effort and never throwing, for the same reason as the bell: this
+        // runs after the row is written, so a failure here must not turn a
+        // successful quarantine into a 500. `ctx.agentId` is required because
+        // an unattributed credential has no breaker to latch.
+        if (ctx.agentId) {
+            await latchOnGuardBlock(ctx.tenantId, ctx.agentId, new Date());
         }
     }
 

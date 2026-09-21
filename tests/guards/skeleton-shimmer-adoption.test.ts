@@ -1,3 +1,4 @@
+import { codeOf } from '../helpers/source-blocks';
 /**
  * Roadmap-11 PR-2 — Skeleton shimmer adoption.
  *
@@ -50,9 +51,8 @@ function walk(dir: string, results: string[] = []): string[] {
 
 describe('Skeleton shimmer adoption (R11-PR2)', () => {
     test('the shared Skeleton primitive renders the shimmer-sweep overlay', () => {
-        const src = fs.readFileSync(
-            path.resolve(ROOT, 'src/components/ui/skeleton.tsx'),
-            'utf-8',
+        const src = codeOf(
+            fs.readFileSync(path.resolve(ROOT, 'src/components/ui/skeleton.tsx'), 'utf-8'),
         );
         // Canonical shimmer signature on the primitive.
         expect(src).toMatch(/after:animate-shimmer-sweep/);
@@ -77,9 +77,8 @@ describe('Skeleton shimmer adoption (R11-PR2)', () => {
     });
 
     test('the tailwind config defines shimmer-sweep keyframes + animation', () => {
-        const src = fs.readFileSync(
-            path.resolve(ROOT, 'tailwind.config.js'),
-            'utf-8',
+        const src = codeOf(
+            fs.readFileSync(path.resolve(ROOT, 'tailwind.config.js'), 'utf-8'),
         );
         // Both the keyframe AND the animation entry must exist.
         expect(src).toMatch(/'shimmer-sweep':\s*\{/);
@@ -94,7 +93,7 @@ describe('Skeleton shimmer adoption (R11-PR2)', () => {
                 .split(path.sep)
                 .join('/');
             if (EXEMPTIONS[rel]) continue;
-            const src = fs.readFileSync(file, 'utf-8');
+            const src = codeOf(fs.readFileSync(file, 'utf-8'));
             if (
                 !/from\s+['"]@\/components\/ui\/skeleton['"]/.test(src)
             ) {
@@ -123,11 +122,13 @@ describe('Skeleton shimmer adoption (R11-PR2)', () => {
                 .split(path.sep)
                 .join('/');
             if (EXEMPTIONS[rel]) continue;
-            const src = fs.readFileSync(file, 'utf-8');
-            // Strip comments so `// animate-pulse` mentions don't trip.
-            const stripped = src
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .replace(/\/\/[^\n]*/g, '');
+            // #2246 — this hand-rolled stripper is replaced by `codeOf`, the
+            // repo's masker. The two `.replace` calls were not fail-closed:
+            // `/\/\/[^\n]*/` eats from ANY `//` to end of line, including one
+            // inside a string such as `href="https://x"`, so an
+            // `animate-pulse` appearing later on that line escaped the check.
+            // `codeOf` blanks comments and KEEPS strings.
+            const stripped = codeOf(fs.readFileSync(file, 'utf-8'));
             if (/\banimate-pulse\b/.test(stripped)) {
                 offenders.push(rel);
             }
