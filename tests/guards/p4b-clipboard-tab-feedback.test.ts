@@ -31,10 +31,13 @@ const ROOT = path.resolve(__dirname, "../..");
 // be satisfied by a comment instead of the code it names. Every read in this
 // file is TypeScript/TSX, re-derived rather than assumed, so `codeOf` is the
 // only masker needed here.
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, cssCodeOf } from '../helpers/source-blocks';
 
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 const read = (rel: string) => codeOf(readRaw(rel));
+// #2727 — CSS through the CSS masker, not the TypeScript one. See
+// p6b-touch-mobile for the same correction and why it matters.
+const readCss = (rel: string) => cssCodeOf(readRaw(rel));
 
 describe("Epic P4-PR-B — clipboard + Tab + connection-rejection", () => {
     describe("Clipboard helper module", () => {
@@ -164,7 +167,7 @@ describe("Epic P4-PR-B — clipboard + Tab + connection-rejection", () => {
     });
 
     describe("globals.css — shake animation respecting reduced-motion", () => {
-        const src = read("src/app/globals.css");
+        const src = readCss("src/app/globals.css");
 
         it("declares both keyframe sets (full shake + reduced fallback)", () => {
             expect(src).toMatch(/@keyframes canvas-connection-shake \{/);

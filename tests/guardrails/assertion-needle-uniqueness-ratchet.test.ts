@@ -279,7 +279,7 @@ const HIGH_MULTIPLICITY = 5;
 //   every open PR: 1319 is the live count of main@fc8954092 + this branch.
 //   Whoever merges second re-measures on the merged tree rather than keeping
 //   this figure.
-const AMBIGUOUS_NEEDLE_BASELINE = 1282;
+const AMBIGUOUS_NEEDLE_BASELINE = 1279;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
@@ -533,7 +533,7 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 202;
 // is left alone because the loop is the clearer test, and because pretending
 // the site is analysable when it is not is the failure this number exists to
 // prevent.
-const UNANALYSABLE_READ_BASELINE = 1454;
+const UNANALYSABLE_READ_BASELINE = 1460;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

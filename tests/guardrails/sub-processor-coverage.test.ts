@@ -169,15 +169,95 @@ describe('sub-processor coverage', () => {
         }
     });
 
-    it('every integration provider is in the inventory', () => {
+    /**
+     * The `## Inventory` table ONLY — not the whole document (#2727).
+     *
+     * `doc.includes(slug)` over the entire file was green for the wrong
+     * reason, and the reason is exact: `personnel`, `device` and `training`
+     * appear NOWHERE except block-quote notes saying each one is **internal**,
+     * i.e. explicitly NOT a sub-processor. A test named "every integration
+     * provider is in the inventory" was passing for three providers BECAUSE
+     * the document states they are not in it. `identity` was worse still — no
+     * entry at all, matched only by the incidental phrase "identity provider".
+     *
+     * Masking cannot fix this and #2727's first framing was wrong about that:
+     * the slugs are backticked CODE SPANS, so any masker that keeps code (and
+     * one that did not would delete the inventory itself) keeps them. The
+     * defect was never prose-versus-code — it was an assertion reading the
+     * wrong REGION of the document.
+     */
+    const inventorySection = (): string => {
+        const doc = read(SUBPROC);
+        const start = doc.indexOf('## Inventory');
+        expect(start).toBeGreaterThan(-1);
+        const next = doc.indexOf('\n## ', start + 1);
+        return doc.slice(start, next < 0 ? doc.length : next);
+    };
+
+    /**
+     * Providers evaluated ENTIRELY inside this product — no third party
+     * receives data, so they are deliberately absent from the inventory. Each
+     * must still be documented as internal, which is the second half of the
+     * assertion pair below: absence alone is indistinguishable from an
+     * omission.
+     */
+    const INTERNAL_PROVIDERS: readonly string[] = ['personnel', 'device', 'training', 'identity'];
+
+    it('every EXTERNAL integration provider is in the inventory table', () => {
         const providersDir = path.join(ROOT, 'src/app-layer/integrations/providers');
         const dirs = fs
             .readdirSync(providersDir, { withFileTypes: true })
             .filter((e) => e.isDirectory())
-            .map((e) => e.name);
-        const doc = read(SUBPROC).toLowerCase();
-        const missing = dirs.filter((d) => !doc.includes(d.toLowerCase()));
+            .map((e) => e.name)
+            .filter((d) => !INTERNAL_PROVIDERS.includes(d));
+
+        // Positive control: if the provider directory were empty or the
+        // filter over-matched, "none missing" would pass vacuously.
+        expect(dirs.length).toBeGreaterThan(5);
+
+        const inv = inventorySection().toLowerCase();
+        const missing = dirs.filter((d) => !inv.includes(d.toLowerCase()));
         expect(missing).toEqual([]);
+    });
+
+    it('every INTERNAL provider is absent from the inventory AND says why', () => {
+        const inv = inventorySection().toLowerCase();
+        const doc = read(SUBPROC);
+        for (const p of INTERNAL_PROVIDERS) {
+            // Absent from the inventory — it is not a sub-processor...
+            expect({ provider: p, inInventory: inv.includes(`\`${p}\``) }).toEqual({
+                provider: p,
+                inInventory: false,
+            });
+            // ...and the document SAYS SO, so the absence is a statement
+            // rather than an omission nobody noticed.
+            //
+            // The property is "the doc declares this is not a sub-processor",
+            // searched in a bounded window after the slug — NOT "the word
+            // `internal` appears on the same line". The same-line form passed
+            // only because three of the four notes happen to be written that
+            // way; it failed the fourth for its wording rather than its
+            // meaning, which is a test asserting prose style instead of fact.
+            const at = doc.indexOf(`\`${p}\``);
+            // Unwrap the block quote before matching. The sentence wraps as
+            // `**not** a\n> sub-processor`, so a `\s+` between the words does
+            // not cross the `> ` continuation marker — the assertion would be
+            // testing where the author's line breaks fell, not what the
+            // document says.
+            // Bounded by the NOTE, not by a character count. A fixed 600-char
+            // window bled into the NEXT block quote, so deleting one
+            // provider's declaration still found its neighbour's — the
+            // mutation proof caught that, and a fixed span is exactly the
+            // unbounded-interior-span shape this repo ratchets against.
+            const noteEnd = at < 0 ? -1 : doc.indexOf('\n\n', at);
+            const window = (at < 0 ? '' : doc.slice(at, noteEnd < 0 ? doc.length : noteEnd))
+                .replace(/\n>\s*/g, ' ')
+                .replace(/\s+/g, ' ');
+            expect({
+                provider: p,
+                declaredNotASubProcessor: /not\*{0,2}\s+a\s+sub-processor/i.test(window),
+            }).toEqual({ provider: p, declaredNotASubProcessor: true });
+        }
     });
 
     it('the DPA template has 15 sections + [LEGAL REVIEW REQUIRED] on 10-12', () => {

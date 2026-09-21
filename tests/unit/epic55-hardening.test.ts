@@ -26,6 +26,15 @@ function readRaw(rel: string): string {
 function read(rel: string): string {
     return codeOf(readRaw(rel));
 }
+// #2727 — the strategy doc is a DELIBERATE RAW SEAM, and the reason is that
+// its assertions' SUBJECT is the document's shape: `## Migrated surfaces`,
+// `## Deferred surfaces`, `Adding a new surface — checklist`. Those are
+// headings and prose, so `mdCodeOf` blanks precisely the thing under test and
+// the assertions could never pass again.
+//
+// What batch 12 had was worse than either choice: the read went through
+// `codeOf`, a TypeScript lexer, so it READ as masked while leaving the prose
+// intact. Raw-and-listed is honest; masked-with-the-wrong-lexer is not.
 
 // The severity + type Comboboxes moved from the inline FindingsClient
 // form into the CreateFindingModal (2026-06-05). Assert against the
@@ -56,7 +65,7 @@ const TASKS_NEW_SRC =
     read('src/app/t/[tenantSlug]/(app)/tasks/_form/NewTaskFields.tsx') +
     '\n' +
     read('src/app/t/[tenantSlug]/(app)/tasks/_form/useNewTaskForm.ts');
-const STRATEGY_DOC = read('docs/combobox-form-strategy.md');
+const STRATEGY_DOC = readRaw('docs/combobox-form-strategy.md');
 
 // ─── findings severity + type ───────────────────────────────────
 
