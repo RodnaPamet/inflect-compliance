@@ -43,12 +43,26 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const NAV_ITEM_SRC = fs.readFileSync(
+const NAV_ITEM_SRC = codeOf(fs.readFileSync(
     path.join(ROOT, 'src/components/layout/nav-item.tsx'),
     'utf8',
-);
-const MOTION_GUARD_SRC = fs.readFileSync(
+));
+const MOTION_GUARD_SRC = codeOf(fs.readFileSync(
+    path.join(ROOT, 'tests/guards/motion-language-discipline.test.ts'),
+    'utf8',
+));
+// The DELIBERATE raw twin (#2246): the assertion that uses it has the PROSE as
+// its subject — it checks that a rationale is WRITTEN DOWN, so over
+// comment-masked source it could never pass again.
+const MOTION_GUARD_DOC = fs.readFileSync(
     path.join(ROOT, 'tests/guards/motion-language-discipline.test.ts'),
     'utf8',
 );
@@ -159,10 +173,12 @@ describe('Roadmap-13 PR-8 — press feedback (the one allowed transform)', () =>
             // path with no reason invites cargo-cult exemptions
             // ("ah, looks like this is where you put files that
             // animate on hover").
-            expect(MOTION_GUARD_SRC).toMatch(
+            // MOTION_GUARD_DOC, not _SRC: this test asserts the exempt entry
+            // carries a WRITTEN RATIONALE, so the comment is its subject.
+            expect(MOTION_GUARD_DOC).toMatch(
                 /Roadmap-13[\s\S]*?nav-item\.tsx/,
             );
-            expect(MOTION_GUARD_SRC).toMatch(
+            expect(MOTION_GUARD_DOC).toMatch(
                 /press[\s-]?down|press feedback|active:translate/i,
             );
         });

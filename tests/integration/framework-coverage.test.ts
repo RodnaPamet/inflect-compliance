@@ -11,6 +11,11 @@ import { join } from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 import { appliedCatalogueText, appliedCatalogueStats } from '../helpers/applied-catalogue';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM. Reads whose result
+// is JSON.parse'd are left RAW on purpose: a catalogue is parsed as DATA, never
+// matched as text, so masking it would only corrupt the parse.
+import { codeOf } from '../helpers/source-blocks';
+
 describe('Framework Coverage & Templates', () => {
     const basePath = process.cwd();
 
@@ -189,7 +194,7 @@ describe('Framework Coverage & Templates', () => {
         it.each(routes)('route %s has no prisma import', (route) => {
             const f = join(baseApi, route);
             if (!existsSync(f)) return;
-            const content = readFileSync(f, 'utf-8');
+            const content = codeOf(readFileSync(f, 'utf-8'));
             expect(content).not.toMatch(/from\s+['"]@\/lib\/prisma['"]/);
             expect(content).not.toMatch(/from\s+['"]@prisma\/client['"]/);
         });
@@ -201,10 +206,10 @@ describe('Framework Coverage & Templates', () => {
         const dirPath = join(basePath, 'src/app-layer/usecases/framework');
         let content: string;
         if (existsSync(flatPath)) {
-            content = readFileSync(flatPath, 'utf-8');
+            content = codeOf(readFileSync(flatPath, 'utf-8'));
         } else if (existsSync(dirPath)) {
             const files = require('fs').readdirSync(dirPath).filter((f: string) => f.endsWith('.ts'));
-            content = files.map((f: string) => readFileSync(join(dirPath, f), 'utf-8')).join('\n');
+            content = files.map((f: string) => codeOf(readFileSync(join(dirPath, f), 'utf-8'))).join('\n');
         } else {
             throw new Error('Framework usecase not found');
         }
@@ -308,7 +313,7 @@ describe('Framework Coverage & Templates', () => {
  */
 function templateCountByPrefix(prefix: string): number {
     const fromSeed = (
-        readFileSync(join(basePath, 'prisma/seed.ts'), 'utf-8').match(
+        codeOf(readFileSync(join(basePath, 'prisma/seed.ts'), 'utf-8')).match(
             new RegExp(`code: '${prefix}`, 'g'),
         ) ?? []
     ).length;
@@ -335,7 +340,7 @@ function templateCountByPrefix(prefix: string): number {
 
     // ─── Template fixtures quality checks ───
     describe('Template coverage', () => {
-        const seed = readFileSync(join(basePath, 'prisma/seed.ts'), 'utf-8');
+        const seed = codeOf(readFileSync(join(basePath, 'prisma/seed.ts'), 'utf-8'));
 
         it('NIS2 has >= 15 templates', () => {
             expect(templateCountByPrefix('NIS2-')).toBeGreaterThanOrEqual(15);

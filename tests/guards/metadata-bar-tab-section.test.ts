@@ -24,13 +24,20 @@
 import * as fs from "fs";
 import * as path from "path";
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, "../..");
 
 describe("v2-PR-13 MetadataBar primitive contract", () => {
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.join(ROOT, "src/components/ui/MetadataBar.tsx"),
         "utf8",
-    );
+    ));
 
     it("exports the component + props + item type", () => {
         expect(src).toMatch(/export\s+function\s+MetadataBar/);
@@ -86,10 +93,10 @@ describe("v2-PR-13 MetadataBar primitive contract", () => {
 });
 
 describe("v2-PR-13 TabSection primitive contract", () => {
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.join(ROOT, "src/components/ui/TabSection.tsx"),
         "utf8",
-    );
+    ));
 
     it("exports the component + props interface", () => {
         expect(src).toMatch(/export\s+function\s+TabSection/);

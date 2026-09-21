@@ -10,6 +10,13 @@
 import fs from 'fs';
 import path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const SRC_ROOT = path.resolve('src');
 
 // ─── 1) Readiness excludes archived evidence ───
@@ -20,27 +27,27 @@ describe('Retention Hardening — Readiness scoring', () => {
         // shared coverage predicate; the scorer routes through it instead of
         // inlining the literals. Verify (a) the scorer uses the predicate and
         // (b) the predicate still filters isArchived.
-        const scorer = fs.readFileSync(
+        const scorer = codeOf(fs.readFileSync(
             path.join(SRC_ROOT, 'app-layer/usecases/audit-readiness/scoring.ts'), 'utf-8'
-        );
+        ));
         expect(scorer).toContain('coverageQualifyingEvidenceWhere');
-        const predicate = fs.readFileSync(
+        const predicate = codeOf(fs.readFileSync(
             path.join(SRC_ROOT, 'lib/compliance/coverage-evidence.ts'), 'utf-8'
-        );
+        ));
         expect(predicate).toContain('isArchived: false');
     });
 
     test('ISO readiness evidence query routes through the coverage predicate (filters deletedAt)', () => {
-        const predicate = fs.readFileSync(
+        const predicate = codeOf(fs.readFileSync(
             path.join(SRC_ROOT, 'lib/compliance/coverage-evidence.ts'), 'utf-8'
-        );
+        ));
         expect(predicate).toContain('deletedAt: null');
     });
 
     test('gap details mention archived/expired exclusion', () => {
-        const content = fs.readFileSync(
+        const content = codeOf(fs.readFileSync(
             path.join(SRC_ROOT, 'app-layer/usecases/audit-readiness/scoring.ts'), 'utf-8'
-        );
+        ));
         expect(content).toContain('archived/expired excluded');
     });
 });
@@ -77,9 +84,9 @@ describe('Retention Hardening — Metrics', () => {
     });
 
     test('metrics route has no direct prisma import', () => {
-        const content = fs.readFileSync(
+        const content = codeOf(fs.readFileSync(
             path.join(SRC_ROOT, 'app/api/t/[tenantSlug]/evidence/retention/metrics/route.ts'), 'utf-8'
-        );
+        ));
         expect(content).not.toContain("from '@/lib/prisma'");
         expect(content).not.toContain('from "@/lib/prisma"');
     });
@@ -89,9 +96,9 @@ describe('Retention Hardening — Metrics', () => {
 
 describe('Retention Hardening — CI guardrail', () => {
     test('readiness scoring file does NOT query evidence without isArchived filter', () => {
-        const content = fs.readFileSync(
+        const content = codeOf(fs.readFileSync(
             path.join(SRC_ROOT, 'app-layer/usecases/audit-readiness/scoring.ts'), 'utf-8'
-        );
+        ));
         // EP-3: Evidence↔Control is a many-to-many join now, so the evidence
         // qualifier is a relation filter on the join — `evidence: <predicate>`.
         // EP-1 routes every readiness evidence query through the shared
@@ -110,18 +117,18 @@ describe('Retention Hardening — CI guardrail', () => {
     });
 
     test('notification job is idempotent — checks for existing tasks', () => {
-        const content = fs.readFileSync(
+        const content = codeOf(fs.readFileSync(
             path.join(SRC_ROOT, 'app-layer/jobs/retention-notifications.ts'), 'utf-8'
-        );
+        ));
         // Must check for existing task before creating new one
         expect(content).toContain('findFirst');
         expect(content).toContain('skippedDuplicate');
     });
 
     test('sweep job is idempotent — only archives non-archived', () => {
-        const content = fs.readFileSync(
+        const content = codeOf(fs.readFileSync(
             path.join(SRC_ROOT, 'app-layer/jobs/retention.ts'), 'utf-8'
-        );
+        ));
         expect(content).toContain('isArchived: false');
     });
 });

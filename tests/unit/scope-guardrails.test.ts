@@ -8,6 +8,11 @@ import path from 'path';
 import fs from 'fs';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM. Reads whose result
+// is JSON.parse'd are left RAW on purpose: a catalogue is parsed as DATA, never
+// matched as text, so masking it would only corrupt the parse.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
 
@@ -26,7 +31,7 @@ function scanFiles(dir: string, pattern: RegExp, extensions = ['.ts', '.tsx']): 
                 if (entry.name === 'node_modules' || entry.name === '.next') continue;
                 walk(full);
             } else if (extensions.some(ext => entry.name.endsWith(ext))) {
-                const content = fs.readFileSync(full, 'utf-8');
+                const content = codeOf(fs.readFileSync(full, 'utf-8'));
                 const lines = content.split('\n');
                 for (let i = 0; i < lines.length; i++) {
                     if (pattern.test(lines[i])) {
@@ -99,8 +104,8 @@ describe('Scope Reintroduction Guardrails', () => {
     // ── i18n guardrails ──
 
     it('no i18n files reference scopeRisks key', () => {
-        const enJson = fs.readFileSync(path.join(ROOT, 'messages', 'en.json'), 'utf-8');
-        const bgJson = fs.readFileSync(path.join(ROOT, 'messages', 'bg.json'), 'utf-8');
+        const enJson = codeOf(fs.readFileSync(path.join(ROOT, 'messages', 'en.json'), 'utf-8'));
+        const bgJson = codeOf(fs.readFileSync(path.join(ROOT, 'messages', 'bg.json'), 'utf-8'));
         expect(enJson).not.toContain('"scopeRisks"');
         expect(bgJson).not.toContain('"scopeRisks"');
     });
@@ -108,7 +113,7 @@ describe('Scope Reintroduction Guardrails', () => {
     // ── Middleware guardrails ──
 
     it('middleware has no scope redirect shim', () => {
-        const middleware = fs.readFileSync(path.join(SRC, 'middleware.ts'), 'utf-8');
+        const middleware = codeOf(fs.readFileSync(path.join(SRC, 'middleware.ts'), 'utf-8'));
         expect(middleware).not.toContain('SCOPE_URL_PATTERN');
         expect(middleware).not.toContain('scopeSlug');
     });

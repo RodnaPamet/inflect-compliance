@@ -17,9 +17,20 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const ROUTE = 'src/app/api/t/[tenantSlug]/calendar/connections/route.ts';
-const src = fs.readFileSync(path.join(ROOT, ROUTE), 'utf8');
+const src = codeOf(fs.readFileSync(path.join(ROOT, ROUTE), 'utf8'));
+// The DELIBERATE raw twin (#2246): the assertion that uses it has the PROSE as
+// its subject — it checks that a rationale is WRITTEN DOWN, so over
+// comment-masked source it could never pass again.
+const srcDoc = fs.readFileSync(path.join(ROOT, ROUTE), 'utf8');
 const codeOnly = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 describe('both verbs are gated', () => {
@@ -77,10 +88,10 @@ describe('the guardrail interaction is respected', () => {
         // Stated as an assertion so that if `calendar` is ever ADDED to
         // PRIVILEGED_ROOTS, this fails and whoever did it is told to check
         // whether the ROUTE_PERMISSIONS half was added in the same diff.
-        const guard = fs.readFileSync(
+        const guard = codeOf(fs.readFileSync(
             path.join(ROOT, 'tests/guardrails/api-permission-coverage.test.ts'),
             'utf8',
-        );
+        ));
         const roots = [...guard.matchAll(/relPath:\s*'([^']+)'/g)].map((m) => m[1]);
         expect(roots.length).toBeGreaterThan(10);
         expect(roots).not.toContain('src/app/api/t/[tenantSlug]/calendar');
@@ -91,7 +102,7 @@ describe('the guardrail interaction is respected', () => {
         // guardrail iterates its rules and requires each to match a file
         // discovered from those roots, so the rule alone turns CI red. The two
         // edits must land together or neither.
-        const rules = fs.readFileSync(path.join(ROOT, 'src/lib/security/route-permissions.ts'), 'utf8');
+        const rules = codeOf(fs.readFileSync(path.join(ROOT, 'src/lib/security/route-permissions.ts'), 'utf8'));
         expect(rules).not.toMatch(/calendar\/connections/);
     });
 });
@@ -101,6 +112,6 @@ describe('the disconnect ordering is written down where it will be read', () => 
         // Revoking first destroys the token, and the pushed events are then
         // stranded in the user's personal calendar with no credential left to
         // remove them. C5 lands the event mapping; this is the note it needs.
-        expect(src).toMatch(/deleted BEFORE this call|BEFORE this call/);
+        expect(srcDoc).toMatch(/deleted BEFORE this call|BEFORE this call/);
     });
 });

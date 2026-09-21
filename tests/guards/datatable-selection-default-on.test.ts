@@ -31,14 +31,21 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 describe('DataTable selection default-on (R12-PR1)', () => {
     test('the Table primitive defaults `selectionEnabled` to true', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.resolve(ROOT, 'src/components/ui/table/table.tsx'),
             'utf-8',
-        );
+        ));
         // Both call sites in the primitive must default to `true`.
         // The literal pattern `selectionEnabled ?? true` is the
         // canonical form (and the most readable in code review).
@@ -48,10 +55,10 @@ describe('DataTable selection default-on (R12-PR1)', () => {
     });
 
     test("DataTable wrapper threads `selectionEnabled` through to useTable", () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.resolve(ROOT, 'src/components/ui/table/data-table.tsx'),
             'utf-8',
-        );
+        ));
         // The prop must be destructured and forwarded into the
         // tableProps object (both pagination branches).
         expect(src).toMatch(/selectionEnabled\??\s*[:,}]/);
@@ -91,7 +98,7 @@ describe('DataTable selection default-on (R12-PR1)', () => {
                 } else if (entry.name.endsWith('.tsx')) {
                     const rel = path.relative(ROOT, full);
                     if (EXEMPTIONS[rel]) continue;
-                    const src = stripComments(fs.readFileSync(full, 'utf-8'));
+                    const src = stripComments(codeOf(fs.readFileSync(full, 'utf-8')));
                     if (/id:\s*['"]select['"]/.test(src)) {
                         offenders.push(rel);
                     }

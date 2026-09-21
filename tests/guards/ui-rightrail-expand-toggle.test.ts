@@ -12,10 +12,17 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-const SRC = fs.readFileSync(
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// Every path this file READS is a TypeScript-alike: the `.json` it touches
+// arrives through `require()`, which is a module import, not a text read — so
+// it never reaches this seam and needs no separate reader.
+import { codeOf } from '../helpers/source-blocks';
+
+const SRC = codeOf(fs.readFileSync(
     path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx'),
     'utf8',
-);
+));
 
 describe('UI-13 — browse expand toggle is a chevron, not a text button', () => {
     it('renders ChevronDown when expanded and ChevronLeft when collapsed', () => {

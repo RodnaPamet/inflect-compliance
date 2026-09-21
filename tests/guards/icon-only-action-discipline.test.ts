@@ -18,10 +18,20 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+//
+// LANGUAGE SPLIT. One seam here carries two things. TypeScript-alikes go
+// through `read` and are masked. The JSON fixtures go through `readRaw` and
+// are NOT: a JSON read is PARSED as data, never matched as text, so masking it
+// would only corrupt the parse — `codeOf` lexes TypeScript and a catalogue is
+// not that language.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const APP = 'src/app/t/[tenantSlug]/(app)';
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
-
+const readRaw = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+const read = (p: string) => codeOf(readRaw(p));
 describe('icon-only action discipline', () => {
     describe('shared IconAction contract', () => {
         const src = read('src/components/ui/icon-action.tsx');
@@ -75,7 +85,7 @@ describe('icon-only action discipline', () => {
                 expect(src).toMatch(
                     new RegExp(`<IconAction[\\s\\S]*?label=\\{t\\w*\\('${escapedKey}'\\)\\}`),
                 );
-                const en = JSON.parse(read('messages/en.json')) as Record<string, Record<string, unknown>>;
+                const en = JSON.parse(readRaw('messages/en.json')) as Record<string, Record<string, unknown>>;
                 const resolved = i18nKey
                     .split('.')
                     .reduce<unknown>((o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined), en[ns ?? 'controls']);
@@ -114,7 +124,7 @@ describe('icon-only action discipline', () => {
                     new RegExp(`aria-label=\\{tx\\('${escapedKey}'\\)\\}[\\s\\S]*?size: 'icon'`),
                 );
                 expect(src).toMatch(new RegExp(`<Tooltip content=\\{tx\\('${escapedKey}'\\)\\}>`));
-                const en = JSON.parse(read('messages/en.json')) as Record<string, Record<string, unknown>>;
+                const en = JSON.parse(readRaw('messages/en.json')) as Record<string, Record<string, unknown>>;
                 const resolved = i18nKey
                     .split('.')
                     .reduce<unknown>((o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined), en[ns ?? 'risks']);

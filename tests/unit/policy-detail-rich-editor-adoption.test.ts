@@ -17,11 +17,18 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// String literals are KEPT, so assertions that harvest codes or ids from source
+// still see them. Every path this file reads is a TypeScript-alike, re-derived
+// per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
+
 const POLICY_DETAIL = path.resolve(
     __dirname,
     '../../src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx',
 );
-const source = readFileSync(POLICY_DETAIL, 'utf8');
+const source = codeOf(readFileSync(POLICY_DETAIL, 'utf8'));
 
 describe('Policy detail — Epic 45.2 RichTextEditor adoption', () => {
     it('lazy-loads RichTextEditor via next/dynamic with ssr: false', () => {

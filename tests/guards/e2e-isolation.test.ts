@@ -42,6 +42,13 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const E2E_DIR = path.resolve(__dirname, '..', 'e2e');
 
 /**
@@ -218,7 +225,7 @@ interface Offender {
 function scan(): Offender[] {
     const offenders: Offender[] = [];
     for (const file of specFiles()) {
-        const raw = fs.readFileSync(path.join(E2E_DIR, file), 'utf8');
+        const raw = codeOf(fs.readFileSync(path.join(E2E_DIR, file), 'utf8'));
         const src = stripNoise(raw);
         const spans = testBodySpans(src);
         if (spans.length < 2) continue; // need ≥2 tests to cascade
@@ -267,7 +274,7 @@ describe('E2E test isolation — no cross-test `let` cascade', () => {
     it('the isolation fixture module exists and exports the `isolatedTenant` fixture', () => {
         const fixturesPath = path.join(E2E_DIR, 'fixtures.ts');
         expect(fs.existsSync(fixturesPath)).toBe(true);
-        const fixturesSrc = fs.readFileSync(fixturesPath, 'utf8');
+        const fixturesSrc = codeOf(fs.readFileSync(fixturesPath, 'utf8'));
         // The fixture must be wired via `base.extend` and expose
         // `isolatedTenant`. These two anchors are load-bearing.
         expect(fixturesSrc).toMatch(/base\.extend</);
@@ -402,7 +409,7 @@ describe('E2E test isolation — shared-seed specs are allowlisted (fullyParalle
     }
 
     const sharedSeedSpecs = specFiles().filter((f) =>
-        importsSharedSeedRunner(fs.readFileSync(path.join(E2E_DIR, f), 'utf8')),
+        importsSharedSeedRunner(codeOf(fs.readFileSync(path.join(E2E_DIR, f), 'utf8'))),
     );
     const allowed = new Set(SHARED_SEED_ALLOWLIST.map((e) => e.file));
 
@@ -438,7 +445,7 @@ describe('E2E test isolation — shared-seed specs are allowlisted (fullyParalle
 
     it('the two known shared-seed mutators are pinned mode:serial (no self-race under fullyParallel)', () => {
         for (const f of ['ai-risk-assessment.spec.ts', 'ciso-portfolio.spec.ts']) {
-            const src = fs.readFileSync(path.join(E2E_DIR, f), 'utf8');
+            const src = codeOf(fs.readFileSync(path.join(E2E_DIR, f), 'utf8'));
             expect(src).toMatch(/test\.describe\.configure\(\{\s*mode:\s*'serial'\s*\}\)/);
         }
     });

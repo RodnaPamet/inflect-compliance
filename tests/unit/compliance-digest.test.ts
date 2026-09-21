@@ -14,6 +14,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// String literals are KEPT, so assertions that harvest codes or ids from source
+// still see them. Every path this file reads is a TypeScript-alike, re-derived
+// per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
+
 const DIGEST_FILE = path.resolve(__dirname, '../../src/app-layer/jobs/compliance-digest.ts');
 const TYPES_FILE = path.resolve(__dirname, '../../src/app-layer/jobs/types.ts');
 const SCHEDULES_FILE = path.resolve(__dirname, '../../src/app-layer/jobs/schedules.ts');
@@ -21,7 +28,7 @@ const EXECUTOR_FILE = path.resolve(__dirname, '../../src/app-layer/jobs/executor
 const SNAPSHOT_FILE = path.resolve(__dirname, '../../src/app-layer/jobs/snapshot.ts');
 
 function readFile(p: string): string {
-    return fs.readFileSync(p, 'utf-8');
+    return codeOf(fs.readFileSync(p, 'utf-8'));
 }
 
 // ─── Job Registration ──────────────────────────────────────────────

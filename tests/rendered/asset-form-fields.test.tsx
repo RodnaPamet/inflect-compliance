@@ -43,6 +43,11 @@ jest.mock('next/navigation', () => ({
 import { NewAssetFields } from '@/app/t/[tenantSlug]/(app)/assets/_form/NewAssetFields';
 import { EditAssetFields } from '@/app/t/[tenantSlug]/(app)/assets/_form/EditAssetFields';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM. Reads whose result
+// is JSON.parse'd are left RAW on purpose: a catalogue is parsed as DATA, never
+// matched as text, so masking it would only corrupt the parse.
+import { codeOf } from '../helpers/source-blocks';
+
 beforeEach(() => {
     global.fetch = jest.fn(() =>
         Promise.resolve({ ok: true, json: () => Promise.resolve([]) }),
@@ -138,10 +143,10 @@ describe('EditAssetFields (edit)', () => {
 });
 
 describe('asset detail page source', () => {
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.join(__dirname, '..', '..', 'src/app/t/[tenantSlug]/(app)/assets/[id]/page.tsx'),
         'utf8',
-    );
+    ));
     it('no longer renders the Suggest Risks action', () => {
         expect(src).not.toMatch(/suggest-risks-btn/);
         expect(src).not.toMatch(/Suggest Risks/);

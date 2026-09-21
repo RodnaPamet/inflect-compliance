@@ -11,9 +11,21 @@
 import * as fs from 'node:fs';
 import path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+//
+// LANGUAGE SPLIT. The raw reader is kept and the JSON path still uses it: a
+// catalogue is PARSED as data, never matched as text, so masking it would only
+// corrupt the parse. Text assertions go through the masked reader.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-function read(rel: string): string {
+function readRaw(rel: string): string {
     return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+}
+
+function read(rel: string): string {
+    return codeOf(readRaw(rel));
 }
 
 describe('Epic G-5 — control exception API + UI wiring', () => {
@@ -113,7 +125,7 @@ describe('Epic G-5 — control exception API + UI wiring', () => {
         // renders `{t('exceptionLabel')}: {ex.status}`. Assert the wiring + that
         // the key still resolves to the canonical English label.
         expect(panel).toContain("t('exceptionLabel')");
-        const en = JSON.parse(read('messages/en.json'));
+        const en = JSON.parse(readRaw('messages/en.json'));
         expect(en.panels.exceptions.exceptionLabel).toBe('Exception');
     });
 

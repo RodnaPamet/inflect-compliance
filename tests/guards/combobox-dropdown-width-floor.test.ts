@@ -19,10 +19,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const SRC = fs.readFileSync(
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// String literals are KEPT, so assertions that harvest codes or ids from source
+// still see them. Every path this file reads is a TypeScript-alike, re-derived
+// per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
+
+const SRC = codeOf(fs.readFileSync(
     path.resolve(__dirname, '../../src/components/ui/combobox/index.tsx'),
     'utf8',
-);
+));
 
 describe('combobox dropdown width is a floor, not an exact trigger match', () => {
     it('uses min-w (a floor) for matchTriggerWidth', () => {

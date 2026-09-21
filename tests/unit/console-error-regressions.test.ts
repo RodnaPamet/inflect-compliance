@@ -10,6 +10,13 @@ import * as path from 'node:path';
 import { ControlStatus } from '@prisma/client';
 import { PROCESS_MAP_TEMPLATES } from '@/components/processes/process-map-templates';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 // ═══════════════════════════════════════════════════════════════════
@@ -24,10 +31,10 @@ const ROOT = path.resolve(__dirname, '../..');
 // as an enum member.
 
 describe('C1 — control status filter accepts a comma-joined list', () => {
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.join(ROOT, 'src/app-layer/repositories/ControlRepository.ts'),
         'utf8',
-    );
+    ));
     // The parse itself now lives in ONE shared module. It had grown a
     // second independent copy in TaskRepository, and then the same
     // bug shipped again on /risks?status=ACTIVE — three copies of the
@@ -35,10 +42,10 @@ describe('C1 — control status filter accepts a comma-joined list', () => {
     // copies delegate here, so the behavioural assertions below follow
     // the logic to its new home rather than pinning a shape the
     // repository no longer owns.
-    const shared = fs.readFileSync(
+    const shared = codeOf(fs.readFileSync(
         path.join(ROOT, 'src/app-layer/domain/list-filter.ts'),
         'utf8',
-    );
+    ));
 
     it('no longer casts the raw query string straight into Prisma', () => {
         // Comments stripped — the fix's own doc comment quotes the old line

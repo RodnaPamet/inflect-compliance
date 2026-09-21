@@ -25,13 +25,20 @@
 import * as fs from "fs";
 import * as path from "path";
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, "../..");
 
 describe("v2-PR-7 FilterToolbar slot contract", () => {
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.join(ROOT, "src/components/filters/FilterToolbar.tsx"),
         "utf8",
-    );
+    ));
 
     it("declares both `actions` and `primary` slot props", () => {
         expect(src).toMatch(/\bactions\?:/);
@@ -77,10 +84,10 @@ describe("v2-PR-7 FilterToolbar slot contract", () => {
 });
 
 describe("v2-PR-7 EntityListPage exposes the slots", () => {
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.join(ROOT, "src/components/layout/EntityListPage.tsx"),
         "utf8",
-    );
+    ));
 
     it("EntityListPageFilters declares `toolbarPrimary` slot", () => {
         expect(src).toMatch(/\btoolbarPrimary\?:/);

@@ -27,9 +27,19 @@ import {
 } from '@/lib/policy/template-skeleton';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
-const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+//
+// LANGUAGE SPLIT. One seam here carries two things. TypeScript-alikes go
+// through `read` and are masked. The JSON fixtures go through `readRaw` and
+// are NOT: a JSON read is PARSED as data, never matched as text, so masking it
+// would only corrupt the parse — `codeOf` lexes TypeScript and a catalogue is
+// not that language.
+import { codeOf } from '../helpers/source-blocks';
 
+const ROOT = path.resolve(__dirname, '../..');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
 describe('policy review workflow — schema', () => {
     const schema = readPrismaSchema();
 
@@ -125,7 +135,7 @@ describe('policy review workflow — canonical skeleton + parsers', () => {
     });
 
     it('the cadence + evidence parsers work on the imported ciso-toolkit templates', () => {
-        const fixture = JSON.parse(read('prisma/fixtures/policy-templates-ciso-toolkit.json')) as {
+        const fixture = JSON.parse(readRaw('prisma/fixtures/policy-templates-ciso-toolkit.json')) as {
             templates: Array<{ externalRef: string; contentText: string }>;
         };
         let cadenceHits = 0;
@@ -168,7 +178,7 @@ describe('policy review workflow — detail page', () => {
         expect(page).not.toMatch(/isCurrentPublished/);
         // "Published" badge label moved to next-intl; assert the key + its en value.
         expect(page).toMatch(/isPublishedVersion && <StatusBadge variant="success">\{t\('detail\.published'\)\}/);
-        const en = JSON.parse(read('messages/en.json')) as {
+        const en = JSON.parse(readRaw('messages/en.json')) as {
             policies: { detail: Record<string, string> };
         };
         expect(en.policies.detail.published).toBe('Published');
@@ -184,7 +194,7 @@ describe('policy review workflow — detail page', () => {
     it('clarifies that "Mark reviewed" does not change publication status', () => {
         // Tooltip copy moved into the catalog (next-intl); assert the key + its value.
         expect(page).toMatch(/markReviewedTooltip/);
-        const en = JSON.parse(read('messages/en.json')) as {
+        const en = JSON.parse(readRaw('messages/en.json')) as {
             policies: { detail: Record<string, string> };
         };
         expect(en.policies.detail.markReviewedTooltip).toMatch(/does not change the publication status/);

@@ -17,9 +17,19 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+//
+// LANGUAGE SPLIT. One seam here carries two things. TypeScript-alikes go
+// through `read` and are masked. The JSON fixtures go through `readRaw` and
+// are NOT: a JSON read is PARSED as data, never matched as text, so masking it
+// would only corrupt the parse — `codeOf` lexes TypeScript and a catalogue is
+// not that language.
+import { codeOf } from '../helpers/source-blocks';
 
+const ROOT = path.resolve(__dirname, '../..');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(readRaw(rel));
 const client = read('src/app/t/[tenantSlug]/(app)/risks/RisksClient.tsx');
 const chart = read('src/components/ui/charts/ale-histogram.tsx');
 const barrel = read('src/components/ui/charts/index.ts');
@@ -95,7 +105,7 @@ describe('RQ3-5 — cell collisions flag on BOTH views', () => {
 
     test('the histogram path: the callout list with the drill-down', () => {
         // "Cell collisions" heading migrated to next-intl; resolve via en.json.
-        const en = JSON.parse(read('messages/en.json')) as { risks: { collisions: { title: string } } };
+        const en = JSON.parse(readRaw('messages/en.json')) as { risks: { collisions: { title: string } } };
         expect(client).toMatch(/tx\('collisions\.title'\)/);
         expect(en.risks.collisions.title).toBe('Cell collisions');
         // Clicking a callout drills into the cell's risks, matching

@@ -22,9 +22,24 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+//
+// LANGUAGE SPLIT. One seam here carries two things. TypeScript-alikes go
+// through `read` and are masked. The JSON fixtures go through `readRaw` and
+// are NOT: a JSON read is PARSED as data, never matched as text, so masking it
+// would only corrupt the parse — `codeOf` lexes TypeScript and a catalogue is
+// not that language.
+import { codeOf } from '../helpers/source-blocks';
 
+const ROOT = path.resolve(__dirname, '../..');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
+// `readDoc` is the DELIBERATE raw seam (#2246). Two tests below assert on the
+// RATIONALE COMMENT beside a piece of code, not on the code — an undocumented
+// `orderBy` is the defect they exist to catch. Over comment-masked source the
+// prose they look for is blanked, so they could never pass again.
+const readDoc = (rel: string) => readRaw(rel);
 const HUB = 'src/app/t/[tenantSlug]/(app)/audits/AuditsClient.tsx';
 const CREATE_FINDING = 'src/app/t/[tenantSlug]/(app)/findings/CreateFindingModal.tsx';
 const PACK = 'src/app/t/[tenantSlug]/(app)/audits/packs/[packId]/page.tsx';
@@ -33,8 +48,8 @@ const CYCLES_LIST = 'src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx';
 const CYCLE_DETAIL = 'src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/page.tsx';
 const FINDING_REPO = 'src/app-layer/repositories/FindingRepository.ts';
 
-const en = JSON.parse(read('messages/en.json')) as Record<string, any>;
-const bg = JSON.parse(read('messages/bg.json')) as Record<string, any>;
+const en = JSON.parse(readRaw('messages/en.json')) as Record<string, any>;
+const bg = JSON.parse(readRaw('messages/bg.json')) as Record<string, any>;
 
 describe('1 — the audits hub surfaces its cycle filter', () => {
     const src = read(HUB);
@@ -103,7 +118,8 @@ describe('3 — the materialize affordance is precise', () => {
     });
 
     it('the chosen fieldwork audit is documented as deterministic, not arbitrary', () => {
-        const src = read(SHARING);
+        // RAW: the window below IS the rationale comment, so it must not be masked.
+        const src = readDoc(SHARING);
         // The oldest-audit choice must carry a written rationale next to it —
         // an undocumented orderBy is what made this look arbitrary.
         const window = src.slice(
@@ -141,7 +157,12 @@ describe('4 — polish: localized statuses, branded fallback, honest comment', (
 
     it('the FindingRepository list-select comment matches the select', () => {
         const src = read(FINDING_REPO);
-        const header = src.slice(0, src.indexOf('const findingListSelect'));
+        // `header` is the comment block above the select, so it reads RAW; `src`
+        // stays masked because `audit: {` below is a CODE assertion.
+        const header = readDoc(FINDING_REPO).slice(
+            0,
+            readDoc(FINDING_REPO).indexOf('const findingListSelect'),
+        );
         // The select DOES carry the audit relation now — the comment must not
         // claim the page never reads it.
         expect(src).toMatch(/audit: \{/);

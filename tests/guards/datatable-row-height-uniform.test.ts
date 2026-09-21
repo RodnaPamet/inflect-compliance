@@ -24,14 +24,21 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 describe('DataTable uniform row height (R12-PR2)', () => {
     test('Table primitive preserves the canonical cell baseline (py-2.5 leading-6 text-sm)', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.resolve(ROOT, 'src/components/ui/table/table.tsx'),
             'utf-8',
-        );
+        ));
         // The base cell-class array contains the three load-bearing
         // tokens that together determine row height (~44px):
         //   py-2.5      → 10px vertical padding (top+bottom)
@@ -43,10 +50,10 @@ describe('DataTable uniform row height (R12-PR2)', () => {
     });
 
     test('the cell baseline string carries all three tokens TOGETHER (one block)', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.resolve(ROOT, 'src/components/ui/table/table.tsx'),
             'utf-8',
-        );
+        ));
         // Stricter: the three must appear in the same className
         // string. A future PR that pulls one out into a different
         // class array would fail this assertion.
@@ -82,7 +89,7 @@ describe('DataTable uniform row height (R12-PR2)', () => {
         for (const rel of titleCellPages) {
             const abs = path.join(ROOT, rel);
             if (!fs.existsSync(abs)) continue;
-            const src = stripComments(fs.readFileSync(abs, 'utf-8'));
+            const src = stripComments(codeOf(fs.readFileSync(abs, 'utf-8')));
             // Narrow to a window around the title cell — find the
             // `accessorKey: 'title'` or `id: 'title'` cell function
             // and search within the next ~600 chars.

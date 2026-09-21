@@ -28,6 +28,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const APP_ROOT = path.resolve(ROOT, 'src/app');
 
@@ -61,7 +68,7 @@ describe('detail-page back prop ban (R10-PR9 + RQ4-4)', () => {
     test('no <EntityDetailLayout> or <PageHeader> in src/app passes the LEGACY back={{ href, label }} static form', () => {
         const offenders: { file: string; snippet: string }[] = [];
         for (const file of walk(APP_ROOT)) {
-            const content = stripComments(fs.readFileSync(file, 'utf-8'));
+            const content = stripComments(codeOf(fs.readFileSync(file, 'utf-8')));
             const blocks = content.match(PRIMITIVE_BLOCK_RE);
             if (!blocks) continue;
             for (const block of blocks) {
@@ -98,10 +105,10 @@ describe('detail-page back prop ban (R10-PR9 + RQ4-4)', () => {
         // type so external consumers / library callers can pass it.
         // RQ4-4 widens it to a union that includes the new smart
         // form; both arms must remain.
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.resolve(ROOT, 'src/components/layout/EntityDetailLayout.tsx'),
             'utf-8',
-        );
+        ));
         expect(src).toMatch(/href:\s*string/);
         expect(src).toMatch(/label:\s*string/);
         expect(src).toMatch(/smart:\s*true/);

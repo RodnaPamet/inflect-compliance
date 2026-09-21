@@ -26,6 +26,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 const ADOPTED_PAGES = [
@@ -41,20 +48,20 @@ const ADOPTED_PAGES = [
 
 describe('TableTitleCell adoption (R13-PR1)', () => {
     test('TableTitleCell primitive carries the canonical className base', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.resolve(ROOT, 'src/components/ui/table-title-cell.tsx'),
             'utf-8',
-        );
+        ));
         // The three load-bearing tokens that define the
         // "this-is-an-identifier" visual signature.
         expect(src).toMatch(/font-medium\s+text-content-emphasis\s+text-sm/);
     });
 
     test('TableTitleCell primitive renders inline elements only (no block children)', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.resolve(ROOT, 'src/components/ui/table-title-cell.tsx'),
             'utf-8',
-        );
+        ));
         // The primitive renders ONLY `<Link>` (inline) or `<span>`
         // (inline). Locking out `<div>` / `<p>` here prevents a
         // future tidy-up from re-introducing block children that
@@ -69,7 +76,7 @@ describe('TableTitleCell adoption (R13-PR1)', () => {
         for (const rel of ADOPTED_PAGES) {
             const abs = path.join(ROOT, rel);
             expect(fs.existsSync(abs)).toBe(true);
-            const src = fs.readFileSync(abs, 'utf-8');
+            const src = codeOf(fs.readFileSync(abs, 'utf-8'));
             const imports =
                 /from\s+['"]@\/components\/ui\/table-title-cell['"]/.test(src);
             const mounts = /<TableTitleCell\b/.test(src);
@@ -99,7 +106,7 @@ describe('TableTitleCell adoption (R13-PR1)', () => {
         const offenders: string[] = [];
         for (const rel of ADOPTED_PAGES) {
             const src = stripComments(
-                fs.readFileSync(path.join(ROOT, rel), 'utf-8'),
+                codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8')),
             );
             // Find each `accessorKey: 'title'|'name'|'code'` site
             // and check the next ~600 chars.

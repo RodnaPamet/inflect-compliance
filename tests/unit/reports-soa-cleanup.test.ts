@@ -12,8 +12,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { CONTROL_STATUS_VARIANT } from '@/app-layer/domain/entity-status-mapping';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const APP = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)');
-const read = (p: string) => fs.readFileSync(path.join(APP, p), 'utf-8');
+const read = (p: string) => codeOf(fs.readFileSync(path.join(APP, p), 'utf-8'));
 
 describe('SoA page — ISO-only guard + framework threading', () => {
     const page = read('reports/soa/page.tsx');
@@ -96,10 +103,10 @@ describe('SoAClient — Print affordance + full status map', () => {
 
 describe('Dead report API surface removed', () => {
     const apiRoot = path.resolve(__dirname, '../../src/app/api');
-    const report = fs.readFileSync(
+    const report = codeOf(fs.readFileSync(
         path.resolve(__dirname, '../../src/app-layer/usecases/report.ts'),
         'utf-8',
-    );
+    ));
 
     test('orphaned GET routes are deleted', () => {
         expect(fs.existsSync(path.join(apiRoot, 't/[tenantSlug]/reports/route.ts'))).toBe(false);

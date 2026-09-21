@@ -19,9 +19,21 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+//
+// LANGUAGE SPLIT. The raw reader is kept and the JSON path still uses it: a
+// catalogue is PARSED as data, never matched as text, so masking it would only
+// corrupt the parse. Text assertions go through the masked reader.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../../');
-function read(rel: string): string {
+function readRaw(rel: string): string {
     return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+}
+
+function read(rel: string): string {
+    return codeOf(readRaw(rel));
 }
 
 // Modal-form P1 (2026-05-24) — the `/tasks/new` and `/vendors/new`
@@ -138,7 +150,7 @@ describe('NewControlModal — category + frequency Comboboxes', () => {
         expect(CONTROL_MODAL_SRC).toMatch(
             /id=["']control-category-input["'][\s\S]{0,800}searchPlaceholder=\{t\('new\.categorySearch'\)\}/,
         );
-        const enControls = JSON.parse(read('messages/en.json')).controls;
+        const enControls = JSON.parse(readRaw('messages/en.json')).controls;
         expect(enControls.new.categorySearch).toMatch(/^Search categories/);
         expect(CONTROL_MODAL_SRC).toMatch(
             /id=["']control-frequency-input["'][\s\S]{0,800}hideSearch/,
@@ -273,7 +285,7 @@ describe('vendors/new — mixed primitives (RadioGroup + Combobox)', () => {
         let i18nNone = false;
         if (!literalNone) {
             const vendors = (
-                JSON.parse(read('messages/en.json')) as Record<string, unknown>
+                JSON.parse(readRaw('messages/en.json')) as Record<string, unknown>
             ).vendors as Record<string, unknown> | undefined;
             const keys = [
                 ...VENDORS_NEW_SRC.matchAll(

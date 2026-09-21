@@ -25,8 +25,15 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// Every path this file READS is a TypeScript-alike: the `.json` it touches
+// arrives through `require()`, which is a module import, not a text read — so
+// it never reaches this seam and needs no separate reader.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, "../..");
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), "utf8"));
 
 describe("Epic P6-PR-A — sub-flow drill-down", () => {
     describe("useCanvasDrillStack hook", () => {

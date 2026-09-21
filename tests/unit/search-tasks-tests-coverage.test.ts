@@ -27,6 +27,11 @@ import {
 } from '@/lib/search/types';
 import { __SEARCHABLE_TYPES__ } from '@/app-layer/usecases/search';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM. Reads whose result
+// is JSON.parse'd are left RAW on purpose: a catalogue is parsed as DATA, never
+// matched as text, so masking it would only corrupt the parse.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 describe('MIN_QUERY_LENGTH allows single-char queries', () => {
@@ -65,20 +70,20 @@ describe('Task search coverage', () => {
     });
 
     it('rank.ts TYPE_BASELINE includes "task"', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(ROOT, 'src/lib/search/rank.ts'),
             'utf8',
-        );
+        ));
         expect(src).toMatch(
             /TYPE_BASELINE:\s*Record<SearchHitType,\s*number>\s*=\s*\{[\s\S]*?\btask:\s*\d+/,
         );
     });
 
     it('search usecase queries db.task.findMany', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(ROOT, 'src/app-layer/usecases/search.ts'),
             'utf8',
-        );
+        ));
         expect(src).toMatch(/db\.task\.findMany\(/);
 
         // BOUNDED to the task query. The previous assertion was
@@ -108,13 +113,13 @@ describe('Task search coverage', () => {
     });
 
     it('palette UI ENTITY_META + ENTITY_ORDER include "task"', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(
                 ROOT,
                 'src/components/command-palette/command-palette.tsx',
             ),
             'utf8',
-        );
+        ));
         expect(src).toMatch(
             /task:\s*\{\s*heading:\s*t\('entityTask'\)[^}]*icon:\s*CheckSquare/,
         );
@@ -141,10 +146,10 @@ describe('Test (ControlTestPlan) search coverage', () => {
     });
 
     it('rank.ts TYPE_BASELINE includes "test"', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(ROOT, 'src/lib/search/rank.ts'),
             'utf8',
-        );
+        ));
         expect(src).toMatch(
             /TYPE_BASELINE:\s*Record<SearchHitType,\s*number>\s*=\s*\{[\s\S]*?\btest:\s*\d+/,
         );
@@ -154,10 +159,10 @@ describe('Test (ControlTestPlan) search coverage', () => {
         // Plans, not Runs — runs have no `name` field. The
         // palette searches the discoverable "what tests exist"
         // surface.
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(ROOT, 'src/app-layer/usecases/search.ts'),
             'utf8',
-        );
+        ));
         expect(src).toMatch(/db\.controlTestPlan\.findMany\(/);
         expect(src).toMatch(/name:\s*\{\s*contains[\s\S]+?description:\s*\{\s*contains/);
         // The query fetches the control relation so the hit
@@ -166,13 +171,13 @@ describe('Test (ControlTestPlan) search coverage', () => {
     });
 
     it('palette UI ENTITY_META + ENTITY_ORDER include "test"', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(
                 ROOT,
                 'src/components/command-palette/command-palette.tsx',
             ),
             'utf8',
-        );
+        ));
         expect(src).toMatch(
             /test:\s*\{\s*heading:\s*t\('entityTest'\)[^}]*icon:\s*FlaskConical/,
         );
