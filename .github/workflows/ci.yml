@@ -1108,7 +1108,7 @@ jobs:
           # across a 2048 MB change. This number is not a guess.
           #
           # `Dockerfile:45` sets NODE_OPTIONS="--max-old-space-size=8192" and
-          # `Dockerfile:62` runs `npx next build --webpack` against the SAME
+          # `Dockerfile:62` runs the same build command against the SAME
           # next.config.js — same single heap, same webpackMemoryOptimizations.
           # `ghcr-publish.yml` completed SUCCESSFULLY on 2e41d62f6, the very commit
           # whose CI Build job peaked at 15670 MB with 319 MB available. So this
@@ -1129,6 +1129,24 @@ jobs:
           #     2026-09-20  peak 15466-15796 avail 193-527
           # That is a regression to be bisected, not growth to be accommodated.
           # This cap is a floor under the symptom while that bisect runs.
+          # ── RESOLVED 2026-09-21: prerender source maps were holding ~7.3 GB ──
+          #
+          # `enablePrerenderSourceMaps: false` in next.config.js, measured on this job
+          # with the [rss] line below:
+          #
+          #     source maps ON    peak 15815 MB   avail  174 MB   next-build 14500 MB
+          #     source maps OFF   peak  8511 MB   avail 7477 MB   next-build  6067 MB
+          #     main 2026-09-13   peak  8447 MB   avail 7541 MB   (the healthy end)
+          #
+          # -7304 MB, landing within 64 MB of the pre-regression baseline. The [rss]
+          # attribution is what made this findable: ONE `next-build` process held
+          # 14.5 GB while every other process was under 90 MB, so worker fan-out was
+          # never the story and `cpus`/`memoryBasedWorkersCount` were ruled out
+          # without spending a run on them.
+          #
+          # The four null results below are kept because they are what proves the cap
+          # was never the constraint.
+          #
           # MALLOC_ARENA_MAX WAS TRIED AND IT IS NOT THE LEVER EITHER. Recorded rather
           # than left set, because an inert env var reads as a fix to the next person.
           #
