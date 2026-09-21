@@ -884,7 +884,7 @@ the highest-blast-radius capability in the product, and it is deliberately
 throttled — though less than it was: the leaver clamp was raised to `AUTOMATIC`
 on 2026-08-30 (#2187), so the ladder alone now governs how far a tenant may go.
 The joiner RUNS but cannot provision: #2687 gave `planJoinerPass` a caller, a
-04:30 UTC schedule and an OWNER-only run route, so a joiner pass leaves an
+04:30 UTC schedule (the OWNER-only run route ships separately), so a joiner pass leaves an
 artefact like the leaver's — while `DIRECTION_IMPLEMENTED.joiner` stays FALSE,
 because `DirectoryProvisioner` declares no create verb and decision 10's
 department→security-group map has no column, so every plan refuses

@@ -366,27 +366,6 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'admin.manage.',
     },
 
-    // ── JML joiner pass — the off-schedule RUN trigger ─────────────
-    //
-    // MUST PRECEDE the joiner report rule below, for the reason the leaver pair
-    // records: first-match-wins, the report's subtree regex already covers
-    // `/run`, and an exact-anchored rule here keeps the endpoint that FIRES a
-    // pass from inheriting whatever key the read surface is later given.
-    {
-        path: new RegExp(`^${T}\\/admin\\/identity-joiner-passes\\/run$`),
-        methods: ['POST'],
-        permission: 'admin.tenant_lifecycle',
-        note:
-            'Fires a joiner pass NOW, off the 04:30 schedule. Same OWNER-only ' +
-            'key as the write policy that decides whether the joiner direction ' +
-            'may act at all, because being able to fire the pass and being able ' +
-            'to authorise it are one authority. Its own rule rather than riding ' +
-            'the identity-joiner-passes subtree rule immediately below: that one ' +
-            'gates a REPORT, and an edit softening it to admin.manage on the ' +
-            'grounds that reading is not writing would otherwise hand every ' +
-            'ADMIN an off-schedule trigger.',
-    },
-
     // ── JML joiner pass reports (the seven-day observation record) ──
     {
         path: new RegExp(`^${T}\\/admin\\/identity-joiner-passes(\\/.*)?$`),

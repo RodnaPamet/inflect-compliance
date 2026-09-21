@@ -6,7 +6,8 @@
  *                                  enabled writable directory connection.
  *
  * A deliberate mirror of `jobs/identity-leaver.ts`. The leaver had all four
- * pieces — IO caller, executor pair, schedule, manual run route — and the joiner
+ * pieces — IO caller, executor pair, schedule (the manual run route follows in
+ * the route half of #2687) — and the joiner
  * had none of them, so `planJoinerPass` was a decision core nothing could reach
  * (#2687). Mirroring rather than inventing keeps one shape for the two halves of
  * JML, so an operator reading either one already knows the other.

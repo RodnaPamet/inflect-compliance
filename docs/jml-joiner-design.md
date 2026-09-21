@@ -1,7 +1,6 @@
 # JML joiner — directory account provisioning
 
-> **Status: living design** — the joiner is a ladder setting with a DRY_RUN runtime behind it
-> and no create verb. The blocking
+> **Status: living design** — the joiner is a ladder setting with no runtime behind it. The blocking
 > pre-check (#2486) is ANSWERED, and the answer widened the direction rather than unblocking it:
 > pre-hires carry no work email, the product creates it in Entra, and the product then writes it
 > BACK to the HRIS. That is three capabilities this product does not have, of which one was costed.
@@ -24,10 +23,8 @@ number is a convenience rather than the evidence. When you edit this file, re-de
 
 ### What exists
 
-The joiner is a **stored enum, its readers, and a DRY_RUN pass that plans and stops.** As of
-#2638 there is a planner with a named refusal vocabulary; as of #2687 there is a job, a dispatch,
-a schedule and a run route that drive it. There is still no writer and no create verb — and, as
-of the operator's answer, no ingestion shape
+The joiner is a **stored enum and its readers**. There is no job, no dispatch, no schedule, no
+usecase, no writer, no refusal vocabulary — and, as of the operator's answer, no ingestion shape
 that can hold a candidate and no way to write anything back to an HRIS.
 
 | Where | What | Cite |

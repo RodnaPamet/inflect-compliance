@@ -168,15 +168,7 @@ describe('Regression: Import hygiene', () => {
         // no `prisma.<model>` query at all. Listed by its FULL segment rather
         // than `identity-leaver-passes`, so the sibling report route above it
         // keeps the gate this test applies to every other route.
-        // identity-joiner-passes/run (#2687) is the same shape a sixth time and
-        // for the same reason: the only mention of prisma in the file is the
-        // handle given to `logEvent` for IDENTITY_JOINER_PASS_REQUESTED — the
-        // record that a human asked for an off-schedule pass, written before the
-        // worker has touched anything — and the route runs no `prisma.<model>`
-        // query at all. Listed by its FULL segment rather than
-        // `identity-joiner-passes`, so the sibling report route above it keeps
-        // the gate this test applies to every other route.
-        const ROUTE_ALLOWLIST = ['audit-log', 'scim', 'key-rotation', 'tenant-dek-rotation', 'sessions', 'av-rescan', 'identity-leaver-passes/run', 'identity-joiner-passes/run'];
+        const ROUTE_ALLOWLIST = ['audit-log', 'scim', 'key-rotation', 'tenant-dek-rotation', 'sessions', 'av-rescan', 'identity-leaver-passes/run'];
         const routes = walk(routeDir, ['.ts']).filter(f =>
             f.endsWith('route.ts') && !ROUTE_ALLOWLIST.some(a => f.includes(a))
         );

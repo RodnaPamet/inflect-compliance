@@ -166,7 +166,7 @@ export function describeRefusal(
         // THE SENTENCE IS RENDERED, so it has to stay true. It used to say
         // "nothing schedules or triggers a <direction> pass", which #2687 made
         // false the day it scheduled one — a refusal whose stated reason an
-        // operator can disprove by looking at the run route is worse than a
+        // operator can disprove by looking at the pass report is worse than a
         // vaguer one, because it invites them to conclude the gate is stale.
         // What is true of an unimplemented direction in general, and of the
         // joiner in particular, is that the pass cannot ACT on the mode: every
