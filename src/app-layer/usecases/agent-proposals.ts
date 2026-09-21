@@ -37,7 +37,7 @@ import {
     guardAgentProposal,
     type AgentProposalGuardResult,
 } from '@/app-layer/ai/guard/proposal-guard';
-import { logAiDecision } from '@/app-layer/ai/decision-log';
+import { logAiDecision, recordDecisionOutcomeForDigest } from '@/app-layer/ai/decision-log';
 import { NO_POLICY_CARD, narrowApprovalRung, type ApprovalRung } from '@/lib/agentic/policy-card';
 import {
     resolveApprovalRequirement,
@@ -1535,6 +1535,36 @@ export async function approveAgentProposal(
         },
     }).catch(() => undefined);
 
+    // ═══ ART 14: CLOSE THE LOOP ═══
+    //
+    // `createAgentProposal` writes the Art 12 record when the proposal is made;
+    // until now nothing ever stamped its outcome, so every agentic decision sat
+    // at `humanOutcome: PENDING` for ever and the human-oversight half of the
+    // register was open.
+    //
+    // HERE, and not at the other return. This function has two exits: one
+    // records a SIGNATURE on a proposal that still needs a second approver and
+    // returns `AWAITING_APPROVAL`, the other applies the proposal. Only the
+    // second is a human OUTCOME. Stamping at the first would record "a human
+    // decided" the moment one of two reviewers signed — which is the
+    // automation-bias failure `wasApplied` exists to prevent, written into the
+    // permanent record.
+    //
+    // `status` is already exactly `'ACCEPTED' | 'EDITED'`, which is the
+    // vocabulary `AiDecisionOutcome` uses, so the reviewer's edit is carried
+    // rather than flattened to a plain accept.
+    //
+    // Keyed by the guard digest, never by `sessionRef`: an ordinary agent
+    // proposal carries no session, so a session-keyed stamp would match nothing
+    // and report success. Best-effort — a failed stamp must not undo an applied
+    // proposal — but the count is asserted in the tests, because a stamp that
+    // silently touches zero rows is indistinguishable from one that worked.
+    if (proposal.guardInputDigest) {
+        await runInTenantContext(ctx, (db) =>
+            recordDecisionOutcomeForDigest(db, ctx, proposal.guardInputDigest!, status),
+        ).catch(() => undefined);
+    }
+
     return { proposalId: id, kind, operation, createdEntityId, status };
 }
 
@@ -1561,12 +1591,19 @@ export async function rejectAgentProposal(ctx: RequestContext, id: string): Prom
     if (proposal.status !== 'PENDING') {
         throw badRequest(`Proposal is already ${proposal.status}`);
     }
-    await runInTenantContext(ctx, (db) =>
-        db.agentProposal.updateMany({
+    await runInTenantContext(ctx, async (db) => {
+        await db.agentProposal.updateMany({
             where: { id, tenantId: ctx.tenantId, status: 'PENDING' },
             data: { status: 'REJECTED', reviewedByUserId: ctx.userId, reviewedAt: new Date() },
-        }),
-    );
+        });
+        // ART 14, the rejection half. In the SAME transaction as the status
+        // write: a rejection recorded on the proposal but not on the decision
+        // log is a register that says a human is still deciding something they
+        // have already refused.
+        if (proposal.guardInputDigest) {
+            await recordDecisionOutcomeForDigest(db, ctx, proposal.guardInputDigest, 'REJECTED');
+        }
+    });
     await appendAuditEntry({
         tenantId: ctx.tenantId,
         userId: ctx.userId,
