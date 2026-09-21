@@ -79,6 +79,17 @@ export default async function AgentRunDetailPage({
 
     const def = getWorkflowDefinition(run.workflowKey);
 
+    // Proposals, grouped onto the step that produced them. Grouped rather than
+    // looked up per step because one step may queue SEVERAL — which is exactly
+    // why `stepSeq` carries no unique constraint.
+    const bySeq = new Map<number, typeof run.proposals>();
+    for (const p of run.proposals) {
+        if (p.stepSeq === null) continue;
+        const list = bySeq.get(p.stepSeq);
+        if (list) list.push(p);
+        else bySeq.set(p.stepSeq, [p]);
+    }
+
     const steps: RunStepRow[] = run.steps.map((s) => {
         const declared = def?.steps[s.seq];
         return {
@@ -100,6 +111,16 @@ export default async function AgentRunDetailPage({
             // from a collapsed panel to the whole page.
             inputJson: s.inputJson,
             outputJson: s.outputJson,
+            // WHAT THIS STEP QUEUED. The other half of the backlink: a
+            // proposal names its step, and a step names its proposals, so a
+            // reviewer can travel either way between the write and the
+            // reasoning that produced it.
+            proposals: (bySeq.get(s.seq) ?? []).map((p) => ({
+                id: p.id,
+                kind: p.kind,
+                status: p.status,
+                guardVerdict: p.guardVerdict,
+            })),
         };
     });
 

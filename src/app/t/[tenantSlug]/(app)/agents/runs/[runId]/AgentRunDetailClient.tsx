@@ -24,6 +24,17 @@ export interface RunStepRow {
     actorUserId: string | null;
     inputJson: string | null;
     outputJson: string | null;
+    /**
+     * The proposals this step queued. Possibly several — one `buildItems` can
+     * produce many — which is why `AgentProposal.stepSeq` carries no unique
+     * constraint.
+     */
+    proposals: ReadonlyArray<{
+        id: string;
+        kind: string;
+        status: string;
+        guardVerdict: string;
+    }>;
 }
 
 export interface RunHeader {
@@ -215,6 +226,30 @@ export function AgentRunDetailClient({
                                 </div>
                                 <Payload label={t('runs.detail.inputLabel')} json={s.inputJson} />
                                 <Payload label={t('runs.detail.outputLabel')} json={s.outputJson} />
+                                {s.proposals.length > 0 && (
+                                    /* WHAT THIS STEP QUEUED. A PROPOSE step's
+                                       own payload records only `{count: N}` —
+                                       the items deliberately do not live on the
+                                       step — so without this the ledger says a
+                                       propose happened and nothing about what
+                                       it proposed. */
+                                    <ul className="flex flex-wrap gap-tight text-xs">
+                                        {s.proposals.map((p) => (
+                                            <li key={p.id}>
+                                                <a
+                                                    className="underline text-content-muted"
+                                                    data-testid={`step-proposal-${p.id}`}
+                                                    href={`${tenantHref('/agents/proposals')}#proposal-${p.id}`}
+                                                >
+                                                    {t('runs.detail.proposal', {
+                                                        kind: p.kind,
+                                                        status: p.status,
+                                                    })}
+                                                </a>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
                             </li>
                         ))}
                     </ol>

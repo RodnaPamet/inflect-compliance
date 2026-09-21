@@ -37,6 +37,14 @@ export interface ProposalRow {
     proposedViaKeyId: string | null;
     createdAt: string;
     /**
+     * The run and step that produced this, or null for a proposal made outside
+     * a workflow — a propose tool called directly by an agent that is not
+     * executing one. NULL is an answer here, not missing data, so the link
+     * below is conditional rather than a disabled control.
+     */
+    runId: string | null;
+    stepSeq: number | null;
+    /**
      * The agentic output guard's verdict on this proposal's content.
      *
      * NOT NULLABLE — the column is `AgentGuardVerdict NOT NULL DEFAULT 'CLEAN'`,
@@ -404,6 +412,35 @@ export function AgentProposalsClient({
                                     className="text-xs text-content-subtle"
                                 >
                                     {t('proposals.diff.targetLabel', { id: p.targetEntityId })}
+                                </p>
+                            )}
+
+                            {/*
+                              WHERE THIS CAME FROM. A reviewer approving an
+                              agent's proposed write is consenting to reasoning
+                              they cannot see from here — the step's tool call,
+                              its input and its output live in the run's ledger.
+                              The link is the shortest path from "should I
+                              approve this" to the evidence for it.
+
+                              Conditional on `runId`, because NULL is a real
+                              answer: a propose tool called outside a workflow
+                              has no step, and a disabled control would imply a
+                              run existed and was unreachable.
+                            */}
+                            {p.runId && (
+                                <p className="text-xs text-content-subtle">
+                                    <a
+                                        className="underline"
+                                        data-testid={`proposal-run-link-${p.id}`}
+                                        href={`${tenantHref(`/agents/runs/${p.runId}`)}${
+                                            p.stepSeq === null ? '' : `#step-${p.stepSeq}`
+                                        }`}
+                                    >
+                                        {p.stepSeq === null
+                                            ? t('proposals.fromRun')
+                                            : t('proposals.fromRunStep', { seq: p.stepSeq + 1 })}
+                                    </a>
                                 </p>
                             )}
 

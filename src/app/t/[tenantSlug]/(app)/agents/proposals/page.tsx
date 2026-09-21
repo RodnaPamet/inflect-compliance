@@ -59,6 +59,12 @@ export default async function AgentProposalsPage({
         rationale: p.rationale,
         proposedViaKeyId: p.proposedViaKeyId,
         createdAt: p.createdAt.toISOString(),
+        // WHICH STEP OF WHICH RUN produced this. `listAgentProposals` has no
+        // `select`, so both columns were already arriving here and were simply
+        // dropped on the floor — the projection was the only thing between the
+        // reviewer and the reasoning behind what they are approving.
+        runId: p.runId,
+        stepSeq: p.stepSeq,
         // ─── The agentic output guard's verdict, forwarded ───────────────
         //
         // `guardAgentProposal` returns FLAGGED when a rule fired but nothing

@@ -87,6 +87,7 @@ function step(over: Partial<RunStepRow> = {}): RunStepRow {
         actorUserId: null,
         inputJson: null,
         outputJson: null,
+        proposals: [],
         ...over,
     };
 }
@@ -193,5 +194,84 @@ describe('the run detail renders the step ledger', () => {
             errorMessage: 'run_action_cap_exceeded',
         });
         expect(screen.getByText('run_action_cap_exceeded')).toBeInTheDocument();
+    });
+});
+
+/**
+ * The step ⟷ proposal link, on the run side.
+ *
+ * A PROPOSE step's own payload records `{"count": N}` and NOT the items — the
+ * driver deliberately keeps proposed content off the step row. So without this
+ * list the ledger says a propose happened and says nothing whatever about what
+ * it proposed, which is the half a reviewer needs.
+ */
+describe('a step names the proposals it queued', () => {
+    it('renders one link per proposal the step produced', () => {
+        // SEVERAL, not one: a single `buildItems` can queue many, which is
+        // precisely why `AgentProposal.stepSeq` carries no unique constraint.
+        // A renderer that showed only the first would pass a single-item test.
+        renderDetail([
+            step({
+                seq: 0,
+                id: 's-0',
+                kind: 'PROPOSE',
+                proposals: [
+                    { id: 'p-1', kind: 'RISK', status: 'PENDING', guardVerdict: 'CLEAN' },
+                    { id: 'p-2', kind: 'RISK', status: 'PENDING', guardVerdict: 'CLEAN' },
+                ],
+            }),
+        ]);
+
+        const row = document.getElementById('step-0') as HTMLElement;
+        expect(within(row).getByTestId('step-proposal-p-1')).toBeInTheDocument();
+        expect(within(row).getByTestId('step-proposal-p-2')).toBeInTheDocument();
+    });
+
+    it('links each proposal to its anchor on the proposals queue', () => {
+        renderDetail([
+            step({
+                seq: 0,
+                id: 's-0',
+                kind: 'PROPOSE',
+                proposals: [{ id: 'p-1', kind: 'RISK', status: 'PENDING', guardVerdict: 'CLEAN' }],
+            }),
+        ]);
+
+        const link = screen.getByTestId('step-proposal-p-1');
+        expect(link.getAttribute('href')).toBe('/t/acme/agents/proposals#proposal-p-1');
+    });
+
+    it('renders NOTHING for a step that queued none', () => {
+        // A READ step has no proposals and must not grow an empty list — an
+        // empty affordance reads as "none yet" where the truth is "never any".
+        renderDetail([step({ seq: 0, id: 's-0', kind: 'READ', proposals: [] })]);
+        const row = document.getElementById('step-0') as HTMLElement;
+        expect(within(row).queryByTestId(/step-proposal-/)).toBeNull();
+        expect(row.querySelector('ul')).toBeNull();
+    });
+
+    it('attaches each proposal to ITS OWN step, not to the first', () => {
+        // The grouping assertion. A projection that put every proposal on
+        // step 0 — or that used `find` instead of a group — passes all three
+        // cases above.
+        renderDetail([
+            step({
+                seq: 0,
+                id: 's-0',
+                kind: 'READ',
+                proposals: [],
+            }),
+            step({
+                seq: 1,
+                id: 's-1',
+                kind: 'PROPOSE',
+                proposals: [{ id: 'p-9', kind: 'RISK', status: 'PENDING', guardVerdict: 'CLEAN' }],
+            }),
+        ]);
+
+        const first = document.getElementById('step-0') as HTMLElement;
+        const second = document.getElementById('step-1') as HTMLElement;
+        expect(within(first).queryByTestId('step-proposal-p-9')).toBeNull();
+        expect(within(second).getByTestId('step-proposal-p-9')).toBeInTheDocument();
     });
 });

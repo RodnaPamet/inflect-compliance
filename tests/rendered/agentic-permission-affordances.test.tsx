@@ -132,6 +132,9 @@ const PROPOSAL: ProposalRow = {
     rationale: 'Observed three failed backups in the last quarter.',
     proposedViaKeyId: 'key-abcdef12',
     createdAt: '2026-09-01T10:00:00.000Z',
+    // Made outside a run — this suite is not about provenance.
+    runId: null,
+    stepSeq: null,
     // Scanned and clean: a null digest would read as pre-guard and put an
     // extra notice on the card, which is a claim this file does not make.
     guardVerdict: 'CLEAN',
