@@ -152,6 +152,31 @@ export interface ProposeInput {
      * reader can see which of the two it is.
      */
     policyCardVersion: number;
+    /**
+     * WHICH STEP OF WHICH RUN produced this, when one did.
+     *
+     * ONE OBJECT rather than two optional fields, because the database refuses
+     * the half-state: `AgentProposal_step_requires_run` CHECKs that a step
+     * ordinal naming no run is unstorable. Two independent optionals make that
+     * combination expressible in TypeScript and rejected only at the insert;
+     * a single object makes it unrepresentable.
+     *
+     * OPTIONAL — and this is the opposite of `policyCardVersion` directly
+     * above, which argues at length against optional-with-a-fallback. The two
+     * differ on whether absence is an ANSWER.
+     *
+     * A card version always has one: `NO_POLICY_CARD` (0) is the real, storable
+     * statement "there was no card", so a caller omitting the field is a caller
+     * withholding an answer it had. A run has no such sentinel. The propose
+     * tools are callable directly by an agent that is not executing a workflow,
+     * and such a proposal genuinely has no step — the column's own schema
+     * comment says so: "NULL IS A REAL ANSWER… reading NULL as 'unknown run'
+     * would invent a run that never existed."
+     *
+     * So `undefined` here means "made outside a run", which is a fact, not an
+     * omission — and the one caller that HAS a run passes it.
+     */
+    origin?: { runId: string; stepSeq: number };
 }
 
 export interface ProposalResult {
@@ -606,6 +631,17 @@ export async function createAgentProposal(
                 // pin already set, so approving or rejecting this proposal
                 // later cannot rewrite what the rules were when it was made.
                 policyCardVersion: input.policyCardVersion,
+                // …and WHICH STEP OF WHICH RUN produced it, when one did.
+                //
+                // Both written from the same object or both NULL — never one
+                // of the two. `AgentProposal_step_requires_run` CHECKs exactly
+                // that at the database, and `origin` is one object so the
+                // half-state is not expressible here either.
+                //
+                // NULL is the real answer for a propose tool called outside a
+                // workflow, which is a supported path rather than a gap.
+                runId: input.origin?.runId ?? null,
+                stepSeq: input.origin?.stepSeq ?? null,
                 // …and HOW MANY HUMANS have to sign it. Written here rather
                 // than derived at review time so a card edit or a re-score
                 // between now and then cannot change what this proposal was

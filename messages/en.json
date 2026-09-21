@@ -8155,7 +8155,9 @@
         "confirmBody": "The agentic output guard flagged this proposal. Approving it creates the real compliance record from content that matched a known injection pattern.",
         "confirmApprove": "Approve anyway",
         "confirmCancel": "Go back"
-      }
+      },
+      "fromRun": "From an agent run",
+      "fromRunStep": "From step {seq} of an agent run"
     },
     "runs": {
       "accessTitle": "Agent runs access required",
@@ -8202,7 +8204,8 @@
         "metaDriver": "Engine",
         "metaSteps": "Steps",
         "metaTokens": "Tokens",
-        "metaStarted": "Started"
+        "metaStarted": "Started",
+        "proposal": "{kind} · {status}"
       }
     },
     "quarantine": {
