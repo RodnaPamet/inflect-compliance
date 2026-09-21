@@ -77,7 +77,6 @@
     "tests/guards/list-header-row-hover.test.ts",
     "tests/guards/list-page-perf-ratchet.test.ts",
     "tests/guards/metadata-bar-tab-section.test.ts",
-    "tests/guards/mobile-canvas-fallback.test.ts",
     "tests/guards/mobile-popover-viewport-clamp.test.ts",
     "tests/guards/mobile-readiness.test.ts",
     "tests/guards/mobile-touch-targets.test.ts",
