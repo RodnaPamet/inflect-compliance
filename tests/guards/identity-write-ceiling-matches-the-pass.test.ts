@@ -209,6 +209,7 @@ describe('the published ceiling agrees with what the pass actually refuses', () 
                 observedAddresses: [],
                 departmentGroups: { Engineering: 'grp-eng' },
                 defaultGroupId: 'grp-everyone',
+                defaultGroupName: 'Contractors',
                 timeZone: 'Europe/Sofia',
             });
 

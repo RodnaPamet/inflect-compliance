@@ -116,6 +116,7 @@ a `userId` but stores no contact PII).
 | `FrameworkPack` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `FrameworkRequirement` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `FrameworkRequirementOrder` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
+| `IdentityDepartmentGroupRule` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion. One row per department→security-group rule for the JML joiner (#2713); holds no personal data — a department string and a directory group id. |
 | `Incident` | Regulatory artefact | maybe | None today — indefinite while tenant active; `description` encrypted | NIS2 Article 23 record — retention is a **legal** decision (incident records often have multi-year statutory retention); **needs legal input** |
 | `IncidentNotification` | Regulatory artefact | maybe | None today — cascade on parent incident delete only; `submissionNote` encrypted | The filed Article 23 report + authority case ref — retention tracks the parent incident; **needs legal input** |
 | `IncidentTimelineEntry` | Regulatory artefact | maybe | None today — cascade on parent incident delete only; `entry` encrypted | Forensic incident narrative — retention tracks the parent incident; **needs legal input** |

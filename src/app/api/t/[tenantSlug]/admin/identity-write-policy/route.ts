@@ -110,9 +110,12 @@ const getHandler = requirePermission('admin.tenant_lifecycle', async (_req, _ctx
         // prints and the refusal the PUT raises cannot drift apart. It is still
         // false for the joiner, and #2687 narrowed the reason to ONE: a planner
         // exists AND a dispatcher and a schedule now call it, but
-        // decision 10's department→group map has nowhere to live, so every plan
-        // refuses `NO_DEPARTMENT_MAP` and a widened joiner would still produce
-        // nothing an operator can act on. See `DIRECTION_IMPLEMENTED`.
+        // decision 10's map now HAS somewhere to live (#2713 —
+        // `IdentityDepartmentGroupRule` plus the singular fallback on
+        // `TenantSecuritySettings`), so a tenant that has configured it no
+        // longer refuses `NO_DEPARTMENT_MAP`. The create VERB is still missing
+        // (#2714), which is why `DIRECTION_IMPLEMENTED.joiner` stays false:
+        // #2713 closed one conjunct, not the conjunction.
         honoured: {
             leaver: { maxMode: LEAVER_MAX_MODE, implemented: DIRECTION_IMPLEMENTED.leaver },
             joiner: { maxMode: JOINER_MAX_MODE, implemented: DIRECTION_IMPLEMENTED.joiner },

@@ -29,10 +29,13 @@
  *
  * Two of the input fields have no column to read from:
  *
- *   · `departmentGroups` / `defaultGroupId` — owner decision 10 puts the
- *     department → security-group map on `TenantSecuritySettings`, so that it
- *     inherits the same OWNER gate as the ladder itself. That column does not
- *     exist. Every plan therefore refuses `NO_DEPARTMENT_MAP`.
+ *   · `departmentGroups` / `defaultGroupId` / `defaultGroupName` — owner
+ *     decision 10, REVISED 2026-09-21 (#2713). The rules live in
+ *     `IdentityDepartmentGroupRule`, one row each so a rule carries its own
+ *     provenance; the singular fallback lives on `TenantSecuritySettings` and
+ *     inherits the same OWNER gate as the ladder itself. A tenant with neither
+ *     configured still refuses `NO_DEPARTMENT_MAP` / `NO_DEFAULT_GROUP` — but
+ *     that refusal is now one an operator can clear.
  *   · `timeZone` — owner decision 9 fires dispatch on the tenant's own zone.
  *     Nothing stores one, so the start-date window is computed in UTC and
  *     `predictionLimits` SAYS SO on every plan.
@@ -172,19 +175,46 @@ export interface JoinerPassResult {
 async function readJoinerEntitlementConfig(ctx: RequestContext): Promise<{
     departmentGroups: Readonly<Record<string, string>> | null;
     defaultGroupId: string | null;
+    defaultGroupName: string | null;
     timeZone: string | null;
 }> {
-    await runInTenantContext(ctx, (db) =>
-        db.tenantSecuritySettings.findUnique({
-            where: { tenantId: ctx.tenantId },
-            select: { tenantId: true },
-        }),
+    const [rules, settings] = await runInTenantContext(ctx, (db) =>
+        Promise.all([
+            db.identityDepartmentGroupRule.findMany({
+                where: { tenantId: ctx.tenantId },
+                select: { department: true, groupId: true },
+            }),
+            db.tenantSecuritySettings.findUnique({
+                where: { tenantId: ctx.tenantId },
+                select: {
+                    identityDefaultGroupId: true,
+                    identityDefaultGroupName: true,
+                },
+            }),
+        ]),
     );
-    // No column holds either value today. Returning null is what makes the
-    // planner refuse NO_DEPARTMENT_MAP by name and emit the UTC caveat in
-    // `predictionLimits` — the honest state of the capability, rather than a
-    // plan with an empty group field or a UTC day presented as a local one.
-    return { departmentGroups: null, defaultGroupId: null, timeZone: null };
+
+    // AN EMPTY MAP IS NOT AN EMPTY OBJECT. The planner refuses
+    // NO_DEPARTMENT_MAP on `!departmentGroups || keys.length === 0`, so `{}`
+    // and `null` refuse identically — but they say different things to a
+    // reader, and only one of them is true here. No rows configured means the
+    // tenant has no map, so `null` is the honest value.
+    const departmentGroups =
+        rules.length > 0
+            ? Object.freeze(
+                  Object.fromEntries(rules.map((r) => [r.department, r.groupId])),
+              )
+            : null;
+
+    // Both halves are read, and NEITHER is defaulted. A missing settings row
+    // and a row with a null column are the same state — no fallback — and the
+    // planner names it NO_DEFAULT_GROUP rather than choosing a group.
+    return {
+        departmentGroups,
+        defaultGroupId: settings?.identityDefaultGroupId ?? null,
+        defaultGroupName: settings?.identityDefaultGroupName ?? null,
+        timeZone: null,
+    };
 }
 
 /**
@@ -457,6 +487,7 @@ export async function runIdentityJoinerPass(input: {
             observedAddresses: observed.addresses,
             departmentGroups: config.departmentGroups,
             defaultGroupId: config.defaultGroupId,
+            defaultGroupName: config.defaultGroupName,
             timeZone: config.timeZone,
         });
 

@@ -153,11 +153,13 @@ export function describeRefusal(
     //
     // The clamp that rung would meet EXISTS — `JOINER_MAX_MODE` (DRY_RUN) in
     // `identity-joiner-pass`, which the admin route reports verbatim (#2638) —
-    // and so does the trigger (#2687). What is missing is the entitlement map:
-    // decision 10 puts the department→security-group map on
-    // `TenantSecuritySettings` and that column does not exist, so a joiner pass
-    // can run but cannot decide anything. That is the sole remaining reason
-    // `DIRECTION_IMPLEMENTED.joiner` is false; see the docblock on it.
+    // and so does the trigger (#2687). The entitlement map now EXISTS (#2713 —
+    // `IdentityDepartmentGroupRule` for the rules, `identityDefaultGroupId` +
+    // `identityDefaultGroupName` for the fallback), so a configured tenant's
+    // pass decides rather than refusing. What is still missing is the create
+    // VERB (#2714): the pass can say which group it WOULD add the person to and
+    // cannot add them. That is why `DIRECTION_IMPLEMENTED.joiner` is still
+    // false; see the docblock on it.
     //
     // Placed BELOW the narrowing check on purpose. A tenant already sitting above
     // DISABLED — set before this gate existed, or after the joiner ships and is
@@ -169,9 +171,9 @@ export function describeRefusal(
         // operator can disprove by looking at the pass report is worse than a
         // vaguer one, because it invites them to conclude the gate is stale.
         // What is true of an unimplemented direction in general, and of the
-        // joiner in particular, is that the pass cannot ACT on the mode: every
-        // joiner plan refuses `NO_DEPARTMENT_MAP` because decision 10's
-        // department→security-group map has no column to live in.
+        // joiner in particular, is that the pass cannot ACT on the mode: it
+        // can now DECIDE a group (#2713 gave the map a home), but there is
+        // no create verb behind that decision (#2714).
         return `The ${direction} direction has no implementation behind it — a ${direction} pass cannot act on the mode it reads, so a rung above DISABLED would be recorded and would do nothing. It cannot be widened until the ${direction} runtime ships.`;
     }
 

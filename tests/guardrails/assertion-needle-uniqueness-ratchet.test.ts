@@ -811,8 +811,13 @@ describe('Class D — needles that match more than the thing they name', () => {
         // Was :18; the #2246 batch-11 conversion inserted the masker header
         // above it and the assertion moved to :30. The CITATION rotted, the
         // claim did not — re-derived against the file rather than dropped.
-        it('entra-ei2-group-mapping.test.ts:30 — @@index([tenantId]) is satisfied by fifteen models', () => {
-            expect(at('entra-ei2-group-mapping.test.ts', 30)?.occurrences).toBe(15);
+        // 15 -> 16: #2713 added `IdentityDepartmentGroupRule`, whose
+        // `@@index([tenantId])` is the sixteenth. The pin's POINT is that this
+        // number grows — the needle names one model and matches every model
+        // with that index — so a new model moving it is the guard working, not
+        // drift. Re-derived against the schema, not incremented on faith.
+        it('entra-ei2-group-mapping.test.ts:30 — @@index([tenantId]) is satisfied by sixteen models', () => {
+            expect(at('entra-ei2-group-mapping.test.ts', 30)?.occurrences).toBe(16);
         });
 
         it('vendor-audit.test.ts:112 — a `.toContain`, the matcher the class hid behind', () => {
