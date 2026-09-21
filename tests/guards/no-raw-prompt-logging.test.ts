@@ -382,7 +382,25 @@ const SINK_FLOOR = 30;
 // is correctly absent from both counts: the swept population is
 // `matchesAgenticPath`, which observability is not part of. That is also why
 // only one new file/kind pair appears below.
-const MEASURED_HOLES = 150;
+// Re-MEASURED 2026-09-21 for the run-engine record: 150 / 87 became 154 / 87.
+// SINKS DID NOT MOVE, and that is the shape of this diff — it adds fields to
+// two `appendAuditEntry` calls that were already swept, rather than a new call.
+//
+// The whole delta is `src/app-layer/usecases/workflow-runs.ts`, measured per
+// file rather than inferred from the total: 4 holes before, 8 after, with the
+// other files unchanged. The start row's driver fields go from two to four,
+// and the resume row goes from a bare `{ category: 'access' }` literal — which
+// is analysable, and is why it contributed nothing before — to four bound
+// identifiers.
+//
+// All eight are `identifier bound elsewhere`, so no new file/kind pair appears
+// below. Every value is a closed `'static' | 'flue'` union or the nullable
+// reason string beside it; none can carry prompt text, and the rule cannot
+// know that, which is exactly what being counted here means. The calls are
+// bound to locals rather than spelled at the sink — `requestedDriver(def)`
+// inline added a FIFTH kind, "call to a helper this rule cannot open", and
+// that one is a new pair rather than a bigger number.
+const MEASURED_HOLES = 154;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
