@@ -907,6 +907,7 @@ jobs:
           # job survives. This covers the silent one.
           ( while true; do
               echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk 'NR==2{print $3" used_MB "$7" avail_MB"}')"
+              echo "[rss] $(date -u +%H:%M:%S) $(ps -eo rss=,comm= --sort=-rss | head -4 | awk '{printf "%s:%dMB ", $2, $1/1024}')"
               sleep 5
             done ) &
           sampler=$!
@@ -1128,34 +1129,31 @@ jobs:
           #     2026-09-20  peak 15466-15796 avail 193-527
           # That is a regression to be bisected, not growth to be accommodated.
           # This cap is a floor under the symptom while that bisect runs.
-          # MALLOC_ARENA_MAX — the one lever that reaches where this memory actually is.
+          # MALLOC_ARENA_MAX WAS TRIED AND IT IS NOT THE LEVER EITHER. Recorded rather
+          # than left set, because an inert env var reads as a fix to the next person.
           #
-          # THREE cap values were measured on this tree and ALL land near 15.5 GB:
-          #     12288 -> peak 15466-15796      10240 -> peak 15479      8192 -> peak 15707
-          # A knob that changes nothing across a 4096 MB range is not the binding
-          # constraint. The memory is not in V8 old space at all.
+          #     cap 12288            peak 15466-15796 MB
+          #     cap 10240            peak 15479 MB
+          #     cap  8192            peak 15707 MB
+          #     MALLOC_ARENA_MAX=2   peak 15568 MB
           #
-          # Where it IS: `next build --webpack` parses every module through SWC, which is
-          # Rust (`@next/swc-linux-x64-gnu`, ~96 MB of native code). Native allocations
-          # never appear in the V8 heap and no --max-old-space-size value bounds them.
+          # Four settings, one band. Run-to-run noise on this job is ~1.4 GB (five runs
+          # inside one minute on 2026-09-17 spanned 7429-8872 MB), so none of these
+          # differences means anything. The glibc per-thread-arena theory is not
+          # supported by its own test.
           #
-          # glibc gives each thread its own malloc arena, up to 64 MB apiece, and sizes
-          # the pool from the CPU count. Threaded native code therefore inflates RSS far
-          # beyond live data, and the memory is not returned to the OS — which is exactly
-          # the trailing plateau this job shows: ~11.2 GB still resident and flat AFTER
-          # "Finalizing page optimization", against ~5.2 GB on 2026-09-13.
+          # WHAT IS STILL TRUE AND STILL UNEXPLAINED:
+          #     2026-09-13  peak  8447 MB  baseline 1086 MB  webpack  62 s  trailing ~5200 MB
+          #     2026-09-20  peak 15670 MB  baseline 1094 MB  webpack 149 s  trailing ~11250 MB
+          # Identical baseline (not the runner image), identical 766-route surface (not
+          # growth), +0.9% modules, cache flat at 326-337 MB. Something doubled the cost
+          # of compiling the same input in one week.
           #
-          # THE CONTROL THAT POINTS HERE: Dockerfile:21 builds this same tree with the
-          # same command and config on `node:24-alpine` — musl, which has no per-thread
-          # arena behaviour — at --max-old-space-size=8192, and ghcr-publish SUCCEEDS on
-          # the very commits whose CI Build peaks at 15.7 GB. Same work, same cap, the
-          # only difference being the libc and therefore the SWC binary variant.
-          #
-          # 2 arenas rather than 1: one serialises every native malloc across threads.
-          # If this does not move the peak, the next measurement is per-process
-          # attribution (`ps -eo rss,comm` in the sampler) — every number in this file
-          # so far is system-wide `free -m` and cannot tell one fat process from several.
-          MALLOC_ARENA_MAX: "2"
+          # THE NEXT MEASUREMENT IS THE [rss] LINE ADDED TO THE SAMPLER ABOVE, and it is
+          # overdue: every figure in this entire history — including all four above — is
+          # system-wide `free -m`. That cannot distinguish "one process holds 14.5 GB"
+          # from "the compile holds 9 GB and something else holds 5 GB", and those have
+          # opposite fixes. Stop proposing levers until the curve says which it is.
           NODE_OPTIONS: "--max-old-space-size=8192"
           NODE_ENV: production
 
@@ -1410,6 +1408,7 @@ jobs:
           # job survives. This covers the silent one.
           ( while true; do
               echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk 'NR==2{print $3" used_MB "$7" avail_MB"}')"
+              echo "[rss] $(date -u +%H:%M:%S) $(ps -eo rss=,comm= --sort=-rss | head -4 | awk '{printf "%s:%dMB ", $2, $1/1024}')"
               sleep 5
             done ) &
           sampler=$!
