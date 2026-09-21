@@ -43,7 +43,14 @@ import * as path from 'node:path';
 import * as yaml from 'js-yaml';
 
 const ROOT = path.resolve(__dirname, '../../..');
+import { codeOf } from '../../helpers/source-blocks';
+
+// #2246 Class A — the mask goes at the READ SEAM, and WHICH masker depends on
+// the language. `read` stays RAW because this file also reads YAML, none of
+// which `codeOf` lexes — handing it YAML once blanked a bare-scalar URL from
+// `//` to end of line. TypeScript reads go through `readSrc`, which masks.
 const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+const readSrc = (p: string) => codeOf(read(p));
 const codeOnly = (s: string) =>
     s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
@@ -135,7 +142,7 @@ describe('AUTH_TEST_MODE is refused in production', () => {
             /NEXT_TEST_MODE !== '1'[\s\S]{0,120}AUTH_TEST_MODE === '1'/,
         );
         // …and the webServer really does set it, so the exemption fires.
-        expect(read('playwright.config.ts')).toMatch(/NEXT_TEST_MODE=1/);
+        expect(readSrc('playwright.config.ts')).toMatch(/NEXT_TEST_MODE=1/);
     });
 
     it('the flag still works outside production — this is a prod refusal, not a removal', () => {

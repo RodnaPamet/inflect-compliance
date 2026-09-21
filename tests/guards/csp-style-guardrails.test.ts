@@ -1,3 +1,4 @@
+import { codeOf } from '../helpers/source-blocks';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -62,7 +63,7 @@ describe('CSP Style Guardrails', () => {
             for (const file of tsxFiles) {
                 const rel = path.relative(SRC_DIR, file);
                 if (STYLE_TAG_EXEMPTIONS.has(rel)) continue;
-                const content = fs.readFileSync(file, 'utf-8');
+                const content = codeOf(fs.readFileSync(file, 'utf8'));
                 const lines = content.split('\n');
                 for (let i = 0; i < lines.length; i++) {
                     const line = lines[i].trim();
@@ -95,7 +96,7 @@ describe('CSP Style Guardrails', () => {
     describe('global-error.tsx', () => {
         it('should not use inline style attributes', () => {
             const errorFile = path.resolve(SRC_DIR, 'app/global-error.tsx');
-            const content = fs.readFileSync(errorFile, 'utf-8');
+            const content = codeOf(fs.readFileSync(errorFile, 'utf8'));
 
             // The error boundary must NOT use style={{}} because it's a root boundary
             // that ships SSR HTML without hydration guarantees. Use CSS module instead.
@@ -105,7 +106,7 @@ describe('CSP Style Guardrails', () => {
 
         it('should import a CSS module for styles', () => {
             const errorFile = path.resolve(SRC_DIR, 'app/global-error.tsx');
-            const content = fs.readFileSync(errorFile, 'utf-8');
+            const content = codeOf(fs.readFileSync(errorFile, 'utf8'));
             expect(content).toContain("import styles from './global-error.module.css'");
         });
     });
@@ -123,7 +124,7 @@ describe('CSP Style Guardrails', () => {
             const violations: { file: string; lib: string }[] = [];
 
             for (const file of tsxFiles) {
-                const content = fs.readFileSync(file, 'utf-8');
+                const content = codeOf(fs.readFileSync(file, 'utf8'));
                 for (const lib of bannedImports) {
                     if (content.includes(`from '${lib}'`) || content.includes(`from "${lib}"`)) {
                         violations.push({
@@ -158,7 +159,7 @@ describe('CSP Style Guardrails', () => {
             const violations: { file: string; pattern: string; line: number }[] = [];
 
             for (const file of tsxFiles) {
-                const content = fs.readFileSync(file, 'utf-8');
+                const content = codeOf(fs.readFileSync(file, 'utf8'));
                 const lines = content.split('\n');
                 for (let i = 0; i < lines.length; i++) {
                     const line = lines[i].trim();

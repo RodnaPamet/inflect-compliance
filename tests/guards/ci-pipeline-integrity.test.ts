@@ -42,7 +42,14 @@ import * as path from 'node:path';
 import * as yaml from 'js-yaml';
 
 const ROOT = path.resolve(__dirname, '../..');
+import { codeOf } from '../helpers/source-blocks';
+
+// #2246 Class A — the mask goes at the READ SEAM, and WHICH masker depends on
+// the language. `read` stays RAW because this file also reads Markdown, SQL and YAML, none of
+// which `codeOf` lexes — handing it YAML once blanked a bare-scalar URL from
+// `//` to end of line. TypeScript reads go through `readSrc`, which masks.
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const readSrc = (rel: string) => codeOf(read(rel));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 /**
@@ -172,7 +179,7 @@ describe('CI/CD pipeline-integrity — build / env-validation discipline', () =>
     it('src/env.ts actually honours SKIP_ENV_VALIDATION (the skip mechanism is real)', () => {
         // If this wiring is removed, the build-time skip silently
         // becomes a no-op AND production loses its runtime check.
-        expect(read('src/env.ts')).toMatch(
+        expect(readSrc('src/env.ts')).toMatch(
             /skipValidation:\s*!!process\.env\.SKIP_ENV_VALIDATION/,
         );
     });

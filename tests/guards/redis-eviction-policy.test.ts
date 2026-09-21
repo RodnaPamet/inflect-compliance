@@ -39,7 +39,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
+import { codeOf } from '../helpers/source-blocks';
+
+// #2246 Class A — the mask goes at the READ SEAM, and WHICH masker depends on
+// the language. `read` stays RAW because this file also reads YAML, none of
+// which `codeOf` lexes — handing it YAML once blanked a bare-scalar URL from
+// `//` to end of line. TypeScript reads go through `readSrc`, which masks.
 const read = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
+const readSrc = (rel: string) => codeOf(read(rel));
 
 /** Redis `maxmemory-policy` values that evict keys — all BullMQ-unsafe. */
 const EVICTION_POLICIES = [
@@ -121,12 +128,12 @@ describe('Redis eviction-policy ratchet — Compose redis is BullMQ-safe', () =>
 
 describe('Redis eviction-policy ratchet — runtime check is wired', () => {
     it('src/lib/redis.ts exports verifyRedisEvictionPolicy', () => {
-        expect(read('src/lib/redis.ts')).toMatch(
+        expect(readSrc('src/lib/redis.ts')).toMatch(
             /export async function verifyRedisEvictionPolicy/,
         );
     });
 
     it('src/instrumentation.ts calls verifyRedisEvictionPolicy at startup', () => {
-        expect(read('src/instrumentation.ts')).toMatch(/verifyRedisEvictionPolicy\(/);
+        expect(readSrc('src/instrumentation.ts')).toMatch(/verifyRedisEvictionPolicy\(/);
     });
 });

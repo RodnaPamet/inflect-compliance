@@ -1,3 +1,4 @@
+import { codeOf } from '../helpers/source-blocks';
 /**
  * STILL SURFACE — the canonical button-material ratchet (2026-07-28).
  *
@@ -34,16 +35,27 @@ import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '../..');
 
-function read(rel: string): string {
-    return fs.readFileSync(path.join(ROOT, rel), 'utf8');
-}
+// Arrow consts, not function declarations: the Class A/D analyser follows the
+// `const read = (p) => …` / `const code = (p) => codeOf(read(p))` shape
+// (assertion-reach.ts:1164) and does NOT resolve a delegating function
+// declaration, which leaves every read through it un-analysable — a blind spot
+// the uniqueness ratchet counts against a zero-allowance ceiling.
+const read = (rel: string): string =>
+    fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
-/** Source with comments stripped — prose must never satisfy a ratchet. */
-function code(rel: string): string {
-    return read(rel)
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/\/\/[^\n]*/g, '');
-}
+/**
+ * Source with comments stripped — prose must never satisfy a ratchet.
+ *
+ * #2246 — this was hand-rolled and is now `codeOf`, the repo's masker. The old
+ * pair of `.replace` calls was not fail-closed: the line-comment pattern ate
+ * from ANY double-slash to end of line, including one inside a string such as
+ * a URL, and both calls DELETED text rather than blanking it, so every offset
+ * shifted. `codeOf` keeps string literals and preserves length and line count.
+ *
+ * `read` deliberately stays RAW: it also serves `src/styles/tokens.css`, and
+ * `codeOf` lexes TypeScript, not CSS.
+ */
+const code = (rel: string): string => codeOf(read(rel));
 
 const VARIANTS = 'src/components/ui/button-variants.ts';
 const BUTTON = 'src/components/ui/button.tsx';
@@ -345,7 +357,10 @@ describe('Still Surface — contrast floors (WCAG AA)', () => {
 
 describe('Still Surface — the canonical four variants', () => {
     it('declares exactly primary | secondary | ghost | destructive', () => {
-        const src = read(VARIANTS);
+        // #2246 — was `read(VARIANTS)`, the one site in this file that took the
+        // RAW text of a TypeScript source while its three siblings used the
+        // masked reader. A commented-out variant could satisfy it.
+        const src = code(VARIANTS);
         const block =
             src.match(/variant:\s*\{([\s\S]*?)\},\s*size:/)?.[1] ?? '';
         const declared = Array.from(
@@ -381,7 +396,7 @@ describe('Still Surface — the canonical four variants', () => {
 });
 
 describe('Still Surface — the single-rung ladder', () => {
-    const src = read(VARIANTS);
+    const src = code(VARIANTS);
 
     const RUNG = /h-7 px-\[0\.7rem\] text-\[0\.76rem\]/;
 

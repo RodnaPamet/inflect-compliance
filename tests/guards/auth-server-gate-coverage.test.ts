@@ -1,3 +1,4 @@
+import { codeOf } from '../helpers/source-blocks';
 /**
  * Auth server-gate coverage — the load-bearing integration tests.
  *
@@ -77,9 +78,8 @@ describe('auth server-gate coverage — integration tests we rely on', () => {
         // would start hitting real rate-limit + verification
         // gates and time-out / fail unpredictably. Lock the
         // invariant here so the removal can't slip in silently.
-        const src = fs.readFileSync(
-            path.join(ROOT, 'playwright.config.ts'),
-            'utf8',
+        const src = codeOf(
+            fs.readFileSync(path.join(ROOT, 'playwright.config.ts'), 'utf8'),
         );
         expect(src).toMatch(/AUTH_TEST_MODE=1/);
     });
