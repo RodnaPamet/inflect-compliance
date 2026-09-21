@@ -1,0 +1,194 @@
+/**
+ * A SIGTERM mid-run must leave the run RESUMABLE, not abandoned.
+ *
+ * ── THE FAILURE THIS PREVENTS ───────────────────────────────────────────────
+ *
+ * Runs execute inline. A rolling deploy sends SIGTERM to the process walking
+ * the steps, and before this change the row was simply left `RUNNING` — with no
+ * executor, and nothing noticing for a long time. `agent-run-reaper` selects on
+ * `updatedAt < now - WALL_CLOCK_MS - REAP_GRACE_MS`, so the run sat there for a
+ * full wall-clock budget plus ten minutes and was then settled to FAILED with a
+ * permanent hash-chained row asserting it had no executor.
+ *
+ * ── THE ASSERTION THAT MATTERS MOST IS THE NEGATIVE ONE ─────────────────────
+ *
+ * "Pause every RUNNING run" is the obvious implementation and it is a
+ * cross-instance outage: pod A's SIGTERM would pause the runs pod B is actively
+ * executing. No query can tell those apart, because the difference is not in
+ * the database — it is in which process holds the run in memory.
+ *
+ * So the test that earns its place is `leaves another process's run alone`. A
+ * drain that paused everything would satisfy every other assertion here.
+ */
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+
+import {
+    pauseInFlightRuns,
+    trackInFlightRun,
+    untrackInFlightRun,
+    inFlightRunIds,
+    _resetInFlightRunsForTesting,
+} from '@/lib/agentic/in-flight-runs';
+
+import { DB_URL, DB_AVAILABLE } from './db-helper';
+
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
+const describeFn = DB_AVAILABLE ? describe : describe.skip;
+jest.setTimeout(30_000);
+
+const TENANT = 'sigterm-drain-tenant';
+const BUDGET = 2_000;
+
+async function makeRun(id: string, status: 'RUNNING' | 'COMPLETED', stepCount = 3) {
+    await prisma.workflowRun.create({
+        data: { id, tenantId: TENANT, workflowKey: 'audit-prep', status, stepCount },
+    });
+}
+
+const statusOf = async (id: string) =>
+    (await prisma.workflowRun.findUnique({ where: { id }, select: { status: true } }))?.status;
+
+describeFn('the SIGTERM drain pauses this process\'s runs and nothing else', () => {
+    beforeAll(async () => {
+        await prisma.workflowRun.deleteMany({ where: { tenantId: TENANT } });
+        await prisma.tenant.deleteMany({ where: { id: TENANT } });
+        await prisma.tenant.create({ data: { id: TENANT, name: TENANT, slug: TENANT } });
+    });
+
+    beforeEach(async () => {
+        _resetInFlightRunsForTesting();
+        await prisma.workflowRun.deleteMany({ where: { tenantId: TENANT } });
+    });
+
+    afterAll(async () => {
+        if (TENANT) {
+            await prisma.workflowRun.deleteMany({ where: { tenantId: TENANT } });
+            await prisma.tenant.deleteMany({ where: { id: TENANT } });
+        }
+        _resetInFlightRunsForTesting();
+        await prisma.$disconnect();
+    });
+
+    it('moves a tracked RUNNING run to PAUSED', async () => {
+        await makeRun('drain-mine', 'RUNNING');
+        trackInFlightRun('drain-mine');
+
+        const outcome = await pauseInFlightRuns(BUDGET);
+
+        expect(outcome).toEqual({ attempted: 1, paused: 1, timedOut: false });
+        expect(await statusOf('drain-mine')).toBe('PAUSED');
+    });
+
+    it('leaves another process\'s run alone', async () => {
+        // THE ONE THAT EARNS ITS PLACE. Both rows are RUNNING and
+        // indistinguishable in the database; only the in-memory set says which
+        // is ours. A drain that paused every RUNNING row would pass every other
+        // test in this file and take down every other pod's work.
+        await makeRun('drain-mine', 'RUNNING');
+        await makeRun('drain-theirs', 'RUNNING');
+        trackInFlightRun('drain-mine');
+
+        const outcome = await pauseInFlightRuns(BUDGET);
+
+        expect(outcome.attempted).toBe(1);
+        expect({
+            mine: await statusOf('drain-mine'),
+            theirs: await statusOf('drain-theirs'),
+        }).toEqual({ mine: 'PAUSED', theirs: 'RUNNING' });
+    });
+
+    it('does not walk a settled run backwards into PAUSED', async () => {
+        // The race the `status: 'RUNNING'` condition exists for: a run can
+        // complete between the snapshot and the write. Without the condition
+        // this would move a COMPLETED run to PAUSED, which is a finished run
+        // reappearing in the resume queue.
+        await makeRun('drain-finished', 'COMPLETED');
+        trackInFlightRun('drain-finished');
+
+        const outcome = await pauseInFlightRuns(BUDGET);
+
+        expect({ attempted: outcome.attempted, paused: outcome.paused }).toEqual({
+            attempted: 1,
+            paused: 0,
+        });
+        expect(await statusOf('drain-finished')).toBe('COMPLETED');
+    });
+
+    it('is a no-op, with no query, when this process runs nothing', async () => {
+        await makeRun('drain-idle', 'RUNNING');
+
+        const outcome = await pauseInFlightRuns(BUDGET);
+
+        expect(outcome).toEqual({ attempted: 0, paused: 0, timedOut: false });
+        expect(await statusOf('drain-idle')).toBe('RUNNING');
+    });
+
+    it('reports BOTH numbers, so a partial drain is visible', async () => {
+        // "paused: 1" alone cannot distinguish a clean drain from one that
+        // found two runs and saved one — and the difference is a run that gets
+        // reaped to FAILED in an hour.
+        await makeRun('drain-a', 'RUNNING');
+        await makeRun('drain-b', 'COMPLETED');
+        trackInFlightRun('drain-a');
+        trackInFlightRun('drain-b');
+
+        const outcome = await pauseInFlightRuns(BUDGET);
+
+        expect({ attempted: outcome.attempted, paused: outcome.paused }).toEqual({
+            attempted: 2,
+            paused: 1,
+        });
+    });
+
+    it('a PAUSED run is what resumeWorkflowRun already knows how to restart', async () => {
+        // Not a new resume path: `resumeWorkflowRun` finds no PENDING step (a
+        // SIGTERM lands mid-step, not at a checkpoint), falls through its
+        // `pending?.seq ?? run.stepCount - 1` branch and executes from
+        // `stepCount`. This pins the two facts that makes true — the status it
+        // accepts, and that `stepCount` is the count of completed steps.
+        await makeRun('drain-resumable', 'RUNNING', 4);
+        trackInFlightRun('drain-resumable');
+        await pauseInFlightRuns(BUDGET);
+
+        const row = await prisma.workflowRun.findUnique({
+            where: { id: 'drain-resumable' },
+            select: { status: true, stepCount: true },
+        });
+        expect(row).toEqual({ status: 'PAUSED', stepCount: 4 });
+
+        const pending = await prisma.workflowStep.count({
+            where: { runId: 'drain-resumable', status: 'PENDING' },
+        });
+        expect(pending).toBe(0);
+    });
+});
+
+describe('the in-flight registry itself', () => {
+    beforeEach(() => _resetInFlightRunsForTesting());
+    afterAll(() => _resetInFlightRunsForTesting());
+
+    it('tracks and untracks', () => {
+        trackInFlightRun('a');
+        trackInFlightRun('b');
+        expect(inFlightRunIds().sort()).toEqual(['a', 'b']);
+        untrackInFlightRun('a');
+        expect(inFlightRunIds()).toEqual(['b']);
+    });
+
+    it('is idempotent in both directions', () => {
+        trackInFlightRun('a');
+        trackInFlightRun('a');
+        expect(inFlightRunIds()).toEqual(['a']);
+        untrackInFlightRun('a');
+        untrackInFlightRun('a');
+        expect(inFlightRunIds()).toEqual([]);
+    });
+
+    it('hands out a snapshot, never the live set', () => {
+        // A caller mutating the returned array must not silently untrack a run.
+        trackInFlightRun('a');
+        inFlightRunIds().push('ghost');
+        expect(inFlightRunIds()).toEqual(['a']);
+    });
+});
