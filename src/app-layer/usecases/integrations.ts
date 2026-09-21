@@ -32,6 +32,7 @@ import { validateProviderConfig, redirectsStoredCredential } from '../integratio
 // module exists to prevent.
 import { HRIS_PROVIDERS, isHrisProviderId } from '../integrations/providers/hris';
 import { LEAVER_PASS_AUTOMATION_SUFFIX } from './identity-leaver-pass';
+import { JOINER_PASS_AUTOMATION_SUFFIX } from './identity-joiner-run';
 import { logger } from '@/lib/observability/logger';
 import { CONNECTION_STALE_AFTER_SECONDS } from '@/lib/observability/connection-freshness';
 import { runIdentitySync } from './identity-sync';
@@ -875,16 +876,32 @@ export async function listAllControlChecks(
         db.integrationExecution.findMany({
             where: {
                 tenantId: ctx.tenantId,
-                // A leaver pass is not a control check. It produces no evidence
-                // and attests nothing — it is an offboarding action that happens
-                // to be stored in the same table — so listing it here would
+                // NEITHER JML PASS IS A CONTROL CHECK. Both produce no evidence
+                // and attest nothing — they are lifecycle actions that happen to
+                // be stored in the same table — so listing either here would
                 // misdescribe it to whoever reads this page.
                 //
                 // It is also the narrower choice on access: this list is
-                // reachable with `controls.view`, while every other leaver
-                // surface is gated at OWNER. Excluding it keeps where-we-store-a
-                // row from quietly deciding who-can-see-it.
-                automationKey: { not: { endsWith: LEAVER_PASS_AUTOMATION_SUFFIX } },
+                // reachable with `controls.view`, while every leaver and joiner
+                // surface is gated at OWNER (`admin.tenant_lifecycle`). Excluding
+                // them keeps where-we-store-a row from quietly deciding
+                // who-can-see-it — and the joiner's rows name which of a
+                // customer's people the product would CREATE an account for, and
+                // under what address, which is the same class of authority.
+                //
+                // AT THE QUERY, AND AS AN `AND` OF TWO `not`s RATHER THAN A
+                // CALLER-SIDE FILTER. One `automationKey` key cannot carry two
+                // `not`s, and pushing either exclusion into the route or the page
+                // would let the next caller of this usecase reintroduce the
+                // exposure without touching anything that looks
+                // security-relevant. The joiner suffix was missed when #2687 gave
+                // the joiner a runtime: until then no `.joiner_pass` row existed,
+                // so this query was right by accident rather than by
+                // construction.
+                AND: [
+                    { automationKey: { not: { endsWith: LEAVER_PASS_AUTOMATION_SUFFIX } } },
+                    { automationKey: { not: { endsWith: JOINER_PASS_AUTOMATION_SUFFIX } } },
+                ],
             },
             select: {
                 id: true,

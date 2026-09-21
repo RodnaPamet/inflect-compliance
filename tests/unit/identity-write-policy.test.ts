@@ -198,28 +198,47 @@ describe('no-op', () => {
 });
 
 /**
- * A direction with nothing behind it must not be climbable.
+ * A direction that cannot ACT on its mode must not be climbable.
  *
- * `identityJoinerMode` has no reader: no joiner job, no directory writer with a
- * create verb, nothing but the policy usecase storing and reporting it. The route
- * has always TOLD the operator so — `honoured.joiner.implemented` was a hard
- * `false` — while the PUT accepted the widen anyway, and the client button read
- * neither that flag nor anything else that would stop it.
+ * THE PREMISE MOVED UNDER THIS BLOCK AND THE ASSERTIONS DID NOT. It used to read
+ * "`identityJoinerMode` has no reader: no joiner job, no directory writer with a
+ * create verb, nothing but the policy usecase storing and reporting it" — and
+ * #2687 falsified the first two-thirds of that sentence: `planJoinerPass` reads
+ * the mode at its own gate 1, and there is now an `identity-joiner-pass` job, an
+ * `identity-joiner-dispatch` fan-out at 04:30 UTC. The OWNER-only run route
+ * ships in the route half of #2687.
  *
- * The harm is state accumulation rather than a live directory write: nothing acts
- * on the value, so the cost is that a tenant can ARRIVE at joiner AUTOMATIC and be
- * sitting there on the day a joiner runtime, or a future JOINER_MAX_MODE clamp,
- * first reads it — the ladder's whole point spent against a subsystem that never
- * ran. A PUT per rung and seven days was the whole climb, because the dwell fires
- * only when LEAVING DRY_RUN.
+ * What survives is the half that still holds, and it is enough on its own:
+ * `DirectoryProvisioner` declares no create verb, and decision 10's
+ * department→security-group map has no column on `TenantSecuritySettings`, so
+ * every plan refuses `NO_DEPARTMENT_MAP`. A joiner pass therefore RUNS and
+ * decides nothing — which is exactly the state `DIRECTION_IMPLEMENTED.joiner`
+ * names, because that flag means a runtime reads the setting AND an operator can
+ * see what it did.
+ *
+ * The route has always TOLD the operator so — `honoured.joiner.implemented` was a
+ * hard `false` — while the PUT accepted the widen anyway, and the client button
+ * read neither that flag nor anything else that would stop it.
+ *
+ * The harm is state accumulation rather than a live directory write: no plan can
+ * provision, so the cost is that a tenant can ARRIVE at joiner AUTOMATIC and be
+ * sitting there on the day the entitlement map lands — the ladder's whole point
+ * spent against a subsystem that never provisioned anyone. A PUT per rung and
+ * seven days was the whole climb, because the dwell fires only when LEAVING
+ * DRY_RUN.
  */
 describe('an unimplemented direction cannot be widened', () => {
     const ctx = makeRequestContext('OWNER');
 
-    it('pins the premise: the joiner has no runtime and the leaver does', () => {
+    it('pins the premise: the joiner is not implemented and the leaver is', () => {
         // If this ever flips, the refusals below stop being the right behaviour
         // and the tests that assert them should fail LOUDLY rather than be
         // quietly rewritten to match a constant somebody moved.
+        //
+        // "Not implemented" is NOT "has no runtime" any more — #2687 shipped the
+        // runtime. The flag is a conjunction, and it is the second half (an
+        // operator can see what it did) that the missing entitlement map still
+        // fails.
         expect(DIRECTION_IMPLEMENTED.joiner).toBe(false);
         expect(DIRECTION_IMPLEMENTED.leaver).toBe(true);
     });

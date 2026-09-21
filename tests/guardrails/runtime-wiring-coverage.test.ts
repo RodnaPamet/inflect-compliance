@@ -55,6 +55,14 @@ const ON_DEMAND_JOBS: Readonly<Record<string, string>> = {
     // no-op — which matters more here than for a sync, because a second pass
     // would mint a second set of journal rows.
     'identity-leaver-pass': 'dispatched by identity-leaver-dispatch',
+    // The per-(tenant, provider) half of the joiner pass (#2687). Not scheduled
+    // on its own for the same reason as its leaver twin: the unit is a
+    // directory, not a clock, and the dispatcher is what knows which tenants
+    // have one. The job id is deterministic per (tenant, provider, UTC day), so
+    // a re-dispatch inside the same bucket is a no-op — which matters here
+    // because a second pass would mint a second artefact for one morning's
+    // decisions, and the seven-day window is read by counting those.
+    'identity-joiner-pass': 'dispatched by identity-joiner-dispatch',
     // These three said 'dispatched by automation-runner' and nothing checked
     // it. It was false: automation-runner resolves a control's automationKey
     // and calls the PROVIDER's runCheck — it never enqueues these job names.
