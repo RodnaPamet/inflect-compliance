@@ -438,6 +438,31 @@ model WorkflowRun {
   /// This column answers "what did this run open under", which is the question
   /// that stops being answerable once the card has moved on.
   policyCardVersion Int?
+  /// WHICH ENGINE WALKED THIS RUN — the driver `selectRunDriver` actually
+  /// chose, not the one the tenant configured or the definition asked for.
+  ///
+  /// The gap between those is the whole reason this is a column. A definition
+  /// REQUESTS a driver and a tenant PERMITS one; the run may get neither,
+  /// because `selectRunDriver` resolves any disagreement — and an unimplemented
+  /// driver — back to static. "What did this run actually execute on" stops
+  /// being answerable the moment the configuration moves on, which is precisely
+  /// when an incident review asks it.
+  ///
+  /// NOT NULL with a default, unlike `agentId` and `policyCardVersion` above,
+  /// and the difference is that this one can be backfilled TRUTHFULLY. Those
+  /// two use NULL to mean "the question was not asked yet", because inventing
+  /// an agent or a card version for an old row would put a fiction in the
+  /// register. Every run that has ever executed was static — `DRIVERS` maps
+  /// only `static` and `DRIVER_IMPLEMENTED.flue` has been false since the
+  /// column's enum was introduced — so `STATIC` is a fact about the existing
+  /// rows rather than a placeholder standing in for one.
+  ///
+  /// It records the engine at the run's START, the same deliberate narrowing
+  /// `policyCardVersion` documents above: a resume re-resolves, so once a
+  /// second driver exists a run spanning an operator's toggle could walk its
+  /// later segments on the other engine. The per-segment truth would belong on
+  /// `WorkflowStep`, and this column would keep meaning what it says.
+  driver            AgentDriverMode   @default(STATIC)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)

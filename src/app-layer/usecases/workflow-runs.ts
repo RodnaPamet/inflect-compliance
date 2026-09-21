@@ -74,9 +74,9 @@ import { resolveDriverForRun } from '@/lib/agentic/agent-driver-policy';
 import { assertWithinMonthlyBudget } from '@/lib/agentic/monthly-budget-policy';
 import { trackInFlightRun, untrackInFlightRun } from '@/lib/agentic/in-flight-runs';
 import { getRunRow } from '@/lib/agentic/drivers/run-store';
-import { selectRunDriver } from '@/lib/agentic/drivers';
+import { selectRunDriver, requestedDriver } from '@/lib/agentic/drivers';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers';
-import { STATIC_DRIVER, type AgentDriver } from '@/lib/agentic/agent-driver';
+import type { AgentDriver } from '@/lib/agentic/agent-driver';
 import {
     estimateTokens,
     type WorkflowContext,
@@ -198,13 +198,34 @@ export async function startWorkflowRun(
         workflowKey,
     });
 
+    // WHAT WILL ACTUALLY WALK IT, which is not the same question.
+    //
+    // `driverDecision.driver` is what the deployment PERMITS. The definition
+    // also gets a say, and `selectRunDriver` resolves any disagreement — and
+    // any driver with no implementation — back to static. Recording the
+    // permitted value as "which engine walked this run" is therefore a claim
+    // about a different thing, and it is true today only because both answers
+    // are always `static`.
+    //
+    // Resolved here, before the audit write, because the entry is appended
+    // before the walk begins and a hash-chained row cannot be corrected
+    // afterwards. `selectRunDriver` is pure, so asking it twice — once here,
+    // once inside `executeFrom` — costs nothing and cannot disagree.
+    // Both bound to locals rather than called inside the audit payload. The
+    // values are a closed `'static' | 'flue'` union either way; what changes is
+    // that `no-raw-prompt-logging` can READ an identifier and cannot open a
+    // call, so spelling the call at the sink buys four un-analysable holes in a
+    // guard whose whole design is that its blind spots are counted.
+    const requested: AgentDriver = requestedDriver(def);
+    const chosenDriver: AgentDriver = selectRunDriver(def, driverDecision.driver).driver;
+
     // Row + first chain link (seq 0, prev null), one transaction. An `input`
     // already over the size cap fails here and no run is created.
     //
     // The pin is passed IN rather than resolved inside: `createSealedRun` owns
     // the seal, not the authority question, and the pin has to be resolved
     // before the row exists because it is write-once at the database.
-    const run = await createSealedRun(ctx, workflowKey, context, policyCardVersion);
+    const run = await createSealedRun(ctx, workflowKey, context, policyCardVersion, chosenDriver);
 
     await appendAuditEntry({
         tenantId: ctx.tenantId,
@@ -226,13 +247,38 @@ export async function startWorkflowRun(
             // in a log line, because "which engine executed this" is a question
             // an incident review asks about a run that has long since finished,
             // and log retention is not the audit trail's retention.
-            driver: driverDecision.driver,
+            // THREE facts, because a single one cannot explain an engine
+            // choice, and the gaps between them are what an incident review is
+            // actually asking about:
+            //
+            //   driverRequested — what the DEFINITION asked for
+            //   driverAllowed   — what the DEPLOYMENT permits (env ∧ tenant ∧
+            //                     implemented), with `driverReason` naming why
+            //                     when it is not what was configured
+            //   driver          — what actually WALKED the run
+            //
+            // A definition cannot widen its own authority, so `driver` is the
+            // intersection and never more than either. Recording only the
+            // permitted value — which is what this entry used to do — answers
+            // "what was this tenant allowed" under a key that says "which
+            // engine walked this run", and those diverge the moment a
+            // definition asks for something it cannot have.
+            driverRequested: requested,
+            driverAllowed: driverDecision.driver,
             driverReason: driverDecision.reason,
+            driver: chosenDriver,
         },
         metadataJson: { apiKeyId: ctx.apiKeyId ?? null, agentId: ctx.agentId ?? null },
     }).catch(() => undefined);
 
-    const { status, stepFailures } = await executeFrom(ctx, run.id, def, 0, Date.now());
+    const { status, stepFailures } = await executeFrom(
+        ctx,
+        run.id,
+        def,
+        0,
+        Date.now(),
+        driverDecision.driver,
+    );
     return { runId: run.id, status, workflowKey, stepFailures };
 }
 
@@ -267,10 +313,35 @@ export async function resumeWorkflowRun(
         return pending?.seq ?? run.stepCount - 1;
     });
 
+    // RE-RESOLVED, not inherited from the start. A resume is a fresh
+    // authorization moment — the same reason the run re-resolves its invocation
+    // and its policy card here — and an operator who switched the tenant off a
+    // driver between the checkpoint and the approval meant it.
+    //
+    // Before this, `executeFrom` was called without the argument at all, so a
+    // resumed segment took the parameter's `STATIC_DRIVER` default whatever the
+    // tenant was configured for, and no audit entry said so either way.
+    const resumeDecision = await resolveDriverForRun(ctx.tenantId, {
+        requestId: ctx.requestId,
+        workflowKey: run.workflowKey,
+    });
+    const resumeRequested: AgentDriver = requestedDriver(def);
+    const resumeDriver: AgentDriver = selectRunDriver(def, resumeDecision.driver).driver;
+
     await appendAuditEntry({
         tenantId: ctx.tenantId, userId: ctx.userId, actorType: 'USER',
         entity: 'WorkflowRun', entityId: runId, action: 'WORKFLOW_RUN_RESUMED',
-        requestId: ctx.requestId, detailsJson: { category: 'access' },
+        requestId: ctx.requestId,
+        detailsJson: {
+            category: 'access',
+            // Which engine walks THIS SEGMENT. `WorkflowRun.driver` records the
+            // one the run opened under and deliberately does not move, so the
+            // trail is the only place a mid-run change is visible.
+            driverRequested: resumeRequested,
+            driverAllowed: resumeDecision.driver,
+            driverReason: resumeDecision.reason,
+            driver: resumeDriver,
+        },
     }).catch(() => undefined);
 
     // THE RUN'S OWN START, not this resume's. `Date.now()` here handed every
@@ -290,6 +361,7 @@ export async function resumeWorkflowRun(
         def,
         resumedFrom + 1,
         run.startedAt.getTime(),
+        resumeDecision.driver,
     );
     return { status, stepFailures };
 }
@@ -371,7 +443,12 @@ async function executeFrom(
     def: WorkflowDefinition,
     fromSeq: number,
     runStartMs: number,
-    permittedDriver: AgentDriver = STATIC_DRIVER,
+    // NO DEFAULT, deliberately. It was `= STATIC_DRIVER`, and a default is
+    // exactly how the resolved decision came to be computed, audited, and then
+    // dropped on the floor: both call sites simply omitted the argument and
+    // the fallback made that look intentional. Required, the compiler asks
+    // every caller the question rather than answering it for them.
+    permittedDriver: AgentDriver,
 ): Promise<RunDriverOutcome> {
     // WHICH ENGINE, resolved here rather than inside the walk. The definition's
     // request is intersected with what the deployment permits, and any
@@ -419,6 +496,7 @@ async function createSealedRun(
     workflowKey: string,
     context: WorkflowContext,
     policyCardVersion: number,
+    driver: AgentDriver,
 ): Promise<{ id: string }> {
     try {
         return await runInTenantContext(ctx, async (db) => {
@@ -444,6 +522,10 @@ async function createSealedRun(
                     // write-once at the database, so the row must arrive
                     // carrying it.
                     policyCardVersion,
+                    // …and on WHICH ENGINE. Written in the CREATE rather than
+                    // updated after the walk: a run that crashes mid-step still
+                    // has to be able to say what was executing it.
+                    driver: driver === 'flue' ? 'FLUE' : 'STATIC',
                 },
                 select: { id: true },
             });
