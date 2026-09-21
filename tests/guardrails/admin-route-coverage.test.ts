@@ -143,6 +143,16 @@ const ADMIN_ONLY_ROUTES = [
     'admin/av-rescan/route.ts',
     'admin/identity-write-policy/route.ts',
     'admin/identity-leaver-passes/route.ts',
+    // #2687 — the joiner's half of the same pair. The report names which of a
+    // customer's people the product would create an account for and at what
+    // address. OWNER-only, like the leaver report it mirrors.
+    //
+    // The `/run` trigger is NOT here yet: it ships in the run-route PR stacked
+    // on this one, split because two new API routes together push the CI Build
+    // over the runner's memory ceiling (#2698). When it lands it carries its own
+    // ROUTE_PERMISSIONS rule, ordered ahead of the subtree one for the same
+    // reason the leaver's is.
+    'admin/identity-joiner-passes/route.ts',
     // The off-schedule RE-RUN trigger. Its sibling above is a read; this is
     // the only endpoint in that subtree that makes the product write to a
     // customer's directory, so it carries its OWN rule in ROUTE_PERMISSIONS

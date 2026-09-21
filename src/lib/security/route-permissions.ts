@@ -366,6 +366,20 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'admin.manage.',
     },
 
+    // ── JML joiner pass reports (the seven-day observation record) ──
+    {
+        path: new RegExp(`^${T}\\/admin\\/identity-joiner-passes(\\/.*)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Reads the per-starter record of what a joiner pass would have ' +
+            'done. Same OWNER-only key as the write policy those passes run ' +
+            'under: the report names which of a customer\'s people the product ' +
+            'would create an account for, and at what address, which is ' +
+            'authority of the same class as granting the create. A SIBLING path ' +
+            'rather than nested under admin/integrations, where first-match-wins ' +
+            'would resolve it to the weaker admin.manage.',
+    },
+
     // ── JML leaver pass — the off-schedule RE-RUN trigger ──────────
     //
     // MUST PRECEDE the report rule below. First-match-wins, and the report's
