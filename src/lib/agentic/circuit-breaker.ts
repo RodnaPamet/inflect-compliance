@@ -125,6 +125,66 @@ export function windowStartFor(at: Date): Date {
  * a year later as they did to whoever wrote the threshold.
  */
 export const BREAKER_SIGNALS = ['PROPOSAL_RATE', 'REJECTION_RATE', 'TOOL_MIX'] as const;
+
+/**
+ * A guard block is a TRIP REASON, not a signal — and the distinction is load-
+ * bearing rather than pedantic.
+ *
+ * Everything in `BREAKER_SIGNALS` is computed by `evaluateCircuitBreaker` as a
+ * departure from this agent's OWN established baseline: a robust z-score over a
+ * median and a MAD, or a total-variation distance, each requiring two windows of
+ * persistence before it counts. That machinery needs a baseline to be a
+ * departure FROM.
+ *
+ * Guard blocks have no such baseline, and should not. The healthy rate is zero,
+ * and a rate over a denominator of zero is not a rate — which this module
+ * already says about the rejection signal's quiet windows. Feeding blocks
+ * through the statistical path would make the FIRST block define the normal
+ * against which later ones are judged, so an agent emitting malicious content
+ * steadily would look steady.
+ *
+ * So blocks latch the breaker DIRECTLY, on a count, and appear in
+ * `trippedSignals` under this name. `BREAKER_SIGNALS` stays exactly what the
+ * evaluator computes — a test asserts a verdict carries a reading for every one
+ * of them, and adding a member the evaluator never reads would break that for
+ * the right reason.
+ */
+export const GUARD_BLOCK_TRIP = 'GUARD_BLOCK';
+
+/**
+ * Everything that can appear in `AgentCircuitBreaker.trippedSignals`: the
+ * computed signals plus the direct trip reasons. Readers of that column want
+ * this, not `BREAKER_SIGNALS`.
+ */
+export const BREAKER_TRIP_REASONS = [...BREAKER_SIGNALS, GUARD_BLOCK_TRIP] as const;
+
+export type BreakerTripReason = (typeof BREAKER_TRIP_REASONS)[number];
+
+/**
+ * How many guard blocks inside one window latch the breaker.
+ *
+ * THREE, and the number is a judgement rather than a measurement — there is no
+ * baseline to measure against, which is the whole point above.
+ *
+ * One block is a single piece of hostile content the guard caught: the proposal
+ * is quarantined, the system worked, and stopping the agent would make every
+ * successful defence an outage. Two inside an hour can still be one payload
+ * retried. Three is a pattern, and the agent is better read as the vector than
+ * as the victim.
+ *
+ * The window is the breaker's own hour, so this is deliberately not a lifetime
+ * total: an agent that tripped the guard once a month for a year has not earned
+ * a stop, and a count with no window would give it one.
+ */
+export const GUARD_BLOCK_TRIP_THRESHOLD = 3;
+
+/**
+ * Should this many blocks in one window latch the breaker? Pure, so the rule is
+ * testable without a database.
+ */
+export function shouldLatchOnGuardBlocks(blocksInWindow: number): boolean {
+    return blocksInWindow >= GUARD_BLOCK_TRIP_THRESHOLD;
+}
 export type BreakerSignal = (typeof BREAKER_SIGNALS)[number];
 
 /**

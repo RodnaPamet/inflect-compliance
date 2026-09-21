@@ -378,7 +378,12 @@ const SINK_FLOOR = 30;
 // is correctly absent from both counts: the swept population is
 // `matchesAgenticPath`, which observability is not part of. That is also why
 // only one new file/kind pair appears below.
-const MEASURED_HOLES = 150;
+// Re-MEASURED 2026-09-21 for the guard-block breaker latch: 150 / 87 became
+// 152 / 88. Floated both and read the printed counts, as the note above
+// requires. The +1 sink is `latchOnGuardBlock`'s single `logger.warn`; the +2
+// holes are its two value positions (`tenantId`, `agentId`) plus the
+// `err.message` arm, in a file already listed below.
+const MEASURED_HOLES = 152;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -391,7 +396,7 @@ const MEASURED_HOLES = 150;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 87;
+const MEASURED_SINKS = 88;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;
