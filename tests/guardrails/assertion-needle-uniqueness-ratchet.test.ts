@@ -510,7 +510,13 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 213;
 // `fs.readFileSync(path.join(UI_DIR, file), 'utf-8')` with a `readWidget(file)`
 // helper: both are keyed by a variable, so both sit in `path-not-constant`,
 // measured at 917 before and 917 after. Left where it is rather than touched.
-const UNANALYSABLE_READ_BASELINE = 1454;
+// 2026-09-21: 1454 -> 1453. The run-driver extraction re-pointed
+// `agentic-engine-coverage`'s "never writes a business entity" check at BOTH
+// halves of the engine, and did it from ONE assertion site over a loop rather
+// than two `expect(...).not.toMatch(entityMutators)` calls. That needle is a
+// variable, so every such site is un-analysable; collapsing two potential
+// sites into one net-removed a blind spot rather than adding one.
+const UNANALYSABLE_READ_BASELINE = 1453;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

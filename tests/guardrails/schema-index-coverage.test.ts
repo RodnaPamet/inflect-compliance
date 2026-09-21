@@ -73,6 +73,8 @@ import * as path from 'path';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const APP_LAYER_DIR = path.join(REPO_ROOT, 'src/app-layer');
+/** Tenant-scoped queries also live here since the run-driver extraction. */
+const AGENTIC_DRIVERS_DIR = path.join(REPO_ROOT, 'src/lib/agentic/drivers');
 
 const MODELS = parseSchemaModels();
 const MODEL_BY_NAME = new Map<string, SchemaModel>(
@@ -764,7 +766,20 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────
 
-/** All `.ts` files under `src/app-layer`, recursively. */
+/**
+ * All `.ts` files under `src/app-layer`, plus the agentic DRIVERS.
+ *
+ * The drivers directory is here because tenant-scoped `findMany` calls moved
+ * into it: the static run driver was extracted verbatim out of
+ * `usecases/workflow-runs.ts`, and it took the `WorkflowStep` list query with
+ * it. Scanning only `src/app-layer` after that move would have quietly dropped
+ * `WorkflowStep` out of the Layer C population — the guard would have reported
+ * the entry as STALE and invited its deletion, which is the opposite of what
+ * happened: the query is still there, it just lives one directory over.
+ *
+ * A guard whose population silently shrinks when code moves is the failure this
+ * repo keeps finding. The scan follows the queries.
+ */
 function listAppLayerFiles(): string[] {
     const out: string[] = [];
     const walk = (dir: string): void => {
@@ -778,6 +793,7 @@ function listAppLayerFiles(): string[] {
         }
     };
     walk(APP_LAYER_DIR);
+    walk(AGENTIC_DRIVERS_DIR);
     return out;
 }
 
