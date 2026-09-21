@@ -1,3 +1,4 @@
+import { codeOf } from '../helpers/source-blocks';
 /**
  * Epic 19 Coherence Guards — Observability & Operational Readiness
  *
@@ -26,8 +27,12 @@ const SRC = path.join(ROOT, 'src');
 
 describe('Epic 19 Coherence: metric names', () => {
     // OTel dot-notation names from metrics.ts
-    const metricsCode = fs.readFileSync(
-        path.join(SRC, 'lib/observability/metrics.ts'), 'utf-8'
+    // #2246 — the ONE TypeScript read in this file is masked at the seam. The
+    // Grafana dashboard read below is JSON handed to JSON.parse, and the alert
+    // rules read is YAML; neither is a language `codeOf` lexes and both stay
+    // raw deliberately rather than spelling the wrong lexer.
+    const metricsCode = codeOf(
+        fs.readFileSync(path.join(SRC, 'lib/observability/metrics.ts'), 'utf-8'),
     );
 
     // Extract all OTel metric names (dot-notation)
@@ -356,8 +361,8 @@ describe('Epic 19 Coherence: probe auth bypass', () => {
 // ─── 6. Barrel Export Completeness ─────────────────────────────────────
 
 describe('Epic 19 Coherence: barrel exports', () => {
-    const barrel = fs.readFileSync(
-        path.join(SRC, 'lib/observability/index.ts'), 'utf-8'
+    const barrel = codeOf(
+        fs.readFileSync(path.join(SRC, 'lib/observability/index.ts'), 'utf-8'),
     );
 
     const requiredExports = [
@@ -450,22 +455,22 @@ describe('Epic 19 Coherence: route normalization idempotency', () => {
 
 describe('Epic 19 Coherence: job runner metrics wiring', () => {
     it('job-runner.ts imports recordJobMetrics', () => {
-        const code = fs.readFileSync(
-            path.join(SRC, 'lib/observability/job-runner.ts'), 'utf-8'
+        const code = codeOf(
+            fs.readFileSync(path.join(SRC, 'lib/observability/job-runner.ts'), 'utf-8'),
         );
         expect(code).toContain("import { recordJobMetrics } from './metrics'");
     });
 
     it('executor-registry.ts imports recordJobMetrics', () => {
-        const code = fs.readFileSync(
-            path.join(SRC, 'app-layer/jobs/executor-registry.ts'), 'utf-8'
+        const code = codeOf(
+            fs.readFileSync(path.join(SRC, 'app-layer/jobs/executor-registry.ts'), 'utf-8'),
         );
         expect(code).toContain("import { recordJobMetrics } from '@/lib/observability/metrics'");
     });
 
     it('withApiErrorHandling uses recordRequestMetrics', () => {
-        const code = fs.readFileSync(
-            path.join(SRC, 'lib/errors/api.ts'), 'utf-8'
+        const code = codeOf(
+            fs.readFileSync(path.join(SRC, 'lib/errors/api.ts'), 'utf-8'),
         );
         expect(code).toContain('recordRequestMetrics');
     });

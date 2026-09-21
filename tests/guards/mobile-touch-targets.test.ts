@@ -16,7 +16,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 const ROOT = path.resolve(__dirname, "../..");
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
+// #2246 Class A — comments are masked at the READ SEAM, so an assertion cannot
+// be satisfied by a comment instead of the code it names. Every read below is
+// TypeScript/TSX, re-derived in this file rather than assumed from the paths.
+import { codeOf } from '../helpers/source-blocks';
+
+const readRaw = (p: string) => fs.readFileSync(path.join(ROOT, p), "utf8");
+const read = (p: string) => codeOf(readRaw(p));
 
 describe("Mobile PR-1 — coarse-pointer touch targets", () => {
     it("Button cva base carries a 44px coarse-pointer min-height", () => {

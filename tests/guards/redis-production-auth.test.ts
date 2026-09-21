@@ -49,8 +49,21 @@ import * as path from 'path';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
+import { codeOf } from '../helpers/source-blocks';
+
+// #2246 Class A — the mask goes at the READ SEAM, and WHICH masker depends on
+// the language. `readRepoFile` stays RAW because six of its seven callers read
+// docker-compose YAML, and `codeOf` is a TypeScript lexer: it read the `//` in
+// `REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379` as the start of a comment
+// and blanked the rest of the line, leaving `REDIS_URL: redis:` — turning a
+// password-presence guard GREEN-to-RED on a file that was fine. In YAML that
+// URL is a bare scalar, not a quoted string, so nothing told the lexer to keep
+// it. The ONE TypeScript caller uses `readRepoSrc`, which masks.
 function readRepoFile(rel: string): string {
     return fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
+}
+function readRepoSrc(rel: string): string {
+    return codeOf(readRepoFile(rel));
 }
 
 /**
@@ -165,7 +178,7 @@ describe('Redis production-auth ratchet — test compose is exempt', () => {
 
 describe('Redis production-auth ratchet — env schema enforces an authenticated URL', () => {
     it('src/env.ts rejects an unauthenticated REDIS_URL in production', () => {
-        const src = readRepoFile('src/env.ts');
+        const src = readRepoSrc('src/env.ts');
         // Regression: a "simplify env validation" PR that drops the
         // password check would let a bare redis://host:6379 boot in
         // production again.
