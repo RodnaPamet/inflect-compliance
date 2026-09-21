@@ -27,9 +27,21 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+//
+// LANGUAGE SPLIT. The raw reader is kept and the JSON path still uses it: a
+// catalogue is PARSED as data, never matched as text, so masking it would only
+// corrupt the parse. Text assertions go through the masked reader.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../../');
-function read(rel: string): string {
+function readRaw(rel: string): string {
     return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+}
+
+function read(rel: string): string {
+    return codeOf(readRaw(rel));
 }
 
 const CYCLES_SRC = read('src/app/t/[tenantSlug]/(app)/audits/cycles/page.tsx');
@@ -194,7 +206,7 @@ describe('UploadEvidenceModal — control linker', () => {
         expect(UPLOAD_SRC).toMatch(
             /controls\.length\s*===\s*0[\s\S]{0,160}searchControlsDesc/,
         );
-        const en = JSON.parse(read('messages/en.json')) as {
+        const en = JSON.parse(readRaw('messages/en.json')) as {
             evidence: { upload: Record<string, string> };
         };
         expect(en.evidence.upload.searchControlsDesc).toMatch(/Search across/);

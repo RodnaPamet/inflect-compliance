@@ -22,17 +22,28 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+//
+// LANGUAGE SPLIT. One seam here carries two things. TypeScript-alikes go
+// through `read` and are masked. The JSON fixtures go through `readRaw` and
+// are NOT: a JSON read is PARSED as data, never matched as text, so masking it
+// would only corrupt the parse — `codeOf` lexes TypeScript and a catalogue is
+// not that language.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SERVER_PATH = 'src/app/org/[orgSlug]/(app)/members/page.tsx';
 const CLIENT_PATH = 'src/app/org/[orgSlug]/(app)/members/MembersTable.tsx';
 const SIDEBAR_PATH = 'src/components/layout/OrgSidebarNav.tsx';
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(readRaw(rel));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 // i18n-aware: nav labels + callout copy now route through next-intl.
 // Resolve keys against the real English catalog so the original
 // visible-text intent still holds.
-const EN = JSON.parse(read('messages/en.json'));
+const EN = JSON.parse(readRaw('messages/en.json'));
 const enOrg = (key: string): unknown =>
     key.split('.').reduce<unknown>(
         (o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined),

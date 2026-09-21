@@ -19,9 +19,19 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+//
+// LANGUAGE SPLIT. One seam here carries two things. TypeScript-alikes go
+// through `read` and are masked. The JSON fixtures go through `readRaw` and
+// are NOT: a JSON read is PARSED as data, never matched as text, so masking it
+// would only corrupt the parse — `codeOf` lexes TypeScript and a catalogue is
+// not that language.
+import { codeOf } from '../helpers/source-blocks';
 
+const ROOT = path.resolve(__dirname, '../..');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(readRaw(rel));
 const matrix = read('src/components/risks/RiskMatrix.tsx');
 const pureResidual = read('src/lib/risk-residual.ts');
 const acceptUsecase = read('src/app-layer/usecases/risk-residual-suggestion.ts');
@@ -75,7 +85,7 @@ describe('RQ3-OB-D — the bridge knows where you have been', () => {
         // The copy now goes through i18n; the branch still keys on fairAle,
         // and the keys resolve to the original English in en.json.
         expect(panel).toMatch(/risk\.fairAle != null\s*\?\s*t\('assessment\.reviewFair'\)\s*:\s*t\('assessment\.quantify'\)/);
-        const en = JSON.parse(read('messages/en.json'));
+        const en = JSON.parse(readRaw('messages/en.json'));
         expect(en.risks.assessment.reviewFair).toBe('Review the FAIR analysis');
         expect(en.risks.assessment.quantify).toBe('Quantify this risk');
     });

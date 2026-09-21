@@ -47,6 +47,11 @@ import { DEFAULT_RISK_MATRIX_CONFIG } from '@/lib/risk-matrix/defaults';
 import { RiskEvaluationFields } from '@/app/t/[tenantSlug]/(app)/risks/_shared/RiskEvaluationFields';
 import { EditRiskModal } from '@/app/t/[tenantSlug]/(app)/risks/[riskId]/_modals/EditRiskModal';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM. Reads whose result
+// is JSON.parse'd are left RAW on purpose: a catalogue is parsed as DATA, never
+// matched as text, so masking it would only corrupt the parse.
+import { codeOf } from '../helpers/source-blocks';
+
 const TENANT_CTX = {
     userId: 'u1', tenantId: 't1', tenantSlug: 'acme', tenantName: 'Acme',
     role: 'ADMIN', permissions: { canRead: true, canWrite: true, canAdmin: true, canAudit: false, canExport: true },
@@ -70,7 +75,7 @@ function withClient(node: React.ReactNode) {
 }
 
 const SRC_ROOT = path.join(__dirname, '..', '..', 'src/app/t/[tenantSlug]/(app)/risks');
-const read = (p: string) => fs.readFileSync(path.join(SRC_ROOT, p), 'utf8');
+const read = (p: string) => codeOf(fs.readFileSync(path.join(SRC_ROOT, p), 'utf8'));
 // Module-level catalog for source-grep assertions that moved to next-intl keys.
 const EN_MESSAGES = JSON.parse(
     fs.readFileSync(path.join(__dirname, '..', '..', 'messages/en.json'), 'utf8'),

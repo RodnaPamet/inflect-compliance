@@ -27,6 +27,11 @@ import * as path from 'node:path';
 import { SEARCH_TYPE_DEFAULTS, type SearchHitType } from '@/lib/search/types';
 import { __SEARCHABLE_TYPES__ } from '@/app-layer/usecases/search';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM. Reads whose result
+// is JSON.parse'd are left RAW on purpose: a catalogue is parsed as DATA, never
+// matched as text, so masking it would only corrupt the parse.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 describe('Asset search coverage', () => {
@@ -56,10 +61,10 @@ describe('Asset search coverage', () => {
     });
 
     it('rank.ts TYPE_BASELINE includes "asset"', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(ROOT, 'src/lib/search/rank.ts'),
             'utf8',
-        );
+        ));
         expect(src).toMatch(
             /TYPE_BASELINE:\s*Record<SearchHitType,\s*number>\s*=\s*\{[\s\S]*?\basset:\s*\d+/,
         );
@@ -68,10 +73,10 @@ describe('Asset search coverage', () => {
     it('search usecase queries db.asset.findMany', () => {
         // The usecase must run a query against the asset table.
         // Without this, the `asset` type is declared but unsearchable.
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(ROOT, 'src/app-layer/usecases/search.ts'),
             'utf8',
-        );
+        ));
         expect(src).toMatch(/db\.asset\.findMany\(/);
         // Matches against `name` AND `externalRef` (the canonical
         // "external system ID" field — `patent1`, asset tags, etc.).
@@ -82,13 +87,13 @@ describe('Asset search coverage', () => {
     it('palette UI ENTITY_META + ENTITY_ORDER include "asset"', () => {
         // Without these the renderer drops asset hits from the
         // group-by-kind step even though the API returned them.
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(
                 ROOT,
                 'src/components/command-palette/command-palette.tsx',
             ),
             'utf8',
-        );
+        ));
         // ENTITY_META.asset → { heading: 'Assets', icon: Package }
         expect(src).toMatch(
             /asset:\s*\{\s*heading:\s*t\('entityAsset'\)[^}]*icon:\s*Package/,

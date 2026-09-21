@@ -10,13 +10,18 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM. Reads whose result
+// is JSON.parse'd are left RAW on purpose: a catalogue is parsed as DATA, never
+// matched as text, so masking it would only corrupt the parse.
+import { codeOf } from '../helpers/source-blocks';
+
 const PAGE = path.resolve(
     __dirname,
     '../../src/app/t/[tenantSlug]/(app)/vendors/[vendorId]/page.tsx',
 );
 
 describe('vendor detail — G-3 send-assessment wiring', () => {
-    const src = fs.readFileSync(PAGE, 'utf8');
+    const src = codeOf(fs.readFileSync(PAGE, 'utf8'));
 
     it('POSTs to the G-3 send route', () => {
         expect(src).toContain('/assessments/send');

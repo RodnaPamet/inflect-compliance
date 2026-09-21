@@ -17,14 +17,26 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+//
+// LANGUAGE SPLIT. The raw reader is kept and the JSON path still uses it: a
+// catalogue is PARSED as data, never matched as text, so masking it would only
+// corrupt the parse. Text assertions go through the masked reader.
+import { codeOf } from '../helpers/source-blocks';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
-function readRepoFile(rel: string): string {
+function readRepoFileRaw(rel: string): string {
     return fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
 }
 
+function readRepoFile(rel: string): string {
+    return codeOf(readRepoFileRaw(rel));
+}
+
 function readJson(rel: string): Record<string, unknown> {
-    return JSON.parse(readRepoFile(rel));
+    return JSON.parse(readRepoFileRaw(rel));
 }
 
 describe('GAP-04 ratchet — dependency pinning', () => {
