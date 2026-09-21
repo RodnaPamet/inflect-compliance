@@ -98,6 +98,18 @@ export type WorkflowStepDef =
     | SynthesisStepDef;
 
 export interface WorkflowDefinition {
+    /**
+     * WHICH ENGINE this workflow asks to be executed by. Absent means `static`,
+     * which is what every workflow shipped today wants and gets.
+     *
+     * A REQUEST, never a grant. `selectRunDriver` intersects it with what the
+     * deployment permits — the operator's `AGENT_DRIVER_FLUE`, the tenant's
+     * toggle and whether this build implements the driver at all — and any
+     * disagreement resolves to `static`. A workflow definition is a piece of
+     * configuration, so it must not be able to widen its own authority.
+     */
+    driver?: 'static' | 'flue';
+
     key: string;
     name: string;
     description: string;
