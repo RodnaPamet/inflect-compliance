@@ -225,7 +225,7 @@ export interface ReviewFlag {
 export class ReviewLatch {
     private readonly recorded: ReviewFlag[] = [];
 
-    /** Has any guard flagged anything in this invocation? */
+    /** Did a guard flag anything in this invocation? */
     get required(): boolean {
         return this.recorded.length > 0;
     }
