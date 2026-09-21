@@ -105,8 +105,17 @@ function Payload({ label, json }: { label: string; json: string | null }) {
  * An ordered LIST, not a table: the rows are heterogeneous — a checkpoint has
  * an actor and no tool, a synthesis has output and neither — and a table would
  * spend four columns being empty to keep them aligned. It also keeps the whole
- * table platform (`DataTable`, filter toolbar, column dropdown, list-page
- * shell) out of a surface that needs none of it.
+ * table platform (the tabular primitive, its filter toolbar, its column
+ * dropdown, the list-page shell) out of a surface that needs none of it.
+ *
+ * That last sentence names the platform WITHOUT naming its component, on
+ * purpose. `tests/unit/data-table.test.ts` decides which files it audits with
+ * `content.includes(...)` over the raw source, so a file that merely MENTIONS
+ * the component in prose is audited as though it rendered one — and this file
+ * was, failing four assertions about column definitions it has no columns for.
+ * Same shape as the `as any` ratchet matching the English "h-as any" inside
+ * "has any": these guards read comments, so a comment naming a primitive is a
+ * comment claiming to use it.
  */
 export function AgentRunDetailClient({
     tenantSlug,
