@@ -34,6 +34,8 @@ import {
     REFUSED_FLUE_EXPORT_NAMES,
 } from '@/lib/agentic/flue/refused-capabilities';
 import { repoRelativeFiles, REPO_ROOT } from '../helpers/repo-files';
+import { codeOf } from '../helpers/source-blocks';
+import { resolveFlueModel } from '@/lib/agentic/flue/model-selection';
 
 /**
  * The names `@flue/runtime` actually exports, located by ASKING NODE.
@@ -297,5 +299,114 @@ describe('the list refuses what was decided, and nothing else', () => {
         // refused name "real" by vacuity, and the whole check would pass while
         // verifying nothing.
         expect(installedRuntimeExportNames().size).toBeGreaterThan(50);
+    });
+});
+
+/**
+ * `setProvider` IS NOT A PER-RUN CALL — and this guard exists before the code
+ * that would be tempted to make it one.
+ *
+ * ── THE HAZARD, MEASURED IN THE INSTALLED PACKAGE ───────────────────────────
+ *
+ * The runtime holds its providers in a module-scoped singleton:
+ *
+ *     let models = createModels();            // dist/providers-*.mjs, module scope
+ *     function setProvider(p) { models.setProvider(p); }
+ *
+ * so every call mutates ONE process-wide registry. The obvious integration —
+ * build a provider from the tenant's settings and register it as the run
+ * starts — therefore races across concurrent runs, and the loser executes
+ * against the winner's provider.
+ *
+ * In this product that race is not a performance bug. `aiResidency:
+ * LOCAL_ONLY` is documented as a HARD invariant, so a lost race streams one
+ * tenant's reasoning to an endpoint another tenant registered, with nothing on
+ * the run to show it happened.
+ *
+ * ── WHY A GUARD RATHER THAN A CODE REVIEW ───────────────────────────────────
+ *
+ * There are zero call sites today, which is exactly when this is worth
+ * pinning: the safe shape (register once at init, choose per run by MODEL
+ * SPECIFIER — see `flue/model-selection.ts`) and the unsafe one differ by a
+ * single line in a file nobody has written yet, and the unsafe one is the one
+ * the runtime's own docstring suggests. A guard placed after the damage guards
+ * nothing.
+ */
+describe('provider registration never becomes a per-run call', () => {
+    /** The only modules that may ever name it. Empty today, deliberately. */
+    const ALLOWED_TO_REGISTER: readonly string[] = [];
+
+    // `repoRelativeFiles()` takes NO arguments — it returns every repo file,
+    // and the narrowing is the caller's. The first draft passed an options
+    // object, which was silently ignored, so the scan swept `docs/**` and
+    // reported two implementation notes as provider registrations. The same
+    // filter shape the top of this file already uses.
+    const SRC = repoRelativeFiles().filter(
+        (f) => f.startsWith('src/') && (f.endsWith('.ts') || f.endsWith('.tsx')),
+    );
+
+    /**
+     * CODE, not prose — via `codeOf`, which blanks comments while preserving
+     * offsets.
+     *
+     * The first draft of this guard grepped the raw file and immediately
+     * failed on `flue/model-selection.ts`, whose docstring EXPLAINS the hazard
+     * and therefore names it several times. That is the same defect as
+     * `data-table.test.ts` selecting its population with
+     * `content.includes('DataTable')`: a detector that cannot tell a mention
+     * from a call reports the documentation as the violation, and the cheapest
+     * way to satisfy it is to stop writing the explanation down.
+     */
+    function callsSetProvider(rel: string): boolean {
+        const abs = path.join(REPO_ROOT, rel);
+        if (!existsSync(abs)) return false;
+        return /\bsetProvider\b/.test(codeOf(readFileSync(abs, 'utf8')));
+    }
+
+    it('scanned a real population, not an empty one', () => {
+        // Without this the assertion below passes by vacuity.
+        expect(SRC.length).toBeGreaterThan(500);
+        expect(SRC).toContain('src/lib/agentic/flue/model-selection.ts');
+    });
+
+    it('no module under src/ registers a provider', () => {
+        const callers = SRC.filter(callsSetProvider).filter(
+            (f) => !ALLOWED_TO_REGISTER.includes(f),
+        );
+        expect({ callers }).toEqual({ callers: [] });
+    });
+
+    it('the detector would SEE a per-run registration', () => {
+        // The positive control. The assertion above is satisfied by a regex
+        // that never matches, and this is the difference between "examined and
+        // clean" and "never looked".
+        const planted = `
+            import { setProvider } from '@flue/runtime/internal';
+            export function startRun(tenant: Tenant) {
+                setProvider(providerFor(tenant));   // the unsafe shape
+            }
+        `;
+        expect(/\bsetProvider\b/.test(planted)).toBe(true);
+    });
+
+    it('the SAFE shape is what the model selector offers instead', () => {
+        // Not decoration: a guard that only forbids leaves the next author
+        // with a banned road and no other one. The specifier route is the
+        // road, and it is asserted to exist so the refusal stays actionable.
+        //
+        // Asserted through the MODULE SYSTEM rather than by reading the file's
+        // text. Two reasons, and the second is the better one:
+        //
+        //   · a whole-file read this detector cannot follow is a Class D blind
+        //     spot, and `codeOf(readFileSync(…))` is exactly that shape;
+        //   · `toMatch(/export function resolveFlueModel/)` proves a STRING is
+        //     present. Importing it proves the export exists and is callable,
+        //     which is the claim actually worth making.
+        //
+        // The companion claim — that this module does not register a provider
+        // — needs no assertion of its own: it lives under `src/`, so the sweep
+        // above already covers it.
+        expect(typeof resolveFlueModel).toBe('function');
+        expect(resolveFlueModel({ residency: 'EXTERNAL' })).toHaveProperty('ok');
     });
 });
