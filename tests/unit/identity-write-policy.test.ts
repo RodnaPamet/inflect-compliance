@@ -209,10 +209,10 @@ describe('no-op', () => {
  * ships in the route half of #2687.
  *
  * What survives is the half that still holds, and it is enough on its own:
- * `DirectoryProvisioner` declares no create verb, and decision 10's
- * department→security-group map has no column on `TenantSecuritySettings`, so
- * every plan refuses `NO_DEPARTMENT_MAP`. A joiner pass therefore RUNS and
- * decides nothing — which is exactly the state `DIRECTION_IMPLEMENTED.joiner`
+ * `DirectoryProvisioner` declares no create verb. The entitlement map now has
+ * a home (#2713), so a CONFIGURED tenant's plan decides a group — but there is
+ * no verb behind the decision. A joiner pass therefore RUNS and cannot act —
+ * which is exactly the state `DIRECTION_IMPLEMENTED.joiner`
  * names, because that flag means a runtime reads the setting AND an operator can
  * see what it did.
  *

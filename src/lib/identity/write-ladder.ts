@@ -188,11 +188,14 @@ export type IdentityDirection = 'leaver' | 'joiner';
  *     zoned cron breaks that, so the fan-out is deliberately UTC and the zoned
  *     dispatch remains owed. That is a scheduling refinement, though, not the
  *     absence of a runtime, and it is no longer what holds this flag down.
- *   • NO ENTITLEMENT MAP — STILL TRUE, AND NOW THE SOLE REASON. Owner decision
- *     10 puts the department→security-group map on `TenantSecuritySettings`, so
- *     it inherits the OWNER gate. That column does not exist, so every plan
- *     refuses `NO_DEPARTMENT_MAP` — a refusal an operator cannot clear, because
- *     there is nowhere to put the map.
+ *   • NO ENTITLEMENT MAP — CLEARED by #2713. Owner decision 10 was REVISED on
+ *     2026-09-21: the rules live in `IdentityDepartmentGroupRule`, one row per
+ *     department→security-group rule, because the planner consumes a LIST that
+ *     wants per-rule provenance. The SINGULAR fallback stayed on
+ *     `TenantSecuritySettings` as `identityDefaultGroupId` +
+ *     `identityDefaultGroupName`, where it inherits the OWNER gate. A tenant
+ *     with rules configured no longer refuses `NO_DEPARTMENT_MAP`; one without
+ *     still does, and that refusal is now one an operator CAN clear.
  *
  * SO THE TRIGGER LANDING IS NOT THE CONDITION FOR FLIPPING THIS. That is what
  * this paragraph used to say — "when the trigger lands, this flips in the same

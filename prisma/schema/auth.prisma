@@ -224,6 +224,7 @@ model Tenant {
   taskWatchers                      TaskWatcher[]
   identityProviders                 TenantIdentityProvider[]
   entraGroupMappings                TenantEntraGroupMapping[]
+  identityDepartmentGroupRules      IdentityDepartmentGroupRule[]
   invites                           TenantInvite[]
   memberships                       TenantMembership[]
   notificationSettings              TenantNotificationSettings?
@@ -1264,6 +1265,49 @@ model TenantEntraGroupMapping {
   @@index([tenantId])
 }
 
+/// JML JOINER — the department → security-group entitlement map (#2713).
+///
+/// ONE ROW PER RULE, not a JSON blob on the settings row. Owner decision 10 was
+/// revised on 2026-09-21 for exactly this reason: the planner consumes two
+/// DIFFERENT shapes. `departmentGroups` is a LIST, and each rule wants its own
+/// provenance (`createdByUserId`) and its own audit trail — neither of which a
+/// blob can carry per entry. The SINGULAR fallback stayed on
+/// `TenantSecuritySettings`, where it inherits the OWNER gate the write ladder
+/// already relies on.
+///
+/// DIRECTORY-AGNOSTIC BY NAME. `groupId` is whatever the tenant's directory
+/// calls a security group — an Entra object GUID or an AD group DN. The owner
+/// ruled on 2026-09-19 that JML targets Entra AND AD, so naming this after
+/// either one would have been wrong. `TenantEntraGroupMapping` is a different
+/// feature entirely (EI-2 role sync at sign-in) and is not this.
+model IdentityDepartmentGroupRule {
+  id              String   @id @default(cuid())
+  tenantId        String
+  /// The HRIS department value this rule keys on, matched exactly as the
+  /// planner receives it. Deliberately NOT normalised: a rule that silently
+  /// matched a department the operator did not type is the same failure
+  /// decision 5 guards against on the fallback side.
+  department      String
+  /// The directory security-group identifier a joiner in this department is
+  /// added to — Entra object GUID or AD group DN, per the tenant's directory.
+  groupId         String
+  /// Cached directory display name, for the admin UI only. Never load-bearing:
+  /// the group is resolved by `groupId`. Contrast the FALLBACK's name on
+  /// `TenantSecuritySettings`, which IS load-bearing (decision 5).
+  groupName       String?
+  /// Provenance — who configured this rule. Null for a row created by a system
+  /// path rather than a person.
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  /// One rule per department per tenant. Two rules for one department is not a
+  /// tie to break, it is a contradiction the operator has to resolve.
+  @@unique([tenantId, department])
+  @@index([tenantId])
+}
+
 /// EI-3 — SCIM 2.0 Group registry. Entra pushes group lifecycle + membership
 /// here; member changes reconcile each user's role via the EI-2 engine.
 model ScimGroup {
@@ -1350,6 +1394,23 @@ model TenantSecuritySettings {
   /// rationally accept one unattended and not the other.
   identityLeaverMode           IdentityWriteMode @default(DISABLED)
   identityJoinerMode           IdentityWriteMode @default(DISABLED)
+
+  /// JML JOINER — the SINGULAR fallback group, for a starter whose department
+  /// matches no rule in `IdentityDepartmentGroupRule` (#2713). Singular per
+  /// tenant, so it lives here rather than in the rule table, and it inherits
+  /// the OWNER gate that guards every other `identity*` column.
+  ///
+  /// THE NAME IS LOAD-BEARING, and that is owner decision 5: "a typo'd or
+  /// brand-new department is otherwise indistinguishable from a mapped one".
+  /// A plan that fell back reports the fallback BY NAME, so an operator can
+  /// tell "Contractors, deliberately" from "Enginering, misspelt". An id alone
+  /// cannot make that distinction, which is why the name is STORED rather than
+  /// resolved for display — a display-time lookup is absent exactly when the
+  /// directory call fails, which is when the operator most needs to read it.
+  ///
+  /// Both null = no fallback configured; the planner refuses NO_DEFAULT_GROUP.
+  identityDefaultGroupId       String?
+  identityDefaultGroupName     String?
 
   /// WHICH ENGINE EXECUTES THIS TENANT'S AGENTIC RUNS. The customer's half of a
   /// two-key gate — the operator's `AGENT_DRIVER_FLUE` is the other half, and
