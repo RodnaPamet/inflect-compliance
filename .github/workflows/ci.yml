@@ -907,6 +907,7 @@ jobs:
           # job survives. This covers the silent one.
           ( while true; do
               echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk 'NR==2{print $3" used_MB "$7" avail_MB"}')"
+              echo "[rss] $(date -u +%H:%M:%S) $(ps -eo rss=,comm= --sort=-rss | head -4 | awk '{printf "%s:%dMB ", $2, $1/1024}')"
               sleep 5
             done ) &
           sampler=$!
@@ -1033,7 +1034,145 @@ jobs:
           # runner. One heap at 12288 claims 12 GB and leaves ~4 GB — less in
           # total, and all of it reachable by the single compilation rather
           # than stranded in a second heap that cannot lend it.
-          NODE_OPTIONS: "--max-old-space-size=12288"
+          #
+          # ── 2026-09-20: 12288 IS ITSELF ABOVE WHAT THE BOX SUPPLIES ──
+          #
+          # The note above reasons "one heap at 12288 claims 12 GB and leaves
+          # ~4 GB". That arithmetic counts only the V8 old space.
+          # `--max-old-space-size` bounds old space, NOT process RSS: native
+          # memory, buffers and retained source text live outside it. This
+          # job's own sampler, three consecutive PASSING runs on main:
+          #
+          #     baseline    peak       delta      available at peak
+          #      1179      15507      14328            482 MB
+          #      1138      15466      14328            527 MB
+          #      1092      15572      14480            416 MB
+          #
+          # The delta is ~2.1 GB LARGER than the 12288 cap, every time. So the
+          # configuration leaves ~450 MB, not ~4 GB, and the cap sits ABOVE what
+          # the runner can supply — precisely the failure this file already
+          # names: "A cap set BELOW available memory fails legibly; a cap above
+          # it fails silently." That trap was reintroduced by the 2026-09-13
+          # change, through its arithmetic and not its reasoning.
+          #
+          # #2697 (two new API routes, nothing else) was kernel-killed twice:
+          # 15816 MB / 172 MB and 15812 MB / 177 MB available. Two attempts
+          # within 4 MB is deterministic, not marginal. Any PR adding ~300 MB of
+          # compile now fails, and it fails as "The runner has received a
+          # shutdown signal" — attributed to whichever PR happens to trip it.
+          #
+          # Also correcting the record above: "Two jobs doing identical work at
+          # the same ceiling, one over the line and one under, is a coin flip."
+          # It is not. Measured on ONE run, both jobs, same 16 GB box:
+          #     Build        peak 15507   delta 14328   avail  482 MB
+          #     E2E bundle   peak 13200   delta 11514   avail 2788 MB
+          # A systematic ~2.3 GB gap, with Build's delta stable to 1% across
+          # three runs. Both peak in `Creating an optimized production build`
+          # (not page-data collection) and both emit 766 route rows. The gap is
+          # real and still UNEXPLAINED — the only declared difference is
+          # NEXT_TEST_MODE, which next.config.js:342 uses solely for distDir.
+          # Naming it as open rather than calling it luck.
+          #
+          # 10240 WAS TRIED AS A FIX AND IT IS NOT ONE. Measured, same job, same
+          # box, cap lowered by 2048 MB:
+          #
+          #     cap 12288 (main, 3 runs)  peak 15466-15572   avail 416-527 MB
+          #     cap 10240 (this change)   peak 15479         avail 510 MB
+          #
+          # A 28 MB difference across a 2048 MB change in the cap — inside main's
+          # own 106 MB run-to-run range. The old-space cap is NOT the binding
+          # constraint here, and the excess ABOVE the cap GREW as the cap fell
+          # (~2.0 GB -> ~4.1 GB): the workload sets the total, the cap only
+          # redistributes it.
+          #
+          # So do not retune this number again expecting peak RSS to follow. The
+          # build PASSED at 10240, which proves the compile does not need 12288 of
+          # old space — that is the only thing this number settles. Whatever holds
+          # the other ~4 GB is off-heap or in another process, and no value of
+          # --max-old-space-size reaches it. 10240 is kept over 12288 only because
+          # a cap below what the box supplies fails legibly, per the principle
+          # this file states throughout.
+          #
+          # THE HEADROOM PROBLEM IS UNSOLVED. Open leads: the unexplained
+          # Build/E2E gap recorded above (~2.3 GB on identical work), and the
+          # page-data workers noted below.
+          #
+          # For the next retune: `next build` ALSO spawns page-data workers
+          # ("Collecting page data using 3 workers") and NODE_OPTIONS reaches
+          # every one of them. "One heap" describes the webpack compile, which
+          # is where the peak is, but it is not the whole process tree.
+          #
+          # ── 2026-09-21: 8192, BECAUSE THE DOCKERFILE ALREADY PROVES IT WORKS ──
+          #
+          # 10240 above was a guess and it returned a null result: peak moved 28 MB
+          # across a 2048 MB change. This number is not a guess.
+          #
+          # `Dockerfile:45` sets NODE_OPTIONS="--max-old-space-size=8192" and
+          # `Dockerfile:62` runs the same build command against the SAME
+          # next.config.js — same single heap, same webpackMemoryOptimizations.
+          # `ghcr-publish.yml` completed SUCCESSFULLY on 2e41d62f6, the very commit
+          # whose CI Build job peaked at 15670 MB with 319 MB available. So this
+          # app's production build demonstrably fits an 8192 heap on the current
+          # tree, in CI, on every push to main.
+          #
+          # Which means the CI Build's 12288/10240 was PERMISSIVE, not required:
+          # V8 grows old space toward whatever ceiling it is given and defers major
+          # GC while it has room. Two runs at 10240 and 12288 both landing near
+          # 15.5 GB total is consistent with that; so is the Dockerfile fitting in
+          # 8192 with the same work.
+          #
+          # THIS IS NOT THE ROOT CAUSE AND IS NOT CLAIMED AS ONE. Build peak on
+          # main roughly DOUBLED in one week on an unchanged configuration and an
+          # unchanged 766-route surface:
+          #     2026-09-13  peak  8749 MB   avail 7240 MB
+          #     2026-09-17  peak  7728-9403 avail 6586-8261
+          #     2026-09-20  peak 15466-15796 avail 193-527
+          # That is a regression to be bisected, not growth to be accommodated.
+          # This cap is a floor under the symptom while that bisect runs.
+          # ── RESOLVED 2026-09-21: prerender source maps were holding ~7.3 GB ──
+          #
+          # `enablePrerenderSourceMaps: false` in next.config.js, measured on this job
+          # with the [rss] line below:
+          #
+          #     source maps ON    peak 15815 MB   avail  174 MB   next-build 14500 MB
+          #     source maps OFF   peak  8511 MB   avail 7477 MB   next-build  6067 MB
+          #     main 2026-09-13   peak  8447 MB   avail 7541 MB   (the healthy end)
+          #
+          # -7304 MB, landing within 64 MB of the pre-regression baseline. The [rss]
+          # attribution is what made this findable: ONE `next-build` process held
+          # 14.5 GB while every other process was under 90 MB, so worker fan-out was
+          # never the story and `cpus`/`memoryBasedWorkersCount` were ruled out
+          # without spending a run on them.
+          #
+          # The four null results below are kept because they are what proves the cap
+          # was never the constraint.
+          #
+          # MALLOC_ARENA_MAX WAS TRIED AND IT IS NOT THE LEVER EITHER. Recorded rather
+          # than left set, because an inert env var reads as a fix to the next person.
+          #
+          #     cap 12288            peak 15466-15796 MB
+          #     cap 10240            peak 15479 MB
+          #     cap  8192            peak 15707 MB
+          #     MALLOC_ARENA_MAX=2   peak 15568 MB
+          #
+          # Four settings, one band. Run-to-run noise on this job is ~1.4 GB (five runs
+          # inside one minute on 2026-09-17 spanned 7429-8872 MB), so none of these
+          # differences means anything. The glibc per-thread-arena theory is not
+          # supported by its own test.
+          #
+          # WHAT IS STILL TRUE AND STILL UNEXPLAINED:
+          #     2026-09-13  peak  8447 MB  baseline 1086 MB  webpack  62 s  trailing ~5200 MB
+          #     2026-09-20  peak 15670 MB  baseline 1094 MB  webpack 149 s  trailing ~11250 MB
+          # Identical baseline (not the runner image), identical 766-route surface (not
+          # growth), +0.9% modules, cache flat at 326-337 MB. Something doubled the cost
+          # of compiling the same input in one week.
+          #
+          # THE NEXT MEASUREMENT IS THE [rss] LINE ADDED TO THE SAMPLER ABOVE, and it is
+          # overdue: every figure in this entire history — including all four above — is
+          # system-wide `free -m`. That cannot distinguish "one process holds 14.5 GB"
+          # from "the compile holds 9 GB and something else holds 5 GB", and those have
+          # opposite fixes. Stop proposing levers until the curve says which it is.
+          NODE_OPTIONS: "--max-old-space-size=8192"
           NODE_ENV: production
 
       # The worker/scheduler bundle. Until 2026-08-25 this ran in exactly ONE
@@ -1287,6 +1426,7 @@ jobs:
           # job survives. This covers the silent one.
           ( while true; do
               echo "[mem] $(date -u +%H:%M:%S) $(free -m | awk 'NR==2{print $3" used_MB "$7" avail_MB"}')"
+              echo "[rss] $(date -u +%H:%M:%S) $(ps -eo rss=,comm= --sort=-rss | head -4 | awk '{printf "%s:%dMB ", $2, $1/1024}')"
               sleep 5
             done ) &
           sampler=$!
@@ -1337,7 +1477,12 @@ jobs:
           # runner. One heap at 12288 claims 12 GB and leaves ~4 GB — less in
           # total, and all of it reachable by the single compilation rather
           # than stranded in a second heap that cannot lend it.
-          NODE_OPTIONS: "--max-old-space-size=12288"
+          # 10240 — lowered with `Build` on 2026-09-20 to keep the two equal, per
+          # the "BOTH jobs changed together" principle above. See the long note on
+          # `build` for the measurements. This job has ~2.3 GB more headroom than
+          # `Build` and was not itself at risk.
+          # 8192 — matched to `build` per the "BOTH jobs changed together" principle.
+          NODE_OPTIONS: "--max-old-space-size=8192"
           NODE_ENV: production
           NEXT_TEST_MODE: "1"
           # NEXT_PUBLIC_* is inlined at BUILD time, so it must be set on
