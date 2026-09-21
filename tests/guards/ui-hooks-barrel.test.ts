@@ -16,6 +16,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const HOOKS_DIR = path.resolve(
     __dirname,
     '../../src/components/ui/hooks',
@@ -44,7 +51,7 @@ describe('Epic 60 — ui/hooks barrel completeness', () => {
         expect(fs.existsSync(BARREL)).toBe(true);
     });
 
-    const barrelSrc = fs.readFileSync(BARREL, 'utf-8');
+    const barrelSrc = codeOf(fs.readFileSync(BARREL, 'utf-8'));
 
     test.each(files)(
         '%s: file exports the expected hook and the barrel re-exports it',
@@ -58,7 +65,7 @@ describe('Epic 60 — ui/hooks barrel completeness', () => {
                 .map((seg) => seg.charAt(0).toUpperCase() + seg.slice(1))
                 .join('');
 
-            const content = fs.readFileSync(path.join(HOOKS_DIR, file), 'utf-8');
+            const content = codeOf(fs.readFileSync(path.join(HOOKS_DIR, file), 'utf-8'));
             // The file must export the hook (named export, no default).
             const fileExportsHook = new RegExp(
                 `export (function|const|async function) ${expected}\\b|export \\{[^}]*\\b${expected}\\b[^}]*\\}`,
@@ -82,7 +89,7 @@ describe('Epic 60 — ui/hooks barrel completeness', () => {
 
 describe('Epic 60 — barrel export integrity', () => {
     it('barrel does not export a hook whose file has been deleted', () => {
-        const barrelSrc = fs.readFileSync(BARREL, 'utf-8');
+        const barrelSrc = codeOf(fs.readFileSync(BARREL, 'utf-8'));
         const referencedFiles = Array.from(
             barrelSrc.matchAll(/from ["']\.\/(use-[a-z0-9-]+)["']/g),
             (m) => m[1],

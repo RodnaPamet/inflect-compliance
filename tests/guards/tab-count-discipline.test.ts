@@ -51,8 +51,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
 const SHELL = 'src/components/layout/EntityDetailLayout.tsx';
 
@@ -105,7 +112,7 @@ describe('Tab-count visual lockdown (Roadmap-4 PR-7)', () => {
                 if (!/\.tsx$/.test(e.name)) continue;
                 const rel = path.relative(ROOT, full);
                 if (rel === SHELL) continue;
-                const src = fs.readFileSync(full, 'utf-8');
+                const src = codeOf(fs.readFileSync(full, 'utf-8'));
                 if (/ml-1 text-xs opacity-60/.test(src)) {
                     offenders.push(rel);
                 }

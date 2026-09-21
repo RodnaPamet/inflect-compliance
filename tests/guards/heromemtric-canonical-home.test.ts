@@ -36,6 +36,13 @@
 import * as fs from "fs";
 import * as path from "path";
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, "../..");
 const SCAN_DIR = "src/app";
 
@@ -92,7 +99,7 @@ describe("HeroMetric canonical home", () => {
     });
 
     it("primitive carries the locked 72px hero typography contract", () => {
-        const src = fs.readFileSync(path.join(ROOT, PRIMITIVE), "utf8");
+        const src = codeOf(fs.readFileSync(path.join(ROOT, PRIMITIVE), "utf8"));
         // The 72px is the load-bearing decision. If a future PR
         // tries to bump down to text-5xl (48px) or text-7xl (72px
         // via Tailwind's named class) silently, the assertion
@@ -102,7 +109,7 @@ describe("HeroMetric canonical home", () => {
 
     it("the canonical home mounts <HeroMetric>", () => {
         for (const rel of CANONICAL_HOMES) {
-            const src = fs.readFileSync(path.join(ROOT, rel), "utf8");
+            const src = codeOf(fs.readFileSync(path.join(ROOT, rel), "utf8"));
             expect(src).toMatch(/<HeroMetric\b/);
         }
     });
@@ -116,7 +123,7 @@ describe("HeroMetric canonical home", () => {
         for (const file of walk(path.join(ROOT, SCAN_DIR))) {
             const rel = path.relative(ROOT, file);
             if (allowed.has(rel)) continue;
-            const content = fs.readFileSync(file, "utf8");
+            const content = codeOf(fs.readFileSync(file, "utf8"));
             if (/<HeroMetric\b/.test(content)) {
                 offenders.push(rel);
             }

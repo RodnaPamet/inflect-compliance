@@ -16,6 +16,13 @@ import {
     generateHeatmapData,
 } from '@/lib/risk-scoring';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 describe('Risk Scoring — calculateRiskScore', () => {
     test('4 * 5 = 20 (standard case)', () => {
         expect(calculateRiskScore(4, 5)).toBe(20);
@@ -186,9 +193,9 @@ describe('Risk Scoring — Integration with usecase', () => {
         // Verify the usecase imports and uses risk-scoring
         const fs = require('fs');
         const path = require('path');
-        const content = fs.readFileSync(
+        const content = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/app-layer/usecases/risk.ts'), 'utf-8'
-        );
+        ));
         expect(content).toContain("import { calculateRiskScore } from '@/lib/risk-scoring'");
         expect(content).toContain('calculateRiskScore');
     });
@@ -196,9 +203,9 @@ describe('Risk Scoring — Integration with usecase', () => {
     test('risk score is stored as inherentScore and score', () => {
         const fs = require('fs');
         const path = require('path');
-        const content = fs.readFileSync(
+        const content = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/app-layer/usecases/risk.ts'), 'utf-8'
-        );
+        ));
         expect(content).toContain('inherentScore');
         expect(content).toContain('score: inherentScore');
     });
@@ -206,9 +213,9 @@ describe('Risk Scoring — Integration with usecase', () => {
     test('updateRisk recalculates score when likelihood and impact change', () => {
         const fs = require('fs');
         const path = require('path');
-        const content = fs.readFileSync(
+        const content = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/app-layer/usecases/risk.ts'), 'utf-8'
-        );
+        ));
         // updateRisk has conditional recalculation
         expect(content).toContain('data.likelihood && data.impact');
         expect(content).toContain('calculateRiskScore(data.likelihood, data.impact');

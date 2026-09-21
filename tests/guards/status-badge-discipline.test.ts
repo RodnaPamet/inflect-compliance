@@ -26,6 +26,13 @@
 import * as fs from "fs";
 import * as path from "path";
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, "../..");
 const SCAN_DIRS = ["src/app", "src/components"];
 
@@ -123,7 +130,7 @@ describe("v2-PR-3 StatusBadge override eradication", () => {
             const offenders: Hit[] = [];
             for (const dir of SCAN_DIRS) {
                 for (const file of walk(path.join(ROOT, dir))) {
-                    const content = fs.readFileSync(file, "utf8");
+                    const content = codeOf(fs.readFileSync(file, "utf8"));
                     const matches = scanFile(content);
                     for (const m of matches) {
                         for (const ban of BANNED_PATTERNS) {
@@ -157,10 +164,10 @@ describe("v2-PR-3 StatusBadge override eradication", () => {
     });
 
     describe("StatusBadge primitive contract (post v2-PR-3)", () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(ROOT, "src/components/ui/status-badge.tsx"),
             "utf8",
-        );
+        ));
 
         it("base CVA uses rounded-full (pill shape locked)", () => {
             // The base class string lives on the cva() first arg.

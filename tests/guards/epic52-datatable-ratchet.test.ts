@@ -23,6 +23,13 @@ import * as path from 'path';
 
 import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slack';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const APP_PAGES = path.resolve(__dirname, '../../src/app/t/[tenantSlug]/(app)');
 
 /** Paths that are intentionally excluded from the ratchet. */
@@ -54,7 +61,7 @@ function countRawTables(): { count: number; files: string[] } {
         const rel = path.relative(APP_PAGES, file);
         if (EXCLUDED_PATHS.some(p => rel.startsWith(p))) continue;
 
-        const content = fs.readFileSync(file, 'utf-8');
+        const content = codeOf(fs.readFileSync(file, 'utf-8'));
         const matches = content.match(/<table[\s>]/g);
         if (matches) {
             count += matches.length;
@@ -68,7 +75,7 @@ function countDataTableUsages(): number {
     const allFiles = walk(APP_PAGES);
     let count = 0;
     for (const file of allFiles) {
-        const content = fs.readFileSync(file, 'utf-8');
+        const content = codeOf(fs.readFileSync(file, 'utf-8'));
         const matches = content.match(/<DataTable[\s/]/g);
         if (matches) count += matches.length;
     }
@@ -105,7 +112,22 @@ describe('Epic 52 — DataTable migration ratchet', () => {
      *   tasks/[taskId]/page.tsx     (1)  comment only
      *   vendors/[vendorId]/page.tsx (1)  comment only
      */
-    const RAW_TABLE_BASELINE = 9;
+    // 9 → 3 (2026-09-21, #2246 batch 9). NOT a migration: three raw tables are
+    // still there. The COUNT changed because the reading guard now masks
+    // comments at the seam, so a `<table` inside prose stops being counted as
+    // markup — which the inventory above already knew it was doing.
+    //
+    // Re-counting that inventory: SIX of the nine are prose (admin/roles' header
+    // comment, admin/members, ControlsClient, EvidenceClient, tasks/[taskId],
+    // vendors/[vendorId]) and THREE are real markup (admin/roles, risks/
+    // correlations, risks/scenarios). The note above says "four of the nine are
+    // prose" — that figure is wrong by two, and the masked live count of exactly
+    // 3 is what shows it: the three that survive masking are the three markup
+    // entries, one for one.
+    //
+    // So this baseline was 6 above the real number for a month, and every one of
+    // those 6 was headroom a genuine new `<table>` could have spent silently.
+    const RAW_TABLE_BASELINE = 3;
 
     /**
      * Tolerance before the drift sentinel fires.
@@ -169,11 +191,11 @@ describe('Epic 52 — DataTable migration ratchet', () => {
         // Verify the print view and RBAC page still have their expected tables
         const soaPrint = path.join(APP_PAGES, 'reports/soa/print/SoAPrintView.tsx');
         if (fs.existsSync(soaPrint)) {
-            expect(fs.readFileSync(soaPrint, 'utf-8')).toContain('<table');
+            expect(codeOf(fs.readFileSync(soaPrint, 'utf-8'))).toContain('<table');
         }
         const rbac = path.join(APP_PAGES, 'admin/rbac/page.tsx');
         if (fs.existsSync(rbac)) {
-            expect(fs.readFileSync(rbac, 'utf-8')).toContain('<table');
+            expect(codeOf(fs.readFileSync(rbac, 'utf-8'))).toContain('<table');
         }
     });
 });

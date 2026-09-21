@@ -58,6 +58,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 // Match a className that contains BOTH `text-[var(--brand-default)]`
@@ -74,10 +81,10 @@ interface Offence {
 
 describe('Link styling discipline (Roadmap-4 PR-10)', () => {
     it('typography primitive exposes the `link` tone', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(ROOT, 'src/components/ui/typography.tsx'),
             'utf-8',
-        );
+        ));
         // Match the tone definition with the three pieces of the
         // canonical class string.
         expect(src).toMatch(/link:\s*\n?\s*"[^"]*text-\[var\(--brand-default\)\]/);
@@ -98,7 +105,7 @@ describe('Link styling discipline (Roadmap-4 PR-10)', () => {
                 }
                 if (!/\.tsx$/.test(e.name)) continue;
                 const rel = path.relative(ROOT, full);
-                const lines = fs.readFileSync(full, 'utf-8').split('\n');
+                const lines = codeOf(fs.readFileSync(full, 'utf-8')).split('\n');
                 lines.forEach((line, i) => {
                     if (DRIFT_RE.test(line)) {
                         offenders.push({

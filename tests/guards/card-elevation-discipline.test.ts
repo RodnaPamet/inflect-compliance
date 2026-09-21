@@ -27,6 +27,13 @@
 import * as fs from "fs";
 import * as path from "path";
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, "../..");
 const SCAN_DIRS = ["src/app", "src/components"];
 
@@ -104,7 +111,7 @@ describe("v2-PR-9 Card elevation ratchet", () => {
             }[] = [];
             for (const dir of SCAN_DIRS) {
                 for (const file of walk(path.join(ROOT, dir))) {
-                    const content = fs.readFileSync(file, "utf8");
+                    const content = codeOf(fs.readFileSync(file, "utf8"));
                     for (const m of scanCardWithShadowOverride(content)) {
                         offenders.push({
                             file: path.relative(ROOT, file),
@@ -136,14 +143,14 @@ describe("v2-PR-9 Card elevation ratchet", () => {
         // components can call it. The CVA definition + variant
         // bodies are asserted on that file; the JSX-level wiring is
         // asserted on card.tsx.
-        const variants = fs.readFileSync(
+        const variants = codeOf(fs.readFileSync(
             path.join(ROOT, "src/components/ui/card-variants.ts"),
             "utf8",
-        );
-        const src = fs.readFileSync(
+        ));
+        const src = codeOf(fs.readFileSync(
             path.join(ROOT, "src/components/ui/card.tsx"),
             "utf8",
-        );
+        ));
 
         it("declares the elevation axis", () => {
             const elevationBlock = variants.match(

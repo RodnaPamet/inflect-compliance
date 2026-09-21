@@ -10,6 +10,13 @@
  */
 import { buildRequestContext, buildControl, buildEvidence } from '../helpers/factories';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 // ─── Structural: createEvidence validates controlId ───
 
 describe('Evidence → Control linking — structural', () => {
@@ -100,9 +107,9 @@ describe('Control evidence tab — unified display', () => {
     const SUBTABLE_PATH = path.resolve(
         __dirname, '../../src/components/controls-shared/EvidenceSubTable.tsx'
     );
-    const pageContent = fs.readFileSync(PAGE_PATH, 'utf-8');
+    const pageContent = codeOf(fs.readFileSync(PAGE_PATH, 'utf-8'));
     const subtableContent = fs.existsSync(SUBTABLE_PATH)
-        ? fs.readFileSync(SUBTABLE_PATH, 'utf-8')
+        ? codeOf(fs.readFileSync(SUBTABLE_PATH, 'utf-8'))
         : '';
     const evidenceTabContent = pageContent + '\n' + subtableContent;
 

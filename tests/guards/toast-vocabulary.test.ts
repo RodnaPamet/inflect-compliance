@@ -29,9 +29,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SCAN_ROOT = path.join(ROOT, 'src');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
 const HOOK_PATH = 'src/components/ui/hooks/use-toast.ts';
 
@@ -101,7 +108,7 @@ describe('Toast vocabulary discipline (Roadmap-2 PR-9)', () => {
     it('no file outside the curated seam imports from sonner', () => {
         const offenders: string[] = [];
         for (const file of walk(SCAN_ROOT)) {
-            const content = fs.readFileSync(file, 'utf-8');
+            const content = codeOf(fs.readFileSync(file, 'utf-8'));
             if (!SONNER_IMPORT_RE.test(content)) continue;
             const rel = path.relative(ROOT, file);
             if (!SONNER_PRIMITIVE_FILES.has(rel)) {
@@ -127,7 +134,7 @@ describe('Toast vocabulary discipline (Roadmap-2 PR-9)', () => {
                 stale.push(`${rel} (file deleted)`);
                 continue;
             }
-            const content = fs.readFileSync(abs, 'utf-8');
+            const content = codeOf(fs.readFileSync(abs, 'utf-8'));
             if (!SONNER_IMPORT_RE.test(content)) {
                 stale.push(`${rel} (no sonner import)`);
             }

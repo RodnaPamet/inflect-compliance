@@ -12,6 +12,13 @@ import { buildRequestContext, buildEvidence } from '../helpers/factories';
 import { assertNotArchived } from '@/app-layer/usecases/evidence-retention';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 describe('Evidence Linking — Auth enforcement', () => {
     test('listEvidence requires canRead', () => {
         // READER has canRead=true
@@ -50,9 +57,9 @@ describe('Evidence Linking — Tenant scoping', () => {
     test('evidence usecase uses runInTenantContext', () => {
         const fs = require('fs');
         const path = require('path');
-        const content = fs.readFileSync(
+        const content = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/app-layer/usecases/evidence.ts'), 'utf-8'
-        );
+        ));
         expect(content).toContain('runInTenantContext');
     });
 
@@ -62,7 +69,7 @@ describe('Evidence Linking — Tenant scoping', () => {
         const repoPath = path.resolve(__dirname, '../../src/app-layer/repositories/EvidenceRepository.ts');
         if (!require('fs').existsSync(repoPath)) return; // skip if not found
 
-        const content = fs.readFileSync(repoPath, 'utf-8');
+        const content = codeOf(fs.readFileSync(repoPath, 'utf-8'));
         expect(content).toContain('tenantId');
     });
 });

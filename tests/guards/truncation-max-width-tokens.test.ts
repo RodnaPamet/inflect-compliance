@@ -58,6 +58,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 // Match a `className="…"` attribute that contains BOTH an
@@ -74,10 +81,10 @@ interface Offence {
 
 describe('Truncation max-width tokens (Roadmap-4 PR-6)', () => {
     it('tailwind config exposes the three trunc-* tokens', () => {
-        const config = fs.readFileSync(
+        const config = codeOf(fs.readFileSync(
             path.join(ROOT, 'tailwind.config.js'),
             'utf-8',
-        );
+        ));
         expect(config).toMatch(/'trunc-tight':\s*'14ch'/);
         expect(config).toMatch(/'trunc-default':\s*'28ch'/);
         expect(config).toMatch(/'trunc-loose':\s*'40ch'/);
@@ -96,7 +103,7 @@ describe('Truncation max-width tokens (Roadmap-4 PR-6)', () => {
                 }
                 if (!/\.tsx$/.test(e.name)) continue;
                 const rel = path.relative(ROOT, full);
-                const lines = fs.readFileSync(full, 'utf-8').split('\n');
+                const lines = codeOf(fs.readFileSync(full, 'utf-8')).split('\n');
                 lines.forEach((line, i) => {
                     if (ARBITRARY_TRUNC_RE.test(line)) {
                         offenders.push({
