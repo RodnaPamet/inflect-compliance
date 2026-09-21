@@ -205,6 +205,12 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // structurally is that no prompt-shaped value exists in that module to
     // name — it holds no model call, no transcript and no tool arguments.
     'src/lib/agentic/agent-driver-policy.ts — identifier bound elsewhere',
+    // The monthly budget's two fallback/refusal log lines. Every value at both
+    // sinks is an id (`tenantId`, `requestId`), an integer token count, or one
+    // `err.message`. The module holds no model call, no transcript and no tool
+    // arguments, so there is no prompt-shaped value in scope for it to name —
+    // which is the part that cannot be shown structurally, hence the entry.
+    'src/lib/agentic/monthly-budget-policy.ts — identifier bound elsewhere',
     'src/lib/agentic/agent-registration-gate.ts — identifier bound elsewhere',
     'src/lib/agentic/policy-card-store.ts — identifier bound elsewhere',
     'src/lib/mcp/auth.ts — identifier bound elsewhere',
@@ -350,7 +356,12 @@ const SINK_FLOOR = 30;
 // notices a fall. This diff contributes +2 (the two `logger.warn` calls in
 // `agent-driver-policy.ts`) and the constant is set to the measured 83 rather
 // than to 80, closing the inherited slack in the same move.
-const MEASURED_HOLES = 146;
+// Re-MEASURED 2026-09-21 for the monthly-budget policy's two log calls:
+// 146 / 83 became 147 / 85. Floated both and read the failure message, as the
+// note above requires. Unlike the previous re-measure, the whole delta is
+// accounted for by this diff — the +2 sinks are exactly the two `logger.warn`
+// calls in `monthly-budget-policy.ts`, with no inherited slack to absorb.
+const MEASURED_HOLES = 147;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -363,7 +374,7 @@ const MEASURED_HOLES = 146;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 83;
+const MEASURED_SINKS = 85;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

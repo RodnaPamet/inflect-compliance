@@ -48,6 +48,30 @@ const REVIEWED: Record<string, { major: number }> = {
     // now throws; default schema YAML 1.1 → 1.2 CORE_SCHEMA) don't affect our
     // non-empty, first-party, 1.2-compatible YAML — verified by the full test
     // sweep. See docs/dependency-risk-review.md.
+    // Reviewed 2026-09-20 when the Flue tools adapter added it. Qualifies on
+    // two of the three criteria at once: it PARSES UNTRUSTED INPUT (model
+    // output and tool results) and performs NETWORK EGRESS to model providers.
+    //
+    // Pinned EXACTLY at 2.1.0, not a caret — a runtime that executes agents
+    // should not cross a minor version without somebody reading the diff.
+    //
+    // The `dependencies` classification is the deliberate answer, not the
+    // automatic one: today the ONLY import is `import type` (tools-adapter.ts,
+    // the never-called compile-time contract check), which is erased, so on
+    // present usage alone it would belong in devDependencies. It is runtime
+    // because the adapter exists to be executed — the day DRIVER_IMPLEMENTED
+    // .flue flips, `npm prune --omit=dev` stripping it would be a production
+    // crash in a path CI cannot see. The reclassification safety rule in
+    // docs/dependency-risk-review.md names that direction as the dangerous one.
+    '@flue/runtime': { major: 2 },
+    // Reviewed in the same diff. Qualifies because it VALIDATES MODEL-SUPPLIED
+    // TOOL ARGUMENTS — untrusted input by construction. Already present
+    // transitively (@t3-oss/env-nextjs, @prisma/dev, @hookform/resolvers);
+    // declaring it turns a phantom import into a real one rather than adding a
+    // package to the image. Its blast radius is bounded by position: a defect
+    // in a converted schema cannot weaken enforcement, because runReadTool
+    // validates against the tool's ZOD schema on a path valibot is not on.
+    valibot: { major: 1 },
     'js-yaml': { major: 5 },
     jszip: { major: 3 },
     pdfkit: { major: 0 },

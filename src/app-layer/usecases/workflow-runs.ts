@@ -71,6 +71,7 @@ import {
 } from '@/lib/agentic/content-provenance';
 import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
 import { resolveDriverForRun } from '@/lib/agentic/agent-driver-policy';
+import { assertWithinMonthlyBudget } from '@/lib/agentic/monthly-budget-policy';
 import {
     estimateTokens,
     type WorkflowContext,
@@ -141,6 +142,24 @@ export async function startWorkflowRun(
 
     const def = getWorkflowDefinition(workflowKey);
     if (!def) throw badRequest(`Unknown workflow: ${workflowKey}`);
+
+    // PRE-FLIGHT: the tenant's monthly token budget.
+    //
+    // Here, and not one line later. Every per-run cap in `run-caps.ts` bounds a
+    // SINGLE run and halts it at the boundary; nothing accumulates across runs,
+    // so a tenant can stay inside every per-run cap and still spend without
+    // limit by starting more of them. This is the only axis that spans runs and
+    // it is checked exactly once, at the door.
+    //
+    // It sits ABOVE `createSealedRun` deliberately: a refusal after the row
+    // exists leaves a RUNNING run nothing will ever advance, which the
+    // `agentic-run-settlement` sweep would later reap as a crashed executor —
+    // a refusal wearing the costume of an outage.
+    //
+    // No-ops for every tenant that has not configured a budget, which is all of
+    // them until somebody sets one: a NULL column short-circuits before the
+    // aggregate runs.
+    await assertWithinMonthlyBudget(ctx);
 
     const context: WorkflowContext = { input, outputs: {} };
 

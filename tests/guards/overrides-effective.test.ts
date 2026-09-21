@@ -593,7 +593,12 @@ describe('package.json overrides — effective and explained', () => {
          * refuses. Read these values off the failure message, never
          * compute them.
          */
-        const INERT_OVERRIDES_TODAY = ['@hono/node-server', 'hono', 'tar'];
+        // Was ['@hono/node-server', 'hono', 'tar'] until 2026-09-20.
+        // @flue/runtime 2.1.0 REINTRODUCED both hono packages, so their notes
+        // stopped being true and were removed — which is this assertion doing
+        // exactly its job, on the day the thing those notes predicted ("if hono
+        // returns") actually happened. Read off the failure message, not computed.
+        const INERT_OVERRIDES_TODAY = ['tar'];
 
         /**
          * Of those, the ones whose note makes a VERSIONED floor claim
@@ -601,7 +606,16 @@ describe('package.json overrides — effective and explained', () => {
          * generated from. `tar` is deliberately absent: its note uses
          * the word `floor` with no version beside it.
          */
-        const FLOOR_CLAIMING_NOTES_TODAY = ['@hono/node-server', 'hono'];
+        // EMPTY since 2026-09-20, and legitimately so: the only two notes that
+        // ever made a versioned floor claim were the hono pair, and both are
+        // gone now that the packages are back in the tree. `tar` remains inert
+        // and its note names no version beside the word `floor`.
+        //
+        // An empty list here is NOT the vacuous pass the comment above warns
+        // about — that warning is about INERT_OVERRIDES_TODAY, which still has
+        // a member to iterate. This assertion keeps its teeth while empty: a
+        // note that later gains a versioned floor claim fails it immediately.
+        const FLOOR_CLAIMING_NOTES_TODAY: string[] = [];
 
         /** Sentence boundary — `7.5.19.` splits, `7.5.19` does not. */
         const SENTENCES = /(?<=[.!?])\s+/;

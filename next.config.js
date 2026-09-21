@@ -48,7 +48,41 @@ const defaultOptions = {
         '@aws-sdk/client-s3',
         '@aws-sdk/s3-request-presigner',
     ],
+    // PRERENDER SOURCE MAPS — OFF. Next's default is TRUE (config-shared.js:146),
+    // and its own memory guidance names this knob for exactly our symptom:
+    // "Next.js will use source maps by default during the prerender phase of
+    // `next build`. If you consistently encounter memory issues during that
+    // phase (after 'Generating static pages'), you can try disabling source
+    // maps in that phase."
+    //
+    // That IS where this build's memory sits. Measured on main's own [mem]
+    // curves, the build holds a FLAT plateau after "Finalizing page
+    // optimization" and never releases it:
+    //     2026-09-13   peak  8447 MB   trailing ~5200 MB
+    //     2026-09-20   peak 15670 MB   trailing ~11250 MB
+    // Same 766-route surface, same baseline (1086 vs 1094 MB), webpack compile
+    // 62 s -> 149 s. The plateau roughly doubled in a week.
+    //
+    // WHY THIS ONE KNOB ALONE. Four levers have already returned null here —
+    // heap cap at 8192/10240/12288 (a 4 GB range, no effect), MALLOC_ARENA_MAX,
+    // the .next/cache (flat 326-337 MB and uncorrelated), and route count
+    // (766 = 766). Run-to-run noise on this job is ~1.4 GB, so changing several
+    // things at once would make the result unattributable. `cpus` /
+    // `memoryBasedWorkersCount` are the next candidates and are deliberately
+    // NOT set yet.
+    //
+    // THE TRADE: prerendered pages lose source maps, so a stack trace from the
+    // prerender phase is less legible. `productionBrowserSourceMaps` is already
+    // false (Next's default), so client debuggability is unchanged.
+    // TOP LEVEL, NOT `experimental`. Next moved this option out of
+    // experimental (`server/config.js:688` calls
+    // warnOptionHasBeenMovedOutOfExperimental for it) and the build reads
+    // `config.enablePrerenderSourceMaps` directly at `build/index.js:409`.
+    // Nesting it under `experimental` is how this becomes a silent no-op.
+    enablePrerenderSourceMaps: false,
+
     experimental: {
+
         // Client Router Cache stale times (Next 15+). The hot app routes are
         // `force-dynamic` (per-tenant auth + URL filters), so their default
         // client-cache stale time is 0 — every back/forward or re-navigation
