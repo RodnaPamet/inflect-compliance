@@ -15,7 +15,19 @@ import { functionBodyOf } from '../helpers/source-blocks';
 import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// #2246 Class A / #2679 LANGUAGE SPLIT — comments are masked at the READ SEAM,
+// and WHICH masker depends on the language of the file being read.
+//
+// `codeOf` lexes TypeScript. Handing it a `.sql` file is the single worst
+// outcome available: every `--` comment survives verbatim while the call site
+// READS as masked. Migrations therefore go through `readSql`, which lexes
+// `--` and `/* */` (and nests, as Postgres does). TypeScript keeps `read`.
+// Which extension flows through which helper was re-derived in this file.
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
+
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
+const readSql = (rel: string) => sqlCodeOf(readRaw(rel));
 
 function walk(dir: string, out: string[] = []): string[] {
     for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
@@ -85,7 +97,7 @@ describe('privacy — digest + sanitised summary only', () => {
 
 describe('immutability — append-only core record', () => {
     it('a migration installs the append-only trigger', () => {
-        const mig = read('prisma/migrations/20260703130000_ai_decision_log/migration.sql');
+        const mig = readSql('prisma/migrations/20260703130000_ai_decision_log/migration.sql');
         expect(mig).toContain('ai_decision_log_immutable');
         expect(mig).toContain('BEFORE UPDATE ON "AiDecisionLog"');
         expect(mig).toMatch(/append-only/i);

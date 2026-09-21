@@ -68,7 +68,16 @@
 import type * as v from 'valibot';
 
 import type { RequestContext } from '@/app-layer/types';
-import { guardEgress, guardUntrustedInput, assertGuardAllowed } from '@/app-layer/ai/guard';
+import {
+    guardEgress,
+    guardUntrustedInput,
+    assertGuardAllowed,
+    assertNoReviewRequired,
+    type GuardOutcome,
+    type GuardVerdict,
+    type GuardDirection,
+} from '@/app-layer/ai/guard';
+import { forbidden } from '@/lib/errors/types';
 import { enforceApiKeyScope } from '@/lib/auth/api-key-auth';
 import {
     requiredAutonomyFor,
@@ -168,6 +177,109 @@ function asToolArgs(data: unknown): Record<string, unknown> {
 /** Why a tool was not advertised. Diagnostic only — never a refusal. */
 export type ToolOmissionReason = 'SCOPE' | 'AUTONOMY' | 'UNCONVERTIBLE_SCHEMA';
 
+/**
+ * One guard flag. Rule ids and verdict only — never the content that tripped it.
+ */
+export interface ReviewFlag {
+    readonly tool: string;
+    /** Which slice of the sandwich fired: the model's ARGUMENTS, or the RESULT. */
+    readonly slice: 'args' | 'result';
+    readonly direction: GuardDirection;
+    readonly verdict: GuardVerdict;
+    readonly ruleIds: readonly string[];
+}
+
+/**
+ * The invocation-scoped answer to "may this run carry on by itself?".
+ *
+ * ## Why refusing one call was not enough
+ *
+ * `GuardAction` has three values and the middle one is the default outcome.
+ * Under `balanced` — the mode a tenant gets without configuring anything — a
+ * SUSPICIOUS finding in either direction, and a MALICIOUS one on input,
+ * resolve to `flag`, whose contract `policy.ts` states as "allow, but force
+ * human review; NEVER auto-commit".
+ *
+ * This adapter honoured only `assertGuardAllowed`, which fires on `blocked`
+ * alone. So a flag did nothing: flagged ARGUMENTS went on to the funnel, and a
+ * flagged RESULT — tenant-authored text that reads as an instruction — was
+ * returned into the model's context verbatim. The guard ran, recorded its
+ * verdict, and changed nothing, which is the shape of a control that reports
+ * itself working.
+ *
+ * Throwing on the flagged call is necessary and is NOT sufficient. A tool that
+ * throws is, to a language model, a tool that did not work: it picks another
+ * one and keeps going. Refusing call three of seven while calls four through
+ * seven proceed is auto-continuation with an extra error in the transcript —
+ * and the one thing a flag must never do is let the agent route around it.
+ *
+ * So the latch is one-way and invocation-wide. The first flag trips it, and
+ * every later call in the same invocation refuses BEFORE the funnel, before
+ * the guards, before anything. A tripped latch is the driver's signal to put
+ * the run into `AWAITING_APPROVAL`: `required` is the question it asks, and
+ * `flags` is what it shows the human who has to answer.
+ *
+ * Nothing is reset. There is no `clear()` and there must not be one — the run
+ * is answered by a person, not by the next call going well.
+ */
+export class ReviewLatch {
+    private readonly recorded: ReviewFlag[] = [];
+
+    /** Did a guard flag anything in this invocation? */
+    get required(): boolean {
+        return this.recorded.length > 0;
+    }
+
+    /** The flags, in the order they fired. */
+    get flags(): readonly ReviewFlag[] {
+        return this.recorded;
+    }
+
+    /**
+     * Refuse outright once anything has been flagged.
+     *
+     * Called at the TOP of every guarded call, so a tripped latch costs no
+     * funnel call, no audit row and no guard scan. The message names the flag
+     * that stopped the run rather than the call that just bounced off it,
+     * because the second one is never the interesting half.
+     */
+    assertNotTripped(tool: string): void {
+        const first = this.recorded[0];
+        if (!first) return;
+        throw forbidden(
+            `ai_guard_review_required: awaiting human review since ` +
+                `${first.slice} of ${first.tool} ` +
+                `[${first.ruleIds.join(',')}] — refusing ${tool}`,
+        );
+    }
+
+    /**
+     * Record a verdict, then enforce it.
+     *
+     * The order is load-bearing: both assertions throw, and a flag recorded
+     * after the throw would be a flag nobody could read — the latch would stay
+     * down while the call that should have tripped it unwound.
+     *
+     * Both assertions, not one. `assertNoReviewRequired` subsumes
+     * `assertGuardAllowed` (a block sets `reviewRequired` too), but running the
+     * narrower one first keeps a block reporting itself as `ai_guard_blocked`
+     * instead of being relabelled as something milder.
+     */
+    check(outcome: GuardOutcome, tool: string, slice: ReviewFlag['slice']): void {
+        if (outcome.reviewRequired) {
+            this.recorded.push({
+                tool,
+                slice,
+                direction: outcome.direction,
+                verdict: outcome.verdict,
+                ruleIds: [...outcome.ruleIds],
+            });
+        }
+        assertGuardAllowed(outcome);
+        assertNoReviewRequired(outcome);
+    }
+}
+
 export interface FlueToolSet {
     tools: FlueToolDefinition[];
     /**
@@ -180,6 +292,13 @@ export interface FlueToolSet {
      * incapable when it is actually under-provisioned.
      */
     omitted: Array<{ name: string; reason: ToolOmissionReason }>;
+    /**
+     * ONE latch for the whole tool set, shared by every `run` closure below.
+     *
+     * Per-tool latches would let a flagged `list_risks` be followed by a clean
+     * `list_controls`, which is the routing-around this is here to stop.
+     */
+    review: ReviewLatch;
 }
 
 /**
@@ -210,6 +329,7 @@ function holdsScope(ctx: RequestContext, tool: McpReadTool<unknown>): boolean {
 export function flueToolsFor(inv: McpInvocation): FlueToolSet {
     const tools: FlueToolDefinition[] = [];
     const omitted: FlueToolSet['omitted'] = [];
+    const review = new ReviewLatch();
 
     for (const tool of loadableReadTools(inv)) {
         if (!holdsScope(inv.ctx, tool)) {
@@ -246,11 +366,17 @@ export function flueToolsFor(inv: McpInvocation): FlueToolSet {
                 title: tool.name,
             },
             run: (context) =>
-                runGuardedTool(inv, tool.name, asToolArgs(context.data), context.toolCallId),
+                runGuardedTool(
+                    inv,
+                    tool.name,
+                    asToolArgs(context.data),
+                    context.toolCallId,
+                    review,
+                ),
         });
     }
 
-    return { tools, omitted };
+    return { tools, omitted, review };
 }
 
 /**
@@ -265,8 +391,16 @@ export async function runGuardedTool(
     name: string,
     args: Record<string, unknown>,
     toolCallId = 'standalone',
+    review: ReviewLatch = new ReviewLatch(),
 ): Promise<string> {
     const ctx = inv.ctx;
+
+    // ── 0. ALREADY AWAITING A HUMAN ─────────────────────────────────────────
+    //
+    // Before the guards, not after: a run that is waiting on a person must not
+    // spend another funnel call, another audit row or another scan to be told
+    // the same thing again.
+    review.assertNotTripped(name);
 
     // ── 1. The model's proposed ARGUMENTS, on their way to an action ────────
     //
@@ -274,7 +408,7 @@ export async function runGuardedTool(
     // guard that fired after that would be reporting on a read that had already
     // happened.
     const egress = await guardEgress(ctx, args, { source: `flue-tool-args:${name}:${toolCallId}` });
-    assertGuardAllowed(egress);
+    review.check(egress, name, 'args');
 
     const result = await runReadTool(inv, name, args);
 
@@ -291,7 +425,11 @@ export async function runGuardedTool(
     const injected = await guardUntrustedInput(ctx, text, {
         source: `flue-tool-result:${name}:${toolCallId}`,
     });
-    assertGuardAllowed(injected);
+    // The read has already happened, and that is fine — it is a READ, it is
+    // audited, and nothing was committed. What must not happen is the text
+    // reaching the model, so the flag is enforced between the funnel and the
+    // return rather than being allowed through with a warning attached.
+    review.check(injected, name, 'result');
 
     return text;
 }

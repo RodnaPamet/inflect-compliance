@@ -21,7 +21,19 @@ import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+// #2246 Class A / #2679 LANGUAGE SPLIT — comments are masked at the READ SEAM,
+// and WHICH masker depends on the language of the file being read.
+//
+// `codeOf` lexes TypeScript. Handing it a `.sql` file is the single worst
+// outcome available: every `--` comment survives verbatim while the call site
+// READS as masked. Migrations therefore go through `readSql`, which lexes
+// `--` and `/* */` (and nests, as Postgres does). TypeScript keeps `read`.
+// Which extension flows through which helper was re-derived in this file.
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
+
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
+const readSql = (rel: string) => sqlCodeOf(readRaw(rel));
 
 const dashboard = read('src/app/t/[tenantSlug]/(app)/risks/dashboard/page.tsx');
 const appetite = read('src/app-layer/usecases/risk-appetite.ts');
@@ -29,7 +41,7 @@ const engine = read('src/app-layer/usecases/monte-carlo.ts');
 const route = read('src/app/api/t/[tenantSlug]/risk-appetite/route.ts');
 const adminPage = read('src/app/t/[tenantSlug]/(app)/admin/risk-appetite/page.tsx');
 const schema = readPrismaSchema();
-const migration = read('prisma/migrations/20260612020000_rq3_3_tested_percentile/migration.sql');
+const migration = readSql('prisma/migrations/20260612020000_rq3_3_tested_percentile/migration.sql');
 
 describe('RQ3-3 — the headline is a distribution, not a sum', () => {
     test('with a run, the quant card headlines P50/P80/P95', () => {

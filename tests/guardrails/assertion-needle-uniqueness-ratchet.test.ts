@@ -279,7 +279,7 @@ const HIGH_MULTIPLICITY = 5;
 //   every open PR: 1319 is the live count of main@fc8954092 + this branch.
 //   Whoever merges second re-measures on the merged tree rather than keeping
 //   this figure.
-const AMBIGUOUS_NEEDLE_BASELINE = 1289;
+const AMBIGUOUS_NEEDLE_BASELINE = 1284;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
@@ -322,7 +322,7 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1289;
 // off the five-plus threshold; a `.tsx` docblock listing props and mounts is
 // what carries a needle over five. Shared state with every open PR:
 // re-measure on the merged tree.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 207;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 204;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -791,8 +791,11 @@ describe('Class D — needles that match more than the thing they name', () => {
             expect(at('audit-s5-readiness-scoring.test.ts', 31)?.occurrences).toBe(2);
         });
 
-        it('entra-ei2-group-mapping.test.ts:18 — @@index([tenantId]) is satisfied by fifteen models', () => {
-            expect(at('entra-ei2-group-mapping.test.ts', 18)?.occurrences).toBe(15);
+        // Was :18; the #2246 batch-11 conversion inserted the masker header
+        // above it and the assertion moved to :30. The CITATION rotted, the
+        // claim did not — re-derived against the file rather than dropped.
+        it('entra-ei2-group-mapping.test.ts:30 — @@index([tenantId]) is satisfied by fifteen models', () => {
+            expect(at('entra-ei2-group-mapping.test.ts', 30)?.occurrences).toBe(15);
         });
 
         it('vendor-audit.test.ts:112 — a `.toContain`, the matcher the class hid behind', () => {

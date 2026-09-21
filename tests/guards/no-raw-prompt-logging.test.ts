@@ -382,12 +382,45 @@ const SINK_FLOOR = 30;
 // is correctly absent from both counts: the swept population is
 // `matchesAgenticPath`, which observability is not part of. That is also why
 // only one new file/kind pair appears below.
+// Re-MEASURED 2026-09-21 for the run-engine record: 150 / 87 became 154 / 87.
+// SINKS DID NOT MOVE, and that is the shape of this diff — it adds fields to
+// two `appendAuditEntry` calls that were already swept, rather than a new call.
+//
+// The whole delta is `src/app-layer/usecases/workflow-runs.ts`, measured per
+// file rather than inferred from the total: 4 holes before, 8 after, with the
+// other files unchanged. The start row's driver fields go from two to four,
+// and the resume row goes from a bare `{ category: 'access' }` literal — which
+// is analysable, and is why it contributed nothing before — to four bound
+// identifiers.
+//
+// All eight are `identifier bound elsewhere`, so no new file/kind pair appears
+// below. Every value is a closed `'static' | 'flue'` union or the nullable
+// reason string beside it; none can carry prompt text, and the rule cannot
+// know that, which is exactly what being counted here means. The calls are
+// bound to locals rather than spelled at the sink — `requestedDriver(def)`
+// inline added a FIFTH kind, "call to a helper this rule cannot open", and
+// that one is a new pair rather than a bigger number.
 // Re-MEASURED 2026-09-21 for the guard-block breaker latch: 150 / 87 became
 // 152 / 88. Floated both and read the printed counts, as the note above
 // requires. The +1 sink is `latchOnGuardBlock`'s single `logger.warn`; the +2
 // holes are its two value positions (`tenantId`, `agentId`) plus the
 // `err.message` arm, in a file already listed below.
-const MEASURED_HOLES = 152;
+// Re-MEASURED 2026-09-21 a THIRD time, on the merge of this branch with the
+// main that #2726 had just landed on: 154 / 87 became 156 / 88.
+//
+// Both notes above are kept because both deltas are real and neither explains
+// the other -- #2726's four holes are the driver fields on two audit rows,
+// this branch's two are `latchOnGuardBlock`'s new sink. The number here is the
+// UNION, and it was measured rather than added up: each branch was green
+// against 150, so arithmetic alone would have justified 152 or 154 depending
+// on merge order, and both would have been wrong on the tree that actually
+// results. A ceiling one lower than the tree it guards is a red build; one
+// higher is headroom the next regression spends.
+//
+// The union was also measured ahead of time on main + #2723 + #2726 + this
+// branch, which reported the same 156 / 88 -- so #2723 contributes nothing,
+// and the number does not depend on which of the two lands first.
+const MEASURED_HOLES = 156;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field

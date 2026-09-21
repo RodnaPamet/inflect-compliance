@@ -7,7 +7,19 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// #2246 Class A / #2679 LANGUAGE SPLIT — comments are masked at the READ SEAM,
+// and WHICH masker depends on the language of the file being read.
+//
+// `codeOf` lexes TypeScript. Handing it a `.sql` file is the single worst
+// outcome available: every `--` comment survives verbatim while the call site
+// READS as masked. Migrations therefore go through `readSql`, which lexes
+// `--` and `/* */` (and nests, as Postgres does). TypeScript keeps `read`.
+// Which extension flows through which helper was re-derived in this file.
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
+
+const readRaw = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+const read = (p: string) => codeOf(readRaw(p));
+const readSql = (p: string) => sqlCodeOf(readRaw(p));
 const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
 describe('EI-2 Entra group → role mapping', () => {
@@ -21,7 +33,7 @@ describe('EI-2 Entra group → role mapping', () => {
     it('the migration adds the table with the three RLS policies', () => {
         const dir = 'prisma/migrations/20260609090000_ei2_tenant_entra_group_mapping/migration.sql';
         expect(exists(dir)).toBe(true);
-        const sql = read(dir);
+        const sql = readSql(dir);
         expect(sql).toMatch(/CREATE TABLE "TenantEntraGroupMapping"/);
         expect(sql).toMatch(/ENABLE ROW LEVEL SECURITY/);
         expect(sql).toMatch(/FORCE ROW LEVEL SECURITY/);

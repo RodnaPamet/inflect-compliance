@@ -24,7 +24,19 @@ import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => readFileSync(path.join(ROOT, p), 'utf-8');
+// #2246 Class A / #2679 LANGUAGE SPLIT — comments are masked at the READ SEAM,
+// and WHICH masker depends on the language of the file being read.
+//
+// `codeOf` lexes TypeScript. Handing it a `.sql` file is the single worst
+// outcome available: every `--` comment survives verbatim while the call site
+// READS as masked. Migrations therefore go through `readSql`, which lexes
+// `--` and `/* */` (and nests, as Postgres does). TypeScript keeps `read`.
+// Which extension flows through which helper was re-derived in this file.
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
+
+const readRaw = (p: string) => readFileSync(path.join(ROOT, p), 'utf8');
+const read = (p: string) => codeOf(readRaw(p));
+const readSql = (p: string) => sqlCodeOf(readRaw(p));
 
 describe('PR-A notification-assignment alert wiring', () => {
     describe('1. Schema + migration', () => {
@@ -55,10 +67,10 @@ describe('PR-A notification-assignment alert wiring', () => {
                 'prisma/migrations/20260527160000_notif_control_assigned',
             );
             expect(existsSync(migrationDir)).toBe(true);
-            const sql = readFileSync(
+            const sql = sqlCodeOf(readFileSync(
                 path.join(migrationDir, 'migration.sql'),
                 'utf-8',
-            );
+            ));
             expect(sql).toMatch(
                 /ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'CONTROL_ASSIGNED'/,
             );
@@ -80,10 +92,10 @@ describe('PR-A notification-assignment alert wiring', () => {
                 'prisma/migrations/20260530120000_notif_risk_asset_assigned',
             );
             expect(existsSync(migrationDir)).toBe(true);
-            const sql = readFileSync(
+            const sql = sqlCodeOf(readFileSync(
                 path.join(migrationDir, 'migration.sql'),
                 'utf-8',
-            );
+            ));
             expect(sql).toMatch(
                 /ALTER TYPE "NotificationType" ADD VALUE IF NOT EXISTS 'RISK_ASSIGNED'/,
             );
@@ -200,6 +212,8 @@ describe('PR-A notification-assignment alert wiring', () => {
     describe('4. control/mutations.ts wires CONTROL_ASSIGNED in setControlOwner', () => {
         const src = () =>
             read('src/app-layer/usecases/control/mutations.ts');
+        const rawSrc = () =>
+            readRaw('src/app-layer/usecases/control/mutations.ts');
 
         it('imports createAssignmentNotification', () => {
             expect(src()).toMatch(
@@ -208,10 +222,19 @@ describe('PR-A notification-assignment alert wiring', () => {
         });
 
         it('setControlOwner calls createAssignmentNotification with CONTROL_ASSIGNED', () => {
+            // #2246 — the END anchor is a COMMENT, and comments are blanked at
+            // the read seam, so `indexOf` on the masked text returns -1. Take
+            // both offsets from the RAW text and the SLICE from the masked
+            // text: `codeOf` blanks in place and preserves length, so the two
+            // strings are index-for-index identical. The assertion below then
+            // reads code only, which is the point — a commented-out
+            // `createAssignmentNotification(db, 'CONTROL_ASSIGNED')` inside
+            // setControlOwner must not satisfy it.
+            const raw = rawSrc();
             const s = src();
-            const start = s.indexOf('export async function setControlOwner');
+            const start = raw.indexOf('export async function setControlOwner');
             expect(start).toBeGreaterThan(-1);
-            const end = s.indexOf('// ─── Cadence', start);
+            const end = raw.indexOf('// ─── Cadence', start);
             expect(end).toBeGreaterThan(start);
             const body = s.slice(start, end);
             expect(body).toMatch(

@@ -6,7 +6,19 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// #2246 Class A / #2679 LANGUAGE SPLIT — comments are masked at the READ SEAM,
+// and WHICH masker depends on the language of the file being read.
+//
+// `codeOf` lexes TypeScript. Handing it a `.sql` file is the single worst
+// outcome available: every `--` comment survives verbatim while the call site
+// READS as masked. Migrations therefore go through `readSql`, which lexes
+// `--` and `/* */` (and nests, as Postgres does). TypeScript keeps `read`.
+// Which extension flows through which helper was re-derived in this file.
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
+
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
+const readSql = (rel: string) => sqlCodeOf(readRaw(rel));
 
 describe('Audit S6 — Vendor / Third-Party Risk', () => {
     describe('require("@/lib/prisma") escape retired', () => {
@@ -109,10 +121,10 @@ describe('Audit S6 — Vendor / Third-Party Risk', () => {
                 'prisma/migrations/20260524140000_audit_s6_vendor_review_due',
             );
             expect(fs.existsSync(migDir)).toBe(true);
-            const sql = fs.readFileSync(
+            const sql = sqlCodeOf(fs.readFileSync(
                 path.join(migDir, 'migration.sql'),
                 'utf8',
-            );
+            ));
             expect(sql).toMatch(/ADD VALUE IF NOT EXISTS 'VENDOR_REVIEW_DUE'/);
         });
     });
