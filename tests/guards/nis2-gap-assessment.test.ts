@@ -13,7 +13,19 @@ import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// #2246 Class A / #2679 LANGUAGE SPLIT — comments are masked at the READ SEAM,
+// and WHICH masker depends on the language of the file being read.
+//
+// `codeOf` lexes TypeScript. Handing it a `.sql` file is the single worst
+// outcome available: every `--` comment survives verbatim while the call site
+// READS as masked. Migrations therefore go through `readSql`, which lexes
+// `--` and `/* */` (and nests, as Postgres does). TypeScript keeps `read`.
+// Which extension flows through which helper was re-derived in this file.
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
+
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
+const readSql = (rel: string) => sqlCodeOf(readRaw(rel));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 // Recursively collect *.ts/*.tsx under src, minus generated dirs.
@@ -112,7 +124,7 @@ describe('NIS2 gap — run store + provenance', () => {
     });
 
     it('the migration adds the source column', () => {
-        const mig = read('prisma/migrations/20260702090000_nis2_assessment_source/migration.sql');
+        const mig = readSql('prisma/migrations/20260702090000_nis2_assessment_source/migration.sql');
         expect(mig).toMatch(/ADD COLUMN[^;]*"source"/);
     });
 

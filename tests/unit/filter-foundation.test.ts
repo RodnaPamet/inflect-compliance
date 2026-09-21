@@ -30,8 +30,19 @@ const ANIMATED_CONTAINER = path.resolve(
 );
 const FILTER_BARREL_SRC = path.resolve(FILTER_DIR, 'index.ts');
 
+import { codeOf } from '../helpers/source-blocks';
+
+// #2246 Class A — the mask goes at the READ SEAM.
+//
+// `readFile` stays RAW and has exactly two callers, both deliberate: the
+// `package.json` read below is handed to `JSON.parse`, where JSON is DATA and
+// masking has no meaning, and the `GUIDE.md` read is markdown, which `codeOf`
+// does not lex. Source reads go through `readSrc`, which masks.
 function readFile(p: string): string {
     return fs.readFileSync(p, 'utf-8');
+}
+function readSrc(p: string): string {
+    return codeOf(readFile(p));
 }
 
 // ─── 1. Dependencies locked in package.json ──────────────────────────
@@ -114,7 +125,7 @@ describe('Epic 53 foundation — dependency layer', () => {
 // ─── 2. AnimatedSizeContainer contract ───────────────────────────────
 
 describe('AnimatedSizeContainer — foundational animated container', () => {
-    const src = readFile(ANIMATED_CONTAINER);
+    const src = readSrc(ANIMATED_CONTAINER);
 
     it('lives at the canonical path src/components/ui/animated-size-container.tsx', () => {
         expect(fs.existsSync(ANIMATED_CONTAINER)).toBe(true);
@@ -150,7 +161,7 @@ describe('AnimatedSizeContainer — foundational animated container', () => {
     });
 
     it('is the container that filter-list consumes (no duplicate implementation)', () => {
-        const filterList = readFile(path.join(FILTER_DIR, 'filter-list.tsx'));
+        const filterList = readSrc(path.join(FILTER_DIR, 'filter-list.tsx'));
         expect(filterList).toMatch(/AnimatedSizeContainer/);
         expect(filterList).toMatch(/from ['"]\.\.\/animated-size-container['"]/);
     });
@@ -159,7 +170,7 @@ describe('AnimatedSizeContainer — foundational animated container', () => {
 // ─── 3. Filter barrel — public surface & source-level exports ────────
 
 describe('Filter barrel — @/components/ui/filter public API', () => {
-    const src = readFile(FILTER_BARREL_SRC);
+    const src = readSrc(FILTER_BARREL_SRC);
 
     it('re-exports the composite Filter object with Select + List slots', () => {
         expect(src).toMatch(/const Filter = \{\s*Select: FilterSelect,\s*List: FilterList\s*\}/);
