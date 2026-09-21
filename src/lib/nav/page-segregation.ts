@@ -210,6 +210,7 @@ export const SUBPAGES: readonly string[] = [
     '/agents/receipts',
     '/agents/review-quality',
     '/agents/runs',
+    '/agents/runs/[runId]',
 
     // Assets
     '/assets/[id]',

@@ -44,6 +44,9 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // agents' behaviour.
     '/agents/proposals': { href: '/agents', label: 'Agents' },
     '/agents/runs': { href: '/agents', label: 'Agents' },
+    // Back from ONE run goes to the run list, not to the register — the
+    // list is where the reader came from and what they are working through.
+    '/agents/runs/[runId]': { href: '/agents/runs', label: 'Runs' },
     '/agents/receipts': { href: '/agents', label: 'Agents' },
     '/agents/quarantine': { href: '/agents', label: 'Agents' },
     // The ASI09 review-quality report: a view of those agents' review queue,

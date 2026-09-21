@@ -64,6 +64,7 @@ const AGENTIC_ROUTES: readonly string[] = [
     '/agents/[agentId]',
     '/agents/proposals',
     '/agents/runs',
+    '/agents/runs/[runId]',
     '/agents/receipts',
     '/agents/quarantine',
     '/agents/review-quality',
@@ -220,6 +221,16 @@ describe('every agentic route under (app)/ has at least one inbound link', () =>
         const linkers = inboundLinkers('/agents');
         expect(linkers).toContain('src/components/layout/SidebarNav.tsx');
         expect(linkers).toContain('src/components/command-palette/use-palette-commands.ts');
+    });
+
+    it('the RUN DETAIL page is linked from the run list’s row', () => {
+        // The step ledger was served by `GET /agent-runs/:id` from the day the
+        // engine shipped and read by nothing — the same unreachable shape the
+        // agent detail page had, one surface along. `AgentRunsClient` is
+        // outside `(app)/agents/runs/[runId]/`, so it counts.
+        expect(inboundLinkers('/agents/runs/[runId]')).toContain(
+            `${APP}/agents/runs/AgentRunsClient.tsx`,
+        );
     });
 
     it('the DETAIL page is linked from the register’s row action', () => {
