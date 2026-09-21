@@ -19,12 +19,17 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM. Reads whose result
+// is JSON.parse'd are left RAW on purpose: a catalogue is parsed as DATA, never
+// matched as text, so masking it would only corrupt the parse.
+import { codeOf } from '../helpers/source-blocks';
+
 const CONTROLS_CLIENT = path.resolve(
     __dirname,
     '../../src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx',
 );
 
-const source = readFileSync(CONTROLS_CLIENT, 'utf8');
+const source = codeOf(readFileSync(CONTROLS_CLIENT, 'utf8'));
 // searchPlaceholder migrated to next-intl; resolve the key against en.json.
 const EN_CONTROLS = JSON.parse(
     readFileSync(path.resolve(__dirname, '../../messages/en.json'), 'utf8'),

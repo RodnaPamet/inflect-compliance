@@ -17,11 +17,16 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM. Reads whose result
+// is JSON.parse'd are left RAW on purpose: a catalogue is parsed as DATA, never
+// matched as text, so masking it would only corrupt the parse.
+import { codeOf } from '../helpers/source-blocks';
+
 const POLICY_DETAIL = path.resolve(
     __dirname,
     '../../src/app/t/[tenantSlug]/(app)/policies/[policyId]/page.tsx',
 );
-const source = readFileSync(POLICY_DETAIL, 'utf8');
+const source = codeOf(readFileSync(POLICY_DETAIL, 'utf8'));
 // Tab labels migrated to next-intl; resolve the keys against the catalog.
 const EN_POLICIES = JSON.parse(
     readFileSync(path.resolve(__dirname, '../../messages/en.json'), 'utf8'),

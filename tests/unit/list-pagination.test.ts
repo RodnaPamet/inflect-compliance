@@ -25,9 +25,14 @@ import {
     type PaginationMeta,
 } from '../../src/components/ui/table/pagination-utils';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM. Reads whose result
+// is JSON.parse'd are left RAW on purpose: a catalogue is parsed as DATA, never
+// matched as text, so masking it would only corrupt the parse.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../../');
 function read(rel: string) {
-    return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+    return codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 }
 
 // ─── useListPagination — source contract ─────────────────────────────
@@ -173,28 +178,59 @@ describe('Epic 52 adoption — migrated pages wire column visibility', () => {
     //
     // Column-visibility persistence was retained — that's a per-user
     // setting independent of how rows are paged.
+    // `shell` is the platform primitive each page ACTUALLY composes, and it
+    // differs by page — which this table did not say until the #2246 masking
+    // exposed it. Controls renders `<EntityListPage>`, the higher-level wrapper
+    // that itself imports ListPageShell (EntityListPage.tsx:54); Risks and
+    // Evidence render `<ListPageShell>` directly.
+    //
+    // WHY THIS WAS GREEN BEFORE. The assertion looked for the literal string
+    // `ListPageShell` in each client. In ControlsClient.tsx that string occurs
+    // exactly ONCE — inside the `//` comment at :689 describing this very
+    // migration — and ZERO times as code. So the guard passed on prose for a page
+    // that composes the primitive a different way, and would have gone on passing
+    // if Controls had left the platform altogether.
     const MIGRATED = [
         {
             dir: 'controls',
             client: 'ControlsClient.tsx',
             storageKey: 'inflect:col-vis:controls',
+            shell: 'EntityListPage',
         },
         {
             dir: 'risks',
             client: 'RisksClient.tsx',
             storageKey: 'inflect:col-vis:risks',
+            shell: 'ListPageShell',
         },
         {
             dir: 'evidence',
             client: 'EvidenceClient.tsx',
             storageKey: 'inflect:col-vis:evidence',
+            shell: 'ListPageShell',
         },
     ];
 
-    it.each(MIGRATED)('%s wraps the table in ListPageShell with fillBody (no pagination)', (page) => {
+    it.each(MIGRATED)('%s wraps the table in its platform shell with fillBody (no pagination)', (page) => {
         const src = read(`src/app/t/[tenantSlug]/(app)/${page.dir}/${page.client}`);
-        expect(src).toContain('ListPageShell');
-        expect(src).toMatch(/\bfillBody\b/);
+        // Anchored on `<` so a COMMENT naming the component cannot satisfy it.
+        expect(src).toContain(`<${page.shell}`);
+        // WHERE the fillBody contract lives differs by shell, and asserting it in
+        // the client was wrong for Controls. Its only two `fillBody` occurrences
+        // are COMMENTS (:689 and :1564) — the behaviour comes from
+        // `EntityListPage.tsx:330`, `fillBody={table.fillBody ?? true}`. Masking
+        // exposed that; before, the comments satisfied it.
+        // CONSTANT path on purpose: a read built from a variable is un-analysable
+        // to the needle ratchet (`path-not-constant`), and an un-analysable read is
+        // exactly where an ambiguous needle hides. Spelling it out keeps this
+        // assertion inside the detector's reach.
+        if (page.shell === 'EntityListPage') {
+            expect(
+                read('src/components/layout/EntityListPage.tsx'),
+            ).toMatch(/fillBody=\{[^}]*\?\?\s*true/);
+        } else {
+            expect(src).toMatch(/\bfillBody\b/);
+        }
         // Pagination wiring should be GONE — internal scroll is the
         // contract. If a future PR re-adds pagination here, the
         // user's "no additional pages" requirement is regressing.

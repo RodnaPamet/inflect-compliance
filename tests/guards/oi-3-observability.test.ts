@@ -12,8 +12,19 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+//
+// LANGUAGE SPLIT. One seam here carries two things. TypeScript-alikes go
+// through `read` and are masked. The JSON fixtures go through `readRaw` and
+// are NOT: a JSON read is PARSED as data, never matched as text, so masking it
+// would only corrupt the parse — `codeOf` lexes TypeScript and a catalogue is
+// not that language.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(readRaw(rel));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 describe('OI-3 — readyz dependency checks', () => {
@@ -173,18 +184,18 @@ describe('OI-3 — dashboards', () => {
     });
 
     it.each(REQUIRED)('%s parses as JSON', (filename) => {
-        expect(() => JSON.parse(read(`${DASH_DIR}/${filename}`))).not.toThrow();
+        expect(() => JSON.parse(readRaw(`${DASH_DIR}/${filename}`))).not.toThrow();
     });
 
     it.each(REQUIRED)('%s has a stable uid (importable/provisionable)', (filename) => {
-        const dash = JSON.parse(read(`${DASH_DIR}/${filename}`));
+        const dash = JSON.parse(readRaw(`${DASH_DIR}/${filename}`));
         expect(typeof dash.uid).toBe('string');
         expect(dash.uid.length).toBeGreaterThan(0);
         expect(dash.uid).toMatch(/^[a-z0-9-]+$/);
     });
 
     it.each(REQUIRED)('%s declares a Prometheus datasource input ($DS_PROMETHEUS)', (filename) => {
-        const dash = JSON.parse(read(`${DASH_DIR}/${filename}`));
+        const dash = JSON.parse(readRaw(`${DASH_DIR}/${filename}`));
         expect(Array.isArray(dash.__inputs)).toBe(true);
         const promInput = dash.__inputs.find(
             (i: { pluginId?: string }) => i.pluginId === 'prometheus',
@@ -194,7 +205,7 @@ describe('OI-3 — dashboards', () => {
     });
 
     it.each(REQUIRED)('%s has at least one panel and a title', (filename) => {
-        const dash = JSON.parse(read(`${DASH_DIR}/${filename}`));
+        const dash = JSON.parse(readRaw(`${DASH_DIR}/${filename}`));
         expect(typeof dash.title).toBe('string');
         expect(dash.title.length).toBeGreaterThan(0);
         expect(Array.isArray(dash.panels)).toBe(true);

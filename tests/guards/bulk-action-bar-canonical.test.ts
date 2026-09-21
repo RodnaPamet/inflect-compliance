@@ -7,9 +7,19 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+//
+// LANGUAGE SPLIT. One seam here carries two things. TypeScript-alikes go
+// through `read` and are masked. The JSON fixtures go through `readRaw` and
+// are NOT: a JSON read is PARSED as data, never matched as text, so masking it
+// would only corrupt the parse — `codeOf` lexes TypeScript and a catalogue is
+// not that language.
+import { codeOf } from '../helpers/source-blocks';
 
+const ROOT = path.resolve(__dirname, '../..');
+const readRaw = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+const read = (p: string) => codeOf(readRaw(p));
 describe('BulkActionBar — canonical bulk action row', () => {
     const bar = read('src/components/ui/bulk-action-bar.tsx');
 
@@ -28,7 +38,7 @@ describe('BulkActionBar — canonical bulk action row', () => {
         // i18n: placeholder flows through the catalog; assert the wiring +
         // that the key still resolves to the canonical English label.
         expect(bar).toMatch(/placeholder=\{t\('table\.chooseAction'\)\}/);
-        const en = JSON.parse(read('messages/en.json'));
+        const en = JSON.parse(readRaw('messages/en.json'));
         expect(en.common.table.chooseAction).toBe('Choose action...');
     });
 

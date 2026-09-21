@@ -21,9 +21,19 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
-const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+//
+// LANGUAGE SPLIT. One seam here carries two things. TypeScript-alikes go
+// through `read` and are masked. The JSON fixtures go through `readRaw` and
+// are NOT: a JSON read is PARSED as data, never matched as text, so masking it
+// would only corrupt the parse — `codeOf` lexes TypeScript and a catalogue is
+// not that language.
+import { codeOf } from '../helpers/source-blocks';
 
+const ROOT = path.resolve(__dirname, '../..');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(readRaw(rel));
 const pure = read('src/lib/control-roi.ts');
 const usecase = read('src/app-layer/usecases/control/roi.ts');
 const roiRoute = read('src/app/api/t/[tenantSlug]/controls/[controlId]/roi/route.ts');
@@ -35,7 +45,7 @@ const leaderboard = read('src/app/t/[tenantSlug]/(app)/controls/_components/Best
 const editModal = read('src/app/t/[tenantSlug]/(app)/controls/[controlId]/_modals/EditControlModal.tsx');
 // The ROI card's user-facing copy moved to next-intl; resolve moved
 // literals against the en catalog.
-const enControls = JSON.parse(read('messages/en.json')).controls as {
+const enControls = JSON.parse(readRaw('messages/en.json')).controls as {
     roi: Record<string, string>;
 };
 
