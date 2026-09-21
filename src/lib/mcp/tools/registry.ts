@@ -89,13 +89,33 @@ export const READ_TOOLS = [
  * ordinary planning is a design that trains operators to ignore it.
  */
 export function listReadToolDescriptors(inv: McpInvocation): McpToolDescriptor[] {
-    return READ_TOOLS.filter((t) => isToolLoadable(inv, t.name))
-        .filter((t) => canSee(inv, t.authorize.keys))
-        .map((t) => ({
-            name: t.name,
-            description: t.description,
-            inputSchema: t.inputSchema,
-        }));
+    return loadableReadTools(inv).map((t) => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+    }));
+}
+
+/**
+ * The same filter, returning the TOOLS rather than their wire descriptors.
+ *
+ * Extracted so a second consumer — the Flue driver's tool adapter, which needs
+ * each tool's `authorize` and `resourceScope` to narrow further — reads the
+ * offered set from the one place that computes it. The alternative was a second
+ * `READ_TOOLS.filter(...)` chain somewhere else, which is the shape that lets
+ * two catalogues of the same thing disagree: this filter already gained the
+ * policy-card term once, and a copy would not have gained it.
+ *
+ * Deliberately NOT widened to apply credential scope or the autonomy ceiling.
+ * Those are call-time decisions made by `authorizeToolCall`, and a listing that
+ * applied them would be making an authorization claim it writes no audit row
+ * for. A caller that wants to advertise only what will actually be permitted
+ * narrows this further itself, and says so.
+ */
+export function loadableReadTools(inv: McpInvocation): ReadonlyArray<McpReadTool<unknown>> {
+    return READ_TOOLS.filter((t) => isToolLoadable(inv, t.name)).filter((t) =>
+        canSee(inv, t.authorize.keys),
+    );
 }
 
 /**

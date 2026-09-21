@@ -126,6 +126,108 @@ wiring), `tests/pdf/generators.test.ts` + `tests/pdf/table.test.ts`
 `tests/integration/evidence-import.test.ts` (jszip archive
 extraction) — 192 tests, all green.
 
+## Review — 2026-09-20 — the agent runtime
+
+Two packages added by the Flue tools adapter. Both qualify under the
+criteria above: `@flue/runtime` **parses untrusted input** (model output and
+tool results) and **performs network egress** to model providers;
+`valibot` is the schema layer that **validates model-supplied tool
+arguments**. Neither could be added without a section here.
+
+### `@flue/runtime` — `2.1.0` (exact)
+
+**1. Where is it used?** Exactly one import site in shipping code, and it is
+type-only:
+
+```
+src/lib/agentic/flue/tools-adapter.ts:318
+    import type { useTool as FlueUseTool } from '@flue/runtime';
+```
+
+It feeds `__assertDescriptorIsALegalFlueTool`, a function that is never
+called and exists so `tsc` proves the adapter's descriptor is a legal
+`useTool` argument. **Nothing from the package enters the bundle today** —
+a type-only import is erased at compile time.
+
+**2. Is it classified correctly?** It is in `dependencies`, and that is the
+deliberate answer rather than the automatic one. On today's usage alone the
+honest classification is `devDependencies`: the only import is erased, so
+`npm prune --omit=dev` would strip it with no runtime effect. It is in
+`dependencies` because the adapter exists **to be executed** — the moment
+`DRIVER_IMPLEMENTED.flue` flips, the package is a runtime dependency, and
+the reclassification safety rule above says that direction is the dangerous
+one to get wrong. Classifying it as runtime now costs image size;
+classifying it as dev now costs a production crash on the day the driver is
+enabled, in a code path CI cannot see.
+
+**3. Version + exposure risk.** 118 transitive packages — by some distance
+the largest single addition in this review. Apache-2.0, compatible inbound
+with the BUSL-1.1 product. Pinned **exactly** at `2.1.0` rather than a
+caret, because a runtime that executes agents should not move minor versions
+without somebody reading the diff.
+
+The exposure that matters is transitive: `@flue/runtime` pins `hono`
+**exactly** at `4.12.32`, which carries four advisories (one fixed in
+4.12.34, three in 4.13.5). This repo's pre-existing `overrides` entry
+(`hono: ^4.13.5`) resolves it to 4.13.8 and clears all four. That override
+had been INERT since 2026-08-03 and was kept specifically so the floor would
+re-apply "if hono returns" — this is the change that made it return. See the
+notes in `tests/guards/override-registry.json`.
+
+`npm audit --omit=dev` reports the same two pre-existing advisories
+(`image-size` via `pptxgenjs`) before and after this addition, and
+`scripts/audit-gate.mjs` passes with its two tracked exemptions matched and
+in date. **Adding this dependency introduced no new advisory** — measured
+both ways, not assumed.
+
+**4. Decision.** Adopt, exact-pinned, in `dependencies`. Revisit the pin on
+any upgrade; a minor bump here is a change to the engine that executes
+agents and is not a routine caret bump.
+
+### `valibot` — `^1.5.0`
+
+**1. Where is it used?** Two sites, one of them real:
+
+```
+src/lib/agentic/flue/json-schema-to-valibot.ts:39   import * as v from 'valibot';   (runtime)
+src/lib/agentic/flue/tools-adapter.ts:68            import type * as v from 'valibot';  (type-only)
+```
+
+The runtime site builds the valibot schema that describes a tool's arguments
+to the model.
+
+**2. Is it classified correctly?** `dependencies` — correct, and it was
+already in the tree transitively (via `@t3-oss/env-nextjs`, `@prisma/dev`
+and `@hookform/resolvers`). Declaring it makes an existing phantom import
+explicit rather than adding a new package to the image.
+
+**3. Version + exposure risk.** `1.5.0` resolved. The repo's `overrides`
+entry moved from a literal `^1.4.2` to `$valibot` — npm refuses an override
+whose range differs from a direct dependency's (`EOVERRIDE`), and `$name` is
+the idiom already used for `$undici` and `$postcss`. The practical effect is
+unchanged: one valibot for the whole tree, now pinned to the version this
+package.json declares rather than to a second hand-maintained number.
+
+**Blast radius is bounded by where it sits.** A defect in the converted
+schema cannot weaken enforcement: `runReadTool` validates every tool call
+against the tool's **Zod** schema at its own step, and nothing in the
+valibot path is on that route. The worst case is a misdescribed argument
+list, which produces a rejected call rather than an unchecked one.
+
+**4. Decision.** Adopt. Declare explicitly; keep the `$valibot` override so
+the tree cannot split.
+
+### Summary — 2026-09-20
+
+| Package | Classification | Version | Decision |
+|---------|----------------|---------|----------|
+| `@flue/runtime` | `dependencies` (deliberately, see above) | `2.1.0` exact | Adopt; exact pin; re-review on any bump |
+| `valibot` | `dependencies` ✓ | `^1.5.0` | Adopt; was transitive, now declared |
+
+No new advisory is introduced by either. The production audit posture is
+identical before and after, which is the claim this section exists to
+record.
+
 ## Re-running this review
 
 When auditing the next batch of dependencies, copy the per-package

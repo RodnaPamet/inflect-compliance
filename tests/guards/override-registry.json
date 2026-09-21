@@ -1,144 +1,142 @@
 {
-    "mysql2": {
-        "kind": "security",
-        "advisory": "GHSA-rgwj-5xj2-c3m3",
-        "patchedFrom": "3.23.1",
-        "reason": "Unbounded zlib inflate in the compressed MySQL protocol handler — a decompression-bomb DoS (medium, GHSA-rgwj-5xj2-c3m3, published 2026-08-31, vulnerable <= 3.23.0). Floor raised 3.22.0 -> 3.23.1 on 2026-09-10: the old floor cleared only the auth-plugin downgrade leaking plaintext credentials (GHSA-3f6p-5ww8-9rcr, high, fixed 3.22.0) and was itself inside this newer range, so the override read as protection while permitting every affected 3.22.x/3.23.0. 3.23.1 clears all seven non-withdrawn mysql2 advisories — it is the highest first_patched_version in the 3.x line. Reached via prisma -> mysql2, and it lands in the PRODUCTION audit for the same reason as the deepmerge-ts entry above: `prisma` (the CLI) is a production dependency here, not only @prisma/client. A version bump does NOT fix it — prisma 7.10.0, the version this repo is already on, still pins mysql2 at exactly 3.15.3, so an override is the only route to a patched release. Not allowlisted in security/audit-allowlist.json because that file's own rule is that an exemption must be genuinely unfixable, and 3.23.1 exists. Almost certainly unreachable in this product: the datasource is PostgreSQL and Prisma loads the mysql2 driver only for a mysql datasource, so neither the vulnerable auth handshake nor the compressed-protocol path ever executes — recorded as context for whoever reviews this, NOT as the justification, since the fix is one line and costs nothing. The lockfile already resolves 3.24.3, so this bump changes no installed version."
-    },
-    "deepmerge-ts": {
-        "kind": "security",
-        "advisory": "GHSA-ggr8-5vv4-36mx",
-        "patchedFrom": "8.0.0",
-        "reason": "deepmerge-ts stack exhaustion when merging recursive object graphs (high). Vulnerable range is < 8.0.0, so the 7.1.6 that also exists does NOT fix it — the patch is a major bump. Reached via prisma@7.9.1 -> @prisma/config@7.9.1 -> deepmerge-ts@7.1.5, and it lands in the PRODUCTION audit because `prisma` (the CLI) is a production dependency here, not only @prisma/client. Not a direct dependency, so a literal range is used rather than $deepmerge-ts. Compatibility of @prisma/config with deepmerge-ts 8 verified by execution: `prisma validate` logs \"Loaded Prisma config from prisma.config.ts\" (the consuming code path) and reports the schemas valid, plus `prisma generate` and `prisma migrate status` (241 migrations, schema current)."
-    },
-    "undici": {
-        "kind": "security",
-        "advisory": "GHSA-vxpw-j846-p89q",
-        "patchedFrom": "7.28.0",
-        "reason": "undici WebSocket client DoS (CVE-2026-12151, high), fixed in 6.27.0 / 7.28.0 / 8.5.0. undici is a direct production dependency (^7.28.0); the override aligns the whole tree to the patched 7.28.0 line, which also clears the cluster of undici advisories fixed there (SOCKS5 cross-origin routing, TLS-cert-validation bypass, Set-Cookie header injection). Was recorded as GHSA-c76h-2ccp-4975 until 2026-07-25 — a real undici advisory but fixed at 5.28.5 / 6.21.1 / 7.2.3, so it never justified a 7.28.0 floor."
-    },
-    "tar": {
-        "kind": "security",
-        "advisory": "GHSA-r292-9mhp-454m",
-        "patchedFrom": "7.5.21",
-        "reason": "Three advisories on the 7.5.x line, each superseding the last: path-traversal on extraction (GHSA-8489-44mv-ggj8, fixed 7.5.16, added in #1252), CVE-2026-59871 / GHSA-w8wr-v893-vjvp (<=7.5.17, fixed 7.5.18), a CRITICAL at GHSA-23hp-3jrh-7fpw (<=7.5.18, fixed 7.5.19), and GHSA-r292-9mhp-454m (<=7.5.20, fixed 7.5.21). Floor raised 7.5.18 → 7.5.21 on 2026-07-25: the previous floor was ITSELF inside the critical advisory range.",
-        "currentlyInert": "The ONLY tar in the tree is npm's bundled copy (node_modules/npm/node_modules/tar), reached via libnpmdiff / node-gyp / pacote. npm ships its dependencies bundled, so an override cannot rewrite them — what actually cleared CVE-2026-59871 was bumping the `npm` pin to ^11.18.0, whose bundle carried tar 7.5.19. That sentence read \"carries\" in the present tense until 2026-09-11 and had gone stale: the ^11.18.0 pin now resolves npm 11.19.1, and the one bundled tar in package-lock.json is 7.5.22 (measured, `node_modules/npm/node_modules/tar`, dev-only). Kept as a floor in case tar re-enters the real tree (the guard will then require this note to be removed), but it is protecting nothing today."
-    },
-    "npm": {
-        "kind": "bundle-vehicle",
-        "reason": "Dev-only, via @semantic-release/npm. npm ships its dependency tree BUNDLED and overrides cannot rewrite bundled deps, so raising this pin is the only lever on the copies inside it: 11.18.0 carries tar 7.5.19 (clearing CVE-2026-59871) and brace-expansion 5.0.7. Re-kinded bundle-vehicle on 2026-07-25 — it was recorded as a security override citing GHSA-4v6q-8jgv-6q2j, an id that resolves to nothing, because no npm-CLI advisory is fixed in 11.18.0. The justification is the bundle, not an advisory on npm itself. npm 12.x requires Node ^24.15 (we run 24.14), so 11.18 is the ceiling until the runtime moves."
-    },
-    "picomatch": {
-        "kind": "security",
-        "advisory": "GHSA-c2c7-rcm5-vvqj",
-        "patchedFrom": "4.0.4",
-        "reason": "ReDoS via extglob quantifiers on adversarial glob input, reached through the test/build matcher chain. The same 4.0.4 release fixes GHSA-3v7f-55p6-f55p (method injection in POSIX character classes), so one floor clears both. Was recorded as GHSA-2p57-rm9w-gvfp until 2026-07-25 — that id is an `ip` SSRF advisory and has nothing to do with picomatch."
-    },
-    "protobufjs": {
-        "kind": "security",
-        "advisory": "GHSA-j3f2-48v5-ccww",
-        "patchedFrom": "8.6.6",
-        "reason": "DoS via an infinite loop in .proto parsing, affecting >=8.0.0 <=8.6.5. Pulled by the OpenTelemetry OTLP exporter, which sits in the production tree. Floor raised 8.2.0 → 8.6.6 on 2026-07-25: the old floor targeted GHSA-jggg-4jg4-v7c6 (fixed 8.2.0) and had been superseded, so it admitted the still-vulnerable 8.6.5. The previously recorded GHSA-h755-8qp9-cq85 is real but patched at 6.11.4 / 7.2.5 — it never justified an 8.x floor."
-    },
-    "@hono/node-server": {
-        "kind": "security",
-        "advisory": "GHSA-9mqv-5hh9-4cgg",
-        "patchedFrom": "2.0.10",
-        "currentlyInert": "Left the tree entirely on 2026-08-03. It only ever arrived transitively via @prisma/dev, which pinned @hono/node-server 1.19.11; the prisma 7.8.0 → 7.9.1 bump moved @prisma/dev 0.24.3 → 0.24.17, which no longer depends on it. The override is KEPT rather than deleted so the 2.0.10 floor re-applies automatically if anything reintroduces the package — deleting it would silently drop that protection with no signal.",
-        "reason": "Unauthenticated memory-leak DoS affecting >=2.0.0 <=2.0.9, fixed 2.0.10. Paired with the `hono` override. Floor raised 2.0.5 → 2.0.10 on 2026-07-25: the old floor cleared only the earlier serve-static path traversal (GHSA-frvp-7c67-39w9, fixed 2.0.5) and admitted versions this later advisory still affects."
-    },
-    "fast-uri": {
-        "kind": "security",
-        "advisory": "GHSA-5jgf-p345-68v8",
-        "patchedFrom": "3.1.6",
-        "reason": "Four HIGH advisories published together on 2026-09-02, all fixed in 3.1.6 and all reached through the Ajv/schema-validation chain (@hookform/resolvers -> ajv -> fast-uri, a PRODUCTION path): host confusion via skipped IDN canonicalization on scheme-relative references (GHSA-5jgf-p345-68v8, recorded above), SSRF via malformed IPv6 normalization (GHSA-f65p-4m7j-42xc), SSRF via repeated hostname percent-decoding (GHSA-fph4-wmhf-6fwf) and host confusion via percent-encoded scheme normalization (GHSA-jqff-g426-hqxp). Floor raised 3.1.5 -> 3.1.6 on 2026-09-10; 3.1.6 is the highest first_patched_version in the 3.x line, so it clears all eleven non-withdrawn fast-uri advisories. The lockfile already resolves 3.1.7, so this bump changes no installed version. Note for the next reader, because this entry had drifted: the floor moved 3.1.4 -> 3.1.5 in #1784 to clear the backslash-authority-introducer host confusion (GHSA-7p8r-x3mc-p8w7, fixed 3.1.5), but `advisory`/`patchedFrom` were left recording the older GHSA-v2hh-gcrm-f6hx (fixed 3.1.4). Check B tolerates that direction by design — a floor ABOVE `patchedFrom` is just a later bump — so nothing went red, and the entry quietly stopped naming the threat the floor was actually defending against. That is the one job the scheduled freshness script does and the offline guard cannot: discover that a NEWER advisory exists. Once its finding is recorded here as `patchedFrom`, check B turns blocking CI red until the override floor is raised to match. So when you act on an Override Freshness issue, update `advisory`/`patchedFrom` FIRST and let the guard tell you which floors it now demands."
-    },
-    "hono": {
-        "kind": "security",
-        "advisory": "GHSA-gqvv-2mrq-wpjv",
-        "patchedFrom": "4.13.5",
-        "currentlyInert": "Left the tree entirely on 2026-08-03, same cause as the paired @hono/node-server entry: hono only ever arrived via @prisma/dev (^4.12.8), and the prisma 7.8.0 → 7.9.1 bump moved @prisma/dev 0.24.3 → 0.24.17, which dropped the dependency. Override KEPT rather than deleted so the 4.13.5 floor re-applies automatically if hono returns. Read that number as the CURRENT one and nothing else: this sentence said 4.12.27 from the day it was written (#1779, 2026-08-03) until 2026-09-11, while #1784 raised the spec to ^4.12.34 the very next day and this change raised it again — 38 days of a note describing a floor the override had not had since its second day. That is precisely the decay `currentlyInert` was invented to prevent, happening to the field itself, so the floor-naming sentence of every inert note is now tied to the override's real spec by tests/guards/overrides-effective.test.ts.",
-        "reason": "Three MEDIUM advisories published together on 2026-09-08, all fixed in 4.13.5 and all affecting the previous ^4.12.34 floor: toSSG() still writing outside the output directory, an incomplete fix for CVE-2026-39408 (GHSA-gqvv-2mrq-wpjv, recorded above), unbounded dot-notation nesting in parseBody() causing memory exhaustion (GHSA-g6gw-c38x-mqfc), and the query parser reading parameters after the URL fragment, giving cache-key and proxy interpretation differentials (GHSA-crvj-82cr-hjcx). Floor raised 4.12.34 -> 4.13.5 on 2026-09-11; 4.13.5 is the highest first_patched_version across all 50 non-withdrawn hono advisories (49 of which fix in the 4.x line, one in 3.11.7), so it clears every one of them and zero advisories affect it. Was recorded as GHSA-w62v-xxxg-mg59 / 4.12.27 until then — a real advisory (server-side XSS via a JSX escaping bypass in cx(), fixed 4.12.27) but three floor bumps behind the spec. THE cautionary entry: pinned ^4.12.23 while the lockfile sat on vulnerable 4.12.25 — the range permitted the fix but nothing pulled it in. Raising a floor is not enough; the lockfile has to move too. Was recorded as GHSA-hcxr-2v8p-3vqw until 2026-07-25 — that id does not resolve as an npm advisory."
-    },
-    "tmp": {
-        "kind": "security",
-        "advisory": "GHSA-7c78-jf6q-g5cm",
-        "patchedFrom": "0.2.7",
-        "reason": "Path traversal via a type-confusion bypass of `_assertPath`, affecting >=0.2.6 <0.2.7. Reached through build/test tooling. Floor raised 0.2.6 → 0.2.7 on 2026-07-25: the old floor cleared the EARLIER traversal (GHSA-ph9p-34f9-6g65, unsanitized prefix/postfix, fixed 0.2.6) but admitted 0.2.6 itself, which the follow-up advisory affects. The previously recorded GHSA-52f5-9888-68mp does not exist — the real low-severity arbitrary-write entry is GHSA-52f5-9888-hmc6, fixed back in 0.2.4."
-    },
-    "@grpc/grpc-js": {
-        "kind": "security",
-        "advisory": "GHSA-5375-pq7m-f5r2",
-        "patchedFrom": "1.14.4",
-        "reason": "A malformed request crashes the server; the 1.14.x line is fixed in 1.14.4. Pulled by the OpenTelemetry gRPC exporter in the production tree. The same release fixes GHSA-99f4-grh7-6pcq (malformed compressed message). Was recorded as GHSA-7v5v-9h63-cj86 until 2026-07-25 — real, but patched at 1.8.22 / 1.9.15 / 1.10.9, so it never justified a 1.14.4 floor."
-    },
-    "uuid": {
-        "kind": "security",
-        "advisory": "GHSA-w5hq-g745-h8pq",
-        "patchedFrom": "11.1.1",
-        "reason": "Missing buffer bounds check in v3/v5/v6 when `buf` is provided. next-auth@4 declares uuid@^8.3.2 and the whole <11.1.1 line is affected, so forcing the patched major is the only fix. next-auth uses the version-stable named exports (v4, …), unchanged v8 → v11."
-    },
-    "brace-expansion": {
-        "kind": "security",
-        "advisory": "GHSA-mh99-v99m-4gvg",
-        "patchedFrom": "5.0.8",
-        "reason": "ReDoS at CVE-2026-14257 / GHSA-mh99-v99m-4gvg affecting <=5.0.7, fixed 5.0.8 — the finding that turned the CI Trivy image gate red. Range-KEYED (`brace-expansion@>=3.0.0 <=5.0.6`) because only that window was affected by the ORIGINAL advisory; the 1.x and 2.x lines predate it and are deliberately left alone rather than force-marched to a breaking major. Floor raised 5.0.7 → 5.0.8 on 2026-07-25. The copy inside npm CLI bundle is unreachable by overrides and is carried by the `npm` pin instead."
-    },
-    "js-yaml": {
-        "kind": "security",
-        "advisory": "GHSA-2883-xcg3-v3hh",
-        "patchedFrom": "4.3.2",
-        "reason": "Prototype-pollution-adjacent parsing defect in the same `!!omap`/merge-key family as its predecessors (GHSA-2883-xcg3-v3hh, high, published 2026-09-08), affecting js-yaml >=4.0.0 <4.3.2 and >=3.0.0 <3.15.2. Reached transitively through cosmiconfig (requests ^4.1.0) and @eslint/eslintrc (requests ^4.3.0) in the DEV tree only — the one production js-yaml is the direct `^5.4.1` dependency, whose 5.x line is clear from 5.2.2 — so this never reaches `npm audit --omit=dev`. Range-KEYED so it moves ONLY the vulnerable 4.x instances and leaves the separate @istanbuljs/load-nyc-config pin (which requests ^3.13.1) on the 3.x API; that pin carries its own floor of ^3.15.2 for the 3.x branch of the SAME advisory. Both halves were raised together on 2026-09-10: 4.3.1 -> 4.3.2 and 3.15.1 -> 3.15.2, and the key's upper bound moved with the replacement (`<4.3.1` -> `<4.3.2`) so the targeted range keeps describing the advisory's actual vulnerable set. Mechanism, measured rather than assumed, because it is counter-intuitive: the REPLACEMENT floor is what moves the tree, not the key. `npm install --package-lock-only` preserves any resolution that still satisfies, so at `^4.3.1` both instances stayed pinned at exactly 4.3.1 across a full re-resolve even though 4.3.2 was published; raising the replacement to `^4.3.2` is what forced them up. Supersedes GHSA-5p4m-2wfm-xmqj (fixed 4.3.1), which superseded GHSA-52cp-r559-cp3m (CVE-2026-59869, fixed 4.3.0)."
-    },
-    "sharp": {
-        "kind": "security",
-        "advisory": "GHSA-rgj7-g3m4-5g8c",
-        "patchedFrom": "0.35.4",
-        "reason": "TWO advisories have set this floor in turn; the CURRENT one is the libheif pair. (1) 2026-07: HIGH libvips CVEs (CVE-2026-33327/33328/35590/35591) inherited by sharp <0.35.0, pulled transitively via next@16, fixed upstream in 0.35.0. #1694 pinned an exact 0.35.3 — deliberately stricter than the fix — to clear the moderate+ npm-audit gate that had turned main red fleet-wide. (2) 2026-09-09: GHSA-rgj7-g3m4-5g8c, HIGH, sharp's bundled libheif (GHSA-g89c-p67h-r497 + GHSA-2jg2-4ch7-h545), vulnerable range `< 0.35.4`. It landed against the exact 0.35.3 pin and turned BOTH the npm-audit gate and the Trivy image scan red on every open PR simultaneously — Trivy reported it as its single finding, `Total: 1 (HIGH: 1)`, status `fixed`, fixed version 0.35.4. `patchedFrom` now records 0.35.4, the upstream fix for the advisory currently setting the floor; the 0.35.0 figure it replaces belonged to advisory (1), which 0.35.4 also satisfies. Not exemptible: the gate's own rule is that an allowlist entry requires the advisory to be genuinely unfixable, and a released version resolves this one. Note the bump also restored 16 `libc` discriminators the lockfile had lost — glibc on the @img/sharp-linux-* variants and musl on the @img/sharp-linuxmusl-* ones. Without them both candidates carry an identical `os: [linux], cpu: [x64]` and nothing distinguishes them, which matters because the runtime image is node:24-alpine. Do not regenerate this lockfile with a tool that strips them again."
-    },
-    "valibot": {
-        "kind": "security",
-        "advisory": "GHSA-5qjj-4xww-7phc",
-        "patchedFrom": "1.4.2",
-        "reason": "Moderate advisory pulled transitively through the production prisma / @prisma/dev chain. No direct dependency on valibot, so forcing the patched 1.x line through an override is the only lever. Added in #1698 alongside the js-yaml direct bump."
-    },
-    "@typescript-eslint/eslint-plugin": {
-        "kind": "peer-bridge",
-        "reason": "Keeps every @typescript-eslint entry-point on one version. A split graph makes the parser and plugin disagree about AST shape."
-    },
-    "@typescript-eslint/parser": {
-        "kind": "peer-bridge",
-        "reason": "Paired with the plugin override above — same version, one AST contract. The plugin is the direct devDependency and carries the version; parser and the umbrella are reached only transitively, so they are pinned by literal range rather than `$name` (a `$ref` to a non-direct dependency dangles and silently disables the override). Raised ^8.61.0 → ^8.67.0 on 2026-08-22: the bridge had SPLIT — the plugin resolved 8.67.0 while parser/typescript-eslint and the shared scope-manager, types, typescript-estree and utils packages sat on 8.61.0, which is exactly the disagreement this pairing exists to prevent. When the plugin devDependency moves, move these two in the same commit."
-    },
-    "typescript-eslint": {
-        "kind": "peer-bridge",
-        "reason": "The umbrella package; pinned with its two constituents so flat config resolves one line. Raised ^8.61.0 → ^8.67.0 on 2026-08-22 alongside @typescript-eslint/parser, to re-close the split against the 8.67.0 plugin. Not a direct dependency, so a literal range rather than `$name`."
-    },
-    "nanoid": {
-        "kind": "security",
-        "advisory": "GHSA-2v37-7h3g-55p8",
-        "patchedFrom": "3.3.18",
-        "reason": "nanoid: a custom generator can loop indefinitely when size is zero (high). The 3.x line is fixed in 3.3.18 (the 4.x/5.x line in 5.1.6). It reaches production only transitively, via next -> postcss, which pins the 3.x line — so the floor is ^3.3.18 rather than the 6.x latest; forcing a major here would break postcss's own contract. Floor raised 3.3.17 → 3.3.18 on 2026-08-22, and patchedFrom corrected 3.3.17 → 3.3.18 in the same change: 3.3.17 is not a fixed version of this advisory at all — the vulnerable range is `< 3.3.18`, so the old floor was itself inside it and excluded nothing. `npm audit` stayed green only because the lockfile happened to resolve 3.3.18. Drop this override once postcss ships a release whose own nanoid floor is >=3.3.18."
-    },
-    "postcss": {
-        "kind": "security",
-        "advisory": "GHSA-qx2v-qp2m-jg93",
-        "patchedFrom": "8.5.10",
-        "reason": "PostCSS XSS via an unescaped `</style>` in stringify output (medium), fixed in 8.5.10. next ships postcss@8.4.31 nailed into its own tree, so the direct devDependency alone does not reach it; the `$postcss` self-reference forces next's copy onto the version we depend on directly. Landed in #421 without a registry entry because `$name` overrides were exempt from this guard until 2026-08-10 — the exemption is what let a security override go unrecorded."
-    },
-    "@conventional-changelog/template": {
-        "kind": "peer-bridge",
-        "reason": "Holds the changelog preset on the writer major that @semantic-release/release-notes-generator@14 actually depends on (conventional-changelog-writer@8). template@1.4.0 added createLegacyWriterGuard(): a mainTemplate that is a handlebars segment literal naming a nonexistent helper, so writer@8 renders it and throws 'Missing helper'. Pinning the preset alone does not hold, because 10.3.0 depends on template ^1.3.0 and that caret still resolves to 1.4.0. Drop this the moment @semantic-release/release-notes-generator@15 (the first to use writer@9) leaves beta."
-    },
-    "@xmldom/xmldom": {
-        "kind": "security",
-        "advisory": "GHSA-6gmq-8vp8-gcm6",
-        "patchedFrom": "0.8.15",
-        "reason": "xmldom XML fragment injection via an invalid EntityReference.nodeName during requireWellFormed serialization (moderate), published 2026-09-02. Reached four ways, all deduped onto one copy: @node-saml/node-saml -> @xmldom/xmldom, and via xml-crypto, xml-encryption and mammoth. It is an override rather than an audit-allowlist entry because the advisory IS fixable in place: GitHub lists two vulnerable ranges with two fixes, '>= 0.7.0, <= 0.8.14' patched by 0.8.15 and '>= 0.9.0, <= 0.9.11' patched by 0.9.12. 0.8.15 satisfies every parent's declared ^0.8.x range, so this is a patch bump and not a cross-major override. Note npm audit's `fixAvailable` surfaces 0.9.12 (dist-tags.latest), which reads as a major jump and is what makes this look unfixable at first glance — read first_patched_version per range from the advisory, not the collapsed `range` field. Severity was never urgent here: the vulnerable path requires serializing with requireWellFormed, and serializeToString/XMLSerializer appear in ZERO files across xml-crypto, xml-encryption, @node-saml/node-saml and src/ — SAML parses and verifies signatures, it never serialises back out. Production also has 0 TenantIdentityProvider rows (queried 2026-09-02), so no SAML SSO is configured. Fixed rather than exempted because a released patch exists."
-    },
-    "nwsapi": {
-        "kind": "upstream-defect",
-        "brokenFrom": "2.2.25",
-        "reason": "TWO distinct upstream defects, which is why the bound is 2.2.25 and not 2.2.26. (1) 2.2.25 rewrote the resolver cache and shipped its invalidator as `clr: function() { cache }` (src/nwsapi.js:227-229) — a bare expression statement, not `cache.clear()` — and nothing calls `clr` anywhere in the file, so a resolver cache added in that release is never invalidated. The same release rewrote the `disp_state` pseudo-class group (adding `popover-open|popover`) and `logicalsel`, and began generating `e.matches(...)` into compiled source. Verified by unpacking 2.2.24 and 2.2.25 from the registry and diffing (551 lines); `matchesNative` is absent from BOTH, so this is not the 2.2.26 defect arriving early. Reproduced independently: 2.2.25 alone reproduces CI's 6-of-11 tooltip failures (\"Unable to find role=tooltip\") while 2.2.23 and 2.2.24 pass 11/11. (2) 2.2.26 added matchesNative(), which resolves the \"native\" matcher as `_matches || node.matches || ...` (src/nwsapi.js:709). `_matches` is assigned ONLY inside install() (:1975), and jsdom never calls install() — jsdom/lib/jsdom/living/helpers/selectors.js:10 just does nwsapi({document, DOMException}). So under jsdom `node.matches` IS nwsapi, and match(':modal') → isModal → matchesNative → node.matches(':modal') recurses without bound. Reached in practice from @floating-ui/dom's isTopLayer, which calls element.matches(':modal') on every getElementRects — i.e. every Combobox/Tooltip/Popover render under jsdom. Both surface as a 30s jest timeout rather than a crash, so WHICH shard reddens depends on runner speed. Nothing in package.json names nwsapi: it floats under jsdom's own `^2.2.16`, so main was safe only because its lockfile happened to pin 2.2.23, and any lockfile regeneration re-admitted the break (that is what reddened #2358, whose 7 DECLARED bumps were all innocent; #2369 then carried the same undeclared move past a <2.2.26 bound that did not exclude 2.2.25). Dev-only — jsdom enters via jest-environment-jsdom. Drop this override when upstream ships a fix for BOTH; the guards are src/nwsapi.js `clr`/createCache for 2.2.25 and matchesNative + install() for 2.2.26."
-    }
+  "mysql2": {
+    "kind": "security",
+    "advisory": "GHSA-rgwj-5xj2-c3m3",
+    "patchedFrom": "3.23.1",
+    "reason": "Unbounded zlib inflate in the compressed MySQL protocol handler — a decompression-bomb DoS (medium, GHSA-rgwj-5xj2-c3m3, published 2026-08-31, vulnerable <= 3.23.0). Floor raised 3.22.0 -> 3.23.1 on 2026-09-10: the old floor cleared only the auth-plugin downgrade leaking plaintext credentials (GHSA-3f6p-5ww8-9rcr, high, fixed 3.22.0) and was itself inside this newer range, so the override read as protection while permitting every affected 3.22.x/3.23.0. 3.23.1 clears all seven non-withdrawn mysql2 advisories — it is the highest first_patched_version in the 3.x line. Reached via prisma -> mysql2, and it lands in the PRODUCTION audit for the same reason as the deepmerge-ts entry above: `prisma` (the CLI) is a production dependency here, not only @prisma/client. A version bump does NOT fix it — prisma 7.10.0, the version this repo is already on, still pins mysql2 at exactly 3.15.3, so an override is the only route to a patched release. Not allowlisted in security/audit-allowlist.json because that file's own rule is that an exemption must be genuinely unfixable, and 3.23.1 exists. Almost certainly unreachable in this product: the datasource is PostgreSQL and Prisma loads the mysql2 driver only for a mysql datasource, so neither the vulnerable auth handshake nor the compressed-protocol path ever executes — recorded as context for whoever reviews this, NOT as the justification, since the fix is one line and costs nothing. The lockfile already resolves 3.24.3, so this bump changes no installed version."
+  },
+  "deepmerge-ts": {
+    "kind": "security",
+    "advisory": "GHSA-ggr8-5vv4-36mx",
+    "patchedFrom": "8.0.0",
+    "reason": "deepmerge-ts stack exhaustion when merging recursive object graphs (high). Vulnerable range is < 8.0.0, so the 7.1.6 that also exists does NOT fix it — the patch is a major bump. Reached via prisma@7.9.1 -> @prisma/config@7.9.1 -> deepmerge-ts@7.1.5, and it lands in the PRODUCTION audit because `prisma` (the CLI) is a production dependency here, not only @prisma/client. Not a direct dependency, so a literal range is used rather than $deepmerge-ts. Compatibility of @prisma/config with deepmerge-ts 8 verified by execution: `prisma validate` logs \"Loaded Prisma config from prisma.config.ts\" (the consuming code path) and reports the schemas valid, plus `prisma generate` and `prisma migrate status` (241 migrations, schema current)."
+  },
+  "undici": {
+    "kind": "security",
+    "advisory": "GHSA-vxpw-j846-p89q",
+    "patchedFrom": "7.28.0",
+    "reason": "undici WebSocket client DoS (CVE-2026-12151, high), fixed in 6.27.0 / 7.28.0 / 8.5.0. undici is a direct production dependency (^7.28.0); the override aligns the whole tree to the patched 7.28.0 line, which also clears the cluster of undici advisories fixed there (SOCKS5 cross-origin routing, TLS-cert-validation bypass, Set-Cookie header injection). Was recorded as GHSA-c76h-2ccp-4975 until 2026-07-25 — a real undici advisory but fixed at 5.28.5 / 6.21.1 / 7.2.3, so it never justified a 7.28.0 floor."
+  },
+  "tar": {
+    "kind": "security",
+    "advisory": "GHSA-r292-9mhp-454m",
+    "patchedFrom": "7.5.21",
+    "reason": "Three advisories on the 7.5.x line, each superseding the last: path-traversal on extraction (GHSA-8489-44mv-ggj8, fixed 7.5.16, added in #1252), CVE-2026-59871 / GHSA-w8wr-v893-vjvp (<=7.5.17, fixed 7.5.18), a CRITICAL at GHSA-23hp-3jrh-7fpw (<=7.5.18, fixed 7.5.19), and GHSA-r292-9mhp-454m (<=7.5.20, fixed 7.5.21). Floor raised 7.5.18 → 7.5.21 on 2026-07-25: the previous floor was ITSELF inside the critical advisory range.",
+    "currentlyInert": "The ONLY tar in the tree is npm's bundled copy (node_modules/npm/node_modules/tar), reached via libnpmdiff / node-gyp / pacote. npm ships its dependencies bundled, so an override cannot rewrite them — what actually cleared CVE-2026-59871 was bumping the `npm` pin to ^11.18.0, whose bundle carried tar 7.5.19. That sentence read \"carries\" in the present tense until 2026-09-11 and had gone stale: the ^11.18.0 pin now resolves npm 11.19.1, and the one bundled tar in package-lock.json is 7.5.22 (measured, `node_modules/npm/node_modules/tar`, dev-only). Kept as a floor in case tar re-enters the real tree (the guard will then require this note to be removed), but it is protecting nothing today."
+  },
+  "npm": {
+    "kind": "bundle-vehicle",
+    "reason": "Dev-only, via @semantic-release/npm. npm ships its dependency tree BUNDLED and overrides cannot rewrite bundled deps, so raising this pin is the only lever on the copies inside it: 11.18.0 carries tar 7.5.19 (clearing CVE-2026-59871) and brace-expansion 5.0.7. Re-kinded bundle-vehicle on 2026-07-25 — it was recorded as a security override citing GHSA-4v6q-8jgv-6q2j, an id that resolves to nothing, because no npm-CLI advisory is fixed in 11.18.0. The justification is the bundle, not an advisory on npm itself. npm 12.x requires Node ^24.15 (we run 24.14), so 11.18 is the ceiling until the runtime moves."
+  },
+  "picomatch": {
+    "kind": "security",
+    "advisory": "GHSA-c2c7-rcm5-vvqj",
+    "patchedFrom": "4.0.4",
+    "reason": "ReDoS via extglob quantifiers on adversarial glob input, reached through the test/build matcher chain. The same 4.0.4 release fixes GHSA-3v7f-55p6-f55p (method injection in POSIX character classes), so one floor clears both. Was recorded as GHSA-2p57-rm9w-gvfp until 2026-07-25 — that id is an `ip` SSRF advisory and has nothing to do with picomatch."
+  },
+  "protobufjs": {
+    "kind": "security",
+    "advisory": "GHSA-j3f2-48v5-ccww",
+    "patchedFrom": "8.6.6",
+    "reason": "DoS via an infinite loop in .proto parsing, affecting >=8.0.0 <=8.6.5. Pulled by the OpenTelemetry OTLP exporter, which sits in the production tree. Floor raised 8.2.0 → 8.6.6 on 2026-07-25: the old floor targeted GHSA-jggg-4jg4-v7c6 (fixed 8.2.0) and had been superseded, so it admitted the still-vulnerable 8.6.5. The previously recorded GHSA-h755-8qp9-cq85 is real but patched at 6.11.4 / 7.2.5 — it never justified an 8.x floor."
+  },
+  "@hono/node-server": {
+    "kind": "security",
+    "advisory": "GHSA-9mqv-5hh9-4cgg",
+    "patchedFrom": "2.0.10",
+    "reason": "Unauthenticated memory-leak DoS affecting >=2.0.0 <=2.0.9, fixed 2.0.10. Paired with the `hono` override. Floor raised 2.0.5 → 2.0.10 on 2026-07-25: the old floor cleared only the earlier serve-static path traversal (GHSA-frvp-7c67-39w9, fixed 2.0.5) and admitted versions this later advisory still affects. RETURNED TO THE TREE on 2026-09-20 via @flue/runtime 2.1.0, the first dependency to pull it since @prisma/dev dropped it on 2026-08-03. Note the asymmetry with the paired hono entry, because it decides whether this override is load-bearing: @flue/runtime depends on @hono/node-server ^2.0.3 — a RANGE that already admits the patched 2.0.10 — and it resolved to 2.1.1, so the floor would have been cleared here with or without the override. hono is the one flue pins EXACTLY (4.12.32), and there the override is what does the work."
+  },
+  "fast-uri": {
+    "kind": "security",
+    "advisory": "GHSA-5jgf-p345-68v8",
+    "patchedFrom": "3.1.6",
+    "reason": "Four HIGH advisories published together on 2026-09-02, all fixed in 3.1.6 and all reached through the Ajv/schema-validation chain (@hookform/resolvers -> ajv -> fast-uri, a PRODUCTION path): host confusion via skipped IDN canonicalization on scheme-relative references (GHSA-5jgf-p345-68v8, recorded above), SSRF via malformed IPv6 normalization (GHSA-f65p-4m7j-42xc), SSRF via repeated hostname percent-decoding (GHSA-fph4-wmhf-6fwf) and host confusion via percent-encoded scheme normalization (GHSA-jqff-g426-hqxp). Floor raised 3.1.5 -> 3.1.6 on 2026-09-10; 3.1.6 is the highest first_patched_version in the 3.x line, so it clears all eleven non-withdrawn fast-uri advisories. The lockfile already resolves 3.1.7, so this bump changes no installed version. Note for the next reader, because this entry had drifted: the floor moved 3.1.4 -> 3.1.5 in #1784 to clear the backslash-authority-introducer host confusion (GHSA-7p8r-x3mc-p8w7, fixed 3.1.5), but `advisory`/`patchedFrom` were left recording the older GHSA-v2hh-gcrm-f6hx (fixed 3.1.4). Check B tolerates that direction by design — a floor ABOVE `patchedFrom` is just a later bump — so nothing went red, and the entry quietly stopped naming the threat the floor was actually defending against. That is the one job the scheduled freshness script does and the offline guard cannot: discover that a NEWER advisory exists. Once its finding is recorded here as `patchedFrom`, check B turns blocking CI red until the override floor is raised to match. So when you act on an Override Freshness issue, update `advisory`/`patchedFrom` FIRST and let the guard tell you which floors it now demands."
+  },
+  "hono": {
+    "kind": "security",
+    "advisory": "GHSA-gqvv-2mrq-wpjv",
+    "patchedFrom": "4.13.5",
+    "reason": "Three MEDIUM advisories published together on 2026-09-08, all fixed in 4.13.5 and all affecting the previous ^4.12.34 floor: toSSG() still writing outside the output directory, an incomplete fix for CVE-2026-39408 (GHSA-gqvv-2mrq-wpjv, recorded above), unbounded dot-notation nesting in parseBody() causing memory exhaustion (GHSA-g6gw-c38x-mqfc), and the query parser reading parameters after the URL fragment, giving cache-key and proxy interpretation differentials (GHSA-crvj-82cr-hjcx). Floor raised 4.12.34 -> 4.13.5 on 2026-09-11; 4.13.5 is the highest first_patched_version across all 50 non-withdrawn hono advisories (49 of which fix in the 4.x line, one in 3.11.7), so it clears every one of them and zero advisories affect it. Was recorded as GHSA-w62v-xxxg-mg59 / 4.12.27 until then — a real advisory (server-side XSS via a JSX escaping bypass in cx(), fixed 4.12.27) but three floor bumps behind the spec. THE cautionary entry: pinned ^4.12.23 while the lockfile sat on vulnerable 4.12.25 — the range permitted the fix but nothing pulled it in. Raising a floor is not enough; the lockfile has to move too. Was recorded as GHSA-hcxr-2v8p-3vqw until 2026-07-25 — that id does not resolve as an npm advisory. RETURNED TO THE TREE on 2026-09-20 via @flue/runtime 2.1.0, which is the first dependency to pull it since @prisma/dev dropped it on 2026-08-03 — so the kept-rather-than-deleted override did exactly what its old inert note said it would: the floor re-applied automatically, with no diff and no decision at the moment it mattered. @flue/runtime pins hono EXACTLY at 4.12.32, which carries four advisories (GHSA-54fx-42gc-7vw4 fixed in 4.12.34, and the three 4.13.5 ones recorded above); the override resolves it to 4.13.8 instead and the tree audits clean. Adding that dependency therefore introduced no new advisory — measured before and after, not assumed."
+  },
+  "tmp": {
+    "kind": "security",
+    "advisory": "GHSA-7c78-jf6q-g5cm",
+    "patchedFrom": "0.2.7",
+    "reason": "Path traversal via a type-confusion bypass of `_assertPath`, affecting >=0.2.6 <0.2.7. Reached through build/test tooling. Floor raised 0.2.6 → 0.2.7 on 2026-07-25: the old floor cleared the EARLIER traversal (GHSA-ph9p-34f9-6g65, unsanitized prefix/postfix, fixed 0.2.6) but admitted 0.2.6 itself, which the follow-up advisory affects. The previously recorded GHSA-52f5-9888-68mp does not exist — the real low-severity arbitrary-write entry is GHSA-52f5-9888-hmc6, fixed back in 0.2.4."
+  },
+  "@grpc/grpc-js": {
+    "kind": "security",
+    "advisory": "GHSA-5375-pq7m-f5r2",
+    "patchedFrom": "1.14.4",
+    "reason": "A malformed request crashes the server; the 1.14.x line is fixed in 1.14.4. Pulled by the OpenTelemetry gRPC exporter in the production tree. The same release fixes GHSA-99f4-grh7-6pcq (malformed compressed message). Was recorded as GHSA-7v5v-9h63-cj86 until 2026-07-25 — real, but patched at 1.8.22 / 1.9.15 / 1.10.9, so it never justified a 1.14.4 floor."
+  },
+  "uuid": {
+    "kind": "security",
+    "advisory": "GHSA-w5hq-g745-h8pq",
+    "patchedFrom": "11.1.1",
+    "reason": "Missing buffer bounds check in v3/v5/v6 when `buf` is provided. next-auth@4 declares uuid@^8.3.2 and the whole <11.1.1 line is affected, so forcing the patched major is the only fix. next-auth uses the version-stable named exports (v4, …), unchanged v8 → v11."
+  },
+  "brace-expansion": {
+    "kind": "security",
+    "advisory": "GHSA-mh99-v99m-4gvg",
+    "patchedFrom": "5.0.8",
+    "reason": "ReDoS at CVE-2026-14257 / GHSA-mh99-v99m-4gvg affecting <=5.0.7, fixed 5.0.8 — the finding that turned the CI Trivy image gate red. Range-KEYED (`brace-expansion@>=3.0.0 <=5.0.6`) because only that window was affected by the ORIGINAL advisory; the 1.x and 2.x lines predate it and are deliberately left alone rather than force-marched to a breaking major. Floor raised 5.0.7 → 5.0.8 on 2026-07-25. The copy inside npm CLI bundle is unreachable by overrides and is carried by the `npm` pin instead."
+  },
+  "js-yaml": {
+    "kind": "security",
+    "advisory": "GHSA-2883-xcg3-v3hh",
+    "patchedFrom": "4.3.2",
+    "reason": "Prototype-pollution-adjacent parsing defect in the same `!!omap`/merge-key family as its predecessors (GHSA-2883-xcg3-v3hh, high, published 2026-09-08), affecting js-yaml >=4.0.0 <4.3.2 and >=3.0.0 <3.15.2. Reached transitively through cosmiconfig (requests ^4.1.0) and @eslint/eslintrc (requests ^4.3.0) in the DEV tree only — the one production js-yaml is the direct `^5.4.1` dependency, whose 5.x line is clear from 5.2.2 — so this never reaches `npm audit --omit=dev`. Range-KEYED so it moves ONLY the vulnerable 4.x instances and leaves the separate @istanbuljs/load-nyc-config pin (which requests ^3.13.1) on the 3.x API; that pin carries its own floor of ^3.15.2 for the 3.x branch of the SAME advisory. Both halves were raised together on 2026-09-10: 4.3.1 -> 4.3.2 and 3.15.1 -> 3.15.2, and the key's upper bound moved with the replacement (`<4.3.1` -> `<4.3.2`) so the targeted range keeps describing the advisory's actual vulnerable set. Mechanism, measured rather than assumed, because it is counter-intuitive: the REPLACEMENT floor is what moves the tree, not the key. `npm install --package-lock-only` preserves any resolution that still satisfies, so at `^4.3.1` both instances stayed pinned at exactly 4.3.1 across a full re-resolve even though 4.3.2 was published; raising the replacement to `^4.3.2` is what forced them up. Supersedes GHSA-5p4m-2wfm-xmqj (fixed 4.3.1), which superseded GHSA-52cp-r559-cp3m (CVE-2026-59869, fixed 4.3.0)."
+  },
+  "sharp": {
+    "kind": "security",
+    "advisory": "GHSA-rgj7-g3m4-5g8c",
+    "patchedFrom": "0.35.4",
+    "reason": "TWO advisories have set this floor in turn; the CURRENT one is the libheif pair. (1) 2026-07: HIGH libvips CVEs (CVE-2026-33327/33328/35590/35591) inherited by sharp <0.35.0, pulled transitively via next@16, fixed upstream in 0.35.0. #1694 pinned an exact 0.35.3 — deliberately stricter than the fix — to clear the moderate+ npm-audit gate that had turned main red fleet-wide. (2) 2026-09-09: GHSA-rgj7-g3m4-5g8c, HIGH, sharp's bundled libheif (GHSA-g89c-p67h-r497 + GHSA-2jg2-4ch7-h545), vulnerable range `< 0.35.4`. It landed against the exact 0.35.3 pin and turned BOTH the npm-audit gate and the Trivy image scan red on every open PR simultaneously — Trivy reported it as its single finding, `Total: 1 (HIGH: 1)`, status `fixed`, fixed version 0.35.4. `patchedFrom` now records 0.35.4, the upstream fix for the advisory currently setting the floor; the 0.35.0 figure it replaces belonged to advisory (1), which 0.35.4 also satisfies. Not exemptible: the gate's own rule is that an allowlist entry requires the advisory to be genuinely unfixable, and a released version resolves this one. Note the bump also restored 16 `libc` discriminators the lockfile had lost — glibc on the @img/sharp-linux-* variants and musl on the @img/sharp-linuxmusl-* ones. Without them both candidates carry an identical `os: [linux], cpu: [x64]` and nothing distinguishes them, which matters because the runtime image is node:24-alpine. Do not regenerate this lockfile with a tool that strips them again."
+  },
+  "valibot": {
+    "kind": "security",
+    "advisory": "GHSA-5qjj-4xww-7phc",
+    "patchedFrom": "1.4.2",
+    "reason": "Moderate advisory pulled transitively through the production prisma / @prisma/dev chain. No direct dependency on valibot, so forcing the patched 1.x line through an override is the only lever. Added in #1698 alongside the js-yaml direct bump."
+  },
+  "@typescript-eslint/eslint-plugin": {
+    "kind": "peer-bridge",
+    "reason": "Keeps every @typescript-eslint entry-point on one version. A split graph makes the parser and plugin disagree about AST shape."
+  },
+  "@typescript-eslint/parser": {
+    "kind": "peer-bridge",
+    "reason": "Paired with the plugin override above — same version, one AST contract. The plugin is the direct devDependency and carries the version; parser and the umbrella are reached only transitively, so they are pinned by literal range rather than `$name` (a `$ref` to a non-direct dependency dangles and silently disables the override). Raised ^8.61.0 → ^8.67.0 on 2026-08-22: the bridge had SPLIT — the plugin resolved 8.67.0 while parser/typescript-eslint and the shared scope-manager, types, typescript-estree and utils packages sat on 8.61.0, which is exactly the disagreement this pairing exists to prevent. When the plugin devDependency moves, move these two in the same commit."
+  },
+  "typescript-eslint": {
+    "kind": "peer-bridge",
+    "reason": "The umbrella package; pinned with its two constituents so flat config resolves one line. Raised ^8.61.0 → ^8.67.0 on 2026-08-22 alongside @typescript-eslint/parser, to re-close the split against the 8.67.0 plugin. Not a direct dependency, so a literal range rather than `$name`."
+  },
+  "nanoid": {
+    "kind": "security",
+    "advisory": "GHSA-2v37-7h3g-55p8",
+    "patchedFrom": "3.3.18",
+    "reason": "nanoid: a custom generator can loop indefinitely when size is zero (high). The 3.x line is fixed in 3.3.18 (the 4.x/5.x line in 5.1.6). It reaches production only transitively, via next -> postcss, which pins the 3.x line — so the floor is ^3.3.18 rather than the 6.x latest; forcing a major here would break postcss's own contract. Floor raised 3.3.17 → 3.3.18 on 2026-08-22, and patchedFrom corrected 3.3.17 → 3.3.18 in the same change: 3.3.17 is not a fixed version of this advisory at all — the vulnerable range is `< 3.3.18`, so the old floor was itself inside it and excluded nothing. `npm audit` stayed green only because the lockfile happened to resolve 3.3.18. Drop this override once postcss ships a release whose own nanoid floor is >=3.3.18."
+  },
+  "postcss": {
+    "kind": "security",
+    "advisory": "GHSA-qx2v-qp2m-jg93",
+    "patchedFrom": "8.5.10",
+    "reason": "PostCSS XSS via an unescaped `</style>` in stringify output (medium), fixed in 8.5.10. next ships postcss@8.4.31 nailed into its own tree, so the direct devDependency alone does not reach it; the `$postcss` self-reference forces next's copy onto the version we depend on directly. Landed in #421 without a registry entry because `$name` overrides were exempt from this guard until 2026-08-10 — the exemption is what let a security override go unrecorded."
+  },
+  "@conventional-changelog/template": {
+    "kind": "peer-bridge",
+    "reason": "Holds the changelog preset on the writer major that @semantic-release/release-notes-generator@14 actually depends on (conventional-changelog-writer@8). template@1.4.0 added createLegacyWriterGuard(): a mainTemplate that is a handlebars segment literal naming a nonexistent helper, so writer@8 renders it and throws 'Missing helper'. Pinning the preset alone does not hold, because 10.3.0 depends on template ^1.3.0 and that caret still resolves to 1.4.0. Drop this the moment @semantic-release/release-notes-generator@15 (the first to use writer@9) leaves beta."
+  },
+  "@xmldom/xmldom": {
+    "kind": "security",
+    "advisory": "GHSA-6gmq-8vp8-gcm6",
+    "patchedFrom": "0.8.15",
+    "reason": "xmldom XML fragment injection via an invalid EntityReference.nodeName during requireWellFormed serialization (moderate), published 2026-09-02. Reached four ways, all deduped onto one copy: @node-saml/node-saml -> @xmldom/xmldom, and via xml-crypto, xml-encryption and mammoth. It is an override rather than an audit-allowlist entry because the advisory IS fixable in place: GitHub lists two vulnerable ranges with two fixes, '>= 0.7.0, <= 0.8.14' patched by 0.8.15 and '>= 0.9.0, <= 0.9.11' patched by 0.9.12. 0.8.15 satisfies every parent's declared ^0.8.x range, so this is a patch bump and not a cross-major override. Note npm audit's `fixAvailable` surfaces 0.9.12 (dist-tags.latest), which reads as a major jump and is what makes this look unfixable at first glance — read first_patched_version per range from the advisory, not the collapsed `range` field. Severity was never urgent here: the vulnerable path requires serializing with requireWellFormed, and serializeToString/XMLSerializer appear in ZERO files across xml-crypto, xml-encryption, @node-saml/node-saml and src/ — SAML parses and verifies signatures, it never serialises back out. Production also has 0 TenantIdentityProvider rows (queried 2026-09-02), so no SAML SSO is configured. Fixed rather than exempted because a released patch exists."
+  },
+  "nwsapi": {
+    "kind": "upstream-defect",
+    "brokenFrom": "2.2.25",
+    "reason": "TWO distinct upstream defects, which is why the bound is 2.2.25 and not 2.2.26. (1) 2.2.25 rewrote the resolver cache and shipped its invalidator as `clr: function() { cache }` (src/nwsapi.js:227-229) — a bare expression statement, not `cache.clear()` — and nothing calls `clr` anywhere in the file, so a resolver cache added in that release is never invalidated. The same release rewrote the `disp_state` pseudo-class group (adding `popover-open|popover`) and `logicalsel`, and began generating `e.matches(...)` into compiled source. Verified by unpacking 2.2.24 and 2.2.25 from the registry and diffing (551 lines); `matchesNative` is absent from BOTH, so this is not the 2.2.26 defect arriving early. Reproduced independently: 2.2.25 alone reproduces CI's 6-of-11 tooltip failures (\"Unable to find role=tooltip\") while 2.2.23 and 2.2.24 pass 11/11. (2) 2.2.26 added matchesNative(), which resolves the \"native\" matcher as `_matches || node.matches || ...` (src/nwsapi.js:709). `_matches` is assigned ONLY inside install() (:1975), and jsdom never calls install() — jsdom/lib/jsdom/living/helpers/selectors.js:10 just does nwsapi({document, DOMException}). So under jsdom `node.matches` IS nwsapi, and match(':modal') → isModal → matchesNative → node.matches(':modal') recurses without bound. Reached in practice from @floating-ui/dom's isTopLayer, which calls element.matches(':modal') on every getElementRects — i.e. every Combobox/Tooltip/Popover render under jsdom. Both surface as a 30s jest timeout rather than a crash, so WHICH shard reddens depends on runner speed. Nothing in package.json names nwsapi: it floats under jsdom's own `^2.2.16`, so main was safe only because its lockfile happened to pin 2.2.23, and any lockfile regeneration re-admitted the break (that is what reddened #2358, whose 7 DECLARED bumps were all innocent; #2369 then carried the same undeclared move past a <2.2.26 bound that did not exclude 2.2.25). Dev-only — jsdom enters via jest-environment-jsdom. Drop this override when upstream ships a fix for BOTH; the guards are src/nwsapi.js `clr`/createCache for 2.2.25 and matchesNative + install() for 2.2.26."
+  }
 }
