@@ -102,6 +102,27 @@ export const MEASURE_BASES = [
     'NO_SUPPLYING_VENDORS',
     /** The fact lives outside this platform's boundary — see the definition. */
     'OUTSIDE_PLATFORM_BOUNDARY',
+    /**
+     * No proposal has ever been recorded here, so the guard's three states have
+     * no rows to fall into.
+     *
+     * Distinct from a guard count of zero, which is the claim "the guard has
+     * looked at every proposal and refused none" — the strongest thing this
+     * subsystem can say about its input filter, and not a sentence an empty
+     * queue is entitled to.
+     */
+    'NO_PROPOSALS_RECORDED',
+    /**
+     * `TenantSecuritySettings.agentMonthlyTokenBudget` is NULL — no ceiling is
+     * configured, which the enforcement path reads as UNLIMITED rather than as
+     * zero.
+     *
+     * NOT_ASSESSED rather than NOT_OBSERVABLE: the number is perfectly
+     * observable, nobody has chosen one. Reported as an absence rather than as
+     * `0`, because `0` here would read as a budget that refuses every run — the
+     * exact opposite of what NULL means.
+     */
+    'NO_MONTHLY_BUDGET_CONFIGURED',
 ] as const;
 
 export type MeasureBasis = (typeof MEASURE_BASES)[number];

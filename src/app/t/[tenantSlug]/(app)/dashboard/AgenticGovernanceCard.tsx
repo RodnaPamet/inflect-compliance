@@ -96,10 +96,17 @@ const STANDING_ORDER = (Object.keys(STANDING_RANK) as AgentStatus[]).sort(
  * ── THE STATES ARE ORDERED BY WHAT AN OPERATOR SHOULD DO FIRST ──────────────
  *
  * Tenant-wide kill, then per-agent kills, then unscored-but-active, then the
- * enforcement caveat, then the waiting queue. The all-clear line renders when
- * none of the above do, and it renders rather than leaving the card blank: an
- * empty panel cannot be told apart from a panel that failed to load, and
- * "nothing is stopped" is the single most reassuring sentence here.
+ * enforcement caveat, then the waiting queue, then runs in flight. The
+ * all-clear line renders when none of the above do, and it renders rather than
+ * leaving the card blank: an empty panel cannot be told apart from a panel that
+ * failed to load, and "nothing is stopped" is the single most reassuring
+ * sentence here.
+ *
+ * Runs in flight is last and does NOT suppress the all-clear line, because it
+ * is the only entry here that is not a fault: a workspace with three runs
+ * executing and nothing stopped is a workspace where everything is working.
+ * `clear` therefore stays a statement about the register and the kill switch,
+ * and the run count sits beside it rather than contradicting it.
  */
 export async function AgenticGovernanceCardBody({
     tenantSlug,
@@ -184,6 +191,19 @@ export async function AgenticGovernanceCardBody({
                         {t('dashboardWidget.proposalsWaiting', {
                             count: summary.proposalsAwaitingReview,
                         })}
+                    </InlineNotice>
+                )}
+                {/* LAST, and behind a `> 0` gate, for two different reasons.
+                    Last because nothing above it is true of a run in flight —
+                    it is not a fault, it is the subsystem working — and the
+                    order of this list is what an operator should do first.
+                    Gated because zero runs is the permanent state of a
+                    workspace whose agents are registered but never driven, and
+                    a line reading "0 runs in flight" on every dashboard every
+                    day is chrome an operator learns to stop seeing. */}
+                {summary.runsInFlight > 0 && (
+                    <InlineNotice variant="info" data-testid="agentic-runs-in-flight">
+                        {t('dashboardWidget.runsInFlight', { count: summary.runsInFlight })}
                     </InlineNotice>
                 )}
                 {clear && (

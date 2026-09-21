@@ -66,6 +66,11 @@ import { badRequest } from '@/lib/errors/types';
 import { UNATTENDED_AUTONOMY } from '@/lib/agentic/agent-risk-scoring';
 import { KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
 import {
+    evaluateMonthlyBudgetForRun,
+    spentThisMonth,
+} from '@/lib/agentic/monthly-budget-policy';
+import { PROPOSAL_GUARD_STATE_WHERE } from '@/lib/agentic/proposal-guard-state';
+import {
     definitionsFor,
     type MetricDefinition,
     type MetricId,
@@ -469,8 +474,32 @@ export async function buildApprovalStatisticsReport(
         alert: false,
     });
     const sample = await getSampleAuditDisagreementRate(ctx, { sinceDays: window.days });
-    const pendingNow = await runInTenantContext(ctx, (db) =>
-        db.agentProposal.count({ where: { tenantId: ctx.tenantId, status: 'PENDING' } }),
+    // THE CONTENT GUARD'S THREE STATES, counted rather than sampled.
+    //
+    // Three counts and not three queries per state: `clean` is the REMAINDER,
+    // so the three always sum to `total` even if a proposal is written between
+    // two of these reads. A third independent count could disagree with the
+    // other two, and an assessor cannot tell a race from a defect.
+    //
+    // The two WHERE fragments come from the same module as
+    // `resolveProposalGuardState`, which is the rule the proposals page reads
+    // row by row. Re-spelling `guardVerdict !== 'CLEAN'` here would be a second
+    // copy of a rule whose whole point is that the column cannot be read alone.
+    const [pendingNow, guardTotal, guardFlagged, guardUnscanned] = await runInTenantContext(
+        ctx,
+        (db) =>
+            Promise.all([
+                db.agentProposal.count({
+                    where: { tenantId: ctx.tenantId, status: 'PENDING' },
+                }),
+                db.agentProposal.count({ where: { tenantId: ctx.tenantId } }),
+                db.agentProposal.count({
+                    where: { tenantId: ctx.tenantId, ...PROPOSAL_GUARD_STATE_WHERE.FLAGGED },
+                }),
+                db.agentProposal.count({
+                    where: { tenantId: ctx.tenantId, ...PROPOSAL_GUARD_STATE_WHERE.UNSCANNED },
+                }),
+            ]),
     );
 
     const fastest = quality.reviewers
@@ -507,6 +536,22 @@ export async function buildApprovalStatisticsReport(
                 sample.disagreementRate === null
                     ? notAssessed('NO_ANSWERED_SAMPLE_AUDITS')
                     : measured(sample.disagreementRate),
+            // NO_POPULATION rather than three zeroes over an empty queue.
+            // "The guard refused nothing" is the strongest claim this filter
+            // can make, and a workspace no agent has ever proposed into has
+            // not earned it.
+            'approvals.guard_flagged':
+                guardTotal === 0
+                    ? noPopulation('NO_PROPOSALS_RECORDED')
+                    : measured(guardFlagged),
+            'approvals.guard_unscanned':
+                guardTotal === 0
+                    ? noPopulation('NO_PROPOSALS_RECORDED')
+                    : measured(guardUnscanned),
+            'approvals.guard_clean':
+                guardTotal === 0
+                    ? noPopulation('NO_PROPOSALS_RECORDED')
+                    : measured(guardTotal - guardFlagged - guardUnscanned),
         },
         {
             reviewers: quality.reviewers,
@@ -694,6 +739,24 @@ export async function buildIncidentHistoryReport(
         (b) => b.trippedAt !== null && b.trippedAt.getTime() >= window.since.getTime(),
     );
 
+    // SPEND AGAINST BUDGET — the third stop control, reported beside the kill
+    // switch and the circuit breaker because it stops runs for the same reason
+    // they do, just one step earlier: at the door, before the run row exists.
+    //
+    // Read through the enforcement path's own `evaluate` half rather than
+    // re-querying the settings row, so the ceiling reported here is the ceiling
+    // a run start would be refused against — including its normalisation (a
+    // stored negative reads as 0, a non-finite one as unconfigured).
+    const budget = await evaluateMonthlyBudgetForRun(ctx, generatedAt);
+    // …but NOT its `spentThisMonth` when no budget is configured. That path
+    // short-circuits the aggregate on purpose — the sum cannot change a verdict
+    // it is not being compared against — and returns 0, which is the right
+    // answer to "does this refuse the run" and a false zero as a reported
+    // figure. A pack is a quarterly read, not the run-start hot path, so it
+    // pays for the sum itself in exactly that case.
+    const tokensSpentThisMonth =
+        budget.budgetTokens === null ? await spentThisMonth(ctx, generatedAt) : budget.spentThisMonth;
+
     return envelope(
         'incident-history',
         generatedAt,
@@ -744,6 +807,22 @@ export async function buildIncidentHistoryReport(
             'incidents.breakers_open_now': measured(
                 breakers.filter((b) => b.state === 'OPEN').length,
             ),
+            // NOT_ASSESSED, never `0`. NULL on the column means UNLIMITED, so a
+            // zero here would invert the control's meaning — it would read as a
+            // ceiling that refuses every run, on every tenant that has simply
+            // not opted in.
+            'incidents.monthly_token_budget':
+                budget.budgetTokens === null
+                    ? notAssessed('NO_MONTHLY_BUDGET_CONFIGURED')
+                    : measured(budget.budgetTokens),
+            // Always MEASURED. Unlike the claims above it, a spend of zero is
+            // simply true — nothing was spent — rather than a control quietly
+            // congratulating itself over an empty population.
+            'incidents.tokens_spent_this_month': measured(tokensSpentThisMonth),
+            'incidents.monthly_budget_remaining_tokens':
+                budget.budgetTokens === null
+                    ? notAssessed('NO_MONTHLY_BUDGET_CONFIGURED')
+                    : measured(budget.budgetTokens - tokensSpentThisMonth),
         },
         { kills, drillCanaryKills, drills, breakers },
     );

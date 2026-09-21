@@ -16,6 +16,13 @@ import { cn } from '@/lib/cn';
 import { formatDateTime } from '@/lib/format-date';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import type { ProposalDiff } from '@/lib/agentic/proposal-diff';
+// The guard's three states, and the rule that reads them. Shared with the
+// governance pack, which counts the same three — see the module header for why
+// a `'use client'` file cannot own a rule a server read also needs.
+import {
+    resolveProposalGuardState,
+    type ProposalGuardState,
+} from '@/lib/agentic/proposal-guard-state';
 // TYPE-ONLY, and that matters: `proposal-guard` imports `node:crypto`, so a
 // value import would drag the guard (and its scanners) into the browser
 // bundle. `import type` is erased at compile time, which lets the client share
@@ -87,34 +94,6 @@ export interface ProposalRow {
      * lives on the server; this exists so the row does not silently vanish.
      */
     awaitingSecondApproval?: boolean;
-}
-
-/**
- * WHAT THE GUARD SAYS ABOUT ONE ROW — three states, not three verdicts.
- *
- * `AgentGuardVerdict` has three values and this has three states, and they do
- * not line up. `guardVerdict` is `NOT NULL DEFAULT 'CLEAN'`, and the migration
- * that added it deliberately ran NO BACKFILL: "every existing row entered a
- * queue that had no guard, so CLEAN here means 'not refused', not 'scanned and
- * found clean'". So the column alone cannot tell a clean scan from no scan, and
- * a surface that reads it alone tells a reviewer a row was checked when nobody
- * checked it. `guardInputDigest` is the discriminator — the guard writes it on
- * every proposal it decides, and it is NULL for exactly the pre-guard rows.
- *
- * QUARANTINED maps to FLAGGED rather than to a fourth state. It cannot arrive
- * here — `listAgentProposals` parses `?status=` against the REVIEWABLE
- * vocabulary and names that set in the query even with no filter — but if it
- * ever does, the safe reading of "the guard refused this" is the alarming one,
- * not silence. The quarantine page is where such a row is investigated.
- */
-export type ProposalGuardState = 'FLAGGED' | 'CLEAN' | 'UNSCANNED';
-
-export function resolveProposalGuardState(row: {
-    guardVerdict: AgentGuardVerdict;
-    guardInputDigest: string | null;
-}): ProposalGuardState {
-    if (row.guardVerdict !== 'CLEAN') return 'FLAGGED';
-    return row.guardInputDigest ? 'CLEAN' : 'UNSCANNED';
 }
 
 /**

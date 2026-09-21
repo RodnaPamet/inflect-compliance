@@ -102,6 +102,12 @@ const BASIS_SENTENCE: Record<MeasureBasis, string> = {
         'No vendor supplies an agent here, so vendor assurance has no subject.',
     OUTSIDE_PLATFORM_BOUNDARY:
         'This fact is not observable from inside this platform. See the definition.',
+    NO_PROPOSALS_RECORDED:
+        'No agent has ever proposed a change in this workspace, so the content ' +
+        'guard has had nothing to look at. This is not a guard that found nothing.',
+    NO_MONTHLY_BUDGET_CONFIGURED:
+        'No monthly token budget is set for this workspace, so agent runs are ' +
+        'not refused on spend. An absent budget means unlimited, never zero.',
 };
 
 /**
