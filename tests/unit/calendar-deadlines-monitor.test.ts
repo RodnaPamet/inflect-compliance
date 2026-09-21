@@ -1,3 +1,4 @@
+import { codeOf } from '../helpers/source-blocks';
 /**
  * Epic 49 — calendar-deadlines monitor + dispatch wiring tests.
  *
@@ -208,9 +209,11 @@ describe('notification-dispatch wires the calendar-deadlines monitor', () => {
     it('imports and runs runCalendarDeadlineMonitor inside DEADLINE_DIGEST', () => {
         const fs = require('fs');
         const path = require('path');
-        const src = fs.readFileSync(
-            path.resolve(__dirname, '../../src/app-layer/jobs/notification-dispatch.ts'),
-            'utf-8',
+        const src = codeOf(
+            fs.readFileSync(
+                path.resolve(__dirname, '../../src/app-layer/jobs/notification-dispatch.ts'),
+                'utf-8',
+            ),
         );
         // The orchestrator must (a) import calendar-deadlines and
         // (b) include runCalendarDeadlineMonitor in the parallel scan.

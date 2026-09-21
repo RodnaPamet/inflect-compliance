@@ -1,3 +1,4 @@
+import { codeOf } from '../helpers/source-blocks';
 /**
  * Observability Infrastructure Validation Tests
  *
@@ -263,8 +264,10 @@ describe('SLO / dashboard / alert alignment', () => {
 
     it('should align SLO metric names with the code emitting them', () => {
         // Verify the metrics.ts file uses the same metric base names
-        const metricsCode = fs.readFileSync(
+        const metricsCode = codeOf(
+            fs.readFileSync(
             path.join(ROOT, 'src/lib/observability/metrics.ts'), 'utf-8'
+        ),
         );
 
         // metrics.ts uses OTel dot-notation: api.request.count

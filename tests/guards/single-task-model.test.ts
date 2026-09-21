@@ -18,7 +18,13 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+import { codeOf } from '../helpers/source-blocks';
+
+// #2246 Class A — comments are masked at the READ SEAM, so an assertion cannot
+// be satisfied by a comment instead of the code it names. Every read in this
+// file is TypeScript, re-derived here rather than assumed from the paths.
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 /** Concatenated text of every `.prisma` file in the schema folder. */

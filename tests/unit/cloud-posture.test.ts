@@ -22,7 +22,14 @@ import { AZURE_POSTURE_CONTROL_MAP, allMappedRequirementCodes as azureCodes } fr
 import { GCP_POSTURE_CONTROL_MAP, allMappedRequirementCodes as gcpCodes } from '@/data/integrations/gcp-posture-control-map';
 
 const ROOT = path.resolve(__dirname, '../..');
+import { codeOf } from '../helpers/source-blocks';
+
+// #2246 Class A — the mask goes at the READ SEAM, and WHICH masker depends on
+// the language. `read` stays RAW because this file also reads JSON and YAML, none of
+// which `codeOf` lexes — handing it YAML once blanked a bare-scalar URL from
+// `//` to end of line. TypeScript reads go through `readSrc`, which masks.
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const readSrc = (rel: string) => codeOf(read(rel));
 
 /**
  * A Powerpipe benchmark JSON with a mix of ok/alarm/skip controls, in the REAL
@@ -147,7 +154,7 @@ describe('control-map validity', () => {
     it('the maps are non-empty and pure (no prisma import)', () => {
         expect(Object.keys(AZURE_POSTURE_CONTROL_MAP).length).toBeGreaterThan(5);
         expect(Object.keys(GCP_POSTURE_CONTROL_MAP).length).toBeGreaterThan(5);
-        expect(read('src/data/integrations/azure-posture-control-map.ts')).not.toMatch(/@prisma\/client/);
-        expect(read('src/data/integrations/gcp-posture-control-map.ts')).not.toMatch(/@prisma\/client/);
+        expect(readSrc('src/data/integrations/azure-posture-control-map.ts')).not.toMatch(/@prisma\/client/);
+        expect(readSrc('src/data/integrations/gcp-posture-control-map.ts')).not.toMatch(/@prisma\/client/);
     });
 });

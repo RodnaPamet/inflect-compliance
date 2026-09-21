@@ -1,3 +1,4 @@
+import { codeOf } from '../helpers/source-blocks';
 /**
  * Per-worker test databases must not collide across CHECKOUTS.
  *
@@ -50,9 +51,13 @@ describe('the tag separates checkouts', () => {
         // routes — one through .env.test, the other through this helper's own
         // default. Two checkouts CAN legitimately hold identical URLs, so a
         // URL-derived tag agrees precisely when it must not.
-        const src = require('node:fs').readFileSync(
-            path.resolve(__dirname, '../helpers/db.ts'),
-            'utf8',
+        // #2246 — masked; the slice anchor below is CODE
+        // (`export function tagForRoot`), and codeOf preserves offsets.
+        const src = codeOf(
+            require('node:fs').readFileSync(
+                path.resolve(__dirname, '../helpers/db.ts'),
+                'utf8',
+            ),
         );
         const fn = src.slice(src.indexOf('export function tagForRoot'));
         const body = fn.slice(0, fn.indexOf('\n}'));
@@ -110,8 +115,12 @@ describe('every site that names a worker DB agrees', () => {
     //
     // That is the failure this describe block exists to make loud, because
     // the drift is invisible until something touches the database.
-    const read = (rel: string): string =>
+    // #2246 Class A — masked at the READ SEAM. Both callers read lexable
+    // source (`jest.setup.js` and `tests/setup/globalSetup.ts`), so `codeOf`
+    // is the correct masker for every read that reaches this helper.
+    const readRaw = (rel: string): string =>
         require('node:fs').readFileSync(path.resolve(__dirname, '../..', rel), 'utf8');
+    const read = (rel: string): string => codeOf(readRaw(rel));
 
     it('jest.setup.js reads the recorded names rather than re-deriving them', () => {
         // It is plain JS and cannot import the TS helper, so "read the

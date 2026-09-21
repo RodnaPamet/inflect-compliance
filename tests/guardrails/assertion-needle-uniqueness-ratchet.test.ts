@@ -322,7 +322,7 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1282;
 // off the five-plus threshold; a `.tsx` docblock listing props and mounts is
 // what carries a needle over five. Shared state with every open PR:
 // re-measure on the merged tree.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 203;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 202;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -516,7 +516,24 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 203;
 // than two `expect(...).not.toMatch(entityMutators)` calls. That needle is a
 // variable, so every such site is un-analysable; collapsing two potential
 // sites into one net-removed a blind spot rather than adding one.
-const UNANALYSABLE_READ_BASELINE = 1453;
+// 2026-09-21: 1453 -> 1454, and it is a WIDENING, not a regression — the only
+// upward move in this number's history that ADDS sightlines. Class A batch 13
+// converted `still-surface-button-material`'s `read`/`code` helpers from
+// FUNCTION DECLARATIONS to arrow consts, because `assertion-reach` follows the
+// `const read = (p) => …` shape (:1164) and does not resolve a delegating
+// function declaration. Measured on that file alone, before and after:
+//     not-a-file-read     34 -> 4
+//     needle-not-literal   0 -> 1
+// Thirty reads the detector could not see became visible. Twenty-nine are
+// fully analysable; ONE carries a computed needle — the `for (const key of
+// ['xs','sm','md','lg'])` loop asserting `new RegExp(`${key}: CONTROL_RUNG`)`
+// — and a computed needle is un-analysable by construction. So the blind-spot
+// count rises by one while the analysed population rises by twenty-nine.
+// Unrolling that loop to four literal needles would take it back to 1453; it
+// is left alone because the loop is the clearer test, and because pretending
+// the site is analysable when it is not is the failure this number exists to
+// prevent.
+const UNANALYSABLE_READ_BASELINE = 1454;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.
