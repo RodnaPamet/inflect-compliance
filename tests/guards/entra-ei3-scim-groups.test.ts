@@ -5,7 +5,19 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// #2246 Class A / #2679 LANGUAGE SPLIT — comments are masked at the READ SEAM,
+// and WHICH masker depends on the language of the file being read.
+//
+// `codeOf` lexes TypeScript. Handing it a `.sql` file is the single worst
+// outcome available: every `--` comment survives verbatim while the call site
+// READS as masked. Migrations therefore go through `readSql`, which lexes
+// `--` and `/* */` (and nests, as Postgres does). TypeScript keeps `read`.
+// Which extension flows through which helper was re-derived in this file.
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
+
+const readRaw = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+const read = (p: string) => codeOf(readRaw(p));
+const readSql = (p: string) => sqlCodeOf(readRaw(p));
 const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
 describe('EI-3 SCIM Groups', () => {
@@ -18,7 +30,7 @@ describe('EI-3 SCIM Groups', () => {
     it('the migration creates ScimGroup with RLS', () => {
         const mig = 'prisma/migrations/20260610320000_ei3_scim_group/migration.sql';
         expect(exists(mig)).toBe(true);
-        const sql = read(mig);
+        const sql = readSql(mig);
         expect(sql).toMatch(/CREATE TABLE "ScimGroup"/);
         expect(sql).toMatch(/FORCE ROW LEVEL SECURITY/);
         expect(sql).toMatch(/CREATE POLICY tenant_isolation ON "ScimGroup"/);

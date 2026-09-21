@@ -24,8 +24,21 @@ import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '../../');
 
-function read(rel: string): string {
+import { codeOf } from '../helpers/source-blocks';
+
+// #2246 Class A — the mask goes at the READ SEAM so an assertion cannot be
+// satisfied by a comment instead of the code it names.
+//
+// `read` masks; `readRaw` does not, and the ONE caller of `readRaw` is the
+// `globals.css` read below. `codeOf` lexes TypeScript, and CSS is not a
+// language it lexes — the repo tracks the missing `.css` masker separately
+// rather than letting this site read as masked while spelling the wrong
+// lexer. Every other read here is `.ts`/`.tsx`, re-derived not assumed.
+function readRaw(rel: string): string {
     return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+}
+function read(rel: string): string {
+    return codeOf(readRaw(rel));
 }
 
 describe('ThemeProvider — source contract', () => {
@@ -127,7 +140,7 @@ describe('Providers wiring — ThemeProvider mounts inside the app shell', () =>
 });
 
 describe('globals.css — legacy → semantic alias bridge', () => {
-    const src = read('src/app/globals.css');
+    const src = readRaw('src/app/globals.css');
 
     it('delegates --bg-primary / --text-primary to the semantic tokens', () => {
         expect(src).toMatch(/--bg-primary:\s*var\(--bg-page\)/);

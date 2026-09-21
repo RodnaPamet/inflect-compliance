@@ -23,12 +23,17 @@
 import * as fs from "fs";
 import * as path from "path";
 
+// #2246 Class A — the mask goes at the READ SEAM. The two `.tsx` reads below
+// are masked; the `docs/design-system.md` read is NOT, because `codeOf` lexes
+// TypeScript and markdown is not a language it lexes. That read is prose and
+// is tracked as an unmasked seam rather than spelled with the wrong lexer.
+import { codeOf } from "../helpers/source-blocks";
+
 const ROOT = path.resolve(__dirname, "../..");
 
 describe("v2-PR-15 SkeletonTable primitive", () => {
-    const src = fs.readFileSync(
-        path.join(ROOT, "src/components/ui/skeleton.tsx"),
-        "utf8",
+    const src = codeOf(
+        fs.readFileSync(path.join(ROOT, "src/components/ui/skeleton.tsx"), "utf8"),
     );
 
     it("exports the SkeletonTable function", () => {
@@ -63,9 +68,8 @@ describe("v2-PR-15 SkeletonTable primitive", () => {
 });
 
 describe("v2-PR-15 EmptyState size axis", () => {
-    const src = fs.readFileSync(
-        path.join(ROOT, "src/components/ui/empty-state.tsx"),
-        "utf8",
+    const src = codeOf(
+        fs.readFileSync(path.join(ROOT, "src/components/ui/empty-state.tsx"), "utf8"),
     );
 
     it("declares the EmptyStateSize type", () => {
