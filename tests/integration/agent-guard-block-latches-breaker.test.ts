@@ -30,6 +30,7 @@ import { GUARD_BLOCK_TRIP_THRESHOLD } from '@/lib/agentic/circuit-breaker';
 import { createRegisteredAgent } from '@/app-layer/usecases/agent-registry';
 import { hashForLookup } from '@/lib/security/encryption';
 import { makeRequestContext } from '../helpers/make-context';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
 
@@ -58,6 +59,46 @@ const ctxFor = (tenantId: string) =>
         tenantSlug: tenantId,
         userId: seeded[tenantId].ownerUserId,
     });
+
+/**
+ * Drop everything this suite seeded for one tenant.
+ *
+ * The membership delete needs `session_replication_role = 'replica'`, and that
+ * is not a convenience: `seedTenant` creates an ACTIVE OWNER deliberately, and
+ * the `tenant_membership_last_owner_guard` trigger raises P0001 on any DELETE
+ * that would leave a tenant with zero active OWNERs — which the last one always
+ * does. `SET LOCAL` keeps the bypass inside this transaction so it cannot leak
+ * to a parallel jest worker.
+ *
+ * The owner USER is dropped too. `User.email` is unique and `seedTenant` calls
+ * `create`, so a leaked row makes the second run against the same database fail
+ * on a duplicate key rather than on anything this suite is about.
+ */
+async function purgeTenant(tenantId: string): Promise<void> {
+    await prisma.agentProposal.deleteMany({ where: { tenantId } });
+    await prisma.agentCircuitBreaker.deleteMany({ where: { tenantId } });
+    await prisma.registeredAgent.deleteMany({ where: { tenantId } });
+    await prisma.aiSystem.deleteMany({ where: { tenantId } });
+    // `notifyBreakerTrip` fans a row out per admin. Enumerated by querying
+    // every table with a `tenantId` column for rows belonging to these two
+    // tenants rather than by peeling one FK error at a time: AiSystem,
+    // AuditLog, Notification, RegisteredAgent, TenantMembership (plus the two
+    // agentic tables `beforeEach` already clears) is the complete set.
+    await prisma.notification.deleteMany({ where: { tenantId } });
+    await prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
+        await tx.$executeRawUnsafe(
+            `DELETE FROM "TenantMembership" WHERE "tenantId" = $1`,
+            tenantId,
+        );
+    });
+    // `createRegisteredAgent` writes hash-chained audit rows, and
+    // `AuditLog_tenantId_fkey` makes them block the tenant delete. The rows are
+    // immutable by trigger, so the shared helper is the only way to drop them.
+    await deleteAuditRowsForTenants(prisma, tenantId);
+    await prisma.tenant.deleteMany({ where: { id: tenantId } });
+    await prisma.user.deleteMany({ where: { email: `owner-${tenantId}@example.test` } });
+}
 
 async function seedTenant(tenantId: string): Promise<void> {
     await prisma.tenant.create({ data: { id: tenantId, name: tenantId, slug: tenantId } });
@@ -162,12 +203,7 @@ async function seedBreaker(tenantId: string, agentId: string, state = 'CLOSED') 
 describeFn('guard blocks latch the breaker, at the right threshold', () => {
     beforeAll(async () => {
         for (const t of [T1, T2]) {
-            await prisma.agentProposal.deleteMany({ where: { tenantId: t } });
-            await prisma.agentCircuitBreaker.deleteMany({ where: { tenantId: t } });
-            await prisma.registeredAgent.deleteMany({ where: { tenantId: t } });
-            await prisma.aiSystem.deleteMany({ where: { tenantId: t } });
-            await prisma.tenantMembership.deleteMany({ where: { tenantId: t } });
-            await prisma.tenant.deleteMany({ where: { id: t } });
+            await purgeTenant(t);
             await seedTenant(t);
         }
     });
@@ -182,12 +218,7 @@ describeFn('guard blocks latch the breaker, at the right threshold', () => {
     afterAll(async () => {
         if (T1 && T2) {
             for (const t of [T1, T2]) {
-                await prisma.agentProposal.deleteMany({ where: { tenantId: t } });
-                await prisma.agentCircuitBreaker.deleteMany({ where: { tenantId: t } });
-                await prisma.registeredAgent.deleteMany({ where: { tenantId: t } });
-                await prisma.aiSystem.deleteMany({ where: { tenantId: t } });
-                await prisma.tenantMembership.deleteMany({ where: { tenantId: t } });
-                await prisma.tenant.deleteMany({ where: { id: t } });
+                await purgeTenant(t);
             }
         }
         await prisma.$disconnect();
