@@ -1,3 +1,4 @@
+import { codeOf } from '../helpers/source-blocks';
 /**
  * `useSsrFallback` decides whether server-rendered rows may seed the SWR
  * cache. Getting it wrong shows the server's rows for filters the user has
@@ -92,9 +93,13 @@ describe('useSsrFallback — when SSR rows may seed the cache', () => {
         // and this function drift apart.
         const fs = require('node:fs') as typeof import('node:fs');
         const path = require('node:path') as typeof import('node:path');
-        const src = fs.readFileSync(
-            path.resolve(__dirname, '../../src/components/ui/hooks/use-ssr-fallback.ts'),
-            'utf8',
+        // #2246 — masked at the READ SEAM: a commented-out hook body must not
+        // satisfy an assertion about the hook.
+        const src = codeOf(
+            fs.readFileSync(
+                path.resolve(__dirname, '../../src/components/ui/hooks/use-ssr-fallback.ts'),
+                'utf8',
+            ),
         );
         expect(src).toContain('if (!serverHadFilters) return !hasActive;');
         expect(src).toContain('const initial = initialFilters ?? {};');
