@@ -205,8 +205,7 @@ describe('no-op', () => {
  * create verb, nothing but the policy usecase storing and reporting it" — and
  * #2687 falsified the first two-thirds of that sentence: `planJoinerPass` reads
  * the mode at its own gate 1, and there is now an `identity-joiner-pass` job, an
- * `identity-joiner-dispatch` fan-out at 04:30 UTC. The OWNER-only run route
- * ships in the route half of #2687.
+ * `identity-joiner-dispatch` fan-out at 04:30 UTC and an OWNER-only run route.
  *
  * What survives is the half that still holds, and it is enough on its own:
  * `DirectoryProvisioner` declares no create verb, and decision 10's

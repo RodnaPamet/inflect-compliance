@@ -174,15 +174,12 @@ export type IdentityDirection = 'leaver' | 'joiner';
  * own gate 1. It is that a plan it produces cannot be acted on yet. This list
  * held TWO reasons; #2687 closed the first, and the second alone is enough:
  *
- *   • NO TRIGGER — MOSTLY CLOSED BY #2687. This used to read "there is no joiner
- *     job, no schedule and no run route". TWO of those three now exist:
- *     `identity-joiner-pass` and its `identity-joiner-dispatch` fan-out in
- *     `jobs/identity-joiner.ts`, and the 04:30 UTC entry in `jobs/schedules.ts`.
- *     The OWNER-only run route is NOT in this diff: it ships in the route half of
- *     #2687, split out because two new API routes push the CI Build over the
- *     runner's memory ceiling (#2698) and the engine should not wait on that.
- *     So a joiner pass fires on schedule today and cannot yet be fired off it.
- *     Owner decision 9 of 2026-09-19 — dispatch
+ *   • NO TRIGGER — CLOSED BY #2687. This used to read "there is no joiner job,
+ *     no schedule and no run route". All three now exist: `identity-joiner-pass`
+ *     and its `identity-joiner-dispatch` fan-out in `jobs/identity-joiner.ts`,
+ *     the 04:30 UTC entry in `jobs/schedules.ts`, and the OWNER-only
+ *     `admin/identity-joiner-passes/run` trigger beside the report surface at
+ *     `admin/identity-joiner-passes`. Owner decision 9 of 2026-09-19 — dispatch
  *     on the TENANT's timezone — is not satisfied and is not pretended to be:
  *     `dispatchJobId` floors on UTC buckets and `schedules.ts` records why a
  *     zoned cron breaks that, so the fan-out is deliberately UTC and the zoned

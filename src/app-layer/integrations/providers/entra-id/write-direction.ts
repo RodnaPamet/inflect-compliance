@@ -80,8 +80,7 @@
  * accidental consent read across time instead of across directions.
  *
  * This paragraph used to add "no dispatcher calls the planner" as a third
- * reason. #2687 landed the dispatcher and the schedule (the run route ships in its
- * route half, held back by the CI memory ceiling #2698), so
+ * reason. #2687 landed the dispatcher, the schedule and the run route, so
  * that clause is gone rather than left to rot. The argument is unaffected:
  * what makes a joiner-writes checkbox premature is the absent CREATE VERB,
  * not the absent trigger. A DRY_RUN pass that plans and stops authorises
