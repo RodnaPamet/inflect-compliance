@@ -4947,7 +4947,8 @@
           "REVERSIBILITY_WORSENED": "Its actions became harder to undo.",
           "PROVENANCE_WIDENED": "It now depends on a third-party supplier.",
           "MODEL_CHANGED": "The model behind it changed."
-        }
+        },
+        "aboveCeilingBadge": "Above ceiling · needs {required}, capped at {ceiling}"
       },
       "coverage": {
         "summaryHeading": "Agentic risk coverage",

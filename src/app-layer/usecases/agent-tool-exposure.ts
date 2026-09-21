@@ -44,6 +44,9 @@ import { baseDataScopeForTool } from '@/lib/mcp/tool-data-scope';
 import {
     AUTONOMY_REQUIRED_BY_CAPABILITY,
     ceilingForRiskTier,
+    resolveAutonomyCeiling,
+    riskTierCeilingFor,
+    requiredAutonomyFor,
     DENY_CEILING,
 } from '@/lib/agentic/autonomy-ceiling';
 import { dataScopeWithinCard } from '@/lib/agentic/policy-card';
@@ -67,7 +70,17 @@ async function assertAgentGrantable(db: PrismaTx, ctx: RequestContext, agentId: 
         // `dataAccessScope` is selected because it BOUNDS a grant, not merely
         // because it describes the agent — see
         // `assertGrantWithinDeclaredDataScope`.
-        select: { id: true, status: true, riskTier: true, dataAccessScope: true },
+        // `autonomyLevel` is selected because the EFFECTIVE ceiling is the
+        // minimum of it and the tier cap — `assertGrantWithinTier` below checks
+        // only the tier, so this is the term that makes a grant inert without
+        // any refusal having been possible at grant time.
+        select: {
+            id: true,
+            status: true,
+            riskTier: true,
+            dataAccessScope: true,
+            autonomyLevel: true,
+        },
     });
     // Same shape whether absent or foreign, so a caller learns nothing about
     // another tenant's id space.
@@ -83,13 +96,70 @@ async function assertAgentGrantable(db: PrismaTx, ctx: RequestContext, agentId: 
 export async function listAgentTools(ctx: RequestContext, agentId: string) {
     assertCanRead(ctx);
     return runInTenantContext(ctx, async (db) => {
-        await assertAgentGrantable(db, ctx, agentId);
+        const agent = await assertAgentGrantable(db, ctx, agentId);
         const tools = await RegisteredAgentToolRepository.listForAgent(db, ctx, agentId);
+
+        // ── WHICH GRANTS THE CEILING ACTUALLY PERMITS ───────────────────────
+        //
+        // `assertGrantWithinTier` refuses an over-tier grant when it is MADE.
+        // That is not the same as no over-ceiling grant existing, for three
+        // reasons, and each produces a row that looks like authority and is
+        // refused on every call:
+        //
+        //   · AN UNSCORED AGENT IS DELIBERATELY NOT REFUSED. Preparing a DRAFT
+        //     agent's tool list before assessing it is an ordinary workflow, so
+        //     every grant is allowed and every one of them is currently
+        //     unreachable (`DENY_CEILING`).
+        //   · THE TIER CAN BE RE-ASSESSED DOWNWARD LATER. The check runs at
+        //     grant time only; a re-score narrows the cap under grants already
+        //     written.
+        //   · THE REGISTERED AUTONOMY IS NEVER CHECKED AT ALL. That refusal
+        //     compares against `ceilingForRiskTier` alone, while every call
+        //     goes through `resolveAutonomyCeiling`, which ALSO mins in
+        //     `agent.autonomyLevel`. An agent registered at rung 2 under a tier
+        //     that caps at 6 can be granted a rung-4 tool with no complaint,
+        //     and the boundary refuses it forever.
+        //
+        // Composed from the same helpers the boundary uses rather than
+        // re-derived here: re-deriving one term is how a surface comes to
+        // disagree with the gate it is describing.
+        const ceiling = resolveAutonomyCeiling({
+            riskTierCeiling: riskTierCeilingFor(agent),
+            agentAutonomy: agent.autonomyLevel,
+            // NULL, stated rather than omitted — the field is required-but-
+            // nullable precisely so a caller has to say which it means. There
+            // is no credential in this question: the register page asks what is
+            // true of the AGENT, and a key narrows further per call.
+            keyMax: null,
+        });
+
         return {
             agentId,
             granted: tools,
             /** The full catalogue, so a UI can offer what is not yet granted. */
             available: MCP_TOOL_NAMES,
+            /**
+             * The AGENT's effective ceiling — the minimum of its registered
+             * autonomy and its tier cap.
+             *
+             * NOT the per-call ceiling. A credential carries its own maximum
+             * and `resolveAutonomyCeiling` mins that in too, so a tool within
+             * this ceiling can still be refused for a particular API key. This
+             * number is the one that is true of the AGENT regardless of who
+             * calls it, which is the question a register page answers.
+             */
+            autonomyCeiling: ceiling,
+            /**
+             * The rung each catalogue tool requires, so a UI can compare
+             * without importing the capability tables or re-deriving the
+             * default-by-class rule.
+             */
+            requiredAutonomy: Object.fromEntries(
+                MCP_TOOL_NAMES.map((name) => [
+                    name,
+                    requiredAutonomyFor(mcpToolCapabilityClass(name)),
+                ]),
+            ) as Record<string, number>,
         };
     });
 }

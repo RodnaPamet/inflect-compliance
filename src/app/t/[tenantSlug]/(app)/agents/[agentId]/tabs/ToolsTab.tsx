@@ -40,7 +40,7 @@
  * a 403 the UI provoked on purpose is a hash-chained `AUTHZ_DENIED` row in
  * somebody's audit log for a page they only opened.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { ApiClientError } from '@/lib/api-client';
@@ -89,6 +89,22 @@ interface AgentToolsPayload {
      * defines) apart from a working one.
      */
     available: string[];
+    /**
+     * The AGENT's effective autonomy ceiling — `min(registered autonomy, tier
+     * cap)` — resolved server-side by the same helper the tool boundary uses.
+     *
+     * NOT the per-call ceiling: a credential carries its own maximum which is
+     * minned in as well, so a tool within this ceiling can still be refused for
+     * a particular API key. This is the number that is true of the agent
+     * whoever calls it, which is the question a register page answers.
+     *
+     * Optional because a payload written before this field existed has none,
+     * and a missing ceiling must read as "not known" rather than as zero — a
+     * default of 0 would paint every grant as unreachable.
+     */
+    autonomyCeiling?: number;
+    /** The rung each catalogue tool requires, keyed by tool name. */
+    requiredAutonomy?: Record<string, number>;
 }
 
 /**
@@ -176,6 +192,26 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
 
     const granted = useMemo(() => data?.granted ?? [], [data]);
     const available = useMemo(() => data?.available ?? [], [data]);
+    const ceiling = data?.autonomyCeiling;
+    const requiredAutonomy = useMemo(() => data?.requiredAutonomy ?? {}, [data]);
+
+    /**
+     * Is this grant above what the agent's ceiling can reach?
+     *
+     * UNDEFINED, not false, when the answer is unknown — an older payload with
+     * no ceiling, or a tool the catalogue no longer declares. The caller
+     * renders nothing in that case rather than an "OK" it has not established,
+     * because a reassuring badge nobody computed is worse than no badge.
+     */
+    const aboveCeiling = useCallback(
+        (toolName: string): boolean | undefined => {
+            if (typeof ceiling !== 'number') return undefined;
+            const required = requiredAutonomy[toolName];
+            if (typeof required !== 'number') return undefined;
+            return required > ceiling;
+        },
+        [ceiling, requiredAutonomy],
+    );
 
     const grantedNames = useMemo(() => new Set(granted.map((g) => g.toolName)), [granted]);
     const options = useMemo<ComboboxOption[]>(
@@ -493,6 +529,39 @@ export function ToolsTab({ agentId, refreshToken, onChanged, canGrantTools }: To
                                             ) : (
                                                 <StatusBadge variant="neutral" size="sm">
                                                     {capabilityLabel(row.toolName)}
+                                                </StatusBadge>
+                                            )}
+                                            {aboveCeiling(row.toolName) === true && (
+                                                /*
+                                                  THE THIRD WAY A GRANT IS DEAD.
+                                                  `inert` means the tool is gone
+                                                  and `blocked` means the manifest
+                                                  refuses it; this one means the
+                                                  tool exists, is pinned, and the
+                                                  agent cannot reach its rung.
+
+                                                  `assertGrantWithinTier` refuses
+                                                  an over-TIER grant when it is
+                                                  made, which is why this is not
+                                                  already impossible — it never
+                                                  checks the registered autonomy,
+                                                  it does not run again when a
+                                                  re-score narrows the cap, and it
+                                                  deliberately passes every grant
+                                                  on an unscored agent.
+                                                */
+                                                <StatusBadge
+                                                    variant="warning"
+                                                    size="sm"
+                                                    data-testid={`agent-tool-above-ceiling-${row.toolName}`}
+                                                >
+                                                    {t('agentDetail.tools.aboveCeilingBadge', {
+                                                        required: requiredAutonomy[row.toolName],
+                                                        // `aboveCeiling` returned
+                                                        // true, which it cannot do
+                                                        // unless this is a number.
+                                                        ceiling: ceiling ?? 0,
+                                                    })}
                                                 </StatusBadge>
                                             )}
                                             {blocked && (
