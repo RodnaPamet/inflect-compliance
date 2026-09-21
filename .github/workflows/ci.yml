@@ -1128,6 +1128,34 @@ jobs:
           #     2026-09-20  peak 15466-15796 avail 193-527
           # That is a regression to be bisected, not growth to be accommodated.
           # This cap is a floor under the symptom while that bisect runs.
+          # MALLOC_ARENA_MAX — the one lever that reaches where this memory actually is.
+          #
+          # THREE cap values were measured on this tree and ALL land near 15.5 GB:
+          #     12288 -> peak 15466-15796      10240 -> peak 15479      8192 -> peak 15707
+          # A knob that changes nothing across a 4096 MB range is not the binding
+          # constraint. The memory is not in V8 old space at all.
+          #
+          # Where it IS: `next build --webpack` parses every module through SWC, which is
+          # Rust (`@next/swc-linux-x64-gnu`, ~96 MB of native code). Native allocations
+          # never appear in the V8 heap and no --max-old-space-size value bounds them.
+          #
+          # glibc gives each thread its own malloc arena, up to 64 MB apiece, and sizes
+          # the pool from the CPU count. Threaded native code therefore inflates RSS far
+          # beyond live data, and the memory is not returned to the OS — which is exactly
+          # the trailing plateau this job shows: ~11.2 GB still resident and flat AFTER
+          # "Finalizing page optimization", against ~5.2 GB on 2026-09-13.
+          #
+          # THE CONTROL THAT POINTS HERE: Dockerfile:21 builds this same tree with the
+          # same command and config on `node:24-alpine` — musl, which has no per-thread
+          # arena behaviour — at --max-old-space-size=8192, and ghcr-publish SUCCEEDS on
+          # the very commits whose CI Build peaks at 15.7 GB. Same work, same cap, the
+          # only difference being the libc and therefore the SWC binary variant.
+          #
+          # 2 arenas rather than 1: one serialises every native malloc across threads.
+          # If this does not move the peak, the next measurement is per-process
+          # attribution (`ps -eo rss,comm` in the sampler) — every number in this file
+          # so far is system-wide `free -m` and cannot tell one fat process from several.
+          MALLOC_ARENA_MAX: "2"
           NODE_OPTIONS: "--max-old-space-size=8192"
           NODE_ENV: production
 
