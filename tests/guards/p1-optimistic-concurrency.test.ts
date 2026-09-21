@@ -36,9 +36,22 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-const ROOT = path.resolve(__dirname, "../..");
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// At the seam, not per assertion, so a new `expect(read(...))` inherits it.
+// String literals are KEPT — masking them would silently empty assertions that
+// harvest codes or ids from source. Every path this file reads is a
+// TypeScript-alike, re-derived per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
 
+const ROOT = path.resolve(__dirname, "../..");
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+const read = (rel: string) => codeOf(readRaw(rel));
+// `readDoc` is the DELIBERATE raw seam (#2246). Masking comments is the right
+// default, but an assertion whose SUBJECT is the prose inverts the defect: the
+// text it names is the very text masking blanks, so the assertion could never
+// pass (or, for a negative, never fail) again. Named, so the choice is visible.
+const readDoc = (rel: string) => readRaw(rel);
 describe("Epic P1 — process map optimistic concurrency", () => {
     describe("Repository — server-side enforcement", () => {
         const src = read(
@@ -118,6 +131,10 @@ describe("Epic P1 — process map optimistic concurrency", () => {
 
     describe("Zod schema — accepts expectedVersion in the save payload", () => {
         const src = read("src/app-layer/schemas/process-map.ts");
+        // RAW twin: the test below locks the COMMENT's phrasing, so over
+        // comment-masked source neither half of it could work — the negative
+        // would pass unconditionally and the positive could never match.
+        const srcDoc = readDoc("src/app-layer/schemas/process-map.ts");
 
         it("SaveProcessMapSchema declares expectedVersion (Zod int ≥1)", () => {
             expect(src).toMatch(
@@ -132,13 +149,13 @@ describe("Epic P1 — process map optimistic concurrency", () => {
             // behaviour, so the "ignores it today" phrasing has to
             // be gone — locked here so a future doc edit can't
             // silently regress the contract.
-            expect(src).not.toMatch(/ignores\s+it\s+today/);
-            expect(src).toMatch(/optimistic-concurrency/);
+            expect(srcDoc).not.toMatch(/ignores\s+it\s+today/);
+            expect(srcDoc).toMatch(/optimistic-concurrency/);
         });
     });
 
     describe("Client — version-conflict helper + canvas wire-up", () => {
-        const helperSrc = read(
+        const helperSrc = readDoc(
             "src/lib/processes/version-conflict-toast.ts",
         );
         const canvasSrc = read(

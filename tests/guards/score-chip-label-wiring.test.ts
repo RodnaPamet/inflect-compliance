@@ -23,8 +23,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// At the seam, not per assertion, so a new `expect(read(...))` inherits it.
+// String literals are KEPT — masking them would silently empty assertions that
+// harvest codes or ids from source. Every path this file reads is a
+// TypeScript-alike, re-derived per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
 /** `label={...}` whose expression names both a score and a band. */
 const LABELLED = /label=\{`[^`]*\$\{[^}]*[Ss]core[^}]*\}[^`]*\$\{[^}]*band[^}]*\}[^`]*`\}/;
