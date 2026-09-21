@@ -113,9 +113,11 @@ function Payload({ label, json }: { label: string; json: string | null }) {
  * `content.includes(...)` over the raw source, so a file that merely MENTIONS
  * the component in prose is audited as though it rendered one — and this file
  * was, failing four assertions about column definitions it has no columns for.
- * Same shape as the `as any` ratchet matching the English "h-as any" inside
- * "has any": these guards read comments, so a comment naming a primitive is a
- * comment claiming to use it.
+ * Not the first guard here to read prose as code: the explicit-`any` ratchet
+ * matches an English word ending in "-as" followed immediately by the word
+ * "any", and the no-fallbacks guard once flagged a comment that quoted the very
+ * pattern it bans. These guards read comments, so a comment naming a primitive
+ * is a comment claiming to use it.
  */
 export function AgentRunDetailClient({
     tenantSlug,
