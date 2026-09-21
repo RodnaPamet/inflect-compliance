@@ -1100,7 +1100,35 @@ jobs:
           # ("Collecting page data using 3 workers") and NODE_OPTIONS reaches
           # every one of them. "One heap" describes the webpack compile, which
           # is where the peak is, but it is not the whole process tree.
-          NODE_OPTIONS: "--max-old-space-size=10240"
+          #
+          # ── 2026-09-21: 8192, BECAUSE THE DOCKERFILE ALREADY PROVES IT WORKS ──
+          #
+          # 10240 above was a guess and it returned a null result: peak moved 28 MB
+          # across a 2048 MB change. This number is not a guess.
+          #
+          # `Dockerfile:45` sets NODE_OPTIONS="--max-old-space-size=8192" and
+          # `Dockerfile:62` runs `npx next build --webpack` against the SAME
+          # next.config.js — same single heap, same webpackMemoryOptimizations.
+          # `ghcr-publish.yml` completed SUCCESSFULLY on 2e41d62f6, the very commit
+          # whose CI Build job peaked at 15670 MB with 319 MB available. So this
+          # app's production build demonstrably fits an 8192 heap on the current
+          # tree, in CI, on every push to main.
+          #
+          # Which means the CI Build's 12288/10240 was PERMISSIVE, not required:
+          # V8 grows old space toward whatever ceiling it is given and defers major
+          # GC while it has room. Two runs at 10240 and 12288 both landing near
+          # 15.5 GB total is consistent with that; so is the Dockerfile fitting in
+          # 8192 with the same work.
+          #
+          # THIS IS NOT THE ROOT CAUSE AND IS NOT CLAIMED AS ONE. Build peak on
+          # main roughly DOUBLED in one week on an unchanged configuration and an
+          # unchanged 766-route surface:
+          #     2026-09-13  peak  8749 MB   avail 7240 MB
+          #     2026-09-17  peak  7728-9403 avail 6586-8261
+          #     2026-09-20  peak 15466-15796 avail 193-527
+          # That is a regression to be bisected, not growth to be accommodated.
+          # This cap is a floor under the symptom while that bisect runs.
+          NODE_OPTIONS: "--max-old-space-size=8192"
           NODE_ENV: production
 
       # The worker/scheduler bundle. Until 2026-08-25 this ran in exactly ONE
@@ -1408,7 +1436,8 @@ jobs:
           # the "BOTH jobs changed together" principle above. See the long note on
           # `build` for the measurements. This job has ~2.3 GB more headroom than
           # `Build` and was not itself at risk.
-          NODE_OPTIONS: "--max-old-space-size=10240"
+          # 8192 — matched to `build` per the "BOTH jobs changed together" principle.
+          NODE_OPTIONS: "--max-old-space-size=8192"
           NODE_ENV: production
           NEXT_TEST_MODE: "1"
           # NEXT_PUBLIC_* is inlined at BUILD time, so it must be set on
