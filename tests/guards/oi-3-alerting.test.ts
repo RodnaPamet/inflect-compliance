@@ -9,7 +9,8 @@
  *   - The default route fans non-matching alerts to a visible receiver
  *     (so a misrouted alert never goes silent)
  *   - inhibit_rules collapse warning + critical of same alertname
- *   - external-uptime.yml targets /api/livez (NOT /api/readyz)
+ *   - external-uptime.yml targets /api/readyz (NOT /api/livez) — see the
+ *     block at the bottom for why this INVERTED on 2026-09-22 (#2745)
  *   - Production has a critical→pagerduty path; staging has a
  *     warning→slack path (severity escalation matches env importance)
  */
@@ -251,12 +252,14 @@ describe('OI-3 — external uptime contract', () => {
     interface UptimeMonitor {
         name: string;
         url: string;
-        method: string;
+        gcp_uptime_check_id: string;
         interval_seconds: number;
-        expect: { status_code: number; body_contains?: string; ssl_valid?: boolean };
-        on_failure: { severity: string; route_to: string };
+        locations_observed: string[];
+        expect: { status_class?: string; body_contains?: string; ssl_valid?: boolean };
+        on_failure: { alert_policy: string; alert_policy_id: string; condition: string };
     }
     interface UptimeFile {
+        metadata: { product: string; provider: string; deployment: string };
         monitors: UptimeMonitor[];
     }
 
@@ -270,46 +273,79 @@ describe('OI-3 — external uptime contract', () => {
         expect(u.monitors.length).toBeGreaterThan(0);
     });
 
-    it('every monitor targets /api/livez (NOT /api/readyz)', () => {
+    /**
+     * THIS ASSERTION IS THE INVERSE OF WHAT IT USED TO BE, DELIBERATELY.
+     *
+     * Until 2026-09-22 this guard required `/api/livez` and FORBADE
+     * `/api/readyz`, on reasoning imported from a Kubernetes deployment:
+     * readyz 503s were called "noise" because k8s rotates traffic away from a
+     * NotReady pod while other replicas serve.
+     *
+     * inflect-compliance has no pods, no replicas and no load balancer — one
+     * app container on one GCE VM. Nothing rotates traffic anywhere, so a
+     * readyz 503 is users getting errors.
+     *
+     * And `livez` is dependency-free: it answers 200 whenever the process is
+     * running. On 2026-09-20 redis crash-looped for 39 hours; a livez monitor
+     * would have stayed green throughout. The old guard was pinning the
+     * failure mode in place.
+     *
+     * If this product ever grows replicas, re-derive the reasoning — do not
+     * simply flip it back.
+     */
+    it('every monitor targets /api/readyz, NOT the dependency-free /api/livez', () => {
         const u = loadUptime();
         for (const m of u.monitors) {
-            expect(m.url).toMatch(/\/api\/livez$/);
-            expect(m.url).not.toMatch(/\/api\/readyz/);
+            expect(m.url).toMatch(/\/api\/readyz$/);
+            expect(m.url).not.toMatch(/\/api\/livez/);
         }
     });
 
-    it('every monitor expects status 200 + the stable livez body substring', () => {
+    /**
+     * The matcher is compared BYTE-FOR-BYTE against what the route actually
+     * emits. `"status": "ready"` (with a space) never matches the real body,
+     * and a content matcher that can never match is a check that is
+     * permanently failing — noise, which gets muted, which is how you arrive
+     * back at no alerting at all.
+     */
+    it('expects a 2xx and the exact readyz body substring, with no space after the colon', () => {
         const u = loadUptime();
         for (const m of u.monitors) {
-            expect(m.expect.status_code).toBe(200);
-            // The exact substring matches the livez route's response body
-            expect(m.expect.body_contains).toBe('"status":"alive"');
+            expect(m.expect.status_class).toBe('2xx');
+            expect(m.expect.body_contains).toBe('"status":"ready"');
+            expect(m.expect.body_contains).not.toContain('": "');
+            expect(m.expect.ssl_valid).toBe(true);
         }
     });
 
-    it('production monitor escalates to pagerduty (critical), staging to slack (warning)', () => {
+    /**
+     * The file must name the REAL provisioned resources. A contract that
+     * describes a monitor nobody created is what this file was for four
+     * months, and it read exactly like a monitor that existed.
+     */
+    it('names the provisioned GCP check and alert policy by id', () => {
         const u = loadUptime();
-        const prod = u.monitors.find((m) => m.name.includes('production'));
-        const stag = u.monitors.find((m) => m.name.includes('staging'));
-        expect(prod).toBeDefined();
-        expect(stag).toBeDefined();
-        expect(prod!.on_failure.severity).toBe('critical');
-        expect(prod!.on_failure.route_to).toBe('pagerduty');
-        expect(stag!.on_failure.severity).toBe('warning');
-        expect(stag!.on_failure.route_to).toBe('slack');
+        expect(u.metadata.provider).toMatch(/GCP Cloud Monitoring/i);
+        for (const m of u.monitors) {
+            expect(m.gcp_uptime_check_id).toMatch(/^[a-z0-9-]+-[A-Za-z0-9_-]{8,}$/);
+            expect(m.on_failure.alert_policy_id).toMatch(/^\d{15,}$/);
+        }
     });
 
-    it('production monitor checks SSL validity (catches expired certs at the user-visible boundary)', () => {
+    it('probes from multiple regions, and does not alert on a single region failing', () => {
         const u = loadUptime();
-        const prod = u.monitors.find((m) => m.name.includes('production'))!;
-        expect(prod.expect.ssl_valid).toBe(true);
+        for (const m of u.monitors) {
+            expect(m.locations_observed.length).toBeGreaterThan(1);
+            // One region failing is a network partition to that region; two is
+            // the service. Verified live: sa-brazil-sao_paulo times out against
+            // app.inflect.bg while the other five pass, so a `> 0` threshold
+            // would page continuously for a reachability quirk. See #2751.
+            expect(m.on_failure.condition).toMatch(/COUNT_FALSE > 1/);
+        }
     });
 
-    it('production monitor probes from multiple regions (avoid single-pop false-positives)', () => {
-        const u = loadUptime();
-        const prod = u.monitors.find((m) => m.name.includes('production'))! as UptimeMonitor & {
-            locations: string[];
-        };
-        expect(prod.locations.length).toBeGreaterThan(1);
+    it('records that no rota exists, so nobody reads a response time into it', () => {
+        const src = read('infra/alerts/external-uptime.yml');
+        expect(src).toMatch(/not.*a rota|no rota/i);
     });
 });

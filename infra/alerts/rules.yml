@@ -1,3 +1,19 @@
+# ┌───────────────────────────────────────────────────────────────────────┐
+# │ NOT PROVISIONED. This file describes a Prometheus/Alertmanager stack   │
+# │ that does not run anywhere for inflect-compliance. There is no         │
+# │ Alertmanager, no PagerDuty service and no Slack webhook. Nothing below │
+# │ pages anyone.                                                          │
+# │                                                                        │
+# │ THE ALERTING THAT ACTUALLY EXISTS is one GCP Cloud Monitoring uptime   │
+# │ check against /api/readyz, emailing one address, described in          │
+# │ `infra/alerts/external-uptime.yml`. Read that file for what is real.   │
+# │                                                                        │
+# │ Kept because the thresholds and routing encode real intent, and this   │
+# │ is the shape to build toward if a metrics stack is ever stood up.      │
+# │ Banner added 2026-09-22 (#2745), after production was down ~25h and    │
+# │ nothing alerted — partly because files like this one read as though    │
+# │ alerting already existed.                                              │
+# └───────────────────────────────────────────────────────────────────────┘
 # Alerting Rules for inflect-compliance
 #
 # Compatible with: Prometheus Alertmanager, Grafana Unified Alerting
