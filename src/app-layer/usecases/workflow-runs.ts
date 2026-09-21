@@ -72,6 +72,7 @@ import {
 import { resolvePolicyCardPin } from '@/lib/agentic/policy-card-pin';
 import { resolveDriverForRun } from '@/lib/agentic/agent-driver-policy';
 import { assertWithinMonthlyBudget } from '@/lib/agentic/monthly-budget-policy';
+import { trackInFlightRun, untrackInFlightRun } from '@/lib/agentic/in-flight-runs';
 import {
     estimateTokens,
     type WorkflowContext,
@@ -378,7 +379,35 @@ interface ExecuteOutcome {
     stepFailures: number;
 }
 
+/**
+ * Execute a run, and tell this process it is doing so.
+ *
+ * The tracking lives HERE rather than at the two call sites (`startWorkflowRun`
+ * and `resumeWorkflowRun`) so a third caller cannot be added without it. What
+ * it buys is at `src/lib/agentic/in-flight-runs.ts`: on SIGTERM the shutdown
+ * handler moves exactly these runs to PAUSED, so a rolling deploy leaves them
+ * resumable instead of abandoned RUNNING for `agent-run-reaper` to settle to
+ * FAILED a wall-clock budget plus ten minutes later.
+ *
+ * `finally`, not `then` — a run that threw is no longer executing, and leaving
+ * it tracked would have the drain pause a row that has already settled.
+ */
 async function executeFrom(
+    ctx: RequestContext,
+    runId: string,
+    def: WorkflowDefinition,
+    fromSeq: number,
+    runStartMs: number,
+): Promise<ExecuteOutcome> {
+    trackInFlightRun(runId);
+    try {
+        return await executeSteps(ctx, runId, def, fromSeq, runStartMs);
+    } finally {
+        untrackInFlightRun(runId);
+    }
+}
+
+async function executeSteps(
     ctx: RequestContext,
     runId: string,
     def: WorkflowDefinition,

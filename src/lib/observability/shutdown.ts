@@ -4,9 +4,11 @@ import { shutdownSentry } from './sentry';
 import { logger } from './logger';
 import {
     SHUTDOWN_AUDIT_FLUSH_MS,
+    SHUTDOWN_PAUSE_RUNS_MS,
     SHUTDOWN_OTEL_MS,
     SHUTDOWN_SENTRY_MS,
 } from './shutdown-budget';
+import { pauseInFlightRuns } from '@/lib/agentic/in-flight-runs';
 
 /**
  * One-shot SIGTERM / SIGINT handler. Drains observability surfaces
@@ -47,10 +49,33 @@ export function installShutdownHandlers(): void {
             new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_AUDIT_FLUSH_MS)),
         ]);
 
-        // Stage 2 — OTel (never throws by contract)
+        // Stage 2 — leave this process's agentic runs RESUMABLE.
+        //
+        // Above OTel because an abandoned run costs more than a lost span: left
+        // RUNNING it is reaped to FAILED a wall-clock budget plus ten minutes
+        // later, with a permanent hash-chained row saying it had no executor.
+        // Below audit because that loss is irreversible and this one degrades
+        // to exactly today's behaviour.
+        //
+        // Bounded and never-throwing by the same contract as the stages either
+        // side, and a no-op with no query when this process is running nothing.
+        await pauseInFlightRuns(SHUTDOWN_PAUSE_RUNS_MS).catch((err) => {
+            // `pauseInFlightRuns` promises never to throw, and this catch does
+            // not trust it — for the same reason the audit stage above carries
+            // one. An unguarded `await` here would reject the handler and skip
+            // OTel AND Sentry, so one bad database connection during a deploy
+            // would cost every span and every queued error as well. A unit test
+            // asserts the later stages still run when this one throws.
+            logger.warn('shutdown: pausing in-flight agentic runs threw', {
+                component: 'shutdown',
+                error: err instanceof Error ? err.message : String(err),
+            });
+        });
+
+        // Stage 3 — OTel (never throws by contract)
         await shutdownTelemetry(SHUTDOWN_OTEL_MS);
 
-        // Stage 3 — Sentry (never throws by contract)
+        // Stage 4 — Sentry (never throws by contract)
         await shutdownSentry(SHUTDOWN_SENTRY_MS);
 
         logger.info('graceful shutdown complete', {

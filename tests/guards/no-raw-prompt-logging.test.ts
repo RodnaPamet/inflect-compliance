@@ -210,6 +210,12 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // `err.message`. The module holds no model call, no transcript and no tool
     // arguments, so there is no prompt-shaped value in scope for it to name —
     // which is the part that cannot be shown structurally, hence the entry.
+    // The SIGTERM drain's two log lines. Every value at both sinks is a run id,
+    // an integer count, a boolean or one `err.message`. The module holds no
+    // model call, no transcript and no tool arguments — there is no
+    // prompt-shaped value in scope for it to name, which is the half that
+    // cannot be shown structurally.
+    'src/lib/agentic/in-flight-runs.ts — identifier bound elsewhere',
     'src/lib/agentic/monthly-budget-policy.ts — identifier bound elsewhere',
     'src/lib/agentic/agent-registration-gate.ts — identifier bound elsewhere',
     'src/lib/agentic/policy-card-store.ts — identifier bound elsewhere',
@@ -361,7 +367,18 @@ const SINK_FLOOR = 30;
 // note above requires. Unlike the previous re-measure, the whole delta is
 // accounted for by this diff — the +2 sinks are exactly the two `logger.warn`
 // calls in `monthly-budget-policy.ts`, with no inherited slack to absorb.
-const MEASURED_HOLES = 147;
+// Re-MEASURED 2026-09-21 for the SIGTERM run-drain: 147 / 85 became 150 / 87.
+// Floated both constants and read the failure message, as the note above
+// requires — and taken AFTER merging main, because #2706 had already moved
+// these numbers and measuring against the pre-merge branch would have pinned a
+// baseline that does not exist on either tree.
+//
+// The whole delta is `src/lib/agentic/in-flight-runs.ts`. This diff adds a
+// THIRD log call, the `.catch` in `src/lib/observability/shutdown.ts`, and it
+// is correctly absent from both counts: the swept population is
+// `matchesAgenticPath`, which observability is not part of. That is also why
+// only one new file/kind pair appears below.
+const MEASURED_HOLES = 150;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -374,7 +391,7 @@ const MEASURED_HOLES = 147;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 85;
+const MEASURED_SINKS = 87;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;
