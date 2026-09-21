@@ -131,6 +131,10 @@ describe("Epic P1 — process map optimistic concurrency", () => {
 
     describe("Zod schema — accepts expectedVersion in the save payload", () => {
         const src = read("src/app-layer/schemas/process-map.ts");
+        // RAW twin: the test below locks the COMMENT's phrasing, so over
+        // comment-masked source neither half of it could work — the negative
+        // would pass unconditionally and the positive could never match.
+        const srcDoc = readDoc("src/app-layer/schemas/process-map.ts");
 
         it("SaveProcessMapSchema declares expectedVersion (Zod int ≥1)", () => {
             expect(src).toMatch(
@@ -145,8 +149,8 @@ describe("Epic P1 — process map optimistic concurrency", () => {
             // behaviour, so the "ignores it today" phrasing has to
             // be gone — locked here so a future doc edit can't
             // silently regress the contract.
-            expect(src).not.toMatch(/ignores\s+it\s+today/);
-            expect(src).toMatch(/optimistic-concurrency/);
+            expect(srcDoc).not.toMatch(/ignores\s+it\s+today/);
+            expect(srcDoc).toMatch(/optimistic-concurrency/);
         });
     });
 
