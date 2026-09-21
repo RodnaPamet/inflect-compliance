@@ -25,9 +25,19 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+//
+// LANGUAGE SPLIT. One seam here carries two things. TypeScript-alikes go
+// through `read` and are masked. The JSON fixtures go through `readRaw` and
+// are NOT: a JSON read is PARSED as data, never matched as text, so masking it
+// would only corrupt the parse — `codeOf` lexes TypeScript and a catalogue is
+// not that language.
+import { codeOf } from '../helpers/source-blocks';
 
+const ROOT = path.resolve(__dirname, '../..');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(readRaw(rel));
 const SHELL_PATH = 'src/components/layout/EntityDetailLayout.tsx';
 
 // Phase 2 — list-page aside slot.
@@ -63,7 +73,7 @@ describe('Right-rail master-detail discipline (Roadmap-2 PR-5)', () => {
         expect(src).toMatch(
             /<aside[\s\S]*?aria-label=\{t\(['"]table\.context['"]\)\}[\s\S]*?data-testid=["']entity-detail-rail["']/,
         );
-        const en = JSON.parse(read('messages/en.json'));
+        const en = JSON.parse(readRaw('messages/en.json'));
         expect(en.common.table.context).toBe('Context');
     });
 

@@ -32,6 +32,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 /** The single source of truth. Every other file is policed against it. */
@@ -89,7 +96,7 @@ function codeOnly(src: string): string {
 
 describe('readiness bands — one definition, no regrowth', () => {
     it('the definition exists and names both boundaries exactly once', () => {
-        const src = fs.readFileSync(path.resolve(ROOT, DEFINITION), 'utf8');
+        const src = codeOf(fs.readFileSync(path.resolve(ROOT, DEFINITION), 'utf8'));
         const code = codeOnly(src);
         expect(code).toMatch(/ready:\s*80/);
         expect(code).toMatch(/nearly:\s*50/);
@@ -102,7 +109,7 @@ describe('readiness bands — one definition, no regrowth', () => {
         // The regrowth mechanism was a renderer needing a vocabulary the
         // extraction did not speak. Each vocabulary having a home here is what
         // makes "add a map" cheaper than "re-read the thresholds".
-        const src = fs.readFileSync(path.resolve(ROOT, DEFINITION), 'utf8');
+        const src = codeOf(fs.readFileSync(path.resolve(ROOT, DEFINITION), 'utf8'));
         expect(src).toMatch(/READINESS_BAND_VARIANT/); // StatusBadge / ProgressBar
         expect(src).toMatch(/READINESS_BAND_TONE/); // KPIStat
         expect(src).toMatch(/READINESS_BAND_COLOR_VAR/); // SVG stroke / fill
@@ -115,7 +122,7 @@ describe('readiness bands — one definition, no regrowth', () => {
             for (const abs of walk(path.resolve(ROOT, rel))) {
                 const relPath = path.relative(ROOT, abs).split(path.sep).join('/');
                 if (relPath === DEFINITION) continue;
-                codeOnly(fs.readFileSync(abs, 'utf8'))
+                codeOnly(codeOf(fs.readFileSync(abs, 'utf8')))
                     .split('\n')
                     .forEach((line, i) => {
                         if (THRESHOLD_RE.test(line)) {
@@ -155,7 +162,7 @@ describe('readiness bands — one definition, no regrowth', () => {
             'src/app/t/[tenantSlug]/(app)/audits/cycles/[cycleId]/readiness/page.tsx',
         ];
         for (const rel of consumers) {
-            const src = fs.readFileSync(path.resolve(ROOT, rel), 'utf8');
+            const src = codeOf(fs.readFileSync(path.resolve(ROOT, rel), 'utf8'));
             expect(src).toMatch(/@\/lib\/readiness\/bands/);
         }
     });

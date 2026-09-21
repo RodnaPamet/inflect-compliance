@@ -552,4 +552,13 @@ model AiDecisionLog {
   @@index([tenantId, createdAt])
   @@index([tenantId, aiSystemId])
   @@index([tenantId, sessionRef])
+  /// The Art 14 stamp's lookup. `recordDecisionOutcomeForDigest` updates by
+  /// (tenantId, inputDigest, humanOutcome=PENDING), and this table grows by one
+  /// row per AI-feature invocation — so without a digest-leading composite the
+  /// stamp degrades to a scan of everything the tenant has ever generated, on
+  /// the path a reviewer waits for.
+  ///
+  /// Mirrors `[tenantId, sessionRef]` directly above, which exists for the same
+  /// query shape on the other join key.
+  @@index([tenantId, inputDigest])
 }

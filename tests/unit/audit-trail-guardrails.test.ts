@@ -13,10 +13,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const SRC_DIR = path.resolve(__dirname, '../../src');
 
 function readFile(relPath: string): string {
-    return fs.readFileSync(path.resolve(SRC_DIR, relPath), 'utf8');
+    return codeOf(fs.readFileSync(path.resolve(SRC_DIR, relPath), 'utf8'));
 }
 
 /**
@@ -89,7 +96,7 @@ describe('Audit Guardrails — No Deprecated logAudit Usage', () => {
         for (const file of allFiles) {
             if (ALLOWED_FILES.includes(file)) continue;
 
-            const content = fs.readFileSync(file, 'utf8');
+            const content = codeOf(fs.readFileSync(file, 'utf8'));
             if (content.includes('logAudit(')) {
                 violations.push(path.relative(SRC_DIR, file));
             }
@@ -115,7 +122,7 @@ describe('Audit Guardrails — No Raw PrismaClient Without Middleware', () => {
         for (const file of allFiles) {
             if (ALLOWED_FILES.includes(file)) continue;
 
-            const content = fs.readFileSync(file, 'utf8');
+            const content = codeOf(fs.readFileSync(file, 'utf8'));
             if (content.includes('new PrismaClient(')) {
                 violations.push(path.relative(SRC_DIR, file));
             }
@@ -143,7 +150,7 @@ describe('Audit Guardrails — No Unaudited Raw SQL to Domain Tables', () => {
         for (const file of allFiles) {
             if (ALLOWED_FILES.includes(file)) continue;
 
-            const content = fs.readFileSync(file, 'utf8');
+            const content = codeOf(fs.readFileSync(file, 'utf8'));
             if (content.includes('$executeRaw')) {
                 // Check if the raw SQL targets a domain table (INSERT/UPDATE/DELETE)
                 for (const table of DOMAIN_TABLES) {

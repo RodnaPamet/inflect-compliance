@@ -2,6 +2,13 @@ import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 describe('Vendor Audit Enhancements', () => {
     const apiBase = join(process.cwd(), 'src/app/api/t/[tenantSlug]/vendors');
 
@@ -33,7 +40,7 @@ describe('Vendor Audit Enhancements', () => {
         it.each(routes)('route %s has no prisma import', (route) => {
             const f = join(apiBase, route);
             if (!existsSync(f)) return;
-            const content = readFileSync(f, 'utf-8');
+            const content = codeOf(readFileSync(f, 'utf-8'));
             expect(content).not.toMatch(/from\s+['"]@\/lib\/prisma['"]/);
             expect(content).not.toMatch(/from\s+['"]@prisma\/client['"]/);
         });
@@ -130,7 +137,7 @@ describe('Vendor Audit Enhancements', () => {
     // ─── Authorization patterns (static analysis) ───
     describe('Authorization checks present', () => {
         const usecasePath = join(process.cwd(), 'src/app-layer/usecases/vendor-audit.ts');
-        const content = readFileSync(usecasePath, 'utf-8');
+        const content = codeOf(readFileSync(usecasePath, 'utf-8'));
 
         it('read operations check assertCanReadVendors', () => {
             // Count occurrences
@@ -152,7 +159,7 @@ describe('Vendor Audit Enhancements', () => {
     // ─── Tenant isolation checks ───
     describe('Tenant isolation in queries', () => {
         const usecasePath = join(process.cwd(), 'src/app-layer/usecases/vendor-audit.ts');
-        const content = readFileSync(usecasePath, 'utf-8');
+        const content = codeOf(readFileSync(usecasePath, 'utf-8'));
 
         it('all findMany/findFirst queries include tenantId', () => {
             const findCalls = content.match(/\.(findMany|findFirst)\(/g);
@@ -185,7 +192,7 @@ describe('Vendor Audit Enhancements', () => {
     // ─── CSV export helper ───
     describe('Export route CSV helper', () => {
         const routePath = join(process.cwd(), 'src/app/api/t/[tenantSlug]/vendors/exports/route.ts');
-        const content = readFileSync(routePath, 'utf-8');
+        const content = codeOf(readFileSync(routePath, 'utf-8'));
 
         it('has toCsv helper', () => {
             expect(content).toContain('function toCsv');

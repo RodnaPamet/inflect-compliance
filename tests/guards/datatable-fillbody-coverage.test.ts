@@ -22,6 +22,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const APP_ROOT = path.resolve(ROOT, 'src/app/t/[tenantSlug]/(app)');
 
@@ -45,7 +52,7 @@ describe('DataTable fillBody coverage on list pages (R12-PR3)', () => {
                 .replace(/\/\/[^\n]*/g, '');
         const offenders: string[] = [];
         for (const file of walk(APP_ROOT)) {
-            const content = stripComments(fs.readFileSync(file, 'utf-8'));
+            const content = stripComments(codeOf(fs.readFileSync(file, 'utf-8')));
             const mountsShellBody = /<ListPageShell\.Body\b/.test(content);
             const mountsDataTable = /<DataTable\b/.test(content);
             if (!mountsShellBody || !mountsDataTable) continue;
@@ -84,10 +91,10 @@ describe('DataTable fillBody coverage on list pages (R12-PR3)', () => {
     });
 
     test('the DataTable primitive defines the fillBody contract', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.resolve(ROOT, 'src/components/ui/table/data-table.tsx'),
             'utf-8',
-        );
+        ));
         // The flex chain that fillBody activates: card uses
         // `md:flex md:flex-col md:max-h-full md:min-h-0
         // md:overflow-hidden`; the scroll wrapper inside uses

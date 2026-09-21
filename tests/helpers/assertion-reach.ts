@@ -1436,7 +1436,8 @@ function scopeOf(sf: ts.SourceFile): FileScope {
  * the derived-read probe. `resolveSubject` is the entry point; see there.
  *
  * Understood shapes, all of them the idioms actually used in this repo:
- *   · `readPrismaSchema()` — the concatenated schema folder
+ *   · `readPrismaSchema()` — the concatenated schema folder, MASKED at the
+ *     seam; `readPrismaSchemaRaw()` is the deliberate unmasked twin
  *   · `fs.readFileSync(path.join(ROOT, 'x'), 'utf8')`, inline or via a
  *     `const src = …` binding
  *   · `read('x')` where `read` is a local arrow wrapping `readFileSync`,
@@ -1471,8 +1472,26 @@ function resolveSubjectCore(
     if (ts.isCallExpression(subject)) {
         const callee = subject.expression;
 
-        // `readPrismaSchema()`
+        // `readPrismaSchema()` — MASKS at the seam (#2246), so it counts as a
+        // masked read and the occurrence count must be taken against the
+        // masked text, exactly as the assertion matched it. The helper is the
+        // authority; this arm mirrors it. If the helper ever stops masking,
+        // this arm is wrong in the dangerous direction — it would credit 77
+        // raw sites as masked — so `prisma-schema-folder-coverage` pins the
+        // two together.
         if (ts.isIdentifier(callee) && callee.text === 'readPrismaSchema') {
+            if (trace !== undefined) trace.masked = true;
+            return {
+                kind: 'content',
+                label: 'prisma/schema/*.prisma (concatenated)',
+                text: codeOf(prismaSchemaText()),
+            };
+        }
+
+        // `readPrismaSchemaRaw()` — the DELIBERATE raw twin. Unmasked by
+        // design, so it stays in the raw population and needs an allowlist
+        // entry like any other raw seam.
+        if (ts.isIdentifier(callee) && callee.text === 'readPrismaSchemaRaw') {
             return {
                 kind: 'content',
                 label: 'prisma/schema/*.prisma (concatenated)',

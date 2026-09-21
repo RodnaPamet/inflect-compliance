@@ -18,9 +18,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../../');
 function read(rel: string): string {
-    return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+    return codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 }
 function exists(rel: string): boolean {
     return fs.existsSync(path.join(ROOT, rel));
@@ -98,7 +105,7 @@ describe('Dead code sentinel — Dub pagination hooks removed', () => {
 
         const offenders: string[] = [];
         for (const f of files) {
-            const src = fs.readFileSync(f, 'utf-8');
+            const src = codeOf(fs.readFileSync(f, 'utf-8'));
             if (/from ["'].*use-router-stuff["']/.test(src)) offenders.push(path.relative(ROOT, f));
             if (/from ["'].*use-pagination["']/.test(src)) offenders.push(path.relative(ROOT, f));
         }

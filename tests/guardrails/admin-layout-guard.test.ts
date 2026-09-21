@@ -8,6 +8,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ADMIN_LAYOUT_PATH = path.resolve(
     __dirname,
     '../../src/app/t/[tenantSlug]/(app)/admin/layout.tsx'
@@ -19,17 +26,17 @@ describe('Admin layout guard', () => {
     });
 
     test('admin layout imports RequirePermission', () => {
-        const content = fs.readFileSync(ADMIN_LAYOUT_PATH, 'utf-8');
+        const content = codeOf(fs.readFileSync(ADMIN_LAYOUT_PATH, 'utf-8'));
         expect(content).toContain('RequirePermission');
     });
 
     test('admin layout imports ForbiddenPage', () => {
-        const content = fs.readFileSync(ADMIN_LAYOUT_PATH, 'utf-8');
+        const content = codeOf(fs.readFileSync(ADMIN_LAYOUT_PATH, 'utf-8'));
         expect(content).toContain('ForbiddenPage');
     });
 
     test('admin layout checks admin resource permission', () => {
-        const content = fs.readFileSync(ADMIN_LAYOUT_PATH, 'utf-8');
+        const content = codeOf(fs.readFileSync(ADMIN_LAYOUT_PATH, 'utf-8'));
         expect(content).toContain('resource="admin"');
     });
 });
@@ -116,7 +123,7 @@ describe('No duplicate admin guards on pages', () => {
             const relPath = rel(pagePath);
             if (relPath in STRICTER_GUARD_PAGES) continue;
 
-            const content = fs.readFileSync(pagePath, 'utf-8');
+            const content = codeOf(fs.readFileSync(pagePath, 'utf-8'));
             // Check for RequirePermission import (not just any mention in comments)
             if (
                 content.includes("from '@/components/require-permission'") ||
@@ -140,7 +147,7 @@ describe('No duplicate admin guards on pages', () => {
             // carve-out applies here.
             if (relPath in STRICTER_GUARD_PAGES) continue;
 
-            const content = fs.readFileSync(pagePath, 'utf-8');
+            const content = codeOf(fs.readFileSync(pagePath, 'utf-8'));
             if (
                 content.includes("from '@/components/ForbiddenPage'") ||
                 content.includes('from "@/components/ForbiddenPage"')
@@ -163,7 +170,7 @@ describe('No duplicate admin guards on pages', () => {
             const full = path.join(ADMIN_PAGES_DIR, relPath);
             expect(fs.existsSync(full)).toBe(true);
 
-            const content = fs.readFileSync(full, 'utf-8');
+            const content = codeOf(fs.readFileSync(full, 'utf-8'));
 
             // Two idioms express the same thing, and the assertion has to see
             // both. A CLIENT page wraps itself in `RequirePermission`; a SERVER

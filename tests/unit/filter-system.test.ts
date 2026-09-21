@@ -485,6 +485,13 @@ describe('Roundtrip: URL → FilterState → ActiveFilter → FilterState → UR
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 describe('Filter module architecture', () => {
   const filterDir = path.resolve(__dirname, '../../src/components/ui/filter');
 
@@ -493,17 +500,17 @@ describe('Filter module architecture', () => {
   });
 
   it('barrel exports filter-state module', () => {
-    const barrel = fs.readFileSync(path.join(filterDir, 'index.ts'), 'utf-8');
+    const barrel = codeOf(fs.readFileSync(path.join(filterDir, 'index.ts'), 'utf-8'));
     expect(barrel).toContain('filter-state');
   });
 
   it('barrel exports filter-definitions module', () => {
-    const barrel = fs.readFileSync(path.join(filterDir, 'index.ts'), 'utf-8');
+    const barrel = codeOf(fs.readFileSync(path.join(filterDir, 'index.ts'), 'utf-8'));
     expect(barrel).toContain('filter-definitions');
   });
 
   it('barrel exports filter-context module', () => {
-    const barrel = fs.readFileSync(path.join(filterDir, 'index.ts'), 'utf-8');
+    const barrel = codeOf(fs.readFileSync(path.join(filterDir, 'index.ts'), 'utf-8'));
     expect(barrel).toContain('filter-context');
   });
 
@@ -527,7 +534,7 @@ describe('Filter module architecture', () => {
   const REFERENCE_MODULES = new Set(['filter-examples']);
 
   it('all public .ts/.tsx files are referenced in barrel (internal + reference modules excluded)', () => {
-    const barrel = fs.readFileSync(path.join(filterDir, 'index.ts'), 'utf-8');
+    const barrel = codeOf(fs.readFileSync(path.join(filterDir, 'index.ts'), 'utf-8'));
     const files = fs.readdirSync(filterDir)
       .filter(f => (f.endsWith('.ts') || f.endsWith('.tsx')) && f !== 'index.ts');
 
@@ -549,7 +556,7 @@ describe('Filter module architecture', () => {
 
     for (const ref of REFERENCE_MODULES) {
       const importers = publicFiles.filter(f => {
-        const src = fs.readFileSync(path.join(filterDir, f), 'utf-8');
+        const src = codeOf(fs.readFileSync(path.join(filterDir, f), 'utf-8'));
         return src.includes(`./${ref}`);
       });
       // Zero importers — reference modules must stay isolated so production
@@ -568,7 +575,7 @@ describe('Filter module architecture', () => {
         .filter(f => f.replace(/\.(ts|tsx)$/, '') !== internal);
 
       const importedBy = otherFiles.filter(f => {
-        const src = fs.readFileSync(path.join(filterDir, f), 'utf-8');
+        const src = codeOf(fs.readFileSync(path.join(filterDir, f), 'utf-8'));
         return src.includes(`./${internal}`);
       });
 

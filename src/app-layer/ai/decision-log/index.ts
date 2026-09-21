@@ -110,3 +110,42 @@ export async function recordDecisionOutcome(
     if (res.count > 0) recordAiDecisionOutcome({ outcome });
     return res.count;
 }
+
+/**
+ * The same Art 14 stamp, keyed by the INPUT DIGEST instead of a session.
+ *
+ * ── WHY A SECOND KEY EXISTS ─────────────────────────────────────────────────
+ *
+ * `sessionRef` is the right join for the suggestion features, which generate a
+ * session and carry its id. The AGENTIC path has no session: `createAgentProposal`
+ * writes `sessionRef: input.proposedBySessionRef ?? null`, and that input is
+ * optional, so for an ordinary agent proposal the key is NULL. Stamping by
+ * session there matches nothing — `updateMany` reports `count: 0`, no error is
+ * raised, and the loop looks closed while every agentic decision stays PENDING
+ * for ever. A silent zero is the worst available outcome for a record-keeping
+ * control, so it is not the key this path uses.
+ *
+ * `inputDigest` IS always present on that path. `createAgentProposal` hashes the
+ * same object into both records — `AiDecisionLog.inputDigest` and
+ * `AgentProposal.guardInputDigest` are the same `sha256:<hex>` string, which the
+ * proposal usecase already documents as the join that "proves the same content
+ * was guarded". This function is that join, used for the purpose it was written
+ * for.
+ *
+ * Identical semantics otherwise: one-way, PENDING rows only, enforced by the
+ * same database trigger, and the count is returned so a caller can assert it
+ * rather than assume it.
+ */
+export async function recordDecisionOutcomeForDigest(
+    db: PrismaTx,
+    ctx: RequestContext,
+    inputDigest: string,
+    outcome: AiDecisionOutcome,
+): Promise<number> {
+    const res = await db.aiDecisionLog.updateMany({
+        where: { tenantId: ctx.tenantId, inputDigest, humanOutcome: 'PENDING' },
+        data: { humanOutcome: outcome },
+    });
+    if (res.count > 0) recordAiDecisionOutcome({ outcome });
+    return res.count;
+}

@@ -22,7 +22,7 @@ import * as path from 'node:path';
 
 import { VALID_SCOPES } from '@/lib/auth/api-key-auth';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
-import { codeOf, declarationOf, sqlCodeOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf, sqlCodeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -33,29 +33,57 @@ const read = (rel: string) => codeOf(readRaw(rel));
 // `--` and `/* */`; TypeScript keeps `read`.
 const readSql = (rel: string) => sqlCodeOf(readRaw(rel));
 
+// THE ENGINE IS TWO FILES since the driver seam landed: the usecase shell that
+// starts, resumes and aborts a run, and the driver that walks its steps. Every
+// assertion below is pointed at the half that owns it — `engine` for the
+// usecase's own surface, `driver` for the execution walk — rather than at a
+// concatenation, which would let an assertion pass because the OTHER file
+// satisfied it.
 const engine = read('src/app-layer/usecases/workflow-runs.ts');
+const driver = read('src/lib/agentic/drivers/static-driver.ts');
 const types = read('src/lib/agentic/workflow-types.ts');
 const runCaps = read('src/lib/agentic/run-caps.ts');
 
 describe('Agentic engine — propose-not-commit across steps', () => {
     it('composes the existing MCP tools (runReadTool + runProposeTool)', () => {
-        expect(engine).toMatch(/runReadTool/);
-        expect(engine).toMatch(/runProposeTool/);
-        expect(engine).toMatch(/from ['"]@\/lib\/mcp\/tools\/registry['"]/);
-        expect(engine).toMatch(/from ['"]@\/lib\/mcp\/tools\/propose-tools['"]/);
+        expect(driver).toMatch(/runReadTool/);
+        expect(driver).toMatch(/runProposeTool/);
+        expect(driver).toMatch(/from ['"]@\/lib\/mcp\/tools\/registry['"]/);
+        expect(driver).toMatch(/from ['"]@\/lib\/mcp\/tools\/propose-tools['"]/);
     });
 
     it('NO workflow step imports an entity create/update/delete usecase (no direct commit)', () => {
         // Writes go ONLY through runProposeTool → createAgentProposal (the queue).
         const entityMutators = /\b(createRisk|createControl|createPolicy|createFinding|updateRisk|deleteRisk|applySession|approveAgentProposal)\b/;
-        expect(engine).not.toMatch(entityMutators);
+        // BOTH halves. The invariant is "the engine never writes a business
+        // entity directly", and checking only the usecase after the execution
+        // walk moved out would have left the half that actually runs tools
+        // unchecked.
+        //
+        // Written as ONE assertion over both sources rather than two, and that
+        // is not style. `entityMutators` is a variable, so its needle is not a
+        // literal the Class D analyser can read — every such site counts
+        // against `UNANALYSABLE_READ_BASELINE`, a zero-slack ceiling that only
+        // moves down. Two sites would have added one to it for no extra
+        // coverage; a loop checks both halves from a single site.
+        for (const [half, src] of [
+            ['usecase', engine],
+            ['driver', driver],
+        ] as const) {
+            expect({ half, writesEntities: entityMutators.test(src) }).toEqual({
+                half,
+                writesEntities: false,
+            });
+        }
     });
 
     it('the engine goes through a usecase context, never raw Prisma / repositories', () => {
         expect(engine).not.toMatch(/from ['"]@\/lib\/prisma['"]/);
         expect(engine).not.toMatch(/from ['"]@\/app-layer\/repositories/);
+        expect(driver).not.toMatch(/from ['"]@\/lib\/prisma['"]/);
+        expect(driver).not.toMatch(/from ['"]@\/app-layer\/repositories/);
         // It DOES bind RLS per tenant (it's a usecase).
-        expect(engine).toMatch(/runInTenantContext/);
+        expect(driver).toMatch(/runInTenantContext/);
     });
 });
 
@@ -78,22 +106,30 @@ describe('Agentic engine — guardrails', () => {
         expect(engineCeiling).toMatch(/ENGINE_CAPS\.WALL_CLOCK_MS/);
         // The engine REACHES them through one budget rather than three inline
         // comparisons, so a fourth axis cannot be added without one.
-        expect(engine).toMatch(/createRunBudget\(/);
+        expect(driver).toMatch(/createRunBudget\(/);
         // A breach HALTS and says which cap fired — it never trims the work to
         // fit. The behaviour is tests/unit/agent-caps.test.ts; this only pins
         // that the halt path exists and is distinct from an ordinary failure.
-        expect(engine).toMatch(/async function haltRunAtCap\(/);
-        expect(engine).toMatch(/failRun\(/);
+        expect(driver).toMatch(/async function haltRunAtCap\(/);
+        expect(driver).toMatch(/failRun\(/);
     });
 
     it('abort works mid-run (the executor checks for ABORTED between steps)', () => {
-        expect(engine).toMatch(/status === 'ABORTED'/);
+        expect(driver).toMatch(/status === 'ABORTED'/);
         expect(engine).toMatch(/export async function abortWorkflowRun/);
     });
 
     it('every step audits with agent attribution', () => {
-        // recordStep writes both a WorkflowStep row AND an audit entry.
-        const recordBlock = engine.slice(engine.indexOf('async function recordStep'));
+        // recordStep writes both a WorkflowStep row AND an audit entry. It
+        // lives in the driver now, with the rest of the execution walk.
+        //
+        // BOUND with `functionBodyOf` rather than sliced from an `indexOf`.
+        // The old form was `engine.slice(engine.indexOf('async function
+        // recordStep'))`, and when the function moved out `indexOf` returned
+        // -1, so the slice silently became the file's LAST CHARACTER and every
+        // assertion below ran against it. A helper that throws on a missing
+        // name reports that as a missing function, which is what it is.
+        const recordBlock = functionBodyOf(driver, 'recordStep');
         expect(recordBlock).toMatch(/appendAuditEntry\(/);
         expect(recordBlock).toMatch(/actorType:/);
         expect(recordBlock).toMatch(/apiKeyId:/);

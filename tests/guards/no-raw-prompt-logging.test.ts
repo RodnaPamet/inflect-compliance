@@ -194,6 +194,10 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     'src/app-layer/usecases/agent-governance-pack-export.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-risk-assessment.ts — identifier bound elsewhere',
     'src/app-layer/usecases/agent-tool-exposure.ts — identifier bound elsewhere',
+    // The execution walk moved out of `workflow-runs.ts` into the static
+    // driver, and its log sinks went with it. Both files appear because both
+    // still log: the usecase for run lifecycle, the driver for each step.
+    'src/lib/agentic/drivers/static-driver.ts — identifier bound elsewhere',
     'src/app-layer/usecases/workflow-runs.ts — identifier bound elsewhere',
     'src/lib/agentic/agent-authority.ts — identifier bound elsewhere',
     // The driver gate's two fallback log lines. Every value at both sinks is an

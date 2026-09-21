@@ -37,11 +37,18 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// String literals are KEPT, so assertions that harvest codes or ids from source
+// still see them. Every path this file reads is a TypeScript-alike, re-derived
+// per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const LAYOUT_SRC = fs.readFileSync(
+const LAYOUT_SRC = codeOf(fs.readFileSync(
     path.join(ROOT, 'src/app/layout.tsx'),
     'utf8',
-);
+));
 
 describe('CSP `strict-dynamic` webpack nonce bridge', () => {
     it('renders a <head> block in the root layout', () => {

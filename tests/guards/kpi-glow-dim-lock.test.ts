@@ -28,11 +28,18 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// String literals are KEPT, so assertions that harvest codes or ids from source
+// still see them. Every path this file reads is a TypeScript-alike, re-derived
+// per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const METRIC_CARD = fs.readFileSync(
+const METRIC_CARD = codeOf(fs.readFileSync(
     path.join(ROOT, 'src/components/ui/MetricCard.tsx'),
     'utf8',
-);
+));
 
 describe('kpi-glow-dim-08 — KPI card glow opacity multiplier', () => {
     it('MetricCard wraps the `::before` glow with `opacity-[0.8]`', () => {

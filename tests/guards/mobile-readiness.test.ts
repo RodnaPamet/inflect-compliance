@@ -25,14 +25,21 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 describe('Mobile readiness baseline (R11-PR9)', () => {
     test('root layout exports a Next.js `viewport` object', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.resolve(ROOT, 'src/app/layout.tsx'),
             'utf-8',
-        );
+        ));
         // Lock the export. Next.js looks for `export const viewport =`
         // OR `export function generateViewport` — we use the const
         // form because the values are static.
@@ -40,20 +47,20 @@ describe('Mobile readiness baseline (R11-PR9)', () => {
     });
 
     test('viewport sets width: device-width + initialScale: 1', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.resolve(ROOT, 'src/app/layout.tsx'),
             'utf-8',
-        );
+        ));
         const block = src.match(/export\s+const\s+viewport[\s\S]+?\};/)?.[0] ?? '';
         expect(block).toMatch(/width:\s*['"]device-width['"]/);
         expect(block).toMatch(/initialScale:\s*1\b/);
     });
 
     test('viewport does NOT set `maximumScale: 1` (a11y)', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.resolve(ROOT, 'src/app/layout.tsx'),
             'utf-8',
-        );
+        ));
         const block = src.match(/export\s+const\s+viewport[\s\S]+?\};/)?.[0] ?? '';
         // maximumScale: 1 disables pinch-zoom — never set it.
         // Higher values (or omitting the field) are fine.

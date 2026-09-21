@@ -35,6 +35,13 @@
 import * as fs from "fs";
 import * as path from "path";
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, "../..");
 const SCAN_DIRS = ["src/app", "src/components"];
 
@@ -97,7 +104,7 @@ describe("cardVariants server-import boundary", () => {
         const offenders: Offender[] = [];
         for (const dir of SCAN_DIRS) {
             for (const file of walk(path.join(ROOT, dir))) {
-                const content = fs.readFileSync(file, "utf8");
+                const content = codeOf(fs.readFileSync(file, "utf8"));
                 if (hasUseClientDirective(content)) continue;
                 const lines = content.split("\n");
                 for (let i = 0; i < lines.length; i++) {
@@ -139,7 +146,7 @@ describe("cardVariants server-import boundary", () => {
             "src/components/ui/card-variants.ts",
         );
         expect(fs.existsSync(cardVariantsPath)).toBe(true);
-        const src = fs.readFileSync(cardVariantsPath, "utf8");
+        const src = codeOf(fs.readFileSync(cardVariantsPath, "utf8"));
         expect(hasUseClientDirective(src)).toBe(false);
         // Sanity: it actually exports cardVariants.
         expect(src).toMatch(/export\s+const\s+cardVariants\s*=/);

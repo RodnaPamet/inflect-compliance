@@ -26,10 +26,20 @@ import {
     parseAisvsRef,
 } from '@/app-layer/services/aisvs-vendor-coverage';
 
-const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+//
+// LANGUAGE SPLIT. One seam here carries two things. TypeScript-alikes go
+// through `read` and are masked. The JSON fixtures go through `readRaw` and
+// are NOT: a JSON read is PARSED as data, never matched as text, so masking it
+// would only corrupt the parse — `codeOf` lexes TypeScript and a catalogue is
+// not that language.
+import { codeOf } from '../helpers/source-blocks';
 
-const fixture = JSON.parse(read('prisma/fixtures/aisvs-vendor-questionnaire.json')) as {
+const ROOT = path.resolve(__dirname, '../..');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
+const fixture = JSON.parse(readRaw('prisma/fixtures/aisvs-vendor-questionnaire.json')) as {
     key: string; name: string; description: string; attribution: string;
     sections: Array<{ title: string; weight: number; conditional: boolean; appliesTo?: string;
         questions: Array<{ aisvsId: string; level: string; weight: number; prompt: string; type?: string }> }>;

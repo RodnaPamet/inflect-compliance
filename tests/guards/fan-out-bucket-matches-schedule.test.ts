@@ -21,6 +21,13 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const JOBS = path.join(ROOT, 'src/app-layer/jobs');
 
@@ -119,7 +126,7 @@ const stripComments = (s: string) =>
     s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 describe('fan-out dedupe bucket vs cron period', () => {
-    const schedulesSrc = fs.readFileSync(path.join(JOBS, 'schedules.ts'), 'utf8');
+    const schedulesSrc = codeOf(fs.readFileSync(path.join(JOBS, 'schedules.ts'), 'utf8'));
 
     it('sanity — the cron parser agrees with known patterns', () => {
         // A parser that silently returned one number for everything would make
@@ -141,7 +148,7 @@ describe('fan-out dedupe bucket vs cron period', () => {
         '$schedule — bucket is no coarser than its cron period',
         ({ schedule, file }) => {
             const period = cronPeriodMs(readSchedulePattern(schedulesSrc, schedule));
-            const src = stripComments(fs.readFileSync(path.join(JOBS, file), 'utf8'));
+            const src = stripComments(codeOf(fs.readFileSync(path.join(JOBS, file), 'utf8')));
             const buckets = bucketsUsedIn(src);
 
             expect(buckets.length).toBeGreaterThan(0);
@@ -164,7 +171,7 @@ describe('fan-out dedupe bucket vs cron period', () => {
         // A fan-out that forgot the id looks completely normal until a retry
         // duplicates every sync.
         for (const { file } of DISPATCHERS) {
-            const src = stripComments(fs.readFileSync(path.join(JOBS, file), 'utf8'));
+            const src = stripComments(codeOf(fs.readFileSync(path.join(JOBS, file), 'utf8')));
             expect({ file, hasJobId: /jobId:\s*dispatchJobId\(/.test(src) }).toEqual({
                 file,
                 hasJobId: true,
@@ -176,7 +183,7 @@ describe('fan-out dedupe bucket vs cron period', () => {
         // The isolation half. A bare `await enqueue(...)` in a loop is the shape
         // that lets one Redis blip drop every connection behind it.
         for (const { file } of DISPATCHERS) {
-            const src = stripComments(fs.readFileSync(path.join(JOBS, file), 'utf8'));
+            const src = stripComments(codeOf(fs.readFileSync(path.join(JOBS, file), 'utf8')));
             expect({ file, usesFanOut: /\bawait fanOut\(/.test(src) }).toEqual({
                 file,
                 usesFanOut: true,
@@ -187,7 +194,7 @@ describe('fan-out dedupe bucket vs cron period', () => {
     it('the bucket table matches the constants fan-out.ts actually exports', () => {
         // This table is a copy, and a copy that drifts turns every comparison
         // above into a comparison against a stale number.
-        const src = fs.readFileSync(path.join(JOBS, 'fan-out.ts'), 'utf8');
+        const src = codeOf(fs.readFileSync(path.join(JOBS, 'fan-out.ts'), 'utf8'));
         expect(src).toMatch(/export const DAILY_BUCKET_MS = 24 \* HOUR_MS;/);
         expect(src).toMatch(/export const FOUR_HOURLY_BUCKET_MS = 4 \* HOUR_MS;/);
         expect(src).toMatch(/export const HOUR_MS = 3_600_000;/);

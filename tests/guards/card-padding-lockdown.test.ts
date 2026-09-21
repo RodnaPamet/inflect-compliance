@@ -45,6 +45,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const VARIANTS = 'src/components/ui/card-variants.ts';
 const PRIMITIVE = 'src/components/ui/card.tsx';
@@ -65,7 +72,7 @@ describe('Card padding lockdown (Roadmap-5 PR-2)', () => {
     it('the primitive exposes the four-rung density axis', () => {
         // Roadmap-5 hotfix — the cva definition lives in
         // `card-variants.ts` (server-safe sibling).
-        const src = fs.readFileSync(path.join(ROOT, VARIANTS), 'utf-8');
+        const src = codeOf(fs.readFileSync(path.join(ROOT, VARIANTS), 'utf-8'));
         expect(src).toMatch(/density:\s*\{[\s\S]*?comfortable:\s*"p-6"/);
         expect(src).toMatch(/compact:\s*"p-4"/);
         expect(src).toMatch(/spacious:\s*"p-12"/);
@@ -86,7 +93,7 @@ describe('Card padding lockdown (Roadmap-5 PR-2)', () => {
                 if (!/\.tsx$/.test(e.name)) continue;
                 const rel = path.relative(ROOT, full);
                 if (rel === PRIMITIVE) continue;
-                const raw = fs.readFileSync(full, 'utf-8');
+                const raw = codeOf(fs.readFileSync(full, 'utf-8'));
                 if (!/cardVariants\(/.test(raw)) continue;
                 // Normalise newlines around `cn(cardVariants(...), ...)`
                 // so multi-line compositions read on one logical line.

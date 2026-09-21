@@ -13,8 +13,22 @@
 import * as fs from 'node:fs';
 import path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// String literals are KEPT, so assertions that harvest codes or ids from source
+// still see them. Every path this file reads is a TypeScript-alike, re-derived
+// per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 function read(rel: string): string {
+    return codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
+}
+
+// The DELIBERATE raw seam (#2246): one assertion below checks that the registry
+// DOCUMENTS the read-only sibling. Its subject is the note itself, so masking
+// comments would blank exactly what it verifies.
+function readDoc(rel: string): string {
     return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
 }
 
@@ -23,6 +37,8 @@ describe('Admin risk-matrix-config API — wiring', () => {
         'src/app/api/t/[tenantSlug]/admin/risk-matrix-config/route.ts',
     );
     const permsSrc = read('src/lib/security/route-permissions.ts');
+    // RAW twin for the one assertion whose subject is the NOTE, not the code.
+    const permsDoc = readDoc('src/lib/security/route-permissions.ts');
     const pageSrc = read(
         'src/app/t/[tenantSlug]/(app)/admin/risk-matrix/page.tsx',
     );
@@ -65,7 +81,7 @@ describe('Admin risk-matrix-config API — wiring', () => {
     it('route-permissions documents the read-only sibling at /risk-matrix-config (risks.view)', () => {
         // The note explicitly calls out the read-only sibling so
         // future audits don't tighten the wrong path.
-        expect(permsSrc).toContain('Risk matrix configuration');
-        expect(permsSrc).toContain('Read-only sibling');
+        expect(permsDoc).toContain('Risk matrix configuration');
+        expect(permsDoc).toContain('Read-only sibling');
     });
 });

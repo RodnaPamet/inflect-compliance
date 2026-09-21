@@ -28,6 +28,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
+// #2246 Class A — NOT converted, deliberately. This file's only text assertion
+// is 'every geometry token carries a non-trivial doc-comment': its SUBJECT is
+// the prose, so masking comments would blank the very thing it checks. Stays
+// on the raw read and stays listed in raw-source-asserting-files.json.
 const SRC = fs.readFileSync(
     path.join(ROOT, 'src/components/layout/nav-item.tsx'),
     'utf8',

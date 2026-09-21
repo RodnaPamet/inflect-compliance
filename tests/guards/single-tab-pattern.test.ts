@@ -31,6 +31,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SCAN_ROOT = path.join(ROOT, 'src/app');
 
@@ -64,7 +71,7 @@ describe('Single tab pattern (Roadmap-3 PR-8)', () => {
     it('zero TabSelect imports in app pages', () => {
         const offenders: Hit[] = [];
         for (const file of walk(SCAN_ROOT)) {
-            const content = fs.readFileSync(file, 'utf-8');
+            const content = codeOf(fs.readFileSync(file, 'utf-8'));
             if (TAB_SELECT_IMPORT_RE.test(content)) {
                 const before = content.match(TAB_SELECT_IMPORT_RE);
                 const idx = before ? content.indexOf(before[0]) : 0;
@@ -90,7 +97,7 @@ describe('Single tab pattern (Roadmap-3 PR-8)', () => {
     it('zero <TabSelect> mounts in app pages', () => {
         const offenders: Hit[] = [];
         for (const file of walk(SCAN_ROOT)) {
-            const content = fs.readFileSync(file, 'utf-8');
+            const content = codeOf(fs.readFileSync(file, 'utf-8'));
             const lines = content.split('\n');
             lines.forEach((line, i) => {
                 if (TAB_SELECT_MOUNT_RE.test(line)) {
@@ -115,10 +122,10 @@ describe('Single tab pattern (Roadmap-3 PR-8)', () => {
     });
 
     it('EntityDetailLayout still owns the canonical tab bar render', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(ROOT, 'src/components/layout/EntityDetailLayout.tsx'),
             'utf-8',
-        );
+        ));
         // The canonical tab bar uses `border-b border-border-default`
         // on the nav, the brand accent on the active tab, and the
         // ARIA tablist role.

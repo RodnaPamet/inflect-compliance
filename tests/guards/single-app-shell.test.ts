@@ -30,8 +30,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf-8'));
 
 const SHELL_PATH = 'src/components/layout/AppShell.tsx';
 const DELETED_SHELL_PATH = 'src/components/layout/OrgAppShell.tsx';
@@ -88,7 +95,7 @@ describe('Single AppShell discipline (Roadmap-2 PR-1)', () => {
                     if (entry.name === 'node_modules') continue;
                     walk(full);
                 } else if (/\.(ts|tsx)$/.test(entry.name)) {
-                    const content = fs.readFileSync(full, 'utf-8');
+                    const content = codeOf(fs.readFileSync(full, 'utf-8'));
                     // Match the path only inside an `import … from`
                     // statement, not the test's own detection regex.
                     if (

@@ -22,6 +22,11 @@ import {
     REFERRER_ONLY_BACK_MAIN_PAGES,
 } from '@/lib/nav/page-segregation';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM. Reads whose result
+// is JSON.parse'd are left RAW on purpose: a catalogue is parsed as DATA, never
+// matched as text, so masking it would only corrupt the parse.
+import { codeOf } from '../helpers/source-blocks';
+
 const BACK_AFFORDANCE_PATH = path.resolve(
     __dirname,
     '../../src/components/nav/BackAffordance.tsx',
@@ -34,7 +39,7 @@ describe('rq4 back-link fixes', () => {
         // resolves that key to the product display name "Internal Audit"
         // (not the raw "Audits"). Both halves are asserted so a rename
         // still fails CI.
-        const source = fs.readFileSync(BACK_AFFORDANCE_PATH, 'utf-8');
+        const source = codeOf(fs.readFileSync(BACK_AFFORDANCE_PATH, 'utf-8'));
         expect(source).toMatch(/SECTION_LABELS/);
         expect(source).toMatch(/'\/audits':\s*'audits'/);
         const en = JSON.parse(

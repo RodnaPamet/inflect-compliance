@@ -39,6 +39,13 @@
 import * as fs from "fs";
 import * as path from "path";
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// String literals are KEPT, so assertions that harvest codes or ids from source
+// still see them. Every path this file reads is a TypeScript-alike, re-derived
+// per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, "../..");
 
 describe("ratchet precedence: visual > count", () => {
@@ -59,10 +66,10 @@ describe("ratchet precedence: visual > count", () => {
     });
 
     it("primary-action-budget map does not gate `+ X` buttons (visual ratchet wins)", () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(ROOT, "tests/guards/primary-action-budget.test.ts"),
             "utf8",
-        );
+        ));
         // The budget ratchet uses a flat map keyed by file path. It
         // does NOT pattern-match button text or strip `+ X` buttons
         // before counting. This guarantees that `+ X` button

@@ -16,14 +16,26 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so a guard can no
+// longer be satisfied by a COMMENT naming the thing its assertion is about.
+//
+// LANGUAGE SPLIT. The raw reader is kept and the JSON path still uses it: a
+// catalogue is PARSED as data, never matched as text, so masking it would only
+// corrupt the parse. Text assertions go through the masked reader.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../../');
-function read(rel: string): string {
+function readRaw(rel: string): string {
     return fs.readFileSync(path.join(ROOT, rel), 'utf-8');
+}
+
+function read(rel: string): string {
+    return codeOf(readRaw(rel));
 }
 
 const SHEET_SRC = read('src/components/ui/sheet.tsx');
 const POPOVER_SRC = read('src/components/ui/popover.tsx');
-const EN = JSON.parse(read('messages/en.json'));
+const EN = JSON.parse(readRaw('messages/en.json'));
 
 // ─── Sheet — size variants ───────────────────────────────────────
 

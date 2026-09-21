@@ -37,6 +37,13 @@ import {
     type NextBestActionInput,
 } from "@/components/ui/next-best-action-logic";
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const tenantHref = (p: string) => `/t/acme${p}`;
 
 const allClean: NextBestActionInput = {
@@ -114,14 +121,14 @@ describe("v2-PR-11 NextBestAction priority chain (resolveNextBestAction)", () =>
 });
 
 describe("v2-PR-11 primitive contract", () => {
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.join(ROOT, "src/components/ui/NextBestActionCard.tsx"),
         "utf8",
-    );
-    const logicSrc = fs.readFileSync(
+    ));
+    const logicSrc = codeOf(fs.readFileSync(
         path.join(ROOT, "src/components/ui/next-best-action-logic.ts"),
         "utf8",
-    );
+    ));
 
     it("exports the component + props + helper", () => {
         expect(src).toMatch(/export\s+function\s+NextBestActionCard/);
@@ -168,13 +175,13 @@ describe("v2-PR-11 primitive contract", () => {
 });
 
 describe("v2-PR-11 executive dashboard adoption", () => {
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.join(
             ROOT,
             "src/app/t/[tenantSlug]/(app)/dashboard/DashboardClient.tsx",
         ),
         "utf8",
-    );
+    ));
 
     it("imports + renders <NextBestActionCard>", () => {
         expect(src).toMatch(

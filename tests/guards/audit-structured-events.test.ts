@@ -11,6 +11,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { AuditDetailsSchema } from '../../src/lib/audit/event-schema';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const SRC_DIR = path.resolve(__dirname, '..', '..', 'src');
 const SCRIPTS_DIR = path.resolve(__dirname, '..', '..', 'scripts');
 const USECASES_DIR = path.resolve(SRC_DIR, 'app-layer', 'usecases');
@@ -39,7 +46,7 @@ describe('Audit Structured Events — Regression Guards', () => {
         const violations: string[] = [];
 
         for (const file of files) {
-            const content = fs.readFileSync(file, 'utf-8');
+            const content = codeOf(fs.readFileSync(file, 'utf-8'));
             const basename = path.relative(SRC_DIR, file);
 
             // Find all logEvent calls
@@ -78,7 +85,7 @@ describe('Audit Structured Events — Regression Guards', () => {
             // Skip the audit writer itself (it's the ONE place that does raw INSERT)
             if (basename.includes('audit-writer') || basename.includes('audit/verify')) continue;
 
-            const content = fs.readFileSync(file, 'utf-8');
+            const content = codeOf(fs.readFileSync(file, 'utf-8'));
             if (/INSERT\s+INTO\s+[\"']?AuditLog[\"']?/i.test(content)) {
                 violations.push(`${basename}: contains raw INSERT INTO AuditLog`);
             }
@@ -93,7 +100,7 @@ describe('Audit Structured Events — Regression Guards', () => {
         const scriptPath = path.join(SCRIPTS_DIR, 'verify-audit-chain.ts');
         expect(fs.existsSync(scriptPath)).toBe(true);
 
-        const content = fs.readFileSync(scriptPath, 'utf-8');
+        const content = codeOf(fs.readFileSync(scriptPath, 'utf-8'));
         expect(content).toContain('verifyTenantChain');
         expect(content).toContain('verifyAllTenants');
         expect(content).toContain('--tenant');
@@ -106,7 +113,7 @@ describe('Audit Structured Events — Regression Guards', () => {
         const verifyPath = path.resolve(SRC_DIR, 'lib', 'audit', 'verify.ts');
         expect(fs.existsSync(verifyPath)).toBe(true);
 
-        const content = fs.readFileSync(verifyPath, 'utf-8');
+        const content = codeOf(fs.readFileSync(verifyPath, 'utf-8'));
         expect(content).toContain('export async function verifyTenantChain');
         expect(content).toContain('export async function verifyAllTenants');
         expect(content).toContain('BreakType');

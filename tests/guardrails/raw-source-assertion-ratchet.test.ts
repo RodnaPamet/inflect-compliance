@@ -322,6 +322,63 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     mask is a no-op today — and would stop being one the moment a URL
  *     lands in either, which is exactly how twelve `.sql` seams read as
  *     masked while masking nothing until #2679.
+ *   • 72 (2026-09-21): the FOURTH Class A batch — 13 files holding a `.sql`
+ *     read, converted with the #2679 language split. But 11 of the 13 were
+ *     not failing on SQL at all: they were failing on `prisma/schema/*.prisma`,
+ *     a THIRD language reached through `readPrismaSchema()`. Repointing 13
+ *     `.sql` seams would have left every one of them raw.
+ *
+ *     THE FIX IS AT THE SHARED SEAM, NOT IN THE 13 FILES. `readPrismaSchema`
+ *     now returns `codeOf(...)` and `readPrismaSchemaRaw` is the deliberate
+ *     unmasked twin. That seam has 61 callers across `tests/guards`,
+ *     `tests/guardrails`, `tests/unit` and `tests/integration` — so this is a
+ *     SHARED-STATE change, and the whole caller population was run, not the
+ *     batch. 91 → 72 in one diff: the 13 targeted files, plus 8 more freed as
+ *     a side effect (`bia-coverage`, `internal-controls-coverage`,
+ *     `scanner-ingestion-coverage`, `security-hardening-epic`,
+ *     `rq3-8-mitigation-roi`, `scope-guardrails`, and the two `integration`
+ *     suites that no batch had touched). Raw sites 470 → 418, masked
+ *     5128 → 5182.
+ *
+ *     `codeOf` IS the right masker for Prisma, re-derived not assumed:
+ *     Prisma's comment syntax is `//` and `///`, it has no `--` and no
+ *     `/* … *\/`, and its only string form is double-quoted. The schema is
+ *     11337 lines of which 4738 are comment (3438 `///` doc comments) — the
+ *     largest single block of prose any assertion in this repo searches.
+ *     `tests/guards/rq7-bowtie.test.ts` had already reached this conclusion
+ *     and wrote `codeOf(readPrismaSchema())` at its call site; that wrapper is
+ *     now redundant and still correct, because masking is idempotent here.
+ *
+ *     MEASURED BEFORE FLIPPING IT, because masking can only turn a `.not.`
+ *     assertion from red to green — the silent-gutting direction. All nine
+ *     negated assertions whose subject is the schema were run against raw AND
+ *     masked text: every one reads false on both. Nothing was gutted. Length
+ *     and line count are preserved, so the `indexOf`/`slice`/`/^…$/m` anchors
+ *     in the calling files line up against either text.
+ *
+ *     TWO DELIBERATE RAW SEAMS ENTER THE LIST. `cve-integration-coverage`
+ *     asserts that `model Cve` carries an RLS-exempt rationale — its subject
+ *     IS a `///` doc comment, and it had already named the seam `schemaRaw`
+ *     before a raw twin existed to point it at. `rq3-1-simulated-lec` asserts
+ *     a demotion disclaimer in a docstring; that file's own comment draws the
+ *     line ("the docstring may reference the history; the SHAPE may not"), so
+ *     its shape assertions read masked and the disclaimer reads raw.
+ *
+ *     THE ANALYSER HAD TO LEARN THE SEAM TOO. `assertion-reach.ts` resolves
+ *     `readPrismaSchema()` by NAME to its own copy of the concatenated text,
+ *     so masking the helper changed nothing it saw — the count sat at 89
+ *     through the entire fix. Its arm now sets `trace.masked` and returns
+ *     `codeOf(...)`, mirroring the helper, with a second arm for the raw twin.
+ *     Nothing linked those two code paths, and the failure is silent and
+ *     one-directional: if the helper stopped masking, the analyser would keep
+ *     crediting all 77 schema sites as masked and this ratchet would report a
+ *     clean population that isn't one. `prisma-schema-folder-coverage` now
+ *     pins them together, mutation-proved by removing the mask from the
+ *     helper (RED on that test alone). That pin asserts on COUNTS of
+ *     comment lines rather than `toMatch`-ing the raw text: the obvious
+ *     spelling, `expect(raw).toMatch(/^\s*\/\/\//m)`, is a whole-file read
+ *     whose needle matches 3438 times, so writing the pin the natural way
+ *     cost this repo's Class D ceiling +1 and its own ratchet caught it.
  *   • 381 (2026-09-17): seated when this ratchet landed. Measured by AST walk
  *     over every `.ts`/`.tsx` file git lists under `tests/` — 2402 files,
  *     12301 `toMatch`/`toContain` sites, of which 5937 resolve to the whole
@@ -369,7 +426,7 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     So a file's presence in this list is NOT an accusation, and this ratchet
  *     is a cap rather than a work queue: it says the population may not grow.
  */
-const RAW_ASSERTING_FILE_BASELINE = 238;
+const RAW_ASSERTING_FILE_BASELINE = 71;
 
 /**
  * The files themselves, sorted, in a sibling JSON — the same population the

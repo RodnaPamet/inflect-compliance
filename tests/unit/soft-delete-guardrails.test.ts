@@ -8,6 +8,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const SRC_DIR = path.join(__dirname, '..', '..', 'src');
 const PRISMA_FILE = path.join(__dirname, '..', '..', 'src', 'lib', 'prisma.ts');
 const SOFT_DELETE_FILE = path.join(__dirname, '..', '..', 'src', 'lib', 'soft-delete.ts');
@@ -40,7 +47,7 @@ describe('Soft-Delete CI Guardrails', () => {
     const allFiles = collectFiles(SRC_DIR);
 
     test('soft-delete extension is wired in prisma.ts', () => {
-        const content = fs.readFileSync(PRISMA_FILE, 'utf-8');
+        const content = codeOf(fs.readFileSync(PRISMA_FILE, 'utf-8'));
         // Prisma 7 — v5 `registerSoftDeleteMiddleware($use)` was replaced
         // by `withSoftDeleteExtension($extends)`. Pin the new symbol.
         expect(content).toContain('withSoftDeleteExtension');
@@ -48,7 +55,7 @@ describe('Soft-Delete CI Guardrails', () => {
     });
 
     test('soft-delete.ts exports SOFT_DELETE_MODELS with all 5 models', () => {
-        const content = fs.readFileSync(SOFT_DELETE_FILE, 'utf-8');
+        const content = codeOf(fs.readFileSync(SOFT_DELETE_FILE, 'utf-8'));
         for (const model of SOFT_DELETE_MODELS) {
             expect(content).toContain(`'${model}'`);
         }
@@ -59,7 +66,7 @@ describe('Soft-Delete CI Guardrails', () => {
         const violations: string[] = [];
 
         for (const file of routeFiles) {
-            const content = fs.readFileSync(file, 'utf-8');
+            const content = codeOf(fs.readFileSync(file, 'utf-8'));
             const relPath = path.relative(SRC_DIR, file);
 
             for (const model of SOFT_DELETE_MODELS) {
@@ -95,7 +102,7 @@ describe('Soft-Delete CI Guardrails', () => {
             const basename = path.basename(file);
             if (APPROVED_RAW_DELETE_FILES.has(basename)) continue;
 
-            const content = fs.readFileSync(file, 'utf-8');
+            const content = codeOf(fs.readFileSync(file, 'utf-8'));
             const relPath = path.relative(SRC_DIR, file);
 
             for (const model of SOFT_DELETE_MODELS) {
@@ -118,7 +125,7 @@ describe('Soft-Delete CI Guardrails', () => {
         // audit sees the operation, so the audit row records the
         // resulting `update` not the original `delete`. This is the
         // load-bearing invariant.
-        const content = fs.readFileSync(PRISMA_FILE, 'utf-8');
+        const content = codeOf(fs.readFileSync(PRISMA_FILE, 'utf-8'));
         const softDeleteIdx = content.indexOf('withSoftDeleteExtension(');
         // Anchor on the call site inside buildExtended (`base.$extends(
         // buildAuditExtension())`) — this is unique vs the audit
@@ -134,7 +141,7 @@ describe('Soft-Delete CI Guardrails', () => {
     });
 
     test('SOFT_DELETE_MODELS allowlist has exactly 12 models', () => {
-        const content = fs.readFileSync(SOFT_DELETE_FILE, 'utf-8');
+        const content = codeOf(fs.readFileSync(SOFT_DELETE_FILE, 'utf-8'));
         // Count the models in the Set
         const modelMatches = content.match(/'(Asset|Risk|Control|Evidence|Policy|Vendor|FileRecord|Task|Finding|Audit|AuditCycle|AuditPack)'/g);
         expect(modelMatches).not.toBeNull();
@@ -142,7 +149,7 @@ describe('Soft-Delete CI Guardrails', () => {
     });
 
     test('withDeleted helper is exported from soft-delete.ts', () => {
-        const content = fs.readFileSync(SOFT_DELETE_FILE, 'utf-8');
+        const content = codeOf(fs.readFileSync(SOFT_DELETE_FILE, 'utf-8'));
         expect(content).toContain('export function withDeleted');
     });
 
@@ -159,10 +166,10 @@ describe('Soft-Delete CI Guardrails', () => {
         // GLOBAL (tenantId IS NULL) rows on an unfiltered pass.
         expect(fs.existsSync(path.join(SRC_DIR, 'lib', 'retention-purge.ts'))).toBe(false);
 
-        const live = fs.readFileSync(
+        const live = codeOf(fs.readFileSync(
             path.join(SRC_DIR, 'app-layer', 'jobs', 'data-lifecycle.ts'),
             'utf-8',
-        );
+        ));
         expect(live).toContain('export async function purgeSoftDeletedOlderThan');
         expect(live).toMatch(/NULLABLE_TENANT_MODELS\.has\(model\)/);
         expect(live).toMatch(/tenantId = \{ not: null \}/);
