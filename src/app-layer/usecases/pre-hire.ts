@@ -21,6 +21,7 @@
  */
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
+import { notFound } from '@/lib/errors/types';
 
 export interface RecordPreHireInput {
     readonly externalId: string;
@@ -110,7 +111,11 @@ export async function reconcilePreHire(
         const pre = await db.preHire.findFirst({
             where: { id: preHireId, tenantId: ctx.tenantId },
         });
-        if (!pre) throw new Error(`No pre-hire ${preHireId} in this tenant`);
+        // `notFound`, not `new Error` — usecases use typed errors so the route
+        // layer maps them to a status instead of a 500. `tests/regression`
+        // enforces this, which is a directory a `tests/guardrails` run does
+        // not reach.
+        if (!pre) throw notFound(`No pre-hire ${preHireId} in this tenant`);
 
         if (pre.status === 'RECONCILED' && pre.reconciledEmployeeId) {
             return {

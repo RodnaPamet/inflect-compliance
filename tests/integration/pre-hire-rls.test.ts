@@ -15,7 +15,11 @@ import { prismaTestClient, resetDatabase } from '../helpers/db';
 // untested. The guard is right to be narrow — a dynamic import inside one
 // `it()` is not the same coverage claim as the module being loaded by the
 // suite.
-import { recordPreHire, reconcilePreHire } from '@/app-layer/usecases/pre-hire';
+import {
+    recordPreHire,
+    reconcilePreHire,
+    listPendingPreHires,
+} from '@/app-layer/usecases/pre-hire';
 
 const prisma: PrismaClient = prismaTestClient();
 const T1 = 'ph-tenant-one';
@@ -142,5 +146,48 @@ describe('reconciliation does not mint a duplicate employee (#2715 acceptance)',
         const out = await reconcilePreHire(ctx, fresh.id);
         expect(out.kind).toBe('NOT_YET');
         expect(await prisma.employee.count({ where: { tenantId: T1 } })).toBe(before);
+    });
+});
+
+
+describe('recording and listing', () => {
+    const ctx = { tenantId: T2, userId: 'u-2' } as never;
+
+    it('recordPreHire is idempotent on (tenantId, externalId)', async () => {
+        const before = await prisma.preHire.count({ where: { tenantId: T2 } });
+        const a = await recordPreHire(ctx, { externalId: 'wd-dup', fullName: 'Dup One' });
+        const b = await recordPreHire(ctx, { externalId: 'wd-dup', fullName: 'Dup One Renamed' });
+        expect(b.id).toBe(a.id);
+        expect(await prisma.preHire.count({ where: { tenantId: T2 } })).toBe(before + 1);
+        // The refresh updates the mutable fields...
+        expect(b.fullName).toBe('Dup One Renamed');
+    });
+
+    it('a refresh does NOT resurrect a reconciled row into PENDING', async () => {
+        // The roster re-reporting someone does not un-hire them. Without this
+        // the upsert's `update` arm would quietly undo a reconciliation.
+        const row = await recordPreHire(ctx, { externalId: 'wd-done', fullName: 'Done' });
+        await prisma.preHire.update({
+            where: { id: row.id },
+            data: { status: 'RECONCILED', reconciledEmployeeId: 'emp-x', reconciledAt: new Date() },
+        });
+        const again = await recordPreHire(ctx, { externalId: 'wd-done', fullName: 'Done Again' });
+        expect(again.status).toBe('RECONCILED');
+        expect(again.reconciledEmployeeId).toBe('emp-x');
+    });
+
+    it('listPendingPreHires returns only PENDING rows, for this tenant only', async () => {
+        const pending = await listPendingPreHires(ctx);
+        expect(pending.length).toBeGreaterThan(0);
+        expect(pending.every((p) => p.status === 'PENDING')).toBe(true);
+        // The reconciled row from the test above must not appear.
+        expect(pending.some((p) => p.externalId === 'wd-done')).toBe(false);
+    });
+
+    it('reconcilePreHire refuses an id from another tenant', async () => {
+        const otherTenantRow = await prisma.preHire.findFirst({ where: { tenantId: T1 } });
+        await expect(
+            reconcilePreHire(ctx, otherTenantRow!.id),
+        ).rejects.toThrow(/No pre-hire/);
     });
 });
