@@ -37,6 +37,7 @@ import { createAgentPolicyCard } from '@/app-layer/usecases/agent-policy-card';
 import {
     approveAgentProposal,
     createAgentProposal,
+    rejectAgentProposal,
     type ApproveOutcome,
 } from '@/app-layer/usecases/agent-proposals';
 import type { RequestContext } from '@/app-layer/types';
@@ -101,6 +102,27 @@ const signaturesOn = (proposalId: string) =>
 
 const risksTitled = (tenantId: string, title: string) =>
     prisma.risk.count({ where: { tenantId, title } });
+
+/**
+ * The Art 14 outcome on the decision-log row(s) for a proposal.
+ *
+ * Joined by the digest, which is the key `createAgentProposal` writes into both
+ * records — `AgentProposal.guardInputDigest` and `AiDecisionLog.inputDigest`
+ * are the same string. Returns every matching row's outcome so a test can see
+ * "still PENDING" as clearly as a stamp.
+ */
+async function decisionOutcomesFor(proposalId: string): Promise<string[]> {
+    const proposal = await prisma.agentProposal.findUnique({
+        where: { id: proposalId },
+        select: { tenantId: true, guardInputDigest: true },
+    });
+    if (!proposal?.guardInputDigest) return [];
+    const rows = await prisma.aiDecisionLog.findMany({
+        where: { tenantId: proposal.tenantId, inputDigest: proposal.guardInputDigest },
+        select: { humanOutcome: true },
+    });
+    return rows.map((r) => r.humanOutcome);
+}
 
 const proposalStatus = async (proposalId: string) =>
     (await prisma.agentProposal.findUnique({
@@ -315,6 +337,59 @@ describe('a HIGH-tier proposal cannot be approved by a single reviewer', () => {
         expect(await risksTitled(T1, 'single-reviewer-high')).toBe(1);
         const signatures = await signaturesOn(proposalId);
         expect(new Set(signatures.map((s) => s.approverUserId)).size).toBe(2);
+
+        // ART 14 — and this is the assertion that proves the WIRING rather than
+        // the helper. The stamp is applied at the applied-the-proposal return,
+        // so reaching it means the usecase called it with the right key on the
+        // right path.
+        expect(await decisionOutcomesFor(proposalId)).toEqual(['ACCEPTED']);
+    });
+});
+
+describe('Art 14 — the human outcome reaches the decision log, and only when decided', () => {
+    // These live here rather than beside the helper's own unit tests because
+    // only this file has the fixture that produces a REAL proposal with a real
+    // guard digest and a real Art 12 row behind it. A helper that works and a
+    // usecase that calls it correctly are two different claims.
+    let proposalId: string;
+
+    beforeAll(async () => {
+        proposalId = await propose(T1, seeded[T1].highAgentId, 'art14-wiring-high');
+    });
+
+    it('a proposal starts with its Art 12 row PENDING', async () => {
+        // The baseline. Without it a later "ACCEPTED" could mean the row was
+        // written that way rather than transitioned, and the closure would be
+        // unproven in the one direction that matters.
+        expect(await decisionOutcomesFor(proposalId)).toEqual(['PENDING']);
+    });
+
+    it('a FIRST-of-two signature does NOT stamp an outcome', async () => {
+        // The subtlety. `approveAgentProposal` has two exits: one records a
+        // signature and returns AWAITING_APPROVAL, the other applies. Only the
+        // second is a human outcome. Stamping on the first would record "a
+        // human decided" the moment one of two reviewers signed — the
+        // automation-bias failure `wasApplied` exists to prevent, written into
+        // the permanent record.
+        const outcome = await approveAgentProposal(reviewerCtx(T1, 'alice'), proposalId);
+        expect(outcome.status).toBe('AWAITING_APPROVAL');
+        expect(await decisionOutcomesFor(proposalId)).toEqual(['PENDING']);
+    });
+
+    it('the SECOND signature, which applies it, stamps ACCEPTED', async () => {
+        const outcome = await approveAgentProposal(reviewerCtx(T1, 'bob'), proposalId);
+        expect(outcome.status).toBe('ACCEPTED');
+        expect(await decisionOutcomesFor(proposalId)).toEqual(['ACCEPTED']);
+    });
+
+    it('a REJECTED proposal stamps REJECTED', async () => {
+        const rejectedId = await propose(T1, seeded[T1].highAgentId, 'art14-wiring-reject');
+        expect(await decisionOutcomesFor(rejectedId)).toEqual(['PENDING']);
+
+        await rejectAgentProposal(reviewerCtx(T1, 'alice'), rejectedId);
+
+        expect(await proposalStatus(rejectedId)).toBe('REJECTED');
+        expect(await decisionOutcomesFor(rejectedId)).toEqual(['REJECTED']);
     });
 });
 

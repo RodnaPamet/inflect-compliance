@@ -11,6 +11,7 @@
  *     model carries the two tenantId-leading indexes.
  */
 import * as fs from 'node:fs';
+import { functionBodyOf } from '../helpers/source-blocks';
 import * as path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -58,7 +59,10 @@ describe('privacy — digest + sanitised summary only', () => {
 
     it('the module hashes the input (SHA-256 digest), never stores it raw', () => {
         expect(mod).toContain("createHash('sha256')");
-        expect(mod).toContain('inputDigest:');
+        // BOUND to the writer. `inputDigest:` at file scope now also matches
+        // the digest-keyed stamp's WHERE clause, so it stopped being evidence
+        // that the write persists a digest — which is the claim here.
+        expect(functionBodyOf(mod, 'logAiDecision')).toContain('inputDigest:');
     });
 
     it('the output summary is sanitised + bounded', () => {
@@ -89,11 +93,45 @@ describe('immutability — append-only core record', () => {
 
     it('the decision-log module never updates the core record — only humanOutcome', () => {
         const mod = read('src/app-layer/ai/decision-log/index.ts');
-        // The only Prisma write-back is recordDecisionOutcome's updateMany on
-        // humanOutcome (scoped to aiDecisionLog so crypto's `.update()` is excluded).
-        const updates = mod.match(/aiDecisionLog\.update(Many)?\s*\(/g) ?? [];
-        expect(updates.length).toBe(1);
-        expect(mod).toMatch(/data:\s*\{\s*humanOutcome:/);
+
+        // EVERY write-back is checked, rather than counting them.
+        //
+        // This asserted `updates.length === 1` until a second legitimate stamp
+        // arrived — `recordDecisionOutcomeForDigest`, the same one-way
+        // humanOutcome transition keyed by digest instead of session — and the
+        // count went red for a change that honoured the invariant exactly. The
+        // pairing was also weaker than it looked: `toMatch(/data:\s*\{\s*humanOutcome:/)`
+        // is satisfied by ANY one update setting humanOutcome, so a second
+        // update writing `provider` would have passed it. The count was doing
+        // all the work, and a hand-maintained count of call sites stops
+        // covering its subject the moment that population grows.
+        //
+        // What matters is that no update touches a column other than
+        // humanOutcome. That is now read off each call's own `data` block, so
+        // a third stamp is free and a stamp that mutates the record is not.
+        const calls = [...mod.matchAll(/aiDecisionLog\.update(?:Many)?\s*\(/g)];
+
+        // Population control: zero call sites would satisfy the loop below
+        // without examining anything.
+        expect(calls.length).toBeGreaterThan(0);
+
+        const offenders: string[] = [];
+        for (const call of calls) {
+            const after = mod.slice(call.index ?? 0);
+            const dataBlock = /data:\s*\{([^}]*)\}/.exec(after)?.[1];
+            if (dataBlock === undefined) {
+                offenders.push('an update with no readable `data` block');
+                continue;
+            }
+            const keys = [...dataBlock.matchAll(/([A-Za-z_$][\w$]*)\s*:/g)].map((k) => k[1]);
+            if (keys.join(',') !== 'humanOutcome') {
+                offenders.push(`writes [${keys.join(', ')}]`);
+            }
+        }
+        expect({ examined: calls.length, offenders }).toEqual({
+            examined: calls.length,
+            offenders: [],
+        });
     });
 });
 
@@ -103,8 +141,30 @@ describe('feedback + indexes', () => {
 
     it('humanOutcome transitions PENDING → terminal via recordDecisionOutcome', () => {
         const mod = read('src/app-layer/ai/decision-log/index.ts');
-        expect(mod).toContain('export async function recordDecisionOutcome');
-        expect(mod).toMatch(/humanOutcome:\s*'PENDING'/);
+
+        // BOUND to the declaration, not asserted against the whole file.
+        //
+        // `toContain('export async function recordDecisionOutcome')` was
+        // satisfied by any function whose name merely STARTS with that — which
+        // `recordDecisionOutcomeForDigest` does. The assertion would have
+        // survived deleting the function it is named for, which is precisely
+        // the Class D failure `assertion-needle-uniqueness-ratchet` counts.
+        // Narrowing the read also makes the PENDING needle unique again: both
+        // stamps legitimately filter on it, so at file scope it says nothing
+        // about which one.
+        const fn = functionBodyOf(mod, 'recordDecisionOutcome');
+        expect(fn).toMatch(/humanOutcome:\s*'PENDING'/);
+        expect(fn).toMatch(/data:\s*\{\s*humanOutcome: outcome\s*\}/);
+    });
+
+    it('the digest-keyed sibling makes the same one-way transition', () => {
+        // The second stamp is the reason the assertion above had to be bound.
+        // It gets its own, equally bound, rather than sharing a file-scope
+        // needle that would then prove nothing about either.
+        const mod = read('src/app-layer/ai/decision-log/index.ts');
+        const fn = functionBodyOf(mod, 'recordDecisionOutcomeForDigest');
+        expect(fn).toMatch(/humanOutcome:\s*'PENDING'/);
+        expect(fn).toMatch(/inputDigest/);
     });
 
     it('AiDecisionLog carries the two tenantId-leading indexes', () => {
