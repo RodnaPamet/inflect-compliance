@@ -153,6 +153,7 @@ const ADMIN_ONLY_ROUTES = [
     // ROUTE_PERMISSIONS rule, ordered ahead of the subtree one for the same
     // reason the leaver's is.
     'admin/identity-joiner-passes/route.ts',
+    'admin/identity-joiner-passes/run/route.ts',
     // The off-schedule RE-RUN trigger. Its sibling above is a read; this is
     // the only endpoint in that subtree that makes the product write to a
     // customer's directory, so it carries its OWN rule in ROUTE_PERMISSIONS
