@@ -85,7 +85,19 @@ jest.mock('next-intl/server', () => ({
         return (key: string, params?: Record<string, unknown>) => {
             const found = walk(ns, key);
             if (typeof found !== 'string') return key;
-            let out = found;
+            // ICU plural FIRST, because four of this card's nine keys are
+            // plural forms and the `{name}` substitution below cannot see
+            // inside one. Without this they resolved to their own raw ICU
+            // source — so a test asserting on the NUMBER would have been
+            // asserting on a template, and would have passed whatever count
+            // the card actually handed the translator.
+            let out = found.replace(
+                /\{(\w+),\s*plural,\s*one\s*\{([^}]*)\}\s*other\s*\{([^}]*)\}\}/g,
+                (_match, name: string, one: string, other: string) => {
+                    const value = params?.[name];
+                    return (Number(value) === 1 ? one : other).split('#').join(String(value));
+                },
+            );
             for (const [name, value] of Object.entries(params ?? {})) {
                 out = out.split(`{${name}}`).join(String(value));
             }
@@ -113,6 +125,7 @@ type Summary = {
     proposalsAwaitingReview: number;
     totalRegistered: number;
     byStanding: Record<AgentStatus, number>;
+    runsInFlight: number;
 };
 
 /** Nothing stopped, nothing unscored, enforcing, no queue — the `clear` state. */
@@ -122,6 +135,7 @@ const QUIET = {
     agentsKilled: 0,
     activeUnscored: 0,
     proposalsAwaitingReview: 0,
+    runsInFlight: 0,
 } as const;
 
 const standing = (
@@ -251,6 +265,47 @@ describe('a tenant with an empty register', () => {
                 .split('{breakdown}')
                 .join(`${EN.register.filterEnums.status.ACTIVE}: 1`),
         );
+    });
+});
+
+describe('runs in flight', () => {
+    it('renders the count, in words, when anything is executing', async () => {
+        const card = await mount(
+            summaryOf({ byStanding: standing(0, 3, 0, 0), runsInFlight: 2 }),
+        );
+        const line = screen.getByTestId('agentic-runs-in-flight').textContent ?? '';
+
+        // The plural arm composed the way next-intl composes it, not a bare
+        // `toContain('2')` — the card already renders a 3 and a total, so a
+        // digit match would pass against the wrong number.
+        expect(line).toContain('2 agentic runs are in flight');
+        expect(card).not.toBeNull();
+    });
+
+    it('takes the singular arm at one, which the plural fixture cannot prove', async () => {
+        await mount(summaryOf({ byStanding: standing(0, 1, 0, 0), runsInFlight: 1 }));
+        expect(screen.getByTestId('agentic-runs-in-flight').textContent ?? '').toContain(
+            '1 agentic run is in flight',
+        );
+    });
+
+    it('renders nothing at zero, and does not suppress the all-clear line', async () => {
+        // Zero is the permanent state of a registered-but-undriven workspace,
+        // so the line is absent rather than reading "0 runs in flight" for ever
+        // — and its absence must not be mistaken for a fault: `clear` still
+        // renders, because a quiet fleet is the all-clear.
+        await mount(summaryOf({ byStanding: standing(0, 2, 0, 0), runsInFlight: 0 }));
+        expect(screen.queryByTestId('agentic-runs-in-flight')).toBeNull();
+        expect(screen.queryByTestId('agentic-clear')).not.toBeNull();
+    });
+
+    it('does not suppress the all-clear line when runs ARE in flight either', async () => {
+        // A workspace with nothing stopped and three runs executing is a
+        // workspace where everything is working. Reporting the runs must not
+        // read as an alarm by displacing the reassuring sentence.
+        await mount(summaryOf({ byStanding: standing(0, 2, 0, 0), runsInFlight: 3 }));
+        expect(screen.queryByTestId('agentic-runs-in-flight')).not.toBeNull();
+        expect(screen.queryByTestId('agentic-clear')).not.toBeNull();
     });
 });
 

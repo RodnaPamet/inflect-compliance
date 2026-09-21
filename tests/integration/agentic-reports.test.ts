@@ -62,6 +62,8 @@ import {
 } from '@/app-layer/usecases/agent-governance-reports';
 import { METRIC_DEFINITIONS } from '@/lib/agentic/report-definitions';
 import { KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
+import { monthStartUtc } from '@/lib/agentic/monthly-budget';
+import { resolveProposalGuardState } from '@/lib/agentic/proposal-guard-state';
 import type { Measure } from '@/lib/agentic/report-measures';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 
@@ -120,6 +122,8 @@ const asiRequirementIds: Record<string, string> = {};
  */
 async function clearOwnRows(): Promise<void> {
     const t = { tenantId: { in: [...TENANTS] } };
+    await prisma.workflowRun.deleteMany({ where: t });
+    await prisma.tenantSecuritySettings.deleteMany({ where: t });
     await prisma.agentProposalSampleAudit.deleteMany({ where: t });
     await prisma.agentProposalApproval.deleteMany({ where: t });
     await prisma.agentProposal.deleteMany({ where: t });
@@ -355,11 +359,28 @@ async function seedTenantOne(): Promise<void> {
     });
 
     // ── The approval queue. Four decided, one pending, one expired.
+    //
+    // The `guard*` columns carry all THREE guard states across these six rows,
+    // and the mix is the point rather than decoration:
+    //
+    //   FLAGGED   P1 (verdict FLAGGED) + P3 (verdict QUARANTINED) = 2
+    //   CLEAN     P2 — verdict CLEAN *with* a digest, i.e. scanned and passed
+    //   UNSCANNED P6, the PENDING row and the EXPIRED row — the column default,
+    //             CLEAN with a NULL digest, which is what every pre-guard row
+    //             in production looks like
+    //
+    // A fixture where every row shared one verdict could not tell the three
+    // counts apart: two of them would be zero whatever the implementation did.
     const proposals = [
-        { key: 'P1', status: 'ACCEPTED', reviewer: s.ownerUserId, createdAgo: 40, latencySec: 600 },
-        { key: 'P2', status: 'EDITED', reviewer: s.ownerUserId, createdAgo: 39, latencySec: 1200 },
-        { key: 'P3', status: 'REJECTED', reviewer: s.secondUserId, createdAgo: 38, latencySec: 300 },
-        { key: 'P6', status: 'ACCEPTED', reviewer: s.thirdUserId, createdAgo: 37, latencySec: 2 },
+        { key: 'P1', status: 'ACCEPTED', reviewer: s.ownerUserId, createdAgo: 40, latencySec: 600,
+          guardVerdict: 'FLAGGED', guardInputDigest: 'sha256:aa' },
+        { key: 'P2', status: 'EDITED', reviewer: s.ownerUserId, createdAgo: 39, latencySec: 1200,
+          guardVerdict: 'CLEAN', guardInputDigest: 'sha256:bb' },
+        { key: 'P3', status: 'REJECTED', reviewer: s.secondUserId, createdAgo: 38, latencySec: 300,
+          guardVerdict: 'QUARANTINED', guardInputDigest: 'sha256:cc' },
+        // No guard columns: the default CLEAN with a NULL digest — UNSCANNED.
+        { key: 'P6', status: 'ACCEPTED', reviewer: s.thirdUserId, createdAgo: 37, latencySec: 2,
+          guardVerdict: undefined, guardInputDigest: undefined },
     ] as const;
     const proposalIds: Record<string, string> = {};
     for (const p of proposals) {
@@ -374,6 +395,9 @@ async function seedTenantOne(): Promise<void> {
                 reviewedByUserId: p.reviewer,
                 reviewedAt: new Date(createdAt.getTime() + p.latencySec * 1000),
                 createdAt,
+                ...(p.guardVerdict
+                    ? { guardVerdict: p.guardVerdict, guardInputDigest: p.guardInputDigest }
+                    : {}),
             },
         });
         proposalIds[p.key] = row.id;
@@ -389,6 +413,33 @@ async function seedTenantOne(): Promise<void> {
             tenantId: T1, agentId: s.agents.A1, kind: 'CONTROL', status: 'EXPIRED',
             payloadJson: JSON.stringify({ title: 'timed out' }),
         },
+    });
+
+    // ── The monthly token budget, and the runs charged against it.
+    //
+    // 100 000 configured; 7 000 + 3 000 spent inside the current UTC calendar
+    // month; 999 999 spent the day BEFORE it, which must not be counted — the
+    // budget is a monthly allowance, so a fixture whose every run fell inside
+    // the month could not tell a month-scoped sum from an all-time one.
+    await prisma.tenantSecuritySettings.create({
+        data: { tenantId: T1, agentMonthlyTokenBudget: 100_000 },
+    });
+    const monthStart = monthStartUtc(new Date());
+    await prisma.workflowRun.createMany({
+        data: [
+            {
+                tenantId: T1, workflowKey: 'wf-spend-a', status: 'COMPLETED',
+                startedAt: new Date(monthStart.getTime() + 60_000), costTokens: 7_000,
+            },
+            {
+                tenantId: T1, workflowKey: 'wf-spend-b', status: 'RUNNING',
+                startedAt: new Date(monthStart.getTime() + 120_000), costTokens: 3_000,
+            },
+            {
+                tenantId: T1, workflowKey: 'wf-spend-last-month', status: 'COMPLETED',
+                startedAt: new Date(monthStart.getTime() - DAY), costTokens: 999_999,
+            },
+        ],
     });
 
     await prisma.agentProposalSampleAudit.createMany({
@@ -542,6 +593,20 @@ async function seedTenantTwo(): Promise<void> {
             reviewedByUserId: s.ownerUserId,
             reviewedAt: new Date(ago(10).getTime() + 900_000),
             createdAt: ago(10),
+        },
+    });
+
+    // NO `TenantSecuritySettings` row for T2, and a run that spent anyway.
+    //
+    // This is the pair that catches the false zero. `evaluateMonthlyBudgetForRun`
+    // short-circuits its aggregate when no budget is configured and reports
+    // `spentThisMonth: 0` — correct as a verdict input, wrong as a figure. A
+    // tenant with no budget AND no spend could not tell the two apart.
+    await prisma.workflowRun.create({
+        data: {
+            tenantId: T2, workflowKey: 'wf-t2-spend', status: 'COMPLETED',
+            startedAt: new Date(monthStartUtc(new Date()).getTime() + 60_000),
+            costTokens: 4_242,
         },
     });
 
@@ -933,6 +998,91 @@ describe('approval statistics', () => {
         await expect(
             buildApprovalStatisticsReport(ctxFor(T1), { windowDays: Number.NaN }),
         ).rejects.toThrow();
+    });
+});
+
+describe('the content guard, counted in three states', () => {
+    it('separates refused, scanned-clean and never-scanned over one queue', async () => {
+        const report = await buildApprovalStatisticsReport(ctxFor(T1));
+
+        // Six proposals: P1 FLAGGED + P3 QUARANTINED refused, P2 scanned clean,
+        // P6 + PENDING + EXPIRED never scanned. Derived from the fixture above,
+        // not read back from the implementation.
+        expectMeasured(report.metrics['approvals.guard_flagged'], 2);
+        expectMeasured(report.metrics['approvals.guard_clean'], 1);
+        expectMeasured(report.metrics['approvals.guard_unscanned'], 3);
+    });
+
+    it('agrees, row for row, with the rule the review page reads', async () => {
+        // The counts are SQL; the review page calls `resolveProposalGuardState`
+        // per row. Two encodings of one rule, so the test walks the same rows
+        // through the function and checks the tallies match — a drift between
+        // them would otherwise show up as a number nobody could reproduce.
+        const rows = await prisma.agentProposal.findMany({
+            where: { tenantId: T1 },
+            select: { guardVerdict: true, guardInputDigest: true },
+        });
+        const byState = { FLAGGED: 0, CLEAN: 0, UNSCANNED: 0 };
+        for (const row of rows) byState[resolveProposalGuardState(row)] += 1;
+
+        const report = await buildApprovalStatisticsReport(ctxFor(T1));
+        expectMeasured(report.metrics['approvals.guard_flagged'], byState.FLAGGED);
+        expectMeasured(report.metrics['approvals.guard_clean'], byState.CLEAN);
+        expectMeasured(report.metrics['approvals.guard_unscanned'], byState.UNSCANNED);
+        // And the fixture really does exercise all three, so the agreement
+        // above is not three zeroes agreeing with three zeroes.
+        expect(Object.values(byState).every((n) => n > 0)).toBe(true);
+    });
+
+    it('reports NO_POPULATION, not three zeroes, over a queue nobody has proposed into', async () => {
+        const report = await buildApprovalStatisticsReport(ctxFor(T3));
+        for (const id of [
+            'approvals.guard_flagged',
+            'approvals.guard_clean',
+            'approvals.guard_unscanned',
+        ] as const) {
+            expectAbsent(report.metrics[id], 'NO_POPULATION', 'NO_PROPOSALS_RECORDED');
+        }
+    });
+});
+
+describe('spend against the monthly token budget', () => {
+    it('reports the ceiling, this month\u2019s spend and the headroom between them', async () => {
+        const report = await buildIncidentHistoryReport(ctxFor(T1));
+
+        expectMeasured(report.metrics['incidents.monthly_token_budget'], 100_000);
+        // 7 000 + 3 000 inside the month. The 999 999 charged the day before
+        // the month started is excluded, which is the whole of this assertion:
+        // the same three runs summed all-time would read 1 009 999.
+        expectMeasured(report.metrics['incidents.tokens_spent_this_month'], 10_000);
+        expectMeasured(report.metrics['incidents.monthly_budget_remaining_tokens'], 90_000);
+    });
+
+    it('still reports the SPEND for a tenant that has configured no budget', async () => {
+        const report = await buildIncidentHistoryReport(ctxFor(T2));
+
+        // The budget and the headroom have no answer — NULL on the column means
+        // unlimited, and a `0` would read as a ceiling refusing every run.
+        expectAbsent(
+            report.metrics['incidents.monthly_token_budget'],
+            'NOT_ASSESSED',
+            'NO_MONTHLY_BUDGET_CONFIGURED',
+        );
+        expectAbsent(
+            report.metrics['incidents.monthly_budget_remaining_tokens'],
+            'NOT_ASSESSED',
+            'NO_MONTHLY_BUDGET_CONFIGURED',
+        );
+        // The spend does. Reading it off the enforcement verdict would report 0
+        // here, because that path skips the aggregate when no budget is set.
+        expectMeasured(report.metrics['incidents.tokens_spent_this_month'], 4_242);
+    });
+
+    it('reports a genuine zero for a tenant that has never run an agent', async () => {
+        const report = await buildIncidentHistoryReport(ctxFor(T3));
+        // MEASURED, not NO_POPULATION: "nothing was spent" is simply true, and
+        // it is not a claim about a control the way a drill figure would be.
+        expectMeasured(report.metrics['incidents.tokens_spent_this_month'], 0);
     });
 });
 

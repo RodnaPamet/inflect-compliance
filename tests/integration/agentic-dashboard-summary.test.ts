@@ -108,6 +108,7 @@ const SEED: readonly Seed[] = [
 
 async function clearOwnRows(): Promise<void> {
     const where = { tenantId: { in: [...TENANTS] } };
+    await prisma.workflowRun.deleteMany({ where });
     await prisma.registeredAgent.deleteMany({ where });
     await prisma.aiSystem.deleteMany({ where });
     await deleteAuditRowsForTenants(prisma, [...TENANTS]);
@@ -176,11 +177,44 @@ beforeAll(async () => {
             },
         });
     }
+
+    // ── Runs in flight. T1 has two RUNNING; T2 has none of any kind; T3 has
+    // three rows that are NOT in flight, one per non-RUNNING state that could
+    // plausibly be mistaken for one. A fixture with only RUNNING rows would
+    // pass against `count({})` — i.e. against no status predicate at all.
+    await prisma.workflowRun.createMany({
+        data: [
+            { tenantId: T1, workflowKey: 'wf-a', status: 'RUNNING' },
+            { tenantId: T1, workflowKey: 'wf-b', status: 'RUNNING' },
+            { tenantId: T1, workflowKey: 'wf-c', status: 'COMPLETED' },
+            { tenantId: T3, workflowKey: 'wf-d', status: 'AWAITING_APPROVAL' },
+            { tenantId: T3, workflowKey: 'wf-e', status: 'PAUSED' },
+            { tenantId: T3, workflowKey: 'wf-f', status: 'FAILED' },
+        ],
+    });
 });
 
 afterAll(async () => {
     await clearOwnRows();
     await prisma.$disconnect();
+});
+
+describe('runs in flight', () => {
+    it('counts the RUNNING rows, and only those', async () => {
+        // T1 holds three runs and two of them are RUNNING.
+        expect((await getAgenticDashboardSummary(ctxFor(T1))).runsInFlight).toBe(2);
+    });
+
+    it('does not count a run that is waiting on a human or drained by a deploy', async () => {
+        // T3 holds AWAITING_APPROVAL, PAUSED and FAILED. All three are runs
+        // that exist and none of them is executing.
+        expect((await getAgenticDashboardSummary(ctxFor(T3))).runsInFlight).toBe(0);
+    });
+
+    it('is scoped to the tenant, like every other figure in the summary', async () => {
+        // T2 has no runs at all, and T1's two must not reach it.
+        expect((await getAgenticDashboardSummary(ctxFor(T2))).runsInFlight).toBe(0);
+    });
 });
 
 describe('the census counts every standing, and the total is the sum of it', () => {

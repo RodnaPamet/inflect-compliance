@@ -7957,7 +7957,9 @@
         "NO_KILLS_ENGAGED": "No kill switch has been engaged in this window.",
         "NO_SUPPLYING_VENDORS": "No supplier provides an agent here.",
         "OUTSIDE_PLATFORM_BOUNDARY": "This cannot be observed from inside the platform.",
-        "UNKNOWN": "This figure is unavailable and the reason was not recorded."
+        "UNKNOWN": "This figure is unavailable and the reason was not recorded.",
+        "NO_PROPOSALS_RECORDED": "No agent has ever proposed a change here, so the content guard has had nothing to look at.",
+        "NO_MONTHLY_BUDGET_CONFIGURED": "No monthly token budget is set for this workspace, so agent runs are not refused on spend. An absent budget means unlimited, never zero."
       }
     },
     "crumbDashboard": "Dashboard",
@@ -8104,7 +8106,8 @@
       "unscoredActive": "{count, plural, one {# ACTIVE agent has no assessed authority tier} other {# ACTIVE agents have no assessed authority tier}}. An unscored agent reaches nothing — its credential resolves to a deny ceiling.",
       "notEnforcing": "This workspace does not require agents to be registered, so the register records what runs without deciding it.",
       "clear": "No kill switch in force, every active agent is scored, and registration is enforced.",
-      "proposalsWaiting": "{count, plural, one {# agent proposal is waiting} other {# agent proposals are waiting}} for a human decision."
+      "proposalsWaiting": "{count, plural, one {# agent proposal is waiting} other {# agent proposals are waiting}} for a human decision.",
+      "runsInFlight": "{count, plural, one {# agentic run is in flight} other {# agentic runs are in flight}} right now — started and not yet settled."
     },
     "proposals": {
       "accessTitle": "Agent proposals access required",

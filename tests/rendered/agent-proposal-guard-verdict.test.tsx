@@ -136,9 +136,9 @@ jest.mock('@/components/ui/hooks', () => {
 
 import {
     AgentProposalsClient,
-    resolveProposalGuardState,
     type ProposalRow,
 } from '@/app/t/[tenantSlug]/(app)/agents/proposals/AgentProposalsClient';
+import { resolveProposalGuardState } from '@/lib/agentic/proposal-guard-state';
 import { computeProposalDiff } from '@/lib/agentic/proposal-diff';
 
 /** The two rule ids a real injection scan puts on a flagged proposal. */

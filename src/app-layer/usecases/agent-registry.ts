@@ -498,6 +498,12 @@ export async function getAgenticAssuranceSignals(ctx: RequestContext): Promise<{
  *     advertises it as running.
  *   • `enforcing` — whether any of the above decides anything.
  *   • `proposalsAwaitingReview` — a queue with a human at the end of it.
+ *   • `runsInFlight` — how many workflow runs are executing RIGHT NOW. The
+ *     other facts describe a fleet's configuration; this one is the only sign
+ *     of life. Read from `WorkflowRun.status = RUNNING` rather than from
+ *     `lib/agentic/in-flight-runs.ts`, whose Set is per-PROCESS by design and
+ *     would report only the runs the instance that rendered the page happens
+ *     to be executing.
  *
  * ── THE CENSUS: `totalRegistered` + `byStanding` (#2560) ────────────────────
  *
@@ -541,13 +547,15 @@ export async function getAgenticDashboardSummary(ctx: RequestContext): Promise<{
     proposalsAwaitingReview: number;
     totalRegistered: number;
     byStanding: Record<AgentStatus, number>;
+    runsInFlight: number;
 }> {
     assertCanReadAgentRegister(ctx);
     const [enforcing, kills, counts] = await Promise.all([
         isAgentRegistrationEnforced(ctx.tenantId),
         listKillSwitches(ctx, { inForceOnly: true, take: 200 }),
         runInTenantContext(ctx, async (db) => {
-            const [activeUnscored, proposalsAwaitingReview, standingRows] = await Promise.all([
+            const [activeUnscored, proposalsAwaitingReview, standingRows, runsInFlight] =
+                await Promise.all([
                 db.registeredAgent.count({
                     where: {
                         tenantId: ctx.tenantId,
@@ -564,13 +572,38 @@ export async function getAgenticDashboardSummary(ctx: RequestContext): Promise<{
                     where: { tenantId: ctx.tenantId, deletedAt: null },
                     _count: { _all: true },
                 }),
+                // RUNS IN FLIGHT — read from the ROW, not from the executing
+                // process. `lib/agentic/in-flight-runs.ts` holds a Set that one
+                // process writes as it walks a run's steps; it exists so a
+                // SIGTERM can pause what THAT process is executing, and it is
+                // deliberately process-local because no query can tell "my run"
+                // from another pod's. A dashboard rendered by whichever
+                // instance took the request would therefore report a fraction
+                // of the fleet and call it the total.
+                //
+                // `status = RUNNING` is the tenant-wide answer, and it is the
+                // same predicate the drain and the reaper both write against.
+                // AWAITING_APPROVAL and PAUSED are excluded on purpose: both
+                // are runs that exist and are NOT executing — one is waiting on
+                // a human, the other was drained by a deploy — and folding
+                // either into "in flight" would have an operator hunting for
+                // work nothing is doing.
+                db.workflowRun.count({
+                    where: { tenantId: ctx.tenantId, status: 'RUNNING' },
+                }),
             ]);
             const byStanding = Object.fromEntries(
                 Object.values(AgentStatus).map((standing) => [standing, 0]),
             ) as Record<AgentStatus, number>;
             for (const row of standingRows) byStanding[row.status] = row._count._all;
             const totalRegistered = Object.values(byStanding).reduce((a, b) => a + b, 0);
-            return { activeUnscored, proposalsAwaitingReview, byStanding, totalRegistered };
+            return {
+                activeUnscored,
+                proposalsAwaitingReview,
+                byStanding,
+                totalRegistered,
+                runsInFlight,
+            };
         }),
     ]);
 
