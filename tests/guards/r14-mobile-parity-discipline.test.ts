@@ -51,23 +51,30 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const NAV_BAR_SRC = fs.readFileSync(
+const NAV_BAR_SRC = codeOf(fs.readFileSync(
     path.join(ROOT, 'src/components/layout/nav-bar.tsx'),
     'utf8',
-);
-const TOP_CHROME_SRC = fs.readFileSync(
+));
+const TOP_CHROME_SRC = codeOf(fs.readFileSync(
     path.join(ROOT, 'src/components/layout/TopChrome.tsx'),
     'utf8',
-);
-const APP_SHELL_SRC = fs.readFileSync(
+));
+const APP_SHELL_SRC = codeOf(fs.readFileSync(
     path.join(ROOT, 'src/components/layout/AppShell.tsx'),
     'utf8',
-);
-const SWITCHER_SRC = fs.readFileSync(
+));
+const SWITCHER_SRC = codeOf(fs.readFileSync(
     path.join(ROOT, 'src/components/layout/tenant-switcher.tsx'),
     'utf8',
-);
+));
 
 describe('Roadmap-14 PR-12 — Mobile parity (unify dual chrome)', () => {
     describe('NAV_BAR_SHELL renders on all viewports', () => {

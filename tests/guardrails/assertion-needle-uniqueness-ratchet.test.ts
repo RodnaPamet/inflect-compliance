@@ -19,7 +19,7 @@
  *     TenantEntraGroupMapping model is TENANT-SCOPED + uniquely keyed"
  *     asserting `@@index([tenantId])` against the whole of `auth.prisma`.
  *     Detector: 15 occurrences. Fifteen models satisfy an assertion about one.
- *   · `vendor-audit.test.ts:105` — `.toContain('model VendorEvidenceBundle')`,
+ *   · `vendor-audit.test.ts:112` — `.toContain('model VendorEvidenceBundle')`,
  *     satisfied by `model VendorEvidenceBundleItem {` eighteen lines below.
  *     Detector: 2. Line 117's `/frozenAt\s+DateTime\?/`: 2.
  *
@@ -279,7 +279,7 @@ const HIGH_MULTIPLICITY = 5;
 //   every open PR: 1319 is the live count of main@fc8954092 + this branch.
 //   Whoever merges second re-measures on the merged tree rather than keeping
 //   this figure.
-const AMBIGUOUS_NEEDLE_BASELINE = 1296;
+const AMBIGUOUS_NEEDLE_BASELINE = 1289;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
@@ -322,7 +322,7 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1296;
 // off the five-plus threshold; a `.tsx` docblock listing props and mounts is
 // what carries a needle over five. Shared state with every open PR:
 // re-measure on the merged tree.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 213;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 209;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -756,7 +756,7 @@ describe('Class D — needles that match more than the thing they name', () => {
     // these the detector's only positive control, which is why all five are
     // here: the header prose above named five, three were asserted, and a
     // summary of this work claimed all five were. Two of them —
-    // `audit-s5:22` and `vendor-audit:117` — were resting on the aggregate
+    // `audit-s5:22` and `vendor-audit:124` — were resting on the aggregate
     // alone, which is the thing the aggregate cannot tell you.
     describe('the instances #2246 proved by hand', () => {
         const at = (file: string, line: number) =>
@@ -789,14 +789,14 @@ describe('Class D — needles that match more than the thing they name', () => {
             expect(at('entra-ei2-group-mapping.test.ts', 18)?.occurrences).toBe(15);
         });
 
-        it('vendor-audit.test.ts:105 — a `.toContain`, the matcher the class hid behind', () => {
-            const hit = at('vendor-audit.test.ts', 105);
+        it('vendor-audit.test.ts:112 — a `.toContain`, the matcher the class hid behind', () => {
+            const hit = at('vendor-audit.test.ts', 112);
             expect(hit?.site.matcher).toBe('toContain');
             expect(hit?.occurrences).toBe(2);
         });
 
-        it('vendor-audit.test.ts:117 — frozenAt is in two models of the same schema', () => {
-            expect(at('vendor-audit.test.ts', 117)?.occurrences).toBe(2);
+        it('vendor-audit.test.ts:124 — frozenAt is in two models of the same schema', () => {
+            expect(at('vendor-audit.test.ts', 124)?.occurrences).toBe(2);
         });
     });
 

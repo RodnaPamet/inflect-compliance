@@ -14,6 +14,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 /** Chart primitives that should carry the polished transition. */
@@ -28,7 +35,7 @@ describe('Chart animation polish lock (R11-PR11)', () => {
         for (const rel of CHART_PRIMITIVES) {
             const abs = path.resolve(ROOT, rel);
             if (!fs.existsSync(abs)) continue;
-            const src = fs.readFileSync(abs, 'utf-8');
+            const src = codeOf(fs.readFileSync(abs, 'utf-8'));
             // If the file uses `transition-all`, every site should
             // also carry an `ease-` token nearby (within the same
             // className-string). The pragmatic check: a global count
@@ -57,10 +64,10 @@ describe('Chart animation polish lock (R11-PR11)', () => {
     });
 
     test('DonutChart segment transition uses ease-out specifically', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.resolve(ROOT, 'src/components/ui/DonutChart.tsx'),
             'utf-8',
-        );
+        ));
         // R18-PR11 — the donut segment no longer uses a CSS
         // `transition-all` class. It morphs its `d` via a
         // framer-motion `<motion.path>` (CSS can't reliably

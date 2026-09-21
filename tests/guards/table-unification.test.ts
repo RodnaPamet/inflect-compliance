@@ -35,14 +35,21 @@
 import * as fs from "fs";
 import * as path from "path";
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, "../..");
 
 describe("DataTable unification — Controls as the canonical shape", () => {
     it("row-select Checkbox in table.tsx is rounded-full (circular select)", () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(ROOT, "src/components/ui/table/table.tsx"),
             "utf8",
-        );
+        ));
         // The select-cell Checkbox renders TWICE in this file (header
         // select-all + body per-row). Both must be rounded-full.
         const matches = src.match(
@@ -57,10 +64,10 @@ describe("DataTable unification — Controls as the canonical shape", () => {
     });
 
     it("select-all Checkbox in selection-toolbar.tsx is rounded-full", () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(ROOT, "src/components/ui/table/selection-toolbar.tsx"),
             "utf8",
-        );
+        ));
         expect(src).toMatch(
             /size-4\s+rounded-full\s+data-\[state=checked\]:bg-\[var\(--brand-emphasis\)\]/,
         );
@@ -75,23 +82,23 @@ describe("DataTable unification — Controls as the canonical shape", () => {
         // canonical hover treatment. Locking the literal here prevents
         // a future "simplify" PR from stripping the transition or
         // changing the bg recipe.
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(ROOT, "src/components/ui/table/table.tsx"),
             "utf8",
-        );
+        ));
         expect(src).toMatch(
             /clickable\s*&&\s*"group-hover\/row:bg-bg-muted\s+transition-colors\s+duration-75"/,
         );
     });
 
     it("Controls table — the canonical reference — sets the four locked traits", () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(
                 ROOT,
                 "src/app/t/[tenantSlug]/(app)/controls/ControlsClient.tsx",
             ),
             "utf8",
-        );
+        ));
         // 1. First column is `id: 'code'`.
         expect(src).toMatch(/id:\s*['"]code['"]/);
         // 2. getRowId is set. Right-rail Phase 2 extracted the row-id
@@ -205,10 +212,10 @@ describe("DataTable first-column registry", () => {
     it("every page marked `adopted: true` contains its declared firstColumnId", () => {
         for (const entry of FIRST_COLUMN_TABLES) {
             if (!entry.adopted) continue;
-            const src = fs.readFileSync(
+            const src = codeOf(fs.readFileSync(
                 path.join(ROOT, entry.file),
                 "utf8",
-            );
+            ));
             // Match either `id: '<X>'` (TanStack explicit id) or
             // `accessorKey: '<X>'` (the row-key path, which TanStack
             // uses as the column id when no explicit id is given).

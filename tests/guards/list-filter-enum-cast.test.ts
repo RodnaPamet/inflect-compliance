@@ -45,6 +45,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 
 /** Every layer that may hand a user-supplied filter value to Prisma. */
@@ -122,7 +129,7 @@ function scan(source: string): Array<{ line: number; text: string }> {
 function allHits(): Violation[] {
     const hits: Violation[] = [];
     for (const file of scannedFiles()) {
-        const source = fs.readFileSync(file, 'utf8');
+        const source = codeOf(fs.readFileSync(file, 'utf8'));
         for (const hit of scan(source)) {
             hits.push({ file: path.relative(ROOT, file), line: hit.line, text: hit.text });
         }
@@ -157,10 +164,10 @@ describe('list filters are validated, never `as`-cast onto a Prisma column', () 
     });
 
     it('routes every list filter through the shared parser', () => {
-        const shared = fs.readFileSync(
+        const shared = codeOf(fs.readFileSync(
             path.join(ROOT, 'src/app-layer/domain/list-filter.ts'),
             'utf8',
-        );
+        ));
         // The ratchet is only meaningful while the canonical parser
         // exists and still validates. If it is ever gutted, fail here
         // rather than let the scan below pass over defanged call sites.

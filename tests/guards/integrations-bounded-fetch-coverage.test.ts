@@ -18,6 +18,13 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const INTEGRATIONS = path.join(ROOT, 'src/app-layer/integrations');
 
@@ -83,7 +90,7 @@ describe('every integration provider defaults to a bounded fetch', () => {
             .filter((f) => {
                 const rel = path.relative(ROOT, f);
                 if (ALLOWED[rel]) return false;
-                return UNBOUNDED_DEFAULT.test(stripComments(fs.readFileSync(f, 'utf8')));
+                return UNBOUNDED_DEFAULT.test(stripComments(codeOf(fs.readFileSync(f, 'utf8'))));
             })
             .map((f) => path.relative(ROOT, f));
 
@@ -94,7 +101,7 @@ describe('every integration provider defaults to a bounded fetch', () => {
         // A "simplification" to `signal: deadline` would silently break
         // cancellation for every caller already passing one — and would look
         // tidier, which is what makes it likely.
-        const src = fs.readFileSync(path.join(INTEGRATIONS, 'bounded-fetch.ts'), 'utf8');
+        const src = codeOf(fs.readFileSync(path.join(INTEGRATIONS, 'bounded-fetch.ts'), 'utf8'));
         expect(src).toMatch(/AbortSignal\.any\(/);
         expect(src).toMatch(/AbortSignal\.timeout\(/);
     });
@@ -105,7 +112,7 @@ describe('every integration provider defaults to a bounded fetch', () => {
         // still fires, but stops being classifiable as retryable, and nothing
         // fails to say so.
         const src = stripComments(
-            fs.readFileSync(path.join(INTEGRATIONS, 'bounded-fetch.ts'), 'utf8'),
+            codeOf(fs.readFileSync(path.join(INTEGRATIONS, 'bounded-fetch.ts'), 'utf8')),
         );
         expect(src).toMatch(/name === 'TimeoutError'/);
         expect(src).not.toMatch(/err instanceof Error && err\.name === 'TimeoutError'/);
@@ -119,7 +126,7 @@ describe('every integration provider defaults to a bounded fetch', () => {
             .filter((f) => {
                 const rel = path.relative(ROOT, f);
                 if (BOUNDED_DIRECT_ALLOWED[rel]) return false;
-                return /\bboundedFetch\b/.test(stripComments(fs.readFileSync(f, 'utf8')));
+                return /\bboundedFetch\b/.test(stripComments(codeOf(fs.readFileSync(f, 'utf8'))));
             })
             .map((f) => path.relative(ROOT, f));
 
@@ -130,7 +137,7 @@ describe('every integration provider defaults to a bounded fetch', () => {
         // If this stops being true, every provider quietly loses its deadline
         // while the rule above still reads as satisfied.
         const src = stripComments(
-            fs.readFileSync(path.join(INTEGRATIONS, 'http-resilience.ts'), 'utf8'),
+            codeOf(fs.readFileSync(path.join(INTEGRATIONS, 'http-resilience.ts'), 'utf8')),
         );
         expect(src).toMatch(/opts\.fetchImpl \?\? boundedFetch/);
     });
@@ -141,7 +148,7 @@ describe('every integration provider defaults to a bounded fetch', () => {
         // other test would notice, because the in-process retry would still
         // work perfectly.
         const src = stripComments(
-            fs.readFileSync(path.join(INTEGRATIONS, 'http-resilience.ts'), 'utf8'),
+            codeOf(fs.readFileSync(path.join(INTEGRATIONS, 'http-resilience.ts'), 'utf8')),
         );
         const fn = src.slice(src.indexOf('export function shouldBypassQueueRetry'));
         const body = fn.slice(0, fn.indexOf('\n}'));

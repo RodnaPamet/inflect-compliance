@@ -27,13 +27,20 @@
 import * as fs from "fs";
 import * as path from "path";
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, "../..");
 
 describe("v2-PR-12 EntityListPage header trio", () => {
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.join(ROOT, "src/components/layout/EntityListPage.tsx"),
         "utf8",
-    );
+    ));
 
     it("EntityListPageHeader declares both `eyebrow` and `description` slots", () => {
         // Both are optional (`?:`); `title` stays required.
@@ -54,10 +61,10 @@ describe("v2-PR-12 EntityListPage header trio", () => {
 });
 
 describe("v2-PR-12 DataTable row hover affordance", () => {
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.join(ROOT, "src/components/ui/table/table.tsx"),
         "utf8",
-    );
+    ));
 
     it("renders a brand-coloured left-border on hover for clickable rows", () => {
         // R13-PR13 — the inset box-shadow recipe moved from the

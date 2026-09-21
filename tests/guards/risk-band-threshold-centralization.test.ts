@@ -25,6 +25,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.join(__dirname, '..', '..');
 
 // The risk display + scoring surfaces the prompt enumerates. Curated
@@ -75,7 +82,7 @@ describe('Risk-band threshold centralization (PR-J)', () => {
         const offences: Offence[] = [];
         for (const abs of collectFiles()) {
             const rel = path.relative(ROOT, abs);
-            const lines = fs.readFileSync(abs, 'utf-8').split('\n');
+            const lines = codeOf(fs.readFileSync(abs, 'utf-8')).split('\n');
             lines.forEach((line, i) => {
                 if (isCommentLine(line)) return;
                 if (BAND_LADDER_RE.test(line)) {
@@ -102,10 +109,10 @@ describe('Risk-band threshold centralization (PR-J)', () => {
     });
 
     it('the single band resolver home exports the config-driven helpers', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(ROOT, 'src/lib/risk-matrix/scoring.ts'),
             'utf-8',
-        );
+        ));
         expect(src).toMatch(/export function resolveBandForScore/);
         expect(src).toMatch(/export function resolveBandTone/);
     });

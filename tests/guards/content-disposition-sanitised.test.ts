@@ -17,6 +17,13 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
 
@@ -56,7 +63,7 @@ describe('Content-Disposition filenames go through the shared builder', () => {
             .filter((f) => {
                 const rel = path.relative(ROOT, f);
                 if (ALLOWED[rel]) return false;
-                return RAW_INTERPOLATION.test(stripComments(fs.readFileSync(f, 'utf8')));
+                return RAW_INTERPOLATION.test(stripComments(codeOf(fs.readFileSync(f, 'utf8'))));
             })
             .map((f) => path.relative(ROOT, f));
 
@@ -67,10 +74,10 @@ describe('Content-Disposition filenames go through the shared builder', () => {
         // A "simplification" that dropped either replace would leave the
         // helper looking correct at every call site while reopening the hole
         // at all of them at once — the cost of centralising.
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(SRC, 'lib/http/content-disposition.ts'),
             'utf8',
-        );
+        ));
         // Non-printable ASCII → placeholder. This is the CR/LF defence.
         expect(src).toMatch(/\\x20-\\x7E/);
         // The quote that would end the quoted-string.

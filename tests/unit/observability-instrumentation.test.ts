@@ -13,6 +13,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 // ─── 1. Route Normalization ─────────────────────────────────────────────
 
 describe('normalizeRoute — cardinality safety', () => {
@@ -296,9 +303,9 @@ describe('label cardinality safety', () => {
 
 describe('metric names align with dashboard/alerts', () => {
     it('should define all metric names referenced in the Grafana dashboard', () => {
-        const metricsCode = fs.readFileSync(
+        const metricsCode = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/lib/observability/metrics.ts'), 'utf-8'
-        );
+        ));
 
         // Dashboard uses Prometheus convention (underscores),
         // code uses OTel convention (dots). Verify the dot-notation names.
@@ -311,9 +318,9 @@ describe('metric names align with dashboard/alerts', () => {
     });
 
     it('should use consistent label names', () => {
-        const metricsCode = fs.readFileSync(
+        const metricsCode = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/lib/observability/metrics.ts'), 'utf-8'
-        );
+        ));
 
         // Request labels
         expect(metricsCode).toContain("'http.method'");
@@ -330,9 +337,9 @@ describe('metric names align with dashboard/alerts', () => {
     });
 
     it('should only use bounded label values for job.status', () => {
-        const metricsCode = fs.readFileSync(
+        const metricsCode = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/lib/observability/metrics.ts'), 'utf-8'
-        );
+        ));
 
         // job.status should map to exactly 'success' or 'failure'
         expect(metricsCode).toContain("'success'");
@@ -340,9 +347,9 @@ describe('metric names align with dashboard/alerts', () => {
     });
 
     it('should only report bounded queue states', () => {
-        const metricsCode = fs.readFileSync(
+        const metricsCode = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/lib/observability/metrics.ts'), 'utf-8'
-        );
+        ));
 
         // Only report meaningful BullMQ states
         expect(metricsCode).toContain("'waiting'");
@@ -356,47 +363,47 @@ describe('metric names align with dashboard/alerts', () => {
 
 describe('job-runner records metrics', () => {
     it('should import recordJobMetrics', () => {
-        const code = fs.readFileSync(
+        const code = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/lib/observability/job-runner.ts'), 'utf-8'
-        );
+        ));
         expect(code).toContain("import { recordJobMetrics } from './metrics'");
     });
 
     it('should call recordJobMetrics on success path', () => {
-        const code = fs.readFileSync(
+        const code = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/lib/observability/job-runner.ts'), 'utf-8'
-        );
+        ));
         expect(code).toContain('recordJobMetrics({ jobName, success: true, durationMs })');
     });
 
     it('should call recordJobMetrics on failure path', () => {
-        const code = fs.readFileSync(
+        const code = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/lib/observability/job-runner.ts'), 'utf-8'
-        );
+        ));
         expect(code).toContain('recordJobMetrics({ jobName, success: false, durationMs })');
     });
 });
 
 describe('executor-registry records metrics', () => {
     it('should import recordJobMetrics', () => {
-        const code = fs.readFileSync(
+        const code = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/app-layer/jobs/executor-registry.ts'), 'utf-8'
-        );
+        ));
         expect(code).toContain("import { recordJobMetrics } from '@/lib/observability/metrics'");
     });
 
     it('should call recordJobMetrics on success path', () => {
-        const code = fs.readFileSync(
+        const code = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/app-layer/jobs/executor-registry.ts'), 'utf-8'
-        );
+        ));
         expect(code).toContain('recordJobMetrics({');
         expect(code).toContain('success: result.success');
     });
 
     it('should call recordJobMetrics on failure path (executor throws)', () => {
-        const code = fs.readFileSync(
+        const code = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/app-layer/jobs/executor-registry.ts'), 'utf-8'
-        );
+        ));
         expect(code).toContain('recordJobMetrics({ jobName: name, success: false, durationMs })');
     });
 });
@@ -405,9 +412,9 @@ describe('executor-registry records metrics', () => {
 
 describe('barrel exports', () => {
     it('should export normalizeRoute from observability barrel', () => {
-        const barrel = fs.readFileSync(
+        const barrel = codeOf(fs.readFileSync(
             path.resolve(__dirname, '../../src/lib/observability/index.ts'), 'utf-8'
-        );
+        ));
         expect(barrel).toContain('normalizeRoute');
         expect(barrel).toContain('recordJobMetrics');
         expect(barrel).toContain('startQueueDepthReporting');

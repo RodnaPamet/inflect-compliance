@@ -29,6 +29,13 @@ import * as path from 'node:path';
 import * as allowedHost from '@/app-layer/integrations/allowed-host';
 import type { HostAllowlist } from '@/app-layer/integrations/allowed-host';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const SRC = path.resolve(__dirname, '../../src');
 
 /** The interface declaration itself, which necessarily names the fields. */
@@ -72,7 +79,7 @@ describe('and nothing in src/ sets one anywhere else', () => {
         const offenders: string[] = [];
         for (const file of walk(SRC)) {
             if (path.resolve(file) === path.resolve(DECLARATION_FILE)) continue;
-            const src = fs.readFileSync(file, 'utf8');
+            const src = codeOf(fs.readFileSync(file, 'utf8'));
             if (/\ballow(Insecure|Port)\b/.test(src)) {
                 offenders.push(path.relative(SRC, file));
             }
@@ -83,7 +90,7 @@ describe('and nothing in src/ sets one anywhere else', () => {
     it('the declaration file names them ONLY in the interface, never on a value', () => {
         // Guards the carve-out above: allowed-host.ts is skipped by the scan,
         // so without this it would be the one place a flag could be set.
-        const src = fs.readFileSync(DECLARATION_FILE, 'utf8');
+        const src = codeOf(fs.readFileSync(DECLARATION_FILE, 'utf8'));
         // `allowInsecure?: boolean` (declaration) is fine.
         // `allowInsecure: true` (assignment) is not.
         expect(src).not.toMatch(/\ballow(Insecure|Port)\s*:\s*(true|false|[A-Za-z_$])/);

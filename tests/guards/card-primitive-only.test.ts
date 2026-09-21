@@ -39,6 +39,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const PRIMITIVE = 'src/components/ui/card.tsx';
 const VARIANTS = 'src/components/ui/card-variants.ts';
@@ -55,11 +62,11 @@ describe('Card-primitive eradication of glass-card (Roadmap-5 PR-1)', () => {
         // `card-variants.ts` (a non-"use client" sibling) so
         // server components can call it without hitting a client-
         // reference boundary.
-        const variantsSrc = fs.readFileSync(path.join(ROOT, VARIANTS), 'utf-8');
+        const variantsSrc = codeOf(fs.readFileSync(path.join(ROOT, VARIANTS), 'utf-8'));
         // cardVariants's `raised` elevation must still emit
         // `glass-card` so existing CSS keeps painting.
         expect(variantsSrc).toMatch(/raised:\s*"glass-card"/);
-        const src = fs.readFileSync(path.join(ROOT, PRIMITIVE), 'utf-8');
+        const src = codeOf(fs.readFileSync(path.join(ROOT, PRIMITIVE), 'utf-8'));
         // The primitive still re-exports cardVariants for callers
         // that grab `{ Card, cardVariants }` together.
         expect(src).toMatch(/from\s+['"]\.\/card-variants['"]/);
@@ -82,7 +89,7 @@ describe('Card-primitive eradication of glass-card (Roadmap-5 PR-1)', () => {
                 if (!/\.tsx$/.test(e.name)) continue;
                 const rel = path.relative(ROOT, full);
                 if (rel === PRIMITIVE) continue;
-                const raw = fs.readFileSync(full, 'utf-8');
+                const raw = codeOf(fs.readFileSync(full, 'utf-8'));
                 // Strip block + line comments first so JSDoc / inline
                 // // comments referencing glass-card don't trip.
                 const stripped = raw

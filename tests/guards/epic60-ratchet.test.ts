@@ -27,6 +27,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const APP_DIR = path.resolve(__dirname, '../../src/app');
 const COMPONENTS_DIR = path.resolve(__dirname, '../../src/components');
 
@@ -48,7 +55,7 @@ function walk(dir: string, match: RegExp): string[] {
 function countMatches(files: string[], pattern: RegExp): { file: string; matches: number }[] {
     const results: { file: string; matches: number }[] = [];
     for (const file of files) {
-        const src = fs.readFileSync(file, 'utf-8');
+        const src = codeOf(fs.readFileSync(file, 'utf-8'));
         const matches = (src.match(pattern) ?? []).length;
         if (matches > 0) results.push({ file, matches });
     }
@@ -190,7 +197,7 @@ describe('Epic 60 — legacy pattern ratchet', () => {
         // the miss at the ratchet layer so the failure shows up in a
         // CI run that's scoped to Epic 60.
         const hooksDir = path.resolve(__dirname, '../../src/components/ui/hooks');
-        const barrel = fs.readFileSync(path.join(hooksDir, 'index.ts'), 'utf-8');
+        const barrel = codeOf(fs.readFileSync(path.join(hooksDir, 'index.ts'), 'utf-8'));
         const files = fs
             .readdirSync(hooksDir)
             .filter((f) => /^use-.+\.tsx?$/.test(f));
@@ -203,7 +210,7 @@ describe('Epic 60 — legacy pattern ratchet', () => {
             f.endsWith('src/components/onboarding/OnboardingWizard.tsx'),
         );
         if (testsClient) {
-            const src = fs.readFileSync(testsClient, 'utf-8');
+            const src = codeOf(fs.readFileSync(testsClient, 'utf-8'));
             expect(src).toMatch(/from ['"]@\/components\/ui\/hooks['"]/);
         }
     });

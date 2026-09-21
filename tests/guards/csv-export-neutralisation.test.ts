@@ -22,6 +22,13 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// EVERY read here is wrapped because every path this file reads is a
+// TypeScript-alike — re-derived per file, not assumed from the directory — so
+// there is no second language needing its own reader. String literals are KEPT.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
 
@@ -99,7 +106,7 @@ describe('CSV exporters neutralise formula triggers', () => {
             const rel = path.relative(ROOT, file);
             if (NOT_EXPORTERS[rel]) continue;
 
-            const src = stripComments(fs.readFileSync(file, 'utf8'));
+            const src = stripComments(codeOf(fs.readFileSync(file, 'utf8')));
             if (!HAND_ROLLED_ESCAPE.test(src)) continue;
             // Must IMPORT the shared module. A same-named local function is
             // exactly what this used to accept.
@@ -120,7 +127,7 @@ describe('CSV exporters neutralise formula triggers', () => {
         const ONELINER =
             /rows\.map\(\s*\(?r\)?\s*=>\s*r\.map\(\s*\(?c\)?\s*=>\s*`"\$\{\(c \|\| ''\)\.replace/;
         const offenders = files
-            .filter((f) => ONELINER.test(stripComments(fs.readFileSync(f, 'utf8'))))
+            .filter((f) => ONELINER.test(stripComments(codeOf(fs.readFileSync(f, 'utf8')))))
             .map((f) => path.relative(ROOT, f));
 
         expect({ offenders }).toEqual({ offenders: [] });
@@ -132,10 +139,10 @@ describe('CSV exporters neutralise formula triggers', () => {
      * for the remaining ones — a partial fix reads exactly like a whole one.
      */
     it('the shared neutraliser still covers every trigger character', () => {
-        const src = fs.readFileSync(
+        const src = codeOf(fs.readFileSync(
             path.join(SRC, 'lib/csv/format-csv.ts'),
             'utf8',
-        );
+        ));
         for (const trigger of ["'='", "'+'", "'-'", "'@'", "'\\t'", "'\\r'"]) {
             expect(src).toContain(trigger);
         }
