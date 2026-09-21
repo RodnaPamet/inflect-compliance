@@ -33,6 +33,8 @@ import {
     functionBodyOf,
     interfaceBodyOf,
     sqlCodeOf,
+    mdCodeOf,
+    cssCodeOf,
 } from '../helpers/source-blocks';
 
 describe('source-blocks — the anchor reads CODE, not prose', () => {
@@ -495,5 +497,76 @@ describe('source-blocks — the anchor is the FIRST match, and that is a limit',
 
         expect(declarationOf(src, 'target')).toMatch(/a: 1/);
         expect(declarationOf(src, 'target')).not.toMatch(/b: 2/);
+    });
+});
+
+
+describe('source-blocks — mdCodeOf', () => {
+    // The INVERSE of codeOf. codeOf blanks the comments out of code; markdown
+    // is prose containing code, so this blanks the prose and keeps the code.
+    it('blanks running prose and preserves length and line count', () => {
+        const md = 'Some prose here.\nMore prose.\n';
+        const out = mdCodeOf(md);
+        expect(out).not.toMatch(/prose/);
+        expect(out.length).toBe(md.length);
+        expect(out.split('\n').length).toBe(md.split('\n').length);
+    });
+
+    it('KEEPS fenced blocks, including the fence marker', () => {
+        const md = 'prose\n```bash\naws s3api copy-object --x\n```\nmore prose\n';
+        const out = mdCodeOf(md);
+        expect(out).toMatch(/aws s3api copy-object --x/);
+        expect(out).toMatch(/```bash/);
+        expect(out).not.toMatch(/more prose/);
+    });
+
+    it('KEEPS inline code spans, which is how identifier tables survive', () => {
+        const md = 'The | `DATABASE_READ_URL` | row describes a replica.\n';
+        const out = mdCodeOf(md);
+        expect(out).toMatch(/`DATABASE_READ_URL`/);
+        expect(out).not.toMatch(/describes a replica/);
+    });
+
+    it('matches a multi-backtick span by its OPENING run length', () => {
+        // ``a ` b`` is one span; assuming a run of one would end it early and
+        // blank the rest of the line as prose.
+        const md = 'x ``a ` b`` y\n';
+        const out = mdCodeOf(md);
+        expect(out).toMatch(/``a ` b``/);
+    });
+
+    it('leaves an unterminated span alone rather than keeping the rest of the line', () => {
+        const md = 'prose with one ` stray backtick and more prose\n';
+        const out = mdCodeOf(md);
+        expect(out).not.toMatch(/stray backtick/);
+    });
+
+    it('is NOT what codeOf does — handing codeOf markdown keeps the prose', () => {
+        const md = 'This sentence mentions animate-pulse in prose.\n';
+        expect(codeOf(md)).toMatch(/animate-pulse/);
+        expect(mdCodeOf(md)).not.toMatch(/animate-pulse/);
+    });
+});
+
+describe('source-blocks — cssCodeOf', () => {
+    it('blanks a /* … */ comment, preserving length and line count', () => {
+        const css = 'a{color:red}/* note */\nb{}\n';
+        const out = cssCodeOf(css);
+        expect(out).not.toMatch(/note/);
+        expect(out.length).toBe(css.length);
+        expect(out.split('\n').length).toBe(css.split('\n').length);
+    });
+
+    it('does NOT treat // as a comment, because CSS has no line comments', () => {
+        const css = 'a{background:url(https://x/y.png)}\n';
+        expect(cssCodeOf(css)).toMatch(/https:\/\/x\/y\.png/);
+        // codeOf WOULD eat it — which is why CSS needs its own masker and is
+        // not merely "close enough" to TypeScript.
+        expect(codeOf(css)).not.toMatch(/y\.png/);
+    });
+
+    it('keeps a comment opener inside a string', () => {
+        const css = 'a::after{content:"/*"}\n';
+        expect(cssCodeOf(css)).toMatch(/content:"\/\*"/);
     });
 });

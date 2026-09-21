@@ -210,6 +210,13 @@ Common to both:
 See also: [`SECURITY.md`](../SECURITY.md), [`docs/encryption-data-protection.md`](./encryption-data-protection.md) (the technical "how data is protected"), and [`docs/data-processing-agreement-template.md`](./data-processing-agreement-template.md).
 
 
+> The `identity` directory under `integrations/providers/` is **not a provider
+> at all** — it holds the shared primitives (`NormalizedIdentityAccount`, the
+> per-account check evaluation) that Okta, Google Workspace and Entra ID each
+> reuse. It contains no client, calls no external service, and appears here
+> only because it sits alongside the real providers on disk. It is **not** a
+> sub-processor.
+
 > The `personnel` integration provider is **internal** — it evaluates the
 > employee roster against already-connected identity accounts (offboarded
 > access, onboarding SLA, manager coverage). It calls no external service, so
