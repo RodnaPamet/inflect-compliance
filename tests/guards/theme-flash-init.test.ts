@@ -71,7 +71,7 @@ describe('theme anti-FOUC', () => {
 
         it('ThemeProvider persists to the cookie (and re-exports THEME_COOKIE)', () => {
             expect(provider).toMatch(/document\.cookie\s*=\s*`\$\{THEME_COOKIE\}=/);
-            expect(provider).toMatch(/function persistTheme/);
+            expect(provider).toMatch(/function persistTheme\b/);
             expect(provider).toMatch(/THEME_COOKIE/);
         });
     });

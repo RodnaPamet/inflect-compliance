@@ -22,7 +22,7 @@ describe('RQ-7 bow-tie', () => {
         expect(src).toMatch(/PREVENTIVE/);
         expect(src).toMatch(/DETECTIVE/);
         // RQ-7 adds NO new model — it's a read projection.
-        expect(codeOf(readPrismaSchema())).not.toMatch(/model BowTie/);
+        expect(codeOf(readPrismaSchema())).not.toMatch(/model BowTie\b/);
     });
 
     it('the route + panel + tab exist', () => {

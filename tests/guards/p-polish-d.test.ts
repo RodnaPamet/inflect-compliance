@@ -188,7 +188,7 @@ describe("PR-D polish — live entity status sync", () => {
             // branches (success / info / error) form the chip's
             // visual contract. Off-tone or wrong-branch additions
             // are caught here.
-            expect(src).toMatch(/function entityStatusTone/);
+            expect(src).toMatch(/function entityStatusTone\b/);
             expect(src).toMatch(/"DONE"\s*\|\|\s*s === "MITIGATED"\s*\|\|\s*s === "ACTIVE"/);
             expect(src).toMatch(/"IN_PROGRESS"\s*\|\|\s*s === "OPEN"/);
             expect(src).toMatch(

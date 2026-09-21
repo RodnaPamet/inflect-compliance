@@ -23,7 +23,7 @@ const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 describe('EI-3 SCIM Groups', () => {
     it('ScimGroup model exists with tenant-scoped uniqueness', () => {
         const schema = read('prisma/schema/auth.prisma');
-        expect(schema).toMatch(/model ScimGroup/);
+        expect(schema).toMatch(/model ScimGroup\b/);
         expect(schema).toMatch(/@@unique\(\[tenantId, externalId\]\)/);
     });
 

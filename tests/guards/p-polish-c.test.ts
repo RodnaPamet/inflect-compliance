@@ -69,7 +69,7 @@ describe("PR-C polish — force-directed layout via elkjs", () => {
             // should call the same helper so selection-only mode
             // behaves identically across the two engines.
             const s = src();
-            expect(s).toMatch(/function finaliseSubsetPositions/);
+            expect(s).toMatch(/function finaliseSubsetPositions\b/);
             // Two call sites — once from dagre, once from force.
             const calls = s.match(/finaliseSubsetPositions\(/g) ?? [];
             expect(calls.length).toBeGreaterThanOrEqual(3); // 1 decl + 2 calls

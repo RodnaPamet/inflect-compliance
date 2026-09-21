@@ -26,7 +26,7 @@ const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
 describe('RQ-4 scenarios', () => {
     it('RiskScenario schema + migration with RLS', () => {
-        expect(readPrismaSchema()).toMatch(/model RiskScenario/);
+        expect(readPrismaSchema()).toMatch(/model RiskScenario\b/);
         const mig = 'prisma/migrations/20260610180000_rq4_scenarios/migration.sql';
         expect(exists(mig)).toBe(true);
         expect(readSql(mig)).toMatch(/CREATE POLICY tenant_isolation ON "RiskScenario"/);

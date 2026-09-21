@@ -118,7 +118,7 @@ describe("Epic P2-PR-B — entity pickers on nodes", () => {
         });
 
         it("declares the NodeLinkedEntityPicker child component", () => {
-            expect(src).toMatch(/function NodeLinkedEntityPicker/);
+            expect(src).toMatch(/function NodeLinkedEntityPicker\b/);
         });
 
         it("the picker mounts only on control/risk/asset kinds", () => {

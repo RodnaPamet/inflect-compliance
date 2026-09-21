@@ -92,7 +92,7 @@ describe('Audit S1 — Risk lifecycle & treatment plans', () => {
             // derived `residualForCompletedStrategy`: AVOID → semantic
             // zero, MITIGATE → derived from linked-control
             // effectiveness, TRANSFER/ACCEPT → no auto-write (null).
-            expect(src).toMatch(/function residualForCompletedStrategy/);
+            expect(src).toMatch(/function residualForCompletedStrategy\b/);
             expect(src).toMatch(/strategy === 'AVOID'/);
             expect(src).toMatch(/strategy !== 'MITIGATE'/);
             expect(src).toMatch(/loadResidualSuggestion/);

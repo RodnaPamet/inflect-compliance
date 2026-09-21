@@ -118,7 +118,7 @@ describe("PR-B polish — clipboard copy + collapsible groups", () => {
 
         it("GroupNodeChrome subcomponent exists with a chevron toggle button", () => {
             const src = node();
-            expect(src).toMatch(/function GroupNodeChrome/);
+            expect(src).toMatch(/function GroupNodeChrome\b/);
             expect(src).toMatch(/data-testid="group-collapse-toggle"/);
         });
 
