@@ -279,7 +279,23 @@ const HIGH_MULTIPLICITY = 5;
 //   every open PR: 1319 is the live count of main@fc8954092 + this branch.
 //   Whoever merges second re-measures on the merged tree rather than keeping
 //   this figure.
-const AMBIGUOUS_NEEDLE_BASELINE = 1302;
+const AMBIGUOUS_NEEDLE_BASELINE = 1303;
+// 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
+// here is the finding. It is the measured COST of fixing a prose-satisfied
+// assertion rather than drift.
+//
+// `p1-optimistic-concurrency` locks a COMMENT's phrasing ("comment no longer
+// says the field is unused"). Batch 6 moved that test onto a raw twin because
+// over comment-masked source its positive half could never match and its
+// negative half passed unconditionally. The twin is a SECOND whole-file read of
+// the same file, and `/optimistic-concurrency/` is not a unique needle in it —
+// so the population this ratchet counts grew by exactly one.
+//
+// Narrowing it was considered and rejected: the assertion's subject IS the
+// docblock, so a whole-file read is what it means. Paying +1 here to convert a
+// silently-dead assertion into a live one is the better side of the trade, and
+// naming it is how the next reader can disagree. Shared state with every open
+// PR: re-measure on the merged tree.
 // 237 (2026-09-18, #2622): −1 on the merge, for the same reason and by the same
 // method as the 1420 above — re-measured on the merged tree, not carried over
 // from either branch. It surfaced only after the other end was re-seated,
