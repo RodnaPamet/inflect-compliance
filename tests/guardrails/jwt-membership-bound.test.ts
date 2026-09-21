@@ -27,6 +27,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// String literals are KEPT, so assertions that harvest codes or ids from source
+// still see them. Every path this file reads is a TypeScript-alike, re-derived
+// per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
+
 const AUTH_TS = path.resolve(__dirname, '../../src/auth.ts');
 
 const SLICE_RE = /\.slice\(\s*0\s*,\s*MAX_JWT_MEMBERSHIPS\s*\)/g;
@@ -39,7 +46,7 @@ const SLICE_RE = /\.slice\(\s*0\s*,\s*MAX_JWT_MEMBERSHIPS\s*\)/g;
 const MAX_REASONABLE_CAP = 200;
 
 describe('JWT membership payload is bounded', () => {
-    const code = fs.readFileSync(AUTH_TS, 'utf-8');
+    const code = codeOf(fs.readFileSync(AUTH_TS, 'utf-8'));
 
     test('MAX_JWT_MEMBERSHIPS is defined and within a sane ceiling', () => {
         const m = /export const MAX_JWT_MEMBERSHIPS\s*=\s*(\d+)/.exec(code);

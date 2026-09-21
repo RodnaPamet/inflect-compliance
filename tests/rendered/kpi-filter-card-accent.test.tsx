@@ -9,6 +9,13 @@ import * as path from 'path';
 import { KpiFilterCard } from '@/components/ui/kpi-filter-card';
 import { KPI_ACCENTS } from '@/components/ui/kpi-accent';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM, so this guard can
+// no longer be satisfied by a COMMENT naming the thing its assertion is about.
+// String literals are KEPT, so assertions that harvest codes or ids from source
+// still see them. Every path this file reads is a TypeScript-alike, re-derived
+// per file rather than assumed from the directory.
+import { codeOf } from '../helpers/source-blocks';
+
 describe('KpiFilterCard accent', () => {
     it('wraps the value in the accent gradient (bg-clip-text text-transparent) when accent is set', () => {
         const { container } = render(
@@ -38,10 +45,10 @@ describe('KpiFilterCard accent', () => {
 });
 
 describe('AssetsClient adoption of the accent pattern', () => {
-    const src = fs.readFileSync(
+    const src = codeOf(fs.readFileSync(
         path.join(__dirname, '..', '..', 'src/app/t/[tenantSlug]/(app)/assets/AssetsClient.tsx'),
         'utf8',
-    );
+    ));
     it('all four asset KPI cards carry a distinct accent', () => {
         // R-filter-gear (#3, 2026-06-07): the KPI grid is data-driven, so the
         // accents live in a per-id config object (`accent: 'indigo'`) and flow
