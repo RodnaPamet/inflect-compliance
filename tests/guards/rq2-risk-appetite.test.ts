@@ -7,8 +7,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
+// #2246 Class A — `codeOf` masks comments at the READ SEAM. No SQL reader is
+// needed here: the only `.sql` path in this file is handed to `exists()` and
+// its CONTENTS are never read, so nothing but TypeScript reaches this seam.
+// Re-derived in this file rather than assumed from the `.sql` literal.
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (p: string) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+const read = (p: string) => codeOf(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
 describe('RQ-2 risk appetite', () => {

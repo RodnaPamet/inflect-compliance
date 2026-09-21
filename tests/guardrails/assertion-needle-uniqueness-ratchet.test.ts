@@ -322,7 +322,7 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1289;
 // off the five-plus threshold; a `.tsx` docblock listing props and mounts is
 // what carries a needle over five. Shared state with every open PR:
 // re-measure on the merged tree.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 209;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 207;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise

@@ -7,9 +7,21 @@ import * as path from 'node:path';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 import { braceBlockAfter } from '../helpers/source-blocks';
 
-const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+// #2246 Class A / #2679 LANGUAGE SPLIT — comments are masked at the READ SEAM,
+// and WHICH masker depends on the language of the file being read.
+//
+// `codeOf` lexes TypeScript. Handing it a `.sql` file is the single worst
+// outcome available: every `--` comment survives verbatim while the call site
+// READS as masked. Migrations therefore go through `readSql`, which lexes
+// `--` and `/* */` (and nests, as Postgres does). TypeScript keeps `read`.
+// Which extension flows through which helper was re-derived in this file, not
+// assumed from the directory it lives in.
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
+const ROOT = path.resolve(__dirname, '../..');
+const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const read = (rel: string) => codeOf(readRaw(rel));
+const readSql = (rel: string) => sqlCodeOf(readRaw(rel));
 describe('personnel / HRIS — registration + wiring', () => {
     it('BambooHR + Personnel providers are registered in bootstrap', () => {
         const boot = read('src/app-layer/integrations/bootstrap.ts');
@@ -57,7 +69,7 @@ describe('personnel / HRIS — registration + wiring', () => {
         expect(employee).toMatch(/@@unique\(\[tenantId, workEmail\]\)/);
         expect(employee).toMatch(/@@index\(\[tenantId, status\]\)/);
         expect(employee).toMatch(/@@index\(\[tenantId, managerEmployeeId\]\)/);
-        const mig = read('prisma/migrations/20260707110000_personnel/migration.sql');
+        const mig = readSql('prisma/migrations/20260707110000_personnel/migration.sql');
         expect(mig).toMatch(/ENABLE ROW LEVEL SECURITY/);
         expect(mig).toMatch(/FORCE ROW LEVEL SECURITY/);
         expect(mig).toMatch(/CREATE POLICY tenant_isolation ON "Employee"/);
