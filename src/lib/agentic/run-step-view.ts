@@ -38,3 +38,47 @@ export function resolveStepTool(
     }
     return null;
 }
+
+/**
+ * The definition entry a recorded step may borrow from — or `undefined` when
+ * borrowing would be a lie.
+ *
+ * ── THE PREMISE THAT ONLY HOLDS FOR ONE ENGINE ──────────────────────────────
+ *
+ * `resolveStepTool` above is justified by "the driver executes
+ * `def.steps[seq]`, so `seq` indexes back into the same array". That is true
+ * of the STATIC driver, whose loop is literally
+ * `for (let seq = fromSeq; seq < def.steps.length; seq++)`.
+ *
+ * It is false of the Flue driver. There `seq` is a running counter of steps
+ * RECORDED — `let seq = fromSeq; … seq++` — incremented once per tool call and
+ * once per model call. It has no relationship to the definition's array at
+ * all.
+ *
+ * So `def.steps[s.seq]` on a Flue run reads an unrelated declared step, and
+ * the timeline then shows a MODEL_CALL wearing another step's label, another
+ * step's tool name, and — because the data rung is derived from that tool —
+ * a data-access claim about content it never touched. On a governance surface
+ * that is worse than showing nothing: it is a specific false statement about
+ * what an agent did.
+ *
+ * ── THE RULE, STATED AS THE THING THAT IS ACTUALLY TRUE ─────────────────────
+ *
+ * A definition can only speak for the kinds a definition can DECLARE. The two
+ * record-only kinds are facts an engine reports about what it did, and no
+ * hand-written step array contains them — so for those, there is nothing to
+ * borrow and the answer is the recorded columns alone.
+ *
+ * Keyed on the KIND rather than on the run's driver on purpose: the driver is
+ * a property of the run, and a run could in principle carry steps of both
+ * shapes. The kind is a property of the step, which is the thing being
+ * rendered.
+ */
+export function declaredStepFor(
+    steps: readonly WorkflowStepDef[] | undefined,
+    seq: number,
+    kind: string,
+): WorkflowStepDef | undefined {
+    if (kind === 'MODEL_CALL' || kind === 'TOOL_CALL') return undefined;
+    return steps?.[seq];
+}

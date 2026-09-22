@@ -5,7 +5,7 @@ import { getTenantCtx } from '@/app-layer/context';
 import { getWorkflowRun } from '@/app-layer/usecases/workflow-runs';
 import { baseDataScopeForTool } from '@/lib/mcp/tool-data-scope';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
-import { resolveStepTool } from '@/lib/agentic/run-step-view';
+import { declaredStepFor, resolveStepTool } from '@/lib/agentic/run-step-view';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 
 import { AgentRunDetailClient, type RunStepRow } from './AgentRunDetailClient';
@@ -92,7 +92,11 @@ export default async function AgentRunDetailPage({
     }
 
     const steps: RunStepRow[] = run.steps.map((s) => {
-        const declared = def?.steps[s.seq];
+        // NOT `def?.steps[s.seq]`. That indexing is only meaningful for the
+        // static engine, whose loop walks the definition's array; a Flue run's
+        // `seq` counts steps RECORDED and indexes nothing. `declaredStepFor`
+        // carries the rule and is tested on its own.
+        const declared = declaredStepFor(def?.steps, s.seq, s.kind);
         // Resolved ONCE: both the tool chip and the data rung below read it,
         // and `resolveStepTool` carries a rule (column first, definition only
         // for the hole a failed step leaves) that must not be evaluated twice
