@@ -322,7 +322,12 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1279;
 // off the five-plus threshold; a `.tsx` docblock listing props and mounts is
 // what carries a needle over five. Shared state with every open PR:
 // re-measure on the merged tree.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 202;
+// 202 -> 201: extracting `recordStep` into `drivers/step-recorder.ts` moved
+// its assertions' subject out of a 900-line file and into an 80-line one, so a
+// needle that previously matched in several places now matches in one. The
+// drift sentinel requires the freed slack to be spent in the same diff —
+// a baseline above the live count is headroom the next regression can use.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 201;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise

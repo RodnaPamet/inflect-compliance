@@ -28,6 +28,7 @@
 import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { appendAuditEntry } from '@/lib/audit';
+import { recordStep, type StepRecord } from './step-recorder';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
 import { runReadTool } from '@/lib/mcp/tools/registry';
 import { runProposeTool } from '@/lib/mcp/tools/propose-tools';
@@ -100,23 +101,6 @@ interface ExecuteOutcome {
     stepFailures: number;
 }
 
-interface StepRecord {
-    toolCalled?: string;
-    input?: unknown;
-    output?: unknown;
-    status: 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED' | 'SKIPPED';
-    label: string;
-    actorUserId?: string;
-    /**
-     * What the step's output is made of. Set on the steps that CALL A TOOL;
-     * absent on a checkpoint or a synthesis, which read no external content.
-     *
-     * A label and nothing else — one of three enum values. It carries no
-     * excerpt, no field name and no length, so it is safe in the plaintext,
-     * hash-chained, never-deleted audit row where `recordStep` puts it.
-     */
-    provenance?: ContentProvenance;
-}
 
 /** What one tool call handed back: its payload, and what that payload is made of. */
 interface ParsedToolResult {
@@ -532,57 +516,6 @@ async function highestRecordedContextSeq(
     return top._max.contextSeq ?? undefined;
 }
 
-async function recordStep(
-    ctx: RequestContext,
-    runId: string,
-    seq: number,
-    kind: 'READ' | 'PROPOSE' | 'HUMAN_CHECKPOINT' | 'SYNTHESIS',
-    rec: StepRecord,
-    contextSeq?: number,
-): Promise<void> {
-    await runInTenantContext(ctx, (db) =>
-        db.workflowStep.create({
-            data: {
-                runId, tenantId: ctx.tenantId, seq, kind,
-                contextSeq: contextSeq ?? null,
-                toolCalled: rec.toolCalled ?? null,
-                inputJson: rec.input !== undefined ? JSON.stringify(rec.input) : null,
-                outputJson: rec.output !== undefined ? JSON.stringify(rec.output) : null,
-                status: rec.status,
-                actorUserId: rec.actorUserId ?? null,
-            },
-        }),
-    );
-    await appendAuditEntry({
-        tenantId: ctx.tenantId,
-        userId: ctx.userId,
-        actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
-        entity: 'WorkflowStep',
-        entityId: `${runId}:${seq}`,
-        action: 'WORKFLOW_STEP',
-        requestId: ctx.requestId,
-        detailsJson: {
-            category: 'access',
-            kind,
-            label: rec.label,
-            tool: rec.toolCalled ?? null,
-            status: rec.status,
-            // WHAT THIS STEP READ, not just which tool it called. The two are
-            // not the same question: `get_compliance_posture` returns platform
-            // arithmetic, every other read tool returns tenant free text, and a
-            // run that only ever touched the first has no injection surface at
-            // all. Recorded here because the audit trail is the durable record
-            // of what a run did — `WorkflowStep` has no column for it, and
-            // adding one is a schema change this change does not make.
-            //
-            // `null` on the steps that call no tool. That is "not applicable",
-            // and it is distinguishable from the untrusted label because the
-            // untrusted label is spelled out.
-            provenance: rec.provenance ?? null,
-        },
-        metadataJson: { apiKeyId: ctx.apiKeyId ?? null, runId },
-    }).catch(() => undefined);
-}
 
 async function updateRun(
     ctx: RequestContext,

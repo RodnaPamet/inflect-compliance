@@ -27,6 +27,8 @@ import { codeOf, declarationOf, sqlCodeOf, functionBodyOf } from '../helpers/sou
 const ROOT = path.resolve(__dirname, '../..');
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const read = (rel: string) => codeOf(readRaw(rel));
+/** The one place a `WorkflowStep` is written — see the seam guard. */
+const recorder = read('src/lib/agentic/drivers/step-recorder.ts');
 // LANGUAGE SPLIT (#2644). `codeOf` lexes `//`, so on a `.sql` file it blanks
 // nothing and a `--` comment reaches the assertion verbatim — masked at the
 // call site, unmasked in fact. Migrations go through `sqlCodeOf`, which lexes
@@ -129,7 +131,16 @@ describe('Agentic engine — guardrails', () => {
         // -1, so the slice silently became the file's LAST CHARACTER and every
         // assertion below ran against it. A helper that throws on a missing
         // name reports that as a missing function, which is what it is.
-        const recordBlock = functionBodyOf(driver, 'recordStep');
+        //
+        // MOVED AGAIN, and the assertion follows it. `recordStep` came INTO
+        // the driver with the #2719 extraction and has now moved OUT to
+        // `drivers/step-recorder.ts`, because a second driver is coming and
+        // the step ledger keeps exactly one write seam
+        // (`tests/guards/workflow-step-single-write-seam.test.ts`). Asserting
+        // against the driver would now pass only by finding nothing — which
+        // is precisely what `functionBodyOf` refuses to let happen, and why
+        // this reported a missing function rather than going quietly green.
+        const recordBlock = functionBodyOf(recorder, 'recordStep');
         expect(recordBlock).toMatch(/appendAuditEntry\(/);
         expect(recordBlock).toMatch(/actorType:/);
         expect(recordBlock).toMatch(/apiKeyId:/);

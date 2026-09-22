@@ -209,6 +209,12 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // structurally is that no prompt-shaped value exists in that module to
     // name — it holds no model call, no transcript and no tool arguments.
     'src/lib/agentic/agent-driver-policy.ts — identifier bound elsewhere',
+    // The step recorder, extracted from `static-driver.ts` so a second driver
+    // writes steps through the same seam. The holes MOVED file rather than
+    // appeared: `recordStep`'s audit row is unchanged, and `MEASURED_HOLES`
+    // does not shift — which is what a pure move should look like here, and
+    // why this entry is a new PAIR with no new number beside it.
+    'src/lib/agentic/drivers/step-recorder.ts — identifier bound elsewhere',
     // The monthly budget's two fallback/refusal log lines. Every value at both
     // sinks is an id (`tenantId`, `requestId`), an integer token count, or one
     // `err.message`. The module holds no model call, no transcript and no tool
