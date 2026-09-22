@@ -1676,3 +1676,183 @@ export async function rejectAgentProposal(ctx: RequestContext, id: string): Prom
         detailsJson: { category: 'access' },
     }).catch(() => undefined);
 }
+
+/** Why a proposal named in a bulk reject was not rejected. */
+export type BulkRejectSkipReason =
+    /** No row with that id in this tenant — deleted, or another tenant's. */
+    | 'NOT_FOUND'
+    /** Terminal, and rejection is refused for it — see `rejectAgentProposal`. */
+    | 'QUARANTINED'
+    /** Its review window closed — see `refuseExpired`. */
+    | 'EXPIRED'
+    /** Already decided (rejected, applied, awaiting a second signature, …). */
+    | 'NOT_PENDING';
+
+export interface BulkRejectResult {
+    /** The ids that MOVED to REJECTED, all in one transaction. */
+    rejected: string[];
+    /** Every id that did not, with the reason it did not. */
+    skipped: Array<{ id: string; reason: BulkRejectSkipReason }>;
+}
+
+/**
+ * Reject MANY proposals in one transaction.
+ *
+ * ─── WHAT "ATOMIC" MEANS HERE, AND WHY IT IS NOT ALL-OR-NOTHING ──────
+ *
+ * The choice is between refusing the whole batch when any one row cannot be
+ * rejected, and rejecting the rejectable rows while reporting the rest. This
+ * takes the second, and the reason is the queue's own physics rather than a
+ * preference for leniency.
+ *
+ * The un-rejectable states are not caller mistakes. A row expires on a clock,
+ * a teammate decides one from their own tab, and the reviewer's browser is
+ * working from a list rendered before any of that — the undo window the UI
+ * puts in front of this call widens that gap by design. So a stale row is the
+ * ORDINARY case, and all-or-nothing would let one of them veto a batch of
+ * fifty, with the operator given a refusal and no way to learn which id to
+ * deselect. Retrying would fail again. The queue would become unclearable by
+ * exactly the rows that are already settled — the opposite of what the
+ * operator asked for, in service of a consistency nobody needed: rejecting
+ * forty-nine and leaving the fiftieth alone is not a partial write, it is
+ * forty-nine complete decisions.
+ *
+ * Atomicity is therefore over the ACCEPTED SUBSET, and it is real: the
+ * accepted ids move to REJECTED together with their decision-log outcomes
+ * inside a single `runInTenantContext` transaction, so no batch can leave a
+ * row rejected with its decision log still saying a human is deciding. The
+ * refusals write the SAME audit rows the single-proposal path writes — a
+ * quarantined row cleared in bulk must leave the same trail it leaves alone,
+ * or bulk becomes the way to dispose of evidence quietly.
+ *
+ * The response names both halves. A count alone cannot tell an operator WHICH
+ * of their fifty survived, and a caller that receives only a number has to
+ * re-fetch to find out — so the ids and the per-id reasons are the shape, and
+ * the UI reconciles against them.
+ */
+export async function bulkRejectAgentProposals(
+    ctx: RequestContext,
+    ids: string[],
+): Promise<BulkRejectResult> {
+    assertCanWrite(ctx);
+
+    // De-duplicated, because a repeated id would otherwise be counted twice in
+    // the result and audited twice for one decision.
+    const requested = Array.from(new Set(ids));
+    const rows = await runInTenantContext(ctx, (db) =>
+        db.agentProposal.findMany({
+            where: { id: { in: requested }, tenantId: ctx.tenantId },
+            select: {
+                id: true,
+                status: true,
+                guardVerdict: true,
+                guardRuleIds: true,
+                expiresAt: true,
+                guardInputDigest: true,
+            },
+        }),
+    );
+    const byId = new Map(rows.map((r) => [r.id, r]));
+
+    const now = new Date();
+    const accepted: typeof rows = [];
+    const skipped: BulkRejectResult['skipped'] = [];
+
+    for (const id of requested) {
+        const row = byId.get(id);
+        if (!row) {
+            // Absent and foreign-tenant collapse to one answer on purpose: the
+            // tenant-scoped read above cannot see another tenant's row, and a
+            // reply that told the two apart would confirm an id exists
+            // elsewhere.
+            skipped.push({ id, reason: 'NOT_FOUND' });
+            continue;
+        }
+        if (row.status === 'QUARANTINED' || row.guardVerdict === 'QUARANTINED') {
+            // The refusal AUDIT is the point, not the throw. `refuseQuarantined`
+            // is the one place that row is written, so it is called here rather
+            // than re-implemented; it ends in a throw that this path swallows,
+            // because one refused row must not abort the others.
+            await refuseQuarantined(ctx, row, 'reject').catch(() => undefined);
+            skipped.push({ id, reason: 'QUARANTINED' });
+            continue;
+        }
+        if (isProposalExpired(row.expiresAt, now)) {
+            await refuseExpired(ctx, row, 'reject').catch(() => undefined);
+            skipped.push({ id, reason: 'EXPIRED' });
+            continue;
+        }
+        if (row.status !== 'PENDING') {
+            skipped.push({ id, reason: 'NOT_PENDING' });
+            continue;
+        }
+        accepted.push(row);
+    }
+
+    if (accepted.length === 0) return { rejected: [], skipped };
+
+    const acceptedIds = accepted.map((r) => r.id);
+    // ONE transaction for the whole accepted subset, status write and decision
+    // log together — the same pairing `rejectAgentProposal` makes for one row,
+    // for the same reason.
+    const movedIds = await runInTenantContext(ctx, async (db) => {
+        await db.agentProposal.updateMany({
+            // The PENDING status is re-asserted inside the transaction: the
+            // classification above ran on a read taken before it, so this is
+            // what stops a row decided in between from being overwritten.
+            where: { id: { in: acceptedIds }, tenantId: ctx.tenantId, status: 'PENDING' },
+            data: { status: 'REJECTED', reviewedByUserId: ctx.userId, reviewedAt: now },
+        });
+        // WHICH rows moved, read back rather than inferred from a count.
+        //
+        // The predicate above can match fewer rows than were accepted — a
+        // teammate deciding one between the classification read and this write
+        // is the whole reason the predicate is there — and a count says how
+        // many survived without saying which. Returning the accepted list
+        // anyway would put ids in `rejected` that this call did not write,
+        // which is the one thing the response must never do. The stamp is this
+        // call's own: nothing else carries that reviewer and that instant.
+        const written = await db.agentProposal.findMany({
+            where: {
+                id: { in: acceptedIds },
+                tenantId: ctx.tenantId,
+                status: 'REJECTED',
+                reviewedByUserId: ctx.userId,
+                reviewedAt: now,
+            },
+            select: { id: true },
+        });
+        const ids = new Set(written.map((r) => r.id));
+        for (const row of accepted) {
+            if (ids.has(row.id) && row.guardInputDigest) {
+                await recordDecisionOutcomeForDigest(db, ctx, row.guardInputDigest, 'REJECTED');
+            }
+        }
+        return ids;
+    });
+
+    const rejected = acceptedIds.filter((id) => movedIds.has(id));
+    for (const id of acceptedIds) {
+        // Accepted at classification time, gone by write time. It reads the
+        // same to the caller as a row that was already decided when the batch
+        // arrived, because that is what it now is.
+        if (!movedIds.has(id)) skipped.push({ id, reason: 'NOT_PENDING' });
+    }
+
+    await Promise.all(
+        rejected.map((id) =>
+            appendAuditEntry({
+                tenantId: ctx.tenantId,
+                userId: ctx.userId,
+                actorType: 'USER',
+                entity: 'AgentProposal',
+                entityId: id,
+                action: 'AGENT_PROPOSAL_REJECTED',
+                requestId: ctx.requestId,
+                detailsJson: { category: 'access' },
+            }).catch(() => undefined),
+        ),
+    );
+
+    return { rejected, skipped };
+}

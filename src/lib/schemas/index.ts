@@ -925,6 +925,15 @@ export const BulkEvidenceApproveSchema = z.object({ evidenceIds: z.array(z.strin
 export const BulkPolicyDeleteSchema = z.object({ policyIds: z.array(z.string().min(1)).min(1).max(100) }).strip();
 export const BulkVendorDeleteSchema = z.object({ vendorIds: z.array(z.string().min(1)).min(1).max(100) }).strip();
 
+// ─── Agent-proposal bulk review ───
+// One reviewer clearing a batch of the propose-not-commit queue. Same batch
+// cap as every register bulk verb above, for the same reason: the transaction
+// behind it holds row locks, and an unbounded list is how one click blocks the
+// queue for everybody else reviewing it.
+export const BulkAgentProposalRejectSchema = z.object({
+    proposalIds: z.array(z.string().min(1)).min(1).max(100),
+}).strip();
+
 // ─── Issue Compatibility Aliases (deprecated — use Task schemas) ───
 
 /** @deprecated Use CreateTaskSchema */ export const CreateIssueSchema = CreateTaskSchema;

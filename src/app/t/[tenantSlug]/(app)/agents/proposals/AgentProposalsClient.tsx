@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { PermissionGated } from '../PermissionGated';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -177,6 +179,93 @@ export function AgentProposalsClient({
      * ids and the row is where they live.
      */
     const [confirmingFlagged, setConfirmingFlagged] = useState<ProposalRow | null>(null);
+    /**
+     * The rows ticked for a bulk reject, by id.
+     *
+     * A Set rather than a flag on the row: the list is re-created by every
+     * single-row action, and a selection carried inside it would have to be
+     * copied through each of those rewrites.
+     */
+    const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+    const toast = useToast();
+    const triggerUndoToast = useToastWithUndo();
+
+    function toggleSelected(id: string) {
+        setSelected((prev) => {
+            const next = new Set(prev);
+            if (!next.delete(id)) next.add(id);
+            return next;
+        });
+    }
+
+    /**
+     * Reject every ticked proposal, behind the undo window.
+     *
+     * The rows leave the list IMMEDIATELY and the request fires when the window
+     * closes — which is why the API is a batch route rather than a loop over
+     * the single-reject endpoint. A loop would send N requests that can half
+     * succeed, leaving the operator with no statement about what happened; one
+     * request answers with the ids it moved and the ids it did not.
+     *
+     * The count in the toast is necessarily the SELECTED count: it is composed
+     * before the request exists. The server's answer is reconciled afterwards,
+     * the way the register bulk deletes do it — a row somebody else decided in
+     * the meantime is reported, not absorbed into a confident wrong number.
+     */
+    function bulkReject() {
+        const ids = Array.from(selected);
+        if (ids.length === 0) return;
+        setError(null);
+        setNotice(null);
+
+        const previous = proposals;
+        const restore = () => setProposals(previous);
+        setProposals((prev) => prev.filter((row) => !selected.has(row.id)));
+        setSelected(new Set());
+
+        triggerUndoToast({
+            message: t('proposals.bulk.rejectedToast', { count: ids.length }),
+            undoMessage: t('proposals.bulk.undo'),
+            action: async () => {
+                const res = await fetch(apiUrl('/agent-proposals/bulk/reject'), {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ proposalIds: ids }),
+                });
+                if (!res.ok) throw new Error(t('proposals.bulk.failed'));
+                const body = (await res.json().catch(() => null)) as
+                    | { rejected?: string[]; skipped?: Array<{ id: string }> }
+                    | null;
+                const rejected = body?.rejected?.length ?? ids.length;
+                const skipped = body?.skipped?.length ?? 0;
+                if (skipped > 0) {
+                    // The rows that could not be rejected are back on the list,
+                    // because they are still open decisions for somebody. The
+                    // optimistic removal above took them out on the assumption
+                    // the whole batch would move.
+                    setProposals((prev) => {
+                        const live = new Set(prev.map((row) => row.id));
+                        const movedIds = new Set(body?.rejected ?? []);
+                        const returning = previous.filter(
+                            (row) =>
+                                ids.includes(row.id) &&
+                                !movedIds.has(row.id) &&
+                                !live.has(row.id),
+                        );
+                        return returning.length > 0 ? [...returning, ...prev] : prev;
+                    });
+                    toast.info(
+                        t('proposals.bulk.rejectedReconciled', { rejected, skipped }),
+                    );
+                }
+            },
+            undoAction: restore,
+            onError: () => {
+                restore();
+                setError(t('proposals.bulk.failed'));
+            },
+        });
+    }
 
     async function act(p: ProposalRow, action: 'approve' | 'reject') {
         setBusy(p.id);
@@ -304,6 +393,41 @@ export function AgentProposalsClient({
                 </div>
             )}
 
+            {selected.size > 0 && (
+                <div
+                    data-testid="proposal-bulk-bar"
+                    className={cn(
+                        cardVariants({ density: 'compact' }),
+                        'flex items-center justify-between gap-default text-sm',
+                    )}
+                >
+                    <span className="text-content-muted">
+                        {t('proposals.bulk.selected', { count: selected.size })}
+                    </span>
+                    <div className="flex items-center gap-tight">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            data-testid="proposal-bulk-clear"
+                            onClick={() => setSelected(new Set())}
+                        >
+                            {t('proposals.bulk.clear')}
+                        </Button>
+                        <PermissionGated allowed={canOperate} reason={t('runs.needsWrite')}>
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                data-testid="proposal-bulk-reject"
+                                disabled={!canOperate}
+                                onClick={bulkReject}
+                            >
+                                {t('proposals.bulk.reject')}
+                            </Button>
+                        </PermissionGated>
+                    </div>
+                </div>
+            )}
+
             {proposals.length === 0 ? (
                 <EmptyState
                     title={t('proposals.emptyTitle')}
@@ -333,6 +457,22 @@ export function AgentProposalsClient({
                         >
                             <div className="flex items-center justify-between gap-default">
                                 <div className="flex items-center gap-tight">
+                                    {/*
+                                      The tick that puts this row in a bulk
+                                      reject. Rendered for readers too and
+                                      disabled there, rather than hidden: a
+                                      control that vanishes by role leaves a
+                                      reader wondering whether the queue even
+                                      has the affordance.
+                                    */}
+                                    <Checkbox
+                                        size="sm"
+                                        aria-label={t('proposals.bulk.selectRow')}
+                                        data-testid={`proposal-select-${p.id}`}
+                                        disabled={!canOperate}
+                                        checked={selected.has(p.id)}
+                                        onCheckedChange={() => toggleSelected(p.id)}
+                                    />
                                     <StatusBadge variant="info">{p.kind}</StatusBadge>
                                     <StatusBadge
                                         variant={p.operation === 'UPDATE' ? 'warning' : 'neutral'}
