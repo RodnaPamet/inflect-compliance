@@ -57,7 +57,17 @@ import {
 } from '@/app/t/[tenantSlug]/(app)/agents/runs/[runId]/AgentRunDetailClient';
 
 const EN = jest.requireActual('../../messages/en.json') as {
-    agents: { runs: { detail: { kind: Record<string, string>; inputLabel: string; outputLabel: string; emptyTitle: string } } };
+    agents: {
+        runs: {
+            detail: {
+                kind: Record<string, string>;
+                scope: Record<string, string>;
+                inputLabel: string;
+                outputLabel: string;
+                emptyTitle: string;
+            };
+        };
+    };
 };
 const D = EN.agents.runs.detail;
 
@@ -82,6 +92,7 @@ function step(over: Partial<RunStepRow> = {}): RunStepRow {
         kind: 'READ',
         status: 'DONE',
         tool: 'list_risks',
+        scope: 'READ_TENANT_DATA',
         label: 'posture',
         at: '2026-09-01T10:00:05.000Z',
         actorUserId: null,
@@ -273,5 +284,34 @@ describe('a step names the proposals it queued', () => {
         const second = document.getElementById('step-1') as HTMLElement;
         expect(within(first).queryByTestId('step-proposal-p-9')).toBeNull();
         expect(within(second).getByTestId('step-proposal-p-9')).toBeInTheDocument();
+    });
+
+    it('shows the data rung beside the tool that reaches it', () => {
+        // The chip an assessor reads to answer "what did this step touch".
+        // Asserted against the REAL catalogue string from `en.json`, not a
+        // literal retyped here — a test that restates the copy passes when
+        // the copy and the key drift apart.
+        renderDetail([step({ seq: 0, tool: 'list_risks', scope: 'READ_TENANT_DATA' })]);
+        expect(screen.getByText(D.scope.READ_TENANT_DATA)).toBeInTheDocument();
+    });
+
+    it('shows NO rung for a step that reaches no tool', () => {
+        // A checkpoint evaluates no rung. Rendering one would claim an
+        // evaluation that never happened — the absence is the assertion.
+        renderDetail([step({ seq: 0, kind: 'HUMAN_CHECKPOINT', tool: null, scope: null })]);
+        expect(screen.queryByText(D.scope.READ_TENANT_DATA)).not.toBeInTheDocument();
+        expect(screen.queryByText(D.scope.NONE)).not.toBeInTheDocument();
+    });
+
+    it('renders the rung each step carries, not one rung for the whole run', () => {
+        // Two steps, two different rungs. A single shared chip — or one read
+        // off the run rather than the step — passes every assertion above and
+        // fails this one.
+        renderDetail([
+            step({ seq: 0, tool: 'list_risks', scope: 'READ_TENANT_DATA' }),
+            step({ seq: 1, tool: 'get_counts', scope: 'READ_METADATA' }),
+        ]);
+        expect(screen.getByText(D.scope.READ_TENANT_DATA)).toBeInTheDocument();
+        expect(screen.getByText(D.scope.READ_METADATA)).toBeInTheDocument();
     });
 });

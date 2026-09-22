@@ -18,6 +18,13 @@ export interface RunStepRow {
     status: string;
     /** The tool that ran, or — on a failed step, which records none — the one the definition declared. */
     tool: string | null;
+    /**
+     * The data rung that tool reaches, derived on the server from the tool
+     * catalogue. Null when the step names no tool: a synthesis or a checkpoint
+     * reaches no tenant data by construction, and a chip there would imply a
+     * rung was evaluated when none was.
+     */
+    scope: string | null;
     /** From the definition; `WorkflowStep` has no label column. */
     label: string | null;
     at: string;
@@ -227,6 +234,19 @@ export function AgentRunDetailClient({
                                         did not. */}
                                     {s.tool && (
                                         <code className="text-xs text-content-muted">{s.tool}</code>
+                                    )}
+                                    {/* THE RUNG, beside the tool that reaches it.
+                                        Inline text rather than a StatusBadge on
+                                        purpose: `status` is the only field here
+                                        whose meaning is a traffic light, and the
+                                        per-file badge budget exists precisely to
+                                        stop a row becoming a wall of colour in
+                                        which the one badge that matters stops
+                                        being read. */}
+                                    {s.scope && (
+                                        <span className="text-xs text-content-subtle">
+                                            {t(`runs.detail.scope.${s.scope}`)}
+                                        </span>
                                     )}
                                     {s.label && (
                                         <span className="text-xs text-content-subtle">{s.label}</span>
