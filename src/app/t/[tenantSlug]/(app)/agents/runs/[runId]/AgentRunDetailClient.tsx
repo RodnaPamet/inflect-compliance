@@ -265,16 +265,25 @@ export function AgentRunDetailClient({
                                         stays one line and the detail is a hover
                                         away. */}
                                     {s.guardVerdict && (
-                                        <span
-                                            className="text-xs text-content-subtle"
-                                            title={
-                                                s.guardRuleIds.length > 0
-                                                    ? s.guardRuleIds.join(', ')
-                                                    : undefined
-                                            }
-                                        >
+                                        <span className="text-xs text-content-subtle">
                                             {t(`runs.detail.guard.${s.guardVerdict}`)}
                                         </span>
+                                    )}
+                                    {/* WHICH RULES FIRED, as visible text.
+                                        Not a `title=` tooltip: the ad-hoc
+                                        `title=` ratchet caps those in `src/app`
+                                        and this is none of its three documented
+                                        escape valves, and not a `<Tooltip>`
+                                        either — portalising a Radix tooltip per
+                                        step is the wrong cost for a ledger that
+                                        can run to the step cap. Visible also
+                                        beats hover-only here: an assessor
+                                        reading which rule stopped a step should
+                                        not have to find it with a mouse. */}
+                                    {s.guardRuleIds.length > 0 && (
+                                        <code className="text-xs text-content-muted">
+                                            {s.guardRuleIds.join(', ')}
+                                        </code>
                                     )}
                                     {/* WHAT IT SPENT. `!= null` rather than a
                                         truthiness test: a model call that really

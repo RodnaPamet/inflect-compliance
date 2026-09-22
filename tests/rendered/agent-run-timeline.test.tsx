@@ -335,14 +335,12 @@ describe('a step names the proposals it queued', () => {
         expect(screen.queryByText(D.guard.FLAGGED)).not.toBeInTheDocument();
     });
 
-    it('carries the rule ids that fired, without spending a row on them', () => {
+    it('shows which rules fired, as text an assessor can read without hovering', () => {
         renderDetail([
             step({ seq: 0, guardVerdict: 'QUARANTINED', guardRuleIds: ['egress.pii', 'inj.002'] }),
         ]);
-        expect(screen.getByText(D.guard.QUARANTINED)).toHaveAttribute(
-            'title',
-            'egress.pii, inj.002',
-        );
+        // Visible text, not a hover attribute — see the component comment.
+        expect(screen.getByText('egress.pii, inj.002')).toBeInTheDocument();
     });
 
     it('shows what a step spent, including a genuine zero', () => {
