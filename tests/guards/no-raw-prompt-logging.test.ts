@@ -476,7 +476,20 @@ const SINK_FLOOR = 30;
 // over from either branch — both were read off the failing assertions on the
 // MERGED tree, because two branches each raising a shared budget is precisely
 // how a ceiling ends up describing a tree nobody built.
-const MEASURED_HOLES = 164;
+// Re-MEASURED 2026-09-22 for the Art 12 decision row (point 4b): 164 / 94
+// became 165 / 95. ONE new sink — `recordModelDecision`'s catch-site
+// `logger.error` — and ONE hole in it, the `err instanceof Error ? err.message
+// : String(err)` ternary, which is the idiom every sibling catch in
+// `src/lib/agentic/` already uses (`agent-authority.ts:277`,
+// `circuit-breaker-store.ts:186`, `agent-registration-gate.ts:379`). The other
+// three fields resolve. Nothing in that line carries model CONTENT: the
+// prompt and the reply go to the row the call FAILED to write, and what the
+// log keeps is the tenant, the workflow key and the failure reason.
+// Read off the failing assertions on this branch merged with main, not added
+// to the previous pair. Note the direction — a sink arriving with one hole
+// TIGHTENS `HOLES_PER_SINK_CEILING` (1.8085 → 1.8), which is what the
+// denominator is in the formula for.
+const MEASURED_HOLES = 165;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -489,7 +502,7 @@ const MEASURED_HOLES = 164;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 94;
+const MEASURED_SINKS = 95;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;
