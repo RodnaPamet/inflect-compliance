@@ -126,6 +126,17 @@ export default async function AgentRunDetailPage({
             // reaches no tenant data by construction, and a chip reading
             // "NONE" there would imply a rung was evaluated when none was.
             scope: tool ? baseDataScopeForTool(tool) : null,
+            // WHAT THE GUARD SAID, when one ran. Null is not CLEAN: a
+            // checkpoint or a synthesis reaches no tenant content and is never
+            // scanned, and a chip reading CLEAN there would tell a reviewer
+            // the guard looked at a step it never examined.
+            guardVerdict: s.guardVerdict,
+            guardRuleIds: s.guardRuleIds,
+            // What THIS step spent. The run total stays in the header; this is
+            // the per-step breakdown, and it is null on the kinds that spend
+            // nothing rather than 0, so a read that cost nothing and a model
+            // call whose usage went unreported stay different facts.
+            costTokens: s.costTokens,
             label: declared?.label ?? null,
             at: s.at.toISOString(),
             actorUserId: s.actorUserId,

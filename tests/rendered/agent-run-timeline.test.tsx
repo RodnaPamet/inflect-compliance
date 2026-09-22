@@ -62,6 +62,8 @@ const EN = jest.requireActual('../../messages/en.json') as {
             detail: {
                 kind: Record<string, string>;
                 scope: Record<string, string>;
+                guard: Record<string, string>;
+                stepTokens: string;
                 inputLabel: string;
                 outputLabel: string;
                 emptyTitle: string;
@@ -93,6 +95,9 @@ function step(over: Partial<RunStepRow> = {}): RunStepRow {
         status: 'DONE',
         tool: 'list_risks',
         scope: 'READ_TENANT_DATA',
+        guardVerdict: null,
+        guardRuleIds: [],
+        costTokens: null,
         label: 'posture',
         at: '2026-09-01T10:00:05.000Z',
         actorUserId: null,
@@ -313,5 +318,46 @@ describe('a step names the proposals it queued', () => {
         ]);
         expect(screen.getByText(D.scope.READ_TENANT_DATA)).toBeInTheDocument();
         expect(screen.getByText(D.scope.READ_METADATA)).toBeInTheDocument();
+    });
+
+    it('shows the guard verdict on a step that was scanned', () => {
+        renderDetail([step({ seq: 0, guardVerdict: 'FLAGGED', guardRuleIds: ['inj.001'] })]);
+        expect(screen.getByText(D.guard.FLAGGED)).toBeInTheDocument();
+    });
+
+    it('shows NO verdict on a step no guard ran on', () => {
+        // The load-bearing absence. A step with no verdict was never scanned,
+        // and a chip reading "clean" there would tell a reviewer the guard
+        // looked at something it never examined. CLEAN and NULL are different
+        // facts and the row must not merge them.
+        renderDetail([step({ seq: 0, kind: 'HUMAN_CHECKPOINT', guardVerdict: null })]);
+        expect(screen.queryByText(D.guard.CLEAN)).not.toBeInTheDocument();
+        expect(screen.queryByText(D.guard.FLAGGED)).not.toBeInTheDocument();
+    });
+
+    it('carries the rule ids that fired, without spending a row on them', () => {
+        renderDetail([
+            step({ seq: 0, guardVerdict: 'QUARANTINED', guardRuleIds: ['egress.pii', 'inj.002'] }),
+        ]);
+        expect(screen.getByText(D.guard.QUARANTINED)).toHaveAttribute(
+            'title',
+            'egress.pii, inj.002',
+        );
+    });
+
+    it('shows what a step spent, including a genuine zero', () => {
+        // `0` is a real measurement — a model call the runtime reported no
+        // usage for. A truthiness test would hide exactly that row, which is
+        // the one worth asking about.
+        renderDetail([step({ seq: 0, kind: 'MODEL_CALL', costTokens: 0 })]);
+        expect(screen.getByText(EN.agents.runs.detail.stepTokens.replace('{count}', '0')))
+            .toBeInTheDocument();
+    });
+
+    it('shows no per-step cost on a step that spent nothing measurable', () => {
+        renderDetail([step({ seq: 0, costTokens: null })]);
+        expect(
+            screen.queryByText(EN.agents.runs.detail.stepTokens.replace('{count}', '0')),
+        ).not.toBeInTheDocument();
     });
 });

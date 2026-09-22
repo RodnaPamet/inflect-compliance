@@ -327,7 +327,13 @@ export class ReviewLatch {
             tool,
             slice,
             verdict: stepVerdictOf(outcome),
-            ruleIds: [...outcome.ruleIds],
+            // `?? []` because this runs INSIDE the guard seam. `GuardOutcome`
+            // types `ruleIds` as required, so this should never fire — but a
+            // scanner returning a malformed outcome would otherwise throw
+            // here, turning a CLEAN scan into a 500 raised by the very code
+            // that exists to observe it. The observation degrades; the call
+            // does not.
+            ruleIds: [...(outcome.ruleIds ?? [])],
         });
 
         if (outcome.reviewRequired) {
