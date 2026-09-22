@@ -1,6 +1,6 @@
 {
   "name": "inflect-compliance",
-  "version": "3.93.0",
+  "version": "3.93.1",
   "private": true,
   "license": "BUSL-1.1",
   "engines": {
@@ -146,7 +146,7 @@
     "d3-array": "^3.2.4",
     "date-fns": "^4.4.0",
     "diff": "^9.0.0",
-    "dotenv": "^17.4.2",
+    "dotenv": "^18.0.0",
     "driver.js": "^1.8.0",
     "elkjs": "0.12.0",
     "html-to-image": "^1.11.13",
