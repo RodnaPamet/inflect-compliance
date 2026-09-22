@@ -863,7 +863,26 @@ jobs:
       # already removes the part that is actually slow (the registry
       # fetch). Caching it would trade ~0 seconds for a stale-tree
       # failure mode.
+      # ── EXPERIMENT, NOT A FIX — see #2753. REVERT AFTER READING THE NUMBER. ──
+      #
+      # Disabled to answer exactly one question: does `Build` still peak near
+      # 15.8 GB with NO webpack cache restored?
+      #
+      # Four local reproductions (cold, exact-match warm, stale, and CI's
+      # verbatim `NODE_OPTIONS` + `npx` invocation) all peak between 6485 and
+      # 7846 MB on this same commit. CI peaks at 14443 MB. Every hypothesis
+      # that explained the gap by the cache has been measured and refuted
+      # locally, but the local box differs from the runner (8 cores vs 4), so
+      # the cache could only ever be cleared ON CI. This run is that test.
+      #
+      # Reading it: peak ~8 GB  => the restored cache is the amplifier, and the
+      # fix is to scope or drop it. Peak still ~15 GB => the cache is cleared
+      # and the cause is elsewhere, which is equally useful to know.
+      #
+      # `if: false` rather than deletion so the diff is one line to revert and
+      # the step's real configuration stays readable underneath.
       - name: Cache Next.js build cache
+        if: false
         uses: actions/cache@v6
         with:
           path: .next/cache
