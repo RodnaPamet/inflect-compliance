@@ -55,7 +55,10 @@
  */
 import { WorkflowRunStatus } from '@prisma/client';
 
-import { runInTenantContext } from '@/lib/db/rls-middleware';
+import { runInTenantContext, runInGlobalContext } from '@/lib/db/rls-middleware';
+import { getPermissionsForRole } from '@/lib/permissions';
+import { enqueue } from '@/app-layer/jobs/queue';
+import { failRun } from '@/lib/agentic/drivers/run-settlement';
 import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { badRequest, notFound, forbidden } from '@/lib/errors/types';
@@ -270,6 +273,30 @@ export async function startWorkflowRun(
         },
         metadataJson: { apiKeyId: ctx.apiKeyId ?? null, agentId: ctx.agentId ?? null },
     }).catch(() => undefined);
+
+    // ── WHERE THE RUN ACTUALLY EXECUTES ─────────────────────────────────────
+    //
+    // Flue runs go to the WORKER; static runs stay in the request.
+    //
+    // Not symmetry for its own sake. A static run is a walk over a
+    // hand-written step array with no model call in it — bounded by
+    // `ENGINE_CAPS.MAX_STEPS`, deterministic, and finished well inside a
+    // request. A Flue run is a reasoning loop: it decides for itself how many
+    // tools to call and how long to keep going, and the plan is explicit that
+    // it belongs in the worker, "never the web tier". The worker also already
+    // has the shutdown drain, which is what makes a SIGTERM mid-run survivable.
+    //
+    // Moving BOTH would change the contract of every existing run — the route
+    // returns a terminal status today — for no benefit the static engine needs.
+    if (chosenDriver === 'flue') {
+        await enqueue('agent-run-execute', { tenantId: ctx.tenantId, runId: run.id });
+        // RUNNING is what `createSealedRun` wrote (the column's default), and
+        // it is reported rather than a synthesised QUEUED. The reaper already
+        // understands a RUNNING row that stops moving; a new enum value would
+        // have to be learned by every reader — list page, reaper, breaker —
+        // to mean something the existing one already covers.
+        return { runId: run.id, status: 'RUNNING', workflowKey, stepFailures: 0 };
+    }
 
     const { status, stepFailures } = await executeFrom(
         ctx,
@@ -580,6 +607,209 @@ async function createSealedRun(
 
 
 
+
+
+/**
+ * What the worker did with a queued run.
+ *
+ * A union rather than an optional field: "it executed and here is the status"
+ * and "it correctly declined, for this reason" are different outcomes, and a
+ * caller that has to check whether `status` happens to be set will eventually
+ * forget to.
+ */
+export type QueuedRunOutcome =
+    | { status: string; stepFailures: number }
+    | { skipped: string };
+
+/**
+ * EXECUTE A RUN THAT WAS ENQUEUED — the worker's entry point.
+ *
+ * ── WHY THE PRINCIPAL IS REBUILT, NOT SUBSTITUTED ───────────────────────────
+ *
+ * The obvious shape, and the one several jobs in this repo already use, is
+ * `buildCtx(tenantId)` — find the first active OWNER/ADMIN and run as them.
+ * That is right for a sweep that belongs to the platform. It is wrong here,
+ * and not by a little: a run's authority is the intersection of the agent's
+ * registration, the key's scopes, the autonomy ceiling and the policy card of
+ * the principal who STARTED it. Executing it as an admin would hand the run a
+ * different — almost certainly wider — authority than the one it was
+ * authorised under, in a subsystem whose entire claim is that multi-step does
+ * not mean multi-privilege.
+ *
+ * So the principal comes off the run row, which already records every term:
+ * `startedByUserId`, `triggeredViaKeyId`, `agentId`, `policyCardVersion`.
+ *
+ * ── WHAT IS RE-READ RATHER THAN PINNED, AND WHY ─────────────────────────────
+ *
+ * The ROLE and the key's SCOPES are read at execution time, not carried from
+ * the enqueue. Authority is current: a principal whose membership was revoked
+ * between enqueue and execution must not have a queued job act for them, and
+ * a key whose scopes were narrowed must not widen again by having been used
+ * earlier. The policy card is the deliberate exception — `policyCardVersion`
+ * is pinned on the row precisely so a run is judged by the rules in force when
+ * it started.
+ *
+ * FAIL CLOSED: no active membership, no execution. The run is settled FAILED
+ * with a message naming the reason rather than left RUNNING for the reaper,
+ * because "the person who started this lost access" is an answer an operator
+ * wants, and a wedged row is not.
+ *
+ * ── WHY `fromSeq` COMES FROM THE LEDGER ─────────────────────────────────────
+ *
+ * Not from the payload. A SIGTERM mid-run leaves the committed steps in place
+ * and the row RUNNING; BullMQ retries; this reads how many steps actually
+ * landed and resumes after them. A payload-carried index would re-execute a
+ * step the run had already committed — and the steps that call tools are not
+ * idempotent.
+ */
+export async function executeQueuedWorkflowRun(
+    tenantId: string,
+    runId: string,
+): Promise<QueuedRunOutcome> {
+    // Read the row BEFORE there is a context to read it with — the one place
+    // that is unavoidable, and scoped by BOTH ids so a wrong tenant cannot
+    // reach another's run even here.
+    const row = await runInGlobalContext((db) =>
+        db.workflowRun.findFirst({
+            where: { id: runId, tenantId },
+            select: {
+                id: true, tenantId: true, workflowKey: true, status: true,
+                startedByUserId: true, triggeredViaKeyId: true, agentId: true,
+                stepCount: true, startedAt: true,
+            },
+        }),
+    );
+    if (!row) return { skipped: 'NOT_FOUND' };
+
+    // IDEMPOTENT. A retry that arrives after the run already settled — or
+    // after a human aborted it — must not restart it. Only a RUNNING row has
+    // work left, and BullMQ can deliver a job more than once.
+    if (row.status !== 'RUNNING') return { skipped: `NOT_RUNNING:${row.status}` };
+
+    const def = getWorkflowDefinition(row.workflowKey);
+    if (!def) {
+        await failRun(
+            { tenantId, userId: row.startedByUserId ?? 'system' } as RequestContext,
+            runId,
+            'workflow_definition_missing: the workflow this run was started from no longer exists.',
+        );
+        return { skipped: 'NO_DEFINITION' };
+    }
+
+    const ctx = await rebuildRunContext(row);
+    if (!ctx) {
+        await failRun(
+            { tenantId, userId: row.startedByUserId ?? 'system' } as RequestContext,
+            runId,
+            'run_principal_no_longer_authorised: the principal that started this run ' +
+                'no longer holds an active membership in this workspace.',
+        );
+        return { skipped: 'PRINCIPAL_REVOKED' };
+    }
+
+    const permitted = (
+        await resolveDriverForRun(ctx.tenantId, {
+            requestId: ctx.requestId,
+            workflowKey: row.workflowKey,
+        })
+    ).driver;
+    const { status, stepFailures } = await executeFrom(
+        ctx,
+        runId,
+        def,
+        // The ledger's answer, not the payload's.
+        row.stepCount,
+        row.startedAt.getTime(),
+        permitted,
+    );
+    return { status, stepFailures };
+}
+
+
+/**
+ * Rebuild the principal who started a run, from the row that recorded them.
+ *
+ * Returns `null` when that principal can no longer act — which is the whole
+ * point of the function. A queued job must not be a way for authority to
+ * outlive the grant that created it.
+ *
+ * The API key is re-read for the same reason: `triggeredViaKeyId` says which
+ * key started the run, and the SCOPES it carries now are the ones it may use
+ * now. A key that was narrowed, or revoked, between enqueue and execution
+ * narrows the run with it.
+ */
+async function rebuildRunContext(row: {
+    tenantId: string;
+    startedByUserId: string | null;
+    triggeredViaKeyId: string | null;
+    agentId: string | null;
+}): Promise<RequestContext | null> {
+    if (!row.startedByUserId) return null;
+
+    const membership = await runInGlobalContext((db) =>
+        db.tenantMembership.findFirst({
+            where: { tenantId: row.tenantId, userId: row.startedByUserId as string, status: 'ACTIVE' },
+            select: { role: true, customRoleId: true },
+        }),
+    );
+    // FAIL CLOSED. No active membership, no context, no execution.
+    if (!membership) return null;
+
+    let apiKeyScopes: string[] | undefined;
+    if (row.triggeredViaKeyId) {
+        const now = new Date();
+        const key = await runInGlobalContext((db) =>
+            db.tenantApiKey.findFirst({
+                where: {
+                    id: row.triggeredViaKeyId as string,
+                    tenantId: row.tenantId,
+                    revokedAt: null,
+                    // EXPIRY COUNTS TOO. A key that lapsed while the job sat in
+                    // the queue is as gone as a revoked one; only `revokedAt`
+                    // would let a run continue on a credential that no live
+                    // request could use.
+                    OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+                },
+                select: { scopes: true },
+            }),
+        );
+        // A revoked or lapsed key is the same answer as a revoked membership:
+        // the grant that authorised this run is gone, so the run does not
+        // continue on it.
+        if (!key) return null;
+        // `scopes` is a Json column holding an array of strings. Narrowed
+        // rather than asserted: a malformed value yields NO scopes, which
+        // fails closed, where a cast would hand the run whatever was there.
+        apiKeyScopes = Array.isArray(key.scopes)
+            ? key.scopes.filter((v): v is string => typeof v === 'string')
+            : [];
+    }
+
+    const appPermissions = getPermissionsForRole(membership.role);
+    return {
+        // Correlates every log line and audit row of this attempt back to the
+        // run, which is what an operator has when they open the page.
+        requestId: `agent-run-${row.tenantId}-${row.startedByUserId}`,
+        userId: row.startedByUserId,
+        tenantId: row.tenantId,
+        role: membership.role,
+        // Derived from the granular set exactly as `risk-appetite-jobs`
+        // does — the coarse five are a projection of it, not a second source.
+        permissions: {
+            canRead: appPermissions.risks.view,
+            canWrite: appPermissions.risks.edit,
+            canAdmin: appPermissions.admin.manage,
+            canAudit: appPermissions.audits.view,
+            canExport: appPermissions.reports.export,
+        },
+        appPermissions,
+        // NOT `actorType: 'JOB'`. The worker is only where this runs; the run
+        // was asked for by a person or a key, and the audit trail must keep
+        // saying so or a review cannot tell an agent's work from a sweep's.
+        ...(row.triggeredViaKeyId ? { apiKeyId: row.triggeredViaKeyId, apiKeyScopes } : {}),
+        ...(row.agentId ? { agentId: row.agentId } : {}),
+    } as RequestContext;
+}
 
 async function loadRunAndDef(ctx: RequestContext, runId: string) {
     const run = await getRunRow(ctx, runId);

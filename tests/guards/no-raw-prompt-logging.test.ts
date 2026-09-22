@@ -205,6 +205,12 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // integers, a source, and how much work stopped), in a new file. The
     // driver keeps its own entry because other sinks stayed behind.
     'src/lib/agentic/drivers/run-settlement.ts — identifier bound elsewhere',
+    // The worker's entry point for a queued run. Two log lines, and every
+    // value at both is an id (tenantId, runId), a closed-union status, or a
+    // refusal REASON drawn from a fixed set — never model input or output.
+    // The run's reasoning never passes through this module: it reports what
+    // the usecase decided and returns.
+    'src/app-layer/jobs/agent-run-execute.ts — identifier bound elsewhere',
     // ── THE FLUE ENGINE'S THREE SINKS ───────────────────────────────────────
     //
     // The kind to read carefully here is `runtime-start.ts`'s: a HELPER kind
@@ -455,7 +461,7 @@ const SINK_FLOOR = 30;
 // The union was also measured ahead of time on main + #2723 + #2726 + this
 // branch, which reported the same 156 / 88 -- so #2723 contributes nothing,
 // and the number does not depend on which of the two lands first.
-const MEASURED_HOLES = 159;
+const MEASURED_HOLES = 163;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -468,7 +474,7 @@ const MEASURED_HOLES = 159;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 91;
+const MEASURED_SINKS = 93;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

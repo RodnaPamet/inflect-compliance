@@ -886,6 +886,33 @@ executorRegistry.register('tenant-dek-rotation', async (payload, ctx) => {
 // SUCCEEDED/FAILED. See `automation-event-dispatch.ts` for the full
 // flow + scope boundaries.
 
+// ONE run per job, so the scanned/actioned/skipped triple reads oddly by
+// design: 1 scanned, and either 1 actioned (the run executed) or 1 skipped
+// (it was already settled, its definition is gone, or its principal lost
+// access). The alternative — reporting 0/0/0 — would make a refusal
+// indistinguishable from a job that did nothing at all.
+executorRegistry.register('agent-run-execute', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runAgentRunExecute } = await import('./agent-run-execute');
+    // Both ids named HERE rather than forwarding an opaque payload. The
+    // tenant-isolation guards read the executor body for exactly this, and
+    // they are right to: a dispatch site that never mentions the tenant is
+    // how a job comes to act across tenants without any single line looking
+    // wrong.
+    const { tenantId, runId } = payload;
+    const r = await runAgentRunExecute({ tenantId, runId });
+    return makeResult(
+        'agent-run-execute',
+        startedAt,
+        startMs,
+        1,
+        r.skipped ? 0 : 1,
+        r.skipped ? 1 : 0,
+        { tenantId, runId, ...(r.skipped ? { reason: r.skipped } : { status: r.status }) },
+    );
+});
+
 executorRegistry.register('automation-event-dispatch', async (payload) => {
     const startedAt = new Date().toISOString();
     const startMs = performance.now();
