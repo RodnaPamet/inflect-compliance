@@ -259,10 +259,29 @@ describe('merge queue — trigger coverage (the hang invariant)', () => {
 
     it('ci.yml declares merge_group and explains the collision class it guards', () => {
         expect(hasTrigger('ci.yml', 'merge_group')).toBe(true);
-        // A bare `merge_group:` reads as cargo-cult to the next reader.
-        expect(CI).toMatch(/merge queue/i);
-        expect(CI).toMatch(/gh-readonly-queue/);
-        expect(CI).toMatch(/stays pending forever|hangs/i);
+
+        // A bare `merge_group:` reads as cargo-cult to the next reader, so the
+        // file must carry the explanation — but BOUND TO THE BLOCK that gives
+        // it, not matched against the whole file.
+        //
+        // `merge queue` is ordinary English that any comment in a 2000-line
+        // workflow may reasonably use, so a whole-file needle is satisfied by
+        // the first one that happens to. It had four satisfying positions and
+        // the Class D ratchet counted it; a comment added elsewhere in the
+        // file (about build memory, nothing to do with queueing) took it to
+        // five and tipped the ceiling — proving the needle was measuring the
+        // file's vocabulary rather than this trigger's documentation.
+        //
+        // `gh-readonly-queue` is the anchor: it is the queue's own branch
+        // prefix, appears once, and can only be written by someone describing
+        // this mechanism.
+        const lines = CI.split('\n');
+        const anchor = lines.findIndex((l) => l.includes('gh-readonly-queue'));
+        expect(anchor).toBeGreaterThan(-1);
+        const block = lines.slice(Math.max(0, anchor - 12), anchor + 12).join('\n');
+
+        expect(block).toMatch(/merge queue/i);
+        expect(block).toMatch(/stays pending forever|hangs/i);
     });
 });
 
