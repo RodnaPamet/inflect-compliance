@@ -192,6 +192,18 @@ export interface LdapClientLike {
      * honest place to notice a client that cannot write.
      */
     modify?(dn: string, changes: readonly LdapModification[]): Promise<void>;
+    /**
+     * Create an entry. Optional for the same reason `modify` is: read-only
+     * fakes predate it and making it mandatory would break them at compile
+     * time for a path they never take. The provisioner refuses at runtime when
+     * it is absent, which is the honest place to notice a client that cannot
+     * create.
+     *
+     * `attributes` is plain data — string or Buffer values keyed by attribute
+     * name. Buffer matters: `unicodePwd` must go on the wire as UTF-16LE and
+     * AD rejects it as a string.
+     */
+    add?(dn: string, attributes: Record<string, string | string[] | Buffer>): Promise<void>;
     unbind(): Promise<void>;
     /**
      * False once the CURRENT socket has not completed a bind — which ldapts
@@ -650,6 +662,10 @@ async function lazyLdaptsClient(opts: LdapClientOptions): Promise<LdapClientLike
                         }),
                 ),
             ),
+        // ldapts takes an entry object directly, so unlike `modify` there is no
+        // class translation to do — but it is adapted rather than passed
+        // through so every caller and every fake stays free of the library.
+        add: (dn, attributes) => client.add(dn, attributes as Record<string, string | string[] | Buffer>),
         unbind: () => client.unbind(),
     };
 }
