@@ -157,6 +157,18 @@ const SITE_CONTRACTS: ReadonlyArray<SiteContract> = [
         name: 'Automation rule archive (rule detail sheet)',
         handlers: ['archiveRule'],
     },
+    {
+        // The agent-proposal review queue clears a BATCH. Rejecting is not an
+        // erasure — the row keeps its payload and its guard verdict — but it is
+        // the one decision on this surface that cannot be taken back through the
+        // product: a REJECTED proposal is terminal, and the approve path refuses
+        // it afterwards. The undo window is therefore the whole of the recovery
+        // story for a mis-ticked row, and a bulk action is exactly where a
+        // mis-tick is cheap to make and expensive to notice.
+        file: 'src/app/t/[tenantSlug]/(app)/agents/proposals/AgentProposalsClient.tsx',
+        name: 'Bulk agent-proposal reject (proposals queue)',
+        handlers: ['bulkReject'],
+    },
 ];
 
 function loadFile(file: string): string {

@@ -32,6 +32,7 @@ import { ActiveDirectoryProvider, formatObjectGuid } from '@/app-layer/integrati
 import {
     createActiveDirectoryWriter,
     objectGuidFilter,
+    objectGuidBytes,
     AD_PRIOR_STATE_SCHEMA,
     type AdPriorState,
 } from '@/app-layer/integrations/providers/active-directory/writer';
@@ -267,7 +268,7 @@ describe('the capture', () => {
         await makeWriter(byGuid).readState(GUID);
         const guidSearch = byGuid.searches.find((s) => s.base !== '');
         expect(guidSearch?.base).toBe(CONNECTION.baseDN);
-        expect(guidSearch?.options.filter).toBe(objectGuidFilter(GUID));
+        expect(guidSearch?.options.filter).toEqual(objectGuidFilter(GUID));
 
         const byDn = fakeAd();
         await makeWriter(byDn).readState(DN);
@@ -276,18 +277,36 @@ describe('the capture', () => {
         expect(dnSearch?.options.scope).toBe('base');
     });
 
-    it('objectGuidFilter is the exact inverse of formatObjectGuid', async () => {
+    it('objectGuidBytes is the exact inverse of formatObjectGuid', async () => {
         // The mixed-endian byte order is easy to get subtly wrong, and getting
         // it wrong means the search matches nothing — or, worse, matches
         // something else.
         expect(formatObjectGuid(GUID_BYTES)).toBe(GUID);
-        const escaped = objectGuidFilter(GUID)
-            .replace('(objectGUID=', '')
-            .replace(')', '')
-            .split('\\')
-            .filter(Boolean)
-            .map((h) => Number.parseInt(h, 16));
-        expect(Buffer.from(escaped)).toEqual(GUID_BYTES);
+        expect(objectGuidBytes(GUID)).toEqual(GUID_BYTES);
+    });
+
+    /**
+     * THE TEST THAT WOULD HAVE CAUGHT #2764.
+     *
+     * The byte order was always right, and the inverse test above proved it —
+     * against a Buffer, in memory, where no LDAP client was involved. What was
+     * wrong was the TRANSPORT: the bytes were rendered as an RFC 4515 string,
+     * `(objectGUID=\65\60…)`, which is valid LDAP and which `ldapts` does not
+     * resolve. It sent the literal backslashes, matched nothing, and every AD
+     * disable failed claiming the account had been deleted.
+     *
+     * The injected fake could never have shown this: it stores whatever filter
+     * it is handed and answers from a fixture, so a filter no real server would
+     * match looks identical to one that works. Asserting the SHAPE is the part
+     * a fake can still police.
+     */
+    it('addresses objectGUID as bytes, never as an escaped string ldapts will not resolve', async () => {
+        const filter = objectGuidFilter(GUID) as unknown as { value: unknown };
+        expect(typeof filter).toBe('object');
+        expect(Buffer.isBuffer(filter.value)).toBe(true);
+        expect(filter.value).toEqual(GUID_BYTES);
+        // The regression itself: a string here is the bug, whatever it spells.
+        expect(typeof objectGuidFilter(GUID)).not.toBe('string');
     });
 
     it('refuses rather than guessing when the id matches more than one account', async () => {

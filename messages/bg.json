@@ -8124,6 +8124,16 @@
       "proposedAt": "предложено {date}",
       "keySuffix": " · ключ {key}",
       "reject": "Отхвърли",
+      "bulk": {
+        "selected": "Избрани: {count}",
+        "clear": "Изчисти",
+        "reject": "Отхвърли избраните",
+        "selectRow": "Изберете това предложение",
+        "undo": "Отмени",
+        "rejectedToast": "{count} предложения бяха отхвърлени",
+        "failed": "Отхвърлянето на избраните предложения беше неуспешно",
+        "rejectedReconciled": "Отхвърлени: {rejected}, останаха в опашката: {skipped} — някой друг вече ги е решил или прозорецът им за преглед е изтекъл."
+      },
       "approve": "Одобри",
       "rationale": "Обосновка: ",
       "diff": {
@@ -8215,7 +8225,13 @@
           "READ_TENANT_DATA": "чете данни",
           "WRITE_TENANT_DATA": "пише данни",
           "EXTERNAL_EGRESS": "външно изпращане"
-        }
+        },
+        "guard": {
+          "CLEAN": "проверка: чисто",
+          "FLAGGED": "проверка: маркирано",
+          "QUARANTINED": "проверка: под карантина"
+        },
+        "stepTokens": "{count} токена"
       }
     },
     "quarantine": {

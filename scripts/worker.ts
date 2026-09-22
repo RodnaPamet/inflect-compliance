@@ -32,6 +32,8 @@ import {
 } from '../src/lib/observability/job-trace';
 import { Worker, Job, Queue, UnrecoverableError } from 'bullmq';
 import Redis from 'ioredis';
+
+import { beat } from '../src/app-layer/jobs/worker-heartbeat';
 import pino from 'pino';
 import {
     QUEUE_NAME,
@@ -295,6 +297,15 @@ async function bootstrap(): Promise<void> {
     );
 
     // ─── Worker Events ───
+
+    // The heartbeat, written from `completed` rather than a timer. A
+    // `setInterval` keeps firing through a severed Redis connection and would
+    // report a wedged worker as healthy — the precise gap #2745 is about,
+    // reintroduced one layer down. Reaching here means the worker pulled a job
+    // off the queue, ran it, and came back.
+    worker.on('completed', () => {
+        if (connection) void beat(connection);
+    });
 
     worker.on('ready', () => {
         log.info({

@@ -478,17 +478,35 @@ describe('Scheduler', () => {
         const { executorRegistry } = await import('../../src/app-layer/jobs/executor-registry');
         executorRegistry._reset();
 
-        // Register only one job
-        executorRegistry.register('health-check', async () => ({} as JobRunResult));
+        // Register exactly one executor, and it MUST be a job nothing schedules —
+        // the whole assertion below is "every scheduled job is reported missing",
+        // which is only true if the one registered job is not itself scheduled.
+        //
+        // This used to be `health-check`, chosen because nothing dispatched it.
+        // #2745 turned it into a 2-minute repeatable (it is what drives the
+        // worker heartbeat), which silently made the premise false and this test
+        // fail for a reason that had nothing to do with the scheduler. So the
+        // premise is now ASSERTED rather than assumed — if someone schedules
+        // `av-rescan` too, this fails with a sentence explaining what to do.
+        const SENTINEL = 'av-rescan';
+        const { SCHEDULED_JOBS } = await import('../../src/app-layer/jobs/schedules');
+        expect({
+            sentinel: SENTINEL,
+            isScheduled: SCHEDULED_JOBS.some((s) => s.name === SENTINEL),
+            fix: 'pick another registered-but-never-scheduled job as SENTINEL',
+        }).toEqual({
+            sentinel: SENTINEL,
+            isScheduled: false,
+            fix: 'pick another registered-but-never-scheduled job as SENTINEL',
+        });
+
+        executorRegistry.register(SENTINEL, async () => ({} as JobRunResult));
 
         const { scheduler } = await import('../../src/app-layer/jobs/scheduler');
         const validation = scheduler.validateRegistrations();
 
         expect(validation.valid).toBe(false);
         expect(validation.missing.length).toBeGreaterThan(0);
-        // health-check is not in SCHEDULED_JOBS so this shouldn't affect it
-        // but all schedule-defined jobs should be missing
-        const { SCHEDULED_JOBS } = await import('../../src/app-layer/jobs/schedules');
         for (const schedule of SCHEDULED_JOBS) {
             expect(validation.missing).toContain(schedule.name);
         }

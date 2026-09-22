@@ -15,7 +15,11 @@ import { flueModelIsRegistered } from './providers';
 import { refusalMessage } from './driver-plan';
 import { bindRun, releaseRun } from './run-binding';
 import { ensureFlueRuntime } from './runtime-start';
-import { flueToolsFor, type FlueToolDefinition } from './tools-adapter';
+import {
+    flueToolsFor,
+    type FlueToolDefinition,
+    type StepGuardObservation,
+} from './tools-adapter';
 
 /**
  * EXECUTING A FLUE RUN: bind, dispatch, record what happened, charge for it.
@@ -54,6 +58,19 @@ import { flueToolsFor, type FlueToolDefinition } from './tools-adapter';
  * from what earlier segments spent, and it is charged at the only place this
  * engine has a per-action boundary — inside each tool call.
  */
+
+/**
+ * Severity order for folding a call's two guard slices into one verdict.
+ *
+ * Written as data rather than as a comparison chain so that adding a fourth
+ * verdict is a compile error here — `Record<AgentGuardVerdict, number>` cannot
+ * miss a member — rather than a silently wrong ordering.
+ */
+const RANK: Record<StepGuardObservation['verdict'], number> = {
+    CLEAN: 0,
+    FLAGGED: 1,
+    QUARANTINED: 2,
+};
 
 /**
  * A cap that fired mid-dispatch.
@@ -143,7 +160,20 @@ export async function executeFlueRun(
         return { status, stepFailures: 0 };
     }
 
-    const offered = flueToolsFor(invocation);
+    // WHAT THE GUARD SAID, collected per call so the step row can carry it.
+    //
+    // Keyed by `toolCallId` because tool calls can overlap: a map keyed by
+    // tool NAME would let a second call to the same tool overwrite the first's
+    // verdict, and the row that lost would be recorded as unscanned.
+    //
+    // Both slices of one call fold into the WORST verdict seen. A call whose
+    // arguments were clean and whose result was flagged is a flagged call —
+    // taking the last would report whichever slice happened to finish second.
+    const seen = new Map<string, StepGuardObservation>();
+    const offered = flueToolsFor(invocation, (o) => {
+        const prior = seen.get(o.toolCallId);
+        seen.set(o.toolCallId, prior && RANK[prior.verdict] >= RANK[o.verdict] ? prior : o);
+    });
     const latch: CapLatch = { halt: null };
     let seq = fromSeq;
     let stepFailures = 0;
@@ -151,6 +181,14 @@ export async function executeFlueRun(
     const tools = offered.tools.map((tool) => wrapForLedger(ctx, runId, tool, latch, budget, {
         nextSeq: () => seq++,
         onFailure: () => { stepFailures += 1; },
+        // TAKEN, not read: the entry is this call's, and leaving it in the map
+        // would both leak for the life of the run and let a later call with a
+        // recycled id inherit a verdict that was not its own.
+        takeVerdict: (id) => {
+            const o = seen.get(id);
+            seen.delete(id);
+            return o;
+        },
     }));
 
     bindRun(runId, { tools, modelSpecifier });
@@ -248,7 +286,11 @@ function wrapForLedger(
     tool: FlueToolDefinition,
     latch: CapLatch,
     budget: ReturnType<typeof createRunBudget>,
-    ledger: { nextSeq: () => number; onFailure: () => void },
+    ledger: {
+        nextSeq: () => number;
+        onFailure: () => void;
+        takeVerdict: (toolCallId: string) => StepGuardObservation | undefined;
+    },
 ): FlueToolDefinition {
     return {
         ...tool,
@@ -274,10 +316,13 @@ function wrapForLedger(
             const seq = ledger.nextSeq();
             try {
                 const result = await tool.run(context);
+                const verdict = ledger.takeVerdict(context.toolCallId);
                 await recordStep(ctx, runId, seq, 'TOOL_CALL', {
                     toolCalled: tool.name,
                     status: 'DONE',
                     label: tool.name,
+                    guardVerdict: verdict?.verdict,
+                    guardRuleIds: verdict?.ruleIds,
                     // The ARGUMENTS the model chose — not the result. The
                     // result is tenant content, already guarded on its way
                     // back through the adapter; the arguments are what the
@@ -290,10 +335,17 @@ function wrapForLedger(
                 return result;
             } catch (err) {
                 ledger.onFailure();
+                // The verdict is read on THIS path too, and it is the path it
+                // matters most on: a guard that blocked or flagged the call
+                // left by throwing, so a failed step with no verdict would be
+                // indistinguishable from a tool that simply errored.
+                const verdict = ledger.takeVerdict(context.toolCallId);
                 await recordStep(ctx, runId, seq, 'TOOL_CALL', {
                     toolCalled: tool.name,
                     status: 'FAILED',
                     label: tool.name,
+                    guardVerdict: verdict?.verdict,
+                    guardRuleIds: verdict?.ruleIds,
                     input: context.data,
                     output: { error: err instanceof Error ? err.message : String(err) },
                 });

@@ -84,7 +84,10 @@ function invocation(autonomyCeiling = 6): McpInvocation {
     } as unknown as McpInvocation;
 }
 
-const CLEAN = { blocked: false, reviewRequired: false } as never;
+// A real `GuardOutcome` always carries `ruleIds` — empty on a clean scan. The
+// fixture omitted it, which is how the observation path's `[...ruleIds]` spread
+// was found to throw on a shape the type says cannot exist.
+const CLEAN = { blocked: false, reviewRequired: false, ruleIds: [] } as never;
 
 /**
  * What the DEFAULT posture produces. Under `balanced` — the mode a tenant gets
@@ -417,5 +420,80 @@ describe('a flag stops the run, and keeps it stopped', () => {
         await expect(set.tools[1].run({ toolCallId: 'c2', data: {} })).rejects.toThrow(
             /refusing b/,
         );
+    });
+});
+
+/**
+ * THE VERDICT REACHES THE LEDGER EVEN WHEN THE CALL IS REFUSED.
+ *
+ * ── THE ORDERING THIS EXISTS TO PIN ─────────────────────────────────────────
+ *
+ * `check()` reports the observation BEFORE it asserts. That ordering is the
+ * whole design: a blocked or flagged scan leaves the method by throwing, so an
+ * observer invoked after the assertions would record every CLEAN verdict and
+ * silently drop every refusal — the exact inversion of what the step ledger
+ * needs, and invisible in any test that only exercises the happy path.
+ *
+ * Written after a mutation proved the gap: moving the report below the
+ * assertions left all nineteen existing tests green.
+ */
+describe('what the step ledger is told about a guarded call', () => {
+    const BLOCKED = { blocked: true, reviewRequired: true, ruleIds: ['egress.pii'] } as never;
+
+    it('reports a CLEAN scan on both slices of a call that succeeded', async () => {
+        const seen: Array<{ slice: string; verdict: string; toolCallId: string }> = [];
+        const review = new ReviewLatch((o) => seen.push(o));
+        mockGuardEgress.mockResolvedValue(CLEAN);
+        mockGuardInput.mockResolvedValue(CLEAN);
+
+        await runGuardedTool(invocation(), 'list_risks', {}, 'call-1', review);
+
+        expect(seen.map((o) => `${o.slice}:${o.verdict}`)).toEqual([
+            'args:CLEAN',
+            'result:CLEAN',
+        ]);
+        // The id is what keeps concurrent calls apart in the driver's map.
+        expect(seen.every((o) => o.toolCallId === 'call-1')).toBe(true);
+    });
+
+    it('reports a FLAGGED scan even though the call then throws', async () => {
+        // The refusing path. Without the report-before-assert ordering this
+        // observation never happens, and the step row records a failure with
+        // no verdict — indistinguishable from a tool that merely errored.
+        const seen: Array<{ verdict: string }> = [];
+        const review = new ReviewLatch((o) => seen.push(o));
+        mockGuardEgress.mockResolvedValueOnce(FLAGGED);
+
+        await expect(
+            runGuardedTool(invocation(), 'list_risks', {}, 'call-1', review),
+        ).rejects.toThrow(/ai_guard_review_required/);
+
+        expect(seen.map((o) => o.verdict)).toEqual(['FLAGGED']);
+    });
+
+    it('reports QUARANTINED for a blocked scan', async () => {
+        // `blocked` outranks `reviewRequired`: a call that never returned data
+        // is a different fact from one held for review, and the enum has a
+        // member for each.
+        const seen: Array<{ verdict: string; ruleIds: readonly string[] }> = [];
+        const review = new ReviewLatch((o) => seen.push(o));
+        mockGuardEgress.mockResolvedValueOnce(BLOCKED);
+
+        await expect(
+            runGuardedTool(invocation(), 'list_risks', {}, 'call-1', review),
+        ).rejects.toThrow();
+
+        expect(seen[0]?.verdict).toBe('QUARANTINED');
+        // The rule ids ride along, copied rather than aliased.
+        expect(seen[0]?.ruleIds).toEqual(['egress.pii']);
+    });
+
+    it('a latch with no observer behaves exactly as before', async () => {
+        // The observer is optional, and adding it must not change refusal.
+        const review = new ReviewLatch();
+        mockGuardEgress.mockResolvedValueOnce(FLAGGED);
+        await expect(
+            runGuardedTool(invocation(), 'list_risks', {}, 'call-1', review),
+        ).rejects.toThrow(/ai_guard_review_required/);
     });
 });

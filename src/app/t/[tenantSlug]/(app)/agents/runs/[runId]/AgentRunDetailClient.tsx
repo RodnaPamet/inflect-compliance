@@ -25,6 +25,15 @@ export interface RunStepRow {
      * rung was evaluated when none was.
      */
     scope: string | null;
+    /**
+     * What the guard said about this step. NULL means no guard ran, which is
+     * a different fact from `CLEAN` — only tool calls are scanned.
+     */
+    guardVerdict: string | null;
+    /** Stable rule ids that fired. Empty on a clean verdict. */
+    guardRuleIds: readonly string[];
+    /** Tokens THIS step spent; null on the kinds that spend none. */
+    costTokens: number | null;
     /** From the definition; `WorkflowStep` has no label column. */
     label: string | null;
     at: string;
@@ -246,6 +255,43 @@ export function AgentRunDetailClient({
                                     {s.scope && (
                                         <span className="text-xs text-content-subtle">
                                             {t(`runs.detail.scope.${s.scope}`)}
+                                        </span>
+                                    )}
+                                    {/* WHAT THE GUARD FOUND. Rendered only when
+                                        one ran: a step with no verdict was never
+                                        scanned, and a chip reading "clean" there
+                                        would answer a question nobody asked of
+                                        it. Rule ids ride in the title so the row
+                                        stays one line and the detail is a hover
+                                        away. */}
+                                    {s.guardVerdict && (
+                                        <span className="text-xs text-content-subtle">
+                                            {t(`runs.detail.guard.${s.guardVerdict}`)}
+                                        </span>
+                                    )}
+                                    {/* WHICH RULES FIRED, as visible text.
+                                        Not a `title=` tooltip: the ad-hoc
+                                        `title=` ratchet caps those in `src/app`
+                                        and this is none of its three documented
+                                        escape valves, and not a `<Tooltip>`
+                                        either — portalising a Radix tooltip per
+                                        step is the wrong cost for a ledger that
+                                        can run to the step cap. Visible also
+                                        beats hover-only here: an assessor
+                                        reading which rule stopped a step should
+                                        not have to find it with a mouse. */}
+                                    {s.guardRuleIds.length > 0 && (
+                                        <code className="text-xs text-content-muted">
+                                            {s.guardRuleIds.join(', ')}
+                                        </code>
+                                    )}
+                                    {/* WHAT IT SPENT. `!= null` rather than a
+                                        truthiness test: a model call that really
+                                        reported zero tokens is a fact worth
+                                        showing, and `0 &&` would hide it. */}
+                                    {s.costTokens != null && (
+                                        <span className="text-xs tabular-nums text-content-subtle">
+                                            {t('runs.detail.stepTokens', { count: s.costTokens })}
                                         </span>
                                     )}
                                     {s.label && (
