@@ -8092,7 +8092,8 @@
       "runs": "Activity",
       "receipts": "Receipts",
       "quarantine": "Quarantine",
-      "reviewQuality": "Review quality"
+      "reviewQuality": "Review quality",
+      "decisions": "AI decision log"
     },
     "reviewQuality": {
       "accessTitle": "Agent register access required",
@@ -8279,6 +8280,25 @@
     "receipts": {
       "accessTitle": "Agent register access required",
       "accessMessage": "You do not have permission to read agent-action receipts. Contact your workspace administrator to request access."
+    },
+    "decisions": {
+      "title": "AI decision log",
+      "description": "One row per model call — what was decided, and whether a person reviewed it.",
+      "emptyTitle": "No model calls recorded yet",
+      "emptyDesc": "A row is written here every time this workspace calls a model.",
+      "emptyFilteredTitle": "No decisions over that content",
+      "emptyFilteredDesc": "Nothing in the recent window was guarded over this digest.",
+      "filteredByDigest": "Showing decisions over one piece of content ({digest}…).",
+      "guardLabel": "guard: {verdict}",
+      "tokensIn": "{count} in",
+      "tokensOut": "{count} out",
+      "latency": "{ms} ms",
+      "outcome": {
+        "PENDING": "awaiting review",
+        "ACCEPTED": "accepted",
+        "MODIFIED": "modified",
+        "REJECTED": "rejected"
+      }
     }
   },
   "securityTesting": {

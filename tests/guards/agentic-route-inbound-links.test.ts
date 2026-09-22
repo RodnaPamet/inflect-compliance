@@ -69,6 +69,9 @@ const AGENTIC_ROUTES: readonly string[] = [
     '/agents/quarantine',
     '/agents/review-quality',
     '/agents/reports',
+    // The EU AI Act record, readable. Linked from the Views menu's Assurance
+    // group beside the other read-only surfaces.
+    '/agents/decisions',
 ] as const;
 
 /**
