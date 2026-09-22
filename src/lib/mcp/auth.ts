@@ -437,14 +437,26 @@ export async function buildMcpInvocation(
 /**
  * The workflow engine's entry point into the tool funnel.
  *
- * Uses `evaluateAgentRegistration` rather than `assertRegisteredAgent`: the
- * engine's own route has already decided whether the caller may start a run, and
- * re-running the registration REFUSAL here would add a second, differently-timed
- * denial to a path that already has one. What it needs from the register is the
- * resolved agent id, so the deny-by-default tool allowlist applies to an
- * agent-driven run exactly as it does to a direct tool call — otherwise
- * orchestration would be a way around it, which is the one thing the engine
- * promises it is not.
+ * Uses `evaluateAgentRegistration` rather than `assertRegisteredAgent`, and the
+ * justification has been CORRECTED: this comment used to say "the engine's own
+ * route has already decided whether the caller may start a run". It had not.
+ * `agent-runs/route.ts` calls `getTenantCtx` and then `startWorkflowRun`, and
+ * neither asserted the register — an adversarial review of the integration
+ * plan's point 1 found the gate this sentence vouched for did not exist.
+ *
+ * It does now, for the engine that needs it: `startWorkflowRun` refuses a FLUE
+ * run whose caller is not `vouched`, unconditionally and above the row
+ * creation. A STATIC run still reaches here unvouched, and that is deliberate
+ * — it walks a hand-written step array and carries the key's own scopes, which
+ * is the same posture any direct MCP call has.
+ *
+ * So the reason to evaluate rather than assert is the narrower one that was
+ * always true underneath: what this needs from the register is the RESOLVED
+ * AGENT ID, so the deny-by-default tool allowlist applies to an agent-driven
+ * run exactly as it does to a direct tool call — otherwise orchestration would
+ * be a way around it, which is the one thing the engine promises it is not.
+ * Refusing here as well would add a second, differently-timed denial to a path
+ * that now has one at its door.
  */
 export async function resolveMcpInvocation(
     ctx: RequestContext,
