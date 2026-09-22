@@ -205,6 +205,12 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // integers, a source, and how much work stopped), in a new file. The
     // driver keeps its own entry because other sinks stayed behind.
     'src/lib/agentic/drivers/run-settlement.ts — identifier bound elsewhere',
+    // The worker's entry point for a queued run. Two log lines, and every
+    // value at both is an id (tenantId, runId), a closed-union status, or a
+    // refusal REASON drawn from a fixed set — never model input or output.
+    // The run's reasoning never passes through this module: it reports what
+    // the usecase decided and returns.
+    'src/app-layer/jobs/agent-run-execute.ts — identifier bound elsewhere',
     // ── THE FLUE ENGINE'S THREE SINKS ───────────────────────────────────────
     //
     // The kind to read carefully here is `runtime-start.ts`'s: a HELPER kind
@@ -465,7 +471,12 @@ const SINK_FLOOR = 30;
 // previous pair, and note the direction — a sink arriving with one hole
 // TIGHTENS `HOLES_PER_SINK_CEILING` (1.8132 → 1.8043), which is what the
 // denominator is in the formula for.
-const MEASURED_HOLES = 160;
+// And re-measured AGAIN on the union with `agent-run-execute` (point 10): the
+// worker's entry point adds one sink of its own. Neither number was carried
+// over from either branch — both were read off the failing assertions on the
+// MERGED tree, because two branches each raising a shared budget is precisely
+// how a ceiling ends up describing a tree nobody built.
+const MEASURED_HOLES = 164;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -478,7 +489,7 @@ const MEASURED_HOLES = 160;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 92;
+const MEASURED_SINKS = 94;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

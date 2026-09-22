@@ -139,7 +139,10 @@ import {
     type Clock,
 } from './token-exchange';
 import { logger } from '@/lib/observability/logger';
-import { assertPermission } from '@/lib/security/permission-middleware';
+// The LEAF, not the middleware. Every driver reaches this module, and the
+// middleware imports `getTenantCtx` -> `@/lib/auth` -> `@/auth`, which cannot
+// be evaluated in the worker's plain-Node runtime. See the leaf's header.
+import { assertPermission } from '@/lib/security/assert-permission';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { isAppError } from '@/lib/errors/types';
 import type { PermissionSet } from '@/lib/permissions';
