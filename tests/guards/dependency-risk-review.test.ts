@@ -63,6 +63,26 @@ const REVIEWED: Record<string, { major: number }> = {
     // .flue flips, `npm prune --omit=dev` stripping it would be a production
     // crash in a path CI cannot see. The reclassification safety rule in
     // docs/dependency-risk-review.md names that direction as the dangerous one.
+    // Reviewed 2026-09-22 when the Flue driver's execution half began
+    // constructing its own pi providers. Qualifies on two of the three
+    // criteria at once: it PERFORMS THE NETWORK EGRESS to model providers and
+    // resolves their credentials, and it PARSES UNTRUSTED INPUT — every model
+    // response, tool-call arguments included, is decoded here first.
+    //
+    // Already present transitively at the same 0.83.0 (@flue/runtime and
+    // @earendil-works/pi-agent-core both require ^0.83.0); declaring it turns
+    // a phantom import into a real one rather than adding a package to the
+    // image, exactly as the valibot entry below did. An undeclared direct
+    // import resolves only by hoisting luck.
+    //
+    // Pinned EXACTLY at 0.83.0. npm would treat ^0.83.0 as patch-only anyway,
+    // but inheriting tightness from semver's 0.x rule is not the same as
+    // stating it — and this is the layer that talks to the providers.
+    //
+    // Major 0: the floor below is therefore 0, which the guard reads as "must
+    // not fall below 0". That is weaker than the other entries by nature, and
+    // the exact pin plus this section is what carries the weight instead.
+    '@earendil-works/pi-ai': { major: 0 },
     '@flue/runtime': { major: 2 },
     // Reviewed in the same diff. Qualifies because it VALIDATES MODEL-SUPPLIED
     // TOOL ARGUMENTS — untrusted input by construction. Already present

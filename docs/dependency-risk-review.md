@@ -228,12 +228,79 @@ No new advisory is introduced by either. The production audit posture is
 identical before and after, which is the claim this section exists to
 record.
 
+## Review — 2026-09-22 — the provider layer
+
+The Flue driver's execution half constructs its own pi providers, which turns
+a package that was transitive into one this repo imports directly.
+
+### `@earendil-works/pi-ai` — `0.83.0` (exact)
+
+**1. Where is it used?** Four import sites, three of them type-only:
+
+```
+src/lib/agentic/flue/providers.ts        createProvider, Model, Provider   (VALUE)
+                                         .../api/anthropic-messages.lazy   (VALUE)
+                                         .../api/openai-completions.lazy   (VALUE)
+src/lib/agentic/flue/runtime-start.ts    import type { Provider }
+src/lib/agentic/flue/runtime-bootstrap.ts  import type { Provider }
+tests/unit/flue-runtime-bootstrap.test.ts  import type { Provider }
+```
+
+`providers.ts` is the only value importer. It builds the two providers this
+deployment may register — `inflect-external` (Anthropic messages) and
+`inflect-local` (an OpenAI-compatible gateway) — under our own ids, so that a
+model specifier names a **residency** rather than a vendor.
+
+**2. Is it classified correctly?** `dependencies`, and here the automatic
+answer and the deliberate one agree: `providers.ts` holds real value imports
+that execute, so `npm prune --omit=dev` stripping it would be a production
+crash the moment `DRIVER_IMPLEMENTED.flue` flips. Same direction of risk as
+`@flue/runtime`, without the type-only ambiguity that one had.
+
+**3. Why it needs a section at all.** It was **already in the tree**, at the
+same 0.83.0, as a transitive dependency of `@flue/runtime` (and of
+`@earendil-works/pi-agent-core`, which requires `^0.83.0`). Declaring it adds
+nothing to the image; it turns a phantom import into a real one, exactly as
+the `valibot` entry did on 2026-09-20. An undeclared direct import resolves
+only by hoisting luck, and breaks silently the day `@flue/runtime` stops
+depending on it.
+
+**4. Version + exposure risk.** Pinned EXACTLY, not a caret, for the reason
+`@flue/runtime` is: this is the layer that **performs the network egress to
+model providers** and resolves their credentials, so it should not cross a
+version without somebody reading the diff. A caret would be nearly as tight
+on 0.x — npm treats `^0.83.0` as patch-only — but "nearly" is not a property
+worth relying on, and the exact pin states the intent rather than inheriting
+it from semver's 0.x rule.
+
+It qualifies for review on two of the three criteria at once: it performs
+**network egress** to model providers, and it **parses untrusted input** —
+every model response, including tool-call arguments, is decoded here before
+anything else sees it.
+
+**5. Residency.** The provider ids are ours and the auth resolvers close over
+credentials passed in, rather than reading ambient `process.env` as pi's
+built-in factories do. That is what keeps "this deployment has an external
+credential" and "this deployment has an external route" the same fact — a key
+merely present in the environment must not create a route under
+`aiResidency: LOCAL_ONLY`.
+
+### Summary — 2026-09-22
+
+| Package | Classification | Version | Decision |
+|---------|----------------|---------|----------|
+| `@earendil-works/pi-ai` | `dependencies` ✓ | `0.83.0` exact | Declare; was transitive at the same version; exact pin |
+
+No package is added to the image and no new advisory is introduced — the
+resolved tree is byte-identical, and the lockfile diff is the single line that
+records the root requirement.
+
 ## Re-running this review
 
 When auditing the next batch of dependencies, copy the per-package
 table shape above. The structural ratchet
-`tests/guards/dependency-risk-review.test.ts` keeps the four
-packages reviewed here pinned where this document says they are — if
+`tests/guards/dependency-risk-review.test.ts` keeps the packages
+reviewed here pinned where this document says they are — if
 a future change moves one of them to `devDependencies`, downgrades a
 major, or drops it, the guard fails and points back here. Add new
 audited packages to that guard's `REVIEWED` map in the same diff
