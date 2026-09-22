@@ -392,7 +392,33 @@ export async function getWorkflowRun(ctx: RequestContext, runId: string) {
     const run = await runInTenantContext(ctx, (db) =>
         db.workflowRun.findFirst({
             where: { id: runId, tenantId: ctx.tenantId },
-            include: { steps: { orderBy: { seq: 'asc' } } },
+            include: {
+                steps: { orderBy: { seq: 'asc' } },
+                // WHAT THIS RUN PROPOSED, by step.
+                //
+                // An explicit SELECT, never the whole row. This usecase is
+                // returned VERBATIM by `GET /agent-runs/:id`, so widening the
+                // include widens what that route emits — and an `AgentProposal`
+                // carries `payloadJson`, the one column the proposals surface
+                // deliberately refuses to send to a browser. Naming the fields
+                // keeps a convenience here from becoming a leak there.
+                //
+                // Ordered by `stepSeq` so the grouping a caller does is over a
+                // sorted list; `null` sorts first, which is correct for a
+                // proposal that names no step.
+                proposals: {
+                    select: {
+                        id: true,
+                        kind: true,
+                        operation: true,
+                        status: true,
+                        stepSeq: true,
+                        guardVerdict: true,
+                        createdAt: true,
+                    },
+                    orderBy: { stepSeq: 'asc' },
+                },
+            },
         }),
     );
     if (!run) throw notFound('Workflow run not found');

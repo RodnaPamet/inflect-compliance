@@ -215,6 +215,17 @@ export async function runProposeTool(
     inv: McpInvocation,
     name: string,
     rawArgs: unknown,
+    /**
+     * WHICH STEP OF WHICH RUN is calling, when a run is.
+     *
+     * Optional because this seam has three callers and only one of them is
+     * inside a workflow: the static driver's PROPOSE step has a run, the direct
+     * MCP route (`/api/mcp`) does not, and an agent calling a propose tool
+     * outside a run is a supported path rather than a gap. Forwarded verbatim
+     * to `createAgentProposal`, whose `origin` field carries the full argument
+     * for why absence here is an answer and not an omission.
+     */
+    origin?: { runId: string; stepSeq: number },
 ): Promise<McpToolResult> {
     // 0. LOAD the tool through this invocation's pinned manifest rather than
     //    straight out of `PROPOSE_TOOLS` — the same door `runReadTool` uses, for
@@ -256,6 +267,11 @@ export async function runProposeTool(
             // and is not what this proposal executed under; between the gate and
             // this line an operator can have edited the card.
             policyCardVersion: pinFromCard(inv.policyCard?.inForce ?? null),
+            // The step that produced it, when a step did. Every item in this
+            // loop shares one origin — they came from one `buildItems` on one
+            // step — so a run's step can legitimately own several proposals,
+            // which is precisely why `stepSeq` carries no unique constraint.
+            origin,
         });
         (proposal.status === 'QUARANTINED' ? quarantined : queued).push(proposal.id);
     }

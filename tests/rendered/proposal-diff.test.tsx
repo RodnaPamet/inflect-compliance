@@ -116,6 +116,9 @@ const CREATE_ROW: ProposalRow = {
     rationale: 'Observed three failed backups in the last quarter.',
     proposedViaKeyId: 'key-abcdef12',
     createdAt: '2026-09-01T10:00:00.000Z',
+    // Made outside a run — this suite is not about provenance.
+    runId: null,
+    stepSeq: null,
     ...SCANNED_CLEAN,
     diff: computeProposalDiff({
         operation: 'CREATE',
@@ -133,6 +136,9 @@ const UPDATE_ROW: ProposalRow = {
     rationale: 'Two new incidents raise the likelihood.',
     proposedViaKeyId: 'key-abcdef12',
     createdAt: '2026-09-01T11:00:00.000Z',
+    // Made outside a run — this suite is not about provenance.
+    runId: null,
+    stepSeq: null,
     ...SCANNED_CLEAN,
     diff: computeProposalDiff({
         operation: 'UPDATE',
@@ -151,6 +157,9 @@ const NO_CHANGES_ROW: ProposalRow = {
     rationale: null,
     proposedViaKeyId: null,
     createdAt: '2026-09-01T12:00:00.000Z',
+    // Made outside a run — this suite is not about provenance.
+    runId: null,
+    stepSeq: null,
     ...SCANNED_CLEAN,
     diff: computeProposalDiff({
         operation: 'UPDATE',
@@ -169,6 +178,9 @@ const TARGET_MISSING_ROW: ProposalRow = {
     rationale: null,
     proposedViaKeyId: null,
     createdAt: '2026-09-01T13:00:00.000Z',
+    // Made outside a run — this suite is not about provenance.
+    runId: null,
+    stepSeq: null,
     ...SCANNED_CLEAN,
     diff: computeProposalDiff({
         operation: 'UPDATE',
@@ -187,6 +199,9 @@ const UNREADABLE_ROW: ProposalRow = {
     rationale: null,
     proposedViaKeyId: null,
     createdAt: '2026-09-01T14:00:00.000Z',
+    // Made outside a run — this suite is not about provenance.
+    runId: null,
+    stepSeq: null,
     ...SCANNED_CLEAN,
     diff: computeProposalDiff({ operation: 'CREATE', payloadJson: 'not json at all' }),
 };

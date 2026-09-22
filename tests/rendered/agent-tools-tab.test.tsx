@@ -217,6 +217,8 @@ interface Reads {
     grantsError?: unknown;
     manifests?: ToolManifestState[];
     manifestsError?: unknown;
+    autonomyCeiling?: number;
+    requiredAutonomy?: Record<string, number>;
 }
 
 /**
@@ -232,6 +234,8 @@ function mockReads({
     grantsError,
     manifests = [],
     manifestsError,
+    autonomyCeiling,
+    requiredAutonomy,
 }: Reads) {
     mockSWR.mockImplementation((key: string | null) => {
         if (key === TOOL_MANIFEST_PATH) {
@@ -246,7 +250,9 @@ function mockReads({
             return { data: undefined, error: undefined, isLoading: false, mutate: grantsMutate };
         }
         return {
-            data: grantsError ? undefined : { agentId: AGENT_ID, granted, available },
+            data: grantsError
+                ? undefined
+                : { agentId: AGENT_ID, granted, available, autonomyCeiling, requiredAutonomy },
             error: grantsError,
             isLoading: false,
             mutate: grantsMutate,
@@ -669,5 +675,99 @@ describe('an agent with no grants', () => {
         expect(EN.noToolsDescription).not.toMatch(/no access/i);
         expect(EN.noToolsDescription).not.toMatch(/every call this agent/i);
         expect(EN.noTools).not.toMatch(/no access/i);
+    });
+});
+
+/**
+ * THE THIRD WAY A GRANT IS DEAD.
+ *
+ * This tab already tells an operator two of them: `inert` means the build no
+ * longer defines the tool, `blocked` means the manifest gate is refusing it.
+ * Neither covers the case where the tool exists, is pinned, and the AGENT
+ * cannot reach the rung it requires.
+ *
+ * That case is reachable despite `assertGrantWithinTier`, which refuses an
+ * over-TIER grant at the moment it is made: the refusal never checks the
+ * registered autonomy, never runs again when a re-score narrows the cap, and
+ * deliberately passes every grant on an unscored agent.
+ */
+describe('a grant above the agent’s ceiling says so', () => {
+    it('flags a granted tool whose required rung exceeds the ceiling', () => {
+        mockReads({
+            granted: [grant('draft_policy')],
+            available: ['list_risks', 'draft_policy'],
+            manifests: [manifest()],
+            autonomyCeiling: 1,
+            requiredAutonomy: { list_risks: 1, draft_policy: 3 },
+        });
+        renderTab();
+
+        expect(screen.getByTestId('agent-tool-above-ceiling-draft_policy')).toBeInTheDocument();
+    });
+
+    it('does NOT flag a tool the ceiling can reach — the badge is not unconditional', () => {
+        // The positive control. A predicate hard-wired to true satisfies the
+        // case above and would paint every grant on every agent.
+        mockReads({
+            granted: [grant('list_risks')],
+            available: ['list_risks', 'draft_policy'],
+            manifests: [manifest()],
+            autonomyCeiling: 3,
+            requiredAutonomy: { list_risks: 1, draft_policy: 3 },
+        });
+        renderTab();
+
+        expect(screen.queryByTestId('agent-tool-above-ceiling-list_risks')).toBeNull();
+    });
+
+    it('flags EXCEEDS only, never EQUALS — the ceiling is a rung you may reach', () => {
+        // `withinCeiling` is `required <= ceiling`. Off-by-one here would
+        // accuse every agent operating exactly at its cap.
+        mockReads({
+            granted: [grant('draft_policy')],
+            available: ['draft_policy'],
+            manifests: [manifest()],
+            autonomyCeiling: 3,
+            requiredAutonomy: { draft_policy: 3 },
+        });
+        renderTab();
+
+        expect(screen.queryByTestId('agent-tool-above-ceiling-draft_policy')).toBeNull();
+    });
+
+    it('says nothing when the CEILING alone is unknown, even though the rung is known', () => {
+        // Isolates the ceiling term. The case below omits BOTH, so the
+        // required-rung lookup short-circuits first and a ceiling defaulted to
+        // 0 would never be reached — which is exactly what happened: the
+        // mutation "unknown ceiling becomes 0" left that test green. Here the
+        // rung IS known, so the only thing that can suppress the badge is the
+        // ceiling being treated as unknown rather than as zero.
+        mockReads({
+            granted: [grant('draft_policy')],
+            available: ['draft_policy'],
+            manifests: [manifest()],
+            requiredAutonomy: { draft_policy: 3 },
+        });
+        renderTab();
+
+        expect(screen.queryByTestId('agent-tool-above-ceiling-draft_policy')).toBeNull();
+        expect(screen.getByTestId('agent-tool-row-draft_policy')).toBeInTheDocument();
+    });
+
+    it('says NOTHING when the ceiling is unknown, rather than reassuring', () => {
+        // An older payload carries no ceiling. Rendering no badge is right;
+        // rendering a clean one would be a claim nobody computed, and a
+        // default of 0 would paint every grant as unreachable.
+        mockReads({
+            granted: [grant('draft_policy')],
+            available: ['draft_policy'],
+            manifests: [manifest()],
+        });
+        renderTab();
+
+        expect(screen.queryByTestId('agent-tool-above-ceiling-draft_policy')).toBeNull();
+        // …and the row still renders, which is what makes the absence a
+        // deliberate silence rather than a crash.
+        expect(screen.getByTestId('agent-tool-row-draft_policy')).toBeInTheDocument();
     });
 });

@@ -159,6 +159,9 @@ function makeRow(overrides: Partial<ProposalRow> = {}): ProposalRow {
         rationale: 'Observed three failed backups in the last quarter.',
         proposedViaKeyId: 'key-abcdef12',
         createdAt: '2026-09-01T10:00:00.000Z',
+        // Made outside a run — this suite is not about provenance.
+        runId: null,
+        stepSeq: null,
         // The post-guard clean row: the scan ran (a digest exists) and nothing
         // fired.
         guardVerdict: 'CLEAN',

@@ -328,7 +328,16 @@ async function executeSteps(
                         return { status, stepFailures };
                     }
                     const rationale = step.rationale ? step.rationale(context) : undefined;
-                    const result = await runProposeTool(invocation, step.tool, { items, rationale });
+                    // The ORIGIN of every proposal this step queues. `seq` is
+                    // the same index the driver used to reach `def.steps[seq]`,
+                    // so the pair addresses this exact step in the ledger the
+                    // run detail page renders.
+                    const result = await runProposeTool(
+                        invocation,
+                        step.tool,
+                        { items, rationale },
+                        { runId, stepSeq: seq },
+                    );
                     const { output, provenance } = parseToolResult(result);
                     context.outputs[step.label] = output;
                     costTokens += estimateTokens(output);

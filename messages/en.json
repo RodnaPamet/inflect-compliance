@@ -4947,7 +4947,8 @@
           "REVERSIBILITY_WORSENED": "Its actions became harder to undo.",
           "PROVENANCE_WIDENED": "It now depends on a third-party supplier.",
           "MODEL_CHANGED": "The model behind it changed."
-        }
+        },
+        "aboveCeilingBadge": "Above ceiling · needs {required}, capped at {ceiling}"
       },
       "coverage": {
         "summaryHeading": "Agentic risk coverage",
@@ -8154,7 +8155,9 @@
         "confirmBody": "The agentic output guard flagged this proposal. Approving it creates the real compliance record from content that matched a known injection pattern.",
         "confirmApprove": "Approve anyway",
         "confirmCancel": "Go back"
-      }
+      },
+      "fromRun": "From an agent run",
+      "fromRunStep": "From step {seq} of an agent run"
     },
     "runs": {
       "accessTitle": "Agent runs access required",
@@ -8180,6 +8183,29 @@
       "driver": {
         "STATIC": "Static engine",
         "FLUE": "Flue engine"
+      },
+      "detail": {
+        "crumbAgents": "Agents",
+        "loadingAria": "Loading run detail",
+        "emptyTitle": "No steps recorded",
+        "emptyDesc": "This run has not recorded a step yet.",
+        "seq": "Step {seq}",
+        "inputLabel": "Input",
+        "outputLabel": "Output",
+        "kind": {
+          "READ": "Read",
+          "PROPOSE": "Propose",
+          "HUMAN_CHECKPOINT": "Human checkpoint",
+          "SYNTHESIS": "Synthesis",
+          "MODEL_CALL": "Model call",
+          "TOOL_CALL": "Tool call"
+        },
+        "metaStatus": "Status",
+        "metaDriver": "Engine",
+        "metaSteps": "Steps",
+        "metaTokens": "Tokens",
+        "metaStarted": "Started",
+        "proposal": "{kind} · {status}"
       }
     },
     "quarantine": {
