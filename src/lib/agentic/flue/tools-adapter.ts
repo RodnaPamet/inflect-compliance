@@ -77,6 +77,11 @@ import {
     type GuardVerdict,
     type GuardDirection,
 } from '@/app-layer/ai/guard';
+// The PERSISTED verdict vocabulary. `proposal-guard` declares it as mirroring
+// the `AgentGuardVerdict` Prisma enum exactly, so importing it from there
+// keeps this module free of a Prisma value import while still being checked
+// against the enum the column accepts.
+import type { AgentGuardVerdict } from '@/app-layer/ai/guard/proposal-guard';
 import { forbidden } from '@/lib/errors/types';
 import { enforceApiKeyScope } from '@/lib/auth/api-key-auth';
 import {
@@ -222,8 +227,48 @@ export interface ReviewFlag {
  * Nothing is reset. There is no `clear()` and there must not be one — the run
  * is answered by a person, not by the next call going well.
  */
+/**
+ * WHAT THE GUARD SAID ABOUT ONE SLICE OF ONE TOOL CALL.
+ *
+ * Reported for EVERY scan, not only the refusing ones. "The guard ran and
+ * found nothing" and "the guard never ran" are different facts, and a ledger
+ * that records only refusals cannot tell them apart — the same reasoning that
+ * put `guardInputDigest` on `AgentProposal`.
+ */
+export interface StepGuardObservation {
+    /** Ties the observation to the call, so concurrent tools cannot cross. */
+    toolCallId: string;
+    tool: string;
+    slice: ReviewFlag['slice'];
+    verdict: AgentGuardVerdict;
+    ruleIds: readonly string[];
+}
+
+export type GuardObserver = (observation: StepGuardObservation) => void;
+
+/**
+ * The scanner's answer, as the step ledger records it.
+ *
+ * NOT `proposal-guard`'s ladder, deliberately. That ladder quarantines a
+ * malicious scan because a proposal becomes a live compliance record; a tool
+ * call is a different question. Here the enforcement outcome IS the verdict:
+ * a blocked call never returned data, a flagged one latched review, and
+ * anything else was scanned and permitted.
+ */
+function stepVerdictOf(outcome: GuardOutcome): AgentGuardVerdict {
+    if (outcome.blocked) return 'QUARANTINED';
+    if (outcome.reviewRequired) return 'FLAGGED';
+    return 'CLEAN';
+}
+
 export class ReviewLatch {
     private readonly recorded: ReviewFlag[] = [];
+
+    /**
+     * Optional, because the latch's REFUSAL job does not depend on anyone
+     * listening. A run with no observer behaves exactly as before.
+     */
+    constructor(private readonly observe?: GuardObserver) {}
 
     /** Did a guard flag anything in this invocation? */
     get required(): boolean {
@@ -265,7 +310,32 @@ export class ReviewLatch {
      * narrower one first keeps a block reporting itself as `ai_guard_blocked`
      * instead of being relabelled as something milder.
      */
-    check(outcome: GuardOutcome, tool: string, slice: ReviewFlag['slice']): void {
+    check(
+        outcome: GuardOutcome,
+        tool: string,
+        slice: ReviewFlag['slice'],
+        toolCallId = 'standalone',
+    ): void {
+        // REPORTED FIRST, before either assertion below can throw.
+        //
+        // A blocked or flagged scan is exactly the one the ledger most needs
+        // to record, and both of those paths leave this method by throwing.
+        // Observing after the asserts would record every CLEAN verdict and
+        // silently drop every refusal — the inversion of what is wanted.
+        this.observe?.({
+            toolCallId,
+            tool,
+            slice,
+            verdict: stepVerdictOf(outcome),
+            // `?? []` because this runs INSIDE the guard seam. `GuardOutcome`
+            // types `ruleIds` as required, so this should never fire — but a
+            // scanner returning a malformed outcome would otherwise throw
+            // here, turning a CLEAN scan into a 500 raised by the very code
+            // that exists to observe it. The observation degrades; the call
+            // does not.
+            ruleIds: [...(outcome.ruleIds ?? [])],
+        });
+
         if (outcome.reviewRequired) {
             this.recorded.push({
                 tool,
@@ -326,10 +396,13 @@ function holdsScope(ctx: RequestContext, tool: McpReadTool<unknown>): boolean {
  * Pure apart from the schema conversion; performs no authorization and writes
  * no audit row. The returned `run` closures are where anything happens.
  */
-export function flueToolsFor(inv: McpInvocation): FlueToolSet {
+export function flueToolsFor(inv: McpInvocation, observe?: GuardObserver): FlueToolSet {
     const tools: FlueToolDefinition[] = [];
     const omitted: FlueToolSet['omitted'] = [];
-    const review = new ReviewLatch();
+    // One latch for the RUN — review, once required, stays required across
+    // every subsequent tool. The observer is per-run too; observations carry
+    // their own `toolCallId` so concurrent calls cannot cross.
+    const review = new ReviewLatch(observe);
 
     for (const tool of loadableReadTools(inv)) {
         if (!holdsScope(inv.ctx, tool)) {
@@ -408,7 +481,7 @@ export async function runGuardedTool(
     // guard that fired after that would be reporting on a read that had already
     // happened.
     const egress = await guardEgress(ctx, args, { source: `flue-tool-args:${name}:${toolCallId}` });
-    review.check(egress, name, 'args');
+    review.check(egress, name, 'args', toolCallId);
 
     const result = await runReadTool(inv, name, args);
 
@@ -429,7 +502,7 @@ export async function runGuardedTool(
     // audited, and nothing was committed. What must not happen is the text
     // reaching the model, so the flag is enforced between the funnel and the
     // return rather than being allowed through with a warning attached.
-    review.check(injected, name, 'result');
+    review.check(injected, name, 'result', toolCallId);
 
     return text;
 }

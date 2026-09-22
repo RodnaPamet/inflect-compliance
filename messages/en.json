@@ -8225,7 +8225,13 @@
           "READ_TENANT_DATA": "reads data",
           "WRITE_TENANT_DATA": "writes data",
           "EXTERNAL_EGRESS": "external egress"
-        }
+        },
+        "guard": {
+          "CLEAN": "guard: clean",
+          "FLAGGED": "guard: flagged",
+          "QUARANTINED": "guard: quarantined"
+        },
+        "stepTokens": "{count} tokens"
       }
     },
     "quarantine": {

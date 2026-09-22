@@ -8225,7 +8225,13 @@
           "READ_TENANT_DATA": "чете данни",
           "WRITE_TENANT_DATA": "пише данни",
           "EXTERNAL_EGRESS": "външно изпращане"
-        }
+        },
+        "guard": {
+          "CLEAN": "проверка: чисто",
+          "FLAGGED": "проверка: маркирано",
+          "QUARANTINED": "проверка: под карантина"
+        },
+        "stepTokens": "{count} токена"
       }
     },
     "quarantine": {

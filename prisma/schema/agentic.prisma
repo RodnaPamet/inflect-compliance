@@ -503,6 +503,23 @@ model WorkflowStep {
   toolCalled  String?
   inputJson   String?
   outputJson  String?
+  /// ─── What the guard said about THIS step ────────────────────────────────
+  /// NULL means no guard ran here, and that is a different fact from CLEAN.
+  /// A checkpoint or a synthesis reaches no tenant content and is never
+  /// scanned; a tool call is scanned on both slices. Defaulting this to CLEAN
+  /// would make "not scanned" and "scanned and clean" the same row — the
+  /// distinction `AgentProposal.guardInputDigest` exists to preserve on the
+  /// proposal side.
+  guardVerdict AgentGuardVerdict?
+  /// The stable rule ids that fired. Safe to surface: the scanners document
+  /// these as carrying no user content, which is why the proposal row stores
+  /// them too. Empty on a CLEAN verdict.
+  guardRuleIds String[]           @default([])
+  /// Tokens THIS step spent, when the step is a model call and the engine
+  /// reported usage. `WorkflowRun.costTokens` remains the enforced total and
+  /// the cap still reads it; this is the per-step breakdown an incident
+  /// review wants, which the run total cannot give.
+  costTokens  Int?
   status      WorkflowStepStatus @default(PENDING)
   at          DateTime           @default(now())
   actorUserId String?
