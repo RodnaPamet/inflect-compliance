@@ -7,6 +7,7 @@ import { logger } from '@/lib/observability/logger';
 import { InflectAgent } from './agent';
 import { buildFlueProviders } from './providers';
 import { planFlueStart } from './runtime-bootstrap';
+import { installFlueTelemetry } from './telemetry';
 
 /**
  * BOOTING THE RUNTIME — once per process, lazily, on the first Flue run.
@@ -75,6 +76,17 @@ export async function ensureFlueRuntime(): Promise<readonly Provider[]> {
         // it registers every pi built-in, which is the egress-by-omission
         // `runtime-bootstrap.ts` documents. `db` is absent, which selects the
         // in-memory default on purpose.
+        // INSTALLED BEFORE `start()`, so the first run is instrumented too.
+        // `instrument` throws `InstrumentationAlreadyInstalledError` on a
+        // second install, which is safe here only because this whole boot is
+        // memoised — the same reason `start()` itself can only be called once.
+        //
+        // The disposer is intentionally dropped. This process-wide
+        // instrumentation lives as long as the runtime does, and there is no
+        // point in the app's lifetime that tears one down without the other;
+        // holding a handle nobody calls would imply otherwise.
+        installFlueTelemetry();
+
         await start({ agents: [InflectAgent], ...planFlueStart(providers) });
 
         logger.info('flue-runtime: started', {
