@@ -152,6 +152,11 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     'exception-expiry-monitor',
     // PR-4 — daily cross-tenant fan-out: an hris-sync per enabled HRIS
     // connection (BambooHR, Workday).
+    // #2745 — the job exists to be COMPLETED, not for what it computes. Its
+    // completion is what refreshes the worker heartbeat key, so a wedged
+    // worker stops being indistinguishable from a healthy one. The executor
+    // had been registered since the queue was built and nothing dispatched it.
+    'health-check',
     'hris-sync-dispatch',
     // #2687 — daily joiner pass fan-out, one per (tenant, writable directory
     // provider), at 04:30 UTC: after identity-sync-dispatch refreshes the link
