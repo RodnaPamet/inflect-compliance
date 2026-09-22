@@ -27,6 +27,8 @@ import { codeOf, declarationOf, sqlCodeOf, functionBodyOf } from '../helpers/sou
 const ROOT = path.resolve(__dirname, '../..');
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const read = (rel: string) => codeOf(readRaw(rel));
+/** The one place a `WorkflowStep` is written — see the seam guard. */
+const recorder = read('src/lib/agentic/drivers/step-recorder.ts');
 // LANGUAGE SPLIT (#2644). `codeOf` lexes `//`, so on a `.sql` file it blanks
 // nothing and a `--` comment reaches the assertion verbatim — masked at the
 // call site, unmasked in fact. Migrations go through `sqlCodeOf`, which lexes
@@ -41,6 +43,11 @@ const readSql = (rel: string) => sqlCodeOf(readRaw(rel));
 // satisfied it.
 const engine = read('src/app-layer/usecases/workflow-runs.ts');
 const driver = read('src/lib/agentic/drivers/static-driver.ts');
+// A THIRD half since the Flue driver landed: how a run reaches a terminal
+// state is not a property of one engine, so `updateRun` / `failRun` /
+// `haltRunAtCap` were extracted where both can reach them.
+const settlement = read('src/lib/agentic/drivers/run-settlement.ts');
+const flueRun = read('src/lib/agentic/flue/execute.ts');
 const types = read('src/lib/agentic/workflow-types.ts');
 const runCaps = read('src/lib/agentic/run-caps.ts');
 
@@ -110,8 +117,47 @@ describe('Agentic engine — guardrails', () => {
         // A breach HALTS and says which cap fired — it never trims the work to
         // fit. The behaviour is tests/unit/agent-caps.test.ts; this only pins
         // that the halt path exists and is distinct from an ordinary failure.
-        expect(driver).toMatch(/async function haltRunAtCap\(/);
+        //
+        // The DEFINITION moved to `run-settlement.ts` when a second engine
+        // arrived, so it is asserted there and the driver is asserted to REACH
+        // it. Both halves, deliberately: pinning only the definition would let
+        // a driver quietly stop calling it, and pinning only the call site
+        // would let the definition go while a same-named local took over.
+        expect(settlement).toMatch(/export async function haltRunAtCap\(/);
+        // Anchored on the IMPORT, which occurs once, rather than on
+        // `haltRunAtCap(` — which occurs eight times in this file and is
+        // therefore a Class D ambiguous needle: satisfied by any one of eight
+        // sites, including the docstring that merely mentions it. The import
+        // is also the stronger claim, since it pins that the driver reaches
+        // the SHARED halt path rather than a same-named local.
+        expect(driver).toMatch(/haltRunAtCap[^;]*from '\.\/run-settlement'/);
         expect(driver).toMatch(/failRun\(/);
+    });
+
+    it('the Flue engine is under the SAME budget, not a second one', () => {
+        // The failure this exists for: an agentic loop is precisely the engine
+        // that decides for itself how many tools to call and how long to keep
+        // going, so a second driver that composed its own ceilings — or none —
+        // would make `ENGINE_CAPS` a number that applies to the engine nobody
+        // runs.
+        expect(flueRun).toMatch(/createRunBudget\(/);
+        expect(flueRun).toMatch(/resolveRunCaps\(/);
+        // Charged on the axes an agentic loop can actually spend: a tool call
+        // is its unit of work, and tokens are what a reasoning loop burns.
+        expect(flueRun).toMatch(/'TOOL_CALLS'/);
+        expect(flueRun).toMatch(/charge\('TOKENS'/);
+        // And it halts through the shared path rather than settling its own
+        // way, so a cap halt is the same row on both engines. Anchored on the
+        // import for the reason above: the bare call needle matches five
+        // sites here.
+        expect(flueRun).toMatch(
+            /haltRunAtCap[^;]*from '@\/lib\/agentic\/drivers\/run-settlement'/,
+        );
+        // Seeded from what earlier SEGMENTS spent. Without this a run with
+        // three human checkpoints gets four budgets — the defect
+        // `actionsAlready` and `proposedItemsSoFar` both exist to prevent.
+        expect(flueRun).toMatch(/actionsAlready/);
+        expect(flueRun).toMatch(/proposedItemsSoFar\(/);
     });
 
     it('abort works mid-run (the executor checks for ABORTED between steps)', () => {
@@ -129,7 +175,16 @@ describe('Agentic engine — guardrails', () => {
         // -1, so the slice silently became the file's LAST CHARACTER and every
         // assertion below ran against it. A helper that throws on a missing
         // name reports that as a missing function, which is what it is.
-        const recordBlock = functionBodyOf(driver, 'recordStep');
+        //
+        // MOVED AGAIN, and the assertion follows it. `recordStep` came INTO
+        // the driver with the #2719 extraction and has now moved OUT to
+        // `drivers/step-recorder.ts`, because a second driver is coming and
+        // the step ledger keeps exactly one write seam
+        // (`tests/guards/workflow-step-single-write-seam.test.ts`). Asserting
+        // against the driver would now pass only by finding nothing — which
+        // is precisely what `functionBodyOf` refuses to let happen, and why
+        // this reported a missing function rather than going quietly green.
+        const recordBlock = functionBodyOf(recorder, 'recordStep');
         expect(recordBlock).toMatch(/appendAuditEntry\(/);
         expect(recordBlock).toMatch(/actorType:/);
         expect(recordBlock).toMatch(/apiKeyId:/);

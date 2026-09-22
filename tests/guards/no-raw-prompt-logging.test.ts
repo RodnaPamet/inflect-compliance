@@ -199,6 +199,35 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // still log: the usecase for run lifecycle, the driver for each step.
     'src/lib/agentic/drivers/static-driver.ts — identifier bound elsewhere',
     'src/app-layer/usecases/workflow-runs.ts — identifier bound elsewhere',
+    // RELOCATION, not a new hole. `haltRunAtCap` was extracted from the static
+    // driver into the shared settlement module when a second engine arrived —
+    // the same audit sink, the same six structural fields (a cap kind, two
+    // integers, a source, and how much work stopped), in a new file. The
+    // driver keeps its own entry because other sinks stayed behind.
+    'src/lib/agentic/drivers/run-settlement.ts — identifier bound elsewhere',
+    // ── THE FLUE ENGINE'S THREE SINKS ───────────────────────────────────────
+    //
+    // The kind to read carefully here is `runtime-start.ts`'s: a HELPER kind
+    // normally means a field bag whose names never reach the source, which is
+    // the shape worth refusing. It is not that. The helper is
+    // `providers.map((p) => p.id)` — a list of the two provider IDS this
+    // deployment registered, which is the one fact that boot line exists to
+    // report. Hoisting it to a const would only move it into the `identifier
+    // bound elsewhere` class without making anything more visible, and the
+    // note above `agent-governance-pack-export.ts` is explicit that
+    // registering a MISDESCRIBED hole is worse than having none.
+    //
+    // What cannot be shown structurally, and is true of all three: none of
+    // these modules logs model input or output. The driver's warn line carries
+    // ids, a workflow key, a residency and a model SPECIFIER — which names a
+    // provider and a model, never a credential and never the prompt. The
+    // dispatch line carries ids and two COUNTS. The reply text is deliberately
+    // absent from both the log and the step ledger: agent output becomes an
+    // `AgentProposal` if it becomes anything, and that row is guarded and
+    // reviewable where a log line is neither.
+    'src/lib/agentic/flue/driver.ts — identifier bound elsewhere',
+    'src/lib/agentic/flue/execute.ts — identifier bound elsewhere',
+    'src/lib/agentic/flue/runtime-start.ts — call to a helper this rule cannot open',
     'src/lib/agentic/agent-authority.ts — identifier bound elsewhere',
     // The driver gate's two fallback log lines. Every value at both sinks is an
     // id (`tenantId`, `requestId`), a workflow key, or a member of a closed
@@ -209,6 +238,12 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // structurally is that no prompt-shaped value exists in that module to
     // name — it holds no model call, no transcript and no tool arguments.
     'src/lib/agentic/agent-driver-policy.ts — identifier bound elsewhere',
+    // The step recorder, extracted from `static-driver.ts` so a second driver
+    // writes steps through the same seam. The holes MOVED file rather than
+    // appeared: `recordStep`'s audit row is unchanged, and `MEASURED_HOLES`
+    // does not shift — which is what a pure move should look like here, and
+    // why this entry is a new PAIR with no new number beside it.
+    'src/lib/agentic/drivers/step-recorder.ts — identifier bound elsewhere',
     // The monthly budget's two fallback/refusal log lines. Every value at both
     // sinks is an id (`tenantId`, `requestId`), an integer token count, or one
     // `err.message`. The module holds no model call, no transcript and no tool
@@ -420,7 +455,7 @@ const SINK_FLOOR = 30;
 // The union was also measured ahead of time on main + #2723 + #2726 + this
 // branch, which reported the same 156 / 88 -- so #2723 contributes nothing,
 // and the number does not depend on which of the two lands first.
-const MEASURED_HOLES = 156;
+const MEASURED_HOLES = 159;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -433,7 +468,7 @@ const MEASURED_HOLES = 156;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 88;
+const MEASURED_SINKS = 91;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;
