@@ -32,9 +32,16 @@
  * Every construct this converter does not understand is a THROW, never a
  * permissive fallback. A converter that quietly emitted "any object" for a
  * schema it could not read would hand the model a tool it cannot call
- * correctly and give no signal — and the accompanying test converts all ten
- * live tools, so a new tool with a nested schema fails CI here rather than
- * shipping as a tool the model silently misuses.
+ * correctly and give no signal — and the accompanying test converts every live
+ * tool on both surfaces, printing the count beside the result, so a new tool
+ * with a shape this file cannot express fails CI here rather than shipping as a
+ * tool the model is never offered.
+ *
+ * That last clause is not hypothetical. The propose tools each take an array,
+ * arrays were refused, and the refusal is silent at the adapter — it drops the
+ * tool into `omitted` rather than throwing. So the whole propose surface was
+ * convertible-to-nothing, and the only signal was a field nobody read. See
+ * `arraySchema` below for the extension that closed it.
  */
 import * as v from 'valibot';
 
@@ -45,6 +52,12 @@ interface JsonSchemaProperty {
     minimum?: unknown;
     maximum?: unknown;
     description?: unknown;
+    /** Array properties only — the element schema and the length bounds. */
+    items?: unknown;
+    minItems?: unknown;
+    maxItems?: unknown;
+    /** Read only, to tell a SHAPED object element from a free-form one. */
+    properties?: unknown;
 }
 
 export class UnsupportedToolSchemaError extends Error {
@@ -107,6 +120,67 @@ function scalarSchema(
 }
 
 /**
+ * An ARRAY property — the deliberate extension this converter's own comment
+ * asked for, made when the first live tool needed it.
+ *
+ * The propose surface is that tool. Every propose tool takes one array of
+ * candidate items, and refusing arrays meant all four converted to nothing and
+ * were dropped from the set a Flue agent is offered: propose-not-commit with
+ * no reachable way to propose.
+ *
+ * Two element shapes, and the line between them is the whole care here:
+ *
+ *   • A FREE-FORM object — `{ type: 'object' }` with no declared properties.
+ *     That is what a propose item is: the JSON Schema says "an object", and
+ *     the real contract is the target entity's create-schema, which
+ *     `createAgentProposal` validates each item against after the funnel.
+ *     A record of unknown is the faithful translation and understates nothing.
+ *
+ *   • A SCALAR, through the same `scalarSchema` a top-level property uses.
+ *
+ * An element that DECLARES properties is refused rather than widened, because
+ * emitting a free-form record for it would drop the declared shape silently —
+ * the one behaviour this file exists to refuse. Bounds are carried through
+ * when present; the funnel's Zod schema re-checks them regardless.
+ */
+function arraySchema(
+    toolName: string,
+    key: string,
+    prop: JsonSchemaProperty,
+): v.GenericSchema<unknown, unknown> {
+    const spec = prop.items;
+    if (spec === null || typeof spec !== 'object' || Array.isArray(spec)) {
+        throw new UnsupportedToolSchemaError(
+            toolName,
+            `property "${key}" is an array with no single "items" schema`,
+        );
+    }
+
+    const item = spec as JsonSchemaProperty;
+    let element: v.GenericSchema<unknown, unknown>;
+    if (item.type === 'object') {
+        if (item.properties !== undefined) {
+            throw new UnsupportedToolSchemaError(
+                toolName,
+                `property "${key}" holds objects with declared properties — ` +
+                    'extend this converter deliberately rather than widening them',
+            );
+        }
+        element = v.record(v.string(), v.unknown()) as v.GenericSchema<unknown, unknown>;
+    } else {
+        element = scalarSchema(toolName, `${key}[]`, item);
+    }
+
+    const pipe: unknown[] = [v.array(element)];
+    if (typeof prop.minItems === 'number') pipe.push(v.minLength(prop.minItems));
+    if (typeof prop.maxItems === 'number') pipe.push(v.maxLength(prop.maxItems));
+    return v.pipe(...(pipe as [v.GenericSchema<unknown, unknown>])) as v.GenericSchema<
+        unknown,
+        unknown
+    >;
+}
+
+/**
  * Convert one tool's `inputSchema`. Throws `UnsupportedToolSchemaError` on any
  * construct outside the subset — including a nested object, which is the one a
  * future tool is most likely to reach for.
@@ -136,20 +210,26 @@ export function toValibotInputSchema(
         if (prop === null || typeof prop !== 'object') {
             throw new UnsupportedToolSchemaError(toolName, `property "${key}" is not an object`);
         }
-        // Nested objects and arrays are refused EXPLICITLY rather than falling
+        // A nested OBJECT is still refused EXPLICITLY rather than falling
         // through the scalar switch's default, so the error names the real
-        // reason. No live tool uses either; the first one that does should be a
+        // reason. No live tool uses one; the first that does should be a
         // deliberate extension of this converter, not a silent reshaping.
-        if (prop.type === 'object' || prop.type === 'array') {
+        if (prop.type === 'object') {
             throw new UnsupportedToolSchemaError(
                 toolName,
-                `property "${key}" is a nested ${prop.type} — extend this converter deliberately`,
+                `property "${key}" is a nested object — extend this converter deliberately`,
             );
         }
-        const scalar = scalarSchema(toolName, key, prop);
+        // An ARRAY is that deliberate extension, made for the propose surface.
+        // `arraySchema` keeps the same posture one level down: it refuses an
+        // element shape it cannot express rather than widening it.
+        const built =
+            prop.type === 'array'
+                ? arraySchema(toolName, key, prop)
+                : scalarSchema(toolName, key, prop);
         entries[key] = required.has(key)
-            ? scalar
-            : (v.optional(scalar) as v.GenericSchema<unknown, unknown>);
+            ? built
+            : (v.optional(built) as v.GenericSchema<unknown, unknown>);
     }
 
     // `additionalProperties: false` becomes a STRICT object, and getting this
