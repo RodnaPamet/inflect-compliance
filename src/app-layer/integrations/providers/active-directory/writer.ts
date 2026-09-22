@@ -109,6 +109,8 @@
  *
  * @module integrations/providers/active-directory/writer
  */
+import { EqualityFilter } from 'ldapts';
+
 import {
     ActiveDirectoryProvider,
     UAC_ACCOUNTDISABLE,
@@ -366,18 +368,46 @@ function isUnderBaseDn(dn: string, baseDN: string): boolean {
 }
 
 /**
- * Render a canonical GUID string as an LDAP search-filter assertion.
+ * The raw 16 bytes AD stores for a canonical GUID string.
  *
  * The inverse of `formatObjectGuid`: AD stores the first three groups
  * little-endian and the last two big-endian, so the byte order has to be undone
- * before it goes on the wire as `\xx\xx…`.
+ * before it goes on the wire.
  */
-export function objectGuidFilter(guid: string): string {
+export function objectGuidBytes(guid: string): Buffer {
     const hex = guid.replace(/-/g, '');
     const b: string[] = [];
     for (let i = 0; i < 16; i += 1) b.push(hex.slice(i * 2, i * 2 + 2));
     const ordered = [b[3], b[2], b[1], b[0], b[5], b[4], b[7], b[6], ...b.slice(8)];
-    return `(objectGUID=${ordered.map((x) => `\\${x}`).join('')})`;
+    return Buffer.from(ordered.join(''), 'hex');
+}
+
+/**
+ * Match a user by objectGUID.
+ *
+ * ═══ WHY THIS IS A FILTER OBJECT AND NOT A STRING ═══
+ *
+ * This used to return the RFC 4515 spelling — `(objectGUID=\65\60\8b…)` —
+ * which is correct LDAP and works from `ldapsearch`. **`ldapts` does not
+ * resolve those escapes**, so the assertion went on the wire as the literal
+ * backslash characters and matched nothing. Every AD disable therefore failed
+ * as "Active Directory has no account matching …", naming deletion and base-DN
+ * scope as the causes, while the account sat exactly where it belonged (#2764).
+ *
+ * Measured against a real DC, same bind, same base DN:
+ *
+ *     (objectGUID=\65\60\8b\9d…)  via ldapsearch  ->  1 match
+ *     (objectGUID=\65\60\8b\9d…)  via ldapts      ->  0 matches
+ *     EqualityFilter + Buffer        via ldapts      ->  1 match
+ *
+ * Uppercase escapes and raw latin-1 bytes were tried too; both 0. So the fix
+ * is not a spelling of the string — the value has to reach ldapts as BYTES.
+ *
+ * The byte order was never the bug and is unchanged; `objectGuidBytes` still
+ * owns it, and the inverse test still guards it.
+ */
+export function objectGuidFilter(guid: string): EqualityFilter {
+    return new EqualityFilter({ attribute: 'objectGUID', value: objectGuidBytes(guid) });
 }
 
 /**
