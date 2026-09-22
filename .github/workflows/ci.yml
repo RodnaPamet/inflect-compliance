@@ -817,10 +817,36 @@ jobs:
   # ═══════════════════════════════════════════════════════════════
   #  Job 5: Build — production build verification
   #  No DB needed. Verifies `next build` succeeds cleanly.
+  #
+  #  ─── WHY THIS JOB READS `BUILD_RUNNER` FIRST (#2753) ───────────
+  #  main's `next build` peaks at ~15.5 GB on GitHub's 16 GB runner and the
+  #  merge queue is evicting green PRs: #2742 was evicted four consecutive
+  #  times carrying 19 passing checks and nothing wrong with it. The spread
+  #  across queue builds was ~224 MB, so this is not run-to-run noise — any
+  #  PR that adds a route is currently unmergeable.
+  #
+  #  `BUILD_RUNNER` is checked BEFORE `LARGE_RUNNER` so this job — and ONLY
+  #  this job — can be pinned to a self-hosted runner. Nine other jobs read
+  #  `LARGE_RUNNER`, among them `ghcr-publish`, which pushes the production
+  #  image Watchtower deploys within 60s; its registry credentials must not
+  #  follow the build onto a self-hosted box.
+  #
+  #  THE FALLBACK IS THE POINT. A job pinned to an offline self-hosted label
+  #  queues forever rather than failing. Unsetting the `BUILD_RUNNER` repo
+  #  variable restores GitHub-hosted builds immediately — no workflow edit,
+  #  no PR — which is what you want at 03:00.
+  #
+  #  A WORKAROUND, NOT A FIX. #2753 stays open until the peak is back under
+  #  ~12 GB with a ratchet holding it there.
+  #
+  #  Keep this prose ABOVE `name:`. `tests/guards/ci-flake-hardening.ts`
+  #  finds this job's `timeout-minutes` by scanning a 900-CHARACTER window
+  #  after `name: Build`; comments added between the two push it out of
+  #  range and fail that guard for a reason unrelated to timeouts.
   # ═══════════════════════════════════════════════════════════════
   build:
     name: Build
-    runs-on: ${{ vars.LARGE_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.BUILD_RUNNER || vars.LARGE_RUNNER || 'ubuntu-latest' }}
     # Normally ~3.5 min; 15 gives cold-runner headroom without masking a
     # genuine hang (the prior spurious cancels were concurrency, not timeout).
     # 15 -> 25 on 2026-08-04, same retry-path reasoning as Lint /
