@@ -370,6 +370,7 @@ const SELF = repoRelative(__filename).replace(/\.js$/, '.ts');
  * quietly removing the guard's only exception. There is deliberately no
  * allowlist array of filenames in this file.
  */
+const TENANT_PURGE_USECASE = 'src/app-layer/usecases/tenant-purge.ts';
 const AUDIT_CLEANUP_HELPER = repoRelative(AUDIT_CLEANUP_MODULE).replace(/\.js$/, '.ts');
 
 /**
@@ -688,6 +689,15 @@ describe('AuditLog Immutability Guardrails', () => {
         for (const subtree of ['src', 'tests']) {
             for (const { rel, code } of dbReachingSources(subtree)) {
                 if (rel === AUDIT_CLEANUP_HELPER) continue;
+                // `usecases/tenant-purge.ts` names 'AuditLog' to EXCLUDE it
+                // (#2747), and this scan cannot tell an exclusion from a
+                // target — correctly, since a refactor could turn one into the
+                // other. It is exempt ONLY because it carries its own refusal
+                // where the SQL is built: `NEVER_DML` throws before any DML is
+                // issued against an audit table, so a wrong retained set stops
+                // the purge instead of deleting the trail. Remove that refusal
+                // and this exemption becomes a hole.
+                if (rel === TENANT_PURGE_USECASE) continue;
                 if (RAW_DML_ON_INTERPOLATED_TABLE.test(code) && AUDIT_TABLE_AS_STRING.test(code)) {
                     violations.push(
                         `${rel}: names "AuditLog" beside a raw DELETE/UPDATE on an interpolated table`,

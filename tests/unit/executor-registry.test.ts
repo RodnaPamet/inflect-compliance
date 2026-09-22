@@ -81,6 +81,16 @@ jest.mock('@/app-layer/jobs/aws-posture-collect', () => ({
 // ── makeResult-wrapper executors: mock each job module's return with the
 // exact shape its closure reads, so the wrapper body runs end-to-end. ──
 jest.mock('@/lib/prisma', () => ({ prisma: {} }));
+// Mocked for the same reason every other collaborator here is: this suite
+// proves the makeResult WRAPPER, against `prisma: {}`. The purge is the one
+// data-lifecycle step that reaches for raw SQL (`$queryRawUnsafe` over
+// pg_constraint, to order deletes by FK depth), so on an empty prisma it
+// throws `raw.$queryRawUnsafe is not a function` and the wrapper faithfully
+// reports success:false. The purge's own behaviour is proved in
+// tests/unit/tenant-purge.test.ts against a real schema.
+jest.mock('@/app-layer/usecases/tenant-purge', () => ({
+    purgeSoftDeletedTenants: jest.fn(async () => []),
+}));
 jest.mock('@/app-layer/jobs/nvd-cve-sync', () => ({
     runNvdCveSync: jest.fn(async () => ({
         fetched: 0, upserted: 0, skipped: 0, matched: 0, windowStart: 'a', windowEnd: 'b',
