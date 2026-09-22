@@ -116,7 +116,7 @@ describe('2. KPI tiles can navigate', () => {
         // The drill link lives in DashboardClient's <KpiTile> wrapper, NOT
         // inside the shared KpiCard primitive (which must not grow a
         // next/link dependency — locked by dashboard-widgets.test.ts).
-        expect(CLIENT).toMatch(/function KpiTile/);
+        expect(CLIENT).toMatch(/function KpiTile\b/);
         expect(CLIENT).toMatch(/data-kpi-drill/);
         expect(KPI_CARD).not.toMatch(/next\/link/);
     });

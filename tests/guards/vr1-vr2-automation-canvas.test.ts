@@ -44,7 +44,7 @@ describe('VR-1/VR-2 — automation canvas foundation', () => {
     });
 
     it('schema carries ProcessCanvasMode + ProcessMap.canvasMode', () => {
-        expect(read('prisma/schema/enums.prisma')).toMatch(/enum ProcessCanvasMode/);
+        expect(read('prisma/schema/enums.prisma')).toMatch(/enum ProcessCanvasMode\b/);
         expect(read('prisma/schema/processes.prisma')).toMatch(
             /canvasMode\s+ProcessCanvasMode/,
         );

@@ -26,7 +26,7 @@ describe('Audit S5 — Audit Readiness & Scoring', () => {
         const auth = read('prisma/schema/auth.prisma');
 
         it('ReadinessSnapshot model exists with required fields', () => {
-            expect(audit).toMatch(/model ReadinessSnapshot/);
+            expect(audit).toMatch(/model ReadinessSnapshot\b/);
             expect(audit).toMatch(/frameworkKey\s+String/);
             expect(audit).toMatch(/auditCycleId\s+String\?/);
             expect(audit).toMatch(/score\s+Int\b/);

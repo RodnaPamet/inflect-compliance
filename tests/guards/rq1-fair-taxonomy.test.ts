@@ -33,7 +33,7 @@ describe('RQ-1 FAIR taxonomy', () => {
         for (const col of ['threatEventFrequency', 'vulnerabilityProbability', 'primaryLossMagnitude', 'secondaryLossMagnitude', 'lossEventFrequency', 'fairAle', 'fairInputsJson']) {
             expect(schema).toMatch(new RegExp(col));
         }
-        expect(read('prisma/schema/enums.prisma')).toMatch(/enum FairConfidence/);
+        expect(read('prisma/schema/enums.prisma')).toMatch(/enum FairConfidence\b/);
         expect(exists('prisma/migrations/20260610120000_rq1_fair_taxonomy/migration.sql')).toBe(true);
     });
 

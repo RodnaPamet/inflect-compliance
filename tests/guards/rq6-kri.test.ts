@@ -26,8 +26,8 @@ const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 describe('RQ-6 KRI', () => {
     it('schema declares both models + migration with RLS', () => {
         const schema = readPrismaSchema();
-        expect(schema).toMatch(/model KeyRiskIndicator/);
-        expect(schema).toMatch(/model KriReading/);
+        expect(schema).toMatch(/model KeyRiskIndicator\b/);
+        expect(schema).toMatch(/model KriReading\b/);
         const mig = 'prisma/migrations/20260610220000_rq6_kri/migration.sql';
         expect(exists(mig)).toBe(true);
         expect(readSql(mig)).toMatch(/CREATE POLICY tenant_isolation ON "KeyRiskIndicator"/);

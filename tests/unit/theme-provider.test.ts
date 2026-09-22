@@ -67,7 +67,7 @@ describe('ThemeProvider — source contract', () => {
         // The cookie (server-readable) is what makes the layout flash-proof;
         // localStorage stays as a back-compat mirror.
         expect(src).toMatch(/document\.cookie\s*=\s*`\$\{THEME_COOKIE\}=/);
-        expect(src).toMatch(/function persistTheme/);
+        expect(src).toMatch(/function persistTheme\b/);
     });
 
     it('flips the html[data-theme] attribute (not a class) so tokens.css matches', () => {

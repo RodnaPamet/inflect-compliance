@@ -44,7 +44,7 @@ describe('DashboardClient — donuts drill through to filtered lists', () => {
         expect(CLIENT).toMatch(/onSegmentClick=\{\(s\) => s\.href && router\.push\(s\.href\)\}/);
     });
     it('renders a clickable legend row per slice', () => {
-        expect(CLIENT).toMatch(/function DonutLegendRow/);
+        expect(CLIENT).toMatch(/function DonutLegendRow\b/);
         expect(CLIENT).toMatch(/<DonutLegendRow/);
     });
 

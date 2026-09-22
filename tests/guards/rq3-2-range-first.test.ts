@@ -136,7 +136,7 @@ describe('RQ3-2 — the write path', () => {
     });
 
     test('triples are canonicalised (sorted) before persisting — simulator safety', () => {
-        expect(usecase).toMatch(/function normalizeTriple/);
+        expect(usecase).toMatch(/function normalizeTriple\b/);
         expect(usecase).toMatch(/\[t\.min, t\.mode, t\.max\]\.sort\(\(a, b\) => a - b\)/);
     });
 
