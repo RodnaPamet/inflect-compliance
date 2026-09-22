@@ -168,15 +168,24 @@ export function createActiveDirectoryProvisioner(
             const { searchEntries } = await c.search(baseDN, {
                 scope: 'sub',
                 filter: `(|(userPrincipalName=${v})(sAMAccountName=${local}))`,
-                attributes: ['sAMAccountName', 'userPrincipalName'],
+                attributes: ['sAMAccountName', 'userPrincipalName', 'objectGUID'],
                 sizeLimit: 2,
             });
             if (searchEntries.length === 0) {
                 return { kind: 'free', namespacesChecked: [...AD_COLLISION_NAMESPACES] };
             }
+            // `taken` names WHICH namespace held it, not merely that something
+            // did. The two have different remedies: a `sAMAccountName` clash
+            // is a 20-character truncation collision and usually needs a
+            // different derivation, while a `userPrincipalName` clash means
+            // the person may already have an account.
+            const hit = searchEntries[0];
+            const upnMatched =
+                String(hit.userPrincipalName ?? '').toLowerCase() === candidate.toLowerCase();
             return {
                 kind: 'taken',
-                namespacesChecked: [...AD_COLLISION_NAMESPACES],
+                namespace: upnMatched ? 'userPrincipalName' : 'sAMAccountName',
+                externalUserId: formatObjectGuid(hit.objectGUID as never) ?? null,
                 detail: `An account already holds ${candidate} in this directory.`,
             };
         },

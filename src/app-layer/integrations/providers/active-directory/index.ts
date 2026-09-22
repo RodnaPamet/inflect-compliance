@@ -199,11 +199,13 @@ export interface LdapClientLike {
      * it is absent, which is the honest place to notice a client that cannot
      * create.
      *
-     * `attributes` is plain data — string or Buffer values keyed by attribute
-     * name. Buffer matters: `unicodePwd` must go on the wire as UTF-16LE and
-     * AD rejects it as a string.
+     * `attributes` is plain data keyed by attribute name. Deliberately NOT
+     * widened to Buffer: the one attribute needing a Buffer is `unicodePwd`,
+     * and that is set through `modify` after the account exists — never at
+     * create time, because the account is created SIGN-IN BLOCKED and has no
+     * credential until the third step of the sequence.
      */
-    add?(dn: string, attributes: Record<string, string | string[] | Buffer>): Promise<void>;
+    add?(dn: string, attributes: Record<string, string | string[]>): Promise<void>;
     unbind(): Promise<void>;
     /**
      * False once the CURRENT socket has not completed a bind — which ldapts
@@ -665,7 +667,7 @@ async function lazyLdaptsClient(opts: LdapClientOptions): Promise<LdapClientLike
         // ldapts takes an entry object directly, so unlike `modify` there is no
         // class translation to do — but it is adapted rather than passed
         // through so every caller and every fake stays free of the library.
-        add: (dn, attributes) => client.add(dn, attributes as Record<string, string | string[] | Buffer>),
+        add: (dn, attributes) => client.add(dn, attributes),
         unbind: () => client.unbind(),
     };
 }

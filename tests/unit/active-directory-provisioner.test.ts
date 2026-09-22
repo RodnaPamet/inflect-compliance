@@ -173,7 +173,13 @@ describe('AD provisioner — the probe asks about both namespaces', () => {
         const f = fakeAd({ entries: [] });
         const p = await make(f).probeIdentifier('new.person@corp.example.test');
         expect(p.kind).toBe('free');
-        expect(p.namespacesChecked).toEqual([...AD_COLLISION_NAMESPACES]);
+        // Narrowed, not asserted through: `namespacesChecked` exists only on
+        // the `free` variant. The union is deliberately shaped that way —
+        // `taken` names WHICH namespace collided and `unknown` names which
+        // could not be consulted, so no single field spans all three.
+        if (p.kind === 'free') {
+            expect(p.namespacesChecked).toEqual([...AD_COLLISION_NAMESPACES]);
+        }
     });
 
     it('reports taken when something matches — never "unknown" like the snapshot arm', async () => {
@@ -183,6 +189,11 @@ describe('AD provisioner — the probe asks about both namespaces', () => {
         // answers `unknown` to every probe because a stored enumeration cannot
         // answer a create-time uniqueness question.
         expect(p.kind).toBe('taken');
+        // And it says WHICH namespace collided — the two have different
+        // remedies, so "taken" alone would not be actionable.
+        if (p.kind === 'taken') {
+            expect(AD_COLLISION_NAMESPACES).toContain(p.namespace as never);
+        }
     });
 
     it('escapes filter metacharacters so an identifier cannot alter the query', () => {
