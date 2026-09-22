@@ -440,17 +440,34 @@ executorRegistry.register('data-lifecycle', async (payload) => {
         dryRun: payload.dryRun,
     });
 
+    // #2747 — tenants deleted from the org plane. Runs LAST, after the
+    // per-model purges above: those work on `deletedAt` per row and would
+    // otherwise be scanning tables this is about to empty wholesale.
+    //
+    // Deliberately NOT scoped by `payload.tenantId`. That field narrows the
+    // sweeps above to one tenant's rows; here it would mean "purge this
+    // tenant", which is a destructive operator action and not something a
+    // routine daily job should infer from a payload field that means something
+    // else everywhere near it. `purgeSoftDeletedTenants({ tenantId })` is
+    // available directly for that.
+    const { purgeSoftDeletedTenants } = await import(
+        '../usecases/tenant-purge'
+    );
+    const tenantPurge = await purgeSoftDeletedTenants({ dryRun: payload.dryRun });
+
     const totalScanned = purgeResults.reduce((s, r) => s + r.scanned, 0)
         + evidencePurge.scanned
-        + retentionResults.reduce((s, r) => s + r.scanned, 0);
+        + retentionResults.reduce((s, r) => s + r.scanned, 0)
+        + tenantPurge.length;
     const totalActioned = purgeResults.reduce((s, r) => s + r.purged, 0)
         + evidencePurge.purged
-        + retentionResults.reduce((s, r) => s + r.expired, 0);
+        + retentionResults.reduce((s, r) => s + r.expired, 0)
+        + tenantPurge.reduce((s, r) => s + r.totalRows, 0);
 
     return makeResult(
         'data-lifecycle', startedAt, startMs,
         totalScanned, totalActioned, 0,
-        { purgeResults, evidencePurge, retentionResults },
+        { purgeResults, evidencePurge, retentionResults, tenantPurge },
     );
 });
 
