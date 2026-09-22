@@ -178,6 +178,22 @@ services:
     restart: always
     entrypoint: ["/bin/sh", "-c"]
     command: ["node dist/scheduler.mjs && node dist/worker.mjs"]
+    # The worker serves no HTTP, so there is nothing to curl — this runs the
+    # bundled probe, which READS the heartbeat key `worker.ts` refreshes from
+    # BullMQ's `completed` event. A pass therefore means the worker pulled a
+    # job off the queue, ran it and came back; a process-existence check
+    # would report a wedged worker as healthy, which is the gap (#2745).
+    #
+    # start_period is 300s because nothing beats until the scheduler has
+    # registered the `health-check` repeatable and the first job has run.
+    # Shorter, and every fresh deploy is briefly unhealthy for a reason
+    # that is not a fault.
+    healthcheck:
+      test: ["CMD", "node", "dist/worker-healthcheck.mjs"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
     depends_on:
       pgbouncer:
         condition: service_healthy

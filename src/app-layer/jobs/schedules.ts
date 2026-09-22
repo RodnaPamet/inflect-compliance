@@ -68,6 +68,25 @@ export interface ScheduleDefinition {
  */
 export const SCHEDULED_JOBS: ScheduleDefinition[] = [
     {
+        // FIRST deliberately, and on the shortest cadence in this file. This
+        // job's only purpose is to give the worker something to complete on an
+        // otherwise quiet queue, so `worker.on('completed')` fires and the
+        // heartbeat key stays fresh — see `jobs/worker-heartbeat.ts`.
+        //
+        // The executor has existed in `executor-registry.ts` since the queue
+        // was built and NOTHING HAD EVER DISPATCHED IT: it returned 'pong' to
+        // nobody. That is why a wedged worker was invisible.
+        //
+        // 2 minutes against an 8-minute TTL = four missed beats before the
+        // container reports unhealthy. Changing this cron without changing the
+        // TTL reddens `tests/guards/worker-heartbeat-wiring.test.ts`, which
+        // parses the number out of this very line.
+        name: 'health-check',
+        pattern: '*/2 * * * *',   // every 2 minutes
+        description: 'Drive the worker heartbeat: completing this job is what proves the worker is consuming, not merely running. Read jobs/worker-heartbeat.ts before changing the cadence — the TTL is derived from it.',
+        defaultPayload: {},
+    },
+    {
         name: 'automation-runner',
         pattern: '*/15 * * * *',  // every 15 minutes
         description: 'Execute scheduled automation/integration checks for controls',

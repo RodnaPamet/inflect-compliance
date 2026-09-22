@@ -46,6 +46,17 @@ await build({
     entryPoints: ['scripts/scheduler.ts'],
     outfile: 'dist/scheduler.mjs',
 });
+// Container healthcheck for the `worker` service (#2745). Bundled rather than
+// run from source because the runner image carries no source tree, and
+// `docker-compose.prod.yml` invokes it as `node dist/worker-healthcheck.mjs`.
+// If this entry is removed the compose healthcheck silently fails every probe
+// and the container is marked unhealthy forever — `worker-heartbeat-wiring`
+// pins the pair.
+await build({
+    ...common,
+    entryPoints: ['scripts/worker-healthcheck.ts'],
+    outfile: 'dist/worker-healthcheck.mjs',
+});
 // Self-assessment library seeder — run from the container entrypoint after
 // `prisma migrate deploy` so the NIS2 gap + AI-gov question sets (global
 // reference tables, not carried by migrations) self-heal on every deploy.
