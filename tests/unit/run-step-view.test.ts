@@ -11,7 +11,13 @@
  * That asymmetry is invisible in the happy path, which is why it gets a test of
  * its own rather than a line in a rendered fixture.
  */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+import { AgentDataAccessScope } from '@prisma/client';
+
 import { resolveStepTool } from '@/lib/agentic/run-step-view';
+import { baseDataScopeForTool } from '@/lib/mcp/tool-data-scope';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import type { WorkflowStepDef } from '@/lib/agentic/workflow-types';
 
@@ -61,5 +67,57 @@ describe('which tool a recorded step shows', () => {
         for (const step of withTools) {
             expect(resolveStepTool(null, step)).toBe((step as { tool: string }).tool);
         }
+    });
+});
+
+/**
+ * The data-rung chip renders `t('runs.detail.scope.' + scope)`, so EVERY
+ * member of the enum needs a key in EVERY locale.
+ *
+ * ── WHY THIS IS NOT COVERED BY THE i18n RATCHET ─────────────────────────────
+ *
+ * That ratchet finds hardcoded UI strings — text that never reached the
+ * catalogue. This is the opposite shape: the call is correctly translated and
+ * the KEY is missing, which next-intl renders as the raw key or an error
+ * depending on configuration. It fails only for the enum member nobody has
+ * produced yet, which is exactly the one a reviewer will not click.
+ *
+ * Read off the Prisma enum rather than a restated list, so a sixth rung fails
+ * here rather than rendering `runs.detail.scope.WHATEVER_IT_IS` to an
+ * assessor.
+ */
+describe('every data rung the chip can show has a translation', () => {
+    const ROOT = path.resolve(__dirname, '../..');
+    const load = (loc: string) =>
+        JSON.parse(fs.readFileSync(path.join(ROOT, `messages/${loc}.json`), 'utf8')) as Record<
+            string,
+            never
+        >;
+
+    const members = Object.values(AgentDataAccessScope);
+
+    it('read a real enum, not an empty one', () => {
+        // Every assertion below is satisfied by zero members.
+        expect(members.length).toBeGreaterThanOrEqual(5);
+    });
+
+    for (const loc of ['en', 'bg']) {
+        it(`${loc} has a key for every rung`, () => {
+            const scope = (load(loc) as unknown as {
+                agents: { runs: { detail: { scope?: Record<string, string> } } };
+            }).agents.runs.detail.scope;
+            const missing = members.filter((m) => !scope?.[m]);
+            expect({ locale: loc, missing }).toEqual({ locale: loc, missing: [] });
+        });
+    }
+
+    it('and the chip only appears for a step that names a tool', () => {
+        // The page passes `scope: tool ? baseDataScopeForTool(tool) : null`.
+        // A checkpoint reaches no tenant data by construction, so a rung
+        // there would claim an evaluation that never happened — the null is
+        // the assertion, not an oversight.
+        expect(resolveStepTool(null, CHECKPOINT)).toBeNull();
+        // And a real tool does resolve to a rung, so the chip is reachable.
+        expect(members).toContain(baseDataScopeForTool('get_compliance_posture'));
     });
 });

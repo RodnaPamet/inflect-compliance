@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
 import { getWorkflowRun } from '@/app-layer/usecases/workflow-runs';
+import { baseDataScopeForTool } from '@/lib/mcp/tool-data-scope';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
 import { resolveStepTool } from '@/lib/agentic/run-step-view';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
@@ -92,6 +93,11 @@ export default async function AgentRunDetailPage({
 
     const steps: RunStepRow[] = run.steps.map((s) => {
         const declared = def?.steps[s.seq];
+        // Resolved ONCE: both the tool chip and the data rung below read it,
+        // and `resolveStepTool` carries a rule (column first, definition only
+        // for the hole a failed step leaves) that must not be evaluated twice
+        // and risk answering differently.
+        const tool = resolveStepTool(s.toolCalled, declared);
         return {
             id: s.id,
             seq: s.seq,
@@ -100,7 +106,26 @@ export default async function AgentRunDetailPage({
             // The column first — it is what RAN. The definition only fills the
             // hole a failed step leaves. The rule is `resolveStepTool`, which
             // carries the reasoning and is tested on its own.
-            tool: resolveStepTool(s.toolCalled, declared),
+            tool,
+            // THE DATA RUNG THE TOOL REACHES, derived rather than stored.
+            //
+            // `baseDataScopeForTool` is a pure function of the tool NAME —
+            // the catalogue rule, or the class default — so there is nothing
+            // to migrate and nothing that can drift from the authority that
+            // actually enforces it. Deriving it here rather than recording it
+            // on the step is what keeps those two the same fact: if the
+            // catalogue reclassifies a tool tomorrow, an old run's timeline
+            // re-reads the rung that tool reaches TODAY, which is the honest
+            // answer to "what does this step touch".
+            //
+            // Computed on the SERVER. The helper only type-imports from
+            // Prisma and otherwise reaches the tool catalogue, so this adds
+            // nothing to the client bundle.
+            //
+            // Null when the step names no tool — a synthesis or a checkpoint
+            // reaches no tenant data by construction, and a chip reading
+            // "NONE" there would imply a rung was evaluated when none was.
+            scope: tool ? baseDataScopeForTool(tool) : null,
             label: declared?.label ?? null,
             at: s.at.toISOString(),
             actorUserId: s.actorUserId,
