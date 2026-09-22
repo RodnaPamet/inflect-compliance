@@ -2555,6 +2555,39 @@ jobs:
           format: "table"
           exit-code: "1"
           severity: "CRITICAL,HIGH"
+          # THE SAME 15m AS THE SARIF STEP BELOW, AND THIS IS THE STEP THAT
+          # STEP'S COMMENT IS ACTUALLY ABOUT.
+          #
+          # The 2026-08-20 fix for `context deadline exceeded` set `timeout`
+          # on the SARIF report and not here, so the GATE — the only Trivy
+          # invocation that sets a non-zero exit code, i.e. the only one that
+          # can fail the build — kept Trivy's internal 5m default. It then
+          # failed exactly as that comment predicts, twice:
+          #
+          # (Deliberately NOT quoting that key/value verbatim.
+          # `security-gate-strictness` asserts it with a whole-file needle, so
+          # a second literal copy in prose would let the REAL setting be
+          # deleted with that security assertion still green. A comment must
+          # not impersonate configuration a text guard reads.)
+          #
+          #     530757861  2026-09-21 21:46
+          #     792f9549c  2026-09-22 10:01:00 -> 10:06:00, FATAL, no CVE
+          #
+          # The second log shows which half was unprotected, in the action's
+          # own echoed inputs: the failing step echoed a non-zero exit code,
+          # table format and an EMPTY timeout, while the step after it echoed
+          # a 15m one.
+          #
+          # Note `timeout-minutes:` on the JOB is a different mechanism and
+          # does not reach this: it bounds the step from outside, while Trivy
+          # aborts itself from inside at 5m and exits 1. A red that reads
+          # exactly like a CVE finding is the worst direction for a security
+          # gate to fail in, because the cheapest response is to re-run until
+          # a faster runner makes it green.
+          #
+          # Raises patience, never the threshold: severity and exit-code are
+          # untouched.
+          timeout: "15m"
           ignore-unfixed: true
           vuln-type: "os,library"
           trivyignores: ".trivyignore"

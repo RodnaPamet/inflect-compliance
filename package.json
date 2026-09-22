@@ -1,6 +1,6 @@
 {
   "name": "inflect-compliance",
-  "version": "3.88.0",
+  "version": "3.89.1",
   "private": true,
   "license": "BUSL-1.1",
   "engines": {
@@ -32,6 +32,7 @@
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset --force && tsx prisma/seed.ts",
     "db:check-migration-drift": "node scripts/check-applied-migration-drift.mjs",
+    "db:check-failed-migration": "node scripts/check-failed-migration.mjs",
     "db:test:catchup": "tsx scripts/catchup-test-db.ts",
     "db:check-schema-drift": "node scripts/check-fresh-db-schema-drift.mjs",
     "db:bootstrap-owners": "tsx scripts/bootstrap-tenant-owners.ts",
