@@ -67,6 +67,7 @@ import { enforceMcpCapability, resolveMcpInvocation } from '@/lib/mcp/auth';
 import { runReadTool } from '@/lib/mcp/tools/registry';
 import { runProposeTool } from '@/lib/mcp/tools/propose-tools';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
+import { evaluateAgentRegistration } from '@/lib/agentic/agent-registration-gate';
 import {
     provenanceOfToolResult,
     UNTRUSTED_PROVENANCE,
@@ -221,6 +222,43 @@ export async function startWorkflowRun(
     // guard whose whole design is that its blind spots are counted.
     const requested: AgentDriver = requestedDriver(def);
     const chosenDriver: AgentDriver = selectRunDriver(def, driverDecision.driver).driver;
+
+    // ── A FLUE RUN MUST BE VOUCHED FOR BY THE REGISTER ──────────────────────
+    //
+    // Plan point 1: "A Flue run must resolve an ACTIVE RegisteredAgent and
+    // stamp WorkflowRun.agentId." The stamp was here; the resolve was not, and
+    // nothing else on this path supplied it — the route calls getTenantCtx and
+    // then this function, and `planFlueRun` refuses only on driver, steps and
+    // model. So a key bound to a SUSPENDED or RETIRED agent, or a signed-in
+    // human with no binding at all, could start a reasoning loop.
+    //
+    // The human case is the worse one: with `ctx.agentId` null,
+    // `buildMcpInvocation` leaves `grantedTools` null, which is NO ALLOWLIST
+    // TERM — the deny-by-default tool list is keyed on the registered agent,
+    // so an unbound caller skips it rather than being narrowed by it.
+    //
+    // UNCONDITIONAL, and deliberately stricter than `assertRegisteredAgent`.
+    // That helper honours the tenant's `requireRegisteredAgent` toggle, which
+    // is right for an MCP call: an unbound caller there still carries the
+    // key's own scopes. A Flue run is an autonomous loop that chooses its own
+    // tool calls, so "this tenant has not switched enforcement on" is not a
+    // reason to let one start unvouched. `standing === 'vouched'` means
+    // resolved AND ACTIVE; every other standing refuses here.
+    //
+    // ABOVE `createSealedRun`, for the reason the budget check above it is:
+    // a refusal after the row exists leaves a RUNNING run nothing will
+    // advance, which the reaper later reports as a crashed executor — a
+    // refusal wearing the costume of an outage.
+    if (chosenDriver === 'flue') {
+        const gate = await evaluateAgentRegistration(ctx);
+        if (gate.standing !== 'vouched') {
+            throw forbidden(
+                `flue_requires_registered_agent: a Flue run must be started by an ACTIVE ` +
+                    `registered agent (standing: ${gate.standing}). The reasoning loop's tool ` +
+                    `allowlist is keyed on the register, so an unvouched run would have none.`,
+            );
+        }
+    }
 
     // Row + first chain link (seq 0, prev null), one transaction. An `input`
     // already over the size cap fails here and no run is created.
@@ -696,6 +734,16 @@ export async function executeQueuedWorkflowRun(
         return { skipped: 'NO_DEFINITION' };
     }
 
+    if (!(await runAgentStillInService(tenantId, row.agentId))) {
+        await failRun(
+            { tenantId, userId: row.startedByUserId ?? 'system' } as RequestContext,
+            runId,
+            'run_agent_no_longer_in_service: the registered agent this run was started by ' +
+                'is no longer ACTIVE, so the run does not resume on its behalf.',
+        );
+        return { skipped: 'AGENT_NOT_ACTIVE' };
+    }
+
     const ctx = await rebuildRunContext(row);
     if (!ctx) {
         await failRun(
@@ -809,6 +857,35 @@ async function rebuildRunContext(row: {
         ...(row.triggeredViaKeyId ? { apiKeyId: row.triggeredViaKeyId, apiKeyScopes } : {}),
         ...(row.agentId ? { agentId: row.agentId } : {}),
     } as RequestContext;
+}
+
+/**
+ * Is the agent this run was started by STILL in service?
+ *
+ * The gap this closes, found by an adversarial review of point 1: the worker
+ * re-read the membership and failed closed on revocation, re-read the key and
+ * failed closed on revoke or expiry — and then restored `ctx.agentId` with no
+ * check of the agent at all. The one principal that IS an agent was the one
+ * principal not re-validated.
+ *
+ * Authority is current, exactly as it is for the membership and the key. An
+ * agent suspended or retired while its run sat in the queue must not have that
+ * run resume on its behalf — suspension is an operator stopping an agent, and
+ * a queue is not a way around it.
+ *
+ * Returns true when there is no agent to check. A run with no `agentId` cannot
+ * be a Flue run (the start path now refuses those), so this is the static
+ * engine's row and the register has nothing to say about it.
+ */
+async function runAgentStillInService(tenantId: string, agentId: string | null): Promise<boolean> {
+    if (!agentId) return true;
+    const agent = await runInGlobalContext((db) =>
+        db.registeredAgent.findFirst({
+            where: { id: agentId, tenantId, status: 'ACTIVE' },
+            select: { id: true },
+        }),
+    );
+    return Boolean(agent);
 }
 
 async function loadRunAndDef(ctx: RequestContext, runId: string) {
