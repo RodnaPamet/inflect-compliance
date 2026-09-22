@@ -338,6 +338,19 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'is the only first-party plan-change path; OWNER-only.',
     },
 
+    // ── Which ENGINE executes this tenant's agentic runs ────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/agent-driver(\\/.*)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'The customer half of the two-key agentic-driver gate. Switching '
+            + 'to FLUE hands an external agent runtime the decision of what to '
+            + 'TRY against this tenant\'s compliance data — `runReadTool` '
+            + 'still decides what is PERMITTED, so no register control moves, '
+            + 'but who may make that change is tenant-lifecycle authority. '
+            + 'ADMIN deliberately does not hold it.',
+    },
+
     // ── JML identity-write authority (per direction) ────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/identity-write-policy(\\/.*)?$`),
