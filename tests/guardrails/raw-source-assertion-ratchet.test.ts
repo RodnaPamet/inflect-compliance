@@ -463,7 +463,7 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     So a file's presence in this list is NOT an accusation, and this ratchet
  *     is a cap rather than a work queue: it says the population may not grow.
  */
-const RAW_ASSERTING_FILE_BASELINE = 52;
+const RAW_ASSERTING_FILE_BASELINE = 49;
 
 /**
  * The files themselves, sorted, in a sibling JSON — the same population the
