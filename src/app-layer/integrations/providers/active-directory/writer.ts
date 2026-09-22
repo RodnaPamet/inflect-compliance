@@ -790,9 +790,29 @@ export function createActiveDirectoryWriter(
         }
 
         if (searchEntries.length === 0) {
+            // STATE WHAT WAS CHECKED; DO NOT ASSERT WHY IT FAILED.
+            //
+            // This used to say the account "may have been deleted, or moved
+            // outside the configured base DN" — two causes it had checked
+            // neither of. When #2764 made every objectGUID lookup return
+            // nothing, that sentence sent the investigation into the directory
+            // hunting an object that was sitting exactly where it belonged,
+            // enumerated by this product's own sync ninety seconds earlier.
+            //
+            // A zero-result search establishes one fact: this identifier did
+            // not resolve under this base. Deletion and OU moves are two
+            // hypotheses among several — the others being a lookup that cannot
+            // express the identifier (which is what it actually was), a
+            // replication lag, or a bind that cannot see the object. Naming
+            // two of them as though they were the finding is how a tool costs
+            // its reader an hour.
+            const shape = GUID_PATTERN.test(id) ? 'objectGUID' : 'distinguishedName';
             throw new Error(
-                `Active Directory has no account matching ${id}. It may have been deleted, or moved outside the ` +
-                    `configured base DN (${baseDN}). Nothing was written.`,
+                `Active Directory returned no account for ${shape} ${id} under ${baseDN}. ` +
+                    'That is what was observed; the cause is not established. Check, in this ' +
+                    'order: that the identifier still resolves (an `ldapsearch` with the same ' +
+                    'bind and base is the quickest test), that the object is within the base DN, ' +
+                    'and that the bind can see it. Nothing was written.',
             );
         }
         if (searchEntries.length > 1) {
