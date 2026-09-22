@@ -135,7 +135,19 @@ function flueImportedNames(source: string): string[] {
 }
 
 const violations = SOURCE_FILES.flatMap((rel) => {
-    const source = readFileSync(path.join(REPO_ROOT, rel), 'utf8');
+    // CODE, not prose — `codeOf` blanks comments while preserving offsets.
+    //
+    // Without it this guard reports the documentation as the violation, which
+    // it did: `flue/execute.ts` spends a docstring explaining why the ESM
+    // packages are imported statically rather than dynamically, and quoting
+    // the dynamic form it does NOT use was enough to trip the sentinel below.
+    // The same defect the `setProvider` scan further down already masks
+    // against, and the same one `data-table.test.ts` hit by selecting its
+    // population with `content.includes('DataTable')`.
+    //
+    // The cheapest way to satisfy an unmasked detector is to stop writing the
+    // explanation down, which is the wrong trade every time.
+    const source = codeOf(readFileSync(path.join(REPO_ROOT, rel), 'utf8'));
     return flueImportedNames(source)
         .filter((n) => REFUSED_FLUE_EXPORT_NAMES.has(n) || n === '__DYNAMIC_FLUE_IMPORT__')
         .map((n) => `${rel} imports ${n}`);
@@ -226,6 +238,29 @@ describe('the detector fires — on every shape the real code could take', () =>
         expect(
             detects(`import { useTool, useModel, useInstruction } from '@flue/runtime';`),
         ).toEqual([]);
+    });
+
+    it('does NOT fire on a dynamic import written inside a COMMENT', () => {
+        // The control for the masking at the read seam above, and it is
+        // two-sided on purpose: masking that removed the false positive by
+        // blanking everything would satisfy a one-sided assertion perfectly.
+        //
+        // `detects` reads whatever it is given, so the masking is the CALLER's
+        // job — the scan at the top of this file does it, and this is what
+        // proves the difference that makes.
+        const prose = [
+            '/**',
+            ' * Reached statically, never through a dynamic specifier:',
+            " * `await import('@flue/runtime')` hides which names are used.",
+            ' */',
+            "import { useSandbox } from '@flue/runtime';",
+        ].join('\n');
+
+        // UNMASKED, the prose mention is indistinguishable from a real one.
+        expect(detects(prose).sort()).toEqual(['__DYNAMIC_FLUE_IMPORT__', 'useSandbox']);
+
+        // MASKED, the mention is gone and the real import is still caught.
+        expect(detects(codeOf(prose))).toEqual(['useSandbox']);
     });
 
     it('does NOT fire on a same-named import from somewhere else', () => {

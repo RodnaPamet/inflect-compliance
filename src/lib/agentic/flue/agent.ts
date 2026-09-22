@@ -1,4 +1,4 @@
-import { useInitialData, useInstruction, useModel, useTool } from '@flue/runtime';
+import { useInitialData, useInstruction, useModel, useResponseFinish, useTool } from '@flue/runtime';
 
 import { takeRunBinding } from './run-binding';
 
@@ -72,6 +72,44 @@ export function InflectAgent(): void {
     for (const tool of binding.tools) {
         useTool(tool);
     }
+
+    // ── HOW USAGE GETS BACK TO THE DRIVER ───────────────────────────────────
+    //
+    // `AgentReply` carries no usage: the settled totals reach agent code only
+    // through this hook, whose return value is deep-merged onto the response's
+    // metadata — which the reply DOES carry. So the driver reads its token
+    // charge off `reply.metadata`, and the alternative (a callback closed over
+    // driver state) is avoided: that would put Prisma-reaching code in the one
+    // module that must stay loadable under the ESM project.
+    //
+    // Synchronous and side-effect-free, as the hook requires — "a returned
+    // promise fails the submission". It reports; the driver records.
+    useResponseFinish(({ response }) => ({
+        [FLUE_USAGE_KEY]: {
+            totalTokens: response.usage.totalTokens,
+            toolCalls: response.toolCalls.length,
+            // Calls whose recorded outcome was an error. The driver charges
+            // tokens either way — a failed tool call still cost a model turn —
+            // but a run that spent its budget failing is a different incident
+            // from one that spent it working.
+            failedToolCalls: response.toolCalls.filter((c) => c.isError).length,
+        },
+    }));
+}
+
+/**
+ * The metadata key the usage report lands under.
+ *
+ * Namespaced rather than bare `usage`: response metadata is a deep-merged
+ * shared surface, and the runtime is free to put its own keys there.
+ */
+export const FLUE_USAGE_KEY = 'inflectUsage';
+
+/** What `FLUE_USAGE_KEY` holds. Read by the driver off `reply.metadata`. */
+export interface FlueUsageReport {
+    totalTokens: number;
+    toolCalls: number;
+    failedToolCalls: number;
 }
 
 /** The runtime keys durable conversation storage on this. */

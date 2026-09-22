@@ -29,7 +29,15 @@ export type FlueStartRefusal =
     /** The definition asked for a driver other than flue. */
     | 'DEFINITION_ASKED_FOR_ANOTHER_DRIVER'
     /** The run resumed past the steps a definition declares. */
-    | 'NO_STEPS_REMAIN';
+    | 'NO_STEPS_REMAIN'
+    /**
+     * The chosen model is not one the runtime registered at boot.
+     *
+     * Decided AFTER the plan — it needs the started runtime's provider list —
+     * but its message belongs with the others, so an operator reading
+     * `errorMessage` sees one vocabulary rather than two.
+     */
+    | 'MODEL_NOT_REGISTERED';
 
 export type FlueRunPlan =
     | { ok: true; modelSpecifier: string; residency: 'EXTERNAL' | 'LOCAL_ONLY' }
@@ -93,6 +101,13 @@ export function refusalMessage(reason: FlueStartRefusal): string {
             return (
                 'flue_local_model_not_configured: the local AI gateway is configured but ' +
                 'names no model. Set the local model.'
+            );
+        case 'MODEL_NOT_REGISTERED':
+            return (
+                'flue_model_not_registered: the model this workspace asks for is not one ' +
+                'this deployment registered at startup. Providers are registered once at ' +
+                'boot, so a per-workspace model override must also be configured on the ' +
+                'deployment.'
             );
         case 'EXTERNAL_CREDENTIAL_NOT_CONFIGURED':
             return (

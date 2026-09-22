@@ -65,6 +65,15 @@ export interface FlueProviderTerms {
     externalApiKey?: string | null;
     /** `AI_LOCAL_BASE_URL` / tenant override, or absent. */
     localBaseUrl?: string | null;
+    /**
+     * `AI_LOCAL_API_KEY`, or absent.
+     *
+     * Deliberately NOT part of `flueProviderIdsFor`'s answer: a self-hosted
+     * gateway that needs no key is a normal deployment, and the BASE URL is
+     * what makes the local route exist. Treating the key as the test would
+     * make a keyless gateway look unconfigured.
+     */
+    localApiKey?: string | null;
 }
 
 /** Which provider ids a given deployment can legitimately offer. */

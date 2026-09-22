@@ -16,6 +16,7 @@
 import type { AgentDriver } from '@/lib/agentic/agent-driver';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 
+import { runFlueDriver } from '@/lib/agentic/flue/driver';
 import { runStaticDriver } from './static-driver';
 import type { RunDriver } from './types';
 
@@ -24,12 +25,20 @@ export type { RunDriver, RunDriverOutcome } from './types';
 /**
  * The implementations this build has.
  *
- * `flue` is deliberately absent rather than mapped to a stub: a stub would make
- * `DRIVERS[driver]` total and hide the gap behind a runtime surprise, where an
- * absent key makes it a compile-time fact that only one driver exists.
+ * `flue` is now a real entry, not a stub — `runFlueDriver` resolves the
+ * tenant's residency, plans the run and hands off to the runtime. That it is
+ * mapped here does NOT mean runs reach it: `DRIVER_IMPLEMENTED.flue` is the
+ * gate, `resolveAgentDriver` ANDs it with the operator switch and the tenant
+ * toggle, and until that flag is flipped `selectRunDriver` can never choose
+ * this key. Mapping it and gating it are separate facts on purpose — the flip
+ * should be a diff that changes one line and nothing else.
+ *
+ * The map stays `Partial` so a future driver added to `AgentDriver` is an
+ * absent key rather than a type error at every read.
  */
 const DRIVERS: Partial<Record<AgentDriver, RunDriver>> = {
     static: runStaticDriver,
+    flue: runFlueDriver,
 };
 
 /**

@@ -29,6 +29,7 @@ import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { appendAuditEntry } from '@/lib/audit';
 import { recordStep, type StepRecord } from './step-recorder';
+import { updateRun, failRun, haltRunAtCap } from './run-settlement';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
 import { runReadTool } from '@/lib/mcp/tools/registry';
 import { runProposeTool } from '@/lib/mcp/tools/propose-tools';
@@ -67,7 +68,7 @@ import {
 } from '@/lib/observability/metrics';
 import { describeFailure, isAgenticFatal } from '@/lib/agentic/failure-isolation';
 
-import { getRunRow } from './run-store';
+import { getRunRow, proposedItemsSoFar } from './run-store';
 
 /**
  * Execute steps from `fromSeq` until completion or a HUMAN_CHECKPOINT. Returns
@@ -526,123 +527,8 @@ async function highestRecordedContextSeq(
 }
 
 
-async function updateRun(
-    ctx: RequestContext,
-    runId: string,
-    data: Record<string, unknown>,
-): Promise<void> {
-    await runInTenantContext(ctx, (db) =>
-        db.workflowRun.update({ where: { id: runId }, data: data as never }),
-    );
-}
 
-/**
- * Mark a run HALTED AT A CAP, and record WHICH cap and how much work is left.
- *
- * Separate from `failRun` on purpose, and the separation is the requirement
- * rather than tidiness. `failRun` says a step went wrong; this says nothing
- * went wrong at all — the run was working exactly as designed and was stopped
- * because it reached a ceiling somebody set. Those are different operator
- * actions (debug the workflow vs. decide whether the ceiling is right), and an
- * `errorMessage` that reads like a tool error sends people to the first one.
- *
- * `stepsNotRun` is the part that makes this a halt rather than a trim. Without
- * it a halted run is indistinguishable from a completed one to anything reading
- * the row: same `FAILED` status a broken step leaves, same absent tail. With
- * it, the remaining work is a recorded number in a hash-chained row that is
- * never deleted — visibly not-done rather than quietly gone.
- *
- * The run stays `FAILED` rather than gaining a `HALTED` status of its own.
- * Adding an enum value is safe to WRITE under a rolling deploy and unsafe to
- * READ: a container still running the old build would fail to deserialise a
- * status its client does not know, taking the whole run list down for the
- * duration of the rollout. The cap is carried by the audit action, the details
- * and the message instead — all three of which an old build reads as strings.
- */
-async function haltRunAtCap(
-    ctx: RequestContext,
-    runId: string,
-    halt: RunCapHalt,
-    stepsNotRun: number,
-): Promise<string> {
-    await updateRun(ctx, runId, {
-        status: 'FAILED',
-        completedAt: new Date(),
-        errorMessage: halt.message,
-    });
-    recordAgentRunCapHalt({ cap: halt.kind, source: halt.source });
-    await appendAuditEntry({
-        tenantId: ctx.tenantId,
-        userId: ctx.userId,
-        actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
-        entity: 'WorkflowRun',
-        entityId: runId,
-        // A distinct action, not a `WORKFLOW_RUN_FAILED` with a special
-        // message. An operator filtering the trail for cap halts must not have
-        // to grep prose to find them.
-        action: 'WORKFLOW_RUN_CAP_HALTED',
-        requestId: ctx.requestId,
-        // Every field named at the sink, none spread. All six are structural
-        // facts about the ceiling — a cap kind, two integers, a source, and how
-        // much work stopped. None of them is content, and none of them can
-        // become content when the halt type grows a field.
-        detailsJson: {
-            category: 'access',
-            cap: halt.kind,
-            capSource: halt.source,
-            limit: halt.limit,
-            used: halt.used,
-            refused: halt.refused,
-            stepsNotRun,
-        },
-        metadataJson: { apiKeyId: ctx.apiKeyId ?? null, agentId: ctx.agentId ?? null },
-    }).catch(() => undefined);
-    return 'FAILED';
-}
 
-/**
- * How many items this run has ALREADY proposed, across every segment.
- *
- * Read from the append-only step ledger rather than accumulated in memory,
- * because `executeFrom` is re-entered after every human checkpoint: a counter
- * seeded at zero would hand a run with three checkpoints four proposal budgets,
- * which is the exact defect `resolveMcpInvocation`'s `actionsAlready` comment
- * already records for the card's per-run budget.
- *
- * An unreadable or absent count reads as ZERO, not as the cap. A run whose
- * PROPOSE steps predate the recorded count would otherwise halt on resume
- * having done nothing wrong — the same direction `highestRecordedContextSeq`
- * takes for its own missing lower bound.
- */
-async function proposedItemsSoFar(ctx: RequestContext, runId: string): Promise<number> {
-    const steps = await runInTenantContext(ctx, (db) =>
-        db.workflowStep.findMany({
-            where: { runId, tenantId: ctx.tenantId, kind: 'PROPOSE', status: 'DONE' },
-            select: { inputJson: true },
-            // A run cannot execute more steps than the engine's step cap, so
-            // this is the tightest honest bound rather than a round number.
-            take: ENGINE_RUN_CAPS.STEPS,
-        }),
-    );
-    let total = 0;
-    for (const step of steps) total += proposedItemCount(step.inputJson);
-    return total;
-}
-
-/** The `{ count }` a PROPOSE step recorded, or 0 when it cannot be read. */
-function proposedItemCount(inputJson: string | null): number {
-    if (inputJson === null) return 0;
-    try {
-        const parsed: unknown = JSON.parse(inputJson);
-        if (typeof parsed !== 'object' || parsed === null) return 0;
-        const count = (parsed as { count?: unknown }).count;
-        return typeof count === 'number' && Number.isFinite(count) && count > 0
-            ? Math.floor(count)
-            : 0;
-    } catch {
-        return 0;
-    }
-}
 
 /**
  * How close a run that did NOT halt came to each of its ceilings.
@@ -663,15 +549,6 @@ function recordRunCapUtilisation(budget: RunBudget): void {
     }
 }
 
-async function failRun(ctx: RequestContext, runId: string, message: string): Promise<string> {
-    await updateRun(ctx, runId, { status: 'FAILED', completedAt: new Date(), errorMessage: message });
-    await appendAuditEntry({
-        tenantId: ctx.tenantId, userId: ctx.userId, actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
-        entity: 'WorkflowRun', entityId: runId, action: 'WORKFLOW_RUN_FAILED',
-        requestId: ctx.requestId, detailsJson: { category: 'access', reason: message },
-    }).catch(() => undefined);
-    return 'FAILED';
-}
 
 /**
  * Open a run row's context under verification — schema AND chain.
