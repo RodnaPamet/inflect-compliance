@@ -455,7 +455,17 @@ const SINK_FLOOR = 30;
 // The union was also measured ahead of time on main + #2723 + #2726 + this
 // branch, which reported the same 156 / 88 -- so #2723 contributes nothing,
 // and the number does not depend on which of the two lands first.
-const MEASURED_HOLES = 159;
+// Re-MEASURED 2026-09-22 for the agent-proposal BULK REJECT: 159 / 91 became
+// 160 / 92. ONE new sink — `bulkRejectAgentProposals`' rejection audit row —
+// and ONE hole in it, the proposal id, which is a local binding from the map
+// over the accepted ids and so reads as `identifier bound elsewhere`. Nothing
+// in that row carries proposal CONTENT: the entry names the entity, the actor
+// and the category, exactly as the single-proposal rejection beside it does.
+// Both numbers were read off the failing assertions rather than added to the
+// previous pair, and note the direction — a sink arriving with one hole
+// TIGHTENS `HOLES_PER_SINK_CEILING` (1.8132 → 1.8043), which is what the
+// denominator is in the formula for.
+const MEASURED_HOLES = 160;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -468,7 +478,7 @@ const MEASURED_HOLES = 159;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 91;
+const MEASURED_SINKS = 92;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

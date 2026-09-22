@@ -8124,6 +8124,16 @@
       "proposedAt": "proposed {date}",
       "keySuffix": " · key {key}",
       "reject": "Reject",
+      "bulk": {
+        "selected": "{count} selected",
+        "clear": "Clear",
+        "reject": "Reject selected",
+        "selectRow": "Select this proposal",
+        "undo": "Undo",
+        "rejectedToast": "{count} proposals rejected",
+        "failed": "Failed to reject the selected proposals",
+        "rejectedReconciled": "{rejected} rejected, {skipped} left in the queue — somebody else had already decided them, or their review window had closed."
+      },
       "approve": "Approve",
       "rationale": "Rationale: ",
       "diff": {
