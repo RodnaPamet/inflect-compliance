@@ -8208,7 +8208,14 @@
         "metaSteps": "Steps",
         "metaTokens": "Tokens",
         "metaStarted": "Started",
-        "proposal": "{kind} · {status}"
+        "proposal": "{kind} · {status}",
+        "scope": {
+          "NONE": "no data",
+          "READ_METADATA": "metadata",
+          "READ_TENANT_DATA": "reads data",
+          "WRITE_TENANT_DATA": "writes data",
+          "EXTERNAL_EGRESS": "external egress"
+        }
       }
     },
     "quarantine": {

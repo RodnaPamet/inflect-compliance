@@ -8208,7 +8208,14 @@
         "metaSteps": "Стъпки",
         "metaTokens": "Токени",
         "metaStarted": "Започнато",
-        "proposal": "{kind} · {status}"
+        "proposal": "{kind} · {status}",
+        "scope": {
+          "NONE": "без данни",
+          "READ_METADATA": "метаданни",
+          "READ_TENANT_DATA": "чете данни",
+          "WRITE_TENANT_DATA": "пише данни",
+          "EXTERNAL_EGRESS": "външно изпращане"
+        }
       }
     },
     "quarantine": {
