@@ -61,7 +61,8 @@ export type AgentsViewRoute =
     | 'receipts'
     | 'quarantine'
     | 'review-quality'
-    | 'reports';
+    | 'reports'
+    | 'decisions';
 
 export interface AgentsViewsMenuProps {
     current: AgentsViewRoute;
@@ -136,6 +137,17 @@ export function AgentsViewsMenu({
                             icon: <ShieldSlash className="size-4" />,
                             href: href('/agents/quarantine'),
                             selected: current === 'quarantine',
+                        },
+                        canInvestigate && {
+                            // The EU AI Act record: one row per model call,
+                            // with whether a person looked. Assurance rather
+                            // than Operate — nobody acts on a run from here,
+                            // they audit what already happened.
+                            id: 'agents-view-decisions',
+                            label: t('views.decisions'),
+                            icon: <Gauge6 className="size-4" />,
+                            href: href('/agents/decisions'),
+                            selected: current === 'decisions',
                         },
                         canInvestigate && {
                             id: 'agents-view-reports',

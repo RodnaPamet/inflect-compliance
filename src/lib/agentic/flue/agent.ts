@@ -87,6 +87,13 @@ export function InflectAgent(): void {
     useResponseFinish(({ response }) => ({
         [FLUE_USAGE_KEY]: {
             totalTokens: response.usage.totalTokens,
+            // The SPLIT as well as the total. `AiDecisionLog` records
+            // `tokensIn`/`tokensOut` separately, and the sum hides which shape
+            // a call had: 200 in / 20 out is a long prompt cheaply answered,
+            // 20 in / 200 out is the opposite, and only one of those is a
+            // runaway generation.
+            tokensIn: response.usage.input,
+            tokensOut: response.usage.output,
             toolCalls: response.toolCalls.length,
             // Calls whose recorded outcome was an error. The driver charges
             // tokens either way — a failed tool call still cost a model turn —
@@ -108,6 +115,8 @@ export const FLUE_USAGE_KEY = 'inflectUsage';
 /** What `FLUE_USAGE_KEY` holds. Read by the driver off `reply.metadata`. */
 export interface FlueUsageReport {
     totalTokens: number;
+    tokensIn: number;
+    tokensOut: number;
     toolCalls: number;
     failedToolCalls: number;
 }

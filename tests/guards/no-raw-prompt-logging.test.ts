@@ -484,25 +484,40 @@ const SINK_FLOOR = 30;
 // over from either branch — both were read off the failing assertions on the
 // MERGED tree, because two branches each raising a shared budget is precisely
 // how a ceiling ends up describing a tree nobody built.
-// Re-MEASURED 2026-09-23 for the agentic driver TOGGLE (point 1d): 164 / 94
-// became 168 / 96. TWO new sinks — the mode-change audit row and the one log
+// Re-MEASURED 2026-09-22 for the Art 12 decision row (point 4b): 164 / 94
+// became 165 / 95. ONE new sink — `recordModelDecision`'s catch-site
+// `logger.error` — and ONE hole in it, the `err instanceof Error ? err.message
+// : String(err)` ternary, which is the idiom every sibling catch in
+// `src/lib/agentic/` already uses (`agent-authority.ts:277`,
+// `circuit-breaker-store.ts:186`, `agent-registration-gate.ts:379`). The other
+// three fields resolve. Nothing in that line carries model CONTENT: the
+// prompt and the reply go to the row the call FAILED to write, and what the
+// log keeps is the tenant, the workflow key and the failure reason.
+// Read off the failing assertions on this branch merged with main, not added
+// to the previous pair. Note the direction — a sink arriving with one hole
+// TIGHTENS `HOLES_PER_SINK_CEILING` (1.8085 → 1.8), which is what the
+// denominator is in the formula for.
+// Re-MEASURED 2026-09-23 for the agentic driver TOGGLE (point 1d): 165 / 95
+// became 169 / 97. TWO new sinks — the mode-change audit row and the one log
 // line beside it — and FOUR holes across them, every one a value bound to a
 // local before the call (`before.mode`, `next`, `before.envEnabled`,
 // `ctx.tenantId`). Nothing at either sink can carry content: this usecase
 // writes a column and returns, and never sees a run, a prompt or a reply.
-// Read off the failing assertions, not added to the previous pair. Two sinks
-// against four holes loosens `HOLES_PER_SINK_CEILING` slightly (1.8085 ->
-// 1.8125) — the one direction the pair is not supposed to move, and the reason
-// it is spelled out rather than left to arithmetic: four holes for two sinks is
-// worse than this subsystem's average, and the entry above says exactly which
+//
+// Two sinks carrying four holes LOOSENS `HOLES_PER_SINK_CEILING` (1.8 ->
+// 1.8041) — the one direction this pair is not supposed to move, so it is
+// spelled out rather than left to arithmetic: four holes for two sinks is
+// worse than this subsystem's average, and the entry above names exactly which
 // four so the next reader can judge whether they are the harmless kind.
 //
-// MEASURED ON THE UNION with the Art 12 decision row (#2776), which adds one
-// sink and one hole of its own. Not added up: `MEASURED_SINKS` is a FLOOR, so
-// a number declared for a tree that does not exist fails in the merge queue
-// rather than on the branch — 164/94 + 1/1 + 4/2 is arithmetic, and what this
-// pair records is a measurement.
-const MEASURED_HOLES = 168;
+// MEASURED ON THE MERGED TREE, after #2776 landed and its 165 / 95 became this
+// branch's base — not added to it. The distinction has teeth because
+// `MEASURED_SINKS` is a FLOOR: a number declared for a tree that does not yet
+// exist passes nothing and fails in the merge queue, where the cost is an
+// evicted green run rather than a red branch. The figures above happen to
+// equal 165/95 + 4/2, and that is a fact discovered afterwards rather than the
+// way they were obtained.
+const MEASURED_HOLES = 169;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -515,7 +530,7 @@ const MEASURED_HOLES = 168;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 96;
+const MEASURED_SINKS = 97;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;
