@@ -76,6 +76,27 @@ const proposeArgs = z
     })
     .strict();
 
+/**
+ * How many PENDING rows a propose call would queue — one per item.
+ *
+ * Lives here, beside `proposeArgs`, because the 1–20 rule is this module's and
+ * `runProposeTool` below is what turns each item into a row. A caller charging
+ * a proposal cap needs the same number, and a second copy of the rule is how a
+ * cap ends up charging the wrong unit.
+ *
+ * Reads the RAW args, before validation, because the caller that needs the
+ * count charges BEFORE the funnel runs — the point of charging early is that a
+ * refusal means nothing was queued. An uncountable shape answers ONE rather
+ * than zero: a malformed propose call is still a propose call, and free is the
+ * only answer a cap cannot recover from. (It will then be refused by
+ * `proposeArgs` inside the funnel, having cost one — which is the safe
+ * direction to be wrong in.)
+ */
+export function proposedItemCount(rawArgs: unknown): number {
+    const items = (rawArgs as { items?: unknown } | null | undefined)?.items;
+    return Array.isArray(items) ? items.length : 1;
+}
+
 function proposeInputSchema(itemNoun: string): Record<string, unknown> {
     return {
         type: 'object',
@@ -166,19 +187,26 @@ export const PROPOSE_TOOLS: McpProposeTool[] = [
 ];
 
 /**
- * `tools/list` descriptors for the propose surface, filtered to what this
- * invocation could actually call — the tools it may LOAD (offered at assembly,
- * granted in the register AND permitted by the agent's policy card), and only
- * when the credential carries `mcp:propose`. Same reasoning as the read registry's
- * filter: a catalogue of tools that will 403 turns ordinary planning into a
- * stream of `AUTHZ_DENIED` rows and buries the signal they exist for.
+ * The propose tools this invocation could actually LOAD: the tools offered at
+ * assembly, granted in the register AND permitted by the agent's policy card,
+ * and only when the credential carries the propose capability. Same reasoning
+ * as the read registry's filter: a catalogue of tools that will 403 turns
+ * ordinary planning into a stream of `AUTHZ_DENIED` rows and buries the signal
+ * they exist for.
  *
  * The PERMISSION is not probed here, only the capability and the exposure. A
  * propose tool's key is checked against the principal, and an agent whose
  * principal cannot create risks should still be told the tool exists — the
  * refusal, when it comes, is the interesting event and belongs in the trail.
+ *
+ * Returns the TOOLS rather than their wire descriptors, so a second consumer —
+ * the Flue driver's tool adapter, which needs each tool's `authorize` and
+ * `resourceScope` to narrow further — reads the offered set from the one place
+ * that computes it. Exactly the split `loadableReadTools` has next door, and
+ * for the same reason: a second filter chain elsewhere is the shape that lets
+ * two catalogues of the same thing disagree.
  */
-export function listProposeToolDescriptors(inv: McpInvocation): McpToolDescriptor[] {
+export function loadableProposeTools(inv: McpInvocation): readonly McpProposeTool[] {
     const scopes = inv.ctx.apiKeyScopes;
     const mayPropose =
         !scopes ||
@@ -186,7 +214,12 @@ export function listProposeToolDescriptors(inv: McpInvocation): McpToolDescripto
         scopes.includes('mcp:*') ||
         scopes.includes('mcp:propose');
     if (!mayPropose) return [];
-    return PROPOSE_TOOLS.filter((t) => isToolLoadable(inv, t.name)).map((t) => ({
+    return PROPOSE_TOOLS.filter((t) => isToolLoadable(inv, t.name));
+}
+
+/** `tools/list` descriptors for the loadable propose surface. */
+export function listProposeToolDescriptors(inv: McpInvocation): McpToolDescriptor[] {
+    return loadableProposeTools(inv).map((t) => ({
         name: t.name,
         description: t.description,
         inputSchema: t.inputSchema,

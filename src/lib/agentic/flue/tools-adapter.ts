@@ -1,29 +1,40 @@
 /**
- * Bridge this product's MCP read tools into the shape an external agent runtime
- * calls — without moving a single authorization decision out of `runReadTool`.
+ * Bridge this product's MCP tools — the READ surface and the PROPOSE surface —
+ * into the shape an external agent runtime calls, without moving a single
+ * authorization decision out of the funnel that owns it.
+ *
+ * ## Both halves, because half an agent is a worse agent
+ *
+ * A Flue agent is offered read tools AND propose tools. Offering only reads
+ * gave the model a way to look at a tenant and no way to write down what it
+ * found: under propose-not-commit the proposal IS the output, so an agent with
+ * no propose tool cannot finish a single piece of work. It cannot commit
+ * anything either way — a propose call queues a PENDING row a human approves.
  *
  * ## The one rule
  *
- * The external engine decides WHAT TO TRY. `runReadTool` decides WHAT IS
- * PERMITTED. Every tool this adapter produces routes its `run` through that
- * funnel, which means an agent driven by third-party code passes through the
- * identical gate a human-driven MCP call does: token audience, credential
- * liveness, deny-by-default tool exposure, the autonomy ceiling, the policy
- * card, credential scope, then the same `assertPermission` / `assertCan*` the
- * equivalent human route uses — with exactly one hash-chained audit row per
- * call and per refusal.
+ * The external engine decides WHAT TO TRY. `runReadTool` and `runProposeTool`
+ * decide WHAT IS PERMITTED. Every tool this adapter produces routes its `run`
+ * through one of those two funnels, which means an agent driven by third-party
+ * code passes through the identical gate a human-driven MCP call does: token
+ * audience, credential liveness, deny-by-default tool exposure, the autonomy
+ * ceiling, the policy card, credential capability and scope, then the same
+ * `assertPermission` / `assertCan*` the equivalent human route uses — with
+ * exactly one hash-chained audit row per call and per refusal.
  *
  * Nothing here re-implements any of that, and nothing here may. If a future
- * edit finds itself reaching for a permission check in this file, the change
- * belongs in the funnel.
+ * edit finds itself reaching for a permission check — or for a usecase, or for
+ * Prisma — in this file, the change belongs in the funnel.
  *
  * ## The advertised set is NARROWER than MCP's, deliberately
  *
- * `loadableReadTools` gives the offered set: exposure allowlist ∩ register
- * grants ∩ policy card ∩ the principal's permissions. That is what MCP's
- * `tools/list` advertises, and it stops there on purpose — credential scope and
- * the autonomy ceiling are call-time decisions that write audit rows, and a
- * listing must not make an authorization claim it records nothing for.
+ * `loadableReadTools` and `loadableProposeTools` give the offered set: exposure
+ * allowlist ∩ register grants ∩ policy card, plus the principal's permissions
+ * on the read side and the credential's propose capability on the other. That
+ * is what MCP's `tools/list` advertises, and it stops there on purpose —
+ * credential resource scope and the autonomy ceiling are call-time decisions
+ * that write audit rows, and a listing must not make an authorization claim it
+ * records nothing for.
  *
  * This adapter narrows by those two as well, because the consumer is different.
  * An MCP client is a program that can handle a 403; a language model handed a
@@ -91,12 +102,25 @@ import {
 } from '@/lib/agentic/autonomy-ceiling';
 import type { McpInvocation } from '@/lib/mcp/authorize';
 import { loadableReadTools, runReadTool } from '@/lib/mcp/tools/registry';
+import {
+    isProposeTool,
+    loadableProposeTools,
+    runProposeTool,
+} from '@/lib/mcp/tools/propose-tools';
 import type { McpReadTool } from '@/lib/mcp/tools/types';
 
 import { toValibotInputSchema } from './json-schema-to-valibot';
 
-/** Read tools are read tools; the class is not per-tool data. */
+/**
+ * The autonomy class each surface sits in — a fact about which REGISTRY a tool
+ * came out of, not per-tool data. Reading a tenant is rung 1; drafting into the
+ * approval queue is rung 2, because putting words in front of an approver is a
+ * different act. Both numbers live in `AUTONOMY_REQUIRED_BY_CAPABILITY`, and
+ * `requiredAutonomyFor` is what turns a class into a rung here exactly as it
+ * does at the two enforcement seams.
+ */
 const READ_CAPABILITY: McpCapabilityClass = 'read';
+const PROPOSE_CAPABILITY: McpCapabilityClass = 'propose';
 
 /**
  * The subset of the runtime's `useTool` argument this adapter produces.
@@ -113,13 +137,18 @@ export interface FlueToolDefinition {
     input: v.GenericSchema<Record<string, unknown>, unknown>;
     /**
      * MCP annotations. The runtime ignores these — its own docs say so — and
-     * application code reads the hints to gate calls. Every tool this adapter
-     * emits is a read tool, so `readOnlyHint` is true and `destructiveHint` is
-     * false for all of them, and that is a fact about the funnel rather than a
-     * per-tool claim: `runReadTool` can only reach `McpReadTool.run`, and the
-     * propose tools live behind a different funnel entirely.
+     * application code reads the hints to gate calls. `readOnlyHint` is a fact
+     * about WHICH FUNNEL the closure below routes to rather than a per-tool
+     * claim to be kept in sync: a read tool's `run` can only reach
+     * `McpReadTool.run`, and a propose tool's can only reach the proposal
+     * queue, which is a write and says so.
+     *
+     * `destructiveHint` is false throughout, and that is true by construction
+     * of both paths: a read changes nothing, and the propose surface queues a
+     * PENDING row a human approves — no tool this adapter can emit destroys or
+     * overwrites a record.
      */
-    annotations: { readOnlyHint: true; destructiveHint: false; title: string };
+    annotations: { readOnlyHint: boolean; destructiveHint: false; title: string };
     run: (context: FlueToolCallContext) => Promise<string>;
 }
 
@@ -381,7 +410,7 @@ export interface FlueToolSet {
  * this repo has already paid for. The function is pure — it either returns or
  * throws — so using it as a predicate is sound.
  */
-function holdsScope(ctx: RequestContext, tool: McpReadTool<unknown>): boolean {
+function holdsScope(ctx: RequestContext, tool: OfferableTool): boolean {
     try {
         enforceApiKeyScope(ctx, tool.resourceScope.resource, tool.resourceScope.action);
         return true;
@@ -391,26 +420,63 @@ function holdsScope(ctx: RequestContext, tool: McpReadTool<unknown>): boolean {
 }
 
 /**
- * Build the tool set for one invocation.
+ * What the advertising probe reads off a tool.
  *
- * Pure apart from the schema conversion; performs no authorization and writes
- * no audit row. The returned `run` closures are where anything happens.
+ * A read tool and a propose tool differ in how they RUN and agree on every
+ * field this probe looks at, so the probe is written once against what they
+ * share. Two near-identical loops is how the card term went missing from one
+ * copy of the MCP listing and not the other.
  */
-export function flueToolsFor(inv: McpInvocation, observe?: GuardObserver): FlueToolSet {
+/**
+ * WHICH STEP OF WHICH RUN a call belongs to, resolved at call time.
+ *
+ * A resolver rather than a value because the tool set is built once per run and
+ * a step seq is allocated per call — and keyed by `toolCallId` rather than held
+ * in a field because the runtime may have more than one call in flight, which
+ * is the same reason the guard observations are keyed that way. Returning
+ * `undefined` is a real answer: a caller with no run (the direct MCP route)
+ * supplies no resolver at all, and `runProposeTool`'s own signature makes
+ * absence an answer rather than an omission.
+ */
+export type OriginResolver = (toolCallId: string) => { runId: string; stepSeq: number } | undefined;
+
+type OfferableTool = Pick<
+    McpReadTool<unknown>,
+    'name' | 'description' | 'inputSchema' | 'resourceScope' | 'authorize'
+>;
+
+/**
+ * Narrow one surface's loadable set to what this invocation will actually be
+ * permitted, and wrap each survivor's `run` in the guard sandwich.
+ *
+ * The candidate list is already the exposure ∩ register-grant ∩ policy-card
+ * intersection its own registry computed; this adds the two call-time terms a
+ * listing may not claim — the credential's resource scope and the autonomy
+ * ceiling — by calling the very functions the funnel calls.
+ */
+function offerTools(
+    inv: McpInvocation,
+    candidates: readonly OfferableTool[],
+    capability: McpCapabilityClass,
+    review: ReviewLatch,
+    originFor?: OriginResolver,
+): Pick<FlueToolSet, 'tools' | 'omitted'> {
     const tools: FlueToolDefinition[] = [];
     const omitted: FlueToolSet['omitted'] = [];
-    // One latch for the RUN — review, once required, stays required across
-    // every subsequent tool. The observer is per-run too; observations carry
-    // their own `toolCallId` so concurrent calls cannot cross.
-    const review = new ReviewLatch(observe);
 
-    for (const tool of loadableReadTools(inv)) {
+    for (const tool of candidates) {
         if (!holdsScope(inv.ctx, tool)) {
             omitted.push({ name: tool.name, reason: 'SCOPE' });
             continue;
         }
 
-        const required = requiredAutonomyFor(READ_CAPABILITY, tool.authorize.autonomy);
+        // BOTH arguments, as both enforcement seams in `authorize.ts` pass
+        // them. The class supplies the rung its surface sits on, and a tool's
+        // own declared override replaces it. Passing only the class would
+        // advertise a tool that declares a higher rung and then watch the
+        // funnel refuse every call to it — the exact mismatch this probe is
+        // here to prevent.
+        const required = requiredAutonomyFor(capability, tool.authorize.autonomy);
         if (!withinCeiling(required, inv.autonomyCeiling)) {
             omitted.push({ name: tool.name, reason: 'AUTONOMY' });
             continue;
@@ -434,7 +500,7 @@ export function flueToolsFor(inv: McpInvocation, observe?: GuardObserver): FlueT
             description: tool.description,
             input,
             annotations: {
-                readOnlyHint: true,
+                readOnlyHint: capability === 'read',
                 destructiveHint: false,
                 title: tool.name,
             },
@@ -445,11 +511,51 @@ export function flueToolsFor(inv: McpInvocation, observe?: GuardObserver): FlueT
                     asToolArgs(context.data),
                     context.toolCallId,
                     review,
+                    originFor?.(context.toolCallId),
                 ),
         });
     }
 
-    return { tools, omitted, review };
+    return { tools, omitted };
+}
+
+/**
+ * Build the tool set for one invocation: the read surface and the propose
+ * surface, each narrowed by the same two call-time terms.
+ *
+ * Pure apart from the schema conversion; performs no authorization and writes
+ * no audit row. The returned `run` closures are where anything happens.
+ */
+export function flueToolsFor(
+    inv: McpInvocation,
+    observe?: GuardObserver,
+    originFor?: OriginResolver,
+): FlueToolSet {
+    // One latch for the RUN — review, once required, stays required across
+    // every subsequent tool, on EITHER surface. The observer is per-run too;
+    // observations carry their own `toolCallId` so concurrent calls cannot
+    // cross. A second latch for the propose tools would let a flagged read be
+    // followed by a clean proposal, which is the routing-around it exists to
+    // stop, and on the surface where it would matter most.
+    const review = new ReviewLatch(observe);
+
+    const read = offerTools(inv, loadableReadTools(inv), READ_CAPABILITY, review);
+    // The origin resolver reaches only the propose surface, because only a
+    // propose call writes a row that can carry one. Passing it to both would
+    // read as though a read were being attributed somewhere.
+    const propose = offerTools(
+        inv,
+        loadableProposeTools(inv),
+        PROPOSE_CAPABILITY,
+        review,
+        originFor,
+    );
+
+    return {
+        tools: [...read.tools, ...propose.tools],
+        omitted: [...read.omitted, ...propose.omitted],
+        review,
+    };
 }
 
 /**
@@ -458,6 +564,14 @@ export function flueToolsFor(inv: McpInvocation, observe?: GuardObserver): FlueT
  *
  * Exported for the tests, which need to exercise the sandwich without building
  * a whole tool set.
+ *
+ * WHICH funnel is decided from the NAME, by asking the registry that owns the
+ * answer, rather than from a parameter the caller supplies. A parameter would
+ * need a default, and the default would route a propose name into the read
+ * funnel for any caller that forgot it — a refusal, but a misreported one. The
+ * name is the whole input either way: both funnels resolve it through this
+ * invocation's pinned manifest, so a tool this run was never offered is
+ * refused with its own audit row before any object is obtained.
  */
 export async function runGuardedTool(
     inv: McpInvocation,
@@ -465,6 +579,12 @@ export async function runGuardedTool(
     args: Record<string, unknown>,
     toolCallId = 'standalone',
     review: ReviewLatch = new ReviewLatch(),
+    /**
+     * Forwarded verbatim to `runProposeTool` and ignored on a read. Absent for
+     * the direct MCP route and for a standalone call, which is what the
+     * funnel's optional parameter is for.
+     */
+    origin?: { runId: string; stepSeq: number },
 ): Promise<string> {
     const ctx = inv.ctx;
 
@@ -477,20 +597,32 @@ export async function runGuardedTool(
 
     // ── 1. The model's proposed ARGUMENTS, on their way to an action ────────
     //
-    // Before the funnel, not after: the funnel's step 3 runs the usecase, and a
-    // guard that fired after that would be reporting on a read that had already
-    // happened.
+    // Before the funnel, not after: the funnel runs the usecase (a read) or
+    // queues the proposal (a write), and a guard that fired after that would be
+    // reporting on something that had already happened. On the propose surface
+    // this is the slice that decides whether the model's drafted content ever
+    // reaches the review queue at all.
     const egress = await guardEgress(ctx, args, { source: `flue-tool-args:${name}:${toolCallId}` });
     review.check(egress, name, 'args', toolCallId);
 
-    const result = await runReadTool(inv, name, args);
+    // A propose call goes through the propose funnel and NOTHING else — no
+    // usecase, no Prisma, no second door. That funnel enforces the credential
+    // capability, the domain scope, the propose rung and the principal's own
+    // create permission, validates the arguments, and queues a PENDING row a
+    // human approves. `origin` is forwarded when a caller resolved one, so a
+    // proposal a run produced is traceable back to the step that produced it;
+    // the direct MCP route resolves none, and the funnel's own signature makes
+    // that absence an answer rather than an omission.
+    const result = isProposeTool(name)
+        ? await runProposeTool(inv, name, args, origin)
+        : await runReadTool(inv, name, args);
 
     // ── 2. The RESULT, on its way into the model's context ──────────────────
     //
-    // `content[0]` is the tool's JSON payload and `content[1]` is the
-    // provenance banner the funnel appends. Both are scanned: the banner is
-    // ours and will never trip a rule, and reconstructing the joined text is
-    // what the model actually receives.
+    // `content[0]` is the tool's JSON payload and, on a read, `content[1]` is
+    // the provenance banner the funnel appends. Every block is scanned: the
+    // banner is ours and will never trip a rule, and reconstructing the joined
+    // text is what the model actually receives.
     const text = result.content
         .map((block) => ('text' in block ? block.text : ''))
         .join('\n');
@@ -498,10 +630,15 @@ export async function runGuardedTool(
     const injected = await guardUntrustedInput(ctx, text, {
         source: `flue-tool-result:${name}:${toolCallId}`,
     });
-    // The read has already happened, and that is fine — it is a READ, it is
-    // audited, and nothing was committed. What must not happen is the text
+    // The funnel has already run, and that is fine on both surfaces: a read is
+    // a read, and a propose queued a PENDING row nobody has approved — audited
+    // either way, and committed neither way. What must not happen is the text
     // reaching the model, so the flag is enforced between the funnel and the
     // return rather than being allowed through with a warning attached.
+    //
+    // The slice that protects the QUEUE is the egress one above, which runs on
+    // the proposed content before the funnel sees it; `createAgentProposal`
+    // then guards each item again and can quarantine it on its own.
     review.check(injected, name, 'result', toolCallId);
 
     return text;
