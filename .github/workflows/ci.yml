@@ -916,14 +916,34 @@ jobs:
       # already removes the part that is actually slow (the registry
       # fetch). Caching it would trade ~0 seconds for a stale-tree
       # failure mode.
-      - name: Cache Next.js build cache
-        uses: actions/cache@v6
-        with:
-          path: .next/cache
-          key: ${{ runner.os }}-next-prod-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.[jt]s', 'src/**/*.[jt]sx', 'next.config.js') }}
-          restore-keys: |
-            ${{ runner.os }}-next-prod-${{ hashFiles('package-lock.json') }}-
-            ${{ runner.os }}-next-prod-
+      # ── THE WEBPACK CACHE IS NOT RESTORED, AND THAT IS THE FIX ──────────
+      #
+      # There was an `actions/cache` step here for `.next/cache`. It cost
+      # 7.2 GB of peak memory and made the build SLOWER. Measured on CI at
+      # `288d7ff3e`, one variable moved (#2754, issue #2753):
+      #
+      #     cache restored   peak used 15788 MB   next-build 14443 MB   FAILED
+      #     cache disabled   peak used  9263 MB   next-build  7204 MB   286 s
+      #
+      # and against the warm builds it was meant to accelerate:
+      #
+      #     cold   286 s
+      #     warm   375 / 387 / 408 / 410 / 523 s
+      #
+      # So it was cost on both axes. The mechanism is the `restore-keys`
+      # chain it used to carry: the exact key embeds `hashFiles('src/**')`
+      # and therefore NEVER hit, so every build fell back to "the newest
+      # cache for this lockfile" and, failing that, to a bare
+      # `Linux-next-prod-` that matches ANY cache — including one built
+      # against a different `package-lock.json`, which is what PR #2744's
+      # build actually restored. Each merge added another generation that
+      # the next build had to deserialise and reconcile against sources it
+      # was not built from. That is why the peak climbed monotonically with
+      # MERGE COUNT while `src/` grew 0.55%.
+      #
+      # Re-adding a cache here needs a measurement, not an intuition: the
+      # `Report peak memory` ceiling below is what will catch it if the cost
+      # comes back.
 
       # Sampled INSIDE the job, copied from `e2e-bundle` below. Build had no
       # instrumentation at all, which is why run 33249331681 left a bare
@@ -942,6 +962,7 @@ jobs:
           echo "sampler started; columns = time used_MB available_MB"
 
       - name: Build Next.js (production)
+        id: nextbuild
         # --webpack: nonce strict-CSP chunks (see Dockerfile + impl note).
         run: |
           # Streamed from INSIDE this step, not written to a file for a later
@@ -1265,13 +1286,64 @@ jobs:
       # sampler in the build step above is what survives a teardown.
       - name: Report peak memory
         if: always()
+        env:
+          # `outcome`, not `conclusion`: this step must distinguish "the build
+          # succeeded and produced no samples" (a broken instrument) from "the
+          # build failed, so of course there are none".
+          BUILD_OUTCOME: ${{ steps.nextbuild.outcome }}
+          MEM_CEILING_MB: '12288'
         run: |
           kill "$(cat /tmp/mem-sampler.pid)" 2>/dev/null || true
-          if [ ! -s /tmp/mem-samples.log ]; then echo "no samples captured"; exit 0; fi
+
+          # ── A MISSING MEASUREMENT IS NOT A PASS ─────────────────────────
+          #
+          # This used to `exit 0` whenever the log was empty, which scored a
+          # broken sampler exactly like a lean build. If the build itself
+          # failed there is legitimately nothing to read; if it SUCCEEDED and
+          # there are still no samples, the instrument is broken and the
+          # ceiling below is unenforced — so say so loudly rather than go
+          # green on no evidence.
+          if [ ! -s /tmp/mem-samples.log ]; then
+            if [ "${BUILD_OUTCOME}" = "success" ]; then
+              echo "::error::memory sampler produced no samples on a successful build —" \
+                   "the peak ceiling is unenforced. Fix the sampler, do not ignore this."
+              exit 1
+            fi
+            echo "no samples captured (build did not succeed — nothing to measure)"
+            exit 0
+          fi
+
           echo "samples: $(wc -l < /tmp/mem-samples.log)  (time used_MB available_MB)"
           echo "── PEAK used:";        sort -k2 -n -r /tmp/mem-samples.log | head -5
           echo "── LOWEST available:"; sort -k3 -n    /tmp/mem-samples.log | head -5
           echo "── final 15 samples:"; tail -15 /tmp/mem-samples.log
+
+          # ── THE CEILING ─────────────────────────────────────────────────
+          #
+          # The sampler has emitted these numbers since #2526 and NOTHING
+          # READ THEM. That is how #2699's 15815 -> 8505 MB win came back to
+          # 15788 MB un-noticed over twenty hours, and how the merge queue
+          # started evicting PRs that had nothing wrong with them (#2753).
+          # A one-off measurement does not survive; a gate does.
+          #
+          # 12288 on a ~16000 MB runner. Measured cold peaks with the
+          # accumulating webpack cache removed are 9263 MB (Build) and
+          # ~10086 MB (E2E bundle), so this leaves real creep room while
+          # still firing ~3.7 GB BEFORE the kernel OOM-killer does — which
+          # matters, because the kill takes the runner with it and prints
+          # nothing to diagnose.
+          #
+          # Raising this number is a decision, not a formality: check first
+          # whether the growth is a cache being reintroduced, and read the
+          # per-process `[rss]` lines to see whether one process or several
+          # are responsible. Those have opposite fixes.
+          PEAK=$(awk '{ if ($2+0 > m) m = $2+0 } END { print m+0 }' /tmp/mem-samples.log)
+          echo "peak_used_MB=${PEAK} ceiling_MB=${MEM_CEILING_MB}"
+          if [ "${PEAK}" -gt "${MEM_CEILING_MB}" ]; then
+            echo "::error::peak build memory ${PEAK} MB exceeded the ${MEM_CEILING_MB} MB ceiling." \
+                 "See docs/implementation-notes/2026-09-22-build-memory-cache.md."
+            exit 1
+          fi
 
       - name: Build worker + scheduler bundle
         run: npm run build:worker
@@ -1426,14 +1498,11 @@ jobs:
 
       # Moved here with the build it belongs to. Keyed exactly as it was
       # in `e2e` so entries written by earlier runs still hit.
-      - name: Cache Next.js build cache (test mode)
-        uses: actions/cache@v6
-        with:
-          path: .next-test/cache
-          key: ${{ runner.os }}-next-test-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**/*.[jt]s', 'src/**/*.[jt]sx', 'next.config.js') }}
-          restore-keys: |
-            ${{ runner.os }}-next-test-${{ hashFiles('package-lock.json') }}-
-            ${{ runner.os }}-next-test-
+      # Removed for the reason the Build job's was — same shape, same
+      # accumulating `restore-keys` chain, and the same symptom: this job
+      # peaked at 15241 MB and 14761 MB on recent `main` runs, against a
+      # 16 GB runner. See the block in the `build` job above for the
+      # measurement.
 
       # ── Mode A instrumentation (2026-08-19) ──
       # This build gets cancelled 1.5-4 min in, intermittently, with NO output
@@ -1461,6 +1530,7 @@ jobs:
           echo "sampler started; columns = time used_MB available_MB"
 
       - name: Build Next.js app
+        id: nextbuild
         # --webpack: match the deployed bundler (nonce strict-CSP chunks).
         run: |
           # Streamed from INSIDE this step, not written to a file for a later
@@ -1554,13 +1624,64 @@ jobs:
       # sampler in the build step above covers that.
       - name: Report peak memory
         if: always()
+        env:
+          # `outcome`, not `conclusion`: this step must distinguish "the build
+          # succeeded and produced no samples" (a broken instrument) from "the
+          # build failed, so of course there are none".
+          BUILD_OUTCOME: ${{ steps.nextbuild.outcome }}
+          MEM_CEILING_MB: '12288'
         run: |
           kill "$(cat /tmp/mem-sampler.pid)" 2>/dev/null || true
-          if [ ! -s /tmp/mem-samples.log ]; then echo "no samples captured"; exit 0; fi
+
+          # ── A MISSING MEASUREMENT IS NOT A PASS ─────────────────────────
+          #
+          # This used to `exit 0` whenever the log was empty, which scored a
+          # broken sampler exactly like a lean build. If the build itself
+          # failed there is legitimately nothing to read; if it SUCCEEDED and
+          # there are still no samples, the instrument is broken and the
+          # ceiling below is unenforced — so say so loudly rather than go
+          # green on no evidence.
+          if [ ! -s /tmp/mem-samples.log ]; then
+            if [ "${BUILD_OUTCOME}" = "success" ]; then
+              echo "::error::memory sampler produced no samples on a successful build —" \
+                   "the peak ceiling is unenforced. Fix the sampler, do not ignore this."
+              exit 1
+            fi
+            echo "no samples captured (build did not succeed — nothing to measure)"
+            exit 0
+          fi
+
           echo "samples: $(wc -l < /tmp/mem-samples.log)  (time used_MB available_MB)"
           echo "── PEAK used:";        sort -k2 -n -r /tmp/mem-samples.log | head -5
           echo "── LOWEST available:"; sort -k3 -n    /tmp/mem-samples.log | head -5
           echo "── final 15 samples:"; tail -15 /tmp/mem-samples.log
+
+          # ── THE CEILING ─────────────────────────────────────────────────
+          #
+          # The sampler has emitted these numbers since #2526 and NOTHING
+          # READ THEM. That is how #2699's 15815 -> 8505 MB win came back to
+          # 15788 MB un-noticed over twenty hours, and how the merge queue
+          # started evicting PRs that had nothing wrong with them (#2753).
+          # A one-off measurement does not survive; a gate does.
+          #
+          # 12288 on a ~16000 MB runner. Measured cold peaks with the
+          # accumulating webpack cache removed are 9263 MB (Build) and
+          # ~10086 MB (E2E bundle), so this leaves real creep room while
+          # still firing ~3.7 GB BEFORE the kernel OOM-killer does — which
+          # matters, because the kill takes the runner with it and prints
+          # nothing to diagnose.
+          #
+          # Raising this number is a decision, not a formality: check first
+          # whether the growth is a cache being reintroduced, and read the
+          # per-process `[rss]` lines to see whether one process or several
+          # are responsible. Those have opposite fixes.
+          PEAK=$(awk '{ if ($2+0 > m) m = $2+0 } END { print m+0 }' /tmp/mem-samples.log)
+          echo "peak_used_MB=${PEAK} ceiling_MB=${MEM_CEILING_MB}"
+          if [ "${PEAK}" -gt "${MEM_CEILING_MB}" ]; then
+            echo "::error::peak build memory ${PEAK} MB exceeded the ${MEM_CEILING_MB} MB ceiling." \
+                 "See docs/implementation-notes/2026-09-22-build-memory-cache.md."
+            exit 1
+          fi
 
       - name: Upload the test-mode bundle
         uses: actions/upload-artifact@v7
