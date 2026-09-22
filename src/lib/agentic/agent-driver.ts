@@ -134,7 +134,25 @@ export function coerceStoredDriverMode(
  */
 export const DRIVER_IMPLEMENTED: Readonly<Record<AgentDriver, boolean>> = {
     static: true,
-    flue: false,
+    // TRUE as of the Flue driver's completion. This flag answers "does this
+    // BUILD have an implementation", and it now does: `runFlueDriver` plans
+    // the run, `execute.ts` boots the runtime, binds the resolved tool set,
+    // dispatches, records MODEL_CALL / TOOL_CALL through the single write
+    // seam, and charges the same run budget the static engine uses.
+    //
+    // FLIPPING THIS ENABLES NOTHING ON ITS OWN. `resolveAgentDriver` ANDs
+    // three independent terms and any one of them still refuses:
+    //
+    //   · the operator's process-wide `AGENT_DRIVER_FLUE` env switch;
+    //   · the per-tenant `agentDriverMode` setting, which must say FLUE;
+    //   · this flag.
+    //
+    // So the blast radius of this line is "a deployment that has already
+    // turned the env switch on, for a tenant that has already been toggled,
+    // now gets what it asked for instead of a silent fall back to static".
+    // Every other deployment is unchanged, which is what makes this
+    // revertible by reverting one line.
+    flue: true,
 };
 
 /** The independent terms the decision is composed from. */
