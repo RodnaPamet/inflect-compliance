@@ -27,8 +27,8 @@ const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 describe('RQ-5 hierarchy', () => {
     it('schema declares both models + migration with RLS', () => {
         const schema = readPrismaSchema();
-        expect(schema).toMatch(/model RiskHierarchyNode/);
-        expect(schema).toMatch(/model RiskHierarchyLink/);
+        expect(schema).toMatch(/model RiskHierarchyNode\b/);
+        expect(schema).toMatch(/model RiskHierarchyLink\b/);
         const mig = 'prisma/migrations/20260610200000_rq5_hierarchy/migration.sql';
         expect(exists(mig)).toBe(true);
         expect(readSql(mig)).toMatch(/CREATE POLICY tenant_isolation ON "RiskHierarchyNode"/);

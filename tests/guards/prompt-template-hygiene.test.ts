@@ -42,7 +42,7 @@ describe('1. delimiting — free-text tenant data is fenced + neutralised', () =
         expect(src).toMatch(/UNTRUSTED_DATA_OPEN/);
         expect(src).toMatch(/UNTRUSTED_DATA_CLOSE/);
         // A neutraliser strips forged markers / reserved chat-template tokens.
-        expect(src).toMatch(/function neutralizeUntrustedText/);
+        expect(src).toMatch(/function neutralizeUntrustedText\b/);
         // …and the assembled prompt actually applies it to tenant values.
         expect(src).toMatch(/neutralizeUntrustedText\(/);
     });

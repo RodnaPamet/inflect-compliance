@@ -140,7 +140,7 @@ describe("Epic P5-PR-B — visual diff + restore wiring", () => {
             // Overlay mount.
             expect(src).toMatch(/<CanvasDiffOverlay/);
             // Snapshot projection helper exists.
-            expect(src).toMatch(/function buildLiveSnapshot/);
+            expect(src).toMatch(/function buildLiveSnapshot\b/);
         });
     });
 });

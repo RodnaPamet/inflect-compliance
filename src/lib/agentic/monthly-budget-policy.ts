@@ -36,6 +36,12 @@ import {
 /**
  * Sum the tokens this tenant's runs have already charged this UTC month.
  *
+ * EXPORTED for the governance pack, which reports spend-against-budget for a
+ * tenant that has configured no budget at all. `evaluateMonthlyBudgetForRun`
+ * short-circuits before this sum in that case — correctly, on the run-start hot
+ * path — and returns `spentThisMonth: 0`, which is the right answer to "does
+ * the budget refuse this run" and a FALSE ZERO as a reported figure.
+ *
  * Reads through `runInTenantContext`, so the sum is RLS-scoped like every other
  * tenant read — a budget computed with the tenant filter applied only in the
  * WHERE clause would be one `app_user` misconfiguration away from summing the
@@ -44,7 +50,7 @@ import {
  * `costTokens` is `@default(0)` and non-null, so a run that has charged nothing
  * contributes zero rather than dropping out of the sum.
  */
-async function spentThisMonth(ctx: RequestContext, now: Date): Promise<number> {
+export async function spentThisMonth(ctx: RequestContext, now: Date): Promise<number> {
     const since = monthStartUtc(now);
     const agg = await runInTenantContext(ctx, (tx) =>
         tx.workflowRun.aggregate({

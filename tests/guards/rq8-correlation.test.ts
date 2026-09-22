@@ -26,7 +26,7 @@ const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
 describe('RQ-8 correlation', () => {
     it('RiskCorrelation model + migration with RLS', () => {
-        expect(readPrismaSchema()).toMatch(/model RiskCorrelation/);
+        expect(readPrismaSchema()).toMatch(/model RiskCorrelation\b/);
         const mig = 'prisma/migrations/20260610240000_rq8_correlation/migration.sql';
         expect(exists(mig)).toBe(true);
         expect(readSql(mig)).toMatch(/CREATE POLICY tenant_isolation ON "RiskCorrelation"/);

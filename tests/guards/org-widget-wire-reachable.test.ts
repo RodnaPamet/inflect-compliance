@@ -64,7 +64,7 @@ describe('2. widgets are editable post-create', () => {
 
 describe('3. KPI trend arrows render from real previous-period data', () => {
     it('resolveKpiContent supplies previousValue + sparkline from the trend series', () => {
-        expect(DISPATCHER).toMatch(/function resolveKpiTrend/);
+        expect(DISPATCHER).toMatch(/function resolveKpiTrend\b/);
         expect(DISPATCHER).toMatch(/previousValue/);
         // the resolved trend bundle is spread into the KPI configs
         expect(DISPATCHER).toMatch(/\.\.\.trend,/);

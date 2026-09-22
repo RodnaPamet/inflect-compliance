@@ -105,8 +105,8 @@ describe('UserCombobox — contract', () => {
     });
 
     it('exposes single-select and multi-select prop unions', () => {
-        expect(USER_COMBO_SRC).toMatch(/type SingleProps/);
-        expect(USER_COMBO_SRC).toMatch(/type MultipleProps/);
+        expect(USER_COMBO_SRC).toMatch(/type SingleProps\b/);
+        expect(USER_COMBO_SRC).toMatch(/type MultipleProps\b/);
         expect(USER_COMBO_SRC).toMatch(
             /UserComboboxProps\s*=\s*SingleProps\s*\|\s*MultipleProps/,
         );

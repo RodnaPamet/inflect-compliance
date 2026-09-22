@@ -20,8 +20,8 @@ const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 describe('RQ-2 risk appetite', () => {
     it('schema declares both models + migration', () => {
         const schema = readPrismaSchema();
-        expect(schema).toMatch(/model RiskAppetiteConfig/);
-        expect(schema).toMatch(/model RiskAppetiteBreach/);
+        expect(schema).toMatch(/model RiskAppetiteConfig\b/);
+        expect(schema).toMatch(/model RiskAppetiteBreach\b/);
         expect(exists('prisma/migrations/20260610140000_rq2_risk_appetite/migration.sql')).toBe(true);
     });
 

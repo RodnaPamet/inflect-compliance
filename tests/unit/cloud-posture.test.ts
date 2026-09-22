@@ -49,6 +49,64 @@ const BENCH_JSON = powerpipeBenchmarkJson('aws_compliance.benchmark.soc_2', {
     ],
 });
 
+
+/**
+ * #2246 CLASS B — THE ARM TABLE, and why it is a fixture rather than an
+ * assertion.
+ *
+ * `cloud-posture.ts` takes a `cloud` parameter, and every test passed
+ * `'azure-posture'`. At runtime the parameter and the hard-coded literal were
+ * THE SAME STRING, so replacing `input.cloud` with the literal survived at
+ * every site — at 100% branch coverage. #2245 closed the thirteen `input.cloud`
+ * sites one at a time; the survivors were on `c.id`, `checkResult.status`,
+ * `evidenceCreated` and `now`, the same class on values nobody had named.
+ *
+ * Per-site assertions are the instance-level fix and will miss the next site.
+ * The issue's own warning is the one to heed: round two "changed one fixture
+ * value and thereby MOVED the coincidence rather than removing it."
+ *
+ * So each arm gets its OWN benchmark id, its OWN control ids and its OWN status
+ * mix. A derived value is then distinguishable from any constant in scope BY
+ * CONSTRUCTION — substituting one arm's literal for a derived value fails on
+ * the other arm, and substituting a constant fails on both. Both arms sharing
+ * one `BENCH_JSON` was precisely what made the coincidence possible.
+ */
+const ARMS = [
+    {
+        cloud: 'azure-posture' as const,
+        benchmarkId: 'azure_compliance.benchmark.soc_2',
+        // Distinct ids AND a distinct alarm/ok split, so neither the ids nor
+        // the counts can be confused with the other arm's.
+        controls: [
+            { id: 'az_storage_encrypted', status: 'ok' as const, title: 'Azure storage encrypted' },
+            { id: 'az_mfa_enforced', status: 'alarm' as const, title: 'Azure MFA enforced' },
+        ],
+        connectionConfig: { benchmark: 'soc2', clientSecret: 'x' },
+    },
+    {
+        cloud: 'gcp-posture' as const,
+        benchmarkId: 'gcp_compliance.benchmark.soc_2',
+        controls: [
+            { id: 'gcp_bucket_private', status: 'alarm' as const, title: 'GCP bucket private' },
+            { id: 'gcp_sa_key_rotation', status: 'alarm' as const, title: 'GCP SA key rotation' },
+            { id: 'gcp_audit_logs_on', status: 'skip' as const, title: 'GCP audit logs' },
+        ],
+        connectionConfig: { benchmark: 'soc2', serviceAccountJson: '{}' },
+    },
+] as const;
+
+function armJson(arm: (typeof ARMS)[number]): string {
+    return powerpipeBenchmarkJson(arm.benchmarkId, {
+        groups: [
+            powerpipeGroup('cc6', {
+                controls: arm.controls.map((c) =>
+                    powerpipeControl(c.id, c.status, { title: c.title }),
+                ),
+            }),
+        ],
+    });
+}
+
 /** An injectable exec that returns our fake JSON. */
 function fakeExec(stdout: string, missing = false) {
     return async () => ({ ok: true, stdout, stderr: '', missing });
@@ -156,5 +214,85 @@ describe('control-map validity', () => {
         expect(Object.keys(GCP_POSTURE_CONTROL_MAP).length).toBeGreaterThan(5);
         expect(readSrc('src/data/integrations/azure-posture-control-map.ts')).not.toMatch(/@prisma\/client/);
         expect(readSrc('src/data/integrations/gcp-posture-control-map.ts')).not.toMatch(/@prisma\/client/);
+    });
+});
+
+describe('#2246 Class B — each cloud is distinguishable from every other by construction', () => {
+    const PROVIDERS = {
+        'azure-posture': AzurePostureProvider,
+        'gcp-posture': GcpPostureProvider,
+    } as const;
+
+    for (const arm of ARMS) {
+        it(`${arm.cloud}: the result carries THIS arm's control ids, not another arm's`, async () => {
+            const Provider = PROVIDERS[arm.cloud];
+            const provider = new Provider({ exec: fakeExec(armJson(arm)) });
+            const r = await provider.runCheck({
+                automationKey: `${arm.cloud}.soc2`,
+                parsed: { provider: arm.cloud, checkType: 'soc2', raw: `${arm.cloud}.soc2` },
+                tenantId: 't',
+                connectionConfig: arm.connectionConfig,
+                triggeredBy: 'scheduled',
+            });
+
+            const details = r.details as { controls?: Array<{ id: string; status: string }> };
+            const ids = (details.controls ?? []).map((c) => c.id).join(' ');
+
+            // Every id this arm declares is present...
+            for (const c of arm.controls) {
+                expect({ arm: arm.cloud, id: c.id, present: ids.includes(c.id) }).toEqual({
+                    arm: arm.cloud,
+                    id: c.id,
+                    present: true,
+                });
+            }
+            // ...and NO id belonging to a different arm is. This is the half
+            // that makes a substituted constant fail: a hard-coded id from the
+            // other arm would satisfy the first loop on that arm and this one
+            // never.
+            for (const other of ARMS) {
+                if (other.cloud === arm.cloud) continue;
+                for (const c of other.controls) {
+                    expect({ arm: arm.cloud, foreignId: c.id, leaked: ids.includes(c.id) }).toEqual({
+                        arm: arm.cloud,
+                        foreignId: c.id,
+                        leaked: false,
+                    });
+                }
+            }
+        });
+
+        it(`${arm.cloud}: status is DERIVED from this arm's rows, not a constant`, async () => {
+            const Provider = PROVIDERS[arm.cloud];
+            const provider = new Provider({ exec: fakeExec(armJson(arm)) });
+            const r = await provider.runCheck({
+                automationKey: `${arm.cloud}.soc2`,
+                parsed: { provider: arm.cloud, checkType: 'soc2', raw: `${arm.cloud}.soc2` },
+                tenantId: 't',
+                connectionConfig: arm.connectionConfig,
+                triggeredBy: 'scheduled',
+            });
+
+            // Both arms alarm, so status alone cannot separate them — the
+            // COUNTS can, and they differ by construction (1 alarm vs 2).
+            const alarms = arm.controls.filter((c) => c.status === 'alarm').length;
+            const details = r.details as { counts?: Record<string, number> };
+            expect({ arm: arm.cloud, status: r.status }).toEqual({ arm: arm.cloud, status: 'FAILED' });
+            expect({ arm: arm.cloud, alarm: details.counts?.alarm }).toEqual({
+                arm: arm.cloud,
+                alarm: alarms,
+            });
+        });
+    }
+
+    it('the arms genuinely differ — otherwise every assertion above is vacuous', () => {
+        // The positive control for the whole table. If two arms ever collapse
+        // onto the same fixture, the "no foreign id leaked" checks pass for the
+        // wrong reason, which is exactly how the original coincidence hid.
+        const ids = ARMS.map((a) => a.controls.map((c) => c.id).sort().join(','));
+        expect(new Set(ids).size).toBe(ARMS.length);
+        expect(new Set(ARMS.map((a) => a.benchmarkId)).size).toBe(ARMS.length);
+        expect(new Set(ARMS.map((a) => a.controls.filter((c) => c.status === 'alarm').length)).size)
+            .toBe(ARMS.length);
     });
 });

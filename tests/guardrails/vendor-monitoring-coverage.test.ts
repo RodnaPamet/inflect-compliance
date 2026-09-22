@@ -113,8 +113,8 @@ describe('vendor-monitoring — external signals ride the shared seam', () => {
     });
 
     it('every provider ships a deterministic, network-free stub (CI-safe default)', () => {
-        expect(BREACH).toMatch(/class TestModeBreachProvider/);
-        expect(TLS).toMatch(/class TestModeTlsProvider/);
+        expect(BREACH).toMatch(/class TestModeBreachProvider\b/);
+        expect(TLS).toMatch(/class TestModeTlsProvider\b/);
         expect(BREACH).toMatch(/export function getBreachProvider/);
         expect(TLS).toMatch(/export function getTlsProvider/);
     });

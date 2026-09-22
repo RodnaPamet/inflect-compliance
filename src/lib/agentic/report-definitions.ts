@@ -359,6 +359,60 @@ export const METRIC_DEFINITIONS = {
         ],
     },
 
+    // The content guard's three states. `guardVerdict` alone cannot tell a
+    // clean scan from no scan — see `lib/agentic/proposal-guard-state.ts`.
+    'approvals.guard_flagged': {
+        id: 'approvals.guard_flagged',
+        label: 'Proposals the content guard refused',
+        population: "rows in AgentProposal whose guardVerdict is not CLEAN",
+        moment: 'AS_OF_GENERATION',
+        includes: [
+            'both non-clean verdicts — FLAGGED (surfaced to a reviewer with its ' +
+                'rule ids) and QUARANTINED (withheld from the review queue ' +
+                'entirely). Both mean the guard looked and objected',
+            'proposals since decided by a human — the guard\u2019s verdict is a ' +
+                'record of what it saw, not of what happened next',
+        ],
+        excludes: [
+            'proposals written before the guard existed, which carry the column ' +
+                'default CLEAN and no guardInputDigest — those are counted ' +
+                'separately by approvals.guard_unscanned',
+        ],
+    },
+    'approvals.guard_unscanned': {
+        id: 'approvals.guard_unscanned',
+        label: 'Proposals no content guard ever scanned',
+        population:
+            'rows in AgentProposal with guardVerdict = CLEAN and guardInputDigest IS NULL',
+        moment: 'AS_OF_GENERATION',
+        includes: [
+            'every proposal that entered the queue before the guard shipped — the ' +
+                'column is NOT NULL DEFAULT CLEAN and the migration ran no ' +
+                'backfill, so CLEAN on these rows means "not refused", never ' +
+                '"scanned and found clean"',
+        ],
+        excludes: [
+            'scanned proposals, whichever way the scan went — the digest is the ' +
+                'discriminator, and it is written on every proposal the guard decides',
+        ],
+    },
+    'approvals.guard_clean': {
+        id: 'approvals.guard_clean',
+        label: 'Proposals the content guard scanned and passed',
+        population:
+            'rows in AgentProposal with guardVerdict = CLEAN and a non-null guardInputDigest',
+        moment: 'AS_OF_GENERATION',
+        includes: [
+            'the remainder: total proposals minus refused minus unscanned, so the ' +
+                'three guard figures always sum to the population rather than ' +
+                'being three counts that can disagree under a concurrent write',
+        ],
+        excludes: [
+            'pre-guard rows, which look identical in the column and are counted ' +
+                'by approvals.guard_unscanned instead',
+        ],
+    },
+
     // ── Incident and kill-switch history ─────────────────────────────
     'incidents.kill_engagements': {
         id: 'incidents.kill_engagements',
@@ -479,6 +533,60 @@ export const METRIC_DEFINITIONS = {
                 'open breaker is open until a human closes it',
         ],
         excludes: ['closed breakers, whatever their close reason'],
+    },
+
+    // The monthly token budget — the third stop control, alongside the kill
+    // switch and the circuit breaker. It refuses a run AT THE DOOR rather than
+    // truncating one mid-flight, so its figures are about admission, not damage.
+    'incidents.monthly_token_budget': {
+        id: 'incidents.monthly_token_budget',
+        label: 'Monthly agent token budget',
+        population:
+            'TenantSecuritySettings.agentMonthlyTokenBudget for this tenant, the ' +
+            'ceiling every run start is checked against',
+        moment: 'AS_OF_GENERATION',
+        includes: ['the configured number, whatever this month has actually spent'],
+        excludes: [
+            'an unconfigured budget, reported as NO_MONTHLY_BUDGET_CONFIGURED ' +
+                'rather than as 0 — NULL means unlimited here, and a 0 would ' +
+                'read as a ceiling that refuses every run',
+        ],
+    },
+    'incidents.tokens_spent_this_month': {
+        id: 'incidents.tokens_spent_this_month',
+        label: 'Agent tokens spent this month',
+        population:
+            'the sum of costTokens over rows in WorkflowRun started on or after ' +
+            'the first instant of the current UTC calendar month',
+        moment: 'AS_OF_GENERATION',
+        includes: [
+            'the UTC calendar month rather than the report window — the budget ' +
+                'this is measured against resets monthly, and a 90-day total ' +
+                'would not be comparable to it',
+            'runs in every terminal state, and runs still RUNNING: the tokens ' +
+                'are spent whether or not the run finished',
+        ],
+        excludes: [
+            'runs started before this month, however recently — the budget is ' +
+                'a monthly allowance and last month\u2019s spend does not consume it',
+        ],
+    },
+    'incidents.monthly_budget_remaining_tokens': {
+        id: 'incidents.monthly_budget_remaining_tokens',
+        label: 'Monthly token budget remaining',
+        population:
+            'the configured budget minus this month\u2019s spend, in tokens, for this tenant',
+        moment: 'AS_OF_GENERATION',
+        includes: [
+            'a NEGATIVE value when spend has passed the ceiling. The check is ' +
+                'pre-flight and bounds a run by its own token cap, so an ' +
+                'admitted run can still finish above the line — clamping to 0 ' +
+                'would hide exactly that overshoot',
+        ],
+        excludes: [
+            'any figure at all when no budget is configured, because subtracting ' +
+                'from unlimited has no answer',
+        ],
     },
 
     // ── Third-party agent assessments ────────────────────────────────

@@ -26,7 +26,7 @@ const exists = (p: string) => fs.existsSync(path.join(ROOT, p));
 
 describe('RQ-3 Monte Carlo', () => {
     it('RiskSimulationRun schema + migration with RLS', () => {
-        expect(readPrismaSchema()).toMatch(/model RiskSimulationRun/);
+        expect(readPrismaSchema()).toMatch(/model RiskSimulationRun\b/);
         const mig = 'prisma/migrations/20260610160000_rq3_monte_carlo/migration.sql';
         expect(exists(mig)).toBe(true);
         expect(readSql(mig)).toMatch(/CREATE POLICY tenant_isolation ON "RiskSimulationRun"/);
