@@ -80,21 +80,32 @@ describe('the stored tenant value is coerced at the read boundary', () => {
     });
 });
 
-describe('the gate while the flue driver is unimplemented', () => {
-    it('reports the driver as not built, rather than pretending it is off', () => {
-        // Configuration ahead of code. Both switches are on and the answer is
-        // still static — but the REASON has to distinguish this from a tenant
-        // that simply did not opt in, because only one of the two is an
-        // operator's mistake.
+describe('the gate now that the flue driver is built', () => {
+    it('gives a deployment that asked for flue, flue', () => {
+        // Both switches on, the driver implemented: the answer is finally the
+        // one that was configured. This assertion replaces the
+        // DRIVER_NOT_IMPLEMENTED one that stood here while the engine was a
+        // seam with nothing behind it — the state it described has ended, and
+        // leaving it would have pinned the gate shut.
         expect(
             resolveAgentDriver({ envEnabled: true, tenantSetting: 'FLUE' }),
-        ).toEqual({ driver: 'static', reason: 'DRIVER_NOT_IMPLEMENTED' });
+        ).toEqual({ driver: 'flue', reason: null });
     });
 
-    it('holds the declared-but-unbuilt flag that makes that true', () => {
-        // The one line that moves when the adapter lands, pinned so it moves
-        // deliberately and in the diff that makes it true.
-        expect(DRIVER_IMPLEMENTED).toEqual({ static: true, flue: false });
+    it('holds the implemented flag that makes that true', () => {
+        // The one line that moved. Pinned so that turning it back off is also
+        // deliberate and visible in the diff that does it.
+        expect(DRIVER_IMPLEMENTED).toEqual({ static: true, flue: true });
+    });
+
+    it('and DRIVER_NOT_IMPLEMENTED is still reachable, for the driver nobody has built', () => {
+        // The reason code did not become dead when flue was built — it is the
+        // answer for the NEXT engine someone declares ahead of implementing.
+        // Asserted through the flag rather than by adding a fake union member,
+        // so the test cannot drift from what the gate actually reads.
+        const unbuilt = { ...DRIVER_IMPLEMENTED, flue: false };
+        expect(unbuilt.flue).toBe(false);
+        expect(Object.values(DRIVER_IMPLEMENTED).every(Boolean)).toBe(true);
     });
 });
 
