@@ -264,18 +264,15 @@ export async function purgeSoftDeletedTenants(
                 totalRows,
                 dryRun,
             });
-            logger.info(
-                {
-                    component: 'tenant-purge',
-                    tenantId: tenant.id,
-                    slug: tenant.slug,
-                    tables: Object.keys(deleted).length,
-                    totalRows,
-                    dryRun,
-                    retained: [...TENANT_PURGE_RETAINED],
-                },
-                dryRun ? 'tenant purge (dry run)' : 'tenant purged',
-            );
+            logger.info(dryRun ? 'tenant purge (dry run)' : 'tenant purged', {
+                component: 'tenant-purge',
+                tenantId: tenant.id,
+                slug: tenant.slug,
+                tables: Object.keys(deleted).length,
+                totalRows,
+                dryRun,
+                retained: [...TENANT_PURGE_RETAINED],
+            });
         }
         return results;
     });
