@@ -1,4 +1,4 @@
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, cssCodeOf } from '../helpers/source-blocks';
 /**
  * Elevation PR-3 — sidebar state-language ratchet.
  *
@@ -47,13 +47,18 @@ describe('Sidebar state-language ratchet (Elevation PR-3)', () => {
 
     it('globals.css does not redefine `.nav-link`', () => {
         // #2246 — named `cssAbs`, not `abs`, on purpose. The Class A analyser
-        // resolves a read's target by VARIABLE NAME, and it does not honour
-        // block scope: with three sibling `const abs` bindings in this file it
-        // credited THIS css read with a `.tsx` path and counted it as a raw
-        // read of lexable source. The read is CSS and stays raw deliberately —
-        // `codeOf` lexes TypeScript, not CSS.
+        // resolves a read's target by VARIABLE NAME and does not honour block
+        // scope: with three sibling `const abs` bindings in this file it
+        // credited THIS css read with a `.tsx` path.
+        //
+        // It used to stay RAW, and the note here said why: "`codeOf` lexes
+        // TypeScript, not CSS". That was true and is no longer — #2727 added
+        // `cssCodeOf`, which blanks /* … */ and preserves length and line
+        // count. So the read is masked with the masker for its OWN kind, and
+        // the assertion below can no longer be satisfied by a `.nav-link`
+        // rule that someone commented out rather than deleted.
         const cssAbs = path.resolve(ROOT, GLOBALS);
-        const content = fs.readFileSync(cssAbs, 'utf8');
+        const content = cssCodeOf(fs.readFileSync(cssAbs, 'utf8'));
         // The retired ruleset shape: `.nav-link {` or `.nav-link.active {`.
         expect(content).not.toMatch(/^\s*\.nav-link\b[^*]/m);
     });
