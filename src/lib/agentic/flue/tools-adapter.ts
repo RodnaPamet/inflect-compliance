@@ -427,6 +427,19 @@ function holdsScope(ctx: RequestContext, tool: OfferableTool): boolean {
  * share. Two near-identical loops is how the card term went missing from one
  * copy of the MCP listing and not the other.
  */
+/**
+ * WHICH STEP OF WHICH RUN a call belongs to, resolved at call time.
+ *
+ * A resolver rather than a value because the tool set is built once per run and
+ * a step seq is allocated per call — and keyed by `toolCallId` rather than held
+ * in a field because the runtime may have more than one call in flight, which
+ * is the same reason the guard observations are keyed that way. Returning
+ * `undefined` is a real answer: a caller with no run (the direct MCP route)
+ * supplies no resolver at all, and `runProposeTool`'s own signature makes
+ * absence an answer rather than an omission.
+ */
+export type OriginResolver = (toolCallId: string) => { runId: string; stepSeq: number } | undefined;
+
 type OfferableTool = Pick<
     McpReadTool<unknown>,
     'name' | 'description' | 'inputSchema' | 'resourceScope' | 'authorize'
@@ -446,6 +459,7 @@ function offerTools(
     candidates: readonly OfferableTool[],
     capability: McpCapabilityClass,
     review: ReviewLatch,
+    originFor?: OriginResolver,
 ): Pick<FlueToolSet, 'tools' | 'omitted'> {
     const tools: FlueToolDefinition[] = [];
     const omitted: FlueToolSet['omitted'] = [];
@@ -497,6 +511,7 @@ function offerTools(
                     asToolArgs(context.data),
                     context.toolCallId,
                     review,
+                    originFor?.(context.toolCallId),
                 ),
         });
     }
@@ -511,7 +526,11 @@ function offerTools(
  * Pure apart from the schema conversion; performs no authorization and writes
  * no audit row. The returned `run` closures are where anything happens.
  */
-export function flueToolsFor(inv: McpInvocation, observe?: GuardObserver): FlueToolSet {
+export function flueToolsFor(
+    inv: McpInvocation,
+    observe?: GuardObserver,
+    originFor?: OriginResolver,
+): FlueToolSet {
     // One latch for the RUN — review, once required, stays required across
     // every subsequent tool, on EITHER surface. The observer is per-run too;
     // observations carry their own `toolCallId` so concurrent calls cannot
@@ -521,7 +540,16 @@ export function flueToolsFor(inv: McpInvocation, observe?: GuardObserver): FlueT
     const review = new ReviewLatch(observe);
 
     const read = offerTools(inv, loadableReadTools(inv), READ_CAPABILITY, review);
-    const propose = offerTools(inv, loadableProposeTools(inv), PROPOSE_CAPABILITY, review);
+    // The origin resolver reaches only the propose surface, because only a
+    // propose call writes a row that can carry one. Passing it to both would
+    // read as though a read were being attributed somewhere.
+    const propose = offerTools(
+        inv,
+        loadableProposeTools(inv),
+        PROPOSE_CAPABILITY,
+        review,
+        originFor,
+    );
 
     return {
         tools: [...read.tools, ...propose.tools],
@@ -551,6 +579,12 @@ export async function runGuardedTool(
     args: Record<string, unknown>,
     toolCallId = 'standalone',
     review: ReviewLatch = new ReviewLatch(),
+    /**
+     * Forwarded verbatim to `runProposeTool` and ignored on a read. Absent for
+     * the direct MCP route and for a standalone call, which is what the
+     * funnel's optional parameter is for.
+     */
+    origin?: { runId: string; stepSeq: number },
 ): Promise<string> {
     const ctx = inv.ctx;
 
@@ -575,11 +609,12 @@ export async function runGuardedTool(
     // usecase, no Prisma, no second door. That funnel enforces the credential
     // capability, the domain scope, the propose rung and the principal's own
     // create permission, validates the arguments, and queues a PENDING row a
-    // human approves. The `origin` argument is deliberately not supplied: this
-    // engine has no per-step identity to give it here, and the funnel's own
-    // signature makes absence an answer rather than an omission.
+    // human approves. `origin` is forwarded when a caller resolved one, so a
+    // proposal a run produced is traceable back to the step that produced it;
+    // the direct MCP route resolves none, and the funnel's own signature makes
+    // that absence an answer rather than an omission.
     const result = isProposeTool(name)
-        ? await runProposeTool(inv, name, args)
+        ? await runProposeTool(inv, name, args, origin)
         : await runReadTool(inv, name, args);
 
     // ── 2. The RESULT, on its way into the model's context ──────────────────

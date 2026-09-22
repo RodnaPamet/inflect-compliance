@@ -341,6 +341,10 @@ describe('propose tools are offered, under the same terms and one rung higher', 
                     expect.anything(),
                     'propose_risks',
                     { items: [{ title: 'x' }] },
+                    // No origin: this set was built without a resolver, which
+                    // is the direct-MCP shape. The run-attributed shape has
+                    // its own tests below.
+                    undefined,
                 );
                 // The half with teeth. A propose call that reached the READ
                 // funnel would be refused there as an unknown tool — a
@@ -401,6 +405,80 @@ describe('propose tools are offered, under the same terms and one rung higher', 
             /refusing propose_risks/,
         );
         expect(mockRunProposeTool).not.toHaveBeenCalled();
+    });
+});
+
+describe('a proposal names the step that produced it', () => {
+    // `AgentProposal.origin` is what makes a queued proposal traceable back to
+    // the run and step that drafted it. Before the propose surface existed
+    // there was no Flue caller to supply one; now there is, and a null origin
+    // would leave the run page's proposals link pointing at rows it cannot
+    // claim. These are BEHAVIOURAL — what `runProposeTool` was actually
+    // handed — because the wiring is a resolver, and a resolver that returns
+    // the wrong thing type-checks perfectly.
+
+    it('forwards the origin the caller resolved for THIS call', async () => {
+        mockRunProposeTool.mockResolvedValue({ content: [{ type: 'text', text: 'queued' }] } as never);
+
+        await runGuardedTool(
+            invocation(),
+            'propose_risks',
+            { items: [{ title: 'x' }] },
+            'call-1',
+            new ReviewLatch(),
+            { runId: 'run-7', stepSeq: 4 },
+        );
+
+        expect(mockRunProposeTool).toHaveBeenCalledWith(
+            expect.anything(),
+            'propose_risks',
+            { items: [{ title: 'x' }] },
+            { runId: 'run-7', stepSeq: 4 },
+        );
+    });
+
+    it('passes undefined when nobody resolved one — absence is an answer', async () => {
+        // The direct MCP route has no run. The funnel's own signature makes
+        // this legal, and the assertion is that we pass the ABSENCE rather
+        // than inventing a placeholder run id.
+        mockRunProposeTool.mockResolvedValue({ content: [{ type: 'text', text: 'queued' }] } as never);
+
+        await runGuardedTool(invocation(), 'propose_risks', { items: [{ title: 'x' }] }, 'call-1');
+
+        expect(mockRunProposeTool).toHaveBeenCalledWith(
+            expect.anything(),
+            'propose_risks',
+            { items: [{ title: 'x' }] },
+            undefined,
+        );
+    });
+
+    it('the resolver is asked for THIS call id, and only the propose surface uses it', async () => {
+        // The discriminator between a real per-call resolution and a resolver
+        // called once at build time: two tools, two call ids, and the read
+        // tool must not consult it at all.
+        mockLoadable.mockReturnValue([tool('list_risks')]);
+        mockLoadablePropose.mockReturnValue([proposeTool('propose_risks')]);
+        mockRunReadTool.mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] } as never);
+        mockRunProposeTool.mockResolvedValue({ content: [{ type: 'text', text: 'queued' }] } as never);
+
+        const asked: string[] = [];
+        const set = flueToolsFor(invocation(), undefined, (id) => {
+            asked.push(id);
+            return { runId: 'run-9', stepSeq: id === 'p1' ? 11 : 99 };
+        });
+        const byName = new Map(set.tools.map((t) => [t.name, t]));
+
+        await byName.get('list_risks')!.run({ toolCallId: 'r1', data: {} } as never);
+        await byName.get('propose_risks')!.run({ toolCallId: 'p1', data: { items: [{}] } } as never);
+
+        expect(asked).toEqual(['p1']);
+        expect(mockRunProposeTool).toHaveBeenCalledWith(
+            expect.anything(),
+            'propose_risks',
+            expect.anything(),
+            { runId: 'run-9', stepSeq: 11 },
+        );
     });
 });
 

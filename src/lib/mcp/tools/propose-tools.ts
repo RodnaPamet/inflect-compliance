@@ -76,6 +76,27 @@ const proposeArgs = z
     })
     .strict();
 
+/**
+ * How many PENDING rows a propose call would queue — one per item.
+ *
+ * Lives here, beside `proposeArgs`, because the 1–20 rule is this module's and
+ * `runProposeTool` below is what turns each item into a row. A caller charging
+ * a proposal cap needs the same number, and a second copy of the rule is how a
+ * cap ends up charging the wrong unit.
+ *
+ * Reads the RAW args, before validation, because the caller that needs the
+ * count charges BEFORE the funnel runs — the point of charging early is that a
+ * refusal means nothing was queued. An uncountable shape answers ONE rather
+ * than zero: a malformed propose call is still a propose call, and free is the
+ * only answer a cap cannot recover from. (It will then be refused by
+ * `proposeArgs` inside the funnel, having cost one — which is the safe
+ * direction to be wrong in.)
+ */
+export function proposedItemCount(rawArgs: unknown): number {
+    const items = (rawArgs as { items?: unknown } | null | undefined)?.items;
+    return Array.isArray(items) ? items.length : 1;
+}
+
 function proposeInputSchema(itemNoun: string): Record<string, unknown> {
     return {
         type: 'object',

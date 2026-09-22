@@ -82,15 +82,44 @@ reshaping this file exists to prevent.
   agent whose principal cannot create risks should still be told the tool
   exists — the refusal is the interesting event and belongs in the trail.
   Composing the existing function keeps one answer instead of two.
-- **`runProposeTool`'s `origin` is not supplied.** It takes an optional
-  `{ runId, stepSeq }`, and this adapter has neither: it is a pure mapping over
-  an invocation, built before dispatch, with no per-step identity. Threading it
-  would mean `flueToolsFor` taking a run id from `execute.ts`.
-- **The PROPOSALS cap is not charged on this engine.** `executeFlueRun` seeds
-  the budget with `proposedItemsSoFar` and `wrapForLedger` charges `STEPS` and
-  `TOOL_CALLS` only. That was harmless while no propose tool was reachable and
-  is not any more — an open gap in `execute.ts`, which this change deliberately
-  did not touch.
+- **`runProposeTool`'s `origin` IS supplied, through a resolver.** The adapter
+  still has no per-step identity of its own — it is a pure mapping over an
+  invocation, built once before dispatch — so `flueToolsFor` takes an optional
+  `OriginResolver` keyed by `toolCallId` instead of a run id. `wrapForLedger`
+  allocates the step seq before it invokes the tool and records it in a map the
+  resolver reads; a `finally` forgets the entry, symmetrically with
+  `takeVerdict`'s delete and for the same two reasons (it leaks for the life of
+  the run, and a recycled id would inherit a step that was not its own). Keyed
+  rather than held in a field because the runtime may have more than one call
+  in flight. The resolver reaches only the propose surface: a read writes no row
+  that could carry an origin, and passing it to both would read as though a read
+  were being attributed somewhere.
+- **The PROPOSALS cap is charged, PER ITEM.** `executeFlueRun` had always
+  seeded the budget from `proposedItemsSoFar` while `wrapForLedger` charged
+  `STEPS` and `TOOL_CALLS` only — harmless exactly as long as nothing on this
+  engine could propose, and an escape the moment one could. The charge is by
+  item count, not by call: `proposeArgs` accepts 1–20 items and
+  `runProposeTool` queues one PENDING row for each, so charging the call would
+  let a run reach twenty times its cap with the counter reading correct. That
+  is the escape point 5 of the plan names — "a loop cannot escape the cap by
+  spending in a kind the counter ignores" — one level down: a kind charged at
+  the wrong unit.
+
+  `proposedItemCount` lives in `propose-tools.ts`, beside the `proposeArgs`
+  envelope whose 1–20 rule it mirrors, not in `execute.ts`. Two reasons: a
+  second copy of the rule is how a cap ends up charging the wrong unit, and
+  `execute.ts` cannot be imported under the `node` jest project at all
+  (`@flue/runtime` is ESM-only), so a helper living there could only ever be
+  asserted about as source text. It reads the RAW args, before validation,
+  because the charge happens before the funnel — the point of charging early
+  being that a refusal means nothing was queued. An uncountable shape answers
+  ONE, never zero: free is the only answer a cap cannot recover from.
+
+  The predicate is `isProposeTool`, the same registry call the adapter
+  dispatches on. A second way of answering "is this a propose tool" — the
+  `readOnlyHint` annotation, a name prefix — is a way for the charge and the
+  funnel to disagree, and the disagreement that matters is a propose call the
+  funnel runs and the counter never sees.
 - **The derived valibot schema has no Zod cross-check on the propose side.**
   The read tools get one (same inputs through both schemas, same verdict
   required), because `argsSchema` is on `McpReadTool`. The propose envelope is
