@@ -73,6 +73,38 @@ describe('AD provisioner — created BLOCKED, which is the whole safety argument
         expect(f.adds[0].attributes?.userAccountControl).toBe('514');
     });
 
+    it('a displayName cannot choose the OU — RFC 4514, not a comma replace', async () => {
+        const f = fakeAd();
+        // The payload: a TRAILING BACKSLASH before the comma the old code added.
+        // Old behaviour was `.replace(/,/g, '\\,')`, which escaped the comma and
+        // left the backslash alone, so `Mallory\` became `CN=Mallory\\,OU=...`
+        // — `\\` is an escaped backslash, the comma goes live, and the RDN ends
+        // exactly where the attacker wanted. Everything after it is their DN.
+        const r = await make(f).createBlockedAccount({
+            identifier: 'mallory@corp.example.test',
+            displayName: 'Mallory\\',
+            employeeId: 'emp-evil',
+        });
+        expect(r.kind).toBe('applied');
+        const dn = f.adds[0].dn;
+
+        // Split on commas that are NOT escaped. Everything after the first one
+        // is the parent DN — which OU the account actually lands in.
+        const parentOf = (d: string) => d.split(/(?<!\\)(?:\\\\)*,/).slice(1).join(',');
+
+        // POSITIVE CONTROL. The old `.replace(/,/g, '\\,')` left the trailing
+        // backslash alone, so the comma it wrote became an ESCAPED one: the CN
+        // value swallows `OU=Employees` as text and the account is created one
+        // level up, in the domain root. Nothing errors — it just lands
+        // somewhere nobody delegated, outside the leaver pass's scope.
+        const oldDn = `CN=${'Mallory\\'.replace(/,/g, '\\,')},${CONNECTION.createOU}`;
+        expect(parentOf(oldDn)).toBe('DC=corp,DC=example,DC=test');
+        expect(parentOf(oldDn)).not.toBe(CONNECTION.createOU);
+
+        // The fix: the backslash is escaped, so the separator stays a separator.
+        expect(parentOf(dn)).toBe(CONNECTION.createOU);
+    });
+
     it('returns the directory objectGUID — everything downstream addresses by it', async () => {
         const f = fakeAd();
         const r = await make(f).createBlockedAccount({

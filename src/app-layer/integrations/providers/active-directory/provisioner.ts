@@ -51,6 +51,7 @@
  * @module integrations/providers/active-directory/provisioner
  */
 import { randomBytes } from 'node:crypto';
+import { DN } from 'ldapts';
 
 import {
     ActiveDirectoryProvider,
@@ -208,7 +209,14 @@ export function createActiveDirectoryProvisioner(
                 };
             }
             const sam = (input.identifier.split('@')[0] ?? input.identifier).slice(0, 20);
-            const dn = `CN=${input.displayName.replace(/,/g, '\\,')},${createOU}`;
+            // RFC 4514 via ldapts, NOT a hand-rolled replace. Escaping only `,`
+        // is worse than escaping nothing: a displayName of `A\,B` became
+        // `A\\,B`, where the first backslash escapes ITSELF and the comma is
+        // then a live RDN separator — the attacker picks where the DN splits
+        // and which OU the account lands in. `+ " = < > ; #` and edge spaces
+        // are all live here too. Only `createOU` is concatenated raw, and that
+        // is operator configuration, never user input.
+        const dn = `${new DN().addPairRDN('CN', input.displayName).toString()},${createOU}`;
             try {
                 await c.add(dn, {
                     objectClass: ['top', 'person', 'organizationalPerson', 'user'],
