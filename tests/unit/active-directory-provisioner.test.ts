@@ -92,12 +92,19 @@ describe('AD provisioner — created BLOCKED, which is the whole safety argument
         // is the parent DN — which OU the account actually lands in.
         const parentOf = (d: string) => d.split(/(?<!\\)(?:\\\\)*,/).slice(1).join(',');
 
-        // POSITIVE CONTROL. The old `.replace(/,/g, '\\,')` left the trailing
-        // backslash alone, so the comma it wrote became an ESCAPED one: the CN
-        // value swallows `OU=Employees` as text and the account is created one
-        // level up, in the domain root. Nothing errors — it just lands
-        // somewhere nobody delegated, outside the leaver pass's scope.
-        const oldDn = `CN=${'Mallory\\'.replace(/,/g, '\\,')},${CONNECTION.createOU}`;
+        // POSITIVE CONTROL: the exact DN the old `.replace(/,/g, '\\,')` emitted
+        // for this displayName. It left the trailing backslash alone, so the
+        // comma it wrote became an ESCAPED one — the CN value swallows
+        // `OU=Employees` as text and the account is created one level up, in
+        // the domain root. Nothing errors; it just lands somewhere nobody
+        // delegated, outside the leaver pass's scope.
+        //
+        // Written as a LITERAL, not by re-running the old expression: CodeQL
+        // flags that expression wherever it appears (js/incomplete-sanitization,
+        // correctly — it is the bug), and a security dashboard carrying an
+        // alert everyone knows to ignore is how real ones get ignored. The old
+        // implementation is gone, so this string can never drift from it.
+        const oldDn = `CN=Mallory\\,${CONNECTION.createOU}`;
         expect(parentOf(oldDn)).toBe('DC=corp,DC=example,DC=test');
         expect(parentOf(oldDn)).not.toBe(CONNECTION.createOU);
 
