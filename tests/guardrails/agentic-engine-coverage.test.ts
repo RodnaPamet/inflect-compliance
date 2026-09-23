@@ -22,6 +22,7 @@ import * as path from 'node:path';
 
 import { VALID_SCOPES } from '@/lib/auth/api-key-auth';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
+import { mdSection } from '../helpers/markdown-regions';
 import { codeOf, declarationOf, sqlCodeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -216,10 +217,24 @@ describe('Agentic engine — scope + model hardening', () => {
 
 describe('Agentic engine — AISVS agentic-orchestration documented', () => {
     it('the implementation note records the composes-MCP-not-new-authority design', () => {
-        // Markdown: RAW on purpose — this assertion is about the note's prose.
+        // NARROWED, NOT MASKED (#2246). The read stays raw because these
+        // assertions are about the note's PROSE — `mdCodeOf` keeps a
+        // document's code and blanks the rest, so masking would delete the
+        // subject. What was wrong was reading the WHOLE note for it: the
+        // design claims were satisfied by any mention anywhere, including the
+        // file list and the decision log. Measured over the note:
+        // `/multi-step|orchestrat/i` 17 matches raw → 8 inside `## Design`,
+        // `/propose-not-commit/i` 3 → 2. Bound to the sections that own them,
+        // a design paragraph moved out of `## Design` reddens this.
         const note = readRaw('docs/implementation-notes/2026-07-01-agentic-workflow-engine.md');
-        expect(note).toMatch(/propose-not-commit/i);
-        expect(note).toMatch(/multi-step|orchestrat/i);
-        expect(note).toMatch(/AISVS|C9/);
+        const design = mdSection(note, 'Design');
+        expect(design).toMatch(/propose-not-commit/i);
+        expect(design).toMatch(/multi-step|orchestrat/i);
+        // The AISVS claim belongs to its own subsection — all 5 occurrences
+        // of `/AISVS|C9/` in the note are already inside it, so this bound
+        // loses nothing and pins where the applicability argument lives.
+        expect(
+            mdSection(note, 'AISVS C9 (Orchestration & Agentic Security)'),
+        ).toMatch(/AISVS|C9/);
     });
 });

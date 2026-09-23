@@ -21,6 +21,7 @@ import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
 import { readPrismaSchema } from '../helpers/prisma-schema';
 
 const ROOT = path.resolve(__dirname, '../..');
+import { mdSection } from '../helpers/markdown-regions';
 import { sqlCodeOf } from '../helpers/source-blocks';
 
 // #2246 Class A / #2679 LANGUAGE SPLIT. `read` deliberately stays RAW here and
@@ -49,7 +50,17 @@ describe('NIS2 gap-assessment — licensing (CC BY 4.0, attribution mandatory)',
     });
 
     it('a LICENSE sidecar exists and names CC BY 4.0 + the required credit', () => {
-        const lic = read(LICENSE_PATH);
+        // NARROWED, NOT MASKED (#2246). The read stays raw — a licence notice
+        // is prose end to end, and `mdCodeOf` would blank all three needles.
+        // The defect was that "the required credit" was checked against the
+        // WHOLE sidecar, which discusses CC BY 4.0 at length in its own
+        // right: measured, `/CC BY 4\.0|Creative Commons Attribution 4\.0/`
+        // matches 6 times across the document and the upstream URL twice, so
+        // deleting the attribution block outright left every assertion here
+        // satisfied by the surrounding explanation. What CC BY actually
+        // obliges is the CREDIT, and that is one section — bound to it, all
+        // three needles come from the block that has to travel with the data.
+        const lic = mdSection(read(LICENSE_PATH), 'Required attribution');
         expect(lic).toMatch(/CC BY 4\.0|Creative Commons Attribution 4\.0/);
         expect(lic).toMatch(/Based on the NIS2 Gap Assessment/);
         expect(lic).toContain('https://github.com/NISD2/nis2-gap-assessment-schema');

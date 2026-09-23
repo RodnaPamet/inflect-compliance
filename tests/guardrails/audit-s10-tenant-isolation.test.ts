@@ -13,6 +13,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { mdSection } from '../helpers/markdown-regions';
 import { codeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -116,21 +117,38 @@ describe('Audit S10 — Tenant Isolation & Authorization', () => {
     describe('Gap 2 & Gap 3 — decision docs land alongside the SHIP scope', () => {
         // Markdown: read RAW — codeOf() would mask `//` in prose/URLs, and
         // these assertions are deliberately about the note's prose.
+        //
+        // NARROWED, NOT MASKED (#2246). Masking is the wrong tool twice over
+        // here: `mdCodeOf` keeps a document's code and blanks its prose, and
+        // a deferral rationale is entirely prose. The reachable defect was
+        // the whole-document read — the note opens with a `## Design` summary
+        // that ALSO names "Gap 2" and "Gap 3", so a diff that gutted the
+        // decision sections and left the summary intact kept every assertion
+        // below green. Each decision is now bound to its own `### Decision —`
+        // section, which is the thing the audit trail actually is.
         const note = readRaw(
             'docs/implementation-notes/2026-05-24-audit-s10-tenant-isolation.md',
         );
+        const gap2 = mdSection(
+            note,
+            'Decision — Gap 2: field-level RBAC stays deferred',
+        );
+        const gap3 = mdSection(
+            note,
+            'Decision — Gap 3: ABAC deferred (matches audit guidance)',
+        );
 
         it('field-level RBAC defer rationale is documented', () => {
-            expect(note).toMatch(/field-level RBAC stays deferred/);
+            expect(gap2).toMatch(/field-level RBAC stays deferred/);
             // Anchor to the four reasons so the defer can't quietly
             // shrink to a one-line "no" later.
-            expect(note).toMatch(/allowlist per field per role/);
-            expect(note).toMatch(/Repository-layer projection/);
+            expect(gap2).toMatch(/allowlist per field per role/);
+            expect(gap2).toMatch(/Repository-layer projection/);
         });
 
         it('ABAC defer rationale is documented + matches audit guidance', () => {
-            expect(note).toMatch(/ABAC deferred/);
-            expect(note).toMatch(/policy engine \(OPA \/ Cedar\)/);
+            expect(gap3).toMatch(/ABAC deferred/);
+            expect(gap3).toMatch(/policy engine \(OPA \/ Cedar\)/);
         });
     });
 });
