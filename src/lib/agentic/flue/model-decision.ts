@@ -74,9 +74,32 @@ export async function recordModelDecision(
     runId: string,
     def: WorkflowDefinition,
     message: string,
-    reply: { text?: string },
+    /**
+     * The settled text for THIS row, already extracted by the caller.
+     *
+     * A plain summary rather than the reply object, deliberately: `execute.ts`
+     * reads `reply.text` exactly once and hands the value down, so the single
+     * read there is the whole supply of model output into this subsystem and
+     * `flue-model-output-has-one-destination` can count it. Taking the reply
+     * here would give the recorder its own read of the same text and turn one
+     * supply into two, which is the shape that guard exists to refuse.
+     *
+     * NULL on every row but the last: a response settles when the model stops
+     * calling tools, so the text belongs to that turn alone.
+     */
+    outputSummary: string | null,
     usage: { tokensIn: number; tokensOut: number },
     modelSpecifier: string,
+    /**
+     * This CALL's own wall clock, when the caller observed it per turn.
+     *
+     * Optional because the value exists only on the event stream: a `turn`
+     * event carries the duration of one model call, and nothing on the
+     * response aggregate does. `null` rather than a made-up number when the
+     * caller could not observe one — a latency column that sometimes holds a
+     * dispatch total and sometimes a call total would be worse than empty.
+     */
+    latencyMs: number | null = null,
 ): Promise<void> {
     // `<provider-id>/<model-id>` — split rather than stored whole, because the
     // row has a column for each and a reader filtering by provider should not
@@ -103,7 +126,8 @@ export async function recordModelDecision(
                 // one column the encryption manifest carves out for exactly
                 // this: "bounded, sanitised AI-output summary — never raw
                 // content".
-                outputSummary: reply.text ?? null,
+                outputSummary,
+                latencyMs,
                 tokensIn: usage.tokensIn || null,
                 tokensOut: usage.tokensOut || null,
                 // The registered agent's EU AI Act system. A Flue run is now

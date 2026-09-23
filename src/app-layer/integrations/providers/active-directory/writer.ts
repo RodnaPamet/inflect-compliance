@@ -169,8 +169,16 @@ const CAPTURE_ATTRIBUTES = [
  * sweep (`listUnsettledWrites`, which reads PENDING / INDETERMINATE) exclude.
  * Anything absent from this list — including every transport failure, which
  * carries no result code at all — leaves `definitivelyNotApplied` false.
+ *
+ * EXPORTED FOR THE PROVISIONER (#2750), not widened for it. A create's three
+ * modify steps ask the same question a disable asks — did the DC parse this
+ * request and decline it? — so the joiner reads this list rather than curating
+ * a second one that would be free to disagree about, say, whether `busy` (51)
+ * proves anything. The ADD step needs one more code (68, entryAlreadyExists),
+ * and the provisioner adds it to a COPY rather than to this set: 68 proves an
+ * add landed nowhere, and proves nothing about a modify.
  */
-const PROVEN_REFUSAL_RESULT_CODES: ReadonlySet<number> = new Set([
+export const PROVEN_REFUSAL_RESULT_CODES: ReadonlySet<number> = new Set([
     8, // strongerAuthRequired
     12, // unavailableCriticalExtension
     16, // noSuchAttribute — the CAS miss
@@ -295,8 +303,12 @@ const DOM_LEGACY_CODE_ERROR_NAMES: ReadonlySet<string> = new Set([
  * it from a domain controller.
  *
  * A numeric `code` alone is NOT evidence — see the collision above.
+ *
+ * Exported so the joiner's provisioner classifies failures through the SAME
+ * DOMException exclusion. A second copy would be one `AbortError` away from
+ * reading result 20 off a lost response and calling it a proven refusal.
  */
-function resultCodeOf(err: unknown): number | null {
+export function resultCodeOf(err: unknown): number | null {
     if (typeof err !== 'object' || err === null) return null;
 
     if (typeof DOMException !== 'undefined' && err instanceof DOMException) return null;

@@ -155,6 +155,21 @@ interface BreakerPayload {
     pendingVerdictWindowStart: string | null;
     baseline: BaselineBlock;
     windowsToTrip: number;
+    /**
+     * The OTHER way this breaker trips, and the one the window ledger below
+     * cannot show. A Flue guard block fires in the tool sandwich, before the
+     * funnel — so the blocked call writes no hourly window row at all and
+     * appears in neither the ledger nor the baseline figures.
+     *
+     * (The model is deliberately not named in this file's prose: the guard at
+     * `tests/guards/agent-behaviour-window-reads-are-bounded.test.ts`
+     * pre-filters its population on RAW file text, so a docblock mentioning it
+     * puts this file into a list of the files that READ it.) `inWindow` is the
+     * count `latchOnGuardBlock` itself makes, over `currentWindowStart` above
+     * — the hour still filling; reaching `threshold` latches the breaker at
+     * once, with no streak.
+     */
+    guardBlocks: { inWindow: number; threshold: number };
     /** The vocabulary, from the server that owns it. Never re-typed here. */
     closeReasons: string[];
 }
@@ -297,6 +312,13 @@ export function CircuitBreakerTab({
                     return t('agentDetail.breaker.signalRejectionRate');
                 case 'TOOL_MIX':
                     return t('agentDetail.breaker.signalToolMix');
+                // The guard-block latch's signal. Without this arm it reached
+                // the operator as the raw enum `GUARD_BLOCK` — the default
+                // below shows an unknown code verbatim, which is right for a
+                // code this build has never heard of and wrong for one it
+                // writes itself.
+                case 'GUARD_BLOCK':
+                    return t('agentDetail.breaker.signalGuardBlock');
                 default:
                     return code;
             }
@@ -516,6 +538,36 @@ export function CircuitBreakerTab({
                         )}
                     </dl>
                 )}
+
+                {/* GUARD BLOCKS, and this one is rendered WITHOUT the
+                    `breaker &&` gate the facts above carry.
+
+                    An agent whose every call the output guard blocked has no
+                    hourly window rows — the block happens before
+                    `authorize.ts`, so nothing records a call — and therefore no
+                    breaker row either, since the row is created on an agent's
+                    first authorized call. Gating this figure on the row would
+                    hide it from exactly the agent it is about. Zero is its own
+                    sentence for the same reason it is elsewhere on this page: a
+                    surface that shows the figure only when it is non-zero
+                    cannot be told apart from one that cannot see blocks at
+                    all. */}
+                <div className="space-y-tight">
+                    <dl className="flex flex-wrap gap-default">
+                        <Fact
+                            label={t('agentDetail.breaker.factGuardBlocks')}
+                            value={t('agentDetail.breaker.guardBlockCount', {
+                                count: data.guardBlocks.inWindow,
+                                threshold: data.guardBlocks.threshold,
+                            })}
+                        />
+                    </dl>
+                    <p className="text-sm text-content-muted">
+                        {t('agentDetail.breaker.guardBlocksExplain', {
+                            threshold: data.guardBlocks.threshold,
+                        })}
+                    </p>
+                </div>
 
                 {breaker && breaker.anomalousStreak > 0 && (
                     <div className="space-y-tight">

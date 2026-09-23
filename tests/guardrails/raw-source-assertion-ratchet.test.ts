@@ -476,6 +476,72 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     fails under `sqlCodeOf` — the #2644 language split, measured on the file
  *     itself. The file keeps its three deliberate raw sites, so this count
  *     does not move for it; the defect closed anyway.
+ *   • 36 (2026-09-23): the SIXTH Class A batch — the thirteen `tests/guardrails/`
+ *     files the 42 entry above left behind, revisited with the tool that entry
+ *     said was missing. SIX leave by NARROWING; seven stay, and the reason the
+ *     seven stay is now a MEASURED one rather than a category.
+ *
+ *     THE 42 ENTRY WAS RIGHT THAT MASKING IS WRONG HERE AND WRONG THAT NOTHING
+ *     ELSE APPLIED. Six of the thirteen read MARKDOWN — an implementation note,
+ *     a runbook, a licence sidecar — and a document has REGIONS even when every
+ *     needle in it is prose. Every needle at every raw site was counted twice
+ *     before anything was edited, once against the whole document and once
+ *     against the candidate region, and the second number is what decided each
+ *     file. 39 needles measured, ZERO taken to zero by the region that shipped.
+ *
+ *     THE REACH THIS BOUGHT, measured on the documents themselves:
+ *     `/helm upgrade --install/` 6 matches across `docs/deployment.md` → 1
+ *     inside `### Local helm commands`; `/autoscaling…|HPA/` 13 → 6 inside
+ *     `### Scaling`; `/CC BY 4\.0|…/` 6 across the NIS2 licence sidecar → 1
+ *     inside `### Required attribution`, which is the block CC BY actually
+ *     obliges; `/multi-step|orchestrat/i` 17 → 8 inside `## Design`. Each of
+ *     those was a guard that could have had the section it is named for deleted
+ *     outright while a sibling section kept it green.
+ *
+ *     AND A MEASUREMENT CAUGHT A BUG THAT READING DID NOT. The first candidate
+ *     regions were cut by a section finder copied in spirit from #2789's three,
+ *     which scan for `^#{1,6}\s` without tracking fences. `docs/deployment.md`
+ *     is a RUNBOOK: it is mostly shell, and a shell comment starts with `#`. The
+ *     finder stopped at `# Adjust bounds + reapply via helm upgrade` inside a
+ *     bash block — `### Scaling` came out 164 characters instead of 1700,
+ *     `#### Files (S3 storage bucket)` 587 instead of 1845 — and FOUR needles
+ *     went to zero matches. A narrowing that drops a needle to zero has deleted
+ *     the subject exactly as masking would. `tests/helpers/markdown-regions.ts`
+ *     is fence-aware for that reason, and the two older copies in
+ *     `privacy-crosswalk` / `sub-processor-coverage` are correct only because
+ *     their documents happen to contain no `#` inside a fence.
+ *
+ *     ALL SIX ARE MUTATION-PROVED FOR REACH, NOT DELETION — each mutation moves
+ *     the needle OUT of the bound region while leaving it present elsewhere in
+ *     the same document, so the old whole-document assertion stays green and
+ *     the new one fails.
+ *
+ *     THE SEVEN THAT STAY, and why this is a floor rather than a pause. ONE is
+ *     `ai-aisvs-hardening-coverage`, whose line 83 is
+ *     `expect(doc).not.toMatch(/L3[- ]verified/i)`. A negative assertion's
+ *     correct reach IS the whole document — "this file claims nothing above
+ *     L2" is false if the claim appears anywhere in it — so binding it to the
+ *     badge section would weaken it while reading as converted, and the usual
+ *     measurement cannot see that: a negative needle counts 0 raw and 0
+ *     narrowed, which is the vacuous-pass trap wearing a passing measurement.
+ *     The other SIX assert on a COMMENT in a `.ts` file (a CC BY 4.0 header, an
+ *     "OVERDUE semantics" rationale, an `idempotent` docblock, the `/trust/`
+ *     allowlist note). Masking deletes those by definition, and narrowing has
+ *     no tool here: every extractor in `tests/helpers/source-blocks.ts` is
+ *     comment-FREE by construction ("Anchor, scan and RESULT are all
+ *     comment-free — see the file header"), so not one of them can bound a
+ *     region that still CONTAINS the subject. Closing those six needs a
+ *     comment-preserving extractor that does not exist yet, which is a new
+ *     capability rather than an application of this one.
+ *
+ *     TWO OF THE SIX ARE REAL CLASS D AMBIGUITIES IN THE MEANTIME, recorded
+ *     here so the next batch has somewhere to start: `org-widget-integrity`'s
+ *     `/idempotent/i` matches twice in `scripts/reconcile-org-dashboard-widgets.ts`
+ *     (the header docblock at line 11 and another at 148), and
+ *     `audit-s2-control-testing`'s `/OVERDUE semantics/` matches twice in
+ *     `src/app-layer/usecases/control/test-plans.ts` (the rationale note at 282
+ *     and a back-reference at 473) — so in each case the block the test is
+ *     named for can be deleted and the other occurrence keeps it green.
  *   • 381 (2026-09-17): seated when this ratchet landed. Measured by AST walk
  *     over every `.ts`/`.tsx` file git lists under `tests/` — 2402 files,
  *     12301 `toMatch`/`toContain` sites, of which 5937 resolve to the whole
@@ -523,7 +589,7 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     So a file's presence in this list is NOT an accusation, and this ratchet
  *     is a cap rather than a work queue: it says the population may not grow.
  */
-const RAW_ASSERTING_FILE_BASELINE = 42;
+const RAW_ASSERTING_FILE_BASELINE = 36;
 
 /**
  * The files themselves, sorted, in a sibling JSON — the same population the

@@ -74,7 +74,7 @@ async function recordFor(
     message: string,
 ): Promise<void> {
     const def = getWorkflowDefinition(CHECKPOINT_WF)!;
-    await recordModelDecision(context, runId, def, message, { text: 'a reply' }, USAGE, MODEL);
+    await recordModelDecision(context, runId, def, message, 'a reply', USAGE, MODEL);
 }
 
 const rowsFor = (tenantId: string, runId: string) =>

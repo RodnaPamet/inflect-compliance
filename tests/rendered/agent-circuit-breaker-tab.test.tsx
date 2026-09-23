@@ -187,6 +187,8 @@ interface BreakerPayload {
     pendingVerdictWindowStart: string | null;
     baseline: BaselineBlock;
     windowsToTrip: number;
+    /** The guard-block latch's count and the threshold it latches at. */
+    guardBlocks: { inWindow: number; threshold: number };
     closeReasons: string[];
 }
 
@@ -194,6 +196,8 @@ const REQUIRED_WINDOWS = 12;
 const REQUIRED_OBSERVATIONS = 200;
 /** `BASELINE_WINDOW_LIMIT` as the route reports it. */
 const LOOKBACK_WINDOWS = 168;
+/** `GUARD_BLOCK_TRIP_THRESHOLD` as the route reports it. */
+const GUARD_BLOCK_THRESHOLD = 3;
 
 /** Short of both thresholds, which is the ordinary state of a young agent. */
 const SHORT_BASELINE: BaselineBlock = {
@@ -283,6 +287,10 @@ function makePayload(over: Partial<BreakerPayload> = {}): BreakerPayload {
         pendingVerdictWindowStart: null,
         baseline: SHORT_BASELINE,
         windowsToTrip: 3,
+        // A quiet hour, which is the ordinary case and the one that has to
+        // render: see the block at the foot of this file for why zero is shown
+        // rather than hidden.
+        guardBlocks: { inWindow: 0, threshold: GUARD_BLOCK_THRESHOLD },
         closeReasons: ['ACCEPTED_NEW_BASELINE', 'RESOLVED'],
         ...over,
     };
@@ -981,5 +989,95 @@ describe('the baseline states its reach in wall-clock time', () => {
         // "0 hours" reads as "gathered just now" — the reassurance-shaped
         // failure the whole panel is arranged against.
         expect(pageText()).not.toContain(reach('baselineReachHours', 0));
+    });
+});
+/**
+ * GUARD BLOCKS — the trip condition this tab could not show.
+ *
+ * Plan point 4 read "the Circuit breaker tab already exists … Flue blocks show
+ * up there for free once wired". They did not. A Flue guard fires in the tool
+ * sandwich, before the funnel, so a blocked call writes no `AgentProposal` and
+ * never reaches `recordAuthorizedCall` — no `AgentBehaviourWindow` row is
+ * written for it. Both of this panel's evidence surfaces, the ledger strip and
+ * the baseline figures, are blind to a block by construction; the only trace
+ * was a TRIP, and only after three blocks inside one hour.
+ *
+ * Three claims, each a sentence the surface could otherwise get wrong:
+ *
+ *   • the count renders with NO breaker row and NO windows — the exact agent it
+ *     is about, since the breaker row is created on the first AUTHORIZED call
+ *     and a wholly-blocked agent has never made one;
+ *   • the threshold shown is the SERVER'S, not a constant re-typed in the
+ *     client, for the reason `windowsToTrip` travels on the payload;
+ *   • a `GUARD_BLOCK` trip names itself. `signalLabel`'s default shows an
+ *     unrecognised code verbatim — right for a code this build has never heard
+ *     of, wrong for the one its own latch writes.
+ */
+describe('a guard block reaches the breaker tab', () => {
+    it('shows the count on an agent with no breaker row and no windows', () => {
+        // Gating this figure on the breaker row — as every other fact on the
+        // state card is gated — would hide it from precisely this agent.
+        renderTab(
+            makePayload({
+                breaker: null,
+                windows: [],
+                guardBlocks: { inWindow: 2, threshold: GUARD_BLOCK_THRESHOLD },
+            }),
+        );
+
+        const stateCard = within(
+            document.getElementById('agent-circuit-breaker')!
+                .firstElementChild as HTMLElement,
+        );
+        expect(stateCard.getByText(S('factGuardBlocks'))).toBeInTheDocument();
+        expect(
+            stateCard.getByText(fill(S('guardBlockCount'), { count: 2, threshold: 3 })),
+        ).toBeInTheDocument();
+        // The companion absence: the ledger really is empty, so the count above
+        // is the only thing on the page that can see those two blocks.
+        expect(screen.getByText(S('noWindows'))).toBeInTheDocument();
+    });
+
+    it('states zero rather than hiding it — absence of blocks is not absence of the check', () => {
+        renderTab(makePayload());
+
+        expect(
+            screen.getByText(fill(S('guardBlockCount'), { count: 0, threshold: 3 })),
+        ).toBeInTheDocument();
+    });
+
+    it("prints the SERVER'S threshold, not one of its own", () => {
+        // A client that re-typed 3 renders identically on every fixture above.
+        renderTab(
+            makePayload({
+                guardBlocks: { inWindow: 1, threshold: 7 },
+            }),
+        );
+
+        expect(
+            screen.getByText(fill(S('guardBlockCount'), { count: 1, threshold: 7 })),
+        ).toBeInTheDocument();
+        expect(
+            screen.queryByText(fill(S('guardBlockCount'), { count: 1, threshold: 3 })),
+        ).toBeNull();
+        expect(pageText()).toContain(fill(S('guardBlocksExplain'), { threshold: 7 }));
+    });
+
+    it('names the GUARD_BLOCK trip signal instead of printing the raw code', () => {
+        renderTab(
+            makePayload({
+                breaker: makeBreaker({
+                    state: 'OPEN',
+                    lastVerdict: 'TRIP',
+                    trippedAt: '2026-09-01T09:10:00.000Z',
+                    trippedWindow: '2026-09-01T09',
+                    trippedSignals: ['GUARD_BLOCK'],
+                }),
+            }),
+        );
+
+        expect(screen.getByText(S('signalGuardBlock'))).toBeInTheDocument();
+        // The raw enum is what the default arm would have shown.
+        expect(pageText()).not.toContain('GUARD_BLOCK');
     });
 });

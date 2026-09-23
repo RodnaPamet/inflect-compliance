@@ -258,8 +258,19 @@ export function createSnapshotWriter(
     };
 }
 
-/** Config merged with decrypted secrets, exactly as identity-sync assembles it. */
-function mergeConnection(conn: {
+/**
+ * Config merged with decrypted secrets, exactly as identity-sync assembles it.
+ *
+ * EXPORTED FOR THE JOINER'S PROVISIONER FACTORY (#2750) rather than copied
+ * into it. Two things here are load-bearing and would be free to drift in a
+ * second spelling: secrets override config (so a rotated `writeBindPassword`
+ * in the secret bag wins over a stale one somebody left in `configJson`), and
+ * an undecryptable bag THROWS instead of degrading to `{}`. The provisioner
+ * factory's `SECRETS_UNREADABLE` refusal is that throw — a copy that caught
+ * would hand the AD provisioner an empty bag, and every create would fail once
+ * per person with nothing said about why.
+ */
+export function mergeConnection(conn: {
     configJson: unknown;
     secretEncrypted: string | null;
 }): Record<string, unknown> {

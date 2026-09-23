@@ -145,6 +145,53 @@ describeFn('Agentic workflow engine (real DB)', () => {
         });
     });
 
+    it('the RUN carries the proposals it produced, and only the columns a browser may see', async () => {
+        // THE OTHER DIRECTION of the backlink, and the half nothing exercised.
+        //
+        // The test above asks `prisma.agentProposal` directly, which proves the
+        // COLUMNS are written and says nothing about whether the run surface
+        // can reach them. `/agents/runs/[runId]` does not query proposals — it
+        // reads `run.proposals` off this usecase and groups them onto steps, so
+        // an include that returns an empty array leaves the page rendering a
+        // PROPOSE step that names nothing, with every rendered test still
+        // green: they are handed already-grouped props.
+        const result = await startWorkflowRun(ctx(), PROPOSE_WF, {});
+        const run = await getWorkflowRun(ctx(), result.runId);
+
+        const proposeStep = run.steps.find((s) => s.kind === 'PROPOSE');
+        expect({
+            arrived: run.proposals.length,
+            allNameTheProposeStep:
+                run.proposals.length > 0 &&
+                run.proposals.every((p) => p.stepSeq === proposeStep?.seq),
+        }).toEqual({ arrived: 1, allNameTheProposeStep: true });
+
+        // ── THE SELECT IS A BOUNDARY, NOT A CONVENIENCE ─────────────────────
+        //
+        // This usecase is returned VERBATIM by `GET /agent-runs/:id`, so every
+        // column the include names is a column that reaches a browser — and an
+        // `AgentProposal` carries `payloadJson`, which the proposals surface
+        // deliberately withholds and replaces with a server-computed diff.
+        // Widening the include here is a one-word edit that reopens that in a
+        // different route, and the type system cannot object: adding a field is
+        // additive at every reader.
+        //
+        // EXACT key-set equality rather than `not.toHaveProperty('payloadJson')`
+        // — the named column is only today's instance. `rationale`,
+        // `guardRuleIds` and `proposedBySessionRef` are the same class of
+        // mistake, and an exact set is the only assertion that objects to a
+        // column nobody has thought of yet.
+        expect(Object.keys(run.proposals[0]).sort()).toEqual([
+            'createdAt',
+            'guardVerdict',
+            'id',
+            'kind',
+            'operation',
+            'status',
+            'stepSeq',
+        ]);
+    });
+
     it('a proposal made OUTSIDE a run still carries no run — absence is an answer', async () => {
         // The other half of the optional `origin`. `runProposeTool` has three
         // callers and only one is inside a workflow; if the field had acquired

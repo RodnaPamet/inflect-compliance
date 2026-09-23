@@ -15,6 +15,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { mdSection } from '../helpers/markdown-regions';
 import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 import { VALID_SCOPES } from '@/lib/auth/api-key-auth';
@@ -189,9 +190,19 @@ describe('MCP server — propose-not-commit lock (no direct entity mutation)', (
 
 describe('MCP server — AISVS C9/C10 applicability documented', () => {
     it('the implementation note records the AISVS agentic + MCP-security applicability', () => {
+        // NARROWED, NOT MASKED (#2246). The read stays raw — these needles
+        // are prose, and `mdCodeOf` would blank them. The defect was the
+        // REACH: `/C9/` against the whole note is satisfied by a passing
+        // mention in `## Design` or a line in `## Decisions`, so the note
+        // could lose its applicability argument entirely and stay green
+        // provided the chapter numbers survived anywhere. Bound to the
+        // section whose heading this test names, all three needles must come
+        // from the assessment itself (measured: 2 / 4 / 3 occurrences, every
+        // one of them already inside this section).
         const note = readRaw('docs/implementation-notes/2026-07-01-mcp-server.md');
-        expect(note).toMatch(/AISVS/);
-        expect(note).toMatch(/C9/);
-        expect(note).toMatch(/C10/);
+        const applicability = mdSection(note, 'AISVS C9 / C10 applicability');
+        expect(applicability).toMatch(/AISVS/);
+        expect(applicability).toMatch(/C9/);
+        expect(applicability).toMatch(/C10/);
     });
 });
