@@ -13,18 +13,24 @@
  * means no PENDING row, which means Art 14 has nothing to stamp — the "closed
  * loop" the bullet names was open at both ends.
  *
- * ── WHY STRUCTURAL ──────────────────────────────────────────────────────────
+ * ── WHAT IS STRUCTURAL HERE AND WHAT IS NOT ─────────────────────────────────
  *
- * The failing version completes runs correctly. Nothing about the run's own
- * output distinguishes it; the difference is a row in another table that
- * nobody reads during the run. A behavioural test would need the whole ESM
- * runtime plus a model, which is the reason this engine's paths are guarded
- * structurally throughout.
+ * This file keeps the claims about the row's SHAPE — which writer, which
+ * digest, which columns are deliberately left null. Those are properties of
+ * one function and a source read binds them exactly.
+ *
+ * The claims about the row's CARDINALITY and its VALUES moved to
+ * `tests/unit/flue-per-turn-accounting.test.ts`, which drives `executeFlueRun`
+ * with `@flue/runtime` virtually mocked and reads the rows back off
+ * `logAiDecision`. They had to move: this file's ordering assertion could not
+ * tell one row per dispatch from one row per model call, and that was the
+ * defect. A needle asserting a line exists is not an assertion that a value is
+ * ever written down.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { codeOf, functionBodyOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf, functionBodyOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
@@ -44,11 +50,36 @@ describe('the Art 12 row', () => {
         // `logAiDecision`, not a hand-rolled create: it digests the input,
         // sanitises and bounds the summary, and is the one place those rules
         // live for every AI feature.
-        // The CALL, not the bare name: `recordModelDecision(` occurs twice in
-        // the file (its declaration and its one call site), and a needle
-        // satisfied by the declaration would still pass with the call removed.
-        expect(src).toContain('await recordModelDecision(ctx, runId, def,');
+        //
+        // Bound to `settleTurns` rather than grepped for: `recordModelDecision`
+        // appears in the file as an import, a call and several comments, and a
+        // whole-file needle is satisfied by any of them — including the ones
+        // that would still be there with the call deleted.
+        const settle = declarationOf(src, 'settleTurns');
+        expect(settle).toContain('await recordModelDecision(');
+        // AND the argument that carries the Art 14 join. #2791 made the
+        // recorder take the run id for `sessionRef`; a per-turn rewrite that
+        // dropped it would still write Art 12 rows and would silently leave
+        // every one of them unreviewable.
+        expect(settle).toContain('runId,');
         expect(recorder).toContain('logAiDecision(');
+    });
+
+    it('carries ONE model call, not a dispatch’s worth of them', () => {
+        // The shape of the second gap. `recordModelDecision` took the response
+        // aggregate (`usage: FlueUsageReport`) and ran once per dispatch, so a
+        // six-turn run left one row holding six calls' summed tokens. It now
+        // takes a `TurnRecord` — the runtime's leaf-level per-call usage — and
+        // the loop that calls it is what makes the rows plural.
+        //
+        // The CARDINALITY is proved behaviourally in
+        // `tests/unit/flue-per-turn-accounting.test.ts`; this is the type-level
+        // half, which is what stops the aggregate being handed back in.
+        // THIS call's tokens, passed as the recorder's `usage` argument —
+        // `turn.tokensIn`/`turn.tokensOut`, never the dispatch aggregate
+        // `usage.totalTokens` the old per-dispatch row carried.
+        expect(declarationOf(src, 'settleTurns')).toContain('{ tokensIn: turn.tokensIn, tokensOut: turn.tokensOut }');
+        expect(declarationOf(src, 'settleTurns')).toContain('for (const [i, turn] of pending');
     });
 
     it('digests the dispatched message, which is what makes it a join key', () => {
@@ -67,6 +98,17 @@ describe('the Art 12 row', () => {
         // only one of those shapes is a runaway generation.
         expect(recorder).toContain('tokensIn');
         expect(recorder).toContain('tokensOut');
+    });
+
+    it('and the call’s own latency, which a dispatch-level row could not carry', () => {
+        // `turn.durationMs` is the model call's wall clock. The per-dispatch
+        // row left `latencyMs` unset entirely — there was no single duration
+        // to report for six calls.
+        // The call's OWN wall clock, which only a `turn` event carries — the
+        // response aggregate has no per-call duration. Passed positionally to
+        // the recorder, which writes it to `latencyMs`.
+        expect(declarationOf(src, 'settleTurns')).toContain('turn.durationMs');
+        expect(recorder).toContain('latencyMs,');
     });
 
     it('links the registered agent’s AI system', () => {
@@ -93,11 +135,20 @@ describe('the Art 12 row', () => {
         expect(recorder).toContain('logger.error');
     });
 
-    it('writes the row AFTER the step ledger, not instead of it', () => {
+    it('writes the rows AFTER the step ledger, not instead of it', () => {
         // Two records with different owners: the step is the engine's, the
-        // decision row is the regulator's. The one that cannot be written must
-        // not stop the one that can.
+        // decision rows are the regulator's. The one that cannot be written
+        // must not stop the one that can.
+        //
+        // Anchored on the CALL to `settleTurns`, not on `recordModelDecision`,
+        // which now sits inside a closure DECLARED above the ledger write. The
+        // two indices must both be found, or a rename turns this into `-1 <
+        // -1` — false, which is the right direction, but the explicit floor
+        // says why.
         const body = functionBodyOf(src, 'executeFlueRun');
-        expect(body.indexOf("'MODEL_CALL'")).toBeLessThan(body.indexOf('recordModelDecision('));
+        expect(body.indexOf("'MODEL_CALL'")).toBeGreaterThan(-1);
+        expect(body.indexOf("'MODEL_CALL'")).toBeLessThan(
+            body.indexOf('await settleTurns(reply.text'),
+        );
     });
 });

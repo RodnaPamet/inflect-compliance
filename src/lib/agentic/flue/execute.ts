@@ -1,4 +1,5 @@
-import { init } from '@flue/runtime';
+import { init, observe } from '@flue/runtime';
+import type { FlueEvent, FlueEventContext } from '@flue/runtime';
 
 import type { RequestContext } from '@/app-layer/types';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
@@ -115,6 +116,36 @@ function runMessage(def: WorkflowDefinition, fromSeq: number): string {
 }
 
 
+/**
+ * ONE MODEL CALL'S OWN USAGE — the leaf level, not a response aggregate.
+ *
+ * The runtime reports usage at two levels and says which is which: a `turn`
+ * event is "one model call", carrying "provider-reported token and cost usage
+ * for this single call", and "turn usage is the leaf level — `operation` and
+ * `compaction` roll-ups already include it"
+ * (`@flue/runtime/docs/reference/events.md`, `ModelResponse.usage`). The hooks
+ * report only the roll-up: `useResponseFinish` "runs after the final finish
+ * cycle … its `response.usage` and `response.toolCalls` aggregates are final"
+ * (`agent-hooks-api.md`), and `useAgentFinish`'s is "the aggregate usage so
+ * far". So the hook the agent already declares can never answer "what did THIS
+ * call cost", and the event stream is the only surface that can.
+ */
+interface TurnRecord {
+    totalTokens: number;
+    tokensIn: number;
+    tokensOut: number;
+    /** The call's own wall clock. `null` on the aggregate fallback below. */
+    durationMs: number | null;
+}
+
+// `recordModelDecision` and `aiSystemIdFor` USED TO LIVE HERE. #2791 moved
+// them to `./model-decision` so the Art 14 `sessionRef` join could be tested
+// against a real database — `execute.ts` statically imports `@flue/runtime`,
+// so no CJS suite can load it, and a structural test cannot answer "does the
+// value the writer stores equal the value the stamper queries". `settleTurns`
+// below calls the extracted function once per TURN rather than once per
+// dispatch, which is the whole of this branch.
+
 export async function executeFlueRun(
     ctx: RequestContext,
     runId: string,
@@ -136,6 +167,11 @@ export async function executeFlueRun(
 
     const initial = await getRunRow(ctx, runId);
     let costTokens = initial.costTokens ?? 0;
+    // The message is computed ONCE and reused: it is dispatched, and it is also
+    // what every decision row's `sanitizedInput` digest is taken over. Two
+    // calls to `runMessage` are two chances for the digest to stop naming the
+    // prompt the model actually saw.
+    const message = runMessage(def, fromSeq);
 
     // The SETTLED terms — membership, key scopes, policy card, autonomy
     // ceiling — resolved once, here, exactly as the static driver does.
@@ -202,6 +238,99 @@ export async function executeFlueRun(
     const stepOfCall = new Map<string, number>();
 
     /**
+     * EVERY MODEL CALL THIS SEGMENT MADE, in the order the runtime reported it.
+     *
+     * Filled from the event stream rather than from the reply, because the
+     * reply cannot answer the question. `turn` is the runtime's per-model-call
+     * event — "one model call is one turn" — and `turn.response.usage` is that
+     * single call's provider-reported usage; every hook an agent can declare
+     * sees only the roll-up (see `TurnRecord` for the citations).
+     *
+     * `observe()` is isolate-global — "the subscription covers all agents,
+     * harnesses, sessions" — so the filter is what makes this THIS run's
+     * accounting. `ctx.id` is documented as "the agent instance id; equals the
+     * `instanceId` stamped on the context's events", and the instance id is the
+     * run id: the dispatch below is `init(InflectAgent, { id: runId })`.
+     *
+     * The subscriber is deliberately a push onto an array and nothing else. It
+     * runs "synchronously from the event emit path", so a DB write here would
+     * sit inside the model loop; the runtime's own instruction is to "queue
+     * substantial work outside the callback". The queue is drained at every
+     * exit below.
+     */
+    const turns: TurnRecord[] = [];
+    const onTurn = (event: FlueEvent, eventCtx: FlueEventContext): void => {
+        if (event.type !== 'turn' || eventCtx.id !== runId) return;
+        const usage = event.response.usage;
+        // Absent "when the provider reported none". Nothing was measured, so
+        // nothing is claimed — the same reading `readUsage` takes.
+        if (!usage) return;
+        // Compaction turns are NOT filtered out. `purpose` distinguishes an
+        // agent turn from a summarisation one, but both are model calls that
+        // spent a tenant's tokens, and a charge that skipped compaction would
+        // under-bill exactly the runs long enough to need it.
+        turns.push({
+            totalTokens: usage.totalTokens,
+            tokensIn: usage.input,
+            tokensOut: usage.output,
+            durationMs: event.durationMs,
+        });
+    };
+    /**
+     * Registered inside the `try` so the `finally` below is its only disposer —
+     * `flueToolsFor` and `bindRun` both throw, and a subscriber registered
+     * above them would outlive a run that never dispatched.
+     */
+    let stopObserving: (() => void) | undefined;
+
+    /**
+     * CHARGE AND RECORD WHAT THE MODEL CALLS SPENT, then persist it.
+     *
+     * ── THE ONE PERSIST SEAM FOR `costTokens` ───────────────────────────────
+     *
+     * Called at the head of the success path AND at the head of the catch, and
+     * that pairing is the whole point. `review.check` leaves by throwing on
+     * both of its refusal paths, so the catch is the NORMAL exit for a guard
+     * block and for a flag — and until this existed every one of those settles
+     * wrote a `costTokens` that excluded the segment that had just been spent.
+     * The tenant's monthly budget is `_sum: { costTokens }` over `WorkflowRun`
+     * (`monthly-budget-policy.ts`), so those tokens were free; worse, a FLAGGED
+     * run re-seeds its budget from the row on resume, handing itself back a
+     * ceiling it had already spent.
+     *
+     * `splice` rather than a read: draining makes a second call a no-op, so the
+     * catch cannot re-charge turns the success path already recorded.
+     */
+    const settleTurns = async (finalText: string | null): Promise<void> => {
+        const pending = turns.splice(0);
+        if (pending.length === 0) return;
+        for (const [i, turn] of pending.entries()) {
+            costTokens += turn.totalTokens;
+            // The settled text belongs to the LAST call and to no other.
+            await recordModelDecision(
+                ctx,
+                // The run id, for the Art 14 `sessionRef` join #2791 added —
+                // an identity rather than a second digest, so a human's
+                // resume or abort can find every row this run decided.
+                runId,
+                def,
+                message,
+                // The settled text belongs to the LAST call and to no other: a
+                // response settles when the model stops calling tools, so its
+                // text is that turn's output. Giving every row the same text
+                // would claim each call produced the whole answer.
+                i === pending.length - 1 ? finalText : null,
+                // THIS call's tokens, not the dispatch aggregate — the whole
+                // point of reading the event stream.
+                { tokensIn: turn.tokensIn, tokensOut: turn.tokensOut },
+                modelSpecifier,
+                turn.durationMs,
+            );
+        }
+        await updateRun(ctx, runId, { costTokens });
+    };
+
+    /**
      * Settle the run on its guard verdict, or answer `null` if no guard fired.
      *
      * ONE implementation for both exit paths. The success path and the catch
@@ -224,7 +353,11 @@ export async function executeFlueRun(
             await latchOnGuardBlock(ctx.tenantId, ctx.agentId, new Date());
         }
 
-        await updateRun(ctx, runId, { costTokens });
+        // NO `updateRun({ costTokens })` here, and its absence is the fix
+        // rather than an omission: `settleTurns` already persisted the charge
+        // before either exit path reached this. A second writer for the same
+        // number is how the two drift, and the one that used to sit here wrote
+        // a total that excluded the segment it was settling.
         const status = await haltRunAtGuard(ctx, runId, worst, worstRuleIds);
         return { status, stepFailures };
     };
@@ -266,6 +399,11 @@ export async function executeFlueRun(
     bindRun(runId, { tools, modelSpecifier });
 
     try {
+        // BEFORE THE DISPATCH, because the stream is live-only: "the
+        // subscription sees events emitted after registration; there is no
+        // durable replay".
+        stopObserving = observe(onTurn);
+
         logger.info('flue-driver: dispatching', {
             component: 'agentic',
             runId,
@@ -276,7 +414,7 @@ export async function executeFlueRun(
 
         const agent = init(InflectAgent, { id: runId });
         const receipt = await agent.dispatch({
-            message: runMessage(def, fromSeq),
+            message,
             // The RUN ID only. `initialData` is part of the durable record
             // stream and is explicitly not a secrets channel — the authority
             // it addresses stays in this process, in `run-binding`.
@@ -284,12 +422,42 @@ export async function executeFlueRun(
         });
         const reply = await agent.read(receipt);
 
+        // The AGGREGATE, still read — but now only for the two counts the
+        // event stream does not give per call, and as the fail-safe below.
         const usage = readUsage(reply.metadata);
-        costTokens += usage.totalTokens;
+
+        // A SETTLED RESPONSE THAT REPORTED TOKENS AND NO TURNS IS NOT FREE.
+        //
+        // If the event stream ever stops carrying per-call usage — a provider
+        // that reports none per call, a runtime that renames the event — the
+        // per-turn charge silently becomes zero and every run bills nothing,
+        // which is worse than the aggregate this replaced. So the aggregate
+        // stands behind it as ONE call's worth, loudly: under-recording the
+        // granularity is a degraded record, under-charging is a hole in the
+        // tenant's monthly budget.
+        if (turns.length === 0 && usage.totalTokens > 0) {
+            logger.warn('flue-driver: no per-call usage was observed; charging the aggregate', {
+                component: 'agentic',
+                runId,
+                workflow: def.key,
+                totalTokens: usage.totalTokens,
+            });
+            turns.push({
+                totalTokens: usage.totalTokens,
+                tokensIn: usage.tokensIn,
+                tokensOut: usage.tokensOut,
+                durationMs: null,
+            });
+        }
+
+        const spent = turns.reduce((n, t) => n + t.totalTokens, 0);
         await recordStep(ctx, runId, seq++, 'MODEL_CALL', {
             status: 'DONE',
             label: def.key,
-            tokens: usage.totalTokens,
+            // The segment's own spend, summed from the calls that made it —
+            // not the response aggregate, so the ledger row and the run row
+            // can never be charged from two different numbers.
+            tokens: spent,
             // The reply TEXT is deliberately not recorded here. Agent output
             // becomes an `AgentProposal` if it becomes anything, and that row
             // is guarded, diffed and reviewable; a copy in the step ledger
@@ -297,7 +465,12 @@ export async function executeFlueRun(
             input: {
                 toolCalls: usage.toolCalls,
                 failedToolCalls: usage.failedToolCalls,
-                // THE KEY TO THIS STEP'S ART 12 ROW.
+                // HOW MANY MODEL CALLS the dispatch actually made. One ledger
+                // row still covers the dispatch — it is the engine's record of
+                // the dispatch, and its seq feeds the step caps — but a reader
+                // must not have to assume that meant one call.
+                modelCalls: turns.length,
+                // THE KEY TO THIS STEP'S ART 12 ROWS.
                 //
                 // `AiDecisionLog` carries no `runId` — deliberately, it is the
                 // regulator's record of a DECISION and not of an engine's
@@ -306,27 +479,34 @@ export async function executeFlueRun(
                 // turns that join into a link a reviewer can follow.
                 //
                 // It is the SAME function `logAiDecision` computes with, over
-                // the SAME value, one line below. Re-deriving the rule instead
-                // of sharing the function is how the two would drift into
-                // pointing at different rows, so a guard pins them together.
+                // the SAME value `settleTurns` passes as `sanitizedInput`, so
+                // the link lands on the rows this dispatch produced. Note the
+                // PLURAL: one dispatch now writes one row per model call, and
+                // every one of them digests this same dispatched message, so
+                // the digest addresses the set rather than a single row.
                 //
                 // A DIGEST IS NOT CONTENT. It is a sha256 over the sanitised
                 // input, already stored on the decision row; recording it adds
                 // no prompt text to a ledger that deliberately holds none.
-                decisionDigest: computeInputDigest(runMessage(def, fromSeq)),
+                // `message`, the SAME local `settleTurns` passes as
+                // `sanitizedInput` — not a second `runMessage(def, fromSeq)`
+                // call. Two spellings of one value is how the step and the row
+                // drift into digesting different things while both look right.
+                decisionDigest: computeInputDigest(message),
             },
         });
 
-        // The Art 12 row, beside the ledger row and after it: the step is the
-        // engine's own record, the decision row is the regulator's, and the
-        // one that cannot be written must not stop the one that can.
-        await recordModelDecision(ctx, runId, def, runMessage(def, fromSeq), reply, usage, modelSpecifier);
+        // The Art 12 rows, beside the ledger row and after it: the step is the
+        // engine's own record, the decision rows are the regulator's, and the
+        // one that cannot be written must not stop the one that can. This also
+        // charges `costTokens` and persists it, before any settle below reads
+        // it.
+        await settleTurns(reply.text ?? null);
 
         // A cap that fired mid-dispatch wins over the reply. The submission
         // may well have finished tidily after being refused its tools, and
         // reporting that as a completed run would hide the ceiling.
         if (latch.halt) {
-            await updateRun(ctx, runId, { costTokens });
             const status = await haltRunAtCap(ctx, runId, latch.halt, def.steps.length - fromSeq);
             return { status, stepFailures };
         }
@@ -359,11 +539,22 @@ export async function executeFlueRun(
         });
         return { status: 'COMPLETED', stepFailures };
     } catch (err) {
+        // FIRST, BEFORE ANY SETTLE: the calls that happened before the throw
+        // happened, and every arm below writes a terminal row. `review.check`
+        // leaves by throwing on both of its refusal paths, so this is the
+        // NORMAL exit for a guard block and for a flag — not an error path —
+        // and a settle that ran before this recorded a spend of zero for a
+        // dispatch that had already burned the tenant's tokens.
+        //
+        // There is no reply here, so no call gets an output summary: the
+        // response never settled, and inventing one from a throw would put
+        // text in the regulator's record that the model did not finish saying.
+        await settleTurns(null);
+
         // A cap latched before the throw explains the throw: the tool refusals
         // are what the submission failed on. Report the ceiling, not the
         // symptom.
         if (latch.halt) {
-            await updateRun(ctx, runId, { costTokens });
             const status = await haltRunAtCap(ctx, runId, latch.halt, def.steps.length - fromSeq);
             return { status, stepFailures };
         }
@@ -379,10 +570,16 @@ export async function executeFlueRun(
         const guardHalt = await settleAtGuard();
         if (guardHalt) return guardHalt;
 
-        const message = err instanceof Error ? err.message : String(err);
-        const status = await failRun(ctx, runId, `flue_run_failed: ${message}`);
+        // `failure`, not `message`: `message` is the dispatched prompt in this
+        // scope, and a shadowing `const` here would read as the same thing.
+        const failure = err instanceof Error ? err.message : String(err);
+        const status = await failRun(ctx, runId, `flue_run_failed: ${failure}`);
         return { status, stepFailures: stepFailures + 1 };
     } finally {
+        // UNSUBSCRIBED FIRST. `observe()` is isolate-global and lives as long
+        // as the process; a subscriber left behind would keep this run's array
+        // reachable and go on filtering every event every later run emits.
+        stopObserving?.();
         // The binding is normally CLAIMED by the agent's render. This covers
         // the paths where it never was — a dispatch that threw before the
         // agent rendered — so authority does not sit in the map for the

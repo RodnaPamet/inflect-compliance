@@ -25,7 +25,13 @@
 import { readFileSync } from 'fs';
 import path from 'path';
 
-import { codeOf } from '../helpers/source-blocks';
+import {
+    callExpressionOf,
+    codeOf,
+    declarationOf,
+    functionBodyOf,
+    interfaceBodyOf,
+} from '../helpers/source-blocks';
 
 /**
  * `ROOT` computed LOCALLY — `tests/helpers/assertion-reach.ts` constant-folds a
@@ -82,7 +88,28 @@ describe('output that becomes nothing reaches ONE column', () => {
         const uses =
             engine.split('reply.text').length - 1 + (recorder.split('reply.text').length - 1);
         expect({ readsOfReplyText: uses }).toEqual({ readsOfReplyText: 1 });
-        expect(recorder).toContain('outputSummary: reply.text ?? null');
+        expect(engine).toContain('await settleTurns(reply.text ?? null)');
+        // …and it reaches the row as a PARAMETER. The recorder lives in
+        // `./model-decision` since #2791 and cannot reach the reply itself, so
+        // the single read above is the whole supply.
+        expect(
+            functionBodyOf(read(RECORDER), 'recordModelDecision'),
+        ).toContain('outputSummary,');
+    });
+
+    it('the per-call path reads TOKENS off the event stream, never model output', () => {
+        // The sink this change could have added. A `turn` event carries
+        // `response.output` — the assistant message that call produced —
+        // beside the usage the accounting needs, and taking the call's own text
+        // for its decision row is the obvious-looking per-call improvement.
+        //
+        // It is a second, unscanned copy of model output arriving through a
+        // channel nobody reviews, which is the exact shape this file exists to
+        // refuse. `TurnRecord` carries four numbers and no text, and the
+        // subscriber reads only `response.usage`.
+        expect(interfaceBodyOf(engine, 'TurnRecord')).not.toContain('string');
+        expect(engine).not.toContain('response.output');
+        expect(declarationOf(engine, 'onTurn')).toContain('event.response.usage');
     });
 
     it('which `logAiDecision` sanitises and bounds', () => {
@@ -95,11 +122,14 @@ describe('output that becomes nothing reaches ONE column', () => {
         // second, unreviewed place — and the ledger is rendered on the run
         // timeline, which the decision log's own surface is not a substitute
         // for.
-        const modelStep = engine.slice(
-            engine.indexOf("recordStep(ctx, runId, seq++, 'MODEL_CALL'"),
-            engine.indexOf('await recordModelDecision('),
-        );
-        expect(modelStep.length).toBeGreaterThan(0);
+        //
+        // BOUND to the call, not sliced between two anchors. The old slice ran
+        // from the ledger write to the `recordModelDecision` call, and the
+        // second anchor moved above the first when the recorder gained a
+        // caller — a backwards slice is silently empty, so every `not.toContain`
+        // in it would have passed while checking nothing.
+        const modelStep = callExpressionOf(engine, 'recordStep');
+        expect(modelStep).toContain("'MODEL_CALL'");
         expect(modelStep).not.toContain('reply.text');
         expect(modelStep).not.toContain('output:');
     });
