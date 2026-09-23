@@ -38,10 +38,40 @@ jest.mock('@/lib/db-context', () => ({
     runInTenantContext: jest.fn(),
 }));
 
+// The singleton, refused rather than stubbed — and it is a POSITIVE CONTROL,
+// not housekeeping. `getAgentCircuitBreaker` now shares
+// `countGuardBlocksInWindow` with the detector, and that function lives in
+// `circuit-breaker-store`, which imports the base client at module scope (it
+// runs at the MCP boundary, where there is no tenant transaction to borrow).
+// Importing it here would otherwise open a real connection; worse, a future
+// edit that counted through the singleton instead of the tenant-scoped `db`
+// would silently read past RLS and every assertion below would still pass.
+// Touching it throws instead.
+jest.mock('@/lib/prisma', () => {
+    const refuse = (model: string) =>
+        new Proxy(
+            {},
+            {
+                get: (_t, method: string) => () => {
+                    throw new Error(
+                        `the prisma SINGLETON was used for ${model}.${String(method)} — ` +
+                            'this usecase must read through the tenant-scoped client',
+                    );
+                },
+            },
+        );
+    const client = new Proxy(
+        {},
+        { get: (_t, model: string) => (model === 'then' ? undefined : refuse(String(model))) },
+    );
+    return { __esModule: true, default: client, prisma: client, prismaRead: client };
+});
+
 import { getAgentCircuitBreaker } from '@/app-layer/usecases/agent-circuit-breaker';
 import { runInTenantContext } from '@/lib/db-context';
 import {
     BASELINE_WINDOW_LIMIT,
+    GUARD_BLOCK_TRIP_THRESHOLD,
     MIN_BASELINE_WINDOWS,
     WINDOW_MS,
     evaluateCircuitBreaker,
@@ -156,6 +186,13 @@ function detectorBaselineAt(rows: Row[], at: Date, epoch?: Date) {
 
 interface DbOptions {
     rows: Row[];
+    /**
+     * Guard blocks the two populations hold, as
+     * `[AgentProposal rows, WorkflowStep rows]`. Two numbers rather than one
+     * because the sum is the claim: a panel wired to only the proposal count
+     * is blind to every Flue block, which is the defect the figure exists for.
+     */
+    guardBlocks?: [proposals: number, steps: number];
     /** The breaker row, or `null` for an agent nothing has ever judged. */
     breaker?: { baselineEpoch: Date; state: string; lastEvaluatedWindow: string | null } | null;
     /**
@@ -171,9 +208,27 @@ interface DbOptions {
     ascending?: boolean;
 }
 
-function makeDb({ rows, breaker = null, ascending = false }: DbOptions) {
+function makeDb({
+    rows,
+    breaker = null,
+    ascending = false,
+    guardBlocks = [0, 0],
+}: DbOptions) {
     const windowQueries: any[] = [];
+    const guardBlockQueries: any[] = [];
     const db = {
+        agentProposal: {
+            count: jest.fn(async (args: any) => {
+                guardBlockQueries.push({ model: 'agentProposal', args });
+                return guardBlocks[0];
+            }),
+        },
+        workflowStep: {
+            count: jest.fn(async (args: any) => {
+                guardBlockQueries.push({ model: 'workflowStep', args });
+                return guardBlocks[1];
+            }),
+        },
         registeredAgent: {
             findFirst: jest.fn(async () => ({
                 id: 'agent-1',
@@ -205,7 +260,7 @@ function makeDb({ rows, breaker = null, ascending = false }: DbOptions) {
         },
     };
     mockRunInTx.mockImplementation(async (_ctx: any, fn: any) => fn(db));
-    return { db, windowQueries };
+    return { db, windowQueries, guardBlockQueries };
 }
 
 /** A breaker that has NOT judged the current hour yet — the ordinary state. */
@@ -551,5 +606,88 @@ describe('the baseline reports how far back it reaches, not just how much', () =
         expect(view.baseline.oldestWindowStart).toEqual(
             new Date(CURRENT_START.getTime() - 5 * 24 * WINDOW_MS),
         );
+    });
+});
+/**
+ * GUARD BLOCKS, which reach this panel through NEITHER read above.
+ *
+ * Plan point 4 says the Circuit breaker tab shows Flue blocks "for free once
+ * wired". It did not, and could not: a Flue guard fires in the tool sandwich
+ * BEFORE the funnel, so a blocked call writes no `AgentProposal`, never reaches
+ * `authorize.ts`, and therefore never reaches `recordAuthorizedCall` — no
+ * `AgentBehaviourWindow` row exists for it. The ledger page and the baseline
+ * figures are both blind to it by construction, and the only trace a block left
+ * on this surface was a TRIP, which needs three of them inside one hour.
+ *
+ * So the payload carries the count `latchOnGuardBlock` itself makes. What is
+ * asserted here is that it is THAT count — both populations, this agent, this
+ * window — and that it survives the agent it is most about: one with no breaker
+ * row and no windows at all.
+ */
+describe('the panel can see a guard block, which writes no window row', () => {
+    it('is the SUM of both populations — a proposal-only count is blind to Flue', async () => {
+        // The assertion with teeth. The static driver's guard writes an
+        // `AgentProposal`; the Flue engine's writes only a `WorkflowStep`.
+        // Counting the first alone passes every other test in this block.
+        makeDb({ rows: makeWindows(4), guardBlocks: [1, 2] });
+
+        const view = await getAgentCircuitBreaker(ctx, 'agent-1');
+
+        expect(view.guardBlocks.inWindow).toBe(3);
+    });
+
+    it('counts a Flue block with NOTHING else on the surface to show it', async () => {
+        // The state the figure exists for: an agent whose every call the guard
+        // refused has no behaviour windows (nothing recorded a call) and no
+        // breaker row (the row is created on the first AUTHORIZED call). Before
+        // this figure, that agent and an agent nobody had ever invoked rendered
+        // identically.
+        makeDb({ rows: [], breaker: null, guardBlocks: [0, 2] });
+
+        const view = await getAgentCircuitBreaker(ctx, 'agent-1');
+
+        expect(view.windows).toHaveLength(0);
+        expect(view.breaker).toBeNull();
+        expect(view.guardBlocks.inWindow).toBe(2);
+    });
+
+    it('counts over the hour still filling, and only this agent', async () => {
+        // The same window `latchOnGuardBlock` counts over — `windowStartFor(now)`
+        // — because a figure counted over a different span would disagree with
+        // the threshold printed beside it. And the step count is scoped through
+        // the run that owns the step, or one noisy agent's blocks would be
+        // reported against every agent in the tenant.
+        const { guardBlockQueries } = makeDb({ rows: makeWindows(4), guardBlocks: [1, 1] });
+
+        await getAgentCircuitBreaker(ctx, 'agent-7');
+
+        const proposals = guardBlockQueries.find((q: any) => q.model === 'agentProposal');
+        const steps = guardBlockQueries.find((q: any) => q.model === 'workflowStep');
+        expect(proposals.args.where).toMatchObject({
+            tenantId: 'tenant-1',
+            agentId: 'agent-7',
+            guardVerdict: 'QUARANTINED',
+            createdAt: { gte: CURRENT_START },
+        });
+        expect(steps.args.where).toMatchObject({
+            tenantId: 'tenant-1',
+            guardVerdict: 'QUARANTINED',
+            at: { gte: CURRENT_START },
+            run: { agentId: 'agent-7' },
+        });
+    });
+
+    it('reports the latch threshold from the detector, not a number of its own', async () => {
+        // Same reason `windowsToTrip` travels on this payload: a threshold
+        // retyped in whatever renders it agrees with the latch by coincidence.
+        makeDb({ rows: makeWindows(4) });
+
+        const view = await getAgentCircuitBreaker(ctx, 'agent-1');
+
+        expect(view.guardBlocks.threshold).toBe(GUARD_BLOCK_TRIP_THRESHOLD);
+        // The hour the count covers is not repeated on the block: it is
+        // `currentWindowStart`, which the payload already carries and which the
+        // query assertion above pins as the count's lower bound.
+        expect(view.currentWindowStart).toEqual(CURRENT_START);
     });
 });
