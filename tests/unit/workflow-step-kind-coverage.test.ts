@@ -174,8 +174,20 @@ describe('the record-only kinds finally have a writer, and it is the Flue engine
         // already satisfied for a definition-walking engine, and "the real
         // exposure is a future driver recording those kinds without charging".
         // This is that driver, so this is that check.
-        expect(dispatchBody).toMatch(/tokens:\s*usage\.totalTokens/);
-        expect(dispatchBody).toContain('costTokens += usage.totalTokens');
+        //
+        // THE CHARGE IS PER MODEL CALL and the ledger row carries the sum of
+        // them, so both needles name `turns` rather than the response aggregate
+        // they used to. This assertion is now the WEAKER half deliberately: it
+        // says the lines exist. That a value is ever written DOWN — on the
+        // success path and on the throw path that every guard outcome arrives
+        // as — is asserted behaviourally in
+        // `tests/unit/flue-per-turn-accounting.test.ts`, which reads the charge
+        // back off the `updateRun` the run row received. The previous version
+        // of this test asserted only `costTokens += usage.totalTokens` and
+        // stayed green with every persist deleted.
+        expect(dispatchBody).toContain('tokens: spent');
+        expect(dispatchBody).toContain('costTokens += turn.totalTokens');
+        expect(dispatchBody).toMatch(/const spent = turns\.reduce/);
     });
 
     it('the static driver still claims neither — the two engines have not blurred', () => {
