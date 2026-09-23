@@ -97,41 +97,24 @@ function tablesThePurgeDeletes(): Set<string> {
 }
 
 /**
- * Claiming models the purge structurally cannot reach: they carry no
- * `tenantId`, so `DELETE FROM "X" WHERE "tenantId" = $1` never names them.
+ * Claiming models the purge structurally cannot reach — they carry no
+ * `tenantId`, so `DELETE FROM "X" WHERE "tenantId" = $1` can never name them.
  *
- * These are global catalogue tables (`Framework`, `ControlTemplate`,
- * `PolicyTemplate`, …) and org-plane tables (`Organization`,
- * `OrgMembership`, …) that inherited the inventory's default retention
- * sentence. The sentence is wrong on each of them, but correcting it is a
- * classification call for a compliance owner rather than a drive-by edit —
- * "what DOES happen to the shared framework catalogue when one tenant
- * leaves" has a real answer and it is not "it is purged".
+ * NOW EMPTY, and that is the point. It held 17 entries: 14 global catalogue
+ * tables (`Framework`, `ControlTemplate`, `PolicyTemplate`, …) plus
+ * `Organization`, `OrgMembership` and `OrgDashboardWidget`, all of which had
+ * inherited the inventory's default retention sentence. Each row now states
+ * what actually happens, verified against the schema and the call sites:
+ * the catalogue has NO delete path at all and is upserted by the deploy-time
+ * seed; the org-plane rows are removed by their own org flows; and there is
+ * no organization delete path in the product.
  *
- * So they are pinned here instead of silently filtered out. The list may
- * SHRINK as rows are corrected; a new name appearing in it means somebody
- * has just written the default sentence onto another unreachable model, and
- * that is exactly the drift this guard exists to catch.
+ * Keeping the constant rather than deleting it is deliberate. An empty
+ * expectation is a real assertion here: a new name appearing means somebody
+ * has just written "purged on tenant deletion" onto a model the purge cannot
+ * reach, which is precisely the drift this guard exists to catch.
  */
-const UNREACHABLE_CLAIMANTS: readonly string[] = [
-    'ControlTemplate',
-    'ControlTemplateRequirementLink',
-    'ControlTemplateTask',
-    'Framework',
-    'FrameworkMapping',
-    'FrameworkPack',
-    'FrameworkRequirement',
-    'OrgDashboardWidget',
-    'OrgMembership',
-    'Organization',
-    'PackTemplateLink',
-    'PolicyTemplate',
-    'QuestionnaireQuestion',
-    'QuestionnaireTemplate',
-    'RequirementMapping',
-    'RequirementMappingSet',
-    'RiskTemplate',
-];
+const UNREACHABLE_CLAIMANTS: readonly string[] = [];
 
 describe('data-retention — "purged on tenant deletion" is backed by the purge', () => {
     it('the population is real and non-empty — a parse returning nothing must fail', () => {
@@ -145,7 +128,12 @@ describe('data-retention — "purged on tenant deletion" is backed by the purge'
         console.log(
             `[tenant-purge-doc-claim] ${claimed.length} model rows claim "purged on tenant deletion"`,
         );
-        expect(claimed.length).toBeGreaterThan(30);
+        // A SANITY FLOOR, not a ratchet: it exists so a parse that silently returns
+        // nothing cannot read as "no false claims". 42 rows claimed before #2747
+        // corrected the 17 the purge cannot reach; 25 claim it now, and every one
+        // of them is genuinely reachable. Deliberately slack, because correcting a
+        // further false claim is progress and must not have to edit this number.
+        expect(claimed.length).toBeGreaterThan(20);
         // Two rows that must always be in it: a membership grant and a
         // per-tenant setting. Both are unambiguously tenant data.
         expect(claimed).toContain('TenantMembership');
