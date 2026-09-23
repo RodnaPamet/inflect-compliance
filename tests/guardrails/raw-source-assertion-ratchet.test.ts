@@ -416,6 +416,66 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     versionId case is the sharp one, where deleting the fenced
  *     `aws s3api copy-object` block leaves the old whole-document assertion
  *     matching prose and the new fence-scoped one correctly failing.
+ *   • 42 (2026-09-23): the FIFTH Class A batch — the `tests/guardrails/`
+ *     share of the population, triaged file by file. Eight leave; thirteen
+ *     stay and the reason is the same for all thirteen, which is the finding.
+ *
+ *     THE BATCH WAS 21 FILES AND ONLY THREE WANTED A MASK. Six read
+ *     TypeScript and are the deliberate comment-assertions this file's 381
+ *     entry already names (`audit-s2-control-testing`,
+ *     `chart-platform-foundation`, `incident-containment-forensic-coverage`,
+ *     `org-widget-integrity`, `sovereignty-self-assessment-coverage`,
+ *     `trust-center-coverage`). The other fifteen read MARKDOWN, and the
+ *     `.md` half of this population does not behave like the `.ts` half:
+ *     `mdCodeOf` keeps a document's CODE and blanks its PROSE, so on a doc
+ *     whose subject IS prose it does not sharpen the assertion, it deletes
+ *     it. Every needle at every raw site was counted twice before anything
+ *     was edited, once raw and once through `mdCodeOf`, and the split is
+ *     stark: TWO files keep every needle (`api-read-rate-limit`,
+ *     `table-platform-drift` — identifiers, written in code spans and
+ *     fences), and in the other thirteen the needles go to ZERO.
+ *
+ *     SO THE OTHER SIX WERE NARROWED, not masked — the route this file's own
+ *     FIX_ADVICE calls "better still", and the only one that reaches a doc
+ *     assertion. Three shapes, each bounding the read to the region the test
+ *     NAMES: heading lines (`date-picker-guide`,
+ *     `keyboard-shortcut-conventions`, and the DPA half of
+ *     `sub-processor-coverage`), a `##` section (`merge-queue-trigger-
+ *     coverage`, `privacy-crosswalk`, and the inventory + change-policy
+ *     halves of `sub-processor-coverage`), and a table ROW
+ *     (`redis-prod-required`).
+ *
+ *     ONE GUARD WAS GREEN ON A REGRESSION IT NAMES IN ITS OWN COMMENT.
+ *     `redis-prod-required`'s `it('docs/deployment.md flags REDIS_URL as
+ *     REQUIRED in production in the env table')` says "a future table-cleanup
+ *     PR could silently strip the row or downgrade the required marker".
+ *     Downgrading that row to `| \`REDIS_URL\` | Optional in production
+ *     (GAP-13) |` left it **8/8 GREEN**: the needle is
+ *     `/REDIS_URL[\s\S]*REQUIRED|REQUIRED[\s\S]*REDIS_URL/` over the whole
+ *     document, and the span re-formed across the gap — `REDIS_URL` on the
+ *     mutated row, `**REQUIRED**` on the `REDIS_PASSWORD` row below it. It is
+ *     a Class C interior span and a Class D ambiguous needle at once (six
+ *     `REDIS_URL` occurrences, a table full of REQUIRED markers), and neither
+ *     of those ratchets is what caught it — converting the read was. Bound to
+ *     the row, the same mutation is red.
+ *
+ *     ALL EIGHT CONVERSIONS ARE MUTATION-PROVED against the real target, each
+ *     mutation leaving the needle PRESENT somewhere in the file so the proof
+ *     is about reach rather than about deletion: `/api/docs` un-backticked
+ *     into prose, the `DataTable` import line moved out of its fence, a
+ *     heading demoted to a sentence, `gh-readonly-queue` removed from the
+ *     runbook section while three occurrences remain elsewhere, the
+ *     attribution's yaml path moved to another section, the REDIS_URL marker
+ *     downgraded, and "30 days" deleted from the notice step while two
+ *     occurrences survive. One test reddens in each case.
+ *
+ *     AND ONE SEAM WAS FIXED IN A FILE THAT STAYS. `audit-s2-control-testing`
+ *     read its migration raw beside the deliberate `readRaw` block; that read
+ *     is now `sqlCodeOf`. Commenting out `ADD VALUE IF NOT EXISTS 'ARCHIVED'`
+ *     leaves the assertion satisfied under raw text AND under `codeOf`, and
+ *     fails under `sqlCodeOf` — the #2644 language split, measured on the file
+ *     itself. The file keeps its three deliberate raw sites, so this count
+ *     does not move for it; the defect closed anyway.
  *   • 381 (2026-09-17): seated when this ratchet landed. Measured by AST walk
  *     over every `.ts`/`.tsx` file git lists under `tests/` — 2402 files,
  *     12301 `toMatch`/`toContain` sites, of which 5937 resolve to the whole
@@ -463,7 +523,7 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     So a file's presence in this list is NOT an accusation, and this ratchet
  *     is a cap rather than a work queue: it says the population may not grow.
  */
-const RAW_ASSERTING_FILE_BASELINE = 50;
+const RAW_ASSERTING_FILE_BASELINE = 42;
 
 /**
  * The files themselves, sorted, in a sibling JSON — the same population the

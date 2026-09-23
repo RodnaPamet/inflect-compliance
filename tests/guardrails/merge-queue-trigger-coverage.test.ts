@@ -82,6 +82,28 @@ import * as path from 'path';
 import * as yaml from 'js-yaml';
 
 const ROOT = path.resolve(__dirname, '../..');
+
+/**
+ * ONE `##` SECTION of a markdown document, heading line included (#2246).
+ *
+ * The markdown counterpart of `braceBlockAfter` in
+ * `tests/helpers/source-blocks.ts`, and it exists for the same reason: an
+ * assertion naming a region has to READ that region. A needle matched
+ * against a whole document is satisfied by any occurrence anywhere in it,
+ * so the span never bound to the section the test names.
+ *
+ * Throws when the heading is gone rather than returning '' — a guard whose
+ * subject was renamed away must fail loudly, not assert against an empty
+ * string.
+ */
+function mdSection(md: string, heading: string): string {
+    const lines = md.split('\n');
+    const start = lines.findIndex((l) => l.trimEnd() === `## ${heading}`);
+    if (start < 0) throw new Error(`section not found: ## ${heading}`);
+    const rest = lines.slice(start + 1).findIndex((l) => /^##\s/.test(l));
+    const end = rest < 0 ? lines.length : start + 1 + rest;
+    return lines.slice(start, end).join('\n');
+}
 const WORKFLOW_DIR = path.join(ROOT, '.github/workflows');
 const CI_YML = path.join(WORKFLOW_DIR, 'ci.yml');
 
@@ -507,7 +529,18 @@ describe('merge queue — the operator runbook is written down', () => {
     });
 
     it('the note carries the enablement runbook and the load-bearing ordering', () => {
-        const src = fs.readFileSync(path.join(ROOT, NOTE), 'utf-8');
+        // NARROWED, NOT MASKED (#2246). `mdCodeOf` keeps a document's code
+        // and blanks its prose; two of the three needles below ARE prose —
+        // `/Enablement runbook/i` is a heading and `/required status check/i`
+        // a sentence, and both match zero times through that mask (measured).
+        // The test's subject is a SECTION of the note, so the fix is to read
+        // the section: `gh-readonly-queue` occurs four times in this document
+        // and only one of them is inside the runbook, so the whole-document
+        // form let the other three stand in for it.
+        const src = mdSection(
+            fs.readFileSync(path.join(ROOT, NOTE), 'utf-8'),
+            'Enablement runbook',
+        );
         // The queue is a repository SETTING. The workflow change must land
         // FIRST; reversed, the queue waits on checks that never fire.
         expect(src).toMatch(/Enablement runbook/i);

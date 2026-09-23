@@ -14,7 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slack';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, mdCodeOf } from '../helpers/source-blocks';
 
 const TABLE_MODULE_DIR = path.resolve(__dirname, '../../src/components/ui/table');
 const UI_DIR = path.resolve(__dirname, '../../src/components/ui');
@@ -187,8 +187,23 @@ describe('Table module integrity', () => {
     it('GUIDE.md exists and is non-trivial', () => {
         const guidePath = path.join(TABLE_MODULE_DIR, 'GUIDE.md');
         expect(fs.existsSync(guidePath)).toBe(true);
-        const content = fs.readFileSync(guidePath, 'utf-8');
-        expect(content.length).toBeGreaterThan(500);
+        // Masked at the READ SEAM (#2246). GUIDE.md is markdown, so the
+        // masker is `mdCodeOf` and NOT `codeOf` — pick the masker for the
+        // file being READ. It works the other way round from its siblings:
+        // markdown is prose containing code, so it keeps fenced blocks and
+        // inline code spans and blanks the prose, preserving length and line
+        // count. The import line below lives in a fenced ```tsx block and
+        // survives (measured: 1 occurrence raw, 1 masked); a future edit that
+        // deleted the usage example and left the sentence "import
+        // `DataTable` and `createColumns` from the barrel" behind can no
+        // longer satisfy it.
+        const raw = fs.readFileSync(guidePath, 'utf-8');
+        const content = mdCodeOf(raw);
+        // Length is measured on the RAW document: "is this guide non-trivial"
+        // is a question about the file that ships, and mdCodeOf preserves
+        // length anyway (blanked bytes become spaces), so the masked string
+        // would answer it only by accident.
+        expect(raw.length).toBeGreaterThan(500);
         // Assert the canonical import LINE, not bare mentions. `createColumns`
         // occurs 5x and `DataTable` 17x in this guide, so either bare needle is
         // satisfied by any surviving prose — the guide could lose its usage

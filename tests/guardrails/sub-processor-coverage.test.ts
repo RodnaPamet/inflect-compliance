@@ -27,6 +27,61 @@ const DPA = 'docs/data-processing-agreement-template.md';
 const POLICY = 'docs/sub-processor-change-policy.md';
 
 /**
+ * ONE `##` SECTION of a markdown document, heading line included (#2246).
+ *
+ * NARROWED RATHER THAN MASKED, and the measurement is what settles which.
+ * `mdCodeOf` — the markdown masker — keeps a document's CODE (fences, inline
+ * spans) and blanks its prose; every needle in the three document blocks
+ * below is prose or table pipework, and all of them match ZERO times through
+ * it. The assertions are not about code, so masking would delete the subject
+ * rather than sharpen it.
+ *
+ * They are about REGIONS, and reading the whole document is what unbound
+ * them: `| Name | Data shared |` was satisfied by any table anywhere in
+ * `sub-processors.md`, and `30 days` by any of its three occurrences in the
+ * change policy rather than the notice step that owes it.
+ *
+ * Throws when the heading is gone rather than returning '' — a guard whose
+ * section was renamed must fail loudly, not assert against an empty string.
+ */
+function mdSection(md: string, heading: string): string {
+    const lines = md.split('\n');
+    const start = lines.findIndex((l) => l.trimEnd() === `## ${heading}`);
+    if (start < 0) throw new Error(`section not found: ## ${heading}`);
+    const rest = lines.slice(start + 1).findIndex((l) => /^##\s/.test(l));
+    const end = rest < 0 ? lines.length : start + 1 + rest;
+    return lines.slice(start, end).join('\n');
+}
+
+/**
+ * The document's ATX heading lines at ONE level, fenced blocks excluded.
+ *
+ * For the assertions whose subject IS the section structure — "the DPA
+ * template has 15 numbered sections". `^##\s+7\.` against the whole document
+ * is satisfied by a numbered line anywhere with two hashes in front of it;
+ * against the level-2 heading lines only a heading satisfies it.
+ *
+ * `level` is a parameter because these assertions all mean `##`, and because
+ * `tests/helpers/assertion-reach.ts` tells a narrowing from a mask by arity
+ * — see the fuller note in `tests/guardrails/date-picker-guide.test.ts`.
+ */
+function headingLines(md: string, level: number): string {
+    const out: string[] = [];
+    const marker = new RegExp(`^#{${level}}\\s`);
+    let open: string | null = null;
+    for (const line of md.split('\n')) {
+        const fence = /^\s*(`{3,}|~{3,})/.exec(line);
+        if (fence) {
+            if (open === null) open = fence[1][0];
+            else if (fence[1][0] === open) open = null;
+            continue;
+        }
+        if (open === null && marker.test(line)) out.push(line);
+    }
+    return out.join('\n');
+}
+
+/**
  * Env vars in src/env.ts that are NOT sub-processor endpoints: internal
  * secrets, operator config, feature flags, and self-hosted components.
  * Each must have a reason — adding a key here is an explicit "this is not
@@ -142,7 +197,10 @@ describe('sub-processor coverage', () => {
     });
 
     it('the inventory has its table', () => {
-        const doc = read(SUBPROC);
+        // The table has to be IN the Inventory section, which the
+        // whole-document read never required — `mdSection` throws if the
+        // heading is gone, so both halves of this test still bind.
+        const doc = mdSection(read(SUBPROC), 'Inventory');
         expect(doc).toMatch(/##\s+Inventory/i);
         expect(doc).toMatch(/\|\s*Name\s*\|\s*Data shared\s*\|/i);
     });
@@ -262,8 +320,12 @@ describe('sub-processor coverage', () => {
 
     it('the DPA template has 15 sections + [LEGAL REVIEW REQUIRED] on 10-12', () => {
         const dpa = read(DPA);
+        // "15 numbered sections" is a claim about the HEADINGS, so read the
+        // headings — `^##\s+7\.` against the whole document is satisfied by
+        // any line that happens to start with two hashes and a number.
+        const sections = headingLines(dpa, 2);
         for (let n = 1; n <= 15; n++) {
-            expect(dpa).toMatch(new RegExp(`^##\\s+${n}\\.`, 'm'));
+            expect(sections).toMatch(new RegExp(`^##\\s+${n}\\.`, 'm'));
         }
         // Sections 10, 11, 12 each carry the marker. Assert it appears at
         // least 3 times AND those section headings exist (checked above).
@@ -272,11 +334,20 @@ describe('sub-processor coverage', () => {
     });
 
     it('the change policy documents the 4-step process + 30-day notice', () => {
-        const policy = read(POLICY);
+        // The four steps and the notice period belong to ONE section, and
+        // the whole-document read did not require them to come from it: the
+        // policy says "30 days" three times (the notice step, the removal
+        // carve-out, and the effective-date note), so deleting the notice
+        // step left the assertion standing on the other two.
+        const process = mdSection(read(POLICY), 'The four-step process');
         for (let n = 1; n <= 4; n++) {
-            expect(policy).toMatch(new RegExp(`^${n}\\.`, 'm'));
+            expect(process).toMatch(new RegExp(`^${n}\\.`, 'm'));
         }
-        expect(policy).toMatch(/30[\s-]day|30 days/);
-        expect(policy).toMatch(/[Ee]ffective/);
+        expect(process).toMatch(/30[\s-]day|30 days/);
+        // `/[Ee]ffective/` used to run against the whole policy, where it was
+        // matched by the word "effective" in any sentence. What it reaches
+        // for is the policy's EFFECTIVE-DATE section, so assert that — as a
+        // heading, which is the thing that would be removed.
+        expect(headingLines(read(POLICY), 2)).toMatch(/^##\s+Effective date/m);
     });
 });
