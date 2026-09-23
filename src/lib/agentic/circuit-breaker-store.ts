@@ -606,14 +606,45 @@ export async function latchOnGuardBlock(
 ): Promise<{ blocksInWindow: number; latched: boolean }> {
     try {
         const since = windowStartFor(now);
-        const blocksInWindow = await prisma.agentProposal.count({
-            where: {
-                tenantId,
-                agentId,
-                guardVerdict: 'QUARANTINED',
-                createdAt: { gte: since },
-            },
-        });
+
+        // TWO POPULATIONS, because there are two engines and only one of them
+        // produces proposals.
+        //
+        // The static driver's guard fires on a PROPOSAL, so a block leaves an
+        // `AgentProposal` row with `guardVerdict: 'QUARANTINED'` and counting
+        // those was the whole story. The Flue engine's guard fires in the tool
+        // sandwich, BEFORE the funnel — which is the point of putting it there
+        // — so a blocked call queues nothing, writes no proposal, and never
+        // reaches `authorize.ts` either. A Flue agent could therefore be
+        // blocked all day and be invisible on BOTH of this breaker's inputs:
+        // the proposal count below, and the per-call ledger `recordAuthorizedCall`
+        // writes downstream of a gate the blocked call never got to.
+        //
+        // So the step ledger is the second population. A Flue block records a
+        // `WorkflowStep` with the same `QUARANTINED` verdict, and the run it
+        // belongs to carries the `agentId` this breaker is about.
+        const [proposalBlocks, stepBlocks] = await Promise.all([
+            prisma.agentProposal.count({
+                where: {
+                    tenantId,
+                    agentId,
+                    guardVerdict: 'QUARANTINED',
+                    createdAt: { gte: since },
+                },
+            }),
+            prisma.workflowStep.count({
+                where: {
+                    tenantId,
+                    guardVerdict: 'QUARANTINED',
+                    // `at`, the step's own stamp — not the run's `startedAt`. A
+                    // run that began before this window and was blocked inside
+                    // it was blocked inside it.
+                    at: { gte: since },
+                    run: { agentId },
+                },
+            }),
+        ]);
+        const blocksInWindow = proposalBlocks + stepBlocks;
 
         if (!shouldLatchOnGuardBlocks(blocksInWindow)) {
             return { blocksInWindow, latched: false };

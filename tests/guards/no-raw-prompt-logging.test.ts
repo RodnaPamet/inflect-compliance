@@ -489,7 +489,21 @@ const SINK_FLOOR = 30;
 // to the previous pair. Note the direction — a sink arriving with one hole
 // TIGHTENS `HOLES_PER_SINK_CEILING` (1.8085 → 1.8), which is what the
 // denominator is in the formula for.
-const MEASURED_HOLES = 165;
+// Re-MEASURED 2026-09-23 for the Flue GUARD SETTLE ARMS (points 4c + 4d/4f):
+// 165 / 95 became 169 / 96. ONE new sink — `haltRunAtGuard`'s audit row — and
+// FOUR holes in it: the settle message, the verdict, the rule-id array and the
+// run id, every one a value bound to a local before the call. The message is
+// built from rule IDS and never from the content that tripped them, which is
+// the whole reason a guard-halt row is safe to write at all: the text the
+// scanner matched is the thing the guard exists to contain.
+//
+// MEASURED on this branch's base (main at 165 / 95). It is NOT the number for
+// a tree that also carries #2780, which moves the same pair to 169 / 97 — so
+// this branch must re-measure after merging main if #2780 lands first, and
+// must not sit in the merge queue across that landing. `MEASURED_HOLES` is a
+// CEILING: 173 actual against a 169 ceiling is an evicted green run, not a red
+// branch, which is the expensive way to find this out.
+const MEASURED_HOLES = 169;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -502,7 +516,7 @@ const MEASURED_HOLES = 165;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 95;
+const MEASURED_SINKS = 96;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

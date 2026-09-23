@@ -4,8 +4,9 @@ import type { RequestContext } from '@/app-layer/types';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
-import { updateRun, failRun, haltRunAtCap } from '@/lib/agentic/drivers/run-settlement';
+import { updateRun, failRun, haltRunAtCap, haltRunAtGuard } from '@/lib/agentic/drivers/run-settlement';
 import { getRunRow, proposedItemsSoFar } from '@/lib/agentic/drivers/run-store';
+import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
 import { createRunBudget, resolveRunCaps, type RunCapHalt } from '@/lib/agentic/run-caps';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
 import { logAiDecision } from '@/app-layer/ai/decision-log';
@@ -265,9 +266,52 @@ export async function executeFlueRun(
     // arguments were clean and whose result was flagged is a flagged call —
     // taking the last would report whichever slice happened to finish second.
     const seen = new Map<string, StepGuardObservation>();
+    // THE RUN'S WORST GUARD VERDICT, kept separately from `seen`.
+    //
+    // `seen` is consumed: `takeVerdict` REMOVES each entry as its step is
+    // recorded, so by the time the run settles the map is empty and cannot
+    // answer "did a guard fire during this run". That is correct for `seen`'s
+    // own job and useless for this one, so the fold is kept here as it happens.
+    // Rule ids ride along because the settle message names which rule fired and
+    // never the content that tripped it.
+    let worst: StepGuardObservation['verdict'] = 'CLEAN';
+    let worstRuleIds: readonly string[] = [];
+
+    /**
+     * Settle the run on its guard verdict, or answer `null` if no guard fired.
+     *
+     * ONE implementation for both exit paths. The success path and the catch
+     * both need this and they need it to agree — two copies is how a flag
+     * ends a thrown run correctly and a tidy one silently.
+     *
+     * The breaker call comes FIRST and only on a block. It is the half that
+     * makes a repeat offender stoppable rather than merely recorded, and it is
+     * awaited before the settle so a run that blocks and then fails to write
+     * its own row has still been counted.
+     */
+    const settleAtGuard = async (): Promise<RunDriverOutcome | null> => {
+        if (worst === 'CLEAN') return null;
+
+        if (worst === 'QUARANTINED' && ctx.agentId) {
+            // NEVER throws: `latchOnGuardBlock` swallows its own failure and
+            // returns a null result, which is the right direction here. The
+            // run is being stopped either way, and a breaker that cannot count
+            // must not also prevent the stop from being recorded.
+            await latchOnGuardBlock(ctx.tenantId, ctx.agentId, new Date());
+        }
+
+        await updateRun(ctx, runId, { costTokens });
+        const status = await haltRunAtGuard(ctx, runId, worst, worstRuleIds);
+        return { status, stepFailures };
+    };
+
     const offered = flueToolsFor(invocation, (o) => {
         const prior = seen.get(o.toolCallId);
         seen.set(o.toolCallId, prior && RANK[prior.verdict] >= RANK[o.verdict] ? prior : o);
+        if (RANK[o.verdict] > RANK[worst]) {
+            worst = o.verdict;
+            worstRuleIds = o.ruleIds;
+        }
     });
     const latch: CapLatch = { halt: null };
     let seq = fromSeq;
@@ -334,6 +378,15 @@ export async function executeFlueRun(
             return { status, stepFailures };
         }
 
+        // A GUARD VERDICT OUTLIVES A TIDY FINISH, for the same reason the cap
+        // above does. The latch refuses every call after the first flag, so a
+        // flagged run usually leaves by throwing — but a flag on the LAST call
+        // lets the dispatch finish cleanly, and reporting that as COMPLETED is
+        // exactly the "guard ran, recorded its verdict, and changed nothing"
+        // shape the adapter's own docstring warns about.
+        const guardHalt = await settleAtGuard();
+        if (guardHalt) return guardHalt;
+
         // Tokens charged AFTER the work is recorded, for the reason the static
         // driver charges them after its commit: the turn has already happened
         // and its record is durable, so halting here stops the NEXT thing
@@ -361,6 +414,18 @@ export async function executeFlueRun(
             const status = await haltRunAtCap(ctx, runId, latch.halt, def.steps.length - fromSeq);
             return { status, stepFailures };
         }
+
+        // A guard verdict latched before the throw EXPLAINS the throw — the
+        // same argument the cap makes immediately above, and the reason this
+        // sits below it rather than beside it: a run that hit the cap and was
+        // also flagged is a run that hit the cap. `review.check` leaves by
+        // throwing on both of its refusal paths, so without this arm every
+        // guard block and every flag arrived here and was settled
+        // `flue_run_failed: <the throw's message>` — a control outcome
+        // reported as a crash.
+        const guardHalt = await settleAtGuard();
+        if (guardHalt) return guardHalt;
+
         const message = err instanceof Error ? err.message : String(err);
         const status = await failRun(ctx, runId, `flue_run_failed: ${message}`);
         return { status, stepFailures: stepFailures + 1 };
