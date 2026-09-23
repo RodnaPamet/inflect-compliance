@@ -92,6 +92,46 @@ async function countBusinessRows(): Promise<Record<string, number>> {
     return Object.fromEntries(entries);
 }
 
+/**
+ * Empty every table `countBusinessRows` counts, for THIS tenant.
+ *
+ * ── WHY THE SUITE COULD NOT CLEAN UP AFTER ITSELF ───────────────────────────
+ *
+ * The setup below deletes proposals, tool grants, agents and AI systems and
+ * calls itself idempotent — and it was, for everything except the four tables
+ * every assertion in this file is about. Those are supposed to stay empty, so
+ * nothing cleaned them; the case that matters is precisely the one where they
+ * did not.
+ *
+ * A row reaches them two ways, and BOTH are routine:
+ *
+ *   · the defect this file exists to catch — a propose tool that commits;
+ *   · a mutation proof of that defect. Deliberately breaking the funnel,
+ *     watching this suite go red and restoring the source leaves the committed
+ *     row behind, because the restore is to the WORKING TREE and the write
+ *     already happened in the database.
+ *
+ * One was found here (a `Risk` titled "committed!", tenant `pcn-tenant`), and
+ * it had turned the last assertion permanently red on an untouched checkout.
+ * That is the expensive half: the failure it produces — `risk: 1` against an
+ * expected `0` — is CHARACTER FOR CHARACTER the failure a real commit
+ * produces. A suite whose true positive and whose stale fixture are the same
+ * message is a suite that gets read as broken and then ignored, which is how
+ * the strongest behavioural evidence for propose-not-commit would have been
+ * lost — not by being deleted, but by being disbelieved.
+ *
+ * DERIVED from `TABLE_FOR_KIND`, like the counting and the population, so a
+ * fifth proposal kind is cleaned the day it is added rather than quietly
+ * accumulating the one row that makes the file cry wolf.
+ */
+async function clearBusinessRows(): Promise<void> {
+    for (const t of [...new Set(Object.values(TABLE_FOR_KIND))]) {
+        await (prisma[t] as { deleteMany: (a: unknown) => Promise<unknown> }).deleteMany({
+            where: { tenantId: TENANT },
+        });
+    }
+}
+
 async function seedUser(userId: string): Promise<string> {
     const email = `${userId}@example.test`;
     await prisma.user.upsert({
@@ -155,6 +195,9 @@ describeFn('a propose tool queues, and commits nothing', () => {
         await prisma.registeredAgentTool.deleteMany({ where: { tenantId: TENANT } });
         await prisma.registeredAgent.deleteMany({ where: { tenantId: TENANT } });
         await prisma.aiSystem.deleteMany({ where: { tenantId: TENANT } });
+        // …and the four tables the assertions are ABOUT, which is the half
+        // this setup was missing. See `clearBusinessRows`.
+        await clearBusinessRows();
 
         ownerId = await seedUser(`${TENANT}-owner`);
         await prisma.tenantMembership.upsert({
@@ -198,6 +241,10 @@ describeFn('a propose tool queues, and commits nothing', () => {
     });
 
     afterAll(async () => {
+        // Leave nothing behind for the NEXT run to misread. A mutation proof
+        // that reddens this file commits a real row, and the restore is to the
+        // working tree — the database keeps it unless this line runs.
+        await clearBusinessRows();
         await deleteAuditRowsForTenants(prisma, [TENANT]);
         await prisma.$disconnect();
     });
@@ -208,6 +255,22 @@ describeFn('a propose tool queues, and commits nothing', () => {
         expect(PROPOSE_TOOLS.map((t) => t.kind).sort()).toEqual(
             Object.keys(TABLE_FOR_KIND).sort(),
         );
+    });
+
+    it('starts from an empty business schema, so the end state means this run', async () => {
+        // Runs FIRST, before any propose call, and it is the assertion that
+        // tells the file's two identical-looking failures apart. The cumulative
+        // check at the bottom reads `risk: 1` whether a propose tool committed
+        // one just now or a stale row was already sitting there — and only this
+        // one, red at the TOP of the run, says which. Without it the expensive
+        // reading ("the funnel commits") and the cheap one ("somebody's
+        // mutation proof leaked a row") arrive as the same message.
+        expect(await countBusinessRows()).toEqual({
+            risk: 0,
+            control: 0,
+            policy: 0,
+            finding: 0,
+        });
     });
 
     it.each(PROPOSE_TOOLS.map((t) => [t.name, t.kind] as const))(
