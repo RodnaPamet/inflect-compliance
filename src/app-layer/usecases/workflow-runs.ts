@@ -508,6 +508,18 @@ export async function listWorkflowRuns(
             where: { tenantId: ctx.tenantId, status },
             orderBy: { startedAt: 'desc' },
             take: opts.take ?? 50,
+            // HOW MANY PROPOSALS ARE ACTUALLY WAITING on this run.
+            //
+            // A filtered relation count rather than a join, because the list
+            // needs the NUMBER and never the rows. It exists because
+            // `AWAITING_APPROVAL` does not mean "there are proposals to
+            // approve": a HUMAN_CHECKPOINT pauses a run whether or not it
+            // queued anything, and a content-guard flag pauses one that
+            // queued nothing at all. Without this the list can only guess,
+            // and it guessed wrong in one direction for every such run.
+            include: {
+                _count: { select: { proposals: { where: { status: 'PENDING' } } } },
+            },
         }),
     );
 }
