@@ -68,7 +68,15 @@ describe('the two sides compute the same key', () => {
         // else's decision.
         const body = functionBodyOf(read(EXECUTE), 'executeFlueRun');
         expect(body).toContain('decisionDigest: computeInputDigest(runMessage(def, fromSeq))');
-        expect(body).toContain('await recordModelDecision(ctx, def, runMessage(def, fromSeq),');
+        // DELIBERATELY BRITTLE to the signature, and it earned that on the
+        // merge that added `runId` for the Art 14 `sessionRef` join: this
+        // assertion went red, which forced someone to go and re-confirm that
+        // both sides still digest `runMessage(def, fromSeq)` before updating
+        // the needle. A looser needle would have stayed green through a
+        // signature change that could just as easily have swapped the message
+        // for the workflow key — and every link would then have opened the
+        // wrong row, silently.
+        expect(body).toContain('await recordModelDecision(ctx, runId, def, runMessage(def, fromSeq),');
     });
 
     it('through ONE function, not two implementations of the rule', () => {

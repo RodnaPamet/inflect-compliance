@@ -36,6 +36,14 @@ const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => codeOf(readFileSync(path.join(ROOT, rel), 'utf8'));
 
 const EXECUTE = 'src/lib/agentic/flue/execute.ts';
+/**
+ * `recordModelDecision` moved out of `execute.ts` so a CJS suite could load and
+ * RUN it. The reply object now crosses that one module boundary, so the count
+ * below is taken over BOTH halves — counting only one file would let a second
+ * sink added in the other pass, which is precisely the regression this file
+ * exists to catch.
+ */
+const RECORDER = 'src/lib/agentic/flue/model-decision.ts';
 
 describe('output that becomes an action was already scanned', () => {
     it('the egress slice runs before the funnel, on the propose path too', () => {
@@ -62,14 +70,19 @@ describe('output that becomes an action was already scanned', () => {
 
 describe('output that becomes nothing reaches ONE column', () => {
     const engine = read(EXECUTE);
+    const recorder = read(RECORDER);
 
     it('the Art 12 summary, and that is the only read of the reply text', () => {
         // THE ASSERTION WITH TEETH. Counted, not merely present: a second sink
         // for model output is exactly the regression this file exists for, and
         // it arrives looking like a helpful addition to a ledger write.
-        const uses = engine.split('reply.text').length - 1;
+        //
+        // Summed across the dispatch half and the recording half, because the
+        // reply travels from one to the other — so the total is still ONE.
+        const uses =
+            engine.split('reply.text').length - 1 + (recorder.split('reply.text').length - 1);
         expect({ readsOfReplyText: uses }).toEqual({ readsOfReplyText: 1 });
-        expect(engine).toContain('outputSummary: reply.text ?? null');
+        expect(recorder).toContain('outputSummary: reply.text ?? null');
     });
 
     it('which `logAiDecision` sanitises and bounds', () => {

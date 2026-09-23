@@ -10,12 +10,16 @@ import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
 import { isProposeTool, proposedItemCount } from '@/lib/mcp/tools/propose-tools';
 import { createRunBudget, resolveRunCaps, type RunCapHalt } from '@/lib/agentic/run-caps';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
-import { computeInputDigest, logAiDecision } from '@/app-layer/ai/decision-log';
-import type { PrismaTx } from '@/lib/db-context';
-import { runInTenantContext } from '@/lib/db/rls-middleware';
+// `computeInputDigest` STAYS, the other three LEAVE. #2786 records the Art 12
+// digest on the MODEL_CALL step so the run timeline can link to the decision
+// row, and that line lives here; `logAiDecision`, `PrismaTx` and
+// `runInTenantContext` moved out with `recordModelDecision` into
+// `./model-decision`, which is what made the sessionRef join testable.
+import { computeInputDigest } from '@/app-layer/ai/decision-log';
 import { logger } from '@/lib/observability/logger';
 
 import { FLUE_USAGE_KEY, InflectAgent, type FlueUsageReport } from './agent';
+import { recordModelDecision } from './model-decision';
 import { flueModelIsRegistered } from './providers';
 import { refusalMessage } from './driver-plan';
 import { bindRun, releaseRun } from './run-binding';
@@ -110,97 +114,6 @@ function runMessage(def: WorkflowDefinition, fromSeq: number): string {
     ].join('\n');
 }
 
-
-/**
- * THE ART 12 RECORD FOR A FLUE MODEL CALL.
- *
- * ── THE GAP THIS CLOSES ─────────────────────────────────────────────────────
- *
- * Plan point 4: "ONE decision-log row per model call — EU AI Act Art 12; stamp
- * `humanOutcome` on review — Art 14, closed loop." An adversarial audit found
- * that nothing wrote one for a Flue run at all. Every other AI feature in this
- * product writes one; the reasoning loop — the feature with the most calls and
- * the least human in the way — wrote none. So there was no Art 12 record of a
- * model call, and therefore no PENDING row for Art 14 to stamp.
- *
- * ── WHAT IS DIGESTED, AND WHY THAT IS THE JOIN KEY ──────────────────────────
- *
- * `logAiDecision` hashes `sanitizedInput` and stores the digest, never the
- * content. The message dispatched to the agent is what that digest is taken
- * over, which makes it the same kind of key `AgentProposal.guardInputDigest`
- * carries — so `/agents/decisions?digest=` lands on exactly the decisions taken
- * over this run's prompt.
- *
- * ── WHAT IS NOT CLAIMED ─────────────────────────────────────────────────────
- *
- * `guardVerdict` is left NULL, deliberately, and that is the honest value: no
- * guard runs on model OUTPUT yet (the plan's 4a, still open). Writing the worst
- * verdict seen across the run's TOOL calls would put a verdict about other
- * content in a column that reads as a verdict about this one.
- *
- * Failure to record does NOT fail the run. The call happened; refusing to
- * settle a completed run because its record could not be written would lose the
- * work as well as the record. It is logged loudly instead — the same posture
- * `appendAuditEntry` takes at every other sink in this subsystem.
- */
-async function recordModelDecision(
-    ctx: RequestContext,
-    def: WorkflowDefinition,
-    message: string,
-    reply: { text?: string },
-    usage: FlueUsageReport,
-    modelSpecifier: string,
-): Promise<void> {
-    // `<provider-id>/<model-id>` — split rather than stored whole, because the
-    // row has a column for each and a reader filtering by provider should not
-    // have to parse.
-    const slash = modelSpecifier.indexOf('/');
-    const provider = slash > 0 ? modelSpecifier.slice(0, slash) : modelSpecifier;
-    const model = slash > 0 ? modelSpecifier.slice(slash + 1) : null;
-
-    try {
-        await runInTenantContext(ctx, async (db) => {
-            await logAiDecision(db, ctx, {
-                // Namespaced by the workflow, so a tenant running three
-                // agentic workflows can tell their decisions apart without
-                // joining back to the run.
-                feature: `agentic-run:${def.key}`,
-                provider,
-                model,
-                sanitizedInput: message,
-                // Bounded and sanitised by `logAiDecision` itself, into the
-                // one column the encryption manifest carves out for exactly
-                // this: "bounded, sanitised AI-output summary — never raw
-                // content".
-                outputSummary: reply.text ?? null,
-                tokensIn: usage.tokensIn || null,
-                tokensOut: usage.tokensOut || null,
-                // The registered agent's EU AI Act system. A Flue run is now
-                // refused unless an ACTIVE `RegisteredAgent` vouches for it,
-                // and that row carries a non-null `aiSystemId` — so this is
-                // the link that makes the record findable from the system it
-                // belongs to.
-                aiSystemId: ctx.agentId ? await aiSystemIdFor(db, ctx) : null,
-            });
-        });
-    } catch (err) {
-        logger.error('flue-driver: could not record the Art 12 decision row', {
-            component: 'agentic',
-            tenantId: ctx.tenantId,
-            workflow: def.key,
-            error: err instanceof Error ? err.message : String(err),
-        });
-    }
-}
-
-/** The registered agent's AI-system id — the Art 12 subject this run acts as. */
-async function aiSystemIdFor(db: PrismaTx, ctx: RequestContext): Promise<string | null> {
-    const agent = await db.registeredAgent.findFirst({
-        where: { id: ctx.agentId, tenantId: ctx.tenantId },
-        select: { aiSystemId: true },
-    });
-    return agent?.aiSystemId ?? null;
-}
 
 export async function executeFlueRun(
     ctx: RequestContext,
@@ -407,7 +320,7 @@ export async function executeFlueRun(
         // The Art 12 row, beside the ledger row and after it: the step is the
         // engine's own record, the decision row is the regulator's, and the
         // one that cannot be written must not stop the one that can.
-        await recordModelDecision(ctx, def, runMessage(def, fromSeq), reply, usage, modelSpecifier);
+        await recordModelDecision(ctx, runId, def, runMessage(def, fromSeq), reply, usage, modelSpecifier);
 
         // A cap that fired mid-dispatch wins over the reply. The submission
         // may well have finished tidily after being refused its tools, and

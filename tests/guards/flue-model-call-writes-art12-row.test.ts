@@ -30,10 +30,15 @@ const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 const EXECUTE = 'src/lib/agentic/flue/execute.ts';
+// The recorder MOVED out of `execute.ts` so a CJS suite can load it — see the
+// module docstring. `execute.ts` still owns the call site, so both files are
+// read here and each assertion names the one that owns its claim.
+const RECORDER = 'src/lib/agentic/flue/model-decision.ts';
 
 describe('the Art 12 row', () => {
     const src = read(EXECUTE);
-    const recorder = functionBodyOf(src, 'recordModelDecision');
+    const recorderSrc = read(RECORDER);
+    const recorder = functionBodyOf(recorderSrc, 'recordModelDecision');
 
     it('is written by the run, through the shared writer', () => {
         // `logAiDecision`, not a hand-rolled create: it digests the input,
@@ -42,7 +47,7 @@ describe('the Art 12 row', () => {
         // The CALL, not the bare name: `recordModelDecision(` occurs twice in
         // the file (its declaration and its one call site), and a needle
         // satisfied by the declaration would still pass with the call removed.
-        expect(src).toContain('await recordModelDecision(ctx, def,');
+        expect(src).toContain('await recordModelDecision(ctx, runId, def,');
         expect(recorder).toContain('logAiDecision(');
     });
 
@@ -69,7 +74,7 @@ describe('the Art 12 row', () => {
         // it, and that row carries a non-null aiSystemId — so the record is
         // findable from the system it belongs to.
         expect(recorder).toContain('aiSystemId');
-        expect(functionBodyOf(src, 'aiSystemIdFor')).toContain('registeredAgent');
+        expect(functionBodyOf(recorderSrc, 'aiSystemIdFor')).toContain('registeredAgent');
     });
 
     it('does NOT claim a guard verdict it did not obtain', () => {

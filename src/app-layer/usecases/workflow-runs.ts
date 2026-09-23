@@ -78,6 +78,7 @@ import { resolveDriverForRun } from '@/lib/agentic/agent-driver-policy';
 import { assertWithinMonthlyBudget } from '@/lib/agentic/monthly-budget-policy';
 import { trackInFlightRun, untrackInFlightRun } from '@/lib/agentic/in-flight-runs';
 import { getRunRow } from '@/lib/agentic/drivers/run-store';
+import { recordDecisionOutcome } from '@/app-layer/ai/decision-log';
 import { selectRunDriver, requestedDriver } from '@/lib/agentic/drivers';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers';
 import type { AgentDriver } from '@/lib/agentic/agent-driver';
@@ -443,6 +444,31 @@ export async function resumeWorkflowRun(
             });
         }
         await db.workflowRun.update({ where: { id: runId }, data: { status: 'RUNNING' } });
+        // ═══ ART 14: A RESUME IS AN ACCEPTANCE ═══
+        //
+        // The run is the reviewable event for a model call. A Flue run that the
+        // content guard FLAGGED parks at AWAITING_APPROVAL precisely so a human
+        // decides whether it may go on, and `resumeWorkflowRun` is that
+        // decision — so every decision row the run has written so far is
+        // ACCEPTED, keyed on the run id the recorder put in `sessionRef`.
+        //
+        // NOT the proposal digest, which is what the three existing stampers
+        // use: that digest is taken over `{ kind, payload, rationale }` and the
+        // model-call row's is taken over the run PROMPT. Same shape, different
+        // content, never equal — so a digest-keyed stamp here would report
+        // `count: 0` and leave the loop looking closed. See
+        // `flue/model-decision.ts` for the full argument.
+        //
+        // In the SAME transaction as the checkpoint close, for the reason
+        // `rejectAgentProposal` gives: a human decision recorded on the run but
+        // not on the decision log is a register that says a model call is still
+        // awaiting a review that has already happened.
+        //
+        // A static run matches nothing here and that costs one indexed
+        // `updateMany` — the engine that writes no decision rows has none to
+        // stamp, and branching on the driver would put the engine's identity in
+        // a place that does not otherwise need to know it.
+        await recordDecisionOutcome(db, ctx, runId, 'ACCEPTED');
         return pending?.seq ?? run.stepCount - 1;
     });
 
@@ -493,12 +519,25 @@ export async function abortWorkflowRun(ctx: RequestContext, runId: string): Prom
     if (['COMPLETED', 'ABORTED', 'FAILED'].includes(run.status)) {
         throw badRequest(`Run is already ${run.status}`);
     }
-    await runInTenantContext(ctx, (db) =>
-        db.workflowRun.update({
+    await runInTenantContext(ctx, async (db) => {
+        await db.workflowRun.update({
             where: { id: runId },
             data: { status: 'ABORTED', completedAt: new Date() },
-        }),
-    );
+        });
+        // ═══ ART 14: AN ABORT IS A REJECTION ═══
+        //
+        // The other half of the resume above, and the same key. A human
+        // stopping a run refuses what it decided, so its model-call decision
+        // rows move PENDING → REJECTED rather than sitting at "awaiting review"
+        // for ever after the review that killed the run.
+        //
+        // One-way, so a run aborted after a resume keeps the ACCEPTED the
+        // resume wrote: `recordDecisionOutcome` filters `humanOutcome:
+        // 'PENDING'` and the DB trigger enforces the same. That is the right
+        // reading — the human accepted what the run had done at the checkpoint,
+        // and then refused what it did next.
+        await recordDecisionOutcome(db, ctx, runId, 'REJECTED');
+    });
     await appendAuditEntry({
         tenantId: ctx.tenantId, userId: ctx.userId, actorType: 'USER',
         entity: 'WorkflowRun', entityId: runId, action: 'WORKFLOW_RUN_ABORTED',
