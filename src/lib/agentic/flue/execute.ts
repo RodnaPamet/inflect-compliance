@@ -10,6 +10,12 @@ import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
 import { isProposeTool, proposedItemCount } from '@/lib/mcp/tools/propose-tools';
 import { createRunBudget, resolveRunCaps, type RunCapHalt } from '@/lib/agentic/run-caps';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
+// `computeInputDigest` STAYS, the other three LEAVE. #2786 records the Art 12
+// digest on the MODEL_CALL step so the run timeline can link to the decision
+// row, and that line lives here; `logAiDecision`, `PrismaTx` and
+// `runInTenantContext` moved out with `recordModelDecision` into
+// `./model-decision`, which is what made the sessionRef join testable.
+import { computeInputDigest } from '@/app-layer/ai/decision-log';
 import { logger } from '@/lib/observability/logger';
 
 import { FLUE_USAGE_KEY, InflectAgent, type FlueUsageReport } from './agent';
@@ -288,7 +294,27 @@ export async function executeFlueRun(
             // becomes an `AgentProposal` if it becomes anything, and that row
             // is guarded, diffed and reviewable; a copy in the step ledger
             // would be un-guarded model output in a second, unreviewed place.
-            input: { toolCalls: usage.toolCalls, failedToolCalls: usage.failedToolCalls },
+            input: {
+                toolCalls: usage.toolCalls,
+                failedToolCalls: usage.failedToolCalls,
+                // THE KEY TO THIS STEP'S ART 12 ROW.
+                //
+                // `AiDecisionLog` carries no `runId` — deliberately, it is the
+                // regulator's record of a DECISION and not of an engine's
+                // bookkeeping — so the two are joined on
+                // `(tenantId, inputDigest)`. Recording the digest here is what
+                // turns that join into a link a reviewer can follow.
+                //
+                // It is the SAME function `logAiDecision` computes with, over
+                // the SAME value, one line below. Re-deriving the rule instead
+                // of sharing the function is how the two would drift into
+                // pointing at different rows, so a guard pins them together.
+                //
+                // A DIGEST IS NOT CONTENT. It is a sha256 over the sanitised
+                // input, already stored on the decision row; recording it adds
+                // no prompt text to a ledger that deliberately holds none.
+                decisionDigest: computeInputDigest(runMessage(def, fromSeq)),
+            },
         });
 
         // The Art 12 row, beside the ledger row and after it: the step is the
