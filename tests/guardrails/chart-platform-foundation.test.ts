@@ -21,7 +21,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 const CHARTS_DIR = path.join(ROOT, 'src/components/ui/charts');
@@ -41,14 +41,18 @@ function read(rel: string): string {
     return codeOf(fs.readFileSync(path.join(CHARTS_DIR, rel), 'utf-8'));
 }
 
-/**
- * Raw text, comments INCLUDED. Only the header-contract assertion below uses
- * it — that one is deliberately ABOUT a comment, so masking would break a
- * correct test. Every other assertion in this file reads through `read()`.
- */
 function readRaw(rel: string): string {
     return fs.readFileSync(path.join(CHARTS_DIR, rel), 'utf-8');
 }
+
+/**
+ * COMMENTS ONLY — the inverse of `read()`. Used by the header-contract
+ * assertion below, which is deliberately ABOUT a comment: `codeOf` would
+ * delete its subject, and a RAW read would let the same words appearing
+ * anywhere in the module's code satisfy a check that the contract is
+ * documented (#2246).
+ */
+const readComments = (rel: string) => commentsOf(readRaw(rel));
 
 describe('Epic 59 — chart platform foundation', () => {
     it('required @visx/* packages are present', () => {
@@ -165,8 +169,8 @@ describe('Epic 59 — chart platform foundation', () => {
         });
 
         it('documents the module contract in a header comment', () => {
-            // Deliberately about the COMMENT — reads the unmasked text.
-            expect(readRaw('index.ts')).toMatch(/Epic 59 — chart platform/);
+            // Bound to the COMMENTS — the assertion's whole subject.
+            expect(readComments('index.ts')).toMatch(/Epic 59 — chart platform/);
         });
     });
 });

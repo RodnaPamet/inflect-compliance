@@ -56,7 +56,7 @@ import * as path from 'node:path';
 import * as ts from 'typescript';
 
 import { REPO_ROOT, repoFiles, repoRelative } from './repo-files';
-import { codeOf, cssCodeOf, mdCodeOf, sqlCodeOf } from './source-blocks';
+import { codeOf, commentsOf, cssCodeOf, mdCodeOf, sqlCodeOf } from './source-blocks';
 
 // ───────────────────────────── parsing ──────────────────────────────────
 
@@ -992,6 +992,26 @@ const SOURCE_BLOCKS_MASKERS: ReadonlyMap<string, MaskFn> = new Map<string, MaskF
     // this diff put it back.
     ['mdCodeOf', mdCodeOf],
     ['cssCodeOf', cssCodeOf],
+    // #2246. `commentsOf` is the INVERSE of `codeOf` — comments kept, code
+    // blanked — for the assertions that are deliberately ABOUT comment text
+    // (a CC BY 4.0 attribution, a rationale docblock, a module-contract
+    // header). Those had no tool at all and so read the whole file RAW, which
+    // let a CODE occurrence satisfy an assertion about prose.
+    //
+    // Registered in the SAME diff that introduced it, which is the lesson the
+    // `mdCodeOf` / `cssCodeOf` note above records: #2727 added two maskers and
+    // not their entries here, and a conversion that took the campaign's advice
+    // then left the analysed population entirely (`content-transformed`, a
+    // capped skip) instead of moving from raw to masked.
+    //
+    // Note what listing it DOES to Class D: the occurrence count for a
+    // `commentsOf` read is taken against comment text only, so a needle that
+    // occurred twice in the raw file CAN become unique. On the nine sites the
+    // first batch converted it did not — all nine count the same raw and
+    // masked, and `AMBIGUOUS_NEEDLE_BASELINE` stayed at 1255 — because in each
+    // case both occurrences were already comments. Worth knowing before
+    // reading a future move in that number as this entry's doing.
+    ['commentsOf', commentsOf],
 ]);
 
 /** Is this module specifier `tests/helpers/source-blocks`, however spelled? */

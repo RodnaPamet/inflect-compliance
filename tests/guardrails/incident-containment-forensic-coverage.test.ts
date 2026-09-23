@@ -23,7 +23,7 @@ import {
     containmentRunbookFor,
 } from '@/data/incident-containment';
 import { readPrismaSchema } from '../helpers/prisma-schema';
-import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const readRaw = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
@@ -34,6 +34,10 @@ const read = (rel: string) => codeOf(readRaw(rel));
 // at the call site, unmasked in fact. Migrations go through `sqlCodeOf`,
 // which lexes `--` and `/* */`; TypeScript keeps `read`.
 const readSql = (rel: string) => sqlCodeOf(readRaw(rel));
+// The third language in the split, and it is the INVERSE rather than a
+// dialect: `commentsOf` keeps the comments and blanks the code, for the
+// attribution assertion below whose subject IS the file header (#2246).
+const readComments = (rel: string) => commentsOf(readRaw(rel));
 const exists = (rel: string) => fs.existsSync(path.join(REPO_ROOT, rel));
 
 const REAL_TYPES = ['RANSOMWARE', 'DATA_BREACH', 'DDOS', 'UNAUTHORIZED_ACCESS'] as const;
@@ -152,12 +156,15 @@ describe('incident detail UI — containment + forensic', () => {
 
 describe('provenance — CC BY 4.0 attribution', () => {
     it('credits Paolo Carner / BARE Consulting (CC BY 4.0) in the reference data', () => {
-        // RAW read ON PURPOSE — the one assertion in this file that is
-        // deliberately ABOUT a comment. CC BY 4.0 requires the attribution to
-        // live in the file header, so masking comments (which every other
-        // read here does, per #2246) would delete the very thing being
-        // asserted and turn a correct licence check red.
-        const src = readRaw('src/data/incident-containment.ts');
+        // COMMENTS-ONLY read ON PURPOSE — the one assertion in this file that
+        // is deliberately ABOUT a comment. CC BY 4.0 requires the attribution
+        // to live in the file header, so `codeOf` (which every other read here
+        // uses, per #2246) would delete the very thing being asserted; this
+        // block used to read RAW instead, which is the mirror defect — a
+        // `'CC BY 4.0'` written into any string literal would have satisfied
+        // a licence check about the header. Measured on the live file: raw 1
+        // occurrence, through `commentsOf` 1, through `codeOf` 0.
+        const src = readComments('src/data/incident-containment.ts');
         expect(src).toMatch(/CC BY 4\.0/);
         expect(src.toLowerCase()).toMatch(/paolo carner|bare consulting/);
     });

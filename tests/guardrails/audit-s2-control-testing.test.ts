@@ -10,13 +10,20 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
-/** Raw file text — only for the one block below that asserts about a COMMENT. */
 const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 /** Comments masked: an assertion about code can never be satisfied by prose. */
 const read = (rel: string) => codeOf(readRaw(rel));
+/**
+ * The INVERSE mask, for the one block below that asserts a rationale COMMENT
+ * is present. It used to read raw, which is the same defect one step over: a
+ * `// OVERDUE semantics` in a comment and an `OVERDUE semantics` in a string
+ * literal are indistinguishable to a raw read, so a check that the rationale
+ * is WRITTEN DOWN could be satisfied by code (#2246).
+ */
+const readComments = (rel: string) => commentsOf(readRaw(rel));
 
 describe('Audit S2 — Control Framework & Testing', () => {
     describe('schema', () => {
@@ -102,9 +109,11 @@ describe('Audit S2 — Control Framework & Testing', () => {
     });
 
     describe('OVERDUE semantics — documented divergence', () => {
-        // DELIBERATELY raw: this block asserts that a rationale COMMENT is
-        // present, so masking comments here would break a correct test.
-        const src = readRaw('src/app-layer/usecases/control/test-plans.ts');
+        // Bound to the COMMENTS, which is what this block is about. `codeOf`
+        // would delete the subject entirely (measured: 0 occurrences of all
+        // three needles in the masked code), and a raw read would let a code
+        // occurrence stand in for the rationale.
+        const src = readComments('src/app-layer/usecases/control/test-plans.ts');
 
         it('the inline rationale comment exists', () => {
             // The comment block explains why TestPlanStatus does NOT
