@@ -29,6 +29,9 @@ const SUITE = `wfe-${randomUUID().slice(0, 8)}`;
 const TENANT = `wf-${SUITE}`;
 const USER = `u-${TENANT}`;
 const PROPOSE_WF = `test-propose-${SUITE}`;
+const READ_WF = `test-read-${SUITE}`;
+const SYNTH_WF = `test-synth-${SUITE}`;
+const CHECKPOINT_ONLY_WF = `test-checkpoint-${SUITE}`;
 
 const ctx = () => makeRequestContext('ADMIN', { tenantId: TENANT, tenantSlug: TENANT, userId: USER });
 
@@ -44,6 +47,24 @@ describeFn('Agentic workflow engine (real DB)', () => {
             });
         }
         // A test workflow with a PROPOSE step + a HUMAN_CHECKPOINT.
+        registerWorkflow({
+            key: READ_WF,
+            name: 'read only',
+            description: 'one READ step, so the READ charge can be attributed to it alone',
+            steps: [{ kind: 'READ', label: 'posture', tool: 'get_compliance_posture' }],
+        });
+        registerWorkflow({
+            key: SYNTH_WF,
+            name: 'synthesis only',
+            description: 'one SYNTHESIS step, the kind a token counter is most likely to forget',
+            steps: [{ kind: 'SYNTHESIS', label: 'summary', synthesize: () => ({ text: 'a synthesised answer long enough to estimate' }) }],
+        });
+        registerWorkflow({
+            key: CHECKPOINT_ONLY_WF,
+            name: 'checkpoint only',
+            description: 'one HUMAN_CHECKPOINT, which must spend nothing',
+            steps: [{ kind: 'HUMAN_CHECKPOINT', label: 'review' }],
+        });
         registerWorkflow({
             key: PROPOSE_WF,
             name: 'Test propose workflow',
@@ -225,3 +246,70 @@ describeFn('Agentic workflow engine (real DB)', () => {
         expect(run.status).toBe('ABORTED');
     });
 });
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  costTokens ACCUMULATES ACROSS ALL KINDS
+    //
+    //  Plan point 5: "`costTokens` accumulates across ALL kinds, so a loop
+    //  cannot escape the cap by spending in a kind the counter ignores."
+    //
+    //  The implementation was there and NOTHING PROTECTED IT. An audit grepped
+    //  the whole test tree for an `expect` touching `costTokens` and found
+    //  exactly one — a source-text needle (`toContain('costTokens +=
+    //  usage.totalTokens')`) narrowed to the FLUE dispatch. So all three of the
+    //  static engine's charge sites could be deleted and every test stayed
+    //  green: the escape the bullet names was reachable with no test to notice.
+    //
+    //  These are per-KIND on purpose. A single workflow exercising all four
+    //  proves the total moved; it cannot say WHICH kind moved it, and the
+    //  bullet's whole claim is about the kind a counter forgets. One workflow
+    //  per kind maps each assertion to one charge site.
+    // ─────────────────────────────────────────────────────────────────────
+    describe('the token counter charges every kind that spends', () => {
+        const runRow = (runId: string) =>
+            prisma.workflowRun.findFirstOrThrow({ where: { id: runId, tenantId: TENANT } });
+
+        it('a READ step is charged', async () => {
+            const { runId } = await startWorkflowRun(ctx(), READ_WF, {});
+            expect((await runRow(runId)).costTokens).toBeGreaterThan(0);
+        });
+
+        it('a SYNTHESIS step is charged — the kind most easily forgotten', async () => {
+            // SYNTHESIS calls no tool and hits no network; it is the arm a
+            // reader is most likely to think costs nothing, and the one the
+            // plan's "a kind the counter ignores" is really about.
+            const { runId } = await startWorkflowRun(ctx(), SYNTH_WF, {});
+            expect((await runRow(runId)).costTokens).toBeGreaterThan(0);
+        });
+
+        it('a HUMAN_CHECKPOINT is charged NOTHING', async () => {
+            // The other direction, and it is not decoration: if every kind
+            // charged, the assertions above would pass under an implementation
+            // that charged a flat fee per step and attributed nothing. A pause
+            // spends no tokens, and saying so is what makes the rest mean
+            // something.
+            const { runId } = await startWorkflowRun(ctx(), CHECKPOINT_ONLY_WF, {});
+            const row = await runRow(runId);
+            expect(row.status).toBe('AWAITING_APPROVAL');
+            expect(row.costTokens).toBe(0);
+        });
+
+        it('a PROPOSE step adds to what the READ before it already spent', async () => {
+            // Attribution without a per-step column: the run pauses at its
+            // checkpoint having done READ + PROPOSE, so the total at that point
+            // is both charges. Asserting it exceeds a READ-only run's total is
+            // what pins the PROPOSE arm specifically.
+            const readOnly = await startWorkflowRun(ctx(), READ_WF, {});
+            const readOnlyTokens = (await runRow(readOnly.runId)).costTokens;
+
+            const paused = await startWorkflowRun(ctx(), PROPOSE_WF, {});
+            expect(paused.status).toBe('AWAITING_APPROVAL');
+            const atCheckpoint = (await runRow(paused.runId)).costTokens;
+            expect(atCheckpoint).toBeGreaterThan(readOnlyTokens);
+
+            // …and the SYNTHESIS after the checkpoint adds again, so the charge
+            // survives a resume rather than restarting or being dropped.
+            await resumeWorkflowRun(ctx(), paused.runId);
+            expect((await runRow(paused.runId)).costTokens).toBeGreaterThan(atCheckpoint);
+        });
+    });
