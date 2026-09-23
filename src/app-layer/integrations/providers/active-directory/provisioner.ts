@@ -60,7 +60,11 @@ import {
     formatObjectGuid,
     type LdapClientLike,
 } from './index';
-import { objectGuidFilter } from './writer';
+import {
+    PROVEN_REFUSAL_RESULT_CODES,
+    objectGuidFilter,
+    resultCodeOf,
+} from './writer';
 import type {
     CreateAccountInput,
     CreateAccountStep,
@@ -84,6 +88,61 @@ const UAC_CREATED_BLOCKED = UAC_NORMAL_ACCOUNT | UAC_ACCOUNTDISABLE;
  * is unique per forest and is what the derived address maps to.
  */
 export const AD_COLLISION_NAMESPACES = ['sAMAccountName', 'userPrincipalName'] as const;
+
+/**
+ * `entryAlreadyExists`. An ADD that gets this created NOTHING.
+ *
+ * Not in the writer's shared list and deliberately not added to it: 68 arrives
+ * from an AddRequest, and the shared list is what a MODIFY response is read
+ * against. A code that proves one operation landed nowhere proves nothing about
+ * the other.
+ */
+const LDAP_ENTRY_ALREADY_EXISTS = 68;
+
+/** The modify list plus the one code only an add can earn. */
+const PROVEN_ADD_REFUSAL_RESULT_CODES: ReadonlySet<number> = new Set([
+    ...PROVEN_REFUSAL_RESULT_CODES,
+    LDAP_ENTRY_ALREADY_EXISTS,
+]);
+
+/**
+ * REFUSED or INDETERMINATE — the one bit the caller cannot infer.
+ *
+ * `createDirectoryAccount` does different things with the two, and they are not
+ * shades of the same answer. `refused` settles the journal row FAILED and
+ * positively asserts the directory did not change; `indeterminate` settles it
+ * INDETERMINATE, which is the file both `findRestorableState` and the operator
+ * sweep read. Collapsing everything into `indeterminate` — which this module
+ * did until #2750 — told an operator "an account may or may not exist" for a
+ * create the domain controller had plainly declined with result 50, and put a
+ * row that needs no human in the queue that only humans clear.
+ *
+ * The default is INDETERMINATE and every unrecognised shape keeps it. A
+ * transport failure (ETIMEDOUT, ECONNRESET, an abort) carries no LDAP result
+ * code at all, because the DC's answer — if it ever sent one — never arrived.
+ */
+function classifyProvisionFailure(
+    err: unknown,
+    what: string,
+    provenRefusalCodes: ReadonlySet<number> = PROVEN_REFUSAL_RESULT_CODES,
+): { kind: 'refused'; detail: string } | { kind: 'indeterminate'; detail: string } {
+    const code = resultCodeOf(err);
+    const detail = err instanceof Error ? err.message : String(err);
+    if (code !== null && provenRefusalCodes.has(code)) {
+        return {
+            kind: 'refused',
+            detail:
+                `Active Directory refused ${what} with LDAP result ${code}. The directory parsed the ` +
+                `request and declined it, so nothing was written and there is nothing to undo: ${detail}`,
+        };
+    }
+    return {
+        kind: 'indeterminate',
+        detail:
+            `${what} did not report a usable outcome${code === null ? '' : ` (LDAP result ${code})`}: ` +
+            `${detail}. Whether the directory changed is UNKNOWN — verify before retrying.`,
+    };
+}
 
 export interface ActiveDirectoryProvisionerOptions {
     /** The merged connection bag: url, baseDN, bind credentials. */
@@ -161,17 +220,40 @@ export function createActiveDirectoryProvisioner(
         collisionNamespaces: [...AD_COLLISION_NAMESPACES],
 
         async probeIdentifier(candidate: string): Promise<IdentifierProbe> {
-            const c = await session();
             const v = escapeFilterValue(candidate);
             // The local part is what becomes sAMAccountName; the whole value is
             // the UPN. Both are asked because both can collide independently.
             const local = escapeFilterValue(candidate.split('@')[0] ?? candidate);
-            const { searchEntries } = await c.search(baseDN, {
-                scope: 'sub',
-                filter: `(|(userPrincipalName=${v})(sAMAccountName=${local}))`,
-                attributes: ['sAMAccountName', 'userPrincipalName', 'objectGUID'],
-                sizeLimit: 2,
-            });
+            let searchEntries: Array<Record<string, unknown>>;
+            try {
+                const c = await session();
+                ({ searchEntries } = await c.search(baseDN, {
+                    scope: 'sub',
+                    filter: `(|(userPrincipalName=${v})(sAMAccountName=${local}))`,
+                    attributes: ['sAMAccountName', 'userPrincipalName', 'objectGUID'],
+                    sizeLimit: 2,
+                }));
+            } catch (err) {
+                // A FAILED PROBE IS UNKNOWN, NEVER FREE, and never a throw.
+                //
+                // The seam's contract says so in as many words, and the live arm
+                // was the one implementation that could not honour it: a bind
+                // refusal, an unresolvable host or a dropped socket propagated
+                // out of here as an exception. A caller that caught it broadly
+                // would have had to invent an answer, and the only answers on
+                // offer are "free" (the create proceeds into a collision) and a
+                // crashed pass. `unknown` NAMES the namespaces it could not
+                // consult, so the artefact says which question went unanswered.
+                return {
+                    kind: 'unknown',
+                    namespacesUnavailable: [...AD_COLLISION_NAMESPACES],
+                    detail:
+                        `The directory could not be asked whether ${JSON.stringify(candidate)} is ` +
+                        `claimable: ${err instanceof Error ? err.message : String(err)}. Reported as ` +
+                        `UNKNOWN rather than free — "we could not look" must not read as "it is ` +
+                        `available".`,
+                };
+            }
             if (searchEntries.length === 0) {
                 return { kind: 'free', namespacesChecked: [...AD_COLLISION_NAMESPACES] };
             }
@@ -231,10 +313,15 @@ export function createActiveDirectoryProvisioner(
             } catch (err) {
                 // A create that may or may not have landed is INDETERMINATE, not
                 // refused: the caller must not retry blindly into a duplicate.
-                return {
-                    kind: 'indeterminate',
-                    detail: `Active Directory did not confirm the create: ${(err as Error).message}`,
-                };
+                // But a create the DC PARSED AND DECLINED is refused — above all
+                // result 68, `entryAlreadyExists`, which is the race the probe
+                // structurally cannot close. Reporting that as indeterminate
+                // leaves a human to establish by hand what the DC already said.
+                return classifyProvisionFailure(
+                    err,
+                    `the create of ${dn}`,
+                    PROVEN_ADD_REFUSAL_RESULT_CODES,
+                );
             }
             const { searchEntries } = await c.search(baseDN, {
                 scope: 'sub',
@@ -272,10 +359,7 @@ export function createActiveDirectoryProvisioner(
                 await c.modify(groupId, [{ operation: 'add', type: 'member', values: [dn] }]);
                 return { kind: 'applied' };
             } catch (err) {
-                return {
-                    kind: 'indeterminate',
-                    detail: `Group add not confirmed: ${(err as Error).message}`,
-                };
+                return classifyProvisionFailure(err, `adding ${dn} to ${groupId}`);
             }
         },
 
@@ -309,10 +393,10 @@ export function createActiveDirectoryProvisioner(
                     detail: 'A random must-change password was set and not retained.',
                 };
             } catch (err) {
-                return {
-                    kind: 'indeterminate',
-                    detail: `Credential not confirmed: ${(err as Error).message}`,
-                };
+                // A ConstraintViolation here is the password failing the domain's
+                // complexity or history policy — declined, nothing written, and a
+                // configuration problem rather than a mystery.
+                return classifyProvisionFailure(err, `setting a credential on ${dn}`);
             }
         },
 
@@ -336,10 +420,7 @@ export function createActiveDirectoryProvisioner(
                 ]);
                 return { kind: 'applied' };
             } catch (err) {
-                return {
-                    kind: 'indeterminate',
-                    detail: `Enable not confirmed: ${(err as Error).message}`,
-                };
+                return classifyProvisionFailure(err, `enabling ${dn}`);
             }
         },
 
