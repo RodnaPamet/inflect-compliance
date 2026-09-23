@@ -96,6 +96,34 @@ updates:
       - dependency-name: "conventional-changelog-conventionalcommits"
         versions: [">=10.4.0"]
 
+      # `@earendil-works/pi-ai` is held below 0.84.0 because the dependency
+      # graph FORBIDS moving it, not because the bump is noisy.
+      #
+      # `@flue/runtime` and `@earendil-works/pi-agent-core` both require
+      # `^0.83.0`. For a 0.x version the caret pins the MINOR — `^0.83.0` means
+      # `>=0.83.0 <0.84.0` — so 0.84+ cannot satisfy them. npm answers by
+      # installing a nested 0.83.0 beside the hoisted new one, and TypeScript
+      # then sees two structurally identical but NOMINALLY different types:
+      #
+      #   Provider<Api> from the hoisted copy is not assignable to Provider<Api>
+      #   from @flue/runtime/node_modules/@earendil-works/pi-ai.
+      #
+      # There is no released combination that works. `@flue/runtime@2.1.0` is its
+      # LATEST published version and still requires `^0.83.0`. An `overrides`
+      # entry would "fix" the types by running flue against a minor it never
+      # declared support for, which for 0.x is exactly where breaking changes
+      # live — so the pin is the honest answer, not a workaround.
+      #
+      # Without this entry Dependabot re-proposes it every cycle and each attempt
+      # costs a red Typecheck plus a triage: #2757 proposed 0.85.1, and #2801
+      # came back with 0.86.1 the same day #2794 held the line.
+      #
+      # Scoped rather than blanket so a 0.83.x patch still comes through, and so
+      # it lifts itself: delete this entry once `@flue/runtime` publishes a
+      # version accepting a newer pi-ai, and let the next PR raise both together.
+      - dependency-name: "@earendil-works/pi-ai"
+        versions: [">=0.84.0"]
+
   # ── GitHub Actions (monthly) ──
   - package-ecosystem: github-actions
     directory: /
