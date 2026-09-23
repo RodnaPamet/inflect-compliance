@@ -497,13 +497,17 @@ const SINK_FLOOR = 30;
 // the whole reason a guard-halt row is safe to write at all: the text the
 // scanner matched is the thing the guard exists to contain.
 //
-// MEASURED on this branch's base (main at 165 / 95). It is NOT the number for
-// a tree that also carries #2780, which moves the same pair to 169 / 97 — so
-// this branch must re-measure after merging main if #2780 lands first, and
-// must not sit in the merge queue across that landing. `MEASURED_HOLES` is a
-// CEILING: 173 actual against a 169 ceiling is an evicted green run, not a red
-// branch, which is the expensive way to find this out.
-const MEASURED_HOLES = 169;
+// RE-MEASURED after #2777 (the propose surface) landed and this branch merged
+// main: 169 / 96 became 173 / 100. That branch brought four sinks and four
+// holes of its own, and the point of re-measuring rather than keeping the
+// earlier figure is that neither branch could have predicted the other's.
+//
+// The same caution still applies to #2780, which is open and moves this pair
+// independently: `MEASURED_HOLES` is a CEILING, so a figure measured for a
+// tree that does not exist yet is an evicted green run in the merge queue
+// rather than a red branch. Re-measure after merging main, every time, and do
+// not sit in the queue across another agentic branch landing.
+const MEASURED_HOLES = 173;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -516,7 +520,7 @@ const MEASURED_HOLES = 169;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 96;
+const MEASURED_SINKS = 100;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

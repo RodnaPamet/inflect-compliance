@@ -7,6 +7,7 @@ import { recordStep } from '@/lib/agentic/drivers/step-recorder';
 import { updateRun, failRun, haltRunAtCap, haltRunAtGuard } from '@/lib/agentic/drivers/run-settlement';
 import { getRunRow, proposedItemsSoFar } from '@/lib/agentic/drivers/run-store';
 import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
+import { isProposeTool, proposedItemCount } from '@/lib/mcp/tools/propose-tools';
 import { createRunBudget, resolveRunCaps, type RunCapHalt } from '@/lib/agentic/run-caps';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
 import { logAiDecision } from '@/app-layer/ai/decision-log';
@@ -277,6 +278,16 @@ export async function executeFlueRun(
     let worst: StepGuardObservation['verdict'] = 'CLEAN';
     let worstRuleIds: readonly string[] = [];
 
+    // WHICH STEP a propose call belongs to. `wrapForLedger` allocates the step
+    // seq before it invokes the tool and records it here; the adapter's closure
+    // reads it back by `toolCallId` on its way into `runProposeTool`, so an
+    // `AgentProposal` this run queued names the run and the step that queued
+    // it. Keyed rather than held in a field for the same reason the guard
+    // observations above are: the runtime may have more than one call in
+    // flight, and a shared field would attribute one call's proposals to
+    // another's step.
+    const stepOfCall = new Map<string, number>();
+
     /**
      * Settle the run on its guard verdict, or answer `null` if no guard fired.
      *
@@ -305,20 +316,29 @@ export async function executeFlueRun(
         return { status, stepFailures };
     };
 
-    const offered = flueToolsFor(invocation, (o) => {
-        const prior = seen.get(o.toolCallId);
-        seen.set(o.toolCallId, prior && RANK[prior.verdict] >= RANK[o.verdict] ? prior : o);
-        if (RANK[o.verdict] > RANK[worst]) {
-            worst = o.verdict;
-            worstRuleIds = o.ruleIds;
-        }
-    });
+    const offered = flueToolsFor(
+        invocation,
+        (o) => {
+            const prior = seen.get(o.toolCallId);
+            seen.set(o.toolCallId, prior && RANK[prior.verdict] >= RANK[o.verdict] ? prior : o);
+            if (RANK[o.verdict] > RANK[worst]) {
+                worst = o.verdict;
+                worstRuleIds = o.ruleIds;
+            }
+        },
+        (toolCallId) => {
+            const stepSeq = stepOfCall.get(toolCallId);
+            return stepSeq === undefined ? undefined : { runId, stepSeq };
+        },
+    );
     const latch: CapLatch = { halt: null };
     let seq = fromSeq;
     let stepFailures = 0;
 
     const tools = offered.tools.map((tool) => wrapForLedger(ctx, runId, tool, latch, budget, {
         nextSeq: () => seq++,
+        noteOrigin: (id, stepSeq) => { stepOfCall.set(id, stepSeq); },
+        forgetOrigin: (id) => { stepOfCall.delete(id); },
         onFailure: () => { stepFailures += 1; },
         // TAKEN, not read: the entry is this call's, and leaving it in the map
         // would both leak for the life of the run and let a later call with a
@@ -453,6 +473,8 @@ function wrapForLedger(
     budget: ReturnType<typeof createRunBudget>,
     ledger: {
         nextSeq: () => number;
+        noteOrigin: (toolCallId: string, stepSeq: number) => void;
+        forgetOrigin: (toolCallId: string) => void;
         onFailure: () => void;
         takeVerdict: (toolCallId: string) => StepGuardObservation | undefined;
     },
@@ -478,7 +500,31 @@ function wrapForLedger(
                 }
             }
 
+            // PROPOSALS is charged PER ITEM, not per call. `proposeArgs`
+            // accepts up to 20 items in one call and `runProposeTool` queues
+            // one PENDING row for each, so charging the call would let a run
+            // reach twenty times its proposal cap while the counter read as
+            // one. The budget already SEEDS this kind from
+            // `proposedItemsSoFar`, which was inert only because nothing on
+            // this engine could propose; offering the surface is what makes
+            // the seed a cap rather than a number.
+            //
+            // The predicate is the registry's own, the same one the adapter
+            // dispatches on — a second way of deciding "is this a propose
+            // tool" is a way for the charge and the funnel to disagree, and
+            // the disagreement that matters is a propose call charged nothing.
+            const items = isProposeTool(tool.name) ? proposedItemCount(context.data) : 0;
+            if (items > 0) {
+                const halt = budget.charge('PROPOSALS', items);
+                if (halt) {
+                    latch.halt = halt;
+                    throw new Error(halt.message);
+                }
+            }
+
             const seq = ledger.nextSeq();
+            // BEFORE the call, because the call is what reads it.
+            ledger.noteOrigin(context.toolCallId, seq);
             try {
                 const result = await tool.run(context);
                 const verdict = ledger.takeVerdict(context.toolCallId);
@@ -515,6 +561,12 @@ function wrapForLedger(
                     output: { error: err instanceof Error ? err.message : String(err) },
                 });
                 throw err;
+            } finally {
+                // Symmetrical with `takeVerdict`'s delete, and for the same
+                // two reasons: the entry is this call's, and leaving it would
+                // both leak for the life of the run and let a later call with
+                // a recycled id inherit a step seq that was not its own.
+                ledger.forgetOrigin(context.toolCallId);
             }
         },
     };
