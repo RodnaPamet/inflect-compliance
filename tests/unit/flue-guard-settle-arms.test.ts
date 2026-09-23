@@ -35,6 +35,13 @@ jest.mock('@/lib/prisma', () => {
         agentProposal: { count: (a: unknown) => proposalCount(a) },
         workflowStep: { count: (a: unknown) => stepCount(a) },
         agentCircuitBreaker: { updateMany: (a: unknown) => breakerUpdateMany(a) },
+        // `latchOnGuardBlock` inserts the latch row before updating it, via
+        // `$executeRaw` as a TAGGED TEMPLATE. The permissive Proxy below
+        // answers unknown keys with an object, and calling an object as a
+        // template tag throws — which this function's catch turns into
+        // `{ blocksInWindow: 0 }`, i.e. the counting assertions fail for a
+        // reason that has nothing to do with counting. It must be callable.
+        $executeRaw: async () => 0,
     } as Record<string, unknown>;
     const permissive = () =>
         new Proxy(
