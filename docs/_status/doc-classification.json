@@ -80,6 +80,9 @@
     "docs/data-retention.md": {
       "class": "authoritative"
     },
+    "docs/runbooks/failed-migration-recovery.md": {
+      "class": "authoritative"
+    },
     "docs/vendor-monitoring.md": {
       "class": "authoritative"
     },

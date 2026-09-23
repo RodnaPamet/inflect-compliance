@@ -693,7 +693,31 @@ export interface AgentRunReaperPayload {
     requestId?: string;
 }
 
+/**
+ * Execute an agent run that has already been CREATED and enqueued.
+ *
+ * ── WHY THE PAYLOAD IS THIS SMALL ───────────────────────────────────────────
+ *
+ * Two ids and nothing else. Everything the run needs to execute under the
+ * right authority is already on the `WorkflowRun` row — `startedByUserId`,
+ * `triggeredViaKeyId`, `agentId`, `policyCardVersion` — and reading it there
+ * is the only way the job can be sure it is executing the run that was
+ * authorised rather than a payload someone could have composed.
+ *
+ * NO `fromSeq`. The executor derives it from the steps actually recorded, so a
+ * retry after a SIGTERM resumes from the last COMPLETED step rather than from
+ * wherever the enqueuer guessed. That is what makes the retry safe: the run
+ * cannot re-execute a step it already committed.
+ */
+export interface AgentRunExecutePayload {
+    /** Tenant whose run this is. Required for isolation. */
+    tenantId: string;
+    /** The `WorkflowRun` to execute. */
+    runId: string;
+}
+
 export interface JobPayloadMap {
+    'agent-run-execute': AgentRunExecutePayload;
     'health-check': HealthCheckPayload;
     'nvd-cve-sync': NvdCveSyncPayload;
     'automation-runner': AutomationRunnerPayload;
@@ -917,6 +941,20 @@ export const JOB_DEFAULTS: Record<JobName, {
     removeOnComplete: number | boolean;
     removeOnFail: number | boolean;
 }> = {
+    'agent-run-execute': {
+        // RETRIED, and the retry is the point. A SIGTERM mid-run leaves the
+        // row RUNNING with its completed steps committed; the executor derives
+        // `fromSeq` from those, so an attempt resumes rather than restarts.
+        //
+        // Three attempts cannot triple the cost: the run budget is seeded from
+        // what earlier segments already spent (`actionsAlready`, `spent.TOKENS`),
+        // and `RUNTIME_MS` is measured from the RUN's own start, so a retry of
+        // an old run halts at the wall clock instead of buying a fresh one.
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
     'health-check': {
         attempts: 1,
         backoff: { type: 'fixed', delay: 1000 },

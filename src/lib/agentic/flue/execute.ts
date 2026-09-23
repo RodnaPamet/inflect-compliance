@@ -4,18 +4,31 @@ import type { RequestContext } from '@/app-layer/types';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
-import { updateRun, failRun, haltRunAtCap } from '@/lib/agentic/drivers/run-settlement';
+import { updateRun, failRun, haltRunAtCap, haltRunAtGuard } from '@/lib/agentic/drivers/run-settlement';
 import { getRunRow, proposedItemsSoFar } from '@/lib/agentic/drivers/run-store';
+import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
+import { isProposeTool, proposedItemCount } from '@/lib/mcp/tools/propose-tools';
 import { createRunBudget, resolveRunCaps, type RunCapHalt } from '@/lib/agentic/run-caps';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
+// `computeInputDigest` STAYS, the other three LEAVE. #2786 records the Art 12
+// digest on the MODEL_CALL step so the run timeline can link to the decision
+// row, and that line lives here; `logAiDecision`, `PrismaTx` and
+// `runInTenantContext` moved out with `recordModelDecision` into
+// `./model-decision`, which is what made the sessionRef join testable.
+import { computeInputDigest } from '@/app-layer/ai/decision-log';
 import { logger } from '@/lib/observability/logger';
 
 import { FLUE_USAGE_KEY, InflectAgent, type FlueUsageReport } from './agent';
+import { recordModelDecision } from './model-decision';
 import { flueModelIsRegistered } from './providers';
 import { refusalMessage } from './driver-plan';
 import { bindRun, releaseRun } from './run-binding';
 import { ensureFlueRuntime } from './runtime-start';
-import { flueToolsFor, type FlueToolDefinition } from './tools-adapter';
+import {
+    flueToolsFor,
+    type FlueToolDefinition,
+    type StepGuardObservation,
+} from './tools-adapter';
 
 /**
  * EXECUTING A FLUE RUN: bind, dispatch, record what happened, charge for it.
@@ -56,6 +69,19 @@ import { flueToolsFor, type FlueToolDefinition } from './tools-adapter';
  */
 
 /**
+ * Severity order for folding a call's two guard slices into one verdict.
+ *
+ * Written as data rather than as a comparison chain so that adding a fourth
+ * verdict is a compile error here — `Record<AgentGuardVerdict, number>` cannot
+ * miss a member — rather than a silently wrong ordering.
+ */
+const RANK: Record<StepGuardObservation['verdict'], number> = {
+    CLEAN: 0,
+    FLAGGED: 1,
+    QUARANTINED: 2,
+};
+
+/**
  * A cap that fired mid-dispatch.
  *
  * Held rather than thrown out of the run, because a throw from inside a tool
@@ -87,6 +113,7 @@ function runMessage(def: WorkflowDefinition, fromSeq: number): string {
         ...lines,
     ].join('\n');
 }
+
 
 export async function executeFlueRun(
     ctx: RequestContext,
@@ -143,14 +170,97 @@ export async function executeFlueRun(
         return { status, stepFailures: 0 };
     }
 
-    const offered = flueToolsFor(invocation);
+    // WHAT THE GUARD SAID, collected per call so the step row can carry it.
+    //
+    // Keyed by `toolCallId` because tool calls can overlap: a map keyed by
+    // tool NAME would let a second call to the same tool overwrite the first's
+    // verdict, and the row that lost would be recorded as unscanned.
+    //
+    // Both slices of one call fold into the WORST verdict seen. A call whose
+    // arguments were clean and whose result was flagged is a flagged call —
+    // taking the last would report whichever slice happened to finish second.
+    const seen = new Map<string, StepGuardObservation>();
+    // THE RUN'S WORST GUARD VERDICT, kept separately from `seen`.
+    //
+    // `seen` is consumed: `takeVerdict` REMOVES each entry as its step is
+    // recorded, so by the time the run settles the map is empty and cannot
+    // answer "did a guard fire during this run". That is correct for `seen`'s
+    // own job and useless for this one, so the fold is kept here as it happens.
+    // Rule ids ride along because the settle message names which rule fired and
+    // never the content that tripped it.
+    let worst: StepGuardObservation['verdict'] = 'CLEAN';
+    let worstRuleIds: readonly string[] = [];
+
+    // WHICH STEP a propose call belongs to. `wrapForLedger` allocates the step
+    // seq before it invokes the tool and records it here; the adapter's closure
+    // reads it back by `toolCallId` on its way into `runProposeTool`, so an
+    // `AgentProposal` this run queued names the run and the step that queued
+    // it. Keyed rather than held in a field for the same reason the guard
+    // observations above are: the runtime may have more than one call in
+    // flight, and a shared field would attribute one call's proposals to
+    // another's step.
+    const stepOfCall = new Map<string, number>();
+
+    /**
+     * Settle the run on its guard verdict, or answer `null` if no guard fired.
+     *
+     * ONE implementation for both exit paths. The success path and the catch
+     * both need this and they need it to agree — two copies is how a flag
+     * ends a thrown run correctly and a tidy one silently.
+     *
+     * The breaker call comes FIRST and only on a block. It is the half that
+     * makes a repeat offender stoppable rather than merely recorded, and it is
+     * awaited before the settle so a run that blocks and then fails to write
+     * its own row has still been counted.
+     */
+    const settleAtGuard = async (): Promise<RunDriverOutcome | null> => {
+        if (worst === 'CLEAN') return null;
+
+        if (worst === 'QUARANTINED' && ctx.agentId) {
+            // NEVER throws: `latchOnGuardBlock` swallows its own failure and
+            // returns a null result, which is the right direction here. The
+            // run is being stopped either way, and a breaker that cannot count
+            // must not also prevent the stop from being recorded.
+            await latchOnGuardBlock(ctx.tenantId, ctx.agentId, new Date());
+        }
+
+        await updateRun(ctx, runId, { costTokens });
+        const status = await haltRunAtGuard(ctx, runId, worst, worstRuleIds);
+        return { status, stepFailures };
+    };
+
+    const offered = flueToolsFor(
+        invocation,
+        (o) => {
+            const prior = seen.get(o.toolCallId);
+            seen.set(o.toolCallId, prior && RANK[prior.verdict] >= RANK[o.verdict] ? prior : o);
+            if (RANK[o.verdict] > RANK[worst]) {
+                worst = o.verdict;
+                worstRuleIds = o.ruleIds;
+            }
+        },
+        (toolCallId) => {
+            const stepSeq = stepOfCall.get(toolCallId);
+            return stepSeq === undefined ? undefined : { runId, stepSeq };
+        },
+    );
     const latch: CapLatch = { halt: null };
     let seq = fromSeq;
     let stepFailures = 0;
 
     const tools = offered.tools.map((tool) => wrapForLedger(ctx, runId, tool, latch, budget, {
         nextSeq: () => seq++,
+        noteOrigin: (id, stepSeq) => { stepOfCall.set(id, stepSeq); },
+        forgetOrigin: (id) => { stepOfCall.delete(id); },
         onFailure: () => { stepFailures += 1; },
+        // TAKEN, not read: the entry is this call's, and leaving it in the map
+        // would both leak for the life of the run and let a later call with a
+        // recycled id inherit a verdict that was not its own.
+        takeVerdict: (id) => {
+            const o = seen.get(id);
+            seen.delete(id);
+            return o;
+        },
     }));
 
     bindRun(runId, { tools, modelSpecifier });
@@ -184,8 +294,33 @@ export async function executeFlueRun(
             // becomes an `AgentProposal` if it becomes anything, and that row
             // is guarded, diffed and reviewable; a copy in the step ledger
             // would be un-guarded model output in a second, unreviewed place.
-            input: { toolCalls: usage.toolCalls, failedToolCalls: usage.failedToolCalls },
+            input: {
+                toolCalls: usage.toolCalls,
+                failedToolCalls: usage.failedToolCalls,
+                // THE KEY TO THIS STEP'S ART 12 ROW.
+                //
+                // `AiDecisionLog` carries no `runId` — deliberately, it is the
+                // regulator's record of a DECISION and not of an engine's
+                // bookkeeping — so the two are joined on
+                // `(tenantId, inputDigest)`. Recording the digest here is what
+                // turns that join into a link a reviewer can follow.
+                //
+                // It is the SAME function `logAiDecision` computes with, over
+                // the SAME value, one line below. Re-deriving the rule instead
+                // of sharing the function is how the two would drift into
+                // pointing at different rows, so a guard pins them together.
+                //
+                // A DIGEST IS NOT CONTENT. It is a sha256 over the sanitised
+                // input, already stored on the decision row; recording it adds
+                // no prompt text to a ledger that deliberately holds none.
+                decisionDigest: computeInputDigest(runMessage(def, fromSeq)),
+            },
         });
+
+        // The Art 12 row, beside the ledger row and after it: the step is the
+        // engine's own record, the decision row is the regulator's, and the
+        // one that cannot be written must not stop the one that can.
+        await recordModelDecision(ctx, runId, def, runMessage(def, fromSeq), reply, usage, modelSpecifier);
 
         // A cap that fired mid-dispatch wins over the reply. The submission
         // may well have finished tidily after being refused its tools, and
@@ -195,6 +330,15 @@ export async function executeFlueRun(
             const status = await haltRunAtCap(ctx, runId, latch.halt, def.steps.length - fromSeq);
             return { status, stepFailures };
         }
+
+        // A GUARD VERDICT OUTLIVES A TIDY FINISH, for the same reason the cap
+        // above does. The latch refuses every call after the first flag, so a
+        // flagged run usually leaves by throwing — but a flag on the LAST call
+        // lets the dispatch finish cleanly, and reporting that as COMPLETED is
+        // exactly the "guard ran, recorded its verdict, and changed nothing"
+        // shape the adapter's own docstring warns about.
+        const guardHalt = await settleAtGuard();
+        if (guardHalt) return guardHalt;
 
         // Tokens charged AFTER the work is recorded, for the reason the static
         // driver charges them after its commit: the turn has already happened
@@ -223,6 +367,18 @@ export async function executeFlueRun(
             const status = await haltRunAtCap(ctx, runId, latch.halt, def.steps.length - fromSeq);
             return { status, stepFailures };
         }
+
+        // A guard verdict latched before the throw EXPLAINS the throw — the
+        // same argument the cap makes immediately above, and the reason this
+        // sits below it rather than beside it: a run that hit the cap and was
+        // also flagged is a run that hit the cap. `review.check` leaves by
+        // throwing on both of its refusal paths, so without this arm every
+        // guard block and every flag arrived here and was settled
+        // `flue_run_failed: <the throw's message>` — a control outcome
+        // reported as a crash.
+        const guardHalt = await settleAtGuard();
+        if (guardHalt) return guardHalt;
+
         const message = err instanceof Error ? err.message : String(err);
         const status = await failRun(ctx, runId, `flue_run_failed: ${message}`);
         return { status, stepFailures: stepFailures + 1 };
@@ -248,7 +404,13 @@ function wrapForLedger(
     tool: FlueToolDefinition,
     latch: CapLatch,
     budget: ReturnType<typeof createRunBudget>,
-    ledger: { nextSeq: () => number; onFailure: () => void },
+    ledger: {
+        nextSeq: () => number;
+        noteOrigin: (toolCallId: string, stepSeq: number) => void;
+        forgetOrigin: (toolCallId: string) => void;
+        onFailure: () => void;
+        takeVerdict: (toolCallId: string) => StepGuardObservation | undefined;
+    },
 ): FlueToolDefinition {
     return {
         ...tool,
@@ -271,13 +433,40 @@ function wrapForLedger(
                 }
             }
 
+            // PROPOSALS is charged PER ITEM, not per call. `proposeArgs`
+            // accepts up to 20 items in one call and `runProposeTool` queues
+            // one PENDING row for each, so charging the call would let a run
+            // reach twenty times its proposal cap while the counter read as
+            // one. The budget already SEEDS this kind from
+            // `proposedItemsSoFar`, which was inert only because nothing on
+            // this engine could propose; offering the surface is what makes
+            // the seed a cap rather than a number.
+            //
+            // The predicate is the registry's own, the same one the adapter
+            // dispatches on — a second way of deciding "is this a propose
+            // tool" is a way for the charge and the funnel to disagree, and
+            // the disagreement that matters is a propose call charged nothing.
+            const items = isProposeTool(tool.name) ? proposedItemCount(context.data) : 0;
+            if (items > 0) {
+                const halt = budget.charge('PROPOSALS', items);
+                if (halt) {
+                    latch.halt = halt;
+                    throw new Error(halt.message);
+                }
+            }
+
             const seq = ledger.nextSeq();
+            // BEFORE the call, because the call is what reads it.
+            ledger.noteOrigin(context.toolCallId, seq);
             try {
                 const result = await tool.run(context);
+                const verdict = ledger.takeVerdict(context.toolCallId);
                 await recordStep(ctx, runId, seq, 'TOOL_CALL', {
                     toolCalled: tool.name,
                     status: 'DONE',
                     label: tool.name,
+                    guardVerdict: verdict?.verdict,
+                    guardRuleIds: verdict?.ruleIds,
                     // The ARGUMENTS the model chose — not the result. The
                     // result is tenant content, already guarded on its way
                     // back through the adapter; the arguments are what the
@@ -290,14 +479,27 @@ function wrapForLedger(
                 return result;
             } catch (err) {
                 ledger.onFailure();
+                // The verdict is read on THIS path too, and it is the path it
+                // matters most on: a guard that blocked or flagged the call
+                // left by throwing, so a failed step with no verdict would be
+                // indistinguishable from a tool that simply errored.
+                const verdict = ledger.takeVerdict(context.toolCallId);
                 await recordStep(ctx, runId, seq, 'TOOL_CALL', {
                     toolCalled: tool.name,
                     status: 'FAILED',
                     label: tool.name,
+                    guardVerdict: verdict?.verdict,
+                    guardRuleIds: verdict?.ruleIds,
                     input: context.data,
                     output: { error: err instanceof Error ? err.message : String(err) },
                 });
                 throw err;
+            } finally {
+                // Symmetrical with `takeVerdict`'s delete, and for the same
+                // two reasons: the entry is this call's, and leaving it would
+                // both leak for the life of the run and let a later call with
+                // a recycled id inherit a step seq that was not its own.
+                ledger.forgetOrigin(context.toolCallId);
             }
         },
     };
@@ -313,7 +515,13 @@ function wrapForLedger(
  * nothing is claimed.
  */
 function readUsage(metadata: Record<string, unknown> | undefined): FlueUsageReport {
-    const empty: FlueUsageReport = { totalTokens: 0, toolCalls: 0, failedToolCalls: 0 };
+    const empty: FlueUsageReport = {
+        totalTokens: 0,
+        tokensIn: 0,
+        tokensOut: 0,
+        toolCalls: 0,
+        failedToolCalls: 0,
+    };
     const raw = metadata?.[FLUE_USAGE_KEY];
     if (typeof raw !== 'object' || raw === null) return empty;
     const report = raw as Partial<FlueUsageReport>;
@@ -321,6 +529,8 @@ function readUsage(metadata: Record<string, unknown> | undefined): FlueUsageRepo
         typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0;
     return {
         totalTokens: num(report.totalTokens),
+        tokensIn: num(report.tokensIn),
+        tokensOut: num(report.tokensOut),
         toolCalls: num(report.toolCalls),
         failedToolCalls: num(report.failedToolCalls),
     };

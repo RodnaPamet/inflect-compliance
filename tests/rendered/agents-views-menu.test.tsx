@@ -1,5 +1,5 @@
 /**
- * The agents "Views ▾" menu (#2436, #2439).
+ * The agents "Views ▾" menu (#2436, #2439, #2771).
  *
  * Five claims:
  *
@@ -83,6 +83,7 @@ const ENTRY_IDS = [
     'agents-view-runs',
     'agents-view-receipts',
     'agents-view-quarantine',
+    'agents-view-decisions',
     'agents-view-reports',
     'agents-view-review-quality',
 ] as const;
@@ -113,7 +114,7 @@ async function openMenu(
 /** The rendered menu-item rows, in DOM order. */
 const items = () => screen.queryAllByRole('menuitem');
 
-describe('six entries in two labelled groups', () => {
+describe('seven entries in two labelled groups', () => {
     it('renders exactly those, in order', async () => {
         await openMenu();
         // The ids, as an exact ordered list — a count would pass for six rows
@@ -130,6 +131,7 @@ describe('six entries in two labelled groups', () => {
             '/t/acme/agents/runs',
             '/t/acme/agents/receipts',
             '/t/acme/agents/quarantine',
+            '/t/acme/agents/decisions',
             '/t/acme/agents/reports',
             '/t/acme/agents/review-quality',
         ]);
@@ -148,6 +150,7 @@ describe('six entries in two labelled groups', () => {
             VIEWS.runs,
             VIEWS.receipts,
             VIEWS.quarantine,
+            VIEWS.decisions,
             VIEWS.reports,
             VIEWS.reviewQuality,
         ]);
@@ -160,6 +163,7 @@ describe('`selected` marks the current route', () => {
         ['runs', 'agents-view-runs'],
         ['receipts', 'agents-view-receipts'],
         ['quarantine', 'agents-view-quarantine'],
+        ['decisions', 'agents-view-decisions'],
         ['review-quality', 'agents-view-review-quality'],
     ] as const)('on %s exactly that one row is selected', async (current, id) => {
         await openMenu({ current });
@@ -185,6 +189,7 @@ describe('a permission-absent entry is NOT RENDERED', () => {
         expect(items().map((el) => el.id)).toEqual([
             'agents-view-receipts',
             'agents-view-quarantine',
+            'agents-view-decisions',
             'agents-view-reports',
             'agents-view-review-quality',
         ]);

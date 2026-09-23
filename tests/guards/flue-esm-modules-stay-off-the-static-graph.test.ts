@@ -157,6 +157,7 @@ describe('the ESM-only packages are outside the static graph the node project lo
             'src/lib/agentic/flue/agent.ts',
             'src/lib/agentic/flue/providers.ts',
             'src/lib/agentic/flue/runtime-start.ts',
+            'src/lib/agentic/flue/telemetry.ts',
         ];
         const reached = esmSide.filter((f) => closure.files.has(f));
         expect({ reached }).toEqual({ reached: [] });
@@ -206,7 +207,7 @@ describe('the ESM-only packages are outside the static graph the node project lo
     });
 });
 
-describe('every src/ file importing an ESM-only package is one of the known four', () => {
+describe('every src/ file importing an ESM-only package is one of the known five', () => {
     // The list is small by design, and this is what keeps it small: a fifth
     // file appearing is a decision someone should make deliberately, with the
     // reachability walk above re-run against it.
@@ -215,6 +216,9 @@ describe('every src/ file importing an ESM-only package is one of the known four
         'src/lib/agentic/flue/execute.ts',
         'src/lib/agentic/flue/providers.ts',
         'src/lib/agentic/flue/runtime-start.ts',
+        // Emits Flue spans onto the existing tracer. Value-imports
+        // `instrument` from the runtime, so it belongs on this side.
+        'src/lib/agentic/flue/telemetry.ts',
     ];
 
     const SRC = repoRelativeFiles().filter(

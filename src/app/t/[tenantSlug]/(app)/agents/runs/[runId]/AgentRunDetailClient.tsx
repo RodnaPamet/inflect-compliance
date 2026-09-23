@@ -18,12 +18,37 @@ export interface RunStepRow {
     status: string;
     /** The tool that ran, or — on a failed step, which records none — the one the definition declared. */
     tool: string | null;
+    /**
+     * The data rung that tool reaches, derived on the server from the tool
+     * catalogue. Null when the step names no tool: a synthesis or a checkpoint
+     * reaches no tenant data by construction, and a chip there would imply a
+     * rung was evaluated when none was.
+     */
+    scope: string | null;
+    /**
+     * What the guard said about this step. NULL means no guard ran, which is
+     * a different fact from `CLEAN` — only tool calls are scanned.
+     */
+    guardVerdict: string | null;
+    /** Stable rule ids that fired. Empty on a clean verdict. */
+    guardRuleIds: readonly string[];
+    /** Tokens THIS step spent; null on the kinds that spend none. */
+    costTokens: number | null;
     /** From the definition; `WorkflowStep` has no label column. */
     label: string | null;
     at: string;
     actorUserId: string | null;
     inputJson: string | null;
     outputJson: string | null;
+    /**
+     * The `(tenantId, inputDigest)` key of this step's EU AI Act Art 12 row,
+     * or null when the step produced none.
+     *
+     * Null for every static-driver step, every tool call, and every run that
+     * predates the digest being recorded — a link is offered only where there
+     * is a row to open.
+     */
+    decisionDigest: string | null;
     /**
      * The proposals this step queued. Possibly several — one `buildItems` can
      * produce many — which is why `AgentProposal.stepSeq` carries no unique
@@ -227,6 +252,83 @@ export function AgentRunDetailClient({
                                         did not. */}
                                     {s.tool && (
                                         <code className="text-xs text-content-muted">{s.tool}</code>
+                                    )}
+                                    {/* THE RUNG, beside the tool that reaches it.
+                                        Inline text rather than a StatusBadge on
+                                        purpose: `status` is the only field here
+                                        whose meaning is a traffic light, and the
+                                        per-file badge budget exists precisely to
+                                        stop a row becoming a wall of colour in
+                                        which the one badge that matters stops
+                                        being read. */}
+                                    {s.scope && (
+                                        <span className="text-xs text-content-subtle">
+                                            {t(`runs.detail.scope.${s.scope}`)}
+                                        </span>
+                                    )}
+                                    {/* WHAT THE GUARD FOUND. Rendered only when
+                                        one ran: a step with no verdict was never
+                                        scanned, and a chip reading "clean" there
+                                        would answer a question nobody asked of
+                                        it. Rule ids ride in the title so the row
+                                        stays one line and the detail is a hover
+                                        away. */}
+                                    {s.guardVerdict && (
+                                        <span className="text-xs text-content-subtle">
+                                            {t(`runs.detail.guard.${s.guardVerdict}`)}
+                                        </span>
+                                    )}
+                                    {/* WHICH RULES FIRED, as visible text.
+                                        Not a `title=` tooltip: the ad-hoc
+                                        `title=` ratchet caps those in `src/app`
+                                        and this is none of its three documented
+                                        escape valves, and not a `<Tooltip>`
+                                        either — portalising a Radix tooltip per
+                                        step is the wrong cost for a ledger that
+                                        can run to the step cap. Visible also
+                                        beats hover-only here: an assessor
+                                        reading which rule stopped a step should
+                                        not have to find it with a mouse. */}
+                                    {s.guardRuleIds.length > 0 && (
+                                        <code className="text-xs text-content-muted">
+                                            {s.guardRuleIds.join(', ')}
+                                        </code>
+                                    )}
+                                    {/* WHAT IT SPENT. `!= null` rather than a
+                                        truthiness test: a model call that really
+                                        reported zero tokens is a fact worth
+                                        showing, and `0 &&` would hide it. */}
+                                    {s.costTokens != null && (
+                                        <span className="text-xs tabular-nums text-content-subtle">
+                                            {t('runs.detail.stepTokens', { count: s.costTokens })}
+                                        </span>
+                                    )}
+                                    {/* THE ART 12 ROW THIS STEP PRODUCED.
+                                        Point 4 of the plan asks that a step
+                                        reach its decision-log row. There is no
+                                        foreign key to follow — `AiDecisionLog`
+                                        carries no `runId`, because it is the
+                                        regulator's record of a DECISION rather
+                                        than the engine's bookkeeping — so the
+                                        join is `(tenantId, inputDigest)` and
+                                        the digest recorded on the step is the
+                                        key.
+
+                                        Rendered only where a digest exists. A
+                                        tool call has a guard verdict and NO
+                                        decision row, so linking every guarded
+                                        step would land half of them on an
+                                        empty table — which is the failure the
+                                        decisions page's own note warned about
+                                        when it declined to wire this half
+                                        before there was a key. */}
+                                    {s.decisionDigest && (
+                                        <a
+                                            className="text-xs underline text-content-subtle"
+                                            href={`${tenantHref('/agents/decisions')}?digest=${encodeURIComponent(s.decisionDigest)}`}
+                                        >
+                                            {t('runs.detail.decisionLink')}
+                                        </a>
                                     )}
                                     {s.label && (
                                         <span className="text-xs text-content-subtle">{s.label}</span>

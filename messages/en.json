@@ -8092,7 +8092,8 @@
       "runs": "Activity",
       "receipts": "Receipts",
       "quarantine": "Quarantine",
-      "reviewQuality": "Review quality"
+      "reviewQuality": "Review quality",
+      "decisions": "AI decision log"
     },
     "reviewQuality": {
       "accessTitle": "Agent register access required",
@@ -8124,6 +8125,16 @@
       "proposedAt": "proposed {date}",
       "keySuffix": " · key {key}",
       "reject": "Reject",
+      "bulk": {
+        "selected": "{count} selected",
+        "clear": "Clear",
+        "reject": "Reject selected",
+        "selectRow": "Select this proposal",
+        "undo": "Undo",
+        "rejectedToast": "{count} proposals rejected",
+        "failed": "Failed to reject the selected proposals",
+        "rejectedReconciled": "{rejected} rejected, {skipped} left in the queue — somebody else had already decided them, or their review window had closed."
+      },
       "approve": "Approve",
       "rationale": "Rationale: ",
       "diff": {
@@ -8208,8 +8219,23 @@
         "metaSteps": "Steps",
         "metaTokens": "Tokens",
         "metaStarted": "Started",
-        "proposal": "{kind} · {status}"
-      }
+        "proposal": "{kind} · {status}",
+        "scope": {
+          "NONE": "no data",
+          "READ_METADATA": "metadata",
+          "READ_TENANT_DATA": "reads data",
+          "WRITE_TENANT_DATA": "writes data",
+          "EXTERNAL_EGRESS": "external egress"
+        },
+        "guard": {
+          "CLEAN": "guard: clean",
+          "FLAGGED": "guard: flagged",
+          "QUARANTINED": "guard: quarantined"
+        },
+        "stepTokens": "{count} tokens",
+        "decisionLink": "Art 12 decision"
+      },
+      "awaitingApprovalNoProposals": "Paused for review — nothing is queued for approval. Open the run to see what stopped it, then Resume."
     },
     "quarantine": {
       "crumb": "Quarantine",
@@ -8256,6 +8282,25 @@
     "receipts": {
       "accessTitle": "Agent register access required",
       "accessMessage": "You do not have permission to read agent-action receipts. Contact your workspace administrator to request access."
+    },
+    "decisions": {
+      "title": "AI decision log",
+      "description": "One row per model call — what was decided, and whether a person reviewed it.",
+      "emptyTitle": "No model calls recorded yet",
+      "emptyDesc": "A row is written here every time this workspace calls a model.",
+      "emptyFilteredTitle": "No decisions over that content",
+      "emptyFilteredDesc": "Nothing in the recent window was guarded over this digest.",
+      "filteredByDigest": "Showing decisions over one piece of content ({digest}…).",
+      "guardLabel": "guard: {verdict}",
+      "tokensIn": "{count} in",
+      "tokensOut": "{count} out",
+      "latency": "{ms} ms",
+      "outcome": {
+        "PENDING": "awaiting review",
+        "ACCEPTED": "accepted",
+        "EDITED": "edited",
+        "REJECTED": "rejected"
+      }
     }
   },
   "securityTesting": {

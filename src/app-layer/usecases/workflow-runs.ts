@@ -55,7 +55,10 @@
  */
 import { WorkflowRunStatus } from '@prisma/client';
 
-import { runInTenantContext } from '@/lib/db/rls-middleware';
+import { runInTenantContext, runInGlobalContext } from '@/lib/db/rls-middleware';
+import { getPermissionsForRole } from '@/lib/permissions';
+import { enqueue } from '@/app-layer/jobs/queue';
+import { failRun } from '@/lib/agentic/drivers/run-settlement';
 import { parseEnumListFilter } from '@/app-layer/domain/list-filter';
 import { assertCanRead, assertCanWrite } from '@/app-layer/policies/common';
 import { badRequest, notFound, forbidden } from '@/lib/errors/types';
@@ -64,6 +67,7 @@ import { enforceMcpCapability, resolveMcpInvocation } from '@/lib/mcp/auth';
 import { runReadTool } from '@/lib/mcp/tools/registry';
 import { runProposeTool } from '@/lib/mcp/tools/propose-tools';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
+import { evaluateAgentRegistration } from '@/lib/agentic/agent-registration-gate';
 import {
     provenanceOfToolResult,
     UNTRUSTED_PROVENANCE,
@@ -74,6 +78,7 @@ import { resolveDriverForRun } from '@/lib/agentic/agent-driver-policy';
 import { assertWithinMonthlyBudget } from '@/lib/agentic/monthly-budget-policy';
 import { trackInFlightRun, untrackInFlightRun } from '@/lib/agentic/in-flight-runs';
 import { getRunRow } from '@/lib/agentic/drivers/run-store';
+import { recordDecisionOutcome } from '@/app-layer/ai/decision-log';
 import { selectRunDriver, requestedDriver } from '@/lib/agentic/drivers';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers';
 import type { AgentDriver } from '@/lib/agentic/agent-driver';
@@ -219,6 +224,43 @@ export async function startWorkflowRun(
     const requested: AgentDriver = requestedDriver(def);
     const chosenDriver: AgentDriver = selectRunDriver(def, driverDecision.driver).driver;
 
+    // ── A FLUE RUN MUST BE VOUCHED FOR BY THE REGISTER ──────────────────────
+    //
+    // Plan point 1: "A Flue run must resolve an ACTIVE RegisteredAgent and
+    // stamp WorkflowRun.agentId." The stamp was here; the resolve was not, and
+    // nothing else on this path supplied it — the route calls getTenantCtx and
+    // then this function, and `planFlueRun` refuses only on driver, steps and
+    // model. So a key bound to a SUSPENDED or RETIRED agent, or a signed-in
+    // human with no binding at all, could start a reasoning loop.
+    //
+    // The human case is the worse one: with `ctx.agentId` null,
+    // `buildMcpInvocation` leaves `grantedTools` null, which is NO ALLOWLIST
+    // TERM — the deny-by-default tool list is keyed on the registered agent,
+    // so an unbound caller skips it rather than being narrowed by it.
+    //
+    // UNCONDITIONAL, and deliberately stricter than `assertRegisteredAgent`.
+    // That helper honours the tenant's `requireRegisteredAgent` toggle, which
+    // is right for an MCP call: an unbound caller there still carries the
+    // key's own scopes. A Flue run is an autonomous loop that chooses its own
+    // tool calls, so "this tenant has not switched enforcement on" is not a
+    // reason to let one start unvouched. `standing === 'vouched'` means
+    // resolved AND ACTIVE; every other standing refuses here.
+    //
+    // ABOVE `createSealedRun`, for the reason the budget check above it is:
+    // a refusal after the row exists leaves a RUNNING run nothing will
+    // advance, which the reaper later reports as a crashed executor — a
+    // refusal wearing the costume of an outage.
+    if (chosenDriver === 'flue') {
+        const gate = await evaluateAgentRegistration(ctx);
+        if (gate.standing !== 'vouched') {
+            throw forbidden(
+                `flue_requires_registered_agent: a Flue run must be started by an ACTIVE ` +
+                    `registered agent (standing: ${gate.standing}). The reasoning loop's tool ` +
+                    `allowlist is keyed on the register, so an unvouched run would have none.`,
+            );
+        }
+    }
+
     // Row + first chain link (seq 0, prev null), one transaction. An `input`
     // already over the size cap fails here and no run is created.
     //
@@ -271,6 +313,30 @@ export async function startWorkflowRun(
         metadataJson: { apiKeyId: ctx.apiKeyId ?? null, agentId: ctx.agentId ?? null },
     }).catch(() => undefined);
 
+    // ── WHERE THE RUN ACTUALLY EXECUTES ─────────────────────────────────────
+    //
+    // Flue runs go to the WORKER; static runs stay in the request.
+    //
+    // Not symmetry for its own sake. A static run is a walk over a
+    // hand-written step array with no model call in it — bounded by
+    // `ENGINE_CAPS.MAX_STEPS`, deterministic, and finished well inside a
+    // request. A Flue run is a reasoning loop: it decides for itself how many
+    // tools to call and how long to keep going, and the plan is explicit that
+    // it belongs in the worker, "never the web tier". The worker also already
+    // has the shutdown drain, which is what makes a SIGTERM mid-run survivable.
+    //
+    // Moving BOTH would change the contract of every existing run — the route
+    // returns a terminal status today — for no benefit the static engine needs.
+    if (chosenDriver === 'flue') {
+        await enqueue('agent-run-execute', { tenantId: ctx.tenantId, runId: run.id });
+        // RUNNING is what `createSealedRun` wrote (the column's default), and
+        // it is reported rather than a synthesised QUEUED. The reaper already
+        // understands a RUNNING row that stops moving; a new enum value would
+        // have to be learned by every reader — list page, reaper, breaker —
+        // to mean something the existing one already covers.
+        return { runId: run.id, status: 'RUNNING', workflowKey, stepFailures: 0 };
+    }
+
     const { status, stepFailures } = await executeFrom(
         ctx,
         run.id,
@@ -297,6 +363,74 @@ export async function resumeWorkflowRun(
         throw badRequest(`Run is ${run.status}, cannot resume`);
     }
 
+    // ── RESOLVED FIRST, BECAUSE THE GATE BELOW NEEDS IT ────────────────────
+    //
+    // RE-RESOLVED, not inherited from the start. A resume is a fresh
+    // authorization moment — the same reason the run re-resolves its
+    // invocation and its policy card — and an operator who switched the tenant
+    // off a driver between the checkpoint and the approval meant it.
+    //
+    // Before this, `executeFrom` was called without the argument at all, so a
+    // resumed segment took the parameter's `STATIC_DRIVER` default whatever the
+    // tenant was configured for, and no audit entry said so either way.
+    //
+    // HOISTED above the checkpoint close so the register gate can run before
+    // anything is mutated: a refusal after the step is DONE and the row is
+    // RUNNING leaves a run nothing will advance, which the reaper later reports
+    // as a crashed executor — a refusal wearing the costume of an outage. The
+    // start path makes the same argument for putting its gate above
+    // `createSealedRun`.
+    const resumeDecision = await resolveDriverForRun(ctx.tenantId, {
+        requestId: ctx.requestId,
+        workflowKey: run.workflowKey,
+    });
+    const resumeRequested: AgentDriver = requestedDriver(def);
+    const resumeDriver: AgentDriver = selectRunDriver(def, resumeDecision.driver).driver;
+
+    // ── THE SECOND DOOR INTO THE FLUE ENGINE ───────────────────────────────
+    //
+    // The start path refuses a Flue run that no ACTIVE `RegisteredAgent`
+    // vouches for, and the worker's resume re-checks the agent and rebuilds
+    // the run's principal. THIS path did neither. It re-resolved the driver
+    // and went straight to `executeFrom` with a signed-in human's context, in
+    // which `ctx.agentId` is undefined — `getTenantCtx` sets no `agentId`.
+    //
+    // What that unbound context does downstream is the whole of the register's
+    // authority, silently dropped:
+    //
+    //   · `grantedTools` resolves null, and `toolIsLoadable` SKIPS the
+    //     allowlist term when it is null rather than narrowing by it — the
+    //     deny-by-default tool list is keyed on the registered agent;
+    //   · both agent-side autonomy terms vanish, so the ceiling is computed
+    //     over an empty set and comes back UNCLAMPED — the exact hazard
+    //     #2399 closed, where suspending a CRITICAL agent PROMOTED it;
+    //   · `settleAtGuard` latches the circuit breaker only when `ctx.agentId`
+    //     is set, so a guard block on a resumed segment is never counted;
+    //   · the Art 12 row names no AI system.
+    //
+    // And this is not a rare path — it is the one the guard arms BUILT. A
+    // FLAGGED verdict settles the run `AWAITING_APPROVAL` precisely so a human
+    // comes here and approves it. Flag, approve, and the continuation ran
+    // unvouched, unclamped and unallowlisted.
+    //
+    // The fix is the worker's, not a new one: re-check the agent is still in
+    // service, and restore the binding the run was started under.
+    if (resumeDriver === 'flue' && !(await runAgentStillInService(ctx.tenantId, run.agentId))) {
+        throw forbidden(
+            'resume_agent_no_longer_in_service: the registered agent this run was started ' +
+                'by is no longer ACTIVE, so the run does not resume on its behalf. ' +
+                'Re-activate the agent, or abort the run.',
+        );
+    }
+
+    // THE RUN'S BINDING, not the approver's. The human stays the ACTOR — the
+    // audit entry below records them and the checkpoint step takes their
+    // `userId` — while the execution carries the agent the run was authorised
+    // under, so every register term applies to the continuation exactly as it
+    // applied to the first segment. Same shape as `rebuildRunContext`'s
+    // `...(row.agentId ? { agentId: row.agentId } : {})` on the worker path.
+    const execCtx: RequestContext = run.agentId ? { ...ctx, agentId: run.agentId } : ctx;
+
     // Close the pending checkpoint step (the one that paused the run).
     const resumedFrom = await runInTenantContext(ctx, async (db) => {
         const pending = await db.workflowStep.findFirst({
@@ -310,23 +444,33 @@ export async function resumeWorkflowRun(
             });
         }
         await db.workflowRun.update({ where: { id: runId }, data: { status: 'RUNNING' } });
+        // ═══ ART 14: A RESUME IS AN ACCEPTANCE ═══
+        //
+        // The run is the reviewable event for a model call. A Flue run that the
+        // content guard FLAGGED parks at AWAITING_APPROVAL precisely so a human
+        // decides whether it may go on, and `resumeWorkflowRun` is that
+        // decision — so every decision row the run has written so far is
+        // ACCEPTED, keyed on the run id the recorder put in `sessionRef`.
+        //
+        // NOT the proposal digest, which is what the three existing stampers
+        // use: that digest is taken over `{ kind, payload, rationale }` and the
+        // model-call row's is taken over the run PROMPT. Same shape, different
+        // content, never equal — so a digest-keyed stamp here would report
+        // `count: 0` and leave the loop looking closed. See
+        // `flue/model-decision.ts` for the full argument.
+        //
+        // In the SAME transaction as the checkpoint close, for the reason
+        // `rejectAgentProposal` gives: a human decision recorded on the run but
+        // not on the decision log is a register that says a model call is still
+        // awaiting a review that has already happened.
+        //
+        // A static run matches nothing here and that costs one indexed
+        // `updateMany` — the engine that writes no decision rows has none to
+        // stamp, and branching on the driver would put the engine's identity in
+        // a place that does not otherwise need to know it.
+        await recordDecisionOutcome(db, ctx, runId, 'ACCEPTED');
         return pending?.seq ?? run.stepCount - 1;
     });
-
-    // RE-RESOLVED, not inherited from the start. A resume is a fresh
-    // authorization moment — the same reason the run re-resolves its invocation
-    // and its policy card here — and an operator who switched the tenant off a
-    // driver between the checkpoint and the approval meant it.
-    //
-    // Before this, `executeFrom` was called without the argument at all, so a
-    // resumed segment took the parameter's `STATIC_DRIVER` default whatever the
-    // tenant was configured for, and no audit entry said so either way.
-    const resumeDecision = await resolveDriverForRun(ctx.tenantId, {
-        requestId: ctx.requestId,
-        workflowKey: run.workflowKey,
-    });
-    const resumeRequested: AgentDriver = requestedDriver(def);
-    const resumeDriver: AgentDriver = selectRunDriver(def, resumeDecision.driver).driver;
 
     await appendAuditEntry({
         tenantId: ctx.tenantId, userId: ctx.userId, actorType: 'USER',
@@ -356,7 +500,8 @@ export async function resumeWorkflowRun(
     // intended reading: `WALL_CLOCK_MS` is documented as "max wall-clock a run
     // may span (ACROSS RESUMES)".
     const { status, stepFailures } = await executeFrom(
-        ctx,
+        // BOUND, not the bare human context — see the register gate above.
+        execCtx,
         runId,
         def,
         resumedFrom + 1,
@@ -374,12 +519,25 @@ export async function abortWorkflowRun(ctx: RequestContext, runId: string): Prom
     if (['COMPLETED', 'ABORTED', 'FAILED'].includes(run.status)) {
         throw badRequest(`Run is already ${run.status}`);
     }
-    await runInTenantContext(ctx, (db) =>
-        db.workflowRun.update({
+    await runInTenantContext(ctx, async (db) => {
+        await db.workflowRun.update({
             where: { id: runId },
             data: { status: 'ABORTED', completedAt: new Date() },
-        }),
-    );
+        });
+        // ═══ ART 14: AN ABORT IS A REJECTION ═══
+        //
+        // The other half of the resume above, and the same key. A human
+        // stopping a run refuses what it decided, so its model-call decision
+        // rows move PENDING → REJECTED rather than sitting at "awaiting review"
+        // for ever after the review that killed the run.
+        //
+        // One-way, so a run aborted after a resume keeps the ACCEPTED the
+        // resume wrote: `recordDecisionOutcome` filters `humanOutcome:
+        // 'PENDING'` and the DB trigger enforces the same. That is the right
+        // reading — the human accepted what the run had done at the checkpoint,
+        // and then refused what it did next.
+        await recordDecisionOutcome(db, ctx, runId, 'REJECTED');
+    });
     await appendAuditEntry({
         tenantId: ctx.tenantId, userId: ctx.userId, actorType: 'USER',
         entity: 'WorkflowRun', entityId: runId, action: 'WORKFLOW_RUN_ABORTED',
@@ -443,6 +601,18 @@ export async function listWorkflowRuns(
             where: { tenantId: ctx.tenantId, status },
             orderBy: { startedAt: 'desc' },
             take: opts.take ?? 50,
+            // HOW MANY PROPOSALS ARE ACTUALLY WAITING on this run.
+            //
+            // A filtered relation count rather than a join, because the list
+            // needs the NUMBER and never the rows. It exists because
+            // `AWAITING_APPROVAL` does not mean "there are proposals to
+            // approve": a HUMAN_CHECKPOINT pauses a run whether or not it
+            // queued anything, and a content-guard flag pauses one that
+            // queued nothing at all. Without this the list can only guess,
+            // and it guessed wrong in one direction for every such run.
+            include: {
+                _count: { select: { proposals: { where: { status: 'PENDING' } } } },
+            },
         }),
     );
 }
@@ -580,6 +750,248 @@ async function createSealedRun(
 
 
 
+
+
+/**
+ * What the worker did with a queued run.
+ *
+ * A union rather than an optional field: "it executed and here is the status"
+ * and "it correctly declined, for this reason" are different outcomes, and a
+ * caller that has to check whether `status` happens to be set will eventually
+ * forget to.
+ */
+export type QueuedRunOutcome =
+    | { status: string; stepFailures: number }
+    | { skipped: string };
+
+/**
+ * EXECUTE A RUN THAT WAS ENQUEUED — the worker's entry point.
+ *
+ * ── WHY THE PRINCIPAL IS REBUILT, NOT SUBSTITUTED ───────────────────────────
+ *
+ * The obvious shape, and the one several jobs in this repo already use, is
+ * `buildCtx(tenantId)` — find the first active OWNER/ADMIN and run as them.
+ * That is right for a sweep that belongs to the platform. It is wrong here,
+ * and not by a little: a run's authority is the intersection of the agent's
+ * registration, the key's scopes, the autonomy ceiling and the policy card of
+ * the principal who STARTED it. Executing it as an admin would hand the run a
+ * different — almost certainly wider — authority than the one it was
+ * authorised under, in a subsystem whose entire claim is that multi-step does
+ * not mean multi-privilege.
+ *
+ * So the principal comes off the run row, which already records every term:
+ * `startedByUserId`, `triggeredViaKeyId`, `agentId`, `policyCardVersion`.
+ *
+ * ── WHAT IS RE-READ RATHER THAN PINNED, AND WHY ─────────────────────────────
+ *
+ * The ROLE and the key's SCOPES are read at execution time, not carried from
+ * the enqueue. Authority is current: a principal whose membership was revoked
+ * between enqueue and execution must not have a queued job act for them, and
+ * a key whose scopes were narrowed must not widen again by having been used
+ * earlier. The policy card is the deliberate exception — `policyCardVersion`
+ * is pinned on the row precisely so a run is judged by the rules in force when
+ * it started.
+ *
+ * FAIL CLOSED: no active membership, no execution. The run is settled FAILED
+ * with a message naming the reason rather than left RUNNING for the reaper,
+ * because "the person who started this lost access" is an answer an operator
+ * wants, and a wedged row is not.
+ *
+ * ── WHY `fromSeq` COMES FROM THE LEDGER ─────────────────────────────────────
+ *
+ * Not from the payload. A SIGTERM mid-run leaves the committed steps in place
+ * and the row RUNNING; BullMQ retries; this reads how many steps actually
+ * landed and resumes after them. A payload-carried index would re-execute a
+ * step the run had already committed — and the steps that call tools are not
+ * idempotent.
+ */
+export async function executeQueuedWorkflowRun(
+    tenantId: string,
+    runId: string,
+): Promise<QueuedRunOutcome> {
+    // Read the row BEFORE there is a context to read it with — the one place
+    // that is unavoidable, and scoped by BOTH ids so a wrong tenant cannot
+    // reach another's run even here.
+    const row = await runInGlobalContext((db) =>
+        db.workflowRun.findFirst({
+            where: { id: runId, tenantId },
+            select: {
+                id: true, tenantId: true, workflowKey: true, status: true,
+                startedByUserId: true, triggeredViaKeyId: true, agentId: true,
+                stepCount: true, startedAt: true,
+            },
+        }),
+    );
+    if (!row) return { skipped: 'NOT_FOUND' };
+
+    // IDEMPOTENT. A retry that arrives after the run already settled — or
+    // after a human aborted it — must not restart it. Only a RUNNING row has
+    // work left, and BullMQ can deliver a job more than once.
+    if (row.status !== 'RUNNING') return { skipped: `NOT_RUNNING:${row.status}` };
+
+    const def = getWorkflowDefinition(row.workflowKey);
+    if (!def) {
+        await failRun(
+            { tenantId, userId: row.startedByUserId ?? 'system' } as RequestContext,
+            runId,
+            'workflow_definition_missing: the workflow this run was started from no longer exists.',
+        );
+        return { skipped: 'NO_DEFINITION' };
+    }
+
+    if (!(await runAgentStillInService(tenantId, row.agentId))) {
+        await failRun(
+            { tenantId, userId: row.startedByUserId ?? 'system' } as RequestContext,
+            runId,
+            'run_agent_no_longer_in_service: the registered agent this run was started by ' +
+                'is no longer ACTIVE, so the run does not resume on its behalf.',
+        );
+        return { skipped: 'AGENT_NOT_ACTIVE' };
+    }
+
+    const ctx = await rebuildRunContext(row);
+    if (!ctx) {
+        await failRun(
+            { tenantId, userId: row.startedByUserId ?? 'system' } as RequestContext,
+            runId,
+            'run_principal_no_longer_authorised: the principal that started this run ' +
+                'no longer holds an active membership in this workspace.',
+        );
+        return { skipped: 'PRINCIPAL_REVOKED' };
+    }
+
+    const permitted = (
+        await resolveDriverForRun(ctx.tenantId, {
+            requestId: ctx.requestId,
+            workflowKey: row.workflowKey,
+        })
+    ).driver;
+    const { status, stepFailures } = await executeFrom(
+        ctx,
+        runId,
+        def,
+        // The ledger's answer, not the payload's.
+        row.stepCount,
+        row.startedAt.getTime(),
+        permitted,
+    );
+    return { status, stepFailures };
+}
+
+
+/**
+ * Rebuild the principal who started a run, from the row that recorded them.
+ *
+ * Returns `null` when that principal can no longer act — which is the whole
+ * point of the function. A queued job must not be a way for authority to
+ * outlive the grant that created it.
+ *
+ * The API key is re-read for the same reason: `triggeredViaKeyId` says which
+ * key started the run, and the SCOPES it carries now are the ones it may use
+ * now. A key that was narrowed, or revoked, between enqueue and execution
+ * narrows the run with it.
+ */
+async function rebuildRunContext(row: {
+    tenantId: string;
+    startedByUserId: string | null;
+    triggeredViaKeyId: string | null;
+    agentId: string | null;
+}): Promise<RequestContext | null> {
+    if (!row.startedByUserId) return null;
+
+    const membership = await runInGlobalContext((db) =>
+        db.tenantMembership.findFirst({
+            where: { tenantId: row.tenantId, userId: row.startedByUserId as string, status: 'ACTIVE' },
+            select: { role: true, customRoleId: true },
+        }),
+    );
+    // FAIL CLOSED. No active membership, no context, no execution.
+    if (!membership) return null;
+
+    let apiKeyScopes: string[] | undefined;
+    if (row.triggeredViaKeyId) {
+        const now = new Date();
+        const key = await runInGlobalContext((db) =>
+            db.tenantApiKey.findFirst({
+                where: {
+                    id: row.triggeredViaKeyId as string,
+                    tenantId: row.tenantId,
+                    revokedAt: null,
+                    // EXPIRY COUNTS TOO. A key that lapsed while the job sat in
+                    // the queue is as gone as a revoked one; only `revokedAt`
+                    // would let a run continue on a credential that no live
+                    // request could use.
+                    OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+                },
+                select: { scopes: true },
+            }),
+        );
+        // A revoked or lapsed key is the same answer as a revoked membership:
+        // the grant that authorised this run is gone, so the run does not
+        // continue on it.
+        if (!key) return null;
+        // `scopes` is a Json column holding an array of strings. Narrowed
+        // rather than asserted: a malformed value yields NO scopes, which
+        // fails closed, where a cast would hand the run whatever was there.
+        apiKeyScopes = Array.isArray(key.scopes)
+            ? key.scopes.filter((v): v is string => typeof v === 'string')
+            : [];
+    }
+
+    const appPermissions = getPermissionsForRole(membership.role);
+    return {
+        // Correlates every log line and audit row of this attempt back to the
+        // run, which is what an operator has when they open the page.
+        requestId: `agent-run-${row.tenantId}-${row.startedByUserId}`,
+        userId: row.startedByUserId,
+        tenantId: row.tenantId,
+        role: membership.role,
+        // Derived from the granular set exactly as `risk-appetite-jobs`
+        // does — the coarse five are a projection of it, not a second source.
+        permissions: {
+            canRead: appPermissions.risks.view,
+            canWrite: appPermissions.risks.edit,
+            canAdmin: appPermissions.admin.manage,
+            canAudit: appPermissions.audits.view,
+            canExport: appPermissions.reports.export,
+        },
+        appPermissions,
+        // NOT `actorType: 'JOB'`. The worker is only where this runs; the run
+        // was asked for by a person or a key, and the audit trail must keep
+        // saying so or a review cannot tell an agent's work from a sweep's.
+        ...(row.triggeredViaKeyId ? { apiKeyId: row.triggeredViaKeyId, apiKeyScopes } : {}),
+        ...(row.agentId ? { agentId: row.agentId } : {}),
+    } as RequestContext;
+}
+
+/**
+ * Is the agent this run was started by STILL in service?
+ *
+ * The gap this closes, found by an adversarial review of point 1: the worker
+ * re-read the membership and failed closed on revocation, re-read the key and
+ * failed closed on revoke or expiry — and then restored `ctx.agentId` with no
+ * check of the agent at all. The one principal that IS an agent was the one
+ * principal not re-validated.
+ *
+ * Authority is current, exactly as it is for the membership and the key. An
+ * agent suspended or retired while its run sat in the queue must not have that
+ * run resume on its behalf — suspension is an operator stopping an agent, and
+ * a queue is not a way around it.
+ *
+ * Returns true when there is no agent to check. A run with no `agentId` cannot
+ * be a Flue run (the start path now refuses those), so this is the static
+ * engine's row and the register has nothing to say about it.
+ */
+async function runAgentStillInService(tenantId: string, agentId: string | null): Promise<boolean> {
+    if (!agentId) return true;
+    const agent = await runInGlobalContext((db) =>
+        db.registeredAgent.findFirst({
+            where: { id: agentId, tenantId, status: 'ACTIVE' },
+            select: { id: true },
+        }),
+    );
+    return Boolean(agent);
+}
 
 async function loadRunAndDef(ctx: RequestContext, runId: string) {
     const run = await getRunRow(ctx, runId);

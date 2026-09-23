@@ -141,6 +141,7 @@ const ADMIN_ONLY_ROUTES = [
     // because it decides the same thing (what the download gate serves)
     // for a page of files rather than for one. Audited AV_RESCAN_INITIATED.
     'admin/av-rescan/route.ts',
+    'admin/agent-driver/route.ts',
     'admin/identity-write-policy/route.ts',
     'admin/identity-leaver-passes/route.ts',
     // #2687 — the joiner's half of the same pair. The report names which of a
@@ -153,6 +154,7 @@ const ADMIN_ONLY_ROUTES = [
     // ROUTE_PERMISSIONS rule, ordered ahead of the subtree one for the same
     // reason the leaver's is.
     'admin/identity-joiner-passes/route.ts',
+    'admin/identity-joiner-passes/run/route.ts',
     // The off-schedule RE-RUN trigger. Its sibling above is a read; this is
     // the only endpoint in that subtree that makes the product write to a
     // customer's directory, so it carries its OWN rule in ROUTE_PERMISSIONS

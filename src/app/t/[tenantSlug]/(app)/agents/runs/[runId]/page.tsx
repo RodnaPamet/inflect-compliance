@@ -3,8 +3,9 @@ import { getTranslations } from 'next-intl/server';
 
 import { getTenantCtx } from '@/app-layer/context';
 import { getWorkflowRun } from '@/app-layer/usecases/workflow-runs';
+import { baseDataScopeForTool } from '@/lib/mcp/tool-data-scope';
 import { getWorkflowDefinition } from '@/lib/agentic/workflow-registry';
-import { resolveStepTool } from '@/lib/agentic/run-step-view';
+import { declaredStepFor, resolveStepTool } from '@/lib/agentic/run-step-view';
 import { ForbiddenPage } from '@/components/ForbiddenPage';
 
 import { AgentRunDetailClient, type RunStepRow } from './AgentRunDetailClient';
@@ -44,6 +45,36 @@ import { AgentRunDetailClient, type RunStepRow } from './AgentRunDetailClient';
  * steps an operator opened this page to inspect. The column wins when set,
  * because it is what actually ran; the definition fills the gap.
  */
+/**
+ * The Art 12 digest a MODEL_CALL step recorded, or null.
+ *
+ * `AiDecisionLog` carries no `runId`: it is the regulator's record of a
+ * DECISION, not the engine's bookkeeping, and the two are joined on
+ * `(tenantId, inputDigest)`. The Flue driver records that digest on the step
+ * it produced, so this reads it back.
+ *
+ * NULL for every step that has none — the static driver's steps, tool calls,
+ * and any run that predates the digest being recorded. A link is offered only
+ * where there is something to open; an anchor that lands on an empty table
+ * would be worse than no anchor.
+ */
+function decisionDigestOf(inputJson: string | null): string | null {
+    if (!inputJson) return null;
+    try {
+        const parsed: unknown = JSON.parse(inputJson);
+        if (!parsed || typeof parsed !== 'object') return null;
+        const d = (parsed as { decisionDigest?: unknown }).decisionDigest;
+        // Shape-checked, not merely present. This value goes into a query
+        // string, and `sha256:<hex>` is the only thing the decisions page can
+        // do anything with.
+        return typeof d === 'string' && /^sha256:[0-9a-f]{64}$/.test(d) ? d : null;
+    } catch {
+        // A malformed blob is a display problem for the payload panel, not a
+        // reason to fail the page.
+        return null;
+    }
+}
+
 export default async function AgentRunDetailPage({
     params,
 }: {
@@ -91,7 +122,16 @@ export default async function AgentRunDetailPage({
     }
 
     const steps: RunStepRow[] = run.steps.map((s) => {
-        const declared = def?.steps[s.seq];
+        // NOT `def?.steps[s.seq]`. That indexing is only meaningful for the
+        // static engine, whose loop walks the definition's array; a Flue run's
+        // `seq` counts steps RECORDED and indexes nothing. `declaredStepFor`
+        // carries the rule and is tested on its own.
+        const declared = declaredStepFor(def?.steps, s.seq, s.kind);
+        // Resolved ONCE: both the tool chip and the data rung below read it,
+        // and `resolveStepTool` carries a rule (column first, definition only
+        // for the hole a failed step leaves) that must not be evaluated twice
+        // and risk answering differently.
+        const tool = resolveStepTool(s.toolCalled, declared);
         return {
             id: s.id,
             seq: s.seq,
@@ -100,7 +140,37 @@ export default async function AgentRunDetailPage({
             // The column first — it is what RAN. The definition only fills the
             // hole a failed step leaves. The rule is `resolveStepTool`, which
             // carries the reasoning and is tested on its own.
-            tool: resolveStepTool(s.toolCalled, declared),
+            tool,
+            // THE DATA RUNG THE TOOL REACHES, derived rather than stored.
+            //
+            // `baseDataScopeForTool` is a pure function of the tool NAME —
+            // the catalogue rule, or the class default — so there is nothing
+            // to migrate and nothing that can drift from the authority that
+            // actually enforces it. Deriving it here rather than recording it
+            // on the step is what keeps those two the same fact: if the
+            // catalogue reclassifies a tool tomorrow, an old run's timeline
+            // re-reads the rung that tool reaches TODAY, which is the honest
+            // answer to "what does this step touch".
+            //
+            // Computed on the SERVER. The helper only type-imports from
+            // Prisma and otherwise reaches the tool catalogue, so this adds
+            // nothing to the client bundle.
+            //
+            // Null when the step names no tool — a synthesis or a checkpoint
+            // reaches no tenant data by construction, and a chip reading
+            // "NONE" there would imply a rung was evaluated when none was.
+            scope: tool ? baseDataScopeForTool(tool) : null,
+            // WHAT THE GUARD SAID, when one ran. Null is not CLEAN: a
+            // checkpoint or a synthesis reaches no tenant content and is never
+            // scanned, and a chip reading CLEAN there would tell a reviewer
+            // the guard looked at a step it never examined.
+            guardVerdict: s.guardVerdict,
+            guardRuleIds: s.guardRuleIds,
+            // What THIS step spent. The run total stays in the header; this is
+            // the per-step breakdown, and it is null on the kinds that spend
+            // nothing rather than 0, so a read that cost nothing and a model
+            // call whose usage went unreported stay different facts.
+            costTokens: s.costTokens,
             label: declared?.label ?? null,
             at: s.at.toISOString(),
             actorUserId: s.actorUserId,
@@ -111,6 +181,15 @@ export default async function AgentRunDetailPage({
             // from a collapsed panel to the whole page.
             inputJson: s.inputJson,
             outputJson: s.outputJson,
+            // THE LINK TO THIS STEP'S ART 12 ROW, derived here rather than in
+            // the client.
+            //
+            // A GUARDED parse, and only for this one field. The raw string
+            // still passes through untouched for display, for the reason
+            // stated immediately above — so a malformed blob costs the LINK
+            // and not the page, which is the whole point of not parsing it
+            // wholesale.
+            decisionDigest: decisionDigestOf(s.inputJson),
             // WHAT THIS STEP QUEUED. The other half of the backlink: a
             // proposal names its step, and a step names its proposals, so a
             // reviewer can travel either way between the write and the

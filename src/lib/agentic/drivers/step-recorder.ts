@@ -1,6 +1,7 @@
 import type { WorkflowStepKind } from '@prisma/client';
 
 import type { RequestContext } from '@/app-layer/types';
+import type { AgentGuardVerdict } from '@/app-layer/ai/guard/proposal-guard';
 // The SAME specifier the static driver used before the move, not the
 // `@/lib/db-context` re-export. Three unit suites partially mock
 // `@/lib/db/rls-middleware` as `{ runInTenantContext }`; importing the same
@@ -61,6 +62,18 @@ export interface StepRecord {
      */
     provenance?: ContentProvenance;
     /**
+     * What the guard said about this step, when a guard ran.
+     *
+     * ABSENT means no guard ran, which is NOT the same as `CLEAN`. A
+     * checkpoint or a synthesis reaches no tenant content and is never
+     * scanned; only a tool call is. Recording `CLEAN` for an unscanned step
+     * would tell a reviewer the guard looked and was satisfied, on a step it
+     * never examined.
+     */
+    guardVerdict?: AgentGuardVerdict;
+    /** Stable rule ids that fired. Safe to persist — they carry no content. */
+    guardRuleIds?: readonly string[];
+    /**
      * Tokens this step spent, when the step is a model call and the runtime
      * reported usage.
      *
@@ -90,6 +103,20 @@ export async function recordStep(
                 outputJson: rec.output !== undefined ? JSON.stringify(rec.output) : null,
                 status: rec.status,
                 actorUserId: rec.actorUserId ?? null,
+                // ── PER-STEP EVIDENCE ───────────────────────────────────────
+                //
+                // `undefined` rather than `null` for the verdict: absent means
+                // no guard ran, and Prisma leaves the column NULL either way,
+                // but writing `?? null` here would read as "we decided it was
+                // nothing" rather than "nothing scanned this".
+                guardVerdict: rec.guardVerdict,
+                // The array column's empty state already says "no rules
+                // fired", so there is no nullable third state to carry.
+                guardRuleIds: rec.guardRuleIds ? [...rec.guardRuleIds] : [],
+                // The per-step breakdown. `WorkflowRun.costTokens` stays the
+                // enforced total and the cap still reads it — this is the
+                // detail an incident review wants and a run total cannot give.
+                costTokens: rec.tokens,
             },
         }),
     );
@@ -112,8 +139,11 @@ export async function recordStep(
             // arithmetic, every other read tool returns tenant free text, and a
             // run that only ever touched the first has no injection surface at
             // all. Recorded here because the audit trail is the durable record
-            // of what a run did — `WorkflowStep` has no column for it, and
-            // adding one is a schema change this change does not make.
+            // of what a run did. (`WorkflowStep` still has no PROVENANCE
+            // column — the guard verdict and the token count below now have
+            // theirs, and this one deliberately did not get one with them:
+            // provenance is a property of the CONTENT a step read, which the
+            // proposal row already carries where it is reviewable.)
             //
             // `null` on the steps that call no tool. That is "not applicable",
             // and it is distinguishable from the untrusted label because the
@@ -124,6 +154,17 @@ export async function recordStep(
             // nothing and a model call whose usage the runtime did not report
             // are different facts, and zero would merge them.
             tokens: rec.tokens ?? null,
+            // …and WHAT THE GUARD SAID, in the trail as well as the column.
+            //
+            // Both, not either. The column is queryable and can be corrected
+            // by a later migration; the audit row is hash-chained and cannot.
+            // An assessor asking "was this step scanned, and what did it find"
+            // is asking a question the immutable half should answer.
+            //
+            // `null` means no guard ran — distinct from `CLEAN`, which means
+            // it ran and found nothing.
+            guardVerdict: rec.guardVerdict ?? null,
+            guardRuleIds: rec.guardRuleIds ? [...rec.guardRuleIds] : [],
         },
         metadataJson: { apiKeyId: ctx.apiKeyId ?? null, runId },
     }).catch(() => undefined);

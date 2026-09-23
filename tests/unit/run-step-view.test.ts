@@ -11,7 +11,13 @@
  * That asymmetry is invisible in the happy path, which is why it gets a test of
  * its own rather than a line in a rendered fixture.
  */
-import { resolveStepTool } from '@/lib/agentic/run-step-view';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+import { AgentDataAccessScope } from '@prisma/client';
+
+import { declaredStepFor, resolveStepTool } from '@/lib/agentic/run-step-view';
+import { baseDataScopeForTool } from '@/lib/mcp/tool-data-scope';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import type { WorkflowStepDef } from '@/lib/agentic/workflow-types';
 
@@ -61,5 +67,111 @@ describe('which tool a recorded step shows', () => {
         for (const step of withTools) {
             expect(resolveStepTool(null, step)).toBe((step as { tool: string }).tool);
         }
+    });
+});
+
+/**
+ * The data-rung chip renders `t('runs.detail.scope.' + scope)`, so EVERY
+ * member of the enum needs a key in EVERY locale.
+ *
+ * ── WHY THIS IS NOT COVERED BY THE i18n RATCHET ─────────────────────────────
+ *
+ * That ratchet finds hardcoded UI strings — text that never reached the
+ * catalogue. This is the opposite shape: the call is correctly translated and
+ * the KEY is missing, which next-intl renders as the raw key or an error
+ * depending on configuration. It fails only for the enum member nobody has
+ * produced yet, which is exactly the one a reviewer will not click.
+ *
+ * Read off the Prisma enum rather than a restated list, so a sixth rung fails
+ * here rather than rendering `runs.detail.scope.WHATEVER_IT_IS` to an
+ * assessor.
+ */
+describe('every data rung the chip can show has a translation', () => {
+    const ROOT = path.resolve(__dirname, '../..');
+    const load = (loc: string) =>
+        JSON.parse(fs.readFileSync(path.join(ROOT, `messages/${loc}.json`), 'utf8')) as Record<
+            string,
+            never
+        >;
+
+    const members = Object.values(AgentDataAccessScope);
+
+    it('read a real enum, not an empty one', () => {
+        // Every assertion below is satisfied by zero members.
+        expect(members.length).toBeGreaterThanOrEqual(5);
+    });
+
+    for (const loc of ['en', 'bg']) {
+        it(`${loc} has a key for every rung`, () => {
+            const scope = (load(loc) as unknown as {
+                agents: { runs: { detail: { scope?: Record<string, string> } } };
+            }).agents.runs.detail.scope;
+            const missing = members.filter((m) => !scope?.[m]);
+            expect({ locale: loc, missing }).toEqual({ locale: loc, missing: [] });
+        });
+    }
+
+    it('and the chip only appears for a step that names a tool', () => {
+        // The page passes `scope: tool ? baseDataScopeForTool(tool) : null`.
+        // A checkpoint reaches no tenant data by construction, so a rung
+        // there would claim an evaluation that never happened — the null is
+        // the assertion, not an oversight.
+        expect(resolveStepTool(null, CHECKPOINT)).toBeNull();
+        // And a real tool does resolve to a rung, so the chip is reachable.
+        expect(members).toContain(baseDataScopeForTool('get_compliance_posture'));
+    });
+});
+
+/**
+ * A RECORD-ONLY STEP BORROWS NOTHING FROM THE DEFINITION.
+ *
+ * Found by an adversarial audit of Phase 1. `resolveStepTool` is justified by
+ * "the driver executes `def.steps[seq]`, so `seq` indexes back into the same
+ * array" — true of the static engine, whose loop is
+ * `for (let seq = fromSeq; seq < def.steps.length; seq++)`, and false of the
+ * Flue engine, where `seq` counts steps RECORDED and indexes nothing.
+ *
+ * The consequence was a specific false statement on a governance surface: a
+ * MODEL_CALL rendered with an unrelated declared step's label, its tool name,
+ * and a data-access rung derived from that wrong tool — a claim about content
+ * the model never touched.
+ */
+describe('which definition entry a recorded step may borrow from', () => {
+    const DEF: WorkflowStepDef[] = [READ, CHECKPOINT, READ];
+
+    it('gives a declarable kind its own entry, as before', () => {
+        expect(declaredStepFor(DEF, 0, 'READ')).toBe(DEF[0]);
+        expect(declaredStepFor(DEF, 1, 'HUMAN_CHECKPOINT')).toBe(DEF[1]);
+    });
+
+    it('gives a MODEL_CALL nothing, even where an entry exists at that index', () => {
+        // The defect precisely: index 0 HAS a declared READ with a tool, and
+        // the old code would have handed it to a model call.
+        expect(declaredStepFor(DEF, 0, 'MODEL_CALL')).toBeUndefined();
+    });
+
+    it('gives a TOOL_CALL nothing — its tool comes from the column it recorded', () => {
+        expect(declaredStepFor(DEF, 2, 'TOOL_CALL')).toBeUndefined();
+    });
+
+    it('so a Flue step cannot inherit a tool it never called', () => {
+        // The end-to-end shape, through the function the page actually uses.
+        // Without the kind rule this returns `get_compliance_posture` — a tool
+        // the model call never invoked — and the page then derives a data rung
+        // from it.
+        const declared = declaredStepFor(DEF, 0, 'MODEL_CALL');
+        expect(resolveStepTool(null, declared)).toBeNull();
+    });
+
+    it('and a static step still recovers its tool after a failure', () => {
+        // The control. The fallback exists because the static failure path
+        // records no `toolCalled`; narrowing it by kind must not take that
+        // away, or the fix trades one blank chip for another.
+        const declared = declaredStepFor(DEF, 0, 'READ');
+        expect(resolveStepTool(null, declared)).toBe('get_compliance_posture');
+    });
+
+    it('is safe when there is no definition at all', () => {
+        expect(declaredStepFor(undefined, 0, 'READ')).toBeUndefined();
     });
 });

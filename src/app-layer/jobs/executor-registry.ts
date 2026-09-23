@@ -440,17 +440,34 @@ executorRegistry.register('data-lifecycle', async (payload) => {
         dryRun: payload.dryRun,
     });
 
+    // #2747 — tenants deleted from the org plane. Runs LAST, after the
+    // per-model purges above: those work on `deletedAt` per row and would
+    // otherwise be scanning tables this is about to empty wholesale.
+    //
+    // Deliberately NOT scoped by `payload.tenantId`. That field narrows the
+    // sweeps above to one tenant's rows; here it would mean "purge this
+    // tenant", which is a destructive operator action and not something a
+    // routine daily job should infer from a payload field that means something
+    // else everywhere near it. `purgeSoftDeletedTenants({ tenantId })` is
+    // available directly for that.
+    const { purgeSoftDeletedTenants } = await import(
+        '../usecases/tenant-purge'
+    );
+    const tenantPurge = await purgeSoftDeletedTenants({ dryRun: payload.dryRun });
+
     const totalScanned = purgeResults.reduce((s, r) => s + r.scanned, 0)
         + evidencePurge.scanned
-        + retentionResults.reduce((s, r) => s + r.scanned, 0);
+        + retentionResults.reduce((s, r) => s + r.scanned, 0)
+        + tenantPurge.length;
     const totalActioned = purgeResults.reduce((s, r) => s + r.purged, 0)
         + evidencePurge.purged
-        + retentionResults.reduce((s, r) => s + r.expired, 0);
+        + retentionResults.reduce((s, r) => s + r.expired, 0)
+        + tenantPurge.reduce((s, r) => s + r.totalRows, 0);
 
     return makeResult(
         'data-lifecycle', startedAt, startMs,
         totalScanned, totalActioned, 0,
-        { purgeResults, evidencePurge, retentionResults },
+        { purgeResults, evidencePurge, retentionResults, tenantPurge },
     );
 });
 
@@ -885,6 +902,33 @@ executorRegistry.register('tenant-dek-rotation', async (payload, ctx) => {
 // filters, claims an AutomationExecution row per match, advances to
 // SUCCEEDED/FAILED. See `automation-event-dispatch.ts` for the full
 // flow + scope boundaries.
+
+// ONE run per job, so the scanned/actioned/skipped triple reads oddly by
+// design: 1 scanned, and either 1 actioned (the run executed) or 1 skipped
+// (it was already settled, its definition is gone, or its principal lost
+// access). The alternative — reporting 0/0/0 — would make a refusal
+// indistinguishable from a job that did nothing at all.
+executorRegistry.register('agent-run-execute', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runAgentRunExecute } = await import('./agent-run-execute');
+    // Both ids named HERE rather than forwarding an opaque payload. The
+    // tenant-isolation guards read the executor body for exactly this, and
+    // they are right to: a dispatch site that never mentions the tenant is
+    // how a job comes to act across tenants without any single line looking
+    // wrong.
+    const { tenantId, runId } = payload;
+    const r = await runAgentRunExecute({ tenantId, runId });
+    return makeResult(
+        'agent-run-execute',
+        startedAt,
+        startMs,
+        1,
+        r.skipped ? 0 : 1,
+        r.skipped ? 1 : 0,
+        { tenantId, runId, ...(r.skipped ? { reason: r.skipped } : { status: r.status }) },
+    );
+});
 
 executorRegistry.register('automation-event-dispatch', async (payload) => {
     const startedAt = new Date().toISOString();

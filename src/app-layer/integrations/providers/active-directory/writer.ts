@@ -109,6 +109,8 @@
  *
  * @module integrations/providers/active-directory/writer
  */
+import { EqualityFilter } from 'ldapts';
+
 import {
     ActiveDirectoryProvider,
     UAC_ACCOUNTDISABLE,
@@ -366,18 +368,46 @@ function isUnderBaseDn(dn: string, baseDN: string): boolean {
 }
 
 /**
- * Render a canonical GUID string as an LDAP search-filter assertion.
+ * The raw 16 bytes AD stores for a canonical GUID string.
  *
  * The inverse of `formatObjectGuid`: AD stores the first three groups
  * little-endian and the last two big-endian, so the byte order has to be undone
- * before it goes on the wire as `\xx\xx…`.
+ * before it goes on the wire.
  */
-export function objectGuidFilter(guid: string): string {
+export function objectGuidBytes(guid: string): Buffer {
     const hex = guid.replace(/-/g, '');
     const b: string[] = [];
     for (let i = 0; i < 16; i += 1) b.push(hex.slice(i * 2, i * 2 + 2));
     const ordered = [b[3], b[2], b[1], b[0], b[5], b[4], b[7], b[6], ...b.slice(8)];
-    return `(objectGUID=${ordered.map((x) => `\\${x}`).join('')})`;
+    return Buffer.from(ordered.join(''), 'hex');
+}
+
+/**
+ * Match a user by objectGUID.
+ *
+ * ═══ WHY THIS IS A FILTER OBJECT AND NOT A STRING ═══
+ *
+ * This used to return the RFC 4515 spelling — `(objectGUID=\65\60\8b…)` —
+ * which is correct LDAP and works from `ldapsearch`. **`ldapts` does not
+ * resolve those escapes**, so the assertion went on the wire as the literal
+ * backslash characters and matched nothing. Every AD disable therefore failed
+ * as "Active Directory has no account matching …", naming deletion and base-DN
+ * scope as the causes, while the account sat exactly where it belonged (#2764).
+ *
+ * Measured against a real DC, same bind, same base DN:
+ *
+ *     (objectGUID=\65\60\8b\9d…)  via ldapsearch  ->  1 match
+ *     (objectGUID=\65\60\8b\9d…)  via ldapts      ->  0 matches
+ *     EqualityFilter + Buffer        via ldapts      ->  1 match
+ *
+ * Uppercase escapes and raw latin-1 bytes were tried too; both 0. So the fix
+ * is not a spelling of the string — the value has to reach ldapts as BYTES.
+ *
+ * The byte order was never the bug and is unchanged; `objectGuidBytes` still
+ * owns it, and the inverse test still guards it.
+ */
+export function objectGuidFilter(guid: string): EqualityFilter {
+    return new EqualityFilter({ attribute: 'objectGUID', value: objectGuidBytes(guid) });
 }
 
 /**
@@ -760,9 +790,29 @@ export function createActiveDirectoryWriter(
         }
 
         if (searchEntries.length === 0) {
+            // STATE WHAT WAS CHECKED; DO NOT ASSERT WHY IT FAILED.
+            //
+            // This used to say the account "may have been deleted, or moved
+            // outside the configured base DN" — two causes it had checked
+            // neither of. When #2764 made every objectGUID lookup return
+            // nothing, that sentence sent the investigation into the directory
+            // hunting an object that was sitting exactly where it belonged,
+            // enumerated by this product's own sync ninety seconds earlier.
+            //
+            // A zero-result search establishes one fact: this identifier did
+            // not resolve under this base. Deletion and OU moves are two
+            // hypotheses among several — the others being a lookup that cannot
+            // express the identifier (which is what it actually was), a
+            // replication lag, or a bind that cannot see the object. Naming
+            // two of them as though they were the finding is how a tool costs
+            // its reader an hour.
+            const shape = GUID_PATTERN.test(id) ? 'objectGUID' : 'distinguishedName';
             throw new Error(
-                `Active Directory has no account matching ${id}. It may have been deleted, or moved outside the ` +
-                    `configured base DN (${baseDN}). Nothing was written.`,
+                `Active Directory returned no account for ${shape} ${id} under ${baseDN}. ` +
+                    'That is what was observed; the cause is not established. Check, in this ' +
+                    'order: that the identifier still resolves (an `ldapsearch` with the same ' +
+                    'bind and base is the quickest test), that the object is within the base DN, ' +
+                    'and that the bind can see it. Nothing was written.',
             );
         }
         if (searchEntries.length > 1) {

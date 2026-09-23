@@ -57,7 +57,20 @@ import {
 } from '@/app/t/[tenantSlug]/(app)/agents/runs/[runId]/AgentRunDetailClient';
 
 const EN = jest.requireActual('../../messages/en.json') as {
-    agents: { runs: { detail: { kind: Record<string, string>; inputLabel: string; outputLabel: string; emptyTitle: string } } };
+    agents: {
+        runs: {
+            detail: {
+                kind: Record<string, string>;
+                scope: Record<string, string>;
+                guard: Record<string, string>;
+                stepTokens: string;
+                inputLabel: string;
+                outputLabel: string;
+                decisionLink: string;
+                emptyTitle: string;
+            };
+        };
+    };
 };
 const D = EN.agents.runs.detail;
 
@@ -82,11 +95,16 @@ function step(over: Partial<RunStepRow> = {}): RunStepRow {
         kind: 'READ',
         status: 'DONE',
         tool: 'list_risks',
+        scope: 'READ_TENANT_DATA',
+        guardVerdict: null,
+        guardRuleIds: [],
+        costTokens: null,
         label: 'posture',
         at: '2026-09-01T10:00:05.000Z',
         actorUserId: null,
         inputJson: null,
         outputJson: null,
+        decisionDigest: null,
         proposals: [],
         ...over,
     };
@@ -273,5 +291,115 @@ describe('a step names the proposals it queued', () => {
         const second = document.getElementById('step-1') as HTMLElement;
         expect(within(first).queryByTestId('step-proposal-p-9')).toBeNull();
         expect(within(second).getByTestId('step-proposal-p-9')).toBeInTheDocument();
+    });
+
+    it('shows the data rung beside the tool that reaches it', () => {
+        // The chip an assessor reads to answer "what did this step touch".
+        // Asserted against the REAL catalogue string from `en.json`, not a
+        // literal retyped here — a test that restates the copy passes when
+        // the copy and the key drift apart.
+        renderDetail([step({ seq: 0, tool: 'list_risks', scope: 'READ_TENANT_DATA' })]);
+        expect(screen.getByText(D.scope.READ_TENANT_DATA)).toBeInTheDocument();
+    });
+
+    it('shows NO rung for a step that reaches no tool', () => {
+        // A checkpoint evaluates no rung. Rendering one would claim an
+        // evaluation that never happened — the absence is the assertion.
+        renderDetail([step({ seq: 0, kind: 'HUMAN_CHECKPOINT', tool: null, scope: null })]);
+        expect(screen.queryByText(D.scope.READ_TENANT_DATA)).not.toBeInTheDocument();
+        expect(screen.queryByText(D.scope.NONE)).not.toBeInTheDocument();
+    });
+
+    it('renders the rung each step carries, not one rung for the whole run', () => {
+        // Two steps, two different rungs. A single shared chip — or one read
+        // off the run rather than the step — passes every assertion above and
+        // fails this one.
+        renderDetail([
+            step({ seq: 0, tool: 'list_risks', scope: 'READ_TENANT_DATA' }),
+            step({ seq: 1, tool: 'get_counts', scope: 'READ_METADATA' }),
+        ]);
+        expect(screen.getByText(D.scope.READ_TENANT_DATA)).toBeInTheDocument();
+        expect(screen.getByText(D.scope.READ_METADATA)).toBeInTheDocument();
+    });
+
+    it('shows the guard verdict on a step that was scanned', () => {
+        renderDetail([step({ seq: 0, guardVerdict: 'FLAGGED', guardRuleIds: ['inj.001'] })]);
+        expect(screen.getByText(D.guard.FLAGGED)).toBeInTheDocument();
+    });
+
+    it('shows NO verdict on a step no guard ran on', () => {
+        // The load-bearing absence. A step with no verdict was never scanned,
+        // and a chip reading "clean" there would tell a reviewer the guard
+        // looked at something it never examined. CLEAN and NULL are different
+        // facts and the row must not merge them.
+        renderDetail([step({ seq: 0, kind: 'HUMAN_CHECKPOINT', guardVerdict: null })]);
+        expect(screen.queryByText(D.guard.CLEAN)).not.toBeInTheDocument();
+        expect(screen.queryByText(D.guard.FLAGGED)).not.toBeInTheDocument();
+    });
+
+    it('shows which rules fired, as text an assessor can read without hovering', () => {
+        renderDetail([
+            step({ seq: 0, guardVerdict: 'QUARANTINED', guardRuleIds: ['egress.pii', 'inj.002'] }),
+        ]);
+        // Visible text, not a hover attribute — see the component comment.
+        expect(screen.getByText('egress.pii, inj.002')).toBeInTheDocument();
+    });
+
+    it('shows what a step spent, including a genuine zero', () => {
+        // `0` is a real measurement — a model call the runtime reported no
+        // usage for. A truthiness test would hide exactly that row, which is
+        // the one worth asking about.
+        renderDetail([step({ seq: 0, kind: 'MODEL_CALL', costTokens: 0 })]);
+        expect(screen.getByText(EN.agents.runs.detail.stepTokens.replace('{count}', '0')))
+            .toBeInTheDocument();
+    });
+
+    it('shows no per-step cost on a step that spent nothing measurable', () => {
+        renderDetail([step({ seq: 0, costTokens: null })]);
+        expect(
+            screen.queryByText(EN.agents.runs.detail.stepTokens.replace('{count}', '0')),
+        ).not.toBeInTheDocument();
+    });
+});
+
+describe('a step reaches the Art 12 decision it produced', () => {
+    const DIGEST = `sha256:${'a1b2c3d4'.repeat(8)}`;
+    const href = (d: string) => `/t/acme/agents/decisions?digest=${encodeURIComponent(d)}`;
+
+    it('a MODEL_CALL step links to its decision row', () => {
+        renderDetail([step({ seq: 0, kind: 'MODEL_CALL', decisionDigest: DIGEST })]);
+        const link = document.querySelector(`a[href="${href(DIGEST)}"]`);
+        expect(link).not.toBeNull();
+        expect(link?.textContent).toBe(EN.agents.runs.detail.decisionLink);
+    });
+
+    it('carries THAT step’s digest, not a shared one', () => {
+        // The assertion with teeth. A link built once outside the row, or
+        // keyed off anything but the step, renders correctly for one step and
+        // sends every other reviewer to somebody else’s decision — which is
+        // worse than no link, because it is confidently wrong.
+        const other = `sha256:${'f0f0f0f0'.repeat(8)}`;
+        renderDetail([
+            step({ seq: 0, kind: 'MODEL_CALL', decisionDigest: DIGEST }),
+            step({ seq: 1, kind: 'MODEL_CALL', decisionDigest: other }),
+        ]);
+        expect(document.querySelector(`a[href="${href(DIGEST)}"]`)).not.toBeNull();
+        expect(document.querySelector(`a[href="${href(other)}"]`)).not.toBeNull();
+    });
+
+    it('a TOOL_CALL step offers NO link, even with a guard verdict', () => {
+        // The half that must not over-reach. A tool call is guarded and has no
+        // Art 12 row; linking it would land the reviewer on an empty table.
+        renderDetail([
+            step({ seq: 0, kind: 'TOOL_CALL', guardVerdict: 'FLAGGED', decisionDigest: null }),
+        ]);
+        expect(document.querySelector('a[href*="/agents/decisions"]')).toBeNull();
+    });
+
+    it('and a static-driver step offers none either', () => {
+        // Every pre-existing run has no digest. The link must be absent rather
+        // than pointing at a query that matches nothing.
+        renderDetail([step({ seq: 0, kind: 'READ', decisionDigest: null })]);
+        expect(document.querySelector('a[href*="/agents/decisions"]')).toBeNull();
     });
 });

@@ -32,6 +32,7 @@ import { ActiveDirectoryProvider, formatObjectGuid } from '@/app-layer/integrati
 import {
     createActiveDirectoryWriter,
     objectGuidFilter,
+    objectGuidBytes,
     AD_PRIOR_STATE_SCHEMA,
     type AdPriorState,
 } from '@/app-layer/integrations/providers/active-directory/writer';
@@ -267,7 +268,7 @@ describe('the capture', () => {
         await makeWriter(byGuid).readState(GUID);
         const guidSearch = byGuid.searches.find((s) => s.base !== '');
         expect(guidSearch?.base).toBe(CONNECTION.baseDN);
-        expect(guidSearch?.options.filter).toBe(objectGuidFilter(GUID));
+        expect(guidSearch?.options.filter).toEqual(objectGuidFilter(GUID));
 
         const byDn = fakeAd();
         await makeWriter(byDn).readState(DN);
@@ -276,18 +277,36 @@ describe('the capture', () => {
         expect(dnSearch?.options.scope).toBe('base');
     });
 
-    it('objectGuidFilter is the exact inverse of formatObjectGuid', async () => {
+    it('objectGuidBytes is the exact inverse of formatObjectGuid', async () => {
         // The mixed-endian byte order is easy to get subtly wrong, and getting
         // it wrong means the search matches nothing — or, worse, matches
         // something else.
         expect(formatObjectGuid(GUID_BYTES)).toBe(GUID);
-        const escaped = objectGuidFilter(GUID)
-            .replace('(objectGUID=', '')
-            .replace(')', '')
-            .split('\\')
-            .filter(Boolean)
-            .map((h) => Number.parseInt(h, 16));
-        expect(Buffer.from(escaped)).toEqual(GUID_BYTES);
+        expect(objectGuidBytes(GUID)).toEqual(GUID_BYTES);
+    });
+
+    /**
+     * THE TEST THAT WOULD HAVE CAUGHT #2764.
+     *
+     * The byte order was always right, and the inverse test above proved it —
+     * against a Buffer, in memory, where no LDAP client was involved. What was
+     * wrong was the TRANSPORT: the bytes were rendered as an RFC 4515 string,
+     * `(objectGUID=\65\60…)`, which is valid LDAP and which `ldapts` does not
+     * resolve. It sent the literal backslashes, matched nothing, and every AD
+     * disable failed claiming the account had been deleted.
+     *
+     * The injected fake could never have shown this: it stores whatever filter
+     * it is handed and answers from a fixture, so a filter no real server would
+     * match looks identical to one that works. Asserting the SHAPE is the part
+     * a fake can still police.
+     */
+    it('addresses objectGUID as bytes, never as an escaped string ldapts will not resolve', async () => {
+        const filter = objectGuidFilter(GUID) as unknown as { value: unknown };
+        expect(typeof filter).toBe('object');
+        expect(Buffer.isBuffer(filter.value)).toBe(true);
+        expect(filter.value).toEqual(GUID_BYTES);
+        // The regression itself: a string here is the bug, whatever it spells.
+        expect(typeof objectGuidFilter(GUID)).not.toBe('string');
     });
 
     it('refuses rather than guessing when the id matches more than one account', async () => {
@@ -1005,18 +1024,48 @@ describe('the DN a ModifyRequest would be addressed to', () => {
 });
 
 describe('an account the directory does not return', () => {
-    it('says the account is gone and names the base DN it looked under', async () => {
-        // The likeliest cause is not deletion but an object moved out of the
-        // configured scope during offboarding — which looks identical from here
-        // and has a completely different remedy.
+    it('reports the observation and names the base DN it looked under', async () => {
         const fake = fakeAd({ entries: [] });
 
         const err = await makeWriter(fake).readState(GUID).catch((e: unknown) => e);
 
-        expect((err as Error).message).toMatch(/has no account matching/);
+        expect((err as Error).message).toMatch(/returned no account/);
         expect((err as Error).message).toContain(CONNECTION.baseDN);
         expect((err as Error).message).toMatch(/Nothing was written/);
         expect(fake.modifies).toEqual([]);
+    });
+
+    /**
+     * #2764's second half. The message used to assert that the account "may
+     * have been deleted, or moved outside the configured base DN" — two causes
+     * it had checked neither of.
+     *
+     * When the objectGUID lookup silently matched nothing, that sentence sent
+     * the investigation into the directory hunting an object that was sitting
+     * exactly where it belonged. A zero-result search establishes ONE fact:
+     * this identifier did not resolve under this base. Everything else is a
+     * hypothesis, and the real cause was a third one nobody had listed.
+     */
+    it('does NOT assert a cause it has not checked', async () => {
+        const fake = fakeAd({ entries: [] });
+        const err = await makeWriter(fake).readState(GUID).catch((e: unknown) => e);
+        const msg = (err as Error).message;
+
+        expect(msg).not.toMatch(/may have been deleted/i);
+        expect(msg).not.toMatch(/moved outside/i);
+        // It should say what it observed, and that the cause is open.
+        expect(msg).toMatch(/cause is not established/i);
+    });
+
+    it('names which identifier SHAPE failed to resolve, so the reader knows which rail ran', async () => {
+        // A GUID id and a DN id take different branches with different failure
+        // modes; a message that does not say which one leaves the reader
+        // guessing at the lookup as well as at the cause.
+        const byGuid = await makeWriter(fakeAd({ entries: [] })).readState(GUID).catch((e: unknown) => e);
+        expect((byGuid as Error).message).toMatch(/objectGUID/);
+
+        const byDn = await makeWriter(fakeAd({ entries: [] })).readState(DN).catch((e: unknown) => e);
+        expect((byDn as Error).message).toMatch(/distinguishedName/);
     });
 
     it('refuses an empty account id without searching for it', async () => {

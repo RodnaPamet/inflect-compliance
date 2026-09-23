@@ -19,10 +19,16 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { cssCodeOf } from '../helpers/source-blocks';
+
 const GLOBALS_CSS = path.resolve(__dirname, '../../src/app/globals.css');
 
 describe('document scroll lock — globals.css contract', () => {
-    const css = fs.readFileSync(GLOBALS_CSS, 'utf-8');
+    // Masked at the READ SEAM (#2246). `cssCodeOf` blanks /* … */ while
+    // preserving length and line count, so a rule that was COMMENTED OUT can
+    // no longer satisfy an assertion about it — and offsets still line up for
+    // anything matching on position.
+    const css = cssCodeOf(fs.readFileSync(GLOBALS_CSS, 'utf-8'));
 
     test('html and body are height-locked + overflow-hidden at md+', () => {
         // Match the @media (min-width: 768px) block and assert the

@@ -121,7 +121,16 @@ import { assertRatchetSlack, ratchetSlackFailure } from '../helpers/ratchet-slac
 // Re-seated in the same diff that made the improvement, as this ratchet's own
 // sentinel requires — leaving the headroom would let a future regression spend
 // it with a green build.
-const UNBOUNDED_INTERIOR_SPAN_BASELINE = 147;
+//   147 -> 146 (2026-09-23, #2246 Class A batch 5): one span removed, and it is
+//   worth naming because this ratchet did not find it — converting a read seam
+//   did. `tests/guardrails/redis-prod-required.test.ts` asserted
+//   `/REDIS_URL[\s\S]*REQUIRED|REQUIRED[\s\S]*REDIS_URL/` over the whole of
+//   `docs/deployment.md`, and the span re-formed across two TABLE ROWS: the
+//   `REDIS_URL` row downgraded to "Optional in production", `**REQUIRED**` still
+//   sitting on the `REDIS_PASSWORD` row below it, guard 8/8 green. Exactly the
+//   sibling-block reach this ratchet names, in markdown rather than code. The
+//   read is now bound to the one row and the span is gone with it.
+const UNBOUNDED_INTERIOR_SPAN_BASELINE = 146;
 
 /**
  * Interior spans of ANY boundedness, including `[\s\S]{0,200}`.
@@ -160,7 +169,14 @@ const UNBOUNDED_INTERIOR_SPAN_BASELINE = 147;
  *     Both are the issue's own point that a span between two identifiers is
  *     not a bound: each was satisfied by prose on one end.
  */
-const INTERIOR_SPAN_BASELINE = 330;
+// 330 -> 329 (2026-09-23, #2246 Class A batch 5): the same single span the
+// `UNBOUNDED_INTERIOR_SPAN_BASELINE` note above records —
+// `redis-prod-required`'s whole-document `/REDIS_URL[\s\S]*REQUIRED/`. It was
+// unbounded, so it sat in both counts, and binding the read to the table row
+// removed it from both. This cap exists so an unbounded span cannot be bought
+// down by rewriting `*?` as `{0,200}`; a span that genuinely leaves must lower
+// it too.
+const INTERIOR_SPAN_BASELINE = 329;
 
 /**
  * `toMatch` arguments whose pattern this detector could not recover.
