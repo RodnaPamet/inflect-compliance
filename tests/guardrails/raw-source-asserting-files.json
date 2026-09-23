@@ -15,7 +15,6 @@
     "tests/guards/dashboard-compute-render-gap.test.ts",
     "tests/guards/dependency-governance-integrity.test.ts",
     "tests/guards/flue-run-requires-registered-agent.test.ts",
-    "tests/guards/nav-item-geometry-discipline.test.ts",
     "tests/guards/nis2-gap-reconcile-skip.test.ts",
     "tests/guards/oi-3-runbook-and-slos.test.ts",
     "tests/guards/org-widget-wire-reachable.test.ts",
