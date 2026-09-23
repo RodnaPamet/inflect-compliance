@@ -305,9 +305,34 @@ const HIGH_MULTIPLICITY = 5;
 //   8/8 green. Two detectors counting a site is not the same as either one
 //   failing on it.
 //
-//   SHARED STATE: zero-headroom and shared with every open PR. 1255 is the
-//   live count of main@a76c192d5 + this branch; whoever merges second
+//   SHARED STATE: zero-headroom and shared with every open PR. 1229 is the
+//   live count of main@023355538 + this branch; whoever merges second
 //   re-measures on the merged tree rather than keeping this figure.
+//
+// 1255 -> 1229 (2026-09-24, #2246 Class A, the eight files outside
+//   `tests/guards` / `tests/guardrails`): -26, and every one of them was freed
+//   by the same mechanism as the -18 below — NARROWING a markdown read onto
+//   the region its test names, which removes the site from this population
+//   wholesale because the subject stops being a whole-file read.
+//
+//   All 26 come from this diff, and that is derivable rather than assumed:
+//   `DRIFT_ALLOWANCE` is 0, so main being green means main's live count was
+//   exactly 1255.
+//
+//   The concentration is `docs/slos.md`, which `observability-infra` read
+//   whole 23 times. Bound to the region each test names: `SLO 1` 14 matches ->
+//   1 in the level-2 heading lines, `500ms` 11 -> 1 in `## SLO Summary Table`,
+//   `api_request_count` 11 -> 2 in `## Telemetry Inventory`, `Critical` 7 -> 1
+//   in `### Alert Thresholds`, `/api/livez` 6 -> 1 in `### Exclusions`. Each
+//   of those was a needle a whole chapter of the document could satisfy while
+//   the section under test was gone.
+//
+//   `UNANALYSABLE_READ_BASELINE` moved too, 1455 -> 1453, and the DIRECTION
+//   is the half worth checking: DOWN. Every narrowing here is spelled with TWO
+//   arguments (`mdSection(md, heading)` / `headingLines(md, level)`), which
+//   `assertion-reach.ts` reads as an EXTRACTION and takes out of scope — not
+//   the one-argument wrapper shape that pushed this same ceiling UP by 7 in
+//   #2789.
 //
 // 1273 -> 1255 (2026-09-23, #2246 Class A batch 6): -18, freed by NARROWING
 //   six markdown-reading guards in `tests/guardrails/` onto the document
@@ -318,7 +343,7 @@ const HIGH_MULTIPLICITY = 5;
 //   places in `docs/deployment.md`, `/autoscaling…|HPA/` 13, `/CC BY 4\.0|…/`
 //   6 across the NIS2 licence sidecar. Every one of those was a guard whose
 //   named section could be deleted while a sibling kept it green.
-const AMBIGUOUS_NEEDLE_BASELINE = 1255;
+const AMBIGUOUS_NEEDLE_BASELINE = 1229;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
@@ -380,7 +405,21 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1255;
 // places and `helm rollback` in 6, so binding those assertions to
 // `### Scaling` and `### Rollback via helm rollback` retires several
 // five-plus-multiplicity sites at once.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 193;
+//
+// 193 -> 179 (2026-09-24, #2246 Class A, the eight files outside
+// `tests/guards` / `tests/guardrails`): -14, alongside -26 on the ambiguous
+// count above — and the SAME inversion, for the same reason. An SLO document
+// is the runbook shape: `docs/slos.md` says `SLO 1` in 14 places, `500ms` in
+// 11 and `api_request_count` in 11, so `observability-infra`'s 23
+// whole-document reads were dense in five-plus-multiplicity needles and
+// narrowing them retires a cluster at a time.
+//
+// WORTH NOTING HOW THIS WAS FOUND, because the instrument hid it: the drift
+// sentinel reports the FIRST baseline with slack and stops, so re-seating
+// AMBIGUOUS_NEEDLE_BASELINE was what made this one visible. A single green
+// run after one edit is not evidence the other ceilings held — re-run until
+// the sentinel passes rather than until the message changes.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 179;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -619,7 +658,20 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 193;
 // took 2 off the SKIPPED count rather than adding to it, which is what a
 // narrowing is supposed to look like from here. A rise would have meant the
 // helper was reading as a mask.
-const UNANALYSABLE_READ_BASELINE = 1455;
+//
+// 1455 -> 1453 (2026-09-24, #2246 Class A, the eight files outside
+// `tests/guards` / `tests/guardrails`): -2, the same direction and the same
+// arity check as the entry above, on a batch that narrowed 46 markdown seams
+// with two-argument calls. Down, not up: the helper still reads as an
+// extraction rather than a wrapper.
+//
+// AND A NOTE ABOUT THE INSTRUMENT, because it nearly cost this a wrong claim.
+// The drift sentinel reports the FIRST baseline carrying slack and stops, so
+// this batch surfaced its three moves ONE PER RUN — ambiguous, then highly-
+// ambiguous, then this. After the first failure it was true and useless to
+// say "only one baseline moved". Re-run the sentinel until it PASSES, not
+// until its message changes.
+const UNANALYSABLE_READ_BASELINE = 1453;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

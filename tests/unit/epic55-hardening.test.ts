@@ -17,6 +17,7 @@ import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '../../');
 import { codeOf } from '../helpers/source-blocks';
+import { headingLines, mdSection } from '../helpers/markdown-regions';
 
 // #2246 Class A — the mask goes at the READ SEAM, so an assertion cannot be
 // satisfied by a comment instead of the code it names. Every read here is TSX.
@@ -26,15 +27,28 @@ function readRaw(rel: string): string {
 function read(rel: string): string {
     return codeOf(readRaw(rel));
 }
-// #2727 — the strategy doc is a DELIBERATE RAW SEAM, and the reason is that
-// its assertions' SUBJECT is the document's shape: `## Migrated surfaces`,
-// `## Deferred surfaces`, `Adding a new surface — checklist`. Those are
-// headings and prose, so `mdCodeOf` blanks precisely the thing under test and
-// the assertions could never pass again.
+// #2727 diagnosed the strategy doc correctly and stopped one step short.
+// Its assertions' SUBJECT is the document's SHAPE — `## Migrated surfaces`,
+// `## Deferred surfaces`, `Adding a new surface — checklist` — so `mdCodeOf`,
+// which keeps a document's CODE and blanks its PROSE, deletes exactly the
+// thing under test. Measured: all four of those needles go to ZERO through it.
+// (The read before that was worse than either choice: `codeOf`, a TypeScript
+// lexer, on a markdown file — masked at the call site, prose intact.)
 //
-// What batch 12 had was worse than either choice: the read went through
-// `codeOf`, a TypeScript lexer, so it READ as masked while leaving the prose
-// intact. Raw-and-listed is honest; masked-with-the-wrong-lexer is not.
+// So the fix is the OTHER route — NARROW the read to the region the test
+// names, with `tests/helpers/markdown-regions.ts`. The whole document is still
+// read once for the size check; each assertion below binds to its own region.
+// Measured against the live doc, raw → region:
+//
+//   the six primitives, in `### ` heading lines under `## When to use each
+//     primitive`:   11→1  7→1  3→1  7→1  4→1  3→1
+//   `epic55-native-select-ratchet.test.ts` in `## Guardrails`:   3→1
+//   the four `##` structure needles, in the level-2 heading lines:  1→1 each
+//
+// Nothing reaches zero, and the primitives are the point: `<Combobox>`
+// appeared ELEVEN times across the document, so the heading naming it could
+// be deleted outright and any of the other ten kept this green.
+const STRATEGY_HEADING = 'When to use each primitive';
 
 // The severity + type Comboboxes moved from the inline FindingsClient
 // form into the CreateFindingModal (2026-06-05). Assert against the
@@ -196,6 +210,14 @@ describe('docs/combobox-form-strategy.md', () => {
     });
 
     it('documents each primitive with a "When to use" section', () => {
+        // Bound to the `###` HEADING LINES inside the section this test is
+        // named for — which is what "documents each primitive with a section"
+        // means. Against the whole document the assertion was satisfied by any
+        // passing mention anywhere in it.
+        const primitiveHeadings = headingLines(
+            mdSection(STRATEGY_DOC, STRATEGY_HEADING),
+            3,
+        );
         for (const heading of [
             '<Combobox>',
             '<Combobox hideSearch>',
@@ -204,23 +226,31 @@ describe('docs/combobox-form-strategy.md', () => {
             '<Switch>',
             '<Checkbox>',
         ]) {
-            expect(STRATEGY_DOC).toContain(heading);
+            expect(primitiveHeadings).toContain(heading);
         }
     });
 
     it('lists both migrated surfaces and deferred surfaces', () => {
-        expect(STRATEGY_DOC).toMatch(/## Migrated surfaces/i);
-        expect(STRATEGY_DOC).toMatch(/## Deferred surfaces/i);
-        expect(STRATEGY_DOC).toMatch(/## Out of scope/i);
+        // The subject is the level-2 STRUCTURE, so the read is the level-2
+        // heading lines: a sentence or a table cell naming a section no longer
+        // stands in for the section existing.
+        const structure = headingLines(STRATEGY_DOC, 2);
+        expect(structure).toMatch(/## Migrated surfaces/i);
+        expect(structure).toMatch(/## Deferred surfaces/i);
+        expect(structure).toMatch(/## Out of scope/i);
     });
 
     it('references the ratchet guardrail so contributors find it', () => {
-        expect(STRATEGY_DOC).toContain(
+        // Three mentions exist document-wide; the one that makes contributors
+        // find it is the one under `## Guardrails`.
+        expect(mdSection(STRATEGY_DOC, 'Guardrails')).toContain(
             'epic55-native-select-ratchet.test.ts',
         );
     });
 
     it('includes the contributor checklist', () => {
-        expect(STRATEGY_DOC).toMatch(/Adding a new surface — checklist/);
+        expect(headingLines(STRATEGY_DOC, 2)).toMatch(
+            /Adding a new surface — checklist/,
+        );
     });
 });

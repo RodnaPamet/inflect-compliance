@@ -476,6 +476,89 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     fails under `sqlCodeOf` — the #2644 language split, measured on the file
  *     itself. The file keeps its three deliberate raw sites, so this count
  *     does not move for it; the defect closed anyway.
+ *   • 31 (2026-09-24): the EIGHT members outside `tests/guards` and
+ *     `tests/guardrails` — the last part of the population nobody had
+ *     surveyed. 55 raw sites; 49 handled; FOUR files leave
+ *     (`epic19-coherence` 12→0, `epic55-hardening` 6→0, `observability-infra`
+ *     23→0, `theme-provider` 8→0) and four stay with their reasons measured.
+ *
+ *     THE `.css` SEAM THIS FILE'S OWN 52 ENTRY PREDICTED, CLOSED.
+ *     `theme-provider` carried a comment saying the `globals.css` read stayed
+ *     raw because no `.css` masker existed and spelling `codeOf` on a
+ *     stylesheet would read as masked while leaving every `/* … *\/` in place.
+ *     `cssCodeOf` shipped with #2727 and nothing went back for the seam. It is
+ *     now `readCss`, and BOTH directions of the defect are proved on the real
+ *     stylesheet: comment out `--brand: var(--brand-default)` and the raw read
+ *     stays **18/18 GREEN** while the masked one fails exactly that case;
+ *     conversely a retired `.badge` rule parked in a `/* … *\/` block RED-ENS
+ *     the raw read — the mirror-image false alarm this file's header names —
+ *     and is correctly green masked. Re-adding `.badge { }` as live CSS is red
+ *     under the mask, so the three negative assertions there are not vacuous.
+ *
+ *     A COMMENT MASK ON A NEGATIVE IS SAFE; A NARROWING IS NOT. Those three
+ *     `.not.toMatch` are masked deliberately, and the distinction is the
+ *     reason: `mdCodeOf` and a region both DISCARD text, so a forbidden term
+ *     can vanish with it and the assertion passes vacuously — which is why
+ *     `ai-aisvs-hardening-coverage` still stands raw in the 36 entry above.
+ *     `codeOf` / `cssCodeOf` discard only COMMENTS, and a rule that survives
+ *     solely inside a comment is genuinely retired. Proved rather than argued,
+ *     above.
+ *
+ *     MARKDOWN WAS NARROWED, NEVER MASKED, and the measurement is why. Four of
+ *     the eight read `.md`; every needle was counted raw, through `mdCodeOf`
+ *     and through the candidate region before anything was edited. `mdCodeOf`
+ *     takes `500ms`, `99.9%`, `99.95%`, `< 1%`, `30-day`, `7-day`,
+ *     `Operational Runbook`, `14 panels`, `10)`, `Epic 53` and every `SLO N`
+ *     heading to ZERO — and leaves the identifier needles
+ *     (`api_request_count`, `histogram_quantile`, `/api/livez`,
+ *     `createFilterDefs`, `<Combobox>`) at their FULL raw count, so it would
+ *     have bought those nothing either. Not one region shipped takes a needle
+ *     to zero.
+ *
+ *     THE REACH THIS BOUGHT, on `docs/slos.md` — the largest single-document
+ *     population in the issue at 23 sites: `SLO 1` 14 matches → 1 in the
+ *     level-2 heading lines; `500ms` 11 → 1 in `## SLO Summary Table`;
+ *     `api_request_count` 11 → 2 in `## Telemetry Inventory`; `Critical` 7 → 1
+ *     in `### Alert Thresholds` (one of the six was a `## Critical user
+ *     journeys` heading in the load-test chapter); `/api/livez` 6 → 1 in
+ *     `### Exclusions`. Elsewhere: `<Combobox>` 11 → 1 in the `###` heading
+ *     lines of `## When to use each primitive`, so the heading naming the
+ *     primitive could have been deleted outright with any of the other ten
+ *     keeping it green; and `infra/README.md`'s `'10)'` — a three-character
+ *     needle against a whole README, satisfied by any numbered list item —
+ *     bound to the level-2 headings where `## Alert Rules (10)` lives.
+ *
+ *     `mdSection` BINDS TO THE FIRST HEADING OF A NAME, which `slos.md`
+ *     exercises: `### Time Window`, `### Exclusions`, `### Alert Thresholds`
+ *     and `### Measurement Formula` each occur once per SLO. Two assertions
+ *     need a later copy, and the measurement is what caught it —
+ *     `mdSection(raw, 'Time Window')` holds `30-day` and takes `7-day` to
+ *     ZERO, and SLO 1's `Measurement Formula` is a ratio with no
+ *     `histogram_quantile` in it. Both nest the call
+ *     (`mdSection(mdSection(raw, '<the SLO>'), '<the subsection>')`), which is
+ *     also why the time-windows test reads two regions rather than one.
+ *
+ *     THE FOUR THAT STAY, each for a reason the 36 entry already names and
+ *     none of them fixable with the tools that exist. THREE assert on a
+ *     COMMENT in a `.ts`/`.tsx` file and say so beside a separately named raw
+ *     reader — `risk-matrix-admin-api`'s `permsDoc` (the route-permissions
+ *     note naming the read-only sibling), `org-controls-status-emphasis`'s
+ *     `srcRaw` (the comment that is the only thing standing between a private
+ *     status map and a well-meant consolidation), and
+ *     `org-page-serialization-boundary`'s `doc` (the docstring that must
+ *     explain WHY the RSC boundary exists). Every extractor in
+ *     `source-blocks.ts` is comment-FREE by construction, so none can bound a
+ *     region that still CONTAINS the subject.
+ *
+ *     The FOURTH is a new shape worth recording: `filter-foundation` went 3→1,
+ *     and the survivor is `/Epic\s*53/i` against `GUIDE.md`. It lives in the
+ *     document's PREAMBLE — the blockquote under the `#` title, above the
+ *     first `##` — and `markdown-regions` cuts ATX SECTIONS, of which a
+ *     preamble is not one. The document's other `Epic 53` sits inside a
+ *     Migration Path subheading, so narrowing to that would bind the
+ *     assertion to a different claim than its own name makes. A
+ *     preamble-before-the-first-heading region is the missing tool, and it is
+ *     a new capability rather than an application of this one.
  *   • 35 (2026-09-23): ONE file, and the interesting number is the other ten.
  *     A sweep of the eleven `tests/guards/` members listed below measured every
  *     needle at every raw site twice, once raw and once through `codeOf`: 17
@@ -623,7 +706,7 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     So a file's presence in this list is NOT an accusation, and this ratchet
  *     is a cap rather than a work queue: it says the population may not grow.
  */
-const RAW_ASSERTING_FILE_BASELINE = 35;
+const RAW_ASSERTING_FILE_BASELINE = 31;
 
 /**
  * The files themselves, sorted, in a sibling JSON — the same population the
