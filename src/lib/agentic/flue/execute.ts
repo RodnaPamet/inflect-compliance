@@ -580,10 +580,12 @@ export async function executeFlueRun(
         // as the process; a subscriber left behind would keep this run's array
         // reachable and go on filtering every event every later run emits.
         stopObserving?.();
-        // The binding is normally CLAIMED by the agent's render. This covers
-        // the paths where it never was — a dispatch that threw before the
-        // agent rendered — so authority does not sit in the map for the
-        // lifetime of the process.
+        // THE disposer. The agent's render READS the binding and leaves it in
+        // place, because the runtime re-renders before every model call and
+        // each render needs the same authority. So this `finally` is what ends
+        // its life — on success, failure, guard halt and throw alike — and it
+        // does so at the moment the dispatch ends, which is the boundary that
+        // was meant all along.
         releaseRun(runId);
     }
 }

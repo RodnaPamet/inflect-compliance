@@ -1,6 +1,6 @@
 import { useInitialData, useInstruction, useModel, useResponseFinish, useTool } from '@flue/runtime';
 
-import { takeRunBinding } from './run-binding';
+import { readRunBinding } from './run-binding';
 
 /**
  * THE ONE AGENT FUNCTION THIS PROCESS SERVES.
@@ -38,10 +38,12 @@ import { takeRunBinding } from './run-binding';
 export function InflectAgent(): void {
     const { runId } = useInitialData<{ runId: string }>();
 
-    // TAKEN, not read: a binding is this run's authority, and leaving it
-    // addressable after the run has claimed it means a later dispatch naming
-    // the same id inherits it.
-    const binding = takeRunBinding(runId);
+    // READ, not taken. The runtime re-runs this function before every model
+    // call, so a destructive read gave turn 1 the tools and every later turn
+    // the no-authority branch below — zero tools, no `useResponseFinish`, and
+    // a run that still reported COMPLETED. Disposal is the driver's, in the
+    // `finally` that ends the dispatch.
+    const binding = readRunBinding(runId);
 
     if (!binding) {
         // NO TOOLS, and say so to the model rather than failing silently.

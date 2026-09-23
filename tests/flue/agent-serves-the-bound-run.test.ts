@@ -79,14 +79,59 @@ describe('a bound run', () => {
                 toolCalls: 1,
             });
 
-            // …and the binding was CLAIMED, not merely read. Asserted inside
-            // the successful run rather than in a second one: a separate
-            // dispatch would need its own scripted responses and its own
-            // runtime start, and would be testing the map rather than the
-            // agent's use of it. A `get` would leave this at `before + 1`.
-            expect(outstandingRunBindings()).toBe(before);
+            // …and the binding SURVIVES the render. This assertion used to
+            // read `toBe(before)` and called the binding "CLAIMED, not merely
+            // read" — the runtime re-renders the agent before EVERY model
+            // call, so claiming it on the first render left every later turn
+            // with no authority at all. Disposal is the driver's `finally`,
+            // which is what the `releaseRun` below stands in for here.
+            expect(outstandingRunBindings()).toBe(before + 1);
         } finally {
             releaseRun('run-bound');
+            await flue.stop();
+        }
+    }, 60_000);
+
+    it('still has its tools on the SECOND turn', async () => {
+        // THE REGRESSION TEST. The one above cannot see the defect: its tool
+        // call happens on turn 1, while the binding is still there, and turn 2
+        // only produces text. So it passed throughout.
+        //
+        // Two tool calls in two separate assistant turns is what separates the
+        // designs. With the destructive read, turn 2 re-rendered the agent,
+        // found nothing, registered ZERO tools and told the model the run
+        // could not be bound — so `called` held one entry, not two, and the
+        // run still settled as though it had finished its work.
+        const faux = fauxProvider();
+        const called: unknown[] = [];
+        const before = outstandingRunBindings();
+        bindRun('run-two-turns', {
+            tools: [listRisks((a) => called.push(a))],
+            modelSpecifier: `${faux.provider.id}/${faux.getModel().id}`,
+        });
+        faux.setResponses([
+            fauxAssistantMessage([fauxToolCall('list_risks', {})]),
+            fauxAssistantMessage([fauxToolCall('list_risks', {})]),
+            fauxAssistantMessage('Three risks, twice.'),
+        ]);
+
+        const flue = await start({ agents: [InflectAgent], providers: [faux.provider] });
+        try {
+            const agent = init(InflectAgent, { id: 'run-two-turns' });
+            const reply = await agent.read(
+                await agent.dispatch({
+                    message: 'Count the risks twice.',
+                    initialData: { runId: 'run-two-turns' },
+                }),
+            );
+
+            expect({ text: reply?.text, toolCalls: called.length }).toEqual({
+                text: 'Three risks, twice.',
+                toolCalls: 2,
+            });
+            expect(outstandingRunBindings()).toBe(before + 1);
+        } finally {
+            releaseRun('run-two-turns');
             await flue.stop();
         }
     }, 60_000);

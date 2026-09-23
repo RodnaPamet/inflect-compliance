@@ -29,14 +29,32 @@ import type { FlueToolDefinition } from './tools-adapter';
  * carries the RUN ID, which is already an identifier the ledger records, and
  * the invocation stays in this process, in memory, addressed by it.
  *
- * ── TAKE, NOT GET ───────────────────────────────────────────────────────────
+ * ── READ, AND LET THE DRIVER DISPOSE ────────────────────────────────────────
  *
- * `takeRunBinding` REMOVES the entry. A binding is authority: it is the
- * resolved answer to "what may this run reach", and leaving it addressable
- * after the run has claimed it means a later dispatch naming the same id
- * inherits it. Runs are keyed by a cuid, so that is not a likely accident —
- * but "not likely" is a poor property for an authority lookup, and a map that
- * only ever grows is also a leak in a long-lived worker.
+ * This used to be `takeRunBinding`, which REMOVED the entry on read. The
+ * reasoning was sound about authority — a binding is the resolved answer to
+ * "what may this run reach", and leaving it addressable after the run has
+ * finished with it means a later dispatch naming the same id inherits it —
+ * but it was wrong about WHO disposes, and that made the agent lose its tools.
+ *
+ * `@flue/runtime` re-runs the agent function before EVERY model call. The
+ * first render claimed the binding and deleted it; from the second turn on the
+ * lookup returned `undefined`, so the agent took the no-authority branch,
+ * registered ZERO tools, skipped `useModel`/`useResponseFinish`, and told the
+ * model the run could not be bound. The run still settled COMPLETED. Every
+ * multi-turn Flue run was silently a one-turn run with an unusable tail.
+ *
+ * So the read is non-destructive, and disposal belongs to the one place that
+ * knows the dispatch is over: `executeFlueRun`'s `finally`, which calls
+ * `releaseRun` on every exit — success, failure, guard halt and throw alike.
+ * That keeps both original properties. The map cannot grow without bound,
+ * because the finally always runs. Authority is not left addressable after the
+ * run, because the finally removes it at exactly the moment the run ends —
+ * which is the correct boundary, rather than the first of N renders inside it.
+ *
+ * `bindRun` deliberately sits OUTSIDE that try: a refused rebind must not
+ * reach the `finally`, or it would release the incumbent's authority while
+ * reporting that it had protected it.
  */
 export interface FlueRunBinding {
     /**
@@ -83,17 +101,22 @@ export function bindRun(runId: string, binding: FlueRunBinding): void {
     BINDINGS.set(runId, binding);
 }
 
-/** Claim the binding, removing it. Returns undefined if there is none. */
-export function takeRunBinding(runId: string): FlueRunBinding | undefined {
-    const found = BINDINGS.get(runId);
-    BINDINGS.delete(runId);
-    return found;
+/**
+ * Read the binding WITHOUT removing it. Returns undefined if there is none.
+ *
+ * Non-destructive because the runtime re-renders the agent before every model
+ * call, and each render must see the same authority. `releaseRun`, from the
+ * driver's `finally`, is the disposer.
+ */
+export function readRunBinding(runId: string): FlueRunBinding | undefined {
+    return BINDINGS.get(runId);
 }
 
 /**
- * Drop a binding without claiming it — for the failure paths between `bindRun`
- * and a dispatch that never happened. Without it a refused or throwing start
- * leaves authority sitting in the map for the lifetime of the process.
+ * Drop a binding. THE disposer: `executeFlueRun`'s `finally` calls this on
+ * every exit, so it covers both the dispatch that ran to completion and the
+ * failure paths between `bindRun` and a dispatch that never happened. Without
+ * it authority would sit in the map for the lifetime of the process.
  */
 export function releaseRun(runId: string): void {
     BINDINGS.delete(runId);
