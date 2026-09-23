@@ -84,6 +84,11 @@ jest.mock('@/app-layer/ai/decision-log', () => ({
         `sha256:${Buffer.from(JSON.stringify(input ?? null)).toString('hex').padEnd(64, '0').slice(0, 64)}`,
 }));
 jest.mock('@/lib/db/rls-middleware', () => ({
+    // PARTIAL: `execute.ts` reaches `kill-switch.ts`, which imports the prisma
+    // client, whose extension chain is built from this module. A wholesale
+    // replacement makes the suite fail to LOAD — and `Tests: 0 total` reads as
+    // a pass in every aggregate.
+    ...jest.requireActual('@/lib/db/rls-middleware'),
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) =>
         fn({ registeredAgent: { findFirst: async () => ({ aiSystemId: 'ai-system-1' }) } }),
     ),
