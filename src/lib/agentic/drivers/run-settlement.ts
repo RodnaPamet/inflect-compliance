@@ -132,6 +132,59 @@ export async function haltRunAtGuard(
 }
 
 /**
+ * Settle a run stopped by a KILL SWITCH.
+ *
+ * ── WHY NOT `failRun` ───────────────────────────────────────────────────────
+ *
+ * The same argument `haltRunAtGuard` and `haltRunAtCap` make: `failRun` says a
+ * step went wrong, and nothing went wrong here. An operator engaged a switch
+ * and the engine obeyed it. Those are different operator actions — debug the
+ * workflow, versus decide whether the switch should still be engaged.
+ *
+ * ABORTED rather than a new status, for the reason `haltRunAtCap` records at
+ * length: adding an enum value is safe to WRITE under a rolling deploy and
+ * unsafe to READ, because a container on the old build cannot deserialise a
+ * status its client does not know. ABORTED already exists and already means
+ * "a control stopped this", which is exactly what happened.
+ *
+ * The message names the SCOPE and who can lift it. It deliberately does not
+ * echo the reason text an administrator typed: that is tenant content, and the
+ * thing being told about the refusal is the thing that was just stopped — the
+ * same rule `assertNotKilled` follows at the tool boundary.
+ */
+export async function haltRunAtKill(
+    ctx: RequestContext,
+    runId: string,
+    kill: { scope: string; switchId: string; engagedAt: Date },
+    reason: string,
+): Promise<string> {
+    const message = `flue_run_agent_killed: ${reason}`;
+    await updateRun(ctx, runId, {
+        status: 'ABORTED',
+        completedAt: new Date(),
+        errorMessage: message,
+    });
+    await appendAuditEntry({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
+        entity: 'WorkflowRun',
+        entityId: runId,
+        action: 'WORKFLOW_RUN_AGENT_KILLED',
+        requestId: ctx.requestId,
+        detailsJson: {
+            category: 'access',
+            reason: message,
+            killScope: kill.scope,
+            killSwitchId: kill.switchId,
+            killEngagedAt: kill.engagedAt.toISOString(),
+            escalate: true,
+        },
+    }).catch(() => undefined);
+    return 'ABORTED';
+}
+
+/**
  * Mark a run HALTED AT A CAP, and record WHICH cap and how much work is left.
  *
  * Separate from `failRun` on purpose, and the separation is the requirement
