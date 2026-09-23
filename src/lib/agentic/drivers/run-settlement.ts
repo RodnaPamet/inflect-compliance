@@ -61,6 +61,77 @@ export async function failRun(
 }
 
 /**
+ * Settle a run the CONTENT GUARD stopped, and say which way it stopped.
+ *
+ * ── WHY NOT `failRun` ───────────────────────────────────────────────────────
+ *
+ * The same argument `haltRunAtCap` makes below, for the same reason: `failRun`
+ * says a step went wrong, and nothing went wrong here. The engine worked, the
+ * model worked, and a control refused what was moving. Those are different
+ * operator actions — read the verdict and the rule ids, versus debug a broken
+ * workflow — and an `errorMessage` that reads like a tool error sends people to
+ * the wrong one. Before this, a guard block left `flue_run_failed: <the throw's
+ * message>`, which is the shape of a crash.
+ *
+ * ── TWO OUTCOMES, BECAUSE THE GUARD HAS TWO ─────────────────────────────────
+ *
+ *   QUARANTINED — blocked. There is nothing for a human to approve: the content
+ *                 was refused and never moved. The run is ABORTED, and the step
+ *                 ledger carries the verdict and the rule ids.
+ *   FLAGGED     — `policy.ts` states this verdict's contract as "allow, but
+ *                 force human review; NEVER auto-commit". AWAITING_APPROVAL is
+ *                 the status that means precisely that, and `resumeWorkflowRun`
+ *                 is how a human acts on it. Leaving a flagged run COMPLETED
+ *                 was the gap: the guard ran, recorded its verdict, and the run
+ *                 reported success — a control that reports itself working.
+ *
+ * ── NO NEW STATUS VALUE ─────────────────────────────────────────────────────
+ *
+ * Deliberately, and `haltRunAtCap` below carries the full argument: adding an
+ * enum member is safe to WRITE under a rolling deploy and unsafe to READ,
+ * because a container still on the old build cannot deserialise a status its
+ * client does not know and takes the whole run list down for the rollout. Both
+ * values used here already ship and are already read.
+ *
+ * `completedAt` is stamped on the ABORTED arm and NOT on the flagged one: a run
+ * awaiting a human is not finished, and the reaper leaves AWAITING_APPROVAL
+ * alone however old it is precisely because someone is expected to come back
+ * to it.
+ */
+export async function haltRunAtGuard(
+    ctx: RequestContext,
+    runId: string,
+    verdict: 'FLAGGED' | 'QUARANTINED',
+    ruleIds: readonly string[],
+): Promise<string> {
+    const blocked = verdict === 'QUARANTINED';
+    const status = blocked ? 'ABORTED' : 'AWAITING_APPROVAL';
+    // The rule ids, never the content that tripped them — the same rule the
+    // adapter's `ReviewFlag` follows. What an operator needs is which rule
+    // fired; the text that matched it is the thing the guard exists to contain.
+    const message = blocked
+        ? `flue_run_guard_blocked: the content guard refused this run's traffic (${ruleIds.join(', ') || 'no rule ids recorded'}). Nothing was committed.`
+        : `flue_run_guard_flagged: the content guard requires human review before this run may continue (${ruleIds.join(', ') || 'no rule ids recorded'}).`;
+
+    await updateRun(ctx, runId, {
+        status,
+        ...(blocked ? { completedAt: new Date() } : {}),
+        errorMessage: message,
+    });
+    await appendAuditEntry({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
+        entity: 'WorkflowRun',
+        entityId: runId,
+        action: blocked ? 'WORKFLOW_RUN_GUARD_BLOCKED' : 'WORKFLOW_RUN_GUARD_FLAGGED',
+        requestId: ctx.requestId,
+        detailsJson: { category: 'access', reason: message, verdict, ruleIds: [...ruleIds] },
+    }).catch(() => undefined);
+    return status;
+}
+
+/**
  * Mark a run HALTED AT A CAP, and record WHICH cap and how much work is left.
  *
  * Separate from `failRun` on purpose, and the separation is the requirement

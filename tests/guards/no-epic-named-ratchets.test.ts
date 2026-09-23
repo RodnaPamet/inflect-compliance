@@ -169,7 +169,34 @@ describe('epic-named ratchets are not added back', () => {
         // Found by a peer's eight-way union sweep across both stacks; neither
         // a per-branch measurement nor either stack's own union would have
         // seen it, because no single branch crosses the line.
-        expect(guardFiles().length).toBeLessThan(725);
+        //
+        // RAISED 725 -> 750 on 2026-09-23, for the same cause and with the
+        // same reasoning. main stood at 724 — headroom ZERO, because
+        // `toBeLessThan(725)` fails AT 725 — so the next guard file anybody
+        // added was going to be red whoever owned it. The phase-1 agentic
+        // audit contributed six, every one invariant-named:
+        //
+        //     flue-model-call-writes-art12-row          (#2776)
+        //     flue-propose-charges-the-cap              (#2777)
+        //     agent-driver-column-has-a-writer          (#2780)
+        //     flue-model-output-has-one-destination     (#2782)
+        //     agent-autonomy-surface-matches-enforcement (#2784)
+        //     flue-guard-outcome-has-arms               (#2781)
+        //
+        // THE BACKSTOP IS INTACT, which is the only thing that licenses this.
+        // The assertion immediately above — the one that names epic-named
+        // files individually — is GREEN and unchanged; the count is the
+        // backstop, not the detector, and a bulk restore still fails there
+        // with a list rather than here with a number. 750 remains 27 below
+        // the pre-retirement 777.
+        //
+        // Caught in the merge queue rather than locally, and the reason is
+        // worth recording: the full sweep was green on this branch, then two
+        // test-only PRs landed, and the re-check after merging main ran only
+        // the two ratchets predicted to move. A shared budget is exactly the
+        // thing a predicted subset cannot find. Re-run the WHOLE sweep after
+        // a merge, not the part you expect to break.
+        expect(guardFiles().length).toBeLessThan(750);
     });
 
     /**

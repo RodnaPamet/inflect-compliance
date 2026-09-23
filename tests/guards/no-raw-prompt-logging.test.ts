@@ -497,6 +497,34 @@ const SINK_FLOOR = 30;
 // to the previous pair. Note the direction — a sink arriving with one hole
 // TIGHTENS `HOLES_PER_SINK_CEILING` (1.8085 → 1.8), which is what the
 // denominator is in the formula for.
+// Re-MEASURED 2026-09-23 for the Flue GUARD SETTLE ARMS (points 4c + 4d/4f):
+// 165 / 95 became 169 / 96. ONE new sink — `haltRunAtGuard`'s audit row — and
+// FOUR holes in it: the settle message, the verdict, the rule-id array and the
+// run id, every one a value bound to a local before the call. The message is
+// built from rule IDS and never from the content that tripped them, which is
+// the whole reason a guard-halt row is safe to write at all: the text the
+// scanner matched is the thing the guard exists to contain.
+//
+// Re-MEASURED 2026-09-23 for the Flue GUARD SETTLE ARMS (points 4c + 4d/4f):
+// 165 / 95 became 169 / 96. ONE new sink — `haltRunAtGuard`'s audit row — and
+// FOUR holes in it: the settle message, the verdict, the rule-id array and the
+// run id, every one a value bound to a local before the call. The message is
+// built from rule IDS and never from the content that tripped them, which is
+// the whole reason a guard-halt row is safe to write at all.
+//
+// AND A MEASUREMENT TRAP, recorded because it cost a wrong number that LOOKED
+// right. Taken mid-merge — after resolving the conflict with #2777, before
+// committing it — this pair reads 173 / 100. The population comes from
+// `repoFiles()`, which is `git ls-files --cached`, and during an uncommitted
+// merge that lists a conflicted path ONCE PER STAGE. `execute.ts` was scanned
+// twice, contributing its own four sinks and four holes a second time: 96 + 4
+// and 169 + 4, an exact fit, which is what makes the wrong figure plausible
+// rather than obviously broken. MEASURE ON A COMMITTED TREE.
+//
+// The `MEASURED_HOLES`-is-a-CEILING caution still applies to #2780, which is
+// open and moves this pair independently: a figure measured for a tree that
+// does not exist yet is an evicted green run in the merge queue rather than a
+// red branch.
 // Re-MEASURED 2026-09-23 for the agentic driver TOGGLE (point 1d): 165 / 95
 // became 169 / 97. TWO new sinks — the mode-change audit row and the one log
 // line beside it — and FOUR holes across them, every one a value bound to a
@@ -517,7 +545,19 @@ const SINK_FLOOR = 30;
 // evicted green run rather than a red branch. The figures above happen to
 // equal 165/95 + 4/2, and that is a fact discovered afterwards rather than the
 // way they were obtained.
-const MEASURED_HOLES = 169;
+// RE-MEASURED after #2780 landed and this branch merged main: 169 / 96 became
+// 173 / 98. #2780 brought the agentic driver toggle's two sinks and four holes;
+// this branch brings `haltRunAtGuard`'s one sink and four holes. Neither branch
+// could have declared this pair on its own, which is the whole reason it is
+// re-measured at the merge rather than carried across it.
+//
+// MEASURED ON A COMMITTED TREE, with `git status` clean and zero unmerged
+// paths. Taken mid-merge this same pair reads four higher, because the
+// population is `git ls-files --cached` and that lists a conflicted path ONCE
+// PER STAGE — the conflicted file's own findings counted twice. The inflated
+// figure fits plausibly and passes its own single-file run, which is what makes
+// it dangerous; it fails only the full sweep, after the commit.
+const MEASURED_HOLES = 173;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -530,7 +570,7 @@ const MEASURED_HOLES = 169;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 97;
+const MEASURED_SINKS = 98;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;
