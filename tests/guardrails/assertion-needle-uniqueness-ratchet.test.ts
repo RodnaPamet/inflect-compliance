@@ -290,7 +290,25 @@ const HIGH_MULTIPLICITY = 5;
 //   describes, not a regression: the detector-or-backstop question resolves to
 //   DETECTOR. Confirmed by direction — `lexableByExtension['.css']` went 8 -> 23
 //   on the same diff, so the population grew rather than the debt.
-const AMBIGUOUS_NEEDLE_BASELINE = 1278;
+//   1278 -> 1273 (2026-09-23, #2246 Class A batch 5): −5, from eight
+//   `tests/guardrails/` read seams converted. Two were masked with `mdCodeOf`
+//   and six were NARROWED to the region the test names — a heading list, a
+//   `##` section, a table row — and a narrowed read leaves this population
+//   rather than shrinking its count, so the −5 is the masked half plus the
+//   needles that left with the narrowed reads.
+//
+//   ONE OF THE FIVE IS THE POINT. `docs/deployment.md` carries six
+//   `REDIS_URL` occurrences and a table full of REQUIRED markers, so
+//   `redis-prod-required`'s marker assertion was ambiguous here AND an
+//   unbounded interior span in Class C — and neither ratchet is what caught
+//   it. Converting the read did: downgrading the row the test names left it
+//   8/8 green. Two detectors counting a site is not the same as either one
+//   failing on it.
+//
+//   SHARED STATE: zero-headroom and shared with every open PR. 1273 is the
+//   live count of main@518b74d36 + this branch; whoever merges second
+//   re-measures on the merged tree rather than keeping this figure.
+const AMBIGUOUS_NEEDLE_BASELINE = 1273;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
@@ -338,7 +356,13 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1278;
 // needle that previously matched in several places now matches in one. The
 // drift sentinel requires the freed slack to be spent in the same diff —
 // a baseline above the live count is headroom the next regression can use.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 201;
+// 201 -> 200 (2026-09-23, #2246 Class A batch 5): one site with five or more
+// satisfying positions left with the eight converted read seams in
+// `tests/guardrails/`. Narrowing a read removes its needles from this
+// population wholesale, which is why a batch that converts eight files moves
+// this number by one and `AMBIGUOUS_NEEDLE_BASELINE` by five — the two counts
+// are over the same sites but with different thresholds.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 200;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -549,7 +573,23 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 201;
 // is left alone because the loop is the clearer test, and because pretending
 // the site is analysable when it is not is the failure this number exists to
 // prevent.
-const UNANALYSABLE_READ_BASELINE = 1460;
+// 1460 -> 1457 (2026-09-23, #2246 Class A batch 5): −3, and the round trip it
+// took to get there is the part worth keeping. The batch narrows six markdown
+// read seams to the region each test names; three of those narrowings were
+// first written as one-argument helpers — `headingLines(md)` — and that
+// spelling took this number UP, 1460 -> 1467. `assertion-reach.ts` tells a
+// narrowing from a mask by ARITY (:1605): `f(<content>)` with one argument is
+// the shape of a wrapper (`codeOnly(src)`) and resolves `content-transformed`,
+// a CAPPED skip, while a second argument is the shape of an extraction
+// (`declarationOf(src, 'x')`) and is out of scope because narrowing is the fix
+// these ratchets ask for. A one-argument narrowing is therefore indistinguish-
+// able from a mask, and the detector errs toward the capped bucket on purpose.
+// `headingLines(md, 2)` states the heading LEVEL the assertions actually mean
+// and reads correctly to the analyser at the same time. Taking the advice must
+// not redden a ceiling — that is the failure mode where a guard teaches people
+// to route around it — but the remedy is to say what you mean, not to raise
+// the cap.
+const UNANALYSABLE_READ_BASELINE = 1457;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

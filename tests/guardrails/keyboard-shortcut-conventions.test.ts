@@ -21,8 +21,50 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
 const SRC = path.join(ROOT, 'src');
+
+/**
+ * The document's ATX heading lines AT ONE LEVEL, and nothing else (#2246).
+ *
+ * NARROWED AT THE READ SEAM RATHER THAN MASKED. The markdown masker
+ * `mdCodeOf` keeps the CODE in a document (fences, inline spans) and blanks
+ * the prose — and a section heading is prose, so masking would empty the
+ * subject: measured on `docs/keyboard-shortcuts.md`, all four needles below
+ * match once raw and ZERO times through `mdCodeOf`. The assertion is about
+ * the guide's SECTION STRUCTURE, not about code.
+ *
+ * Narrowing is the other route this repo's Class A advice names, and it is
+ * the one that binds here. `/## Scope rules/` against the whole document is
+ * satisfied by that text anywhere — a sentence naming the section, a table
+ * cell, or a fenced markdown sample. Against the level-2 heading lines only
+ * a level-2 heading satisfies it. Fences are tracked and excluded for that
+ * last case.
+ *
+ * `level` is a parameter because the assertions below all write `##`, so
+ * that is what they mean — and because `tests/helpers/assertion-reach.ts`
+ * tells a narrowing from a mask by ARITY: one argument is the shape of a
+ * wrapper and lands in a capped skip bucket, two is the shape of an
+ * extraction and is out of scope. See the fuller note in
+ * `tests/guardrails/date-picker-guide.test.ts`, where it was measured.
+ */
+function headingLines(md: string, level: number): string {
+    const out: string[] = [];
+    const marker = new RegExp(`^#{${level}}\\s`);
+    let open: string | null = null;
+    for (const line of md.split('\n')) {
+        const fence = /^\s*(`{3,}|~{3,})/.exec(line);
+        if (fence) {
+            if (open === null) open = fence[1][0];
+            else if (fence[1][0] === open) open = null;
+            continue;
+        }
+        if (open === null && marker.test(line)) out.push(line);
+    }
+    return out.join('\n');
+}
 
 /** Files that legitimately install keyboard listeners or define the hook. */
 const ALLOWED_KEYDOWN_LISTENER_FILES = new Set<string>([
@@ -147,7 +189,12 @@ describe('Keyboard shortcut conventions', () => {
         const violations: { file: string; snippet: string }[] = [];
         for (const file of allFiles) {
             if (ALLOWED_KEYDOWN_LISTENER_FILES.has(file)) continue;
-            const src = fs.readFileSync(file, 'utf-8');
+            // Masked at the READ SEAM (#2246), and this scan is the MIRROR
+            // IMAGE of the usual case: a negative guard cannot be made green
+            // by prose, it is made RED by it. A migration note recording
+            // `// was: document.addEventListener('keydown', …)` installs no
+            // listener and must not be reported as one.
+            const src = codeOf(fs.readFileSync(file, 'utf-8'));
             const match = src.match(KEYDOWN_LISTENER_RE);
             if (match) {
                 for (const snippet of match) {
@@ -184,7 +231,11 @@ describe('Keyboard shortcut conventions', () => {
                 continue;
             }
 
-            const src = fs.readFileSync(file, 'utf-8');
+            // Masked at the READ SEAM (#2246): a commented-out call site is
+            // not a call site, and `findKeyboardShortcutCalls` scans by
+            // offset — `codeOf` blanks in place, so every index still lines
+            // up with the file on disk.
+            const src = codeOf(fs.readFileSync(file, 'utf-8'));
             if (!src.includes('useKeyboardShortcut(')) continue;
 
             for (const call of findKeyboardShortcutCalls(src)) {
@@ -219,11 +270,11 @@ describe('Keyboard shortcut conventions', () => {
         const docPath = path.join(ROOT, 'docs/keyboard-shortcuts.md');
         expect(fs.existsSync(docPath)).toBe(true);
 
-        const doc = fs.readFileSync(docPath, 'utf-8');
+        const headings = headingLines(fs.readFileSync(docPath, 'utf-8'), 2);
         // Canonical sections the hook + palette rely on.
-        expect(doc).toMatch(/## TL;DR/i);
-        expect(doc).toMatch(/## Priority tiers/i);
-        expect(doc).toMatch(/## Scope rules/i);
-        expect(doc).toMatch(/## When NOT to add a shortcut/i);
+        expect(headings).toMatch(/## TL;DR/i);
+        expect(headings).toMatch(/## Priority tiers/i);
+        expect(headings).toMatch(/## Scope rules/i);
+        expect(headings).toMatch(/## When NOT to add a shortcut/i);
     });
 });

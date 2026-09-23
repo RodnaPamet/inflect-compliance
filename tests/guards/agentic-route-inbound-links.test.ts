@@ -41,6 +41,16 @@
  *
  * Population from `repoFiles()` — git's own file list — never a `readdirSync`
  * walk. `tests/guardrails/source-scan-population.test.ts` has no allowlist.
+ *
+ * ── AND THE POPULATION ITSELF IS PINNED ───────────────────────────────────
+ *
+ * Two registries live here, and the second half of the file asserts each is a
+ * complete census rather than a sample: `AGENTIC_ROUTES` (+ `REDIRECT_SHIMS`)
+ * for the pages, `AGENTIC_API_ROUTES` for the routes under `src/app/api/`.
+ * Neither can grow without somebody writing the new entry down, which is what
+ * makes "this phase ships no new surface" a claim CI can refuse rather than
+ * one a plan can only assert. See
+ * `docs/implementation-notes/2026-09-23-phase1-surface-reconciliation.md`.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -49,6 +59,16 @@ import { codeOf } from '../helpers/source-blocks';
 import { repoFiles, repoRelative } from '../helpers/repo-files';
 
 const APP = 'src/app/t/[tenantSlug]/(app)';
+const API = 'src/app/api';
+
+/**
+ * The repo root, computed HERE rather than imported. A guard that reads source
+ * must fold its own root constant; an imported one lands every assertion below
+ * in the un-analysable set.
+ */
+function repoRoot(): string {
+    return path.resolve(__dirname, '../..');
+}
 
 /**
  * The agentic routes under `(app)/`, as a user types them.
@@ -89,6 +109,88 @@ const REDIRECT_SHIMS: readonly string[] = [
     '/admin/mcp/quarantine',
     '/agent-proposals',
     '/agent-runs',
+] as const;
+
+/**
+ * WHAT COUNTS AS THE AGENTIC SURFACE — one definition, used by both halves.
+ *
+ * Widening this widens the page population AND the API population together. A
+ * needle that drifted between them would leave a gap exactly where the two
+ * meet, which is where a page and the route it calls land in the same PR.
+ */
+const IS_AGENTIC = /agent|mcp/i;
+
+/**
+ * The agentic API surface, as route files under `src/app/api/`.
+ *
+ * ── WHY THIS LIST EXISTS ────────────────────────────────────────
+ *
+ * The Flue integration plan's point 01 says of phase 1: "Nothing else — phase
+ * 1 ships no new surface." Phase 1 then shipped two agentic API routes
+ * (`admin/agent-driver`, `agent-proposals/bulk/reject`), each compelled by a
+ * later plan bullet and neither contradicted by anything that could go red.
+ *
+ * The PAGE half of that claim was already enforced: the completeness check
+ * below refuses a new `(app)/agents/*` page until somebody writes it down.
+ * The API half had nothing of the kind. What a new route DID hit was
+ * `tests/contracts/api-schemas.test.ts` — and that is a CHECKSUM, not a
+ * registry: the route walker publishes every route as a stub, so regenerating
+ * `public/openapi.json` turns the red green without anybody deciding that new
+ * agentic surface was intended. A checksum notices an addition; it cannot
+ * refuse one.
+ *
+ * So this list is the decision seam. A route added here is a route someone
+ * declared to be agentic surface, in the same file as the pages, where a claim
+ * that a phase ships none of it is visibly contradicted.
+ *
+ * Paths are relative to `src/app/api/`, which is why the untenanted (`mcp/`)
+ * and platform (`admin/agent-kill-switch`) routes sit beside the per-tenant
+ * ones: the surface is what is CALLABLE, not what is tenant-scoped.
+ */
+const AGENTIC_API_ROUTES: readonly string[] = [
+    // Platform scope — no tenant, behind PLATFORM_ADMIN_API_KEY.
+    'admin/agent-kill-switch/route.ts',
+    // The MCP transport itself, and the credential exchange in front of it.
+    'mcp/route.ts',
+    'mcp/token/route.ts',
+    // PHASE 1, point 01's third bullet — the per-tenant driver toggle. The
+    // column shipped with a reader, a default and no writer; a gate whose
+    // customer half cannot be moved through the product is a constant wearing
+    // a switch's name. NOTE: no page calls this route today, so it is API
+    // surface without a user-facing page — see
+    // docs/implementation-notes/2026-09-23-phase1-surface-reconciliation.md.
+    't/[tenantSlug]/admin/agent-driver/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/circuit-breaker/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/coverage/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/policy-card/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/risk-assessment/complete/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/risk-assessment/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/status/route.ts',
+    't/[tenantSlug]/admin/agents/[agentId]/tools/route.ts',
+    't/[tenantSlug]/admin/agents/kill-switch/route.ts',
+    't/[tenantSlug]/admin/agents/reports/export/route.ts',
+    't/[tenantSlug]/admin/agents/reports/route.ts',
+    't/[tenantSlug]/admin/agents/review-quality/route.ts',
+    't/[tenantSlug]/admin/agents/route.ts',
+    't/[tenantSlug]/admin/agents/tool-manifests/route.ts',
+    't/[tenantSlug]/admin/mcp/quarantine/route.ts',
+    't/[tenantSlug]/admin/security-settings/agent-enforcement/route.ts',
+    't/[tenantSlug]/agent-proposals/[id]/approve/route.ts',
+    't/[tenantSlug]/agent-proposals/[id]/reject/route.ts',
+    // PHASE 1, point 03 — bulk reject on the review queue. A queue too slow to
+    // clear is a queue people stop reading, which is the automation-bias
+    // problem the queue exists to resist arriving from the other side.
+    't/[tenantSlug]/agent-proposals/bulk/reject/route.ts',
+    't/[tenantSlug]/agent-proposals/route.ts',
+    't/[tenantSlug]/agent-proposals/sample-audits/[id]/route.ts',
+    't/[tenantSlug]/agent-proposals/sample-audits/route.ts',
+    't/[tenantSlug]/agent-receipts/[id]/export/route.ts',
+    't/[tenantSlug]/agent-receipts/route.ts',
+    't/[tenantSlug]/agent-runs/[id]/abort/route.ts',
+    't/[tenantSlug]/agent-runs/[id]/resume/route.ts',
+    't/[tenantSlug]/agent-runs/[id]/route.ts',
+    't/[tenantSlug]/agent-runs/route.ts',
 ] as const;
 
 /** Every `.ts`/`.tsx` file under `src/`, comment-stripped, by repo-relative path. */
@@ -245,6 +347,55 @@ describe('every agentic route under (app)/ has at least one inbound link', () =>
     });
 });
 
+describe('the agentic API surface is declared, not discovered', () => {
+    /** Every `route.ts` under `src/app/api/` whose path mentions agents or mcp. */
+    function discoveredAgenticApiRoutes(): string[] {
+        return repoFiles({ under: API, extensions: ['.ts'] })
+            .filter((abs) => path.basename(abs) === 'route.ts')
+            .map((abs) => path.relative(path.join(repoRoot(), API), abs))
+            .map((r) => r.replace(/\\/g, '/'))
+            .filter((r) => IS_AGENTIC.test(r));
+    }
+
+    it('the scan finds an agentic API surface at all', () => {
+        // Positive control. Every assertion below is satisfied by an EMPTY
+        // discovery, so without a floor a scan that had silently stopped
+        // matching would read as a clean bill of health.
+        expect(discoveredAgenticApiRoutes().length).toBeGreaterThan(20);
+    });
+
+    it('every discovered agentic API route is registered', () => {
+        const unlisted = discoveredAgenticApiRoutes().filter(
+            (r) => !AGENTIC_API_ROUTES.includes(r),
+        );
+        if (unlisted.length > 0) {
+            throw new Error(
+                'New agentic API surface landed unregistered:\n' +
+                    unlisted.map((r) => `  - ${r}`).join('\n') +
+                    '\n\nAdd it to AGENTIC_API_ROUTES with the reason it exists. ' +
+                    'Regenerating public/openapi.json is NOT the same thing: the ' +
+                    "route walker stubs every route, so the spec's drift check " +
+                    'goes green on a regenerate without anybody deciding the ' +
+                    'surface was intended.',
+            );
+        }
+        expect(unlisted).toEqual([]);
+    });
+
+    it('every registered agentic API route still exists', () => {
+        // The other direction. A stale entry is a line nobody has to satisfy,
+        // and it makes the list stop being a census of what is callable.
+        const missing = AGENTIC_API_ROUTES.filter(
+            (r) => !fs.existsSync(path.join(repoRoot(), API, r)),
+        );
+        expect(missing).toEqual([]);
+    });
+
+    it('the registry names each route once', () => {
+        expect(new Set(AGENTIC_API_ROUTES).size).toBe(AGENTIC_API_ROUTES.length);
+    });
+});
+
 describe('the route list is complete — a new agentic page cannot land unlisted', () => {
     /** Every `page.tsx` under `(app)/` whose route mentions agents or mcp. */
     function discoveredAgenticRoutes(): string[] {
@@ -252,10 +403,7 @@ describe('the route list is complete — a new agentic page cannot land unlisted
             .filter((abs) => path.basename(abs) === 'page.tsx')
             .map((abs) => '/' + path.relative(path.join(repoRoot(), APP), path.dirname(abs)))
             .map((r) => r.replace(/\\/g, '/'))
-            .filter((r) => /agent|mcp/i.test(r));
-    }
-    function repoRoot(): string {
-        return path.resolve(__dirname, '../..');
+            .filter((r) => IS_AGENTIC.test(r));
     }
 
     it('classifies every discovered agentic page as a route or a shim', () => {

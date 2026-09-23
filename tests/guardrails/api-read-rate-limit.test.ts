@@ -39,6 +39,7 @@ import {
     codeOf,
     declarationOf,
     functionBodyOf,
+    mdCodeOf,
 } from '../helpers/source-blocks';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -63,15 +64,28 @@ function readRepoFile(rel: string): string {
 }
 
 /**
- * The one deliberate exception. `docs/rate-limiting.md` is prose by
- * construction — the assertion there is that an operator can find the three
- * tiers described, so prose is the thing being checked, not a stand-in for
- * it. Reading it through `codeOf` would also be wrong mechanically: the
- * masker lexes TypeScript, and a markdown file's stray backticks and `//`
- * in URLs are not literals or comments.
+ * The MARKDOWN seam — separate from `readRepoFile` because the masker has to
+ * match the language being READ. `codeOf` lexes TypeScript, so on a `.md`
+ * file it would blank the rest of every line carrying a `//` in a URL while
+ * reading, at the call site, as masked: unmasked in fact.
+ *
+ * This used to be a deliberate RAW read, on the reasoning that
+ * `docs/rate-limiting.md` "is prose by construction". That reasoning was
+ * about the FILE and the assertions are about IDENTIFIERS — the preset
+ * names and the excluded route paths, every one of which this doc writes in
+ * a code span or a table cell's backticks. So `mdCodeOf` (#2727) is the
+ * right reader: it blanks the prose and keeps the fenced blocks and inline
+ * code spans, length and line count preserved.
+ *
+ * MEASURED, because a mask over a `.not.` assertion can only turn red to
+ * green and this block has none — but a POSITIVE one silently retargeted is
+ * just as bad. All five needles below still match through the mask; one
+ * moves, and the movement is the point: `/\/api\/health/` goes 4 → 3,
+ * because one of its four occurrences was a prose sentence rather than the
+ * exclusion-list entry the test names.
  */
 function readDoc(rel: string): string {
-    return fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
+    return mdCodeOf(fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8'));
 }
 
 describe('GAP-17 ratchet — preset', () => {

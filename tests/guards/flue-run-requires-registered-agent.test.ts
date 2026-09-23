@@ -10,6 +10,25 @@
  * and model. An adversarial review of Phase 1 found it, with a positive
  * control proving the search could see a gate if one existed.
  *
+ * ── AND THE THIRD DOOR, FOUND LATER ─────────────────────────────────────────
+ *
+ * This file originally pinned TWO entry points and rested on the premise that
+ * they were all of them. They were not. `resumeWorkflowRun` — the human
+ * approve-and-continue path — re-resolved the driver and went straight to
+ * `executeFrom` with a signed-in human's context, carrying no `agentId` at
+ * all. The continuation of an already-authorised run therefore ran with the
+ * whole register dropped: no allowlist term, an UNCLAMPED ceiling, no breaker
+ * counting, no AI system on the Art 12 row.
+ *
+ * It was reachable by design rather than by accident: `haltRunAtGuard` settles
+ * a FLAGGED verdict to `AWAITING_APPROVAL` precisely so a human comes and
+ * resumes it. Flag, approve, and the segment ran unvouched.
+ *
+ * The lesson is the shape, not the instance — a gate that names the doors it
+ * guards is only as good as the enumeration, so the third describe block below
+ * pins the resume path and `everyExecuteFromCaller` counts the doors rather
+ * than trusting a list.
+ *
  * Two callers could therefore start a reasoning loop:
  *
  *   · a key bound to a SUSPENDED or RETIRED agent — an operator had stopped
@@ -119,5 +138,74 @@ describe('the justification that was false is corrected', () => {
         // A silent correction loses the reason the next reader needs: that the
         // sentence was believed, and that believing it is what let the gap sit.
         expect(raw).toContain('has been CORRECTED');
+    });
+});
+
+describe('resuming a flue run as a HUMAN — the third door', () => {
+    /**
+     * WHOLE-FILE, not `functionBodyOf`.
+     *
+     * `resumeWorkflowRun` returns
+     * `Promise<{ status: string; stepFailures: number }>`, and a return type
+     * carrying braces is exactly what that helper mis-bounds on — it stops at
+     * the type's closing brace and hands back the signature. Every assertion
+     * below would then have been satisfied by nothing, which is the failure
+     * shape that reads as a pass. Each needle used here was verified unique in
+     * the file (1 occurrence apiece), so the wider read costs no precision.
+     */
+    const resume = read(USECASE);
+
+    it('re-checks the agent is still in service', () => {
+        // The worker's resume does this; the human's did not. An agent
+        // suspended while the run sat at a checkpoint must not have the run
+        // continue on its behalf — suspension is an operator stopping an
+        // agent, and an approval is not a way around it.
+        expect(resume).toContain('runAgentStillInService(ctx.tenantId, run.agentId)');
+        expect(resume).toContain('resume_agent_no_longer_in_service');
+    });
+
+    it('and refuses BEFORE the checkpoint is closed', () => {
+        // Ordering, asserted by position. A refusal after the step is DONE and
+        // the row is RUNNING leaves a run nothing will advance, which the
+        // reaper later reports as a crashed executor. The start path makes the
+        // same argument for putting its gate above `createSealedRun`.
+        const gate = resume.indexOf('resume_agent_no_longer_in_service');
+        const close = resume.indexOf('status: \'DONE\', actorUserId: ctx.userId');
+        expect(gate).toBeGreaterThan(-1);
+        expect(close).toBeGreaterThan(-1);
+        expect(gate).toBeLessThan(close);
+    });
+
+    it('restores the run\'s agent binding onto the executing context', () => {
+        // The human stays the ACTOR — the audit entry and the checkpoint step
+        // both take their userId — while the EXECUTION carries the agent the
+        // run was authorised under, so every register term applies to the
+        // continuation as it did to the first segment.
+        expect(resume).toContain('const execCtx: RequestContext = run.agentId ? { ...ctx, agentId: run.agentId } : ctx');
+    });
+
+    it('and hands THAT context to the engine, not the bare one', () => {
+        // The assertion with teeth. Building `execCtx` and then passing `ctx`
+        // would look completely correct at a glance and change nothing at all.
+        // `await executeFrom(` occurs three times in this file, so the slice
+        // is anchored on `execCtx` — the one thing unique to the resume's
+        // call — rather than on the first match, which is the start path's.
+        const at = resume.indexOf('execCtx,');
+        expect(at).toBeGreaterThan(-1);
+        const before = resume.slice(Math.max(0, at - 300), at);
+        expect(before).toContain('await executeFrom(');
+    });
+});
+
+describe('the doors are counted, not listed', () => {
+    it('every caller of executeFrom is one this file pins', () => {
+        // THE ASSERTION THAT WOULD HAVE CAUGHT THE THIRD DOOR. The file used
+        // to name two entry points and assume that was all of them; a fourth
+        // caller added tomorrow would inherit the same blind spot. Counting
+        // the callers turns "we listed the doors" into "there are exactly
+        // these doors", which is a claim that can go red.
+        const src = read(USECASE);
+        const callers = src.split('await executeFrom(').length - 1;
+        expect({ executeFromCallSites: callers }).toEqual({ executeFromCallSites: 3 });
     });
 });

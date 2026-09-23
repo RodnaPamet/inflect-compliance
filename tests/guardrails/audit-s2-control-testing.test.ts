@@ -10,7 +10,7 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
 
 const ROOT = path.resolve(__dirname, '../..');
 /** Raw file text — only for the one block below that asserts about a COMMENT. */
@@ -32,9 +32,14 @@ describe('Audit S2 — Control Framework & Testing', () => {
                 'prisma/migrations/20260524110000_audit_s2_testplan_archived',
             );
             expect(fs.existsSync(migDir)).toBe(true);
-            const sql = fs.readFileSync(
-                path.join(migDir, 'migration.sql'),
-                'utf8',
+            // LANGUAGE SPLIT at the READ SEAM (#2246 / #2644). A migration is
+            // SQL, so the masker is `sqlCodeOf` — `codeOf` lexes TypeScript
+            // and on a `.sql` file blanks nothing while reading as masked.
+            // Without this, `-- ALTER TYPE ... ADD VALUE IF NOT EXISTS
+            // 'ARCHIVED'` — the DDL commented out, the line left behind —
+            // still satisfies the assertion below.
+            const sql = sqlCodeOf(
+                fs.readFileSync(path.join(migDir, 'migration.sql'), 'utf8'),
             );
             expect(sql).toMatch(
                 /ADD VALUE IF NOT EXISTS 'ARCHIVED'/,

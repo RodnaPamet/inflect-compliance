@@ -30,9 +30,15 @@ import { DecisionsClient } from './DecisionsClient';
  * every decision taken over what it was guarded on, without either side
  * storing the content.
  *
- * The step half is NOT wired yet, deliberately: the tool-boundary guards emit
- * no digest today, so there is no key to link with. Inventing one would be
- * worse than the surface existing and waiting.
+ * THE MODEL-CALL HALF IS NOW WIRED. `executeFlueRun` records the Art 12
+ * digest on the `MODEL_CALL` step it produced, and the run timeline links on
+ * it — so a reviewer reaching a model call can open the decision it took.
+ *
+ * THE TOOL-CALL HALF IS STILL NOT, and for the reason this note originally
+ * gave: the tool-boundary guards emit no digest, and the Art 12 row is written
+ * per MODEL call, so a tool call has a guard verdict and no decision row to
+ * reach. Linking every guarded step would land half of them on an empty table.
+ * Inventing a key remains worse than the surface waiting for one.
  *
  * ── READS LIVE, STORES NOTHING ──────────────────────────────────────────────
  *

@@ -11,12 +11,16 @@ import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
 import { isProposeTool, proposedItemCount } from '@/lib/mcp/tools/propose-tools';
 import { createRunBudget, resolveRunCaps, type RunCapHalt } from '@/lib/agentic/run-caps';
 import { resolveMcpInvocation } from '@/lib/mcp/auth';
-import { logAiDecision } from '@/app-layer/ai/decision-log';
-import type { PrismaTx } from '@/lib/db-context';
-import { runInTenantContext } from '@/lib/db/rls-middleware';
+// `computeInputDigest` STAYS, the other three LEAVE. #2786 records the Art 12
+// digest on the MODEL_CALL step so the run timeline can link to the decision
+// row, and that line lives here; `logAiDecision`, `PrismaTx` and
+// `runInTenantContext` moved out with `recordModelDecision` into
+// `./model-decision`, which is what made the sessionRef join testable.
+import { computeInputDigest } from '@/app-layer/ai/decision-log';
 import { logger } from '@/lib/observability/logger';
 
 import { FLUE_USAGE_KEY, InflectAgent, type FlueUsageReport } from './agent';
+import { recordModelDecision } from './model-decision';
 import { flueModelIsRegistered } from './providers';
 import { refusalMessage } from './driver-plan';
 import { bindRun, releaseRun } from './run-binding';
@@ -134,110 +138,13 @@ interface TurnRecord {
     durationMs: number | null;
 }
 
-/**
- * THE ART 12 RECORD FOR A FLUE MODEL CALL — one row per call.
- *
- * ── THE GAP THIS CLOSES ─────────────────────────────────────────────────────
- *
- * Plan point 4: "ONE decision-log row per model call — EU AI Act Art 12; stamp
- * `humanOutcome` on review — Art 14, closed loop." An adversarial audit found
- * that nothing wrote one for a Flue run at all. Every other AI feature in this
- * product writes one; the reasoning loop — the feature with the most calls and
- * the least human in the way — wrote none. So there was no Art 12 record of a
- * model call, and therefore no PENDING row for Art 14 to stamp.
- *
- * The first fix left a second gap of the same shape: it wrote the row once per
- * DISPATCH, off the response aggregate, so a six-turn run left ONE row carrying
- * six calls' summed tokens. Art 12 is a per-call obligation and the per-call
- * numbers are not recoverable from that sum — 6 calls at 100 tokens and 1 call
- * at 600 are the same row. `turns` above is what makes them different rows.
- *
- * ── WHAT IS DIGESTED, AND WHY THAT IS THE JOIN KEY ──────────────────────────
- *
- * `logAiDecision` hashes `sanitizedInput` and stores the digest, never the
- * content. The message dispatched to the agent is what that digest is taken
- * over, which makes it the same kind of key `AgentProposal.guardInputDigest`
- * carries — so `/agents/decisions?digest=` lands on exactly the decisions taken
- * over this run's prompt.
- *
- * ── WHAT IS NOT CLAIMED ─────────────────────────────────────────────────────
- *
- * `guardVerdict` is left NULL, deliberately, and that is the honest value: no
- * guard runs on model OUTPUT yet (the plan's 4a, still open). Writing the worst
- * verdict seen across the run's TOOL calls would put a verdict about other
- * content in a column that reads as a verdict about this one.
- *
- * Failure to record does NOT fail the run. The call happened; refusing to
- * settle a completed run because its record could not be written would lose the
- * work as well as the record. It is logged loudly instead — the same posture
- * `appendAuditEntry` takes at every other sink in this subsystem.
- */
-async function recordModelDecision(
-    ctx: RequestContext,
-    def: WorkflowDefinition,
-    message: string,
-    turn: TurnRecord,
-    modelSpecifier: string,
-    outputSummary: string | null,
-): Promise<void> {
-    // `<provider-id>/<model-id>` — split rather than stored whole, because the
-    // row has a column for each and a reader filtering by provider should not
-    // have to parse.
-    const slash = modelSpecifier.indexOf('/');
-    const provider = slash > 0 ? modelSpecifier.slice(0, slash) : modelSpecifier;
-    const model = slash > 0 ? modelSpecifier.slice(slash + 1) : null;
-
-    try {
-        await runInTenantContext(ctx, async (db) => {
-            await logAiDecision(db, ctx, {
-                // Namespaced by the workflow, so a tenant running three
-                // agentic workflows can tell their decisions apart without
-                // joining back to the run.
-                feature: `agentic-run:${def.key}`,
-                provider,
-                model,
-                sanitizedInput: message,
-                // Bounded and sanitised by `logAiDecision` itself, into the
-                // one column the encryption manifest carves out for exactly
-                // this: "bounded, sanitised AI-output summary — never raw
-                // content".
-                //
-                // Supplied by the CALLER and null on every call but the last,
-                // because a response's settled text is the LAST turn's output —
-                // the response settles when the model stops calling tools. The
-                // caller reads it from the reply exactly once; no per-turn read
-                // of model output is taken, which is what keeps
-                // `flue-model-output-has-one-destination` true.
-                outputSummary,
-                latencyMs: turn.durationMs,
-                tokensIn: turn.tokensIn || null,
-                tokensOut: turn.tokensOut || null,
-                // The registered agent's EU AI Act system. A Flue run is now
-                // refused unless an ACTIVE `RegisteredAgent` vouches for it,
-                // and that row carries a non-null `aiSystemId` — so this is
-                // the link that makes the record findable from the system it
-                // belongs to.
-                aiSystemId: ctx.agentId ? await aiSystemIdFor(db, ctx) : null,
-            });
-        });
-    } catch (err) {
-        logger.error('flue-driver: could not record the Art 12 decision row', {
-            component: 'agentic',
-            tenantId: ctx.tenantId,
-            workflow: def.key,
-            error: err instanceof Error ? err.message : String(err),
-        });
-    }
-}
-
-/** The registered agent's AI-system id — the Art 12 subject this run acts as. */
-async function aiSystemIdFor(db: PrismaTx, ctx: RequestContext): Promise<string | null> {
-    const agent = await db.registeredAgent.findFirst({
-        where: { id: ctx.agentId, tenantId: ctx.tenantId },
-        select: { aiSystemId: true },
-    });
-    return agent?.aiSystemId ?? null;
-}
+// `recordModelDecision` and `aiSystemIdFor` USED TO LIVE HERE. #2791 moved
+// them to `./model-decision` so the Art 14 `sessionRef` join could be tested
+// against a real database — `execute.ts` statically imports `@flue/runtime`,
+// so no CJS suite can load it, and a structural test cannot answer "does the
+// value the writer stores equal the value the stamper queries". `settleTurns`
+// below calls the extracted function once per TURN rather than once per
+// dispatch, which is the whole of this branch.
 
 export async function executeFlueRun(
     ctx: RequestContext,
@@ -402,11 +309,22 @@ export async function executeFlueRun(
             // The settled text belongs to the LAST call and to no other.
             await recordModelDecision(
                 ctx,
+                // The run id, for the Art 14 `sessionRef` join #2791 added —
+                // an identity rather than a second digest, so a human's
+                // resume or abort can find every row this run decided.
+                runId,
                 def,
                 message,
-                turn,
-                modelSpecifier,
+                // The settled text belongs to the LAST call and to no other: a
+                // response settles when the model stops calling tools, so its
+                // text is that turn's output. Giving every row the same text
+                // would claim each call produced the whole answer.
                 i === pending.length - 1 ? finalText : null,
+                // THIS call's tokens, not the dispatch aggregate — the whole
+                // point of reading the event stream.
+                { tokensIn: turn.tokensIn, tokensOut: turn.tokensOut },
+                modelSpecifier,
+                turn.durationMs,
             );
         }
         await updateRun(ctx, runId, { costTokens });
@@ -552,6 +470,29 @@ export async function executeFlueRun(
                 // the dispatch, and its seq feeds the step caps — but a reader
                 // must not have to assume that meant one call.
                 modelCalls: turns.length,
+                // THE KEY TO THIS STEP'S ART 12 ROWS.
+                //
+                // `AiDecisionLog` carries no `runId` — deliberately, it is the
+                // regulator's record of a DECISION and not of an engine's
+                // bookkeeping — so the two are joined on
+                // `(tenantId, inputDigest)`. Recording the digest here is what
+                // turns that join into a link a reviewer can follow.
+                //
+                // It is the SAME function `logAiDecision` computes with, over
+                // the SAME value `settleTurns` passes as `sanitizedInput`, so
+                // the link lands on the rows this dispatch produced. Note the
+                // PLURAL: one dispatch now writes one row per model call, and
+                // every one of them digests this same dispatched message, so
+                // the digest addresses the set rather than a single row.
+                //
+                // A DIGEST IS NOT CONTENT. It is a sha256 over the sanitised
+                // input, already stored on the decision row; recording it adds
+                // no prompt text to a ledger that deliberately holds none.
+                // `message`, the SAME local `settleTurns` passes as
+                // `sanitizedInput` — not a second `runMessage(def, fromSeq)`
+                // call. Two spellings of one value is how the step and the row
+                // drift into digesting different things while both look right.
+                decisionDigest: computeInputDigest(message),
             },
         });
 

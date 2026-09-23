@@ -109,6 +109,13 @@ jest.mock('@/lib/agentic/circuit-breaker-store', () => ({
 }));
 jest.mock('@/app-layer/ai/decision-log', () => ({
     logAiDecision: jest.fn(async () => 'decision-1'),
+    // REAL-SHAPED, not a stub returning a constant. `execute.ts` records this
+    // digest on the MODEL_CALL step so the run timeline can link to the Art 12
+    // rows (#2786), and the link is only correct if the step and the rows
+    // digest the SAME value — so a mock that collapsed every input to one
+    // string would make a broken link look fine here.
+    computeInputDigest: (input: unknown) =>
+        `sha256:${Buffer.from(JSON.stringify(input ?? null)).toString('hex').padEnd(64, '0').slice(0, 64)}`,
 }));
 jest.mock('@/lib/db/rls-middleware', () => ({
     runInTenantContext: jest.fn(async (_ctx: unknown, fn: (db: unknown) => unknown) =>

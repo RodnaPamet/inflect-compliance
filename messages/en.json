@@ -8232,7 +8232,8 @@
           "FLAGGED": "guard: flagged",
           "QUARANTINED": "guard: quarantined"
         },
-        "stepTokens": "{count} tokens"
+        "stepTokens": "{count} tokens",
+        "decisionLink": "Art 12 decision"
       },
       "awaitingApprovalNoProposals": "Paused for review — nothing is queued for approval. Open the run to see what stopped it, then Resume."
     },
@@ -8297,7 +8298,7 @@
       "outcome": {
         "PENDING": "awaiting review",
         "ACCEPTED": "accepted",
-        "MODIFIED": "modified",
+        "EDITED": "edited",
         "REJECTED": "rejected"
       }
     }

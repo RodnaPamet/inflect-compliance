@@ -36,10 +36,15 @@ const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 const EXECUTE = 'src/lib/agentic/flue/execute.ts';
+// The recorder MOVED out of `execute.ts` so a CJS suite can load it — see the
+// module docstring. `execute.ts` still owns the call site, so both files are
+// read here and each assertion names the one that owns its claim.
+const RECORDER = 'src/lib/agentic/flue/model-decision.ts';
 
 describe('the Art 12 row', () => {
     const src = read(EXECUTE);
-    const recorder = functionBodyOf(src, 'recordModelDecision');
+    const recorderSrc = read(RECORDER);
+    const recorder = functionBodyOf(recorderSrc, 'recordModelDecision');
 
     it('is written by the run, through the shared writer', () => {
         // `logAiDecision`, not a hand-rolled create: it digests the input,
@@ -47,10 +52,16 @@ describe('the Art 12 row', () => {
         // live for every AI feature.
         //
         // Bound to `settleTurns` rather than grepped for: `recordModelDecision`
-        // appears in the file as a declaration, a call and several comments,
-        // and a whole-file needle is satisfied by any of them — including the
-        // ones that would still be there with the call deleted.
-        expect(declarationOf(src, 'settleTurns')).toContain('await recordModelDecision(');
+        // appears in the file as an import, a call and several comments, and a
+        // whole-file needle is satisfied by any of them — including the ones
+        // that would still be there with the call deleted.
+        const settle = declarationOf(src, 'settleTurns');
+        expect(settle).toContain('await recordModelDecision(');
+        // AND the argument that carries the Art 14 join. #2791 made the
+        // recorder take the run id for `sessionRef`; a per-turn rewrite that
+        // dropped it would still write Art 12 rows and would silently leave
+        // every one of them unreviewable.
+        expect(settle).toContain('runId,');
         expect(recorder).toContain('logAiDecision(');
     });
 
@@ -64,7 +75,10 @@ describe('the Art 12 row', () => {
         // The CARDINALITY is proved behaviourally in
         // `tests/unit/flue-per-turn-accounting.test.ts`; this is the type-level
         // half, which is what stops the aggregate being handed back in.
-        expect(src).toContain('turn: TurnRecord,');
+        // THIS call's tokens, passed as the recorder's `usage` argument —
+        // `turn.tokensIn`/`turn.tokensOut`, never the dispatch aggregate
+        // `usage.totalTokens` the old per-dispatch row carried.
+        expect(declarationOf(src, 'settleTurns')).toContain('{ tokensIn: turn.tokensIn, tokensOut: turn.tokensOut }');
         expect(declarationOf(src, 'settleTurns')).toContain('for (const [i, turn] of pending');
     });
 
@@ -90,7 +104,11 @@ describe('the Art 12 row', () => {
         // `turn.durationMs` is the model call's wall clock. The per-dispatch
         // row left `latencyMs` unset entirely — there was no single duration
         // to report for six calls.
-        expect(recorder).toContain('latencyMs: turn.durationMs');
+        // The call's OWN wall clock, which only a `turn` event carries — the
+        // response aggregate has no per-call duration. Passed positionally to
+        // the recorder, which writes it to `latencyMs`.
+        expect(declarationOf(src, 'settleTurns')).toContain('turn.durationMs');
+        expect(recorder).toContain('latencyMs,');
     });
 
     it('links the registered agent’s AI system', () => {
@@ -98,7 +116,7 @@ describe('the Art 12 row', () => {
         // it, and that row carries a non-null aiSystemId — so the record is
         // findable from the system it belongs to.
         expect(recorder).toContain('aiSystemId');
-        expect(functionBodyOf(src, 'aiSystemIdFor')).toContain('registeredAgent');
+        expect(functionBodyOf(recorderSrc, 'aiSystemIdFor')).toContain('registeredAgent');
     });
 
     it('does NOT claim a guard verdict it did not obtain', () => {

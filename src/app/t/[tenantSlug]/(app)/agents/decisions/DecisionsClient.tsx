@@ -33,10 +33,22 @@ export interface DecisionRow {
  * PENDING means nobody has looked yet, and that is the state an assessor asks
  * about. The guard verdict beside it is inline text for the same reason the
  * run timeline's is: one badge per row, so the badge still means something.
+ *
+ * ── THE FOUR VALUES, SPELLED THE WAY THE DATABASE SPELLS THEM ───────────────
+ *
+ * `AiHumanOutcome` is `PENDING | ACCEPTED | EDITED | REJECTED`, and this map
+ * carried `MODIFIED` instead of `EDITED` — a value the column cannot hold, and
+ * the one value it CAN hold that was missing. `approveAgentProposal` passes its
+ * `'ACCEPTED' | 'EDITED'` status straight through, so an edited approval has
+ * always been writable; it rendered with the neutral fallback variant and a
+ * `t()` key that resolves to nothing, i.e. as the dotted key path. Nothing
+ * caught it because the lookup is a template literal, which
+ * `i18n-keys-resolve` states outright it cannot follow — "those keys are the
+ * ones a rendered test has to cover instead", which is now what covers them.
  */
 const OUTCOME_VARIANT: Record<string, 'success' | 'warning' | 'error' | 'neutral'> = {
     ACCEPTED: 'success',
-    MODIFIED: 'warning',
+    EDITED: 'warning',
     REJECTED: 'error',
     PENDING: 'neutral',
 };

@@ -541,7 +541,10 @@ model AiDecisionLog {
   /// Output-guard verdict (redactions / dropped-low-confidence / error).
   guardVerdict  String?
   humanOutcome  AiHumanOutcome @default(PENDING)
-  /// The generating session (RiskSuggestionSession id) — the feedback join key.
+  /// The generating session — the feedback join key `recordDecisionOutcome`
+  /// stamps by. A `RiskSuggestionSession` id for the suggestion features; the
+  /// `WorkflowRun` id for an agentic run, whose reviewable event is the run a
+  /// human resumes or aborts rather than a session it never opened.
   sessionRef    String?
   userId        String?
   createdAt     DateTime       @default(now())
