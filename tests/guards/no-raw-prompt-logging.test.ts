@@ -497,17 +497,27 @@ const SINK_FLOOR = 30;
 // the whole reason a guard-halt row is safe to write at all: the text the
 // scanner matched is the thing the guard exists to contain.
 //
-// RE-MEASURED after #2777 (the propose surface) landed and this branch merged
-// main: 169 / 96 became 173 / 100. That branch brought four sinks and four
-// holes of its own, and the point of re-measuring rather than keeping the
-// earlier figure is that neither branch could have predicted the other's.
+// Re-MEASURED 2026-09-23 for the Flue GUARD SETTLE ARMS (points 4c + 4d/4f):
+// 165 / 95 became 169 / 96. ONE new sink — `haltRunAtGuard`'s audit row — and
+// FOUR holes in it: the settle message, the verdict, the rule-id array and the
+// run id, every one a value bound to a local before the call. The message is
+// built from rule IDS and never from the content that tripped them, which is
+// the whole reason a guard-halt row is safe to write at all.
 //
-// The same caution still applies to #2780, which is open and moves this pair
-// independently: `MEASURED_HOLES` is a CEILING, so a figure measured for a
-// tree that does not exist yet is an evicted green run in the merge queue
-// rather than a red branch. Re-measure after merging main, every time, and do
-// not sit in the queue across another agentic branch landing.
-const MEASURED_HOLES = 173;
+// AND A MEASUREMENT TRAP, recorded because it cost a wrong number that LOOKED
+// right. Taken mid-merge — after resolving the conflict with #2777, before
+// committing it — this pair reads 173 / 100. The population comes from
+// `repoFiles()`, which is `git ls-files --cached`, and during an uncommitted
+// merge that lists a conflicted path ONCE PER STAGE. `execute.ts` was scanned
+// twice, contributing its own four sinks and four holes a second time: 96 + 4
+// and 169 + 4, an exact fit, which is what makes the wrong figure plausible
+// rather than obviously broken. MEASURE ON A COMMITTED TREE.
+//
+// The `MEASURED_HOLES`-is-a-CEILING caution still applies to #2780, which is
+// open and moves this pair independently: a figure measured for a tree that
+// does not exist yet is an evicted green run in the merge queue rather than a
+// red branch.
+const MEASURED_HOLES = 169;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -520,7 +530,7 @@ const MEASURED_HOLES = 173;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 100;
+const MEASURED_SINKS = 96;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;
