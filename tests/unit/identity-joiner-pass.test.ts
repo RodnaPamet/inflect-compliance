@@ -36,6 +36,10 @@ import {
     type JoinerPlanInput,
 } from '@/app-layer/usecases/identity-joiner-pass';
 import { LADDER, isAboveClamp } from '@/lib/identity/write-ladder';
+import {
+    JOINER_PREDICTION_LIMITS_NO_TIMEZONE,
+    JOINER_STANDING_PREDICTION_LIMITS,
+} from '../helpers/joiner-prediction-limits';
 
 const NOW = new Date('2026-09-19T09:00:00.000Z');
 const STARTS_TODAY = new Date('2026-09-19T00:00:00.000Z');
@@ -413,6 +417,48 @@ describe('what the dry run says it could not know', () => {
         expect(planJoinerPass(input()).predictionLimits.some((l) => /drift/i.test(l))).toBe(true);
     });
 
+    it('is EXACTLY the standing three, in order, when a timezone IS stored', () => {
+        // The assertions above this one are keyed on a TOPIC word, and a topic
+        // word is satisfied by a sentence saying the opposite of what the limit
+        // says. Measured, not assumed (#2687): rewriting limit 1 from "has
+        // never been attempted" to "is covered by this plan" left every test in
+        // the joiner population green — including the two named for acceptance
+        // 3. Equality against a second, independently-written copy is what
+        // makes a reword visible; the copy lives in tests/helpers so the IO
+        // suite asserts the same text from the other end of the seam.
+        expect(planJoinerPass(input({ timeZone: 'Europe/Sofia' })).predictionLimits).toEqual(
+            JOINER_STANDING_PREDICTION_LIMITS,
+        );
+    });
+
+    it('APPENDS the UTC caveat LAST when no timezone is stored, and changes nothing else', () => {
+        // Order is part of "verbatim": an operator reads these top to bottom,
+        // and the conditional one belongs at the end rather than interleaved
+        // with the three that are always true.
+        expect(planJoinerPass(input({ timeZone: null })).predictionLimits).toEqual(
+            JOINER_PREDICTION_LIMITS_NO_TIMEZONE,
+        );
+    });
+
+    it('says the same on EVERY refusal as on a clean plan — same text, same order', () => {
+        // `refuse(...)` is a SECOND return site carrying its own
+        // `predictionLimits`, so the refused artefact can lose them while the
+        // clean one keeps them, and the refused artefact is the one most likely
+        // to be trimmed. One case per gate that can produce a plan.
+        const refusals: Partial<JoinerPlanInput>[] = [
+            { mode: 'DISABLED' },
+            { mode: 'AUTOMATIC' },
+            { starters: [] },
+            { departmentGroups: null },
+            { defaultGroupId: null },
+        ];
+        for (const over of refusals) {
+            const plan = planJoinerPass(input({ ...over, timeZone: null }));
+            expect(plan.refusal).not.toBeNull();
+            expect(plan.predictionLimits).toEqual(JOINER_PREDICTION_LIMITS_NO_TIMEZONE);
+        }
+    });
+
     it('DECISION 9 — names the UTC window only when no tenant timezone exists', () => {
         const utc = planJoinerPass(input({ timeZone: null })).predictionLimits;
         expect(utc.some((l) => /computed in UTC/.test(l))).toBe(true);
@@ -421,6 +467,48 @@ describe('what the dry run says it could not know', () => {
         // and this one must disappear the day a tenant timezone is stored.
         const zoned = planJoinerPass(input({ timeZone: 'Europe/Sofia' })).predictionLimits;
         expect(zoned.some((l) => /computed in UTC/.test(l))).toBe(false);
+    });
+});
+
+describe('THE WINDOW IS ONE UTC DAY, and both edges are the assertion', () => {
+    // #2687 acceptance 2, the date half. Widen this window and the pass becomes
+    // an ALL-DATES one with nothing in the artefact looking different: every
+    // starter simply stops being reported NOT_IN_WINDOW, and a plausible number
+    // goes on being published over a population somebody quietly enlarged.
+    //
+    // The neighbouring case (`separates a missing start date from an
+    // unparseable one from another day`) uses a date six days out, so it stays
+    // GREEN on a window widened to a month — which is why the two boundary
+    // milliseconds are asserted here instead of a second comfortable date.
+    // NOW is 09:00 UTC on 2026-09-19, so the window is [09-19T00:00:00.000Z,
+    // 09-20T00:00:00.000Z).
+    const startingAt = (iso: string) =>
+        planJoinerPass(
+            input({ starters: [candidate({ startDate: new Date(iso) })], timeZone: null }),
+        );
+
+    it('admits the FIRST millisecond of the UTC day', () => {
+        expect(outcomeFor(startingAt('2026-09-19T00:00:00.000Z'), 'emp-1')?.outcome).toBe(
+            'PLANNED',
+        );
+    });
+
+    it('admits the LAST millisecond of the UTC day', () => {
+        expect(outcomeFor(startingAt('2026-09-19T23:59:59.999Z'), 'emp-1')?.outcome).toBe(
+            'PLANNED',
+        );
+    });
+
+    it('excludes the FIRST millisecond of the next UTC day — the ceiling is exclusive', () => {
+        expect(outcomeFor(startingAt('2026-09-20T00:00:00.000Z'), 'emp-1')?.outcome).toBe(
+            'NOT_IN_WINDOW',
+        );
+    });
+
+    it('excludes the LAST millisecond of the previous UTC day — the floor is inclusive', () => {
+        expect(outcomeFor(startingAt('2026-09-18T23:59:59.999Z'), 'emp-1')?.outcome).toBe(
+            'NOT_IN_WINDOW',
+        );
     });
 });
 
