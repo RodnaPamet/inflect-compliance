@@ -21,6 +21,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { cssCodeOf } from '../helpers/source-blocks';
+
 const TOKENS_CSS = path.resolve(__dirname, '../../src/styles/tokens.css');
 
 /**
@@ -86,7 +88,9 @@ function extractBlock(src: string, selector: RegExp): string {
 }
 
 describe('Epic 51 — light-mode parity', () => {
-    const src = fs.readFileSync(TOKENS_CSS, 'utf-8');
+    // Masked at the READ SEAM (#2246): a token defined only inside a
+    // /* … */ comment must not satisfy a parity assertion about it.
+    const src = cssCodeOf(fs.readFileSync(TOKENS_CSS, 'utf-8'));
     const rootBlock = extractBlock(src, /:root\s*\{/);
     const lightBlock = extractBlock(src, /\[data-theme="light"\]\s*\{/);
 

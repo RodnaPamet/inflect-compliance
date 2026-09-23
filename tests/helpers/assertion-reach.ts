@@ -56,7 +56,7 @@ import * as path from 'node:path';
 import * as ts from 'typescript';
 
 import { REPO_ROOT, repoFiles, repoRelative } from './repo-files';
-import { codeOf, sqlCodeOf } from './source-blocks';
+import { codeOf, cssCodeOf, mdCodeOf, sqlCodeOf } from './source-blocks';
 
 // ───────────────────────────── parsing ──────────────────────────────────
 
@@ -975,6 +975,23 @@ type MaskFn = (text: string) => string;
 const SOURCE_BLOCKS_MASKERS: ReadonlyMap<string, MaskFn> = new Map<string, MaskFn>([
     ['codeOf', codeOf],
     ['sqlCodeOf', sqlCodeOf],
+    // #2727 added `mdCodeOf` and `cssCodeOf` and admitted `.md` / `.css` to
+    // LEXABLE_EXTENSIONS — but did not list them HERE, and the two halves have
+    // to move together.
+    //
+    // The consequence is the one the `sqlCodeOf` note above predicts, and it
+    // is worse than a missed optimisation: converting a `.css` read seam to
+    // `cssCodeOf` made the site resolve as `content-transformed` — a capped
+    // skip — so it left the analysed population ENTIRELY instead of moving
+    // from raw to masked. `lexableByExtension['.css']` fell from over 10 to 8
+    // on a diff that converted three reads and deleted none, which then
+    // reddened the liveness floor that exists to notice exactly that.
+    //
+    // So the campaign's own advice, taken literally, shrank the measurement
+    // rather than the debt. Measured, not reasoned: the three conversions in
+    // this diff put it back.
+    ['mdCodeOf', mdCodeOf],
+    ['cssCodeOf', cssCodeOf],
 ]);
 
 /** Is this module specifier `tests/helpers/source-blocks`, however spelled? */

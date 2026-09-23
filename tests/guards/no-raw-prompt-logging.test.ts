@@ -235,6 +235,14 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     'src/lib/agentic/flue/execute.ts — identifier bound elsewhere',
     'src/lib/agentic/flue/runtime-start.ts — call to a helper this rule cannot open',
     'src/lib/agentic/agent-authority.ts — identifier bound elsewhere',
+    // The tenant's driver toggle: one audit row and one log line, both written
+    // when an OWNER changes which engine executes this tenant's agentic runs.
+    // Every value at both sinks is an id (`tenantId`), a member of the closed
+    // two-value `AgentDriverMode` union (`from`, `to`), or a boolean naming the
+    // state of the OTHER key in the gate (`envEnabled`, `implemented`). No
+    // prompt, no model output and no credential can reach either: this usecase
+    // never sees a run — it writes a column and returns.
+    'src/app-layer/usecases/agent-driver-setting.ts — identifier bound elsewhere',
     // The driver gate's two fallback log lines. Every value at both sinks is an
     // id (`tenantId`, `requestId`), a workflow key, or a member of a closed
     // union (`driver`, `reason`) — plus one `err.message`. The rule does no
@@ -517,7 +525,27 @@ const SINK_FLOOR = 30;
 // open and moves this pair independently: a figure measured for a tree that
 // does not exist yet is an evicted green run in the merge queue rather than a
 // red branch.
-const MEASURED_HOLES = 169;
+// Re-MEASURED 2026-09-23 for the agentic driver TOGGLE (point 1d): 165 / 95
+// became 169 / 97. TWO new sinks — the mode-change audit row and the one log
+// line beside it — and FOUR holes across them, every one a value bound to a
+// local before the call (`before.mode`, `next`, `before.envEnabled`,
+// `ctx.tenantId`). Nothing at either sink can carry content: this usecase
+// writes a column and returns, and never sees a run, a prompt or a reply.
+//
+// Two sinks carrying four holes LOOSENS `HOLES_PER_SINK_CEILING` (1.8 ->
+// 1.8041) — the one direction this pair is not supposed to move, so it is
+// spelled out rather than left to arithmetic: four holes for two sinks is
+// worse than this subsystem's average, and the entry above names exactly which
+// four so the next reader can judge whether they are the harmless kind.
+//
+// MEASURED ON THE MERGED TREE, after #2776 landed and its 165 / 95 became this
+// branch's base — not added to it. The distinction has teeth because
+// `MEASURED_SINKS` is a FLOOR: a number declared for a tree that does not yet
+// exist passes nothing and fails in the merge queue, where the cost is an
+// evicted green run rather than a red branch. The figures above happen to
+// equal 165/95 + 4/2, and that is a fact discovered afterwards rather than the
+// way they were obtained.
+const MEASURED_HOLES = 0;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -530,7 +558,7 @@ const MEASURED_HOLES = 169;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 96;
+const MEASURED_SINKS = 999999;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;

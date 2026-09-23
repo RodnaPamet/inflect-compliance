@@ -279,7 +279,18 @@ const HIGH_MULTIPLICITY = 5;
 //   every open PR: 1319 is the live count of main@fc8954092 + this branch.
 //   Whoever merges second re-measures on the merged tree rather than keeping
 //   this figure.
-const AMBIGUOUS_NEEDLE_BASELINE = 1276;
+//   1276 -> 1278 (#2246, md/css batch). NOT two new ambiguous needles —
+//   two that were always there and could not be seen. `assertion-reach.ts`
+//   recognised only `codeOf` and `sqlCodeOf` as maskers, so a read masked with
+//   `cssCodeOf` or `mdCodeOf` resolved as `content-transformed`, a capped skip,
+//   and left the analysed population entirely. Teaching it both maskers put
+//   those reads back, and their needles came with them.
+//
+//   This is the "gate opened" case the `.sql` note in raw-source-assertions.ts
+//   describes, not a regression: the detector-or-backstop question resolves to
+//   DETECTOR. Confirmed by direction — `lexableByExtension['.css']` went 8 -> 23
+//   on the same diff, so the population grew rather than the debt.
+const AMBIGUOUS_NEEDLE_BASELINE = 1278;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
