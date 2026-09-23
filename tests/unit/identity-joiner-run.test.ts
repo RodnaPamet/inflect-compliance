@@ -54,6 +54,7 @@ import {
     JOINER_LINK_FRESHNESS_MS,
     JOINER_PASS_AUTOMATION_SUFFIX,
 } from '@/app-layer/usecases/identity-joiner-run';
+import { JOINER_PREDICTION_LIMITS_NO_TIMEZONE } from '../helpers/joiner-prediction-limits';
 
 const TENANT = 'tenant-1';
 const PROVIDER = 'entra-id';
@@ -279,6 +280,59 @@ describe('THE PROVIDER SCOPE — one directory\'s evidence, never a union', () =
 });
 
 describe('THE PREDICTION LIMITS reach the artefact verbatim (#2687 acceptance 3)', () => {
+    it('records the plan\'s limits CHARACTER FOR CHARACTER, in order', async () => {
+        // The assertion the criterion actually asks for, and the one the
+        // `.some(...)` checks below could not make. Each of those is satisfied
+        // by an array this row must not be allowed to carry — REORDERED,
+        // per-string TRUNCATED, or REWORDED at the source — and all three were
+        // measured GREEN against them (#2687). Equality against a second,
+        // independently-written copy of the text is what closes that.
+        await runIdentityJoinerPass({ tenantId: TENANT, provider: PROVIDER, now: NOW });
+
+        expect(writtenRow()!.resultJson.predictionLimits).toEqual(
+            JOINER_PREDICTION_LIMITS_NO_TIMEZONE,
+        );
+    });
+
+    it('positive control — that equality can actually fail', () => {
+        // An equality is evidence only if it discriminates. Two of the three
+        // transforms this block exists to catch, applied to the fixture itself:
+        // the matcher rejects both, so a green row above means the row matched
+        // rather than that `toEqual` waves arrays through.
+        expect(JOINER_PREDICTION_LIMITS_NO_TIMEZONE).toHaveLength(4);
+        expect(JOINER_PREDICTION_LIMITS_NO_TIMEZONE).not.toEqual(
+            JOINER_PREDICTION_LIMITS_NO_TIMEZONE.map((l) => l.slice(0, 80)),
+        );
+        expect(JOINER_PREDICTION_LIMITS_NO_TIMEZONE).not.toEqual(
+            [...JOINER_PREDICTION_LIMITS_NO_TIMEZONE].reverse(),
+        );
+    });
+
+    it('carries them on a CLEAN row too, not only on the refused one', async () => {
+        // The row every other case here inspects is a NO_DEPARTMENT_MAP
+        // refusal, built at `refuse(...)`. A plan that does not refuse returns
+        // from a DIFFERENT site carrying its own `predictionLimits`, so that
+        // site can lose them with every refusal test still green.
+        mockDb.identityDepartmentGroupRule.findMany.mockResolvedValue([
+            { department: 'Engineering', groupId: 'grp-eng' },
+        ]);
+        mockDb.tenantSecuritySettings.findUnique.mockImplementation(async () => ({
+            tenantId: TENANT,
+            identityLeaverMode: 'DISABLED',
+            identityJoinerMode: joinerMode.value,
+            identityLeaverDryRunSince: null,
+            identityJoinerDryRunSince: null,
+            identityDefaultGroupId: 'grp-fallback',
+            identityDefaultGroupName: 'Contractors',
+        }));
+
+        await runIdentityJoinerPass({ tenantId: TENANT, provider: PROVIDER, now: NOW });
+
+        const row = writtenRow()!;
+        expect(row.resultJson.refusal).toBeNull();
+        expect(row.resultJson.predictionLimits).toEqual(JOINER_PREDICTION_LIMITS_NO_TIMEZONE);
+    });
+
     it('records every limit the plan carried, unsummarised', async () => {
         await runIdentityJoinerPass({ tenantId: TENANT, provider: PROVIDER, now: NOW });
 
