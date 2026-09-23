@@ -91,9 +91,9 @@ a `userId` but stores no contact PII).
 | `ControlException` | Business record | No | Soft-delete (`deletedAt`) — **NOT** auto-purged | Soft-deleted rows **not auto-purged** — gap |
 | `ControlKeySequence` | Operational | No | None today — cascade on parent/tenant delete only | No TTL today — candidate for time-boxed prune |
 | `ControlRequirementLink` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
-| `ControlTemplate` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
-| `ControlTemplateRequirementLink` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
-| `ControlTemplateTask` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
+| `ControlTemplate` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
+| `ControlTemplateRequirementLink` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
+| `ControlTemplateTask` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
 | `ControlTestEvidenceLink` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `ControlTestPlan` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `ControlTestRun` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
@@ -111,10 +111,10 @@ a `userId` but stores no contact PII).
 | `FindingAsset` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `FindingEvidence` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `FindingRisk` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
-| `Framework` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
-| `FrameworkMapping` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
-| `FrameworkPack` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
-| `FrameworkRequirement` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
+| `Framework` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
+| `FrameworkMapping` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
+| `FrameworkPack` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
+| `FrameworkRequirement` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
 | `FrameworkRequirementOrder` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `IdentityDepartmentGroupRule` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion. One row per department→security-group rule for the JML joiner (#2713); holds no personal data — a department string and a directory group id. |
 | `Incident` | Regulatory artefact | maybe | None today — indefinite while tenant active; `description` encrypted | NIS2 Article 23 record — retention is a **legal** decision (incident records often have multi-year statutory retention); **needs legal input** |
@@ -155,15 +155,15 @@ a `userId` but stores no contact PII).
 | `Notification` | Operational | No | None today — cascade on parent/tenant delete only | No TTL today — candidate for time-boxed prune |
 | `NotificationOutbox` | Operational | No | None today — cascade on parent/tenant delete only | No TTL today — candidate for time-boxed prune |
 | `OrgAuditLog` | Regulatory artefact | ind. | Immutable + hash-chained (never deleted) | Regulatory min/max — **needs legal/auditor input** |
-| `OrgDashboardWidget` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
+| `OrgDashboardWidget` | Configuration | No | Removed by its own org-plane flow (member removal / widget removal) | Lives with the ORGANIZATION, not the tenant. A tenant deletion does not touch it. |
 | `OrgInitiativeLink` | Operational | No | None today — cascade on initiative/org delete only | Append-only cross-tenant work links; pruned with the initiative |
 | `OrgInvite` | Security ephemeral | maybe | `expiresAt` expiry (security) | DEFINED — expiry-driven |
-| `OrgMembership` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
+| `OrgMembership` | Configuration | No | Removed by its own org-plane flow (member removal / widget removal) | Lives with the ORGANIZATION, not the tenant. A tenant deletion does not touch it. |
 | `OrgMaturityRating` | Operational | No | None today — cascade on org delete only | Append-only maturity-rating history (human-judgment); no TTL today — candidate for time-boxed prune |
 | `OrgSecurityInitiative` | Operational | No | None today — cascade on org delete only | Portfolio programme records; no TTL today — review w/ compliance |
 | `OrgThreatLevel` | Operational | No | None today — cascade on org delete only | Append-only posture history (human-curated); no TTL today — candidate for time-boxed prune |
-| `Organization` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
-| `PackTemplateLink` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
+| `Organization` | Configuration | No | None — no organization delete path exists | Org-plane root. Outlives every tenant beneath it; a tenant deletion does not touch it. |
+| `PackTemplateLink` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
 | `PasswordResetToken` | Security ephemeral | No | `expiresAt` expiry (security) | DEFINED — expiry-driven |
 | `PreHire` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion. The JML joiner's pre-hire surface (#2715): a person the HRIS has hired who has no mailbox yet. Holds a name, department and start date — personal data, but the same fields the `Employee` row will carry once reconciled, and for a strictly shorter window. |
 | `Policy` | Business record | No | Soft-delete purge only (90-day `data-lifecycle` sweep) | Indefinite while tenant active. The `retentionUntil` column exists but has NO writer anywhere in the product — no schema field, no DTO, no API field, no UI, no job — so it was removed from `RETENTION_MODELS` on 2026-08-12 rather than left as a sweep that could never match. |
@@ -172,7 +172,7 @@ a `userId` but stores no contact PII).
 | `PolicyApproval` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `PolicyControlLink` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `PolicyEvidenceItem` | Business record | No | None today — cascade on parent policy/tenant delete; evidence link SetNull on evidence delete | Indefinite while tenant active — review w/ compliance |
-| `PolicyTemplate` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
+| `PolicyTemplate` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
 | `PolicyVersion` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `PortfolioSnapshot` | Operational | No | None today — cascade on parent/tenant delete only | No TTL today — candidate for time-boxed prune |
 | `ProcessEdge` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
@@ -180,15 +180,15 @@ a `userId` but stores no contact PII).
 | `ProcessMap` | Business record | No | Soft-delete (`deletedAt`) — **NOT** auto-purged | Soft-deleted rows **not auto-purged** — gap |
 | `ProcessMapSnapshot` | Operational | No | None today — cascade on parent/tenant delete only | No TTL today — candidate for time-boxed prune |
 | `ProcessNode` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
-| `QuestionnaireQuestion` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
-| `QuestionnaireTemplate` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
+| `QuestionnaireQuestion` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
+| `QuestionnaireTemplate` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
 | `ReadinessSnapshot` | Regulatory artefact | ind. | Immutable + hash-chained (never deleted) | Regulatory min/max — **needs legal/auditor input** |
 | `ReminderHistory` | Operational | No | None today — cascade on parent/tenant delete only | No TTL today — candidate for time-boxed prune |
 | `ReportRun` | Operational | No | None today — cascade on parent/tenant delete only | No TTL today — candidate for time-boxed prune |
 | `ReportSchedule` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `ReportTemplate` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
-| `RequirementMapping` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
-| `RequirementMappingSet` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
+| `RequirementMapping` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
+| `RequirementMappingSet` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
 | `Risk` | Business record | No | Soft-delete purge only (90-day `data-lifecycle` sweep) | Indefinite while tenant active. The `retentionUntil` column exists but has NO writer anywhere in the product — no schema field, no DTO, no API field, no UI, no job — so it was removed from `RETENTION_MODELS` on 2026-08-12 rather than left as a sweep that could never match. |
 | `RiskAppetiteBreach` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `RiskAppetiteConfig` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
@@ -227,7 +227,7 @@ a `userId` but stores no contact PII).
 | `WorkflowStep` | Operational | maybe | None today — cascade on run/tenant delete only | No TTL today — the run's append-only step narrative |
 | `FrameworkVersionDiff` | Configuration | No | Global reference (no tenantId) — never per-tenant deleted | Lives with the framework library; a version-diff record |
 | `TenantFrameworkDelta` | Operational | No | Cascade on tenant/diff delete | No TTL today — reviewed/dismissed deltas are candidates for time-boxed prune |
-| `RiskTemplate` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
+| `RiskTemplate` | Configuration | No | None — global reference data, upserted by the deploy-time catalogue seed | Global catalogue, NOT tenant data. Unaffected by tenant deletion; no delete path exists. |
 | `RiskTreatmentPlan` | Business record | No | Soft-delete (`deletedAt`) — **NOT** auto-purged | Soft-deleted rows **not auto-purged** — gap |
 | `ScimGroup` | Configuration | maybe | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `Task` | Business record | No | Soft-delete purge only (90-day `data-lifecycle` sweep) | Indefinite while tenant active. The `retentionUntil` column exists but has NO writer anywhere in the product — no schema field, no DTO, no API field, no UI, no job — so it was removed from `RETENTION_MODELS` on 2026-08-12 rather than left as a sweep that could never match. |
