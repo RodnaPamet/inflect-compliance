@@ -476,6 +476,40 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     fails under `sqlCodeOf` — the #2644 language split, measured on the file
  *     itself. The file keeps its three deliberate raw sites, so this count
  *     does not move for it; the defect closed anyway.
+ *   • 35 (2026-09-23): ONE file, and the interesting number is the other ten.
+ *     A sweep of the eleven `tests/guards/` members listed below measured every
+ *     needle at every raw site twice, once raw and once through `codeOf`: 17
+ *     raw sites across the eleven, and in TEN of them the needle goes to ZERO
+ *     under the mask. That is not a conversion problem, it is the population
+ *     having already been converted — each of those ten carries a separately
+ *     named raw reader (`srcDoc` / `CONTEXT_DOC` / `readDoc` / `PRESETS` /
+ *     `MOTION_GUARD_DOC` / `analyticsDoc` / `raw`) feeding one assertion whose
+ *     SUBJECT is the prose, exactly the shape the 338 entry above describes.
+ *     Masking those deletes the subject: the positives could never pass again
+ *     and the four negatives could never fail again. They stay, measured.
+ *
+ *     `nav-item-geometry-discipline` was the eleventh and was NOT that shape,
+ *     though its header claimed to be — "this file's only text assertion is
+ *     'every geometry token carries a non-trivial doc-comment'". It is not.
+ *     Five `export const <TOKEN> = '<literal>'` assertions sit above it, they
+ *     are what the ratchet is FOR, and they read the file raw. Counted raw and
+ *     masked they are identical — five literals 1 → 1, the `NAV_ITEM_BASE`
+ *     region 1 → 1, both icon-composition probes 1 → 1 — so masking costs the
+ *     file nothing, and the doc-comment assertion keeps a named `SRC_DOC`.
+ *
+ *     THE PREMISE WAS FALSE AND THE GUARD WAS EXPLOITABLE, proved rather than
+ *     argued. `NAV_ITEM_RADIUS` changed from `'rounded-lg'` to `'rounded-xl'`
+ *     with `// was: export const NAV_ITEM_RADIUS = 'rounded-lg';` left on the
+ *     next line: the suite stayed 7/7 GREEN with the geometry it exists to lock
+ *     already changed. Through `codeOf` the same mutation fails exactly the
+ *     RADIUS case, 6 passed / 1 failed — reach, not deletion.
+ *
+ *     A deliberate-looking comment is not evidence the decision was made: this
+ *     one named a subject the file does not have. The sibling ratchets did not
+ *     move — `assertion-needle-uniqueness-ratchet` and
+ *     `assertion-span-reach-ratchet` both pass untouched, because the site was
+ *     already a whole-file read in Class D's population and only changed which
+ *     bucket it sits in, and the converted assertion carries no interior span.
  *   • 36 (2026-09-23): the SIXTH Class A batch — the thirteen `tests/guardrails/`
  *     files the 42 entry above left behind, revisited with the tool that entry
  *     said was missing. SIX leave by NARROWING; seven stay, and the reason the
@@ -588,8 +622,18 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *
  *     So a file's presence in this list is NOT an accusation, and this ratchet
  *     is a cap rather than a work queue: it says the population may not grow.
- *   • 30 (2026-09-23): ten `tests/guards` files with MIXED read targets, six
- *     of which leave. Their raw sites were 94 and are now 7. The technique was
+ *   • 29 (2026-09-23): ten `tests/guards` files with MIXED read targets, six
+ *     of which leave. Their raw sites were 94 and are now 7.
+ *
+ *     THE NUMBER IS 29, NOT 30, AND THAT IS THE POINT OF WRITING IT DOWN.
+ *     This batch and the `nav-item-geometry-discipline` batch above were
+ *     authored in parallel against a 36-entry list. Each was internally
+ *     consistent alone — 36 - 1 = 35, 36 - 6 = 30 — and NEITHER number
+ *     survives the union: the merged list is 29. A baseline is a
+ *     MEASUREMENT of the combined tree, never the arithmetic of one branch,
+ *     and a history entry naming 30 would name a state this repo never
+ *     holds. Resolved by running the ratchet on the merged tree and taking
+ *     the count it reported. The technique was
  *     chosen PER READ rather than per file, and the split is the finding:
  *     eight of the ten had already masked every `.ts` read they own, and were
  *     in this list only for markdown admitted by the #2727 widening.
@@ -637,7 +681,7 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     guardrails it watches, where one file has 4 raw and 3 in code, so a
  *     commented-out block was padding its ">= 3" floor.
  */
-const RAW_ASSERTING_FILE_BASELINE = 30;
+const RAW_ASSERTING_FILE_BASELINE = 29;
 
 /**
  * The files themselves, sorted, in a sibling JSON — the same population the
