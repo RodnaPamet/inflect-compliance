@@ -58,6 +58,43 @@ function readNonSourceFile(rel: string): string {
     return fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
 }
 
+/**
+ * ONE ROW of a markdown table, found by its first cell (#2246).
+ *
+ * NARROWED RATHER THAN MASKED, because masking cannot reach this defect and
+ * would in fact delete the subject: `mdCodeOf` keeps a document's CODE and
+ * blanks its prose, and the marker being asserted — `✅ **REQUIRED** in
+ * production` — is prose in a table cell. The assertion is not about code.
+ *
+ * WHAT IT IS ABOUT is a single ROW, and reading the whole document is what
+ * unbound it. MEASURED, not predicted: downgrade that row to
+ *
+ *     | `REDIS_URL` | Optional in production (GAP-13) | …
+ *
+ * — the exact regression the test's own comment names ("a future
+ * table-cleanup PR could … downgrade the required marker") — and
+ * `redis-prod-required` stayed **8/8 GREEN**. The span
+ * `/REDIS_URL[\s\S]*REQUIRED/` had re-formed across the gap: `REDIS_URL` on
+ * the mutated row and `**REQUIRED**` on the NEXT one, the `REDIS_PASSWORD`
+ * row below it. Six `REDIS_URL` occurrences and a table full of REQUIRED
+ * markers mean the two halves of that regex never had to come from the same
+ * place.
+ *
+ * Bounding the read to the row makes them. Throws when the row is gone,
+ * rather than returning '' — a guard whose subject was deleted must fail
+ * loudly, not assert against an empty string (the same rule the
+ * `source-blocks` extractors follow).
+ */
+function tableRow(md: string, firstCell: string): string {
+    const row = md
+        .split('\n')
+        .find((l) => new RegExp(`^\\|\\s*\`?${firstCell}\`?\\s*\\|`).test(l));
+    if (row === undefined) {
+        throw new Error(`table row not found: | ${firstCell} |`);
+    }
+    return row;
+}
+
 describe('GAP-13 ratchet — schema layer', () => {
     it('src/env.ts has REDIS_URL with a superRefine that mentions production', () => {
         const src = readRepoFile('src/env.ts');
@@ -162,14 +199,19 @@ describe('GAP-13 ratchet — env templates + docs', () => {
     });
 
     it('docs/deployment.md flags REDIS_URL as REQUIRED in production in the env table', () => {
-        const src = readNonSourceFile('docs/deployment.md');
         // Regression: doc rot — operators reading the deployment
         // guide must see REDIS_URL marked the same way as
         // DATA_ENCRYPTION_KEY (the GAP-03 precedent). A future
         // table-cleanup PR could silently strip the row or downgrade
         // the "required" marker.
-        expect(src).toMatch(/REDIS_URL/);
-        expect(src).toMatch(/REDIS_URL[\s\S]*REQUIRED|REQUIRED[\s\S]*REDIS_URL/);
+        //
+        // Read ONE ROW, not the document: see `tableRow` above for the
+        // measurement showing the whole-document form survived exactly that
+        // downgrade. Stripping the row throws; downgrading it fails the
+        // REQUIRED assertion — and neither can now be satisfied by the
+        // REDIS_PASSWORD row underneath.
+        const src = tableRow(readNonSourceFile('docs/deployment.md'), 'REDIS_URL');
+        expect(src).toMatch(/REQUIRED/);
         expect(src).toMatch(/GAP-13/);
     });
 });
