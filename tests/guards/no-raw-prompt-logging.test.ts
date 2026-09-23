@@ -545,7 +545,19 @@ const SINK_FLOOR = 30;
 // evicted green run rather than a red branch. The figures above happen to
 // equal 165/95 + 4/2, and that is a fact discovered afterwards rather than the
 // way they were obtained.
-const MEASURED_HOLES = 0;
+// RE-MEASURED after #2780 landed and this branch merged main: 169 / 96 became
+// 173 / 98. #2780 brought the agentic driver toggle's two sinks and four holes;
+// this branch brings `haltRunAtGuard`'s one sink and four holes. Neither branch
+// could have declared this pair on its own, which is the whole reason it is
+// re-measured at the merge rather than carried across it.
+//
+// MEASURED ON A COMMITTED TREE, with `git status` clean and zero unmerged
+// paths. Taken mid-merge this same pair reads four higher, because the
+// population is `git ls-files --cached` and that lists a conflicted path ONCE
+// PER STAGE — the conflicted file's own findings counted twice. The inflated
+// figure fits plausibly and passes its own single-file run, which is what makes
+// it dangerous; it fails only the full sweep, after the commit.
+const MEASURED_HOLES = 173;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -558,7 +570,7 @@ const MEASURED_HOLES = 0;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 999999;
+const MEASURED_SINKS = 98;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;
