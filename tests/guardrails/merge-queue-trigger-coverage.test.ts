@@ -80,30 +80,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { mdSection } from '../helpers/markdown-regions';
 
 const ROOT = path.resolve(__dirname, '../..');
 
-/**
- * ONE `##` SECTION of a markdown document, heading line included (#2246).
- *
- * The markdown counterpart of `braceBlockAfter` in
- * `tests/helpers/source-blocks.ts`, and it exists for the same reason: an
- * assertion naming a region has to READ that region. A needle matched
- * against a whole document is satisfied by any occurrence anywhere in it,
- * so the span never bound to the section the test names.
- *
- * Throws when the heading is gone rather than returning '' — a guard whose
- * subject was renamed away must fail loudly, not assert against an empty
- * string.
- */
-function mdSection(md: string, heading: string): string {
-    const lines = md.split('\n');
-    const start = lines.findIndex((l) => l.trimEnd() === `## ${heading}`);
-    if (start < 0) throw new Error(`section not found: ## ${heading}`);
-    const rest = lines.slice(start + 1).findIndex((l) => /^##\s/.test(l));
-    const end = rest < 0 ? lines.length : start + 1 + rest;
-    return lines.slice(start, end).join('\n');
-}
 const WORKFLOW_DIR = path.join(ROOT, '.github/workflows');
 const CI_YML = path.join(WORKFLOW_DIR, 'ci.yml');
 

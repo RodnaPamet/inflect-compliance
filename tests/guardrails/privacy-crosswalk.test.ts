@@ -23,6 +23,7 @@ import { parseLibraryFile, loadLibrary } from '@/app-layer/libraries';
 import { parseMappingSetFile } from '@/app-layer/services/mapping-set-importer';
 import { appliedCatalogFor } from '../helpers/applied-catalogue';
 import { codeOf } from '../helpers/source-blocks';
+import { mdSection } from '../helpers/markdown-regions';
 
 const ROOT = path.resolve(__dirname, '../..');
 const LIB = path.join(ROOT, 'src/data/libraries');
@@ -32,34 +33,6 @@ const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 // readRaw — codeOf() would mask `//` inside a URL there.
 const read = (rel: string) => codeOf(readRaw(rel));
 
-/**
- * ONE `##` SECTION of a markdown document, heading line included (#2246).
- *
- * NARROWED RATHER THAN MASKED. The markdown masker `mdCodeOf` keeps a
- * document's CODE — fenced blocks and inline spans — and blanks its prose, so
- * on an attribution file it deletes most of what is being asserted:
- * `/Microsoft Data Protection Mapping Project/` and `/MIT/` both match once
- * raw and ZERO times masked (measured). A licence attribution IS prose, and
- * this is one of the cases the Class A advice calls out as legitimately raw.
- *
- * What is NOT legitimate is reading the whole file for it.
- * `docs/attributions.md` is a document of attributions: `MIT` appears in
- * more than one, so "the MS project is credited under MIT" was satisfied by
- * ANY section carrying an MIT line. Bound to the section that names the
- * project, each needle has to come from the attribution it belongs to.
- *
- * Throws when the section is gone, rather than returning '' — an empty
- * string would make every `toMatch` below fail loudly anyway, but the throw
- * names which heading vanished.
- */
-function mdSection(md: string, heading: string): string {
-    const lines = md.split('\n');
-    const start = lines.findIndex((l) => l.trimEnd() === `## ${heading}`);
-    if (start < 0) throw new Error(`section not found: ## ${heading}`);
-    const rest = lines.slice(start + 1).findIndex((l) => /^##\s/.test(l));
-    const end = rest < 0 ? lines.length : start + 1 + rest;
-    return lines.slice(start, end).join('\n');
-}
 
 function nodes(file: string) {
     const lib = loadLibrary(parseLibraryFile(path.join(LIB, file)), file);

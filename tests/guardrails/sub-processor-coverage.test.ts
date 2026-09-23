@@ -17,6 +17,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { codeOf } from '../helpers/source-blocks';
+import { mdSection } from '../helpers/markdown-regions';
 
 const ROOT = path.resolve(__dirname, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -26,32 +27,6 @@ const SUBPROC = 'docs/sub-processors.md';
 const DPA = 'docs/data-processing-agreement-template.md';
 const POLICY = 'docs/sub-processor-change-policy.md';
 
-/**
- * ONE `##` SECTION of a markdown document, heading line included (#2246).
- *
- * NARROWED RATHER THAN MASKED, and the measurement is what settles which.
- * `mdCodeOf` — the markdown masker — keeps a document's CODE (fences, inline
- * spans) and blanks its prose; every needle in the three document blocks
- * below is prose or table pipework, and all of them match ZERO times through
- * it. The assertions are not about code, so masking would delete the subject
- * rather than sharpen it.
- *
- * They are about REGIONS, and reading the whole document is what unbound
- * them: `| Name | Data shared |` was satisfied by any table anywhere in
- * `sub-processors.md`, and `30 days` by any of its three occurrences in the
- * change policy rather than the notice step that owes it.
- *
- * Throws when the heading is gone rather than returning '' — a guard whose
- * section was renamed must fail loudly, not assert against an empty string.
- */
-function mdSection(md: string, heading: string): string {
-    const lines = md.split('\n');
-    const start = lines.findIndex((l) => l.trimEnd() === `## ${heading}`);
-    if (start < 0) throw new Error(`section not found: ## ${heading}`);
-    const rest = lines.slice(start + 1).findIndex((l) => /^##\s/.test(l));
-    const end = rest < 0 ? lines.length : start + 1 + rest;
-    return lines.slice(start, end).join('\n');
-}
 
 /**
  * The document's ATX heading lines at ONE level, fenced blocks excluded.
