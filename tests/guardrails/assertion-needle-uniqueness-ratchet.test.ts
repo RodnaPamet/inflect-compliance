@@ -318,7 +318,21 @@ const HIGH_MULTIPLICITY = 5;
 //   places in `docs/deployment.md`, `/autoscaling…|HPA/` 13, `/CC BY 4\.0|…/`
 //   6 across the NIS2 licence sidecar. Every one of those was a guard whose
 //   named section could be deleted while a sibling kept it green.
-const AMBIGUOUS_NEEDLE_BASELINE = 1255;
+// 1255 -> 1215 (2026-09-23, #2246 Class A, the ten mixed-target `tests/guards`
+//   files): -40, the same mechanism as batch 6 one directory over. 82 raw
+//   markdown sites across six guards were bound to the section or the heading
+//   lines their own test titles name, which takes the whole subject out of
+//   this population. The needles that were ambiguous purely because a
+//   670-line runbook was in scope: `--namespace inflect-production` matched
+//   20 places in `docs/incident-response.md`, `Rollback` 22, `/\bpage\b/` 14
+//   in `docs/design-system.md`, `/params/i` 10 in `docs/codebase-hygiene.md`.
+//   Bound to the Rollback playbook, the spacing scale and the pillar headings
+//   they are 5, 1, 3 and 1.
+//
+//   SHARED STATE, and this branch has a sibling: a parallel #2246 branch is
+//   converting the other eleven `tests/guards` files, so whoever merges
+//   second re-measures on the merged tree rather than keeping this figure.
+const AMBIGUOUS_NEEDLE_BASELINE = 1215;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
@@ -380,7 +394,14 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1255;
 // places and `helm rollback` in 6, so binding those assertions to
 // `### Scaling` and `### Rollback via helm rollback` retires several
 // five-plus-multiplicity sites at once.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 193;
+// 193 -> 180 (2026-09-23, #2246 Class A, the ten mixed-target `tests/guards`
+// files): -13 against -40 ambiguous, a ratio close to batch 6's and for the
+// same reason — two of the six converted guards read operational RUNBOOKS
+// (`docs/incident-response.md`, `docs/slos.md`), and a runbook repeats its
+// own vocabulary in every playbook. `--namespace inflect-production` at 20
+// and `Rollback` at 22 are both five-plus sites that the Rollback playbook's
+// own bounds retire outright.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 180;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -619,7 +640,20 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 193;
 // took 2 off the SKIPPED count rather than adding to it, which is what a
 // narrowing is supposed to look like from here. A rise would have meant the
 // helper was reading as a mask.
-const UNANALYSABLE_READ_BASELINE = 1455;
+//
+// 1455 -> 1445 (2026-09-23, #2246 Class A, the ten mixed-target `tests/guards`
+// files): -10, and the direction is again the evidence that the helper read
+// as a NARROWING and not as a mask. Every new seam is two-argument
+// (`mdSection(read(DOC), '6. Rollback')`, `headingLines(read(SLO_DOC), 2)`),
+// so the arity rule puts them out of scope rather than into
+// `content-transformed`. The fall comes from three places, all of them sites
+// LEAVING a skip bucket: `needle-carries-span` on the severity-table and
+// Rollback assertions, and two hand-rolled narrowings that were
+// `content-transformed` and are now real extractions —
+// `src.split('## SLO Summary Table')[1]`, which had no end bound and ran
+// 15842 characters to EOF where the section is 800, and a `.toLowerCase()`
+// over a whole 702-line runbook that is now over one playbook.
+const UNANALYSABLE_READ_BASELINE = 1445;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

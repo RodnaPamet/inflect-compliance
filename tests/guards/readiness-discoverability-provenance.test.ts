@@ -128,7 +128,14 @@ describe('3 — the materialize affordance is precise', () => {
         );
         expect(window).toMatch(/Deterministic attachment point/i);
         expect(window).toMatch(/OLDEST/);
-        expect(src).toMatch(/orderBy: \{ createdAt: 'asc' \}/);
+        // …but the `orderBy` itself is CODE, so it goes through the MASKED
+        // read (#2246). It was the file's last raw whole-file assertion, and
+        // it sat on the deliberately-raw seam only because the rationale
+        // above shares the read. Measured in the target: 1 occurrence raw, 1
+        // through `codeOf` — so this is not a caught defect, it is the clause
+        // being pinned to the code rather than to the paragraph that would
+        // survive its deletion.
+        expect(read(SHARING)).toMatch(/orderBy: \{ createdAt: 'asc' \}/);
     });
 });
 
