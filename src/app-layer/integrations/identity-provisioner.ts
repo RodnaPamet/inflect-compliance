@@ -204,11 +204,43 @@ export interface DirectoryProvisioner {
     enableAccount(externalUserId: string): Promise<ProvisionStep>;
 }
 
-/** Why no provisioner could be resolved. Shares the writer's vocabulary. */
-export type ProvisionerRefusal = WriterRefusal;
+/**
+ * Why no provisioner could be resolved.
+ *
+ * Shares the writer's vocabulary, plus ONE arm the disable seam cannot have.
+ * `NO_LIVE_PROVISIONER` is not `UNSUPPORTED_PROVIDER` wearing a different
+ * label: Entra IS a supported directory, has a live writer, and is observed
+ * every night. What it has no live arm for is CREATING, because the joining
+ * credential is a Temporary Access Pass and a TAP needs `Policy.Read.All`,
+ * which is a per-tenant consent decision nobody has made. Telling an operator
+ * "entra-id has no directory writer" would be flatly false and would send them
+ * to the wrong setting.
+ */
+export type ProvisionerRefusal = WriterRefusal | 'NO_LIVE_PROVISIONER';
 
+/**
+ * A resolved provisioner plus its disposal — shaped after `WriterResolution`.
+ *
+ * `snapshot` and `live` are separate arms rather than one `provisioner` arm
+ * with a boolean, for the reason the writer's are: a caller that must know
+ * whether a socket was opened should not be able to forget to ask. And `close`
+ * is ALWAYS present — a no-op for the snapshot arm, the AD provisioner's real
+ * unbind for the live one — so a caller's `finally` is unconditional and
+ * typechecked rather than a `'close' in p` narrowing somebody will forget. The
+ * AD arm holds an LDAP bind, and a leaked bind outlives the process that made
+ * it.
+ */
 export type ProvisionerResolution =
-    | { readonly kind: 'provisioner'; readonly provisioner: DirectoryProvisioner }
+    | {
+          readonly kind: 'snapshot';
+          readonly provisioner: DirectoryProvisioner;
+          readonly close: () => Promise<void>;
+      }
+    | {
+          readonly kind: 'live';
+          readonly provisioner: DirectoryProvisioner;
+          readonly close: () => Promise<void>;
+      }
     | {
           readonly kind: 'none';
           readonly refusal: ProvisionerRefusal;

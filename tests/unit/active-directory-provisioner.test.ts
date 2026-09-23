@@ -5,12 +5,39 @@
  * "did it succeed" — an account created ENABLED works fine until someone signs
  * into it with no entitlements.
  */
+
+// The create sequence is journalled before every step. Mocked so the four
+// failure tests below can assert WHICH settle verb each failure earns —
+// `failed` (we know nothing changed) and `indeterminate` (we do not) are
+// different files: the restore path and the operator sweep both read the
+// second, and neither reads the first.
+const settles: Array<{ action: string; settled: string }> = [];
+jest.mock('@/app-layer/usecases/identity-write-journal', () => ({
+    beginWrite: jest.fn(async (_ctx: unknown, input: { action: string }) => ({
+        journalId: `j-${input.action}`,
+        applied: jest.fn(async () => { settles.push({ action: input.action, settled: 'applied' }); }),
+        failed: jest.fn(async () => { settles.push({ action: input.action, settled: 'failed' }); }),
+        reverted: jest.fn(async () => { settles.push({ action: input.action, settled: 'reverted' }); }),
+        indeterminate: jest.fn(async () => {
+            settles.push({ action: input.action, settled: 'indeterminate' });
+        }),
+    })),
+}));
+
+import {
+    AlreadyExistsError,
+    ConstraintViolationError,
+    InsufficientAccessError,
+    UnwillingToPerformError,
+} from 'ldapts';
+
 import {
     createActiveDirectoryProvisioner,
     encodeUnicodePwd,
     escapeFilterValue,
     AD_COLLISION_NAMESPACES,
 } from '@/app-layer/integrations/providers/active-directory/provisioner';
+import { createDirectoryAccount } from '@/app-layer/usecases/identity-create-account';
 
 const CONNECTION = {
     // A private IP, not a hostname: `assertPrivateLdapHost` does a real DNS
@@ -28,22 +55,42 @@ const GUID_BYTES = Buffer.from('65608b9d1c230c4ca49483ce83326f08', 'hex');
 
 interface Recorded { dn: string; attributes?: Record<string, unknown>; changes?: unknown[] }
 
-function fakeAd(opts: { entries?: Array<Record<string, unknown>>; addThrows?: Error } = {}) {
+interface FakeAdOptions {
+    entries?: Array<Record<string, unknown>>;
+    addThrows?: Error;
+    searchThrows?: Error;
+    /**
+     * Keyed by the FIRST modification's attribute type, which is what makes
+     * each of the three modify steps independently failable: `member` is the
+     * group add, `unicodePwd` the credential, `userAccountControl` the enable.
+     */
+    modifyThrows?: Record<string, Error>;
+}
+
+function fakeAd(opts: FakeAdOptions = {}) {
     const adds: Recorded[] = [];
     const modifies: Recorded[] = [];
     const client = {
         isBound: true,
         bind: async () => {},
         unbind: async () => {},
-        search: async () => ({
-            searchEntries:
-                opts.entries ?? [{ distinguishedName: 'CN=New Person,OU=Employees,DC=corp,DC=example,DC=test', objectGUID: GUID_BYTES }],
-        }),
+        search: async () => {
+            if (opts.searchThrows) throw opts.searchThrows;
+            return {
+                searchEntries:
+                    opts.entries ?? [{ distinguishedName: 'CN=New Person,OU=Employees,DC=corp,DC=example,DC=test', objectGUID: GUID_BYTES }],
+            };
+        },
         add: async (dn: string, attributes: Record<string, unknown>) => {
             if (opts.addThrows) throw opts.addThrows;
             adds.push({ dn, attributes });
         },
-        modify: async (dn: string, changes: unknown[]) => { modifies.push({ dn, changes }); },
+        modify: async (dn: string, changes: unknown[]) => {
+            const type = (changes[0] as { type?: string } | undefined)?.type ?? '';
+            const boom = opts.modifyThrows?.[type];
+            if (boom) throw boom;
+            modifies.push({ dn, changes });
+        },
     };
     const provider = {
         makeClient: async () => client,
@@ -238,5 +285,201 @@ describe('AD provisioner — the probe asks about both namespaces', () => {
     it('escapes filter metacharacters so an identifier cannot alter the query', () => {
         expect(escapeFilterValue('a*b(c)')).not.toContain('*');
         expect(escapeFilterValue('a*b(c)')).not.toContain('(');
+    });
+});
+
+describe('AD provisioner — a probe that cannot look answers UNKNOWN, never free', () => {
+    it('a directory the probe cannot reach yields unknown, naming both namespaces', async () => {
+        // Not a hypothetical: a bind refusal, an unresolvable host or a dropped
+        // socket all arrive here. Before #2750 the live arm was the ONE
+        // implementation that could not honour the seam's own contract — it
+        // threw, so a caller had to invent an answer, and the only answers on
+        // offer were "free" (a create straight into a collision) and a crashed
+        // pass.
+        const f = fakeAd({ searchThrows: new Error('ECONNREFUSED 192.168.56.10:636') });
+        const p = await make(f).probeIdentifier('new.person@corp.example.test');
+
+        expect(p.kind).toBe('unknown');
+        expect(p.kind).not.toBe('free');
+        if (p.kind === 'unknown') {
+            expect(p.namespacesUnavailable).toEqual([...AD_COLLISION_NAMESPACES]);
+        }
+    });
+});
+
+/**
+ * THE FOUR STEPS, EACH FAILING ALONE, ON ERRORS ldapts ACTUALLY THROWS.
+ *
+ * `new Error('boom')` would exercise none of what matters here. A real
+ * `ResultCodeError` carries a numeric `code`, and that number is the entire
+ * basis for the one decision the caller cannot make for itself: did the
+ * directory CHANGE? A result code inside a response means the DC parsed the
+ * request and declined it — nothing was written. No result code at all means
+ * the answer was lost, and the write may well have landed.
+ *
+ * So each test pairs a real error class with the `PARTIAL_*` state it must
+ * produce AND the journal verb it must earn, because the two are not the same
+ * assertion: every failure of step 2 is `PARTIAL_NO_GROUP` whether refused or
+ * indeterminate, and only the journal distinguishes a row a human must chase
+ * from one nobody needs to.
+ */
+describe('AD provisioner — each of the four steps fails independently', () => {
+    const CTX = { tenantId: 't-1', userId: 'u-1' } as never;
+    const GROUP = 'CN=Engineering,OU=Groups,DC=corp,DC=example,DC=test';
+    const CANDIDATE = {
+        identifier: 'new.person@corp.example.test',
+        displayName: 'New Person',
+        employeeId: 'emp-1',
+    };
+
+    function drive(f: ReturnType<typeof fakeAd>) {
+        const disableCreated = jest.fn(async () => {});
+        return {
+            disableCreated,
+            run: () =>
+                createDirectoryAccount(CTX, {
+                    provisioner: make(f),
+                    candidate: CANDIDATE,
+                    groupId: GROUP,
+                    mode: 'AUTOMATIC',
+                    disableCreated,
+                }),
+        };
+    }
+
+    const settledFor = (action: string) =>
+        settles.filter((s) => s.action === action).map((s) => s.settled);
+
+    beforeEach(() => {
+        settles.length = 0;
+    });
+
+    it('all four land — and the account is BLOCKED from create until the LAST step', async () => {
+        // The positive control for every failure below: without it, a sequence
+        // that silently stopped after step 1 would satisfy several of them.
+        const f = fakeAd();
+        const { run, disableCreated } = drive(f);
+        const outcome = await run();
+
+        // No HRIS write-back is wired (#2716), which is the correct terminal
+        // state for a complete create today.
+        expect(outcome.kind).toBe('PARTIAL_NO_HRIS_WRITEBACK');
+        expect(disableCreated).not.toHaveBeenCalled();
+
+        // 514 at CREATE. An account created at 512 can be signed into before it
+        // holds entitlements or a credential — the one ordering mistake the
+        // whole sequence exists to prevent.
+        expect(f.adds[0].attributes?.userAccountControl).toBe('514');
+
+        // And the order is decision 3: group, then credential, then unblock.
+        // The enable is LAST because every earlier partial then leaves the
+        // person unable to sign in, which is the failure you want.
+        const order = f.modifies.map((m) => (m.changes as Array<{ type: string }>)[0].type);
+        expect(order).toEqual(['member', 'unicodePwd', 'userAccountControl']);
+    });
+
+    it('step 1 — InsufficientAccess (50) is REFUSED: nothing created, nothing to undo', async () => {
+        const f = fakeAd({ addThrows: new InsufficientAccessError() });
+        const { run, disableCreated } = drive(f);
+        const outcome = await run();
+
+        expect(outcome.kind).toBe('REFUSED');
+        // A rollback here would disable an id we never created.
+        expect(disableCreated).not.toHaveBeenCalled();
+        expect(settledFor('CREATE_ACCOUNT')).toEqual(['failed']);
+    });
+
+    it('step 1 — AlreadyExists (68) is REFUSED: the race the probe cannot close', async () => {
+        // The probe asked and the directory said free; between that answer and
+        // the add, somebody else claimed the name. Reporting this as
+        // INDETERMINATE — which this module did until #2750 — leaves a human to
+        // establish by hand what the DC already stated plainly.
+        const f = fakeAd({ addThrows: new AlreadyExistsError() });
+        const outcome = await drive(f).run();
+
+        expect(outcome.kind).toBe('REFUSED');
+        expect(outcome.kind).not.toBe('INDETERMINATE');
+    });
+
+    it('step 1 — a lost response is INDETERMINATE, because an account may exist', async () => {
+        // THE CONTROL FOR THE TWO ABOVE. A socket error carries a STRING code,
+        // never an LDAP result, so nothing here can be read as proof the
+        // directory was untouched. Retrying blindly makes a duplicate.
+        const f = fakeAd({
+            addThrows: Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }),
+        });
+        const { run, disableCreated } = drive(f);
+        const outcome = await run();
+
+        expect(outcome.kind).toBe('INDETERMINATE');
+        expect(disableCreated).not.toHaveBeenCalled();
+        expect(settledFor('CREATE_ACCOUNT')).toEqual(['indeterminate']);
+    });
+
+    it('step 2 — a refused group add leaves PARTIAL_NO_GROUP, rolled back', async () => {
+        const f = fakeAd({ modifyThrows: { member: new InsufficientAccessError() } });
+        const { run, disableCreated } = drive(f);
+        const outcome = await run();
+
+        expect(outcome.kind).toBe('PARTIAL_NO_GROUP');
+        if (outcome.kind !== 'PARTIAL_NO_GROUP') throw new Error('narrowing');
+        // The account exists and is sign-in blocked — the least useful account
+        // possible and the safest. Rollback disables what we made.
+        expect(outcome.rolledBack).toBe(true);
+        expect(disableCreated).toHaveBeenCalledWith(GUID);
+        expect(settledFor('ASSIGN_GROUP')).toEqual(['failed']);
+    });
+
+    it('step 2 — a LOST group add is the same state but a different journal row', async () => {
+        // The discriminating pair. Both are PARTIAL_NO_GROUP, so the terminal
+        // state alone cannot tell an operator whether the membership may have
+        // landed. The journal verb is what does.
+        const f = fakeAd({
+            modifyThrows: { member: Object.assign(new Error('ETIMEDOUT'), { code: 'ETIMEDOUT' }) },
+        });
+        const outcome = await drive(f).run();
+
+        expect(outcome.kind).toBe('PARTIAL_NO_GROUP');
+        expect(settledFor('ASSIGN_GROUP')).toEqual(['indeterminate']);
+    });
+
+    it('step 3 — ConstraintViolation (19) on the password leaves PARTIAL_NO_CREDENTIAL', async () => {
+        // What a domain password policy actually returns: the generated value
+        // failed complexity or history. Declined, nothing written, and a
+        // configuration problem rather than a mystery.
+        const f = fakeAd({ modifyThrows: { unicodePwd: new ConstraintViolationError() } });
+        const { run, disableCreated } = drive(f);
+        const outcome = await run();
+
+        expect(outcome.kind).toBe('PARTIAL_NO_CREDENTIAL');
+        if (outcome.kind !== 'PARTIAL_NO_CREDENTIAL') throw new Error('narrowing');
+        expect(outcome.rolledBack).toBe(true);
+        // Step 2 had already landed, so this is an account that exists and is
+        // entitled but that nobody can sign into.
+        expect(settledFor('ASSIGN_GROUP')).toEqual(['applied']);
+        expect(disableCreated).toHaveBeenCalledWith(GUID);
+    });
+
+    it('step 4 — UnwillingToPerform (53) on the enable is named as an ENABLE failure', async () => {
+        const f = fakeAd({ modifyThrows: { userAccountControl: new UnwillingToPerformError() } });
+        const outcome = await drive(f).run();
+
+        expect(outcome.kind).toBe('PARTIAL_NO_CREDENTIAL');
+        if (outcome.kind !== 'PARTIAL_NO_CREDENTIAL') throw new Error('narrowing');
+        // Shares the terminal state with step 3 because the person likewise
+        // cannot sign in — so the DETAIL has to say which half is missing, or
+        // an operator reissues a credential that already exists.
+        expect(outcome.detail).toContain('could not be enabled');
+        expect(outcome.rolledBack).toBe(true);
+    });
+
+    it('a refusal reports the LDAP result code, so the remedy is nameable', async () => {
+        const f = fakeAd({ modifyThrows: { member: new InsufficientAccessError() } });
+        const outcome = await drive(f).run();
+
+        if (outcome.kind !== 'PARTIAL_NO_GROUP') throw new Error('narrowing');
+        // 50 is insufficientAccessRights: the write bind lacks the delegation.
+        // Without the number an operator cannot tell it from a wrong group DN.
+        expect(outcome.detail).toContain('LDAP result 50');
     });
 });
