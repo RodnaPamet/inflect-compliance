@@ -26,6 +26,15 @@ export interface RunRow {
     startedAt: string;
     completedAt: string | null;
     summary: string | null;
+    /**
+     * PENDING proposals this run queued, for the paused-run hint below.
+     *
+     * `AWAITING_APPROVAL` is not the same statement as "there is something in
+     * the queue for you": a HUMAN_CHECKPOINT pauses a run whether or not it
+     * proposed anything, and a content-guard flag pauses one that proposed
+     * nothing at all.
+     */
+    pendingProposals: number;
 }
 
 interface WorkflowOption {
@@ -267,9 +276,29 @@ export function AgentRunsClient({
                             </div>
                             {r.status === 'AWAITING_APPROVAL' && (
                                 <p className="text-xs text-content-muted">
-                                    {t('runs.awaitingApprovalPre')}
-                                    <a className="underline" href={tenantHref('/agents/proposals')}>{t('runs.proposalsLink')}</a>
-                                    {t('runs.awaitingApprovalPost')}
+                                    {/*
+                                      * WHAT IS ACTUALLY WAITING, not what usually is.
+                                      *
+                                      * This used to send every paused run to the
+                                      * proposals queue — "approve its proposals … then
+                                      * Resume" — on the assumption that a pause means
+                                      * something was proposed. Two pauses break it: a
+                                      * HUMAN_CHECKPOINT fires whether or not the run
+                                      * queued anything, and a content-guard flag pauses
+                                      * a run that queued nothing by construction. Both
+                                      * sent a reviewer to an empty queue to look for
+                                      * work that was never there, on a page whose job
+                                      * is to say where the work is.
+                                      */}
+                                    {r.pendingProposals > 0 ? (
+                                        <>
+                                            {t('runs.awaitingApprovalPre')}
+                                            <a className="underline" href={tenantHref('/agents/proposals')}>{t('runs.proposalsLink')}</a>
+                                            {t('runs.awaitingApprovalPost')}
+                                        </>
+                                    ) : (
+                                        t('runs.awaitingApprovalNoProposals')
+                                    )}
                                 </p>
                             )}
                             {r.summary && <p className="text-sm text-content-default">{r.summary}</p>}

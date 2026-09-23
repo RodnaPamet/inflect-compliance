@@ -51,6 +51,7 @@ export default async function AgentRunsPage({
         startedAt: r.startedAt.toISOString(),
         completedAt: r.completedAt ? r.completedAt.toISOString() : null,
         summary: r.summary,
+        pendingProposals: r._count.proposals,
     }));
 
     const workflows = listWorkflowDefinitions().map((w) => ({ key: w.key, name: w.name, description: w.description }));
