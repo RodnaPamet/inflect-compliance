@@ -6,16 +6,21 @@
  * run with its ordered step timeline". Nothing read it. The ledger the engine
  * writes on every step was reachable by curl and by nothing else.
  *
- * ── WHAT THIS FILE PINS, AND WHAT IT DELIBERATELY DOES NOT ──────────────────
+ * ── WHAT THIS FILE PINS ─────────────────────────────────────────────
  *
- * It pins ORDER, the per-step status axis, and that payloads are rendered as
- * inert text behind a disclosure. It does NOT assert anything about
- * `MODEL_CALL` or `TOOL_CALL` steps: no driver writes them — `recordStep`'s
- * kind parameter is typed to the other four and `DRIVER_IMPLEMENTED.flue` is
- * false — so a test asserting they appear would be asserting against data no
- * writer in the product can produce. The switch renders them if they ever
- * arrive; that is a readiness claim, not a tested one, and saying so here is
- * cheaper than a green test that proves nothing.
+ * It pins ORDER, the per-step status axis, that payloads are rendered as inert
+ * text behind a disclosure, and — since the Flue driver shipped — what each of
+ * the two RECORD-ONLY kinds is allowed to claim about itself.
+ *
+ * That last half used to be absent on purpose, and the note saying so had
+ * rotted through BOTH of its premises. It read: "no driver writes them —
+ * `recordStep`'s kind parameter is typed to the other four and
+ * `DRIVER_IMPLEMENTED.flue` is false". Both have flipped. `recordStep` takes
+ * the full `WorkflowStepKind` enum and says so at its own signature,
+ * `DRIVER_IMPLEMENTED.flue` is `true`, and `src/lib/agentic/flue/execute.ts`
+ * records a `MODEL_CALL` per dispatch and a `TOOL_CALL` per tool invocation.
+ * A readiness claim that has become a shipped path is just an untested path,
+ * so the last describe block below tests it.
  */
 import { render, screen, within } from '@testing-library/react';
 
@@ -401,5 +406,213 @@ describe('a step reaches the Art 12 decision it produced', () => {
         // than pointing at a query that matches nothing.
         renderDetail([step({ seq: 0, kind: 'READ', decisionDigest: null })]);
         expect(document.querySelector('a[href*="/agents/decisions"]')).toBeNull();
+    });
+});
+
+/**
+ * THE TWO RECORD-ONLY KINDS, AND WHAT EACH ROW MAY CLAIM ABOUT ITSELF.
+ *
+ * ── THE AFFORDANCES ARE DATA-DRIVEN, AND THAT IS THE RIGHT DESIGN ───────────
+ *
+ * The plan asks that the timeline give the two kinds "distinct affordances —
+ * model calls show token cost, tool calls show args and result". The component
+ * contains no switch on `kind` that does any of that, and should not grow one.
+ * Every chip is gated on the FIELD it renders: the token chip on
+ * `costTokens != null`, the tool and rung chips on `tool`/`scope`, the two
+ * payload disclosures on `inputJson`/`outputJson`. `kind` is rendered as a
+ * label and decides nothing else.
+ *
+ * The distinctness is real all the same, because it comes from the WRITER. In
+ * `flue/execute.ts` a `MODEL_CALL` is recorded with `tokens` and no
+ * `toolCalled`; a `TOOL_CALL` is recorded with `toolCalled`, the arguments the
+ * model chose as `input`, and no `tokens`. Two kinds, two shapes, one
+ * renderer — and the rows come out looking different without anyone writing a
+ * switch.
+ *
+ * Gating on the data is also the only version that stays honest: a step of
+ * some other kind that really did spend tokens should show them, and a kind
+ * switch would hide exactly that row. So what is pinned below is the OUTCOME
+ * the bullet asks for — given the rows the writer produces, the two kinds look
+ * different and neither claims the other's facts — plus the gate itself, so
+ * that nobody "fixes" it into a switch on kind and calls that the feature.
+ *
+ * ── ONE THING THE BULLET OVERSTATES ─────────────────────────────────────────
+ *
+ * "tool calls show args and result" is true of the args and half true of the
+ * result. The DONE arm records `input: context.data` and NO output — the
+ * tool's return value is tenant content, already guarded on its way back
+ * through the adapter, and the write site declines to copy it into the ledger
+ * a second time. The FAILED arm records the error as `output`. So the
+ * renderer's job is to show a result WHERE THERE IS ONE, which is what the
+ * data-gated disclosure does and what the failed-call test pins. Symmetrically
+ * a MODEL_CALL does carry an `input` — its usage counters and the Art 12
+ * digest — so the honest claim about that row is that it shows no RESULT, not
+ * that it shows no payload at all.
+ *
+ * ── WHY THIS MATTERS MORE HERE THAN ANYWHERE ELSE ON THE PAGE ───────────────
+ *
+ * #2774: Flue steps inherited an unrelated step's tool and rung, because the
+ * projection indexed `def.steps[s.seq]` and a Flue `seq` counts steps RECORDED
+ * rather than indexing the definition. A MODEL_CALL wore another step's tool
+ * name and a data-access claim about content it never touched — on a
+ * governance surface, a specific false statement about what an agent did.
+ * `declaredStepFor` carries the server-side rule and
+ * `tests/unit/run-step-view.test.ts` pins it. What follows is the CLIENT half
+ * of the same class: a row must render the tool and the rung of the step it
+ * IS. Every test here therefore renders SEVERAL steps, because one row cannot
+ * tell "its own tool" apart from "the first step's tool" or from a constant.
+ */
+describe('the two Flue step kinds claim only what they did', () => {
+    // `label: null` on every tool fixture below, and that is load-bearing
+    // rather than lazy. The driver records a TOOL_CALL's label AS the tool
+    // name, so a fixture carrying both would print the string twice and an
+    // assertion that the string is present would stay green with the chip
+    // deleted — the label alone would satisfy it. One occurrence means the
+    // absence is detectable, which is the whole point of the assertion.
+    const toolStep = (seq: number, tool: string, scope: string) =>
+        step({ seq, kind: 'TOOL_CALL', tool, scope, label: null });
+
+    it('each tool call names ITS OWN tool and rung, not a neighbour’s', () => {
+        renderDetail([
+            toolStep(0, 'list_risks', 'READ_TENANT_DATA'),
+            toolStep(1, 'get_counts', 'READ_METADATA'),
+            toolStep(2, 'propose_risk', 'WRITE_TENANT_DATA'),
+        ]);
+
+        const tools = ['list_risks', 'get_counts', 'propose_risk'];
+        const rungs = [D.scope.READ_TENANT_DATA, D.scope.READ_METADATA, D.scope.WRITE_TENANT_DATA];
+
+        tools.forEach((tool, i) => {
+            const row = document.getElementById(`step-${i}`) as HTMLElement;
+            expect(within(row).getByText(tool)).toBeInTheDocument();
+            expect(within(row).getByText(rungs[i])).toBeInTheDocument();
+            // The half with teeth. A chip built from `steps[0]`, or hoisted
+            // out of the map, or read off the run, renders correctly in
+            // exactly one row and wrongly in the rest — and a single-step
+            // test cannot tell the two apart.
+            for (let j = 0; j < tools.length; j++) {
+                if (j === i) continue;
+                expect(within(row).queryByText(tools[j])).toBeNull();
+                expect(within(row).queryByText(rungs[j])).toBeNull();
+            }
+        });
+    });
+
+    it('a model call between two tool calls claims neither tool nor rung', () => {
+        // The #2774 shape exactly: the bug put a neighbouring step's tool —
+        // and the data-access claim derived from that tool — onto a MODEL_CALL
+        // row. Sandwiched between two tool calls on purpose, so a renderer
+        // reaching either forwards or backwards is caught.
+        renderDetail([
+            toolStep(0, 'list_risks', 'READ_TENANT_DATA'),
+            step({ seq: 1, kind: 'MODEL_CALL', tool: null, scope: null, label: null, costTokens: 812 }),
+            toolStep(2, 'propose_risk', 'WRITE_TENANT_DATA'),
+        ]);
+
+        const model = document.getElementById('step-1') as HTMLElement;
+        expect(within(model).getByText(D.kind.MODEL_CALL)).toBeInTheDocument();
+        expect(within(model).getByText(D.stepTokens.replace('{count}', '812'))).toBeInTheDocument();
+        expect(within(model).queryByText('list_risks')).toBeNull();
+        expect(within(model).queryByText('propose_risk')).toBeNull();
+
+        // Swept over EVERY rung the catalogue can render, not just the two in
+        // the fixture: the claim is that this row evaluated no rung AT ALL,
+        // and naming two of five would leave three ways to be wrong.
+        const rungs = Object.values(D.scope);
+        // An empty sweep is a vacuous pass, so the denominator is asserted too.
+        expect(rungs.length).toBeGreaterThanOrEqual(3);
+        for (const rung of rungs) {
+            expect(within(model).queryByText(rung)).toBeNull();
+        }
+    });
+
+    it('the two kinds look different because they carry different data', () => {
+        // Both fixtures are the shapes `flue/execute.ts` actually writes: a
+        // MODEL_CALL with `tokens` and no `toolCalled`, a TOOL_CALL with
+        // `toolCalled`, the args the model chose as its input, and no tokens.
+        renderDetail([
+            step({
+                seq: 0,
+                kind: 'MODEL_CALL',
+                tool: null,
+                scope: null,
+                label: null,
+                costTokens: 4120,
+                inputJson: '{"toolCalls":2,"failedToolCalls":0}',
+                outputJson: null,
+            }),
+            step({
+                seq: 1,
+                kind: 'TOOL_CALL',
+                tool: 'list_risks',
+                scope: 'READ_TENANT_DATA',
+                label: null,
+                costTokens: null,
+                guardVerdict: 'CLEAN',
+                inputJson: '{"status":"OPEN"}',
+                outputJson: '[{"id":"r-1"}]',
+            }),
+        ]);
+
+        const model = document.getElementById('step-0') as HTMLElement;
+        const call = document.getElementById('step-1') as HTMLElement;
+
+        // THE MODEL CALL: its cost, and nothing borrowed from the row below.
+        expect(within(model).getByText(D.stepTokens.replace('{count}', '4120'))).toBeInTheDocument();
+        expect(within(model).queryByText('list_risks')).toBeNull();
+        expect(within(model).queryByText(D.scope.READ_TENANT_DATA)).toBeNull();
+        // No RESULT panel — the reply text is deliberately never recorded, so
+        // a row offering one would invite a reader to open a fact that was
+        // never captured.
+        expect(within(model).queryByText(D.outputLabel)).toBeNull();
+
+        // THE TOOL CALL: the tool, the rung it reaches, the arguments it was
+        // called with, the result it returned — and no token chip, because it
+        // reported no usage and inventing one would be a fabricated cost.
+        expect(within(call).getByText('list_risks')).toBeInTheDocument();
+        expect(within(call).getByText(D.scope.READ_TENANT_DATA)).toBeInTheDocument();
+        expect(within(call).getByText(D.inputLabel)).toBeInTheDocument();
+        expect(within(call).getByText('{"status":"OPEN"}')).toBeInTheDocument();
+        expect(within(call).getByText(D.outputLabel)).toBeInTheDocument();
+        expect(within(call).getByText('[{"id":"r-1"}]')).toBeInTheDocument();
+        expect(within(call).queryByText(D.stepTokens.replace('{count}', '4120'))).toBeNull();
+    });
+
+    it('a failed tool call shows the error it returned as its result', () => {
+        // The DONE arm records args and NO output on purpose — the return
+        // value is tenant content, guarded on its way back through the
+        // adapter, and the write site declines to copy it into the ledger.
+        // The FAILED arm is where a result exists, and it is the row an
+        // operator opened this page to read.
+        renderDetail([
+            step({
+                seq: 0,
+                kind: 'TOOL_CALL',
+                status: 'FAILED',
+                tool: 'propose_risk',
+                scope: 'WRITE_TENANT_DATA',
+                label: null,
+                guardVerdict: 'QUARANTINED',
+                guardRuleIds: ['egress.pii'],
+                inputJson: '{"title":"Vendor drift"}',
+                outputJson: '{"error":"guard_quarantined"}',
+            }),
+        ]);
+
+        const row = document.getElementById('step-0') as HTMLElement;
+        expect(within(row).getByText('propose_risk')).toBeInTheDocument();
+        expect(within(row).getByText('{"title":"Vendor drift"}')).toBeInTheDocument();
+        expect(within(row).getByText('{"error":"guard_quarantined"}')).toBeInTheDocument();
+        expect(within(row).getByText(D.guard.QUARANTINED)).toBeInTheDocument();
+    });
+
+    it('the token chip is gated on the NUMBER, not on the kind', () => {
+        // Pins the design decision itself, which the plan bullet read
+        // literally would undo. `kind === 'MODEL_CALL' && costTokens != null`
+        // satisfies "model calls show token cost" and hides any other step
+        // that genuinely spent tokens — the row whose cost is exactly the
+        // thing worth asking about, because nobody expected it to have one.
+        renderDetail([step({ seq: 0, kind: 'PROPOSE', costTokens: 7 })]);
+        expect(screen.getByText(D.stepTokens.replace('{count}', '7'))).toBeInTheDocument();
     });
 });
