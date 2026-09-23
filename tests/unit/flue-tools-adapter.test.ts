@@ -32,6 +32,8 @@
  * check all live in the two funnels, which have their own suites. A test here
  * that asserted a refusal would be asserting the mock.
  */
+import * as v from 'valibot';
+
 import type { McpInvocation } from '@/lib/mcp/authorize';
 import type { McpProposeTool } from '@/lib/mcp/tools/propose-tools';
 import type { McpReadTool } from '@/lib/mcp/tools/types';
@@ -234,6 +236,120 @@ describe('the advertised set is the permitted set', () => {
             { readOnlyHint: true, destructiveHint: false, title: 'a' },
             { readOnlyHint: false, destructiveHint: false, title: 'propose_risks' },
         ]);
+    });
+});
+
+/**
+ * THE MAPPING IS 1:1, AND EVERY TERM OF THE CONTRACT HAS TO TRAVEL.
+ *
+ * `McpReadTool` carries five fields a caller depends on — `name`,
+ * `description`, `inputSchema`, `argsSchema`, `resourceScope` — and the
+ * descriptor this adapter emits has to carry each of them FOR THAT TOOL.
+ *
+ * `description` was carried and pinned by nothing. It appeared in this file
+ * only in the fixtures, so `description: tool.name`, a constant, the adjacent
+ * tool's text, or no description at all passed every test in the repo — and
+ * the description is the whole of what the model is told a tool DOES. A tool
+ * set that describes every tool by its own snake_case name is one the model
+ * picks from at random.
+ *
+ * (`flue-schema-carries-descriptions.test.ts` is NOT this. It walks the
+ * per-PROPERTY descriptions INSIDE the converted input schema — a different
+ * field on a different object.)
+ *
+ * Every case below offers TWO tools differing on the term under test and
+ * asserts the PAIRING. One tool, or two tools sharing a value, cannot tell a
+ * carried value from a shared one.
+ */
+describe('the 1:1 mapping carries every term of the tool contract', () => {
+    // Prose that resembles neither the tool's name nor the other tool's text,
+    // so "the name", "a constant" and "the neighbour's" are three distinct
+    // failures rather than one.
+    const RISKS_DESC = 'Every risk on the register, newest first.';
+    const CONTROLS_DESC = 'Controls and the effectiveness last recorded for each.';
+
+    it('gives each tool its OWN name and its OWN description', () => {
+        mockLoadable.mockReturnValue([
+            tool('list_risks', { description: RISKS_DESC }),
+            tool('list_controls', { description: CONTROLS_DESC }),
+        ]);
+
+        expect(
+            flueToolsFor(invocation()).tools.map((t) => ({
+                name: t.name,
+                description: t.description,
+            })),
+        ).toEqual([
+            { name: 'list_risks', description: RISKS_DESC },
+            { name: 'list_controls', description: CONTROLS_DESC },
+        ]);
+    });
+
+    it("converts each tool's OWN input schema, not the set's first", () => {
+        // Asserted by PARSING rather than by identity: the descriptor's `input`
+        // is a DERIVED valibot schema, so the only honest question is which
+        // arguments it accepts. Each tool's property is REQUIRED, which makes
+        // the other tool's arguments a refusal rather than a shrug.
+        mockLoadable.mockReturnValue([
+            tool('list_risks', {
+                inputSchema: {
+                    type: 'object',
+                    properties: { severity: { type: 'string' } },
+                    required: ['severity'],
+                },
+            }),
+            tool('list_controls', {
+                inputSchema: {
+                    type: 'object',
+                    properties: { frameworkKey: { type: 'string' } },
+                    required: ['frameworkKey'],
+                },
+            }),
+        ]);
+        const [risks, controls] = flueToolsFor(invocation()).tools;
+
+        expect(v.safeParse(risks.input, { severity: 'HIGH' }).success).toBe(true);
+        expect(v.safeParse(risks.input, { frameworkKey: 'soc2' }).success).toBe(false);
+        expect(v.safeParse(controls.input, { frameworkKey: 'soc2' }).success).toBe(true);
+        expect(v.safeParse(controls.input, { severity: 'HIGH' }).success).toBe(false);
+    });
+
+    it("checks each tool's OWN resourceScope — a name is not a scope", () => {
+        // The scope resource here deliberately DIFFERS from the tool name,
+        // which the default fixture's does not. `enforceApiKeyScope(ctx,
+        // tool.name, 'read')` satisfies every other scope assertion in this
+        // file; it cannot satisfy this one.
+        mockLoadable.mockReturnValue([
+            tool('list_risks', { resourceScope: { resource: 'risks', action: 'read' } }),
+            tool('list_controls', { resourceScope: { resource: 'controls', action: 'read' } }),
+        ]);
+        mockScope.mockImplementation((_ctx, resource) => {
+            if (resource === 'risks') throw new Error('no scope');
+        });
+
+        const set = flueToolsFor(invocation());
+        expect(mockScope).toHaveBeenCalledWith(expect.anything(), 'risks', 'read');
+        expect(mockScope).toHaveBeenCalledWith(expect.anything(), 'controls', 'read');
+        // And the verdict landed on the right tool, not merely on some tool.
+        expect(set.tools.map((t) => t.name)).toEqual(['list_controls']);
+        expect(set.omitted).toEqual([{ name: 'list_risks', reason: 'SCOPE' }]);
+    });
+
+    it('names its OWN tool at the funnel — which is how argsSchema is carried', async () => {
+        // `argsSchema` never reaches the descriptor: the funnel owns runtime
+        // validation and resolves the tool BY NAME from the pinned manifest.
+        // So the term travels if and only if each closure names its own tool —
+        // a closure that captured the first candidate would have every call
+        // validated against the wrong schema and audited under the wrong name.
+        mockLoadable.mockReturnValue([tool('list_risks'), tool('list_controls')]);
+        const [, controls] = flueToolsFor(invocation()).tools;
+
+        await controls.run({ toolCallId: 'call-1', data: { limit: 3 } });
+
+        expect(mockRunReadTool).toHaveBeenCalledTimes(1);
+        expect(mockRunReadTool).toHaveBeenCalledWith(expect.anything(), 'list_controls', {
+            limit: 3,
+        });
     });
 });
 

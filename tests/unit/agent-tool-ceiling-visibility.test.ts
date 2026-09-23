@@ -27,7 +27,14 @@ import {
     DENY_CEILING,
 } from '@/lib/agentic/autonomy-ceiling';
 
-/** What `listAgentTools` computes, composed from the same helpers. */
+/**
+ * The composition `listAgentTools` is SUPPOSED to perform, re-stated here from
+ * the same helpers — which is a claim about a correspondence, not a test of
+ * one. Nothing in this file imports `listAgentTools`, so deleting the payload's
+ * `autonomyCeiling` leaves every case below green. That half is covered
+ * behaviourally in `tests/unit/agent-tool-exposure-usecase.test.ts`; what these
+ * cases own is the SEMANTICS of the ladder — which term binds, and when.
+ */
 function effectiveCeiling(agent: {
     riskTier: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL' | null;
     autonomyLevel: number;
