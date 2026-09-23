@@ -71,10 +71,31 @@
  *     text later and with less context about where it came from.
  *
  * What is given up, and it is stated rather than glossed: the model's own
- * free-text output is not egress-scanned. Under propose-not-commit that output
- * is not an action — it becomes an `AgentProposal` a human reads, already
- * covered by `guardAgentProposal` and the `guardVerdict` / `guardRuleIds` /
- * `guardInputDigest` columns on that row.
+ * free-text output is not egress-scanned. That is safe only because of where
+ * such output can GO, and there are exactly two places.
+ *
+ *   • OUTPUT THAT BECOMES AN ACTION goes through a propose tool, so it is a
+ *     tool ARGUMENT and the egress slice above has already scanned it before
+ *     the funnel ran. `createAgentProposal` then guards each item again and can
+ *     quarantine it on its own, recording `guardVerdict` / `guardRuleIds` /
+ *     `guardInputDigest` on the row. Two scans, neither of them this one.
+ *
+ *   • OUTPUT THAT BECOMES NOTHING reaches exactly one column:
+ *     `AiDecisionLog.outputSummary`, the EU AI Act Art 12 record, where
+ *     `logAiDecision` sanitises it and bounds it to `SUMMARY_MAX`. It is not
+ *     written to the step ledger — `executeFlueRun` says so at the
+ *     `MODEL_CALL` step and means it — it is not returned to any caller, and
+ *     it never re-enters the model's context, because a dispatch is one turn
+ *     and the runtime's own loop feeds back tool RESULTS, which the untrusted-
+ *     input slice above scans.
+ *
+ * THIS PARAGRAPH USED TO BE WRONG, which is why it is now pinned by
+ * `tests/guards/flue-model-output-has-one-destination.test.ts`. It claimed
+ * output "becomes an `AgentProposal`" at a time when the Flue adapter offered
+ * read tools only, so there was no propose tool for a model to call and the
+ * justification described a path that did not exist. A comment that explains
+ * why a guard is unnecessary is load-bearing exactly like the guard would have
+ * been, and this one was discharging that duty against a future.
  */
 import type * as v from 'valibot';
 

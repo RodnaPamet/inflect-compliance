@@ -67,6 +67,35 @@ export class UnsupportedToolSchemaError extends Error {
     }
 }
 
+/**
+ * Carry a property's `description` onto the schema the model is shown.
+ *
+ * `JsonSchemaProperty` has declared `description` since this file was written
+ * and nothing ever read it, so every per-property description in
+ * `src/lib/mcp/tools/` was dropped on the way to the model. That is not
+ * cosmetic: the propose tools put the CONTRACT in the description — "Each is
+ * validated against the risk create-schema; malformed items are rejected,
+ * never queued" — and a model told the types but not the contract asks for the
+ * wrong shape first time and gets refused at the funnel. The same class of
+ * mismatch the `additionalProperties` note below was written about: telling
+ * the model less than the enforcement layer will hold it to.
+ *
+ * Applied to the INNER schema rather than around the `v.optional` wrapper, so
+ * the description sits on the type it describes rather than on the optionality
+ * of it.
+ *
+ * An absent or empty description is left alone rather than piped through an
+ * empty action — a schema carrying `description: ""` states something false.
+ */
+function described(
+    schema: v.GenericSchema<unknown, unknown>,
+    description: unknown,
+): v.GenericSchema<unknown, unknown> {
+    return typeof description === 'string' && description.trim().length > 0
+        ? (v.pipe(schema, v.description(description)) as v.GenericSchema<unknown, unknown>)
+        : schema;
+}
+
 function scalarSchema(
     toolName: string,
     key: string,
@@ -223,10 +252,12 @@ export function toValibotInputSchema(
         // An ARRAY is that deliberate extension, made for the propose surface.
         // `arraySchema` keeps the same posture one level down: it refuses an
         // element shape it cannot express rather than widening it.
-        const built =
+        const built = described(
             prop.type === 'array'
                 ? arraySchema(toolName, key, prop)
-                : scalarSchema(toolName, key, prop);
+                : scalarSchema(toolName, key, prop),
+            prop.description,
+        );
         entries[key] = required.has(key)
             ? built
             : (v.optional(built) as v.GenericSchema<unknown, unknown>);
