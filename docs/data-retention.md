@@ -235,7 +235,7 @@ a `userId` but stores no contact PII).
 | `TaskKeySequence` | Operational | No | None today — cascade on parent/tenant delete only | No TTL today — candidate for time-boxed prune |
 | `TaskLink` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
 | `TaskWatcher` | Business record | No | None today — cascade on parent/tenant delete only | Indefinite while tenant active — review w/ compliance |
-| `Tenant` | Configuration | No | Soft-delete (`deletedAt`) — **NOT** auto-purged | Lives with tenant; purged on tenant deletion |
+| `Tenant` | Configuration | No | Soft-delete (`deletedAt`) — **NOT** auto-purged | RETAINED as a tombstone — the purge empties the tenant and keeps this row, because `AuditLog`/`Incident`/`ReadinessSnapshot` carry a NOT-NULL non-cascading FK to it (`TENANT_PURGE_RETAINED`) |
 | `TenantApiKey` | Security ephemeral | No | `expiresAt` expiry (security) | DEFINED — expiry-driven |
 | `TenantCustomRole` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |
 | `TenantEntraGroupMapping` | Configuration | No | None today — cascade on parent/tenant delete only | Lives with tenant; purged on tenant deletion |

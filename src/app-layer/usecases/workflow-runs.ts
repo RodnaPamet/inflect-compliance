@@ -363,6 +363,74 @@ export async function resumeWorkflowRun(
         throw badRequest(`Run is ${run.status}, cannot resume`);
     }
 
+    // ── RESOLVED FIRST, BECAUSE THE GATE BELOW NEEDS IT ────────────────────
+    //
+    // RE-RESOLVED, not inherited from the start. A resume is a fresh
+    // authorization moment — the same reason the run re-resolves its
+    // invocation and its policy card — and an operator who switched the tenant
+    // off a driver between the checkpoint and the approval meant it.
+    //
+    // Before this, `executeFrom` was called without the argument at all, so a
+    // resumed segment took the parameter's `STATIC_DRIVER` default whatever the
+    // tenant was configured for, and no audit entry said so either way.
+    //
+    // HOISTED above the checkpoint close so the register gate can run before
+    // anything is mutated: a refusal after the step is DONE and the row is
+    // RUNNING leaves a run nothing will advance, which the reaper later reports
+    // as a crashed executor — a refusal wearing the costume of an outage. The
+    // start path makes the same argument for putting its gate above
+    // `createSealedRun`.
+    const resumeDecision = await resolveDriverForRun(ctx.tenantId, {
+        requestId: ctx.requestId,
+        workflowKey: run.workflowKey,
+    });
+    const resumeRequested: AgentDriver = requestedDriver(def);
+    const resumeDriver: AgentDriver = selectRunDriver(def, resumeDecision.driver).driver;
+
+    // ── THE SECOND DOOR INTO THE FLUE ENGINE ───────────────────────────────
+    //
+    // The start path refuses a Flue run that no ACTIVE `RegisteredAgent`
+    // vouches for, and the worker's resume re-checks the agent and rebuilds
+    // the run's principal. THIS path did neither. It re-resolved the driver
+    // and went straight to `executeFrom` with a signed-in human's context, in
+    // which `ctx.agentId` is undefined — `getTenantCtx` sets no `agentId`.
+    //
+    // What that unbound context does downstream is the whole of the register's
+    // authority, silently dropped:
+    //
+    //   · `grantedTools` resolves null, and `toolIsLoadable` SKIPS the
+    //     allowlist term when it is null rather than narrowing by it — the
+    //     deny-by-default tool list is keyed on the registered agent;
+    //   · both agent-side autonomy terms vanish, so the ceiling is computed
+    //     over an empty set and comes back UNCLAMPED — the exact hazard
+    //     #2399 closed, where suspending a CRITICAL agent PROMOTED it;
+    //   · `settleAtGuard` latches the circuit breaker only when `ctx.agentId`
+    //     is set, so a guard block on a resumed segment is never counted;
+    //   · the Art 12 row names no AI system.
+    //
+    // And this is not a rare path — it is the one the guard arms BUILT. A
+    // FLAGGED verdict settles the run `AWAITING_APPROVAL` precisely so a human
+    // comes here and approves it. Flag, approve, and the continuation ran
+    // unvouched, unclamped and unallowlisted.
+    //
+    // The fix is the worker's, not a new one: re-check the agent is still in
+    // service, and restore the binding the run was started under.
+    if (resumeDriver === 'flue' && !(await runAgentStillInService(ctx.tenantId, run.agentId))) {
+        throw forbidden(
+            'resume_agent_no_longer_in_service: the registered agent this run was started ' +
+                'by is no longer ACTIVE, so the run does not resume on its behalf. ' +
+                'Re-activate the agent, or abort the run.',
+        );
+    }
+
+    // THE RUN'S BINDING, not the approver's. The human stays the ACTOR — the
+    // audit entry below records them and the checkpoint step takes their
+    // `userId` — while the execution carries the agent the run was authorised
+    // under, so every register term applies to the continuation exactly as it
+    // applied to the first segment. Same shape as `rebuildRunContext`'s
+    // `...(row.agentId ? { agentId: row.agentId } : {})` on the worker path.
+    const execCtx: RequestContext = run.agentId ? { ...ctx, agentId: run.agentId } : ctx;
+
     // Close the pending checkpoint step (the one that paused the run).
     const resumedFrom = await runInTenantContext(ctx, async (db) => {
         const pending = await db.workflowStep.findFirst({
@@ -404,21 +472,6 @@ export async function resumeWorkflowRun(
         return pending?.seq ?? run.stepCount - 1;
     });
 
-    // RE-RESOLVED, not inherited from the start. A resume is a fresh
-    // authorization moment — the same reason the run re-resolves its invocation
-    // and its policy card here — and an operator who switched the tenant off a
-    // driver between the checkpoint and the approval meant it.
-    //
-    // Before this, `executeFrom` was called without the argument at all, so a
-    // resumed segment took the parameter's `STATIC_DRIVER` default whatever the
-    // tenant was configured for, and no audit entry said so either way.
-    const resumeDecision = await resolveDriverForRun(ctx.tenantId, {
-        requestId: ctx.requestId,
-        workflowKey: run.workflowKey,
-    });
-    const resumeRequested: AgentDriver = requestedDriver(def);
-    const resumeDriver: AgentDriver = selectRunDriver(def, resumeDecision.driver).driver;
-
     await appendAuditEntry({
         tenantId: ctx.tenantId, userId: ctx.userId, actorType: 'USER',
         entity: 'WorkflowRun', entityId: runId, action: 'WORKFLOW_RUN_RESUMED',
@@ -447,7 +500,8 @@ export async function resumeWorkflowRun(
     // intended reading: `WALL_CLOCK_MS` is documented as "max wall-clock a run
     // may span (ACROSS RESUMES)".
     const { status, stepFailures } = await executeFrom(
-        ctx,
+        // BOUND, not the bare human context — see the register gate above.
+        execCtx,
         runId,
         def,
         resumedFrom + 1,
