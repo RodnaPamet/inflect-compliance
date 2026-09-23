@@ -41,6 +41,15 @@ export interface RunStepRow {
     inputJson: string | null;
     outputJson: string | null;
     /**
+     * The `(tenantId, inputDigest)` key of this step's EU AI Act Art 12 row,
+     * or null when the step produced none.
+     *
+     * Null for every static-driver step, every tool call, and every run that
+     * predates the digest being recorded — a link is offered only where there
+     * is a row to open.
+     */
+    decisionDigest: string | null;
+    /**
      * The proposals this step queued. Possibly several — one `buildItems` can
      * produce many — which is why `AgentProposal.stepSeq` carries no unique
      * constraint.
@@ -293,6 +302,33 @@ export function AgentRunDetailClient({
                                         <span className="text-xs tabular-nums text-content-subtle">
                                             {t('runs.detail.stepTokens', { count: s.costTokens })}
                                         </span>
+                                    )}
+                                    {/* THE ART 12 ROW THIS STEP PRODUCED.
+                                        Point 4 of the plan asks that a step
+                                        reach its decision-log row. There is no
+                                        foreign key to follow — `AiDecisionLog`
+                                        carries no `runId`, because it is the
+                                        regulator's record of a DECISION rather
+                                        than the engine's bookkeeping — so the
+                                        join is `(tenantId, inputDigest)` and
+                                        the digest recorded on the step is the
+                                        key.
+
+                                        Rendered only where a digest exists. A
+                                        tool call has a guard verdict and NO
+                                        decision row, so linking every guarded
+                                        step would land half of them on an
+                                        empty table — which is the failure the
+                                        decisions page's own note warned about
+                                        when it declined to wire this half
+                                        before there was a key. */}
+                                    {s.decisionDigest && (
+                                        <a
+                                            className="text-xs underline text-content-subtle"
+                                            href={`${tenantHref('/agents/decisions')}?digest=${encodeURIComponent(s.decisionDigest)}`}
+                                        >
+                                            {t('runs.detail.decisionLink')}
+                                        </a>
                                     )}
                                     {s.label && (
                                         <span className="text-xs text-content-subtle">{s.label}</span>

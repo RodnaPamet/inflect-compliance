@@ -45,6 +45,36 @@ import { AgentRunDetailClient, type RunStepRow } from './AgentRunDetailClient';
  * steps an operator opened this page to inspect. The column wins when set,
  * because it is what actually ran; the definition fills the gap.
  */
+/**
+ * The Art 12 digest a MODEL_CALL step recorded, or null.
+ *
+ * `AiDecisionLog` carries no `runId`: it is the regulator's record of a
+ * DECISION, not the engine's bookkeeping, and the two are joined on
+ * `(tenantId, inputDigest)`. The Flue driver records that digest on the step
+ * it produced, so this reads it back.
+ *
+ * NULL for every step that has none — the static driver's steps, tool calls,
+ * and any run that predates the digest being recorded. A link is offered only
+ * where there is something to open; an anchor that lands on an empty table
+ * would be worse than no anchor.
+ */
+function decisionDigestOf(inputJson: string | null): string | null {
+    if (!inputJson) return null;
+    try {
+        const parsed: unknown = JSON.parse(inputJson);
+        if (!parsed || typeof parsed !== 'object') return null;
+        const d = (parsed as { decisionDigest?: unknown }).decisionDigest;
+        // Shape-checked, not merely present. This value goes into a query
+        // string, and `sha256:<hex>` is the only thing the decisions page can
+        // do anything with.
+        return typeof d === 'string' && /^sha256:[0-9a-f]{64}$/.test(d) ? d : null;
+    } catch {
+        // A malformed blob is a display problem for the payload panel, not a
+        // reason to fail the page.
+        return null;
+    }
+}
+
 export default async function AgentRunDetailPage({
     params,
 }: {
@@ -151,6 +181,15 @@ export default async function AgentRunDetailPage({
             // from a collapsed panel to the whole page.
             inputJson: s.inputJson,
             outputJson: s.outputJson,
+            // THE LINK TO THIS STEP'S ART 12 ROW, derived here rather than in
+            // the client.
+            //
+            // A GUARDED parse, and only for this one field. The raw string
+            // still passes through untouched for display, for the reason
+            // stated immediately above — so a malformed blob costs the LINK
+            // and not the page, which is the whole point of not parsing it
+            // wholesale.
+            decisionDigest: decisionDigestOf(s.inputJson),
             // WHAT THIS STEP QUEUED. The other half of the backlink: a
             // proposal names its step, and a step names its proposals, so a
             // reviewer can travel either way between the write and the
