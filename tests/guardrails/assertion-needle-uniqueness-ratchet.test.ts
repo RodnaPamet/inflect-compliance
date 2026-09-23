@@ -305,10 +305,20 @@ const HIGH_MULTIPLICITY = 5;
 //   8/8 green. Two detectors counting a site is not the same as either one
 //   failing on it.
 //
-//   SHARED STATE: zero-headroom and shared with every open PR. 1273 is the
-//   live count of main@518b74d36 + this branch; whoever merges second
+//   SHARED STATE: zero-headroom and shared with every open PR. 1255 is the
+//   live count of main@a76c192d5 + this branch; whoever merges second
 //   re-measures on the merged tree rather than keeping this figure.
-const AMBIGUOUS_NEEDLE_BASELINE = 1273;
+//
+// 1273 -> 1255 (2026-09-23, #2246 Class A batch 6): -18, freed by NARROWING
+//   six markdown-reading guards in `tests/guardrails/` onto the document
+//   section each one names. Narrowing removes a site from this population
+//   wholesale — the subject stops being a whole-file read — so the needles
+//   that were ambiguous only because the whole document was in scope leave
+//   with it. The ones that mattered: `/helm upgrade --install/` matched 6
+//   places in `docs/deployment.md`, `/autoscaling…|HPA/` 13, `/CC BY 4\.0|…/`
+//   6 across the NIS2 licence sidecar. Every one of those was a guard whose
+//   named section could be deleted while a sibling kept it green.
+const AMBIGUOUS_NEEDLE_BASELINE = 1255;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
@@ -362,7 +372,15 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1273;
 // population wholesale, which is why a batch that converts eight files moves
 // this number by one and `AMBIGUOUS_NEEDLE_BASELINE` by five — the two counts
 // are over the same sites but with different thresholds.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 200;
+// 200 -> 193 (2026-09-23, #2246 Class A batch 6): -7 with the six narrowed
+// markdown guards. The ratio inverts against batch 5 — that batch moved this
+// by 1 and the ambiguous count by 5; this one moves it by 7 against 18 —
+// because a RUNBOOK is the shape that produces high-multiplicity needles.
+// `docs/deployment.md` names HPA or an `autoscaling.*Replicas` key in 13
+// places and `helm rollback` in 6, so binding those assertions to
+// `### Scaling` and `### Rollback via helm rollback` retires several
+// five-plus-multiplicity sites at once.
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 193;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -589,7 +607,19 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 200;
 // not redden a ceiling — that is the failure mode where a guard teaches people
 // to route around it — but the remedy is to say what you mean, not to raise
 // the cap.
-const UNANALYSABLE_READ_BASELINE = 1457;
+//
+// 1457 -> 1455 (2026-09-23, #2246 Class A batch 6): -2, and the DIRECTION is
+// the evidence. The arity rule above predicts that a two-argument narrowing
+// leaves this number alone (out of scope) while a one-argument one raises it
+// (`content-transformed`, a capped skip). Batch 6 added a two-argument
+// `mdSection(md, heading)` / `headingLines(md, level)` at nineteen seams, and
+// `content-transformed` did not move — it fell, because two of the narrowed
+// sites carried an interior span and were `needle-carries-span` skips against
+// the whole document. So the same edit that took 18 off the ambiguous count
+// took 2 off the SKIPPED count rather than adding to it, which is what a
+// narrowing is supposed to look like from here. A rise would have meant the
+// helper was reading as a mask.
+const UNANALYSABLE_READ_BASELINE = 1455;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

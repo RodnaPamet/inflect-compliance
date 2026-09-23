@@ -26,6 +26,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { mdSection } from "../helpers/markdown-regions";
+
 const ROOT = path.resolve(__dirname, "../..");
 const DEFERRAL_DOC =
     "docs/implementation-notes/2026-05-24-audit-s10-tenant-isolation.md";
@@ -37,8 +39,27 @@ describe("Audit S10 — field-level RBAC + ABAC deferral (closure lock)", () => 
             expect(fs.existsSync(fullPath)).toBe(true);
         });
 
+        // NARROWED, NOT MASKED (#2246). The reads below stay raw because a
+        // deferral rationale is PROSE — `mdCodeOf` keeps a markdown file's
+        // code and blanks everything else, which would empty the subject of
+        // every assertion here. The fixable defect was the whole-document
+        // reach: this note's `## Design` preamble names Gap 2 and Gap 3 in
+        // passing, so deleting the decision sections outright left the
+        // "explicitly documents" claims satisfied by the summary that
+        // introduces them. Each is now bound to the `### Decision —` section
+        // it is about, so the rationale has to be where the audit trail says.
+        const note = fs.readFileSync(path.join(ROOT, DEFERRAL_DOC), "utf8");
+        const gap2 = mdSection(
+            note,
+            "Decision — Gap 2: field-level RBAC stays deferred",
+        );
+        const gap3 = mdSection(
+            note,
+            "Decision — Gap 3: ABAC deferred (matches audit guidance)",
+        );
+
         it("explicitly documents `field-level RBAC stays deferred`", () => {
-            const doc = fs.readFileSync(path.join(ROOT, DEFERRAL_DOC), "utf8");
+            const doc = gap2;
             // Anchor on the exact heading + reasoning — a future
             // doc edit that softens the language ("might defer")
             // would erase the audit trail.
@@ -54,7 +75,7 @@ describe("Audit S10 — field-level RBAC + ABAC deferral (closure lock)", () => 
         });
 
         it("explicitly documents `ABAC deferred`", () => {
-            const doc = fs.readFileSync(path.join(ROOT, DEFERRAL_DOC), "utf8");
+            const doc = gap3;
             expect(doc).toMatch(/Gap 3:\s*ABAC deferred/i);
             // The "audit explicitly suggested deferring this" phrase
             // is the load-bearing audit-alignment statement — if a
