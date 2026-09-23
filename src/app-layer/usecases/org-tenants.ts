@@ -184,6 +184,28 @@ function assertCanManageOrgTenants(ctx: OrgContext): void {
  * compliance and a possible restore. A hard purge (wiping the tenant's
  * rows) is a separate, deliberate operation and is NOT done here.
  *
+ * AND REVOKES THE MEMBERSHIPS, in the same transaction (#2747). The
+ * paragraph above was a claim about every CURRENT query, not about the
+ * grants themselves: `deletedAt` makes the tenant inaccessible only for
+ * as long as every future reader remembers the filter, and in the
+ * meantime the rows saying "this user may enter this tenant" survive the
+ * whole 90-day retention window — 113 of them, when this was measured.
+ * A grant that outlives the thing it grants access to is a finding, not
+ * a formality; revoking it at deletion time removes the dependency on
+ * everyone else's `WHERE` clause.
+ *
+ * Revocation is a STATUS change (`DEACTIVATED` + `deactivatedAt`), the
+ * same shape `deactivateTenantMember` writes in `tenant-admin.ts` — one
+ * seam for "this membership no longer grants access", not two.
+ *
+ * THERE IS NO RESTORE COUNTERPART, and that is why this is safe to do
+ * unconditionally. `restoreEntity` in `soft-delete-operations.ts` covers
+ * twelve models and `Tenant` is not one of them; nothing in `src/` or
+ * `scripts/` clears `Tenant.deletedAt`. A tenant is un-deleted today by a
+ * hand-written UPDATE, and whoever writes it must now reactivate the
+ * memberships too. If a real restore path is ever built, it belongs
+ * beside this function and it owns that half.
+ *
  * Org-scoped: only a tenant that belongs to THIS org (and isn't already
  * removed) can be deleted — a foreign / unknown id is a `notFound`, so
  * an org admin can never reach across into another org's tenant.
@@ -211,10 +233,50 @@ export async function deleteTenantUnderOrg(
         throw notFound('Tenant not found in this organization');
     }
 
-    await prisma.tenant.update({
-        where: { id: tenant.id },
-        data: { deletedAt: new Date() },
-    });
+    // ONE TRANSACTION, because the half-state is the thing to avoid.
+    //
+    // A soft-delete that commits while the revocation fails leaves a tenant
+    // that every view hides and 113 memberships that still grant access —
+    // and `Tenant.deletedAt` is exactly what makes that invisible, because
+    // the tenant no longer appears on any surface an admin could use to
+    // notice. The reverse order fails safe by comparison (access revoked,
+    // tenant still listed), but neither half alone is the operation.
+    //
+    // THE ORDER INSIDE THE ARRAY IS LOAD-BEARING, and not for style.
+    // `$transaction([...])` runs its entries sequentially, and the
+    // `tenant_membership_last_owner_guard` trigger raises P0001 on any UPDATE
+    // that deactivates a tenant's last ACTIVE OWNER — which is precisely what
+    // the second statement does. Migration `20260922200000_last_owner_guard_
+    // allows_purge` exempts a tenant whose `deletedAt IS NOT NULL`, so the
+    // soft-delete MUST be the statement that has already run when the
+    // membership UPDATE fires. Swap these two and every tenant deletion
+    // aborts on the trigger — and a unit test with a mocked client stays
+    // green, because a mock has no triggers.
+    const revokedAt = new Date();
+    const [, revoked] = await prisma.$transaction([
+        prisma.tenant.update({
+            where: { id: tenant.id },
+            data: { deletedAt: revokedAt },
+        }),
+        // REVOKED, NOT ERASED. This usecase's docstring promises the data is
+        // "retained for compliance and a possible restore", and "who had
+        // access to this tenant, and until when?" is a question an auditor
+        // asks about a tenant that has been removed. A `deleteMany` here
+        // would answer it with silence.
+        //
+        // ONLY THE ROWS THAT STILL GRANT ACCESS. `deactivatedAt` is evidence
+        // of when access actually ended, so a row already carrying one must
+        // keep it — overwriting a months-old revocation with today's date
+        // would forge the record. `REMOVED` is excluded for the same reason:
+        // it is a terminal state `resolveTenantContext` already refuses, and
+        // rewriting it to DEACTIVATED loses which of the two happened.
+        // ACTIVE and INVITED are what `src/lib/tenant-context.ts` lets
+        // through, so they are exactly the live grants.
+        prisma.tenantMembership.updateMany({
+            where: { tenantId: tenant.id, status: { in: ['ACTIVE', 'INVITED'] } },
+            data: { status: 'DEACTIVATED', deactivatedAt: revokedAt },
+        }),
+    ]);
 
     // Resolve plan for the KPI label. Self-hosted is always ENTERPRISE —
     // skip the BillingAccount lookup entirely in that mode.
@@ -234,6 +296,7 @@ export async function deleteTenantUnderOrg(
         tenantId: tenant.id,
         slug: tenant.slug,
         deletedByUserId: ctx.userId,
+        revokedMemberships: revoked.count,
         requestId: ctx.requestId,
     });
 
