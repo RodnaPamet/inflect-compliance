@@ -27,15 +27,39 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-// #2246 Class A — NOT converted, deliberately. This file's only text assertion
-// is 'every geometry token carries a non-trivial doc-comment': its SUBJECT is
-// the prose, so masking comments would blank the very thing it checks. Stays
-// on the raw read and stays listed in raw-source-asserting-files.json.
-const SRC = fs.readFileSync(
+const RAW = fs.readFileSync(
     path.join(ROOT, 'src/components/layout/nav-item.tsx'),
     'utf8',
 );
+
+// Masked at the READ SEAM (#2246 Class A). `codeOf` blanks comments while
+// keeping string literals, length and line count, so a token that survives
+// only in a comment can no longer satisfy an assertion about the code.
+//
+// THIS FILE'S HEADER USED TO SAY IT WAS DELIBERATELY NOT CONVERTED, and the
+// premise it gave was false: "this file's only text assertion is 'every
+// geometry token carries a non-trivial doc-comment'". It is not. The five
+// `export const <TOKEN> = '<literal>'` assertions below are about CODE — they
+// are the entire point of the ratchet — and they were reading raw. Measured on
+// the pre-conversion tree by changing `NAV_ITEM_RADIUS` to `'rounded-xl'` and
+// leaving `// was: export const NAV_ITEM_RADIUS = 'rounded-lg';` on the next
+// line: this suite stayed 7/7 GREEN with the geometry it exists to lock
+// already changed. Through `codeOf` the same mutation reddens the RADIUS case.
+//
+// Masking costs none of the code assertions, counted raw and masked on the
+// unmutated tree: each of the five token literals 1 → 1, the NAV_ITEM_BASE
+// region 1 → 1, `jsxConsumesIconClass` 1 → 1, `iconClassComposesSize` 1 → 1.
+const SRC = codeOf(RAW);
+
+// DELIBERATELY RAW, and the only assertion that uses it is the last one — the
+// doc-comment check, whose SUBJECT is the prose. It matches a JSDoc block and
+// then measures the length of its body, so over masked source the block is
+// spaces and the assertion could never pass again (measured: 5/5 tokens match
+// on RAW, 0/5 masked). Named, so the choice is visible and stays confined.
+const SRC_DOC = RAW;
 
 /**
  * The five tokens — name → expected string literal. A failing
@@ -126,7 +150,8 @@ describe('Roadmap-12 PR-2 — NavItem geometry discipline', () => {
             const blockBefore = new RegExp(
                 `\\/\\*\\*[\\s\\S]+?\\*\\/[\\s\\n]*export\\s+const\\s+${name}\\b`,
             );
-            const matched = SRC.match(blockBefore);
+            // SRC_DOC, not SRC: the subject here IS the doc-comment.
+            const matched = SRC_DOC.match(blockBefore);
             expect(matched).not.toBeNull();
             // Body should be at least 60 chars after stripping the
             // JSDoc framing — caught by hand-grepping for empty
