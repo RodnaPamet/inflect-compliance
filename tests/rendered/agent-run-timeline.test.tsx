@@ -66,6 +66,7 @@ const EN = jest.requireActual('../../messages/en.json') as {
                 stepTokens: string;
                 inputLabel: string;
                 outputLabel: string;
+                decisionLink: string;
                 emptyTitle: string;
             };
         };
@@ -103,6 +104,7 @@ function step(over: Partial<RunStepRow> = {}): RunStepRow {
         actorUserId: null,
         inputJson: null,
         outputJson: null,
+        decisionDigest: null,
         proposals: [],
         ...over,
     };
@@ -357,5 +359,47 @@ describe('a step names the proposals it queued', () => {
         expect(
             screen.queryByText(EN.agents.runs.detail.stepTokens.replace('{count}', '0')),
         ).not.toBeInTheDocument();
+    });
+});
+
+describe('a step reaches the Art 12 decision it produced', () => {
+    const DIGEST = `sha256:${'a1b2c3d4'.repeat(8)}`;
+    const href = (d: string) => `/t/acme/agents/decisions?digest=${encodeURIComponent(d)}`;
+
+    it('a MODEL_CALL step links to its decision row', () => {
+        renderDetail([step({ seq: 0, kind: 'MODEL_CALL', decisionDigest: DIGEST })]);
+        const link = document.querySelector(`a[href="${href(DIGEST)}"]`);
+        expect(link).not.toBeNull();
+        expect(link?.textContent).toBe(EN.agents.runs.detail.decisionLink);
+    });
+
+    it('carries THAT step’s digest, not a shared one', () => {
+        // The assertion with teeth. A link built once outside the row, or
+        // keyed off anything but the step, renders correctly for one step and
+        // sends every other reviewer to somebody else’s decision — which is
+        // worse than no link, because it is confidently wrong.
+        const other = `sha256:${'f0f0f0f0'.repeat(8)}`;
+        renderDetail([
+            step({ seq: 0, kind: 'MODEL_CALL', decisionDigest: DIGEST }),
+            step({ seq: 1, kind: 'MODEL_CALL', decisionDigest: other }),
+        ]);
+        expect(document.querySelector(`a[href="${href(DIGEST)}"]`)).not.toBeNull();
+        expect(document.querySelector(`a[href="${href(other)}"]`)).not.toBeNull();
+    });
+
+    it('a TOOL_CALL step offers NO link, even with a guard verdict', () => {
+        // The half that must not over-reach. A tool call is guarded and has no
+        // Art 12 row; linking it would land the reviewer on an empty table.
+        renderDetail([
+            step({ seq: 0, kind: 'TOOL_CALL', guardVerdict: 'FLAGGED', decisionDigest: null }),
+        ]);
+        expect(document.querySelector('a[href*="/agents/decisions"]')).toBeNull();
+    });
+
+    it('and a static-driver step offers none either', () => {
+        // Every pre-existing run has no digest. The link must be absent rather
+        // than pointing at a query that matches nothing.
+        renderDetail([step({ seq: 0, kind: 'READ', decisionDigest: null })]);
+        expect(document.querySelector('a[href*="/agents/decisions"]')).toBeNull();
     });
 });
