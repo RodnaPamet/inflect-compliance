@@ -47,6 +47,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { headingLines } from '../helpers/markdown-regions';
+
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const RENDERED_DIR = path.join(REPO_ROOT, 'tests/rendered');
 const GUARDS_DIR = path.join(REPO_ROOT, 'tests/guards');
@@ -218,10 +220,21 @@ describe('behavioural-coverage registry', () => {
         const text = fs.readFileSync(doc, 'utf8');
         // The doc must name all four tiers so the convention is
         // discoverable from the registry guard.
-        expect(text).toMatch(/Structural ratchet/);
-        expect(text).toMatch(/Rendered \/ behavioural/i);
-        expect(text).toMatch(/Integration/);
-        expect(text).toMatch(/Browser \/ E2E/i);
+        //
+        // NARROWED to the doc's level-3 HEADING LINES (#2246 Class A). "It
+        // documents the four tiers" is a claim about section STRUCTURE, and
+        // over the whole 254-line document each of these four needles is
+        // satisfied by a passing mention in prose — a tier could be deleted
+        // as a section and this stayed green on the paragraph that still
+        // referred to it. Masking is not the alternative: measured, all four
+        // needles match ZERO times through `mdCodeOf`, because the tier names
+        // are prose and prose is exactly what it blanks. Measured raw →
+        // heading lines: 3 → 1, 2 → 1, 2 → 1, 2 → 1.
+        const tiers = headingLines(text, 3);
+        expect(tiers).toMatch(/Structural ratchet/);
+        expect(tiers).toMatch(/Rendered \/ behavioural/i);
+        expect(tiers).toMatch(/Integration/);
+        expect(tiers).toMatch(/Browser \/ E2E/i);
     });
 
     // Sanity that the directories the registry references are real —

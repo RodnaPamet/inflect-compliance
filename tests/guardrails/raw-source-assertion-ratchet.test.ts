@@ -588,8 +588,56 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *
  *     So a file's presence in this list is NOT an accusation, and this ratchet
  *     is a cap rather than a work queue: it says the population may not grow.
+ *   • 30 (2026-09-23): ten `tests/guards` files with MIXED read targets, six
+ *     of which leave. Their raw sites were 94 and are now 7. The technique was
+ *     chosen PER READ rather than per file, and the split is the finding:
+ *     eight of the ten had already masked every `.ts` read they own, and were
+ *     in this list only for markdown admitted by the #2727 widening.
+ *
+ *     MASKING IS THE WRONG TOOL ON THOSE, and it is wrong in the silent
+ *     direction. Counted needle by needle against the documents actually read,
+ *     `mdCodeOf` takes 50 of these assertions' needles to ZERO — it keeps a
+ *     document's code and blanks its prose, and a guard asserting that a
+ *     policy states a rule or a runbook names a playbook is asserting about
+ *     prose. Every one of those would have read as converted while being
+ *     unable to fail. So the markdown reads are NARROWED with
+ *     `tests/helpers/markdown-regions.ts` — `mdSection` where the subject is a
+ *     section's content, `headingLines(doc, N)` where the test's own title is
+ *     a claim about section STRUCTURE ("documents the four tiers", "states all
+ *     three pillars", "still declares an RPO and an RTO section").
+ *
+ *     Narrowing is not cosmetic here. Bound to the region the test names:
+ *     `--namespace inflect-production` 20 → 5, `Rollback` 22 → 1,
+ *     `/\bpage\b/` 14 → 3, `/params/i` 10 → 1, `/Epic OI-3/` 7 → 5,
+ *     `AUTH_TEST_MODE=1` 5 → 1. `oi-3-runbook-and-slos` alone held 42 of the
+ *     94, against two 670-line documents whose own docblock already records
+ *     three assertions that went on passing from a dated CHANGELOG row after
+ *     the live text they pinned had been corrected.
+ *
+ *     FOUR FILES STAY, each for a reason this ratchet already recognises:
+ *     `ai-system-registry` and `p1-optimistic-concurrency` assert that a
+ *     COMMENT is present or absent (a Regulation citation in a docblock; the
+ *     phrasing of a rationale) — through `codeOf` the citation goes 1 → 0 in
+ *     each of the two files it is read from, and `/optimistic-concurrency/`
+ *     2 → 0, so masking would make the positives impossible and the negative
+ *     unfailable;
+ *     `capstone-discipline` keeps two `.not.toMatch` over the whole document,
+ *     because a negative is satisfied by any RESTRICTION of the text it reads,
+ *     so narrowing one weakens it while looking converted; and
+ *     `verification-integrity` keeps one positive whose subject is the
+ *     document's opening thesis, ABOVE the first `##`, so there is no section
+ *     to bind it to and every candidate takes it to 0.
+ *
+ *     WHAT WAS NOT A DEFECT, measured rather than assumed: no assertion
+ *     reddened. Every needle that survives its new bound was already matching
+ *     real text. Two things did move that are worth recording — the summary
+ *     table in `oi-3` was bounded by `src.split('## SLO Summary Table')[1]`,
+ *     which has no END and ran 15842 characters to EOF where the section is
+ *     800; and `codebase-hygiene-integrity` counts `it(` blocks in the
+ *     guardrails it watches, where one file has 4 raw and 3 in code, so a
+ *     commented-out block was padding its ">= 3" floor.
  */
-const RAW_ASSERTING_FILE_BASELINE = 36;
+const RAW_ASSERTING_FILE_BASELINE = 30;
 
 /**
  * The files themselves, sorted, in a sibling JSON — the same population the
@@ -923,7 +971,35 @@ describe('Class A — assertions satisfied by prose', () => {
         expect(r.unlexableByExtension['.yml']).toBeGreaterThan(50);
         // And the newly-admitted languages ARE inside — the other half of
         // "the gate opened" rather than "the filter broke".
-        expect(r.lexableByExtension['.md']).toBeGreaterThan(100);
+        //
+        // `.md` IS A DRAINING POPULATION AND `.sql` IS NOT, which is why the
+        // note above does not transfer and this clause had to change shape.
+        // The `.sql` fix is a MASK at the read seam: a site moves from raw to
+        // masked and `lexableByExtension` does not move at all, which is the
+        // invariance that made "count what the gate admits" a stable control.
+        // The `.md` fix cannot be a mask — `mdCodeOf` blanks a document's
+        // prose, and a guard asserting that a policy states a rule is
+        // asserting about prose — so the prescribed fix is a NARROWING, and a
+        // narrowed read (`mdSection(doc, 'Rollback')`) is a two-argument
+        // extraction that leaves the analysed population ENTIRELY. Taking the
+        // advice therefore drains this very count. Measured: the #2246
+        // mixed-target batch (2026-09-23) converted 82 raw `.md` sites across
+        // six `tests/guards` files and took this number 147 → 65, straight
+        // through a floor of 100, on a diff that deleted no read and no
+        // assertion.
+        //
+        // So the load-bearing half is now the EXCLUSION check, which no
+        // conversion can move: if the gate closed, `.md` reads would reappear
+        // under `unlexableByExtension`. The magnitude floor stays as the
+        // companion that says reads exist to be admitted at all — an empty
+        // selection satisfies the exclusion check on its own — but it is set
+        // well below the live count on purpose, because it is drainable and
+        // two branches each narrowing markdown drain it independently. When
+        // it does fire, check `unlexableByExtension['.md']` first: undefined
+        // means the gate is open and somebody took the advice, and the
+        // response is to re-seat this number, not to un-narrow a read.
+        expect(r.unlexableByExtension['.md']).toBeUndefined();
+        expect(r.lexableByExtension['.md']).toBeGreaterThan(20);
         expect(r.lexableByExtension['.css']).toBeGreaterThan(10);
     });
 

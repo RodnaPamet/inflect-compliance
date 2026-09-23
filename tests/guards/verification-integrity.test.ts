@@ -32,8 +32,27 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { mdSection } from '../helpers/markdown-regions';
+import { codeOf } from '../helpers/source-blocks';
+
 const ROOT = path.resolve(__dirname, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/**
+ * THREE READERS, AND THE SPLIT IS THE POINT (#2246 Class A).
+ *
+ * `read` — the TypeScript seam, MASKED. Every anchor below names a code
+ * symbol and `itCount` is counting real `it(` blocks, so a guardrail gutted
+ * to a no-op with its symbols surviving in a docblock must not pass. Measured
+ * over the three guardrails, nothing empties: `behavioural` 8→5,
+ * `tests/rendered` 5→2, `REGISTRY` 7→5, `ENCRYPTED_FIELDS` 12→6,
+ * `RICH_TEXT_COVERAGE` 8→7, `RENDERED_TEST_FLOOR` 5→5, `upward` 4→2.
+ *
+ * `readMarkdown` — prose, NOT masked, because `mdCodeOf` keeps a document's
+ * code and blanks its sentences: all four policy needles below match ZERO
+ * times through it. Three of its four reads are NARROWED to the section the
+ * test names; the fourth stays whole-document and says why at its call site.
+ */
+const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+const readMarkdown = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const exists = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
 /**
@@ -109,10 +128,26 @@ describe('verification integrity — guard the guards', () => {
     it('the verification policy states the structural-is-not-verified rule', () => {
         // The load-bearing sentence of the policy — if the doc is
         // hollowed out, this catches it.
-        const policy = read('docs/verification-policy.md');
+        const policy = readMarkdown('docs/verification-policy.md');
+
+        // DELIBERATELY WHOLE-DOCUMENT, and it is the only one here (#2246).
+        // The sentence is the document's opening thesis, on line 3, ABOVE the
+        // first `##` — so there is no section to bind it to: `mdSection` over
+        // either candidate ('Three verification states', 'Why a structural
+        // ratchet is not enough') takes this needle to ZERO, and so does
+        // `mdCodeOf`. Measured: exactly one occurrence exists in the file,
+        // "A structural ratchet that passes is **not** proof a feature
+        // works." Binding it to anything narrower would delete the subject
+        // and leave a guard that cannot fail, which is the defect, not a fix.
         expect(policy).toMatch(/not\s+\*\*?proof|not.*proof a feature works/i);
-        expect(policy).toMatch(/structurally present/i);
-        expect(policy).toMatch(/functionally tested/i);
-        expect(policy).toMatch(/browser verified/i);
+
+        // The three STATES are a table in one named section, so these are
+        // narrowed to it. Measured raw → section: 3→2, 2→1, 2→1 — each was
+        // additionally satisfied by a passing mention elsewhere in the doc,
+        // so the table could have been deleted and this stayed green.
+        const states = mdSection(policy, 'Three verification states');
+        expect(states).toMatch(/structurally present/i);
+        expect(states).toMatch(/functionally tested/i);
+        expect(states).toMatch(/browser verified/i);
     });
 });
