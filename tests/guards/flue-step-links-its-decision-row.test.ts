@@ -32,7 +32,7 @@ import path from 'path';
 
 import { computeInputDigest } from '@/app-layer/ai/decision-log';
 
-import { codeOf, functionBodyOf } from '../helpers/source-blocks';
+import { codeOf, declarationOf, functionBodyOf } from '../helpers/source-blocks';
 
 /**
  * `ROOT` computed LOCALLY — `tests/helpers/assertion-reach.ts` constant-folds a
@@ -67,16 +67,20 @@ describe('the two sides compute the same key', () => {
         // every link still renders, and every one of them opens somebody
         // else's decision.
         const body = functionBodyOf(read(EXECUTE), 'executeFlueRun');
-        expect(body).toContain('decisionDigest: computeInputDigest(runMessage(def, fromSeq))');
-        // DELIBERATELY BRITTLE to the signature, and it earned that on the
-        // merge that added `runId` for the Art 14 `sessionRef` join: this
-        // assertion went red, which forced someone to go and re-confirm that
-        // both sides still digest `runMessage(def, fromSeq)` before updating
-        // the needle. A looser needle would have stayed green through a
-        // signature change that could just as easily have swapped the message
-        // for the workflow key — and every link would then have opened the
-        // wrong row, silently.
-        expect(body).toContain('await recordModelDecision(ctx, runId, def, runMessage(def, fromSeq),');
+        expect(body).toContain('decisionDigest: computeInputDigest(message)');
+        // ONE BINDING, TWO READERS. `const message = runMessage(def, fromSeq)`
+        // is the single value; the step digests it and `settleTurns` passes it
+        // as `sanitizedInput`. Asserting both read THE SAME LOCAL is stronger
+        // than asserting both spell `runMessage(def, fromSeq)` — two identical
+        // spellings can drift apart one edit at a time while each still looks
+        // correct, and every link would then open the wrong row silently.
+        //
+        // This went red on the merge that made the write per-turn, which is
+        // the point: a change to how the row is written must re-prove the
+        // link, not inherit it.
+        expect(body).toContain('const message = runMessage(def, fromSeq);');
+        expect(body).toContain('decisionDigest: computeInputDigest(message),');
+        expect(declarationOf(body, 'settleTurns')).toContain('message,');
     });
 
     it('through ONE function, not two implementations of the rule', () => {

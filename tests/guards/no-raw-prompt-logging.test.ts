@@ -567,7 +567,30 @@ const SINK_FLOOR = 30;
 // PER STAGE — the conflicted file's own findings counted twice. The inflated
 // figure fits plausibly and passes its own single-file run, which is what makes
 // it dangerous; it fails only the full sweep, after the commit.
-const MEASURED_HOLES = 173;
+// Re-MEASURED 2026-09-23 for FLUE PER-TURN ACCOUNTING: 173 / 98 became
+// 174 / 99. ONE new sink and ONE new hole, both in the same `logger.warn` —
+// the fail-safe that fires when a settled response reported tokens but the
+// event stream carried no per-call usage. The hole is its shorthand `runId`
+// field (`identifier bound elsewhere`), the same hole the `flue-driver:
+// dispatching` line beside it already has; the other three fields are a
+// literal, `def.key` and `usage.totalTokens`, none of which can carry content.
+//
+// One hole for one sink is BETTER than this subsystem's average, so
+// `HOLES_PER_SINK_CEILING` tightens with it: (173+6)/98 = 1.8265 becomes
+// (174+6)/99 = 1.8182. That is the direction this pair is supposed to move.
+//
+// The per-call accounting itself adds NO sink. It reads `response.usage` off
+// the runtime's turn events — four numbers — and the rows it writes go through
+// `recordModelDecision`, which was already counted.
+//
+// MEASURED ON A TREE WITH ZERO UNMERGED PATHS (`git status --porcelain` showing
+// only ordinary ` M` / `??` entries). The population is `git ls-files --cached
+// --others`, which lists a CONFLICTED path once per merge stage; measured
+// mid-merge this pair reads high by exactly the conflicted file's own findings,
+// which fits plausibly and passes a single-file run. The figure above was cross-
+// checked by linting `origin/main`'s `execute.ts` and this branch's separately:
+// 2/2 against 3/3, which is the whole difference between 173/98 and 174/99.
+const MEASURED_HOLES = 174;
 // 140 → 143: AGENTIC UI 4/4 (#2467). Three holes in one new sink — the pack
 // export's audit row — all `identifier bound elsewhere`, all values that are
 // local bindings (`title`, `documentBytes`, `PACK_RETENTION_DAYS`) beside field
@@ -580,7 +603,10 @@ const MEASURED_HOLES = 173;
 // TRANSPARENT_CALL the rule walks into and then records a hole for. Raising the
 // denominator TIGHTENS `HOLES_PER_SINK_CEILING`, which is the direction this
 // pair is supposed to move.
-const MEASURED_SINKS = 98;
+// 98 → 99: FLUE PER-TURN ACCOUNTING. See the note on `MEASURED_HOLES` above
+// for the one sink and the one hole, and for why the pair was measured on a
+// tree with no unmerged paths.
+const MEASURED_SINKS = 99;
 const MOST_OPAQUE_SINGLE_CALL = 6;
 const HOLES_PER_SINK_CEILING =
     (MEASURED_HOLES + MOST_OPAQUE_SINGLE_CALL) / MEASURED_SINKS;
