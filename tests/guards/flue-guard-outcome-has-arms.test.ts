@@ -160,10 +160,19 @@ describe('the circuit breaker can see a Flue block', () => {
         //
         // The SUM line is the needle that carries the whole claim: it names
         // both operands, so it cannot be satisfied unless both populations are
-        // counted and combined. `prisma.agentProposal.count(` on its own would
-        // be a poor needle anyway — it occurs five times in this file.
-        expect(breakerSrc).toContain('prisma.workflowStep.count(');
+        // counted and combined. `agentProposal.count(` on its own would be a
+        // poor needle anyway — it occurs five times in this file.
+        //
+        // The counts moved into `countGuardBlocksInWindow`, which takes its
+        // client as a parameter so the operator surface can report the SAME
+        // number through its tenant-scoped one — hence `db.` rather than
+        // `prisma.` here. The third needle is what keeps the extraction
+        // honest: with the helper unused, the two above would still pass.
+        expect(breakerSrc).toContain('db.workflowStep.count(');
         expect(breakerSrc).toContain('const blocksInWindow = proposalBlocks + stepBlocks;');
+        expect(breakerSrc).toContain(
+            'await countGuardBlocksInWindow(prisma, tenantId, agentId, since)',
+        );
     });
 
     it('scopes the step count to THIS agent, through the run that owns it', () => {

@@ -14,6 +14,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { SkeletonCard } from '@/components/ui/skeleton';
+import { StatusBadge, type StatusBadgeVariant } from '@/components/ui/status-badge';
 import { Heading } from '@/components/ui/typography';
 import { useToast } from '@/components/ui/hooks';
 import { ApiClientError } from '@/lib/api-client';
@@ -127,6 +128,23 @@ interface AgentDetail {
 
 /** The only two moves `POST ./status` accepts — RETIRED lives on DELETE. */
 type LifecycleMove = 'ACTIVE' | 'SUSPENDED';
+
+/**
+ * The engine's tone, and NEITHER value is a health colour — the engine is not
+ * good or bad news. Same pairing as the run-row chip in `AgentRunsClient`,
+ * which keys on the uppercase `WorkflowRun.driver` column; this one keys on the
+ * lowercase decision `resolveDriverForTenant` returns. Two spellings of one
+ * enum, so the map is per-surface rather than shared.
+ *
+ * A chip rather than the bare text this tab shipped with: every sibling tab on
+ * this page states an enum as a `<StatusBadge>`, and the run rows already state
+ * THIS enum as one. Plain text here made the two surfaces of the same fact look
+ * like two different kinds of fact.
+ */
+const DRIVER_VARIANT: Record<string, StatusBadgeVariant> = {
+    static: 'neutral',
+    flue: 'info',
+};
 
 /**
  * One row of the governing profile. A hand-rolled `<dl>` rather than
@@ -395,7 +413,12 @@ export function OverviewTab({
                         in force is reading them together. */}
                     <Fact label={t('agentDetail.overview.driverLabel')}>
                         <span className="flex flex-wrap items-center gap-tight">
-                            {t(`agentDetail.overview.driverValue.${agent.driver}`)}
+                            <StatusBadge
+                                variant={DRIVER_VARIANT[agent.driver] ?? 'neutral'}
+                                size="sm"
+                            >
+                                {t(`agentDetail.overview.driverValue.${agent.driver}`)}
+                            </StatusBadge>
                             {agent.driverReason && (
                                 <span className="text-xs text-content-muted">
                                     {t(`agentDetail.overview.driverReason.${agent.driverReason}`)}

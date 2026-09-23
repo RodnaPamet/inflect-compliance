@@ -41,6 +41,7 @@
  * counter.
  */
 import prisma from '@/lib/prisma';
+import type { PrismaTx } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
 import {
     createAgenticNotification,
@@ -570,6 +571,76 @@ export async function recordAuthorizedCall(
 
 
 /**
+ * How many guard blocks this agent has taken since `since` — the number the
+ * breaker latches on, and the number the operator surface reports.
+ *
+ * TWO POPULATIONS, because there are two engines and only one of them produces
+ * proposals.
+ *
+ * The static driver's guard fires on a PROPOSAL, so a block leaves an
+ * `AgentProposal` row with `guardVerdict: 'QUARANTINED'` and counting those was
+ * the whole story. The Flue engine's guard fires in the tool sandwich, BEFORE
+ * the funnel — which is the point of putting it there — so a blocked call
+ * queues nothing, writes no proposal, and never reaches `authorize.ts` either.
+ * A Flue agent could therefore be blocked all day and be invisible on BOTH of
+ * this breaker's inputs: the proposal count, and the per-call ledger
+ * `recordAuthorizedCall` writes downstream of a gate the blocked call never got
+ * to.
+ *
+ * So the step ledger is the second population. A Flue block records a
+ * `WorkflowStep` with the same `QUARANTINED` verdict, and the run it belongs to
+ * carries the `agentId` this breaker is about.
+ *
+ * ## Exported because the TAB reports this number, and must report THIS one
+ *
+ * `getAgentCircuitBreaker` calls this with its tenant-scoped client instead of
+ * counting the rows again. A second count would be a second definition of the
+ * population — free to disagree with the one that actually trips the breaker —
+ * and the number that disagrees is the one an operator is reading. The client
+ * is a parameter for the same reason the rest of this file takes `tenantId`:
+ * the detector runs outside a tenant transaction on the base client, the panel
+ * runs inside one, and neither may borrow the other's isolation.
+ *
+ * Both counts are `count`, not `findMany`: the caller wants the number, and
+ * either population is unbounded in principle.
+ */
+export async function countGuardBlocksInWindow(
+    db: Pick<PrismaTx, 'agentProposal' | 'workflowStep'>,
+    tenantId: string,
+    agentId: string,
+    since: Date,
+): Promise<number> {
+    const [proposalBlocks, stepBlocks] = await Promise.all([
+        db.agentProposal.count({
+            where: {
+                tenantId,
+                agentId,
+                guardVerdict: 'QUARANTINED',
+                createdAt: { gte: since },
+            },
+        }),
+        db.workflowStep.count({
+            where: {
+                tenantId,
+                guardVerdict: 'QUARANTINED',
+                // `at`, the step's own stamp — not the run's `startedAt`. A run
+                // that began before this window and was blocked inside it was
+                // blocked inside it.
+                at: { gte: since },
+                run: { agentId },
+            },
+        }),
+    ]);
+    // Named rather than returned inline, deliberately:
+    // `tests/guards/flue-guard-outcome-has-arms.test.ts` reads this exact line
+    // as its proof that both populations are counted, precisely because it
+    // names both operands. Inlining it would be tidier and would delete the
+    // needle.
+    const blocksInWindow = proposalBlocks + stepBlocks;
+    return blocksInWindow;
+}
+
+/**
  * Latch the breaker when an agent's guard blocks pile up inside one window.
  *
  * ## Not a new counter
@@ -606,45 +677,7 @@ export async function latchOnGuardBlock(
 ): Promise<{ blocksInWindow: number; latched: boolean }> {
     try {
         const since = windowStartFor(now);
-
-        // TWO POPULATIONS, because there are two engines and only one of them
-        // produces proposals.
-        //
-        // The static driver's guard fires on a PROPOSAL, so a block leaves an
-        // `AgentProposal` row with `guardVerdict: 'QUARANTINED'` and counting
-        // those was the whole story. The Flue engine's guard fires in the tool
-        // sandwich, BEFORE the funnel — which is the point of putting it there
-        // — so a blocked call queues nothing, writes no proposal, and never
-        // reaches `authorize.ts` either. A Flue agent could therefore be
-        // blocked all day and be invisible on BOTH of this breaker's inputs:
-        // the proposal count below, and the per-call ledger `recordAuthorizedCall`
-        // writes downstream of a gate the blocked call never got to.
-        //
-        // So the step ledger is the second population. A Flue block records a
-        // `WorkflowStep` with the same `QUARANTINED` verdict, and the run it
-        // belongs to carries the `agentId` this breaker is about.
-        const [proposalBlocks, stepBlocks] = await Promise.all([
-            prisma.agentProposal.count({
-                where: {
-                    tenantId,
-                    agentId,
-                    guardVerdict: 'QUARANTINED',
-                    createdAt: { gte: since },
-                },
-            }),
-            prisma.workflowStep.count({
-                where: {
-                    tenantId,
-                    guardVerdict: 'QUARANTINED',
-                    // `at`, the step's own stamp — not the run's `startedAt`. A
-                    // run that began before this window and was blocked inside
-                    // it was blocked inside it.
-                    at: { gte: since },
-                    run: { agentId },
-                },
-            }),
-        ]);
-        const blocksInWindow = proposalBlocks + stepBlocks;
+        const blocksInWindow = await countGuardBlocksInWindow(prisma, tenantId, agentId, since);
 
         if (!shouldLatchOnGuardBlocks(blocksInWindow)) {
             return { blocksInWindow, latched: false };

@@ -40,6 +40,7 @@ import { badRequest, notFound } from '@/lib/errors/types';
 import {
     BASELINE_WINDOW_LIMIT,
     BREAKER_CLOSE_REASONS,
+    GUARD_BLOCK_TRIP_THRESHOLD,
     MIN_BASELINE_OBSERVATIONS,
     MIN_BASELINE_WINDOWS,
     WINDOW_MS,
@@ -48,6 +49,7 @@ import {
     windowStartFor,
     type BreakerCloseReason,
 } from '@/lib/agentic/circuit-breaker';
+import { countGuardBlocksInWindow } from '@/lib/agentic/circuit-breaker-store';
 import { recordAgentBreakerClose } from '@/lib/observability/integration-metrics';
 
 import { assertCanAdmin, assertCanRead } from '../policies/common';
@@ -109,7 +111,7 @@ export async function getAgentCircuitBreaker(ctx: RequestContext, agentId: strin
         // hour boundary from a clock this server has already read.
         const currentWindowStart = windowStartFor(now);
 
-        const [windows, lookback] = await Promise.all([
+        const [windows, lookback, guardBlocksInWindow] = await Promise.all([
             db.agentBehaviourWindow.findMany({
                 where: { tenantId: ctx.tenantId, agentId },
                 orderBy: { windowStart: 'desc' },
@@ -175,6 +177,23 @@ export async function getAgentCircuitBreaker(ctx: RequestContext, agentId: strin
                     anomalous: true,
                 },
             }),
+            // GUARD BLOCKS, which are on NEITHER read above.
+            //
+            // A Flue guard block writes no `AgentBehaviourWindow` row — the
+            // guard fires in the tool sandwich, before the funnel, so the
+            // blocked call never reaches `authorize.ts` and never reaches
+            // `recordAuthorizedCall`. The ledger and the baseline figures are
+            // therefore BLIND to it, and an agent that had been blocked all
+            // morning rendered here as an agent with no activity at all. The
+            // only trace was a trip, and only once three had landed in one
+            // hour.
+            //
+            // The count comes from the detector's own function rather than
+            // from a query written here: `latchOnGuardBlock` counts the same
+            // two populations to decide whether to trip, and a panel counting
+            // them its own way would be a second number free to disagree with
+            // the one that actually stops the agent.
+            countGuardBlocksInWindow(db, ctx.tenantId, agentId, currentWindowStart),
         ]);
 
         // One bounded query per READ, not per agent: this usecase serves a
@@ -295,6 +314,31 @@ export async function getAgentCircuitBreaker(ctx: RequestContext, agentId: strin
                           ),
             },
             windowsToTrip: WINDOWS_TO_TRIP,
+            /**
+             * The OTHER way this breaker trips, and the only one the window
+             * ledger above cannot show.
+             *
+             * `latchOnGuardBlock` latches immediately at `threshold` blocks
+             * inside one window — no streak, no baseline, because a block has
+             * no normal to depart from. So this is a count against a hard
+             * limit, not a statistical signal, and it is reported whether or
+             * not the agent has a breaker row: an agent whose every call has
+             * been blocked has no `AgentBehaviourWindow` rows, no
+             * `AgentCircuitBreaker` row, and — until this figure — nothing on
+             * this surface at all.
+             *
+             * Counted over `currentWindowStart` above — the hour still
+             * filling, and the same window the latch counts over. It is not
+             * repeated here: two copies of one timestamp on one payload are
+             * free to disagree, and this figure's whole claim is that it is
+             * the detector's number rather than a second one. It resets on the
+             * hour by design: three blocks spread over three hours are not the
+             * burst the threshold is about.
+             */
+            guardBlocks: {
+                inWindow: guardBlocksInWindow,
+                threshold: GUARD_BLOCK_TRIP_THRESHOLD,
+            },
             closeReasons: [...BREAKER_CLOSE_REASONS],
         };
     });

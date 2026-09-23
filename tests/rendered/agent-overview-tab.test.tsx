@@ -127,6 +127,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 }));
 
 import { OverviewTab } from '@/app/t/[tenantSlug]/(app)/agents/[agentId]/tabs/OverviewTab';
+import { statusBadgeVariants } from '@/components/ui/status-badge';
 
 // ─── The real catalogue the mock resolves — assertions read the copy the
 // operator reads, never an internal prop or a class name. ────────────────────
@@ -783,10 +784,39 @@ describe('the Overview tab names the run engine, and why it was narrowed', () =>
         }
     ).admin.agentDetail.overview;
 
-    it('renders the engine', () => {
+    /**
+     * The badge's OWN class contract, asked of the component rather than typed
+     * here. A `getByText` passes identically for a `<StatusBadge>` and for the
+     * bare `<span>` this tab actually shipped with — which is exactly how "a
+     * driver chip on the Overview tab" sat unbuilt under a green test for two
+     * days. `getByText` returns the element holding the label as a DIRECT text
+     * child, which is the badge itself; a plain span carries none of these
+     * classes and fails.
+     */
+    const badgeClasses = (variant: 'neutral' | 'info'): string[] =>
+        statusBadgeVariants({ variant, size: 'sm' }).split(' ').filter(Boolean);
+
+    it('renders the engine AS A CHIP, not as bare text', () => {
         renderTab(makeAgent());
         expect(screen.getByText(OV.driverLabel)).toBeInTheDocument();
-        expect(screen.getByText(OV.driverValue.static)).toBeInTheDocument();
+        const chip = screen.getByText(OV.driverValue.static);
+        expect(chip.className.split(' ')).toEqual(
+            expect.arrayContaining(badgeClasses('neutral')),
+        );
+    });
+
+    it('gives flue its own variant, so the chip is not one hardcoded tone', () => {
+        // Neither tone is a health colour, but they are different tones: a map
+        // collapsed to one value renders both engines identically and the
+        // `text-content-info` / `text-content-muted` split is what says so.
+        renderTab(makeAgent({ driver: 'flue', driverReason: null }));
+        const chip = screen.getByText(OV.driverValue.flue);
+        expect(chip.className.split(' ')).toEqual(
+            expect.arrayContaining(badgeClasses('info')),
+        );
+        expect(chip.className.split(' ')).not.toEqual(
+            expect.arrayContaining(badgeClasses('neutral')),
+        );
     });
 
     it('names the reason when the configured driver is NOT the one in force', () => {
