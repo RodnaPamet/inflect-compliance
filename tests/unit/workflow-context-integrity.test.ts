@@ -126,6 +126,16 @@ function makeDb() {
                 return { ...row };
             },
         },
+        // `resumeWorkflowRun` stamps the Art 14 human outcome on the run's
+        // decision rows in the same transaction as the checkpoint close, so
+        // this double needs the table. It answers `count: 0` because this
+        // fixture writes no decision rows; the BEHAVIOURAL proof that the
+        // stamp reaches the right ones is
+        // `tests/integration/agentic-art14-run-closes-the-loop.test.ts`, which
+        // runs it against a real table.
+        aiDecisionLog: {
+            updateMany: async () => ({ count: 0 }),
+        },
         workflowStep: {
             // The replay anchor: the highest chain position this run's
             // APPEND-ONLY ledger has seen. Modelled here because restoring the

@@ -233,6 +233,16 @@ const KNOWN_UNANALYSABLE: readonly string[] = [
     // reviewable where a log line is neither.
     'src/lib/agentic/flue/driver.ts — identifier bound elsewhere',
     'src/lib/agentic/flue/execute.ts — identifier bound elsewhere',
+    // RELOCATION, not a new hole — the same reading as `run-settlement.ts` and
+    // `step-recorder.ts` above. `recordModelDecision` was extracted from
+    // `execute.ts` so a CJS suite could load and RUN it (the Art 14 join key it
+    // writes had to be provable against a real row, and no test can import a
+    // module that statically imports `@flue/runtime`). Its one `logger.error`
+    // moved with it unchanged: a tenant id, a workflow key and an
+    // `err.message`. `execute.ts` keeps its own entry because its dispatch log
+    // line stayed behind, and `MEASURED_HOLES` does not shift — which is what a
+    // pure move looks like here.
+    'src/lib/agentic/flue/model-decision.ts — identifier bound elsewhere',
     'src/lib/agentic/flue/runtime-start.ts — call to a helper this rule cannot open',
     'src/lib/agentic/agent-authority.ts — identifier bound elsewhere',
     // The tenant's driver toggle: one audit row and one log line, both written

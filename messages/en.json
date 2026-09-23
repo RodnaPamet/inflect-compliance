@@ -8297,7 +8297,7 @@
       "outcome": {
         "PENDING": "awaiting review",
         "ACCEPTED": "accepted",
-        "MODIFIED": "modified",
+        "EDITED": "edited",
         "REJECTED": "rejected"
       }
     }
