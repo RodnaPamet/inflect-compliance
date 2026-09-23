@@ -69,6 +69,7 @@ const RUN: RunRow = {
     startedAt: '2026-09-01T10:00:00.000Z',
     completedAt: '2026-09-01T10:04:00.000Z',
     summary: null,
+    pendingProposals: 0,
 };
 
 function renderRuns(runs: RunRow[]) {
