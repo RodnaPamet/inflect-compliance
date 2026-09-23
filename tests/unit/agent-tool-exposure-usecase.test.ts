@@ -41,6 +41,7 @@ import {
 import { runInTenantContext } from '@/lib/db-context';
 import { logEvent } from '@/app-layer/events/audit';
 import { MCP_TOOL_NAMES } from '@/lib/mcp/tool-catalogue';
+import { ceilingForRiskTier, DENY_CEILING } from '@/lib/agentic/autonomy-ceiling';
 import { makeRequestContext } from '../helpers/make-context';
 
 const mockRunInTx = runInTenantContext as jest.MockedFunction<any>;
@@ -50,7 +51,15 @@ const ctx = makeRequestContext('ADMIN', { tenantId: 'tenant-1', userId: 'user-1'
 
 interface DbOptions {
     /** The agent the tenant-scoped lookup resolves, or null for "not ours". */
-    agent?: { id: string; status: string; dataAccessScope?: string; riskTier?: string } | null;
+    agent?: {
+        id: string;
+        status: string;
+        dataAccessScope?: string;
+        // NULL is a real value here, not an omission — it is the UNSCORED
+        // agent, whose ceiling is DENY rather than a friendly low tier.
+        riskTier?: string | null;
+        autonomyLevel?: number;
+    } | null;
     /** Rows the revoke deleteMany reports. */
     revoked?: number;
     /**
@@ -332,5 +341,62 @@ describe('listAgentTools', () => {
         const out = await listAgentTools(ctx, 'agent-1');
         expect(out.granted.map((g: any) => g.toolName)).toEqual(['list_risks']);
         expect(out.available).toEqual(MCP_TOOL_NAMES);
+    });
+
+    /**
+     * ── THE CEILING, ASSERTED ON THE PAYLOAD RATHER THAN BESIDE IT ──────
+     *
+     * `tests/unit/agent-tool-ceiling-visibility.test.ts` composes the same
+     * three helpers under a comment reading "what `listAgentTools` computes".
+     * That is a docstring asserting a correspondence, not a test of it: the
+     * file never imports `listAgentTools`. Nor does the type system tie them —
+     * `AgentToolsPayload` is hand-declared in `ToolsTab.tsx` with
+     * `autonomyCeiling?: number`, so the field is optional to the client and
+     * `undefined` renders NO badge by design.
+     *
+     * Deleting `autonomyCeiling` from this payload therefore took the whole
+     * "which grants are inert" feature dark, with all 20 tests in the two
+     * suites green and `tsc` silent. These cases call the usecase and read the
+     * field off what it actually returns.
+     *
+     * The expected values are LITERAL, and each case is pinned on a DIFFERENT
+     * binding term, so a payload returning any one term alone fails at least
+     * one of them. Re-deriving them through `resolveAutonomyCeiling` would
+     * reproduce the tautology this is replacing.
+     */
+    it('carries a ceiling narrowed by the REGISTERED AUTONOMY — the term grant-time never checks', async () => {
+        makeDb({
+            agent: { id: 'agent-1', status: 'ACTIVE', riskTier: 'LOW', autonomyLevel: 1 },
+        });
+        const out = await listAgentTools(ctx, 'agent-1');
+
+        expect(out.autonomyCeiling).toBe(1);
+        // The second number, beside the answer. The tier alone says something
+        // higher, so a payload returning the tier cap cannot pass — and were
+        // the two equal this would be pinning a coincidence.
+        expect(out.autonomyCeiling).toBeLessThan(ceilingForRiskTier('LOW'));
+    });
+
+    it('carries DENY for an UNSCORED agent, whatever autonomy it registered', async () => {
+        // The other direction: the registered autonomy alone says 6.
+        makeDb({
+            agent: { id: 'agent-1', status: 'ACTIVE', riskTier: null, autonomyLevel: 6 },
+        });
+        const out = await listAgentTools(ctx, 'agent-1');
+        expect(out.autonomyCeiling).toBe(DENY_CEILING);
+    });
+
+    it('carries the TIER CAP when that is the narrower term — the badge must not fire on everything', async () => {
+        // The positive control, and the third distinct binding term. A payload
+        // hard-coding DENY_CEILING, or echoing the registered autonomy,
+        // satisfies one of the two cases above and fails here.
+        makeDb({
+            agent: { id: 'agent-1', status: 'ACTIVE', riskTier: 'LOW', autonomyLevel: 6 },
+        });
+        const out = await listAgentTools(ctx, 'agent-1');
+
+        expect(out.autonomyCeiling).toBe(ceilingForRiskTier('LOW'));
+        expect(out.autonomyCeiling).toBeLessThan(6);
+        expect(out.autonomyCeiling).toBeGreaterThan(DENY_CEILING);
     });
 });
