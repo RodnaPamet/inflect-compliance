@@ -39,7 +39,7 @@ const read = (rel: string) => codeOf(fs.readFileSync(path.join(ROOT, rel), 'utf8
  * reason. A new executor job must be scheduled OR added here deliberately.
  */
 const ON_DEMAND_JOBS: Readonly<Record<string, string>> = {
-    'agent-run-execute': 'Enqueued by startWorkflowRun when the resolved driver is flue. '
+    'agent-run-execute': 'Enqueued by startWorkflowRun AND by resumeWorkflowRun when the resolved driver is flue. '
         + 'A reasoning loop decides for itself how many tools to call and how long to keep '
         + 'going, so it belongs in the worker rather than a web request; the static engine, '
         + 'which walks a bounded hand-written step array, still runs inline.',
