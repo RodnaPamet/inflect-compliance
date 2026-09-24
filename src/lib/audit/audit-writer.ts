@@ -129,6 +129,36 @@ function generateCuid(): string {
 // ─── Core Writer ────────────────────────────────────────────────────
 
 /**
+ * The sentinel a background job carries in `RequestContext.userId`, mapped to
+ * the NULL the column actually accepts.
+ *
+ * `RequestContext.userId` is typed `string`, so a job with no signed-in user
+ * has to put SOMETHING there, and `buildSystemContext` puts `'system'`. But
+ * `AuditLog.userId` is a nullable FK to `User.id`, and no `User` row has that
+ * id — so every audit write from a scheduled job failed the constraint and
+ * the event was lost. Production was dropping roughly 71 a day: 71 failed
+ * inserts against 12 rows successfully written in the same period, with
+ * `JOB`-typed rows having stopped entirely on 2026-09-12.
+ *
+ * NULL IS NOT A DEGRADATION HERE, it is what the schema already expects. 1186
+ * existing rows carry `userId IS NULL` with `actorType: 'SYSTEM'`, the DSAR
+ * erasure path sets `userId -> NULL` deliberately (#2682), and the hash-chain
+ * verifier already tolerates it. `actorType` is what identifies a machine
+ * actor; the id column was never the place for that, and a synthetic value
+ * there only ever resolved to nobody.
+ *
+ * Applied at the single write seam rather than at each of the thirteen job
+ * context builders, so a future job cannot reintroduce it by copying an
+ * existing one.
+ */
+const SYSTEM_PRINCIPAL_SENTINEL = 'system';
+
+export function auditUserIdOrNull(userId: string | null | undefined): string | null {
+    if (userId === undefined || userId === null) return null;
+    return userId === SYSTEM_PRINCIPAL_SENTINEL ? null : userId;
+}
+
+/**
  * Append a hash-chained audit entry within an advisory-locked transaction.
  *
  * This is the ONLY function that should insert into AuditLog. All other
@@ -154,6 +184,10 @@ export async function appendAuditEntry(input: AppendAuditInput, client?: PrismaC
     // the SIEM-visible "sent at" by milliseconds.
     const streamOccurredAt = new Date().toISOString();
 
+    // Normalised ONCE, here, so the row written inside the transaction and the
+    // copy handed to the SIEM streamer cannot disagree about who acted.
+    const entry: AppendAuditInput = { ...input, userId: auditUserIdOrNull(input.userId) };
+
     const db = client || getDefaultPrisma();
 
     // AUDIT_APPEND_TX_OPTIONS is DECLARED, not inherited (#2653).
@@ -176,7 +210,7 @@ export async function appendAuditEntry(input: AppendAuditInput, client?: PrismaC
     // is a LOWER BOUND rather than a measured p99, are all in
     // `src/lib/db/concurrency-limits.ts`.
     const result = await db.$transaction(
-        async (tx) => appendAuditEntryWithin(tx as unknown as AuditAppendClient, input),
+        async (tx) => appendAuditEntryWithin(tx as unknown as AuditAppendClient, entry),
         AUDIT_APPEND_TX_OPTIONS,
     );
 
@@ -196,9 +230,9 @@ export async function appendAuditEntry(input: AppendAuditInput, client?: PrismaC
             id: result.id,
             entryHash: result.entryHash,
             previousHash: result.previousHash,
-            tenantId: input.tenantId,
-            userId: input.userId,
-            actorType: input.actorType || 'USER',
+            tenantId: entry.tenantId,
+            userId: entry.userId,
+            actorType: entry.actorType || 'USER',
             entity: input.entity,
             entityId: input.entityId,
             action: input.action,
@@ -245,6 +279,10 @@ export async function appendAuditEntryWithin(
     input: AppendAuditInput,
 ): Promise<AppendAuditResult> {
     const id = generateCuid();
+    // Direct callers reach this without passing through `appendAuditEntry`,
+    // so the sentinel is mapped here as well. Idempotent: a value already
+    // normalised is returned unchanged.
+    const userId = auditUserIdOrNull(input.userId);
     const actorType = input.actorType || 'USER';
     const version = input.version ?? 1;
 
@@ -300,7 +338,11 @@ export async function appendAuditEntryWithin(
     const entryHash = computeEntryHash({
         tenantId: input.tenantId,
         actorType,
-        actorUserId: input.userId,
+        // MUST be the normalised value, not the raw input. `verifyAuditChain`
+        // recomputes this hash from the row as STORED; hashing 'system' while
+        // storing NULL would make every such row report as tampered — the
+        // exact signature of a forgery, on a row that is perfectly lawful.
+        actorUserId: userId,
         eventType: input.action,
         entityType: input.entity,
         entityId: input.entityId,
@@ -332,7 +374,7 @@ export async function appendAuditEntryWithin(
         )`,
         id,
         input.tenantId,
-        input.userId,
+        userId,
         actorType,
         input.entity,
         input.entityId,
