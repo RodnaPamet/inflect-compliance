@@ -88,6 +88,10 @@ const fakeDb = {
         findMany: async () => [],
         update: async () => ({}),
         updateMany: async () => ({ count: 0 }),
+        // The reconcile's blast-radius rail counts before it writes. Zero is
+        // the honest answer for this fixture — nothing is proposed, so the
+        // rail is silent and these tests keep measuring the read deadline.
+        count: async () => 0,
     },
 };
 
