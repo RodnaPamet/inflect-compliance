@@ -13,6 +13,7 @@ import {
 import type {
     DirectoryProvisioner,
     CreateAccountStep,
+    ProvisionRead,
     ProvisionStep,
 } from '@/app-layer/integrations/identity-provisioner';
 
@@ -29,12 +30,25 @@ const begun: string[] = [];
 jest.mock('@/app-layer/usecases/identity-write-journal', () => ({
     beginWrite: jest.fn(async (_ctx: unknown, input: { action: string }) => {
         begun.push(input.action);
+        // SETTLEMENT is recorded, not just opening. A mutation that deleted
+        // `credentialHandle.applied()` left the row OPENED and never settled and
+        // every assertion here still passed — which is the exact state the
+        // unsettled-writes alert (#2842) exists to page a human about. Opening a
+        // row is half the contract; `begun` alone cannot see the other half.
         return {
             journalId: 'j-1',
-            applied: jest.fn(async () => {}),
-            failed: jest.fn(async () => {}),
-            reverted: jest.fn(async () => {}),
-            indeterminate: jest.fn(async () => {}),
+            applied: jest.fn(async () => {
+                settled.push(`${input.action}:applied`);
+            }),
+            failed: jest.fn(async () => {
+                settled.push(`${input.action}:failed`);
+            }),
+            reverted: jest.fn(async () => {
+                settled.push(`${input.action}:reverted`);
+            }),
+            indeterminate: jest.fn(async () => {
+                settled.push(`${input.action}:indeterminate`);
+            }),
         };
     }),
 }));
@@ -52,6 +66,16 @@ function provisioner(over: Partial<DirectoryProvisioner> = {}): DirectoryProvisi
         ),
         assignGroup: jest.fn(async (): Promise<ProvisionStep> => OK),
         issueCredential: jest.fn(async (): Promise<ProvisionStep> => OK),
+        // The capture the enable is derived from (#2840). A real prior value,
+        // not `{}` — `beginWrite` rejects an empty priorState, and a fake that
+        // returned one would make every enable path fail for a reason the
+        // production code does not have.
+        readAccountState: jest.fn(
+            async (): Promise<ProvisionRead> => ({
+                kind: 'read',
+                priorState: { userAccountControl: 514 },
+            }),
+        ),
         enableAccount: jest.fn(async (): Promise<ProvisionStep> => OK),
         ...over,
     };
@@ -197,9 +221,90 @@ describe('every partial-failure terminal state is reachable (#2674 acceptance 2)
 });
 
 describe('every write is journalled BEFORE it is attempted', () => {
-    it('opens CREATE_ACCOUNT and ASSIGN_GROUP rows — the two verbs nothing constructed before', async () => {
+    it('opens a row for ALL FOUR directory writes, in order', async () => {
+        // This assertion used to read `['CREATE_ACCOUNT', 'ASSIGN_GROUP']` and
+        // pass, under a describe block named "every write is journalled". The
+        // `it` was honest about it — "the two verbs" — but the heading asserted
+        // the invariant, and the two steps that were MISSING are the two that
+        // make the account usable: the credential, and the enable.
+        //
+        // `toEqual` on the whole array rather than `toContain` per action, on
+        // purpose: ORDER is part of the contract. The credential must be minted
+        // before the enable, so a journal that recorded them the other way round
+        // would describe a window where a usable account existed without one.
         await createDirectoryAccount(CTX, req({ writeBackToHris: async () => {} }));
-        expect(begun).toEqual(['CREATE_ACCOUNT', 'ASSIGN_GROUP']);
+        expect(begun).toEqual([
+            'CREATE_ACCOUNT',
+            'ASSIGN_GROUP',
+            'ISSUE_CREDENTIAL',
+            'ENABLE_ACCOUNT',
+        ]);
+    });
+
+    it('SETTLES every row it opens — an opened-and-unsettled row is the #2842 alarm', async () => {
+        await createDirectoryAccount(CTX, req({ writeBackToHris: async () => {} }));
+        // Added because a mutation proved the assertion above blind: deleting
+        // `credentialHandle.applied()` left the credential's row opened and
+        // never settled, and all four `begun` assertions still passed.
+        //
+        // That state is not cosmetic. `IdentityWriteJournal` rows in PENDING are
+        // exactly what the unsettled-writes reporter pages a human about, so a
+        // create that succeeded would have raised an alert saying an account was
+        // in unknown state — forever, because nothing would ever settle it.
+        expect(settled).toEqual([
+            'CREATE_ACCOUNT:applied',
+            'ASSIGN_GROUP:applied',
+            'ISSUE_CREDENTIAL:applied',
+            'ENABLE_ACCOUNT:applied',
+        ]);
+    });
+
+    it('journals the ROLLBACK disable too — the undo is a directory write', async () => {
+        // The third unjournalled write, and the one that runs precisely when
+        // something has already gone wrong.
+        await createDirectoryAccount(CTX, req({
+            provisioner: provisioner({
+                issueCredential: jest.fn(
+                    async (): Promise<ProvisionStep> => ({ kind: 'refused', detail: 'no TAP policy' }),
+                ),
+            }),
+        }));
+        expect(begun).toEqual(['CREATE_ACCOUNT', 'ASSIGN_GROUP', 'ISSUE_CREDENTIAL', 'DISABLE_ACCOUNT']);
+    });
+
+    it('captures prior state BEFORE the enable, and enables FROM that capture', async () => {
+        // The ordering the journal's docblock promises, and the reason the
+        // capture is a separate call: the value in the row and the value the
+        // write is derived from must be the same value.
+        const enableAccount = jest.fn(async (): Promise<ProvisionStep> => ({ kind: 'applied' }));
+        const readAccountState = jest.fn(async () => ({
+            kind: 'read' as const,
+            priorState: { userAccountControl: 514 },
+        }));
+        await createDirectoryAccount(CTX, req({
+            provisioner: provisioner({ readAccountState, enableAccount }),
+            writeBackToHris: async () => {},
+        }));
+        expect(readAccountState).toHaveBeenCalled();
+        expect(enableAccount).toHaveBeenCalledWith('ext-1', { userAccountControl: 514 });
+    });
+
+    it('refuses to enable when the capture fails, rather than enabling from nothing', async () => {
+        const enableAccount = jest.fn(async (): Promise<ProvisionStep> => ({ kind: 'applied' }));
+        const r = await createDirectoryAccount(CTX, req({
+            provisioner: provisioner({
+                readAccountState: jest.fn(async () => ({
+                    kind: 'indeterminate' as const,
+                    detail: 'could not read userAccountControl',
+                })),
+                enableAccount,
+            }),
+        }));
+        // The write must not have been attempted at all.
+        expect(enableAccount).not.toHaveBeenCalled();
+        expect(r.kind).toBe('PARTIAL_NO_CREDENTIAL');
+        // And no ENABLE_ACCOUNT row was opened, because nothing was attempted.
+        expect(begun).not.toContain('ENABLE_ACCOUNT');
     });
 
     it('journals the create even when the create is REFUSED', async () => {

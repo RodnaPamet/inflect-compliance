@@ -78,7 +78,16 @@ function fakeAd(opts: FakeAdOptions = {}) {
             if (opts.searchThrows) throw opts.searchThrows;
             return {
                 searchEntries:
-                    opts.entries ?? [{ distinguishedName: 'CN=New Person,OU=Employees,DC=corp,DC=example,DC=test', objectGUID: GUID_BYTES }],
+                    opts.entries ?? [
+                    {
+                        distinguishedName: 'CN=New Person,OU=Employees,DC=corp,DC=example,DC=test',
+                        objectGUID: GUID_BYTES,
+                        // 514 = NORMAL_ACCOUNT | ACCOUNTDISABLE — exactly what
+                        // `createBlockedAccount` writes, so it is what the
+                        // enable's capture legitimately reads back (#2840).
+                        userAccountControl: 514,
+                    },
+                ],
             };
         },
         add: async (dn: string, attributes: Record<string, unknown>) => {
@@ -235,11 +244,68 @@ describe('AD provisioner — the encodings AD actually requires', () => {
         expect(JSON.stringify(r)).not.toContain('Str0ngPassw0rd');
     });
 
-    it('enables by writing 512, the account back to a normal user', async () => {
+    // ── #2840. This block replaced a test that asserted the DEFECT as the
+    // contract: "enables by writing 512, the account back to a normal user".
+    // Writing 512 is exactly what destroys every other flag on the account, so
+    // the old test would have gone red on the fix and green on the bug.
+
+    it('CLEARS the disable bit and preserves every other flag', async () => {
+        // 0x10202 = NORMAL_ACCOUNT | DONT_EXPIRE_PASSWORD | ACCOUNTDISABLE.
+        // The old unconditional replace returned 512 here, silently dropping
+        // DONT_EXPIRE_PASSWORD — a password policy change nobody asked for and
+        // nothing recorded.
         const f = fakeAd();
-        await make(f).enableAccount(GUID);
+        const prior = 0x10202;
+        await make(f).enableAccount(GUID, { userAccountControl: prior });
         const changes = f.modifies.at(-1)!.changes as Array<{ type: string; values: string[] }>;
-        expect(changes[0]).toMatchObject({ type: 'userAccountControl', values: ['512'] });
+        expect(changes[0]).toMatchObject({
+            type: 'userAccountControl',
+            values: [String(prior & ~0x2)],
+        });
+        // Said positively as well as by arithmetic: DONT_EXPIRE_PASSWORD survives.
+        expect(Number(changes[0].values[0]) & 0x10000).toBe(0x10000);
+        expect(Number(changes[0].values[0]) & 0x2).toBe(0);
+    });
+
+    it('REFUSES to enable without a captured prior state — no invented base value', async () => {
+        // The whole point. An enable that defaults its base is the
+        // unconditional replace wearing a read-modify-write's clothes.
+        const f = fakeAd();
+        const r = await make(f).enableAccount(GUID, {});
+        expect(r.kind).toBe('refused');
+        expect(r.detail).toMatch(/captured userAccountControl/i);
+        expect(f.modifies).toHaveLength(0);
+    });
+
+    it('writes nothing when the account is already enabled', async () => {
+        const f = fakeAd();
+        const r = await make(f).enableAccount(GUID, { userAccountControl: 0x200 });
+        expect(r.kind).toBe('applied');
+        expect(f.modifies).toHaveLength(0);
+    });
+
+    it('captures userAccountControl so the journal holds the value the write uses', async () => {
+        const f = fakeAd({
+            entries: [
+                {
+                    distinguishedName: 'CN=New Person,OU=Employees,DC=corp,DC=example,DC=com',
+                    userAccountControl: 514,
+                },
+            ],
+        });
+        const r = await make(f).readAccountState(GUID);
+        expect(r.kind).toBe('read');
+        expect(r.kind === 'read' && r.priorState).toEqual({ userAccountControl: 514 });
+    });
+
+    it('reports INDETERMINATE when userAccountControl cannot be read, never a default', async () => {
+        // "We could not read it" must not collapse into a number. A capture
+        // that guesses is one a later restore would write back as fact.
+        const f = fakeAd({
+            entries: [{ distinguishedName: 'CN=New Person,OU=Employees,DC=corp,DC=example,DC=com' }],
+        });
+        const r = await make(f).readAccountState(GUID);
+        expect(r.kind).toBe('indeterminate');
     });
 });
 

@@ -39,7 +39,8 @@ export type IdentityWriteAction =
     | 'ENABLE_ACCOUNT'
     | 'CREATE_ACCOUNT'
     | 'ASSIGN_GROUP'
-    | 'REMOVE_GROUP';
+    | 'REMOVE_GROUP'
+    | 'ISSUE_CREDENTIAL';
 
 export interface BeginWriteInput {
     /** The link this write acts through, when there is one. */

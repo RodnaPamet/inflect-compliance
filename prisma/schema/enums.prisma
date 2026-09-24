@@ -1751,6 +1751,13 @@ enum IdentityWriteAction {
   CREATE_ACCOUNT
   ASSIGN_GROUP
   REMOVE_GROUP
+  /// Minting the joiner's first credential (#2840). APPENDED deliberately:
+  /// `ALTER TYPE … ADD VALUE` with no BEFORE/AFTER appends to the physical
+  /// type, so a member written into the middle of this block would sit at a
+  /// different ordinal than the database — which `prisma-enum-order` exists
+  /// to catch and which `prisma migrate diff` cannot see, because it treats
+  /// enum values as a set rather than a sequence.
+  ISSUE_CREDENTIAL
 }
 
 // ─────────────────────────────────────────────────────────────────

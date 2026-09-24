@@ -130,6 +130,24 @@ export type ProvisionStep =
     | { readonly kind: 'refused'; readonly detail: string }
     | { readonly kind: 'indeterminate'; readonly detail: string };
 
+/**
+ * A capture of an account's state, taken BEFORE a step that changes it (#2840).
+ *
+ * `priorState` is an OPAQUE, PROVIDER-OWNED bag, and that is the whole design.
+ * The only consumer that interprets it is the provisioner that produced it —
+ * for Active Directory it carries `userAccountControl`, which is a concept
+ * Entra does not have and which has no business on a shared type. The usecase
+ * treats it as something to journal and hand back, never something to read.
+ *
+ * A capture has an `indeterminate` arm for the same reason a write does: "we
+ * could not read the account" and "the account is in this state" must not be
+ * the same value, or a restore later reads a guess as a fact.
+ */
+export type ProvisionRead =
+    | { readonly kind: 'read'; readonly priorState: Record<string, unknown> }
+    | { readonly kind: 'refused'; readonly detail: string }
+    | { readonly kind: 'indeterminate'; readonly detail: string };
+
 /** What a create needs to know about the person it is provisioning. */
 export interface CreateAccountInput {
     /** The identifier the plan derived and probed. */
@@ -195,13 +213,35 @@ export interface DirectoryProvisioner {
     issueCredential(externalUserId: string): Promise<ProvisionStep>;
 
     /**
+     * Capture what `enableAccount` is about to change — #2840.
+     *
+     * Separate from `enableAccount` because the journal's contract is that the
+     * capture is COMMITTED BEFORE the write is attempted. A method that read
+     * and wrote in one call could not satisfy that: the row would be opened
+     * from a value the write had already replaced, which is a record of the
+     * outcome wearing a capture's name.
+     *
+     * The leaver writer learned this first and states it as a refusal — it
+     * will not disable from a capture it did not produce, because "without the
+     * journalled userAccountControl there is no value to compare-and-swap
+     * against, and the only alternative — an unconditional replace — silently
+     * reverts every other bit that changed since the read". The joiner's
+     * enable had exactly that unconditional replace until #2840.
+     */
+    readAccountState(externalUserId: string): Promise<ProvisionRead>;
+
+    /**
      * Unblock sign-in. LAST.
      *
      * By this point the account exists, is entitled, and has a credential. It
      * is the last step precisely because everything before it is the half that
      * is not observable if left half-done.
+     *
+     * Takes the capture from `readAccountState` rather than reading its own,
+     * so the value the journal holds and the value the write is derived from
+     * are the SAME value and cannot drift between the two calls.
      */
-    enableAccount(externalUserId: string): Promise<ProvisionStep>;
+    enableAccount(externalUserId: string, prior: Record<string, unknown>): Promise<ProvisionStep>;
 }
 
 /**
@@ -308,7 +348,28 @@ export function createSnapshotProvisioner(
                 `The snapshot provisioner cannot mint a credential for ${externalUserId}: no ` +
                 `write path to ${provider}. Never a password fallback — see the interface.`,
         }),
-        enableAccount: async (externalUserId: string): Promise<ProvisionStep> => ({
+        /**
+         * The CAPTURE refuses too, and `refused` is the honest arm.
+         *
+         * A snapshot reader genuinely cannot see the live account, so it cannot
+         * produce a prior state. Returning an empty `read` would be worse than
+         * refusing by exactly the margin that matters: `beginWrite` rejects an
+         * empty `priorState`, but a bag with a plausible-looking default in it
+         * would be COMMITTED, and a later restore would read that default as
+         * the account's real prior state and write it to the directory.
+         */
+        readAccountState: async (externalUserId: string): Promise<ProvisionRead> => ({
+            kind: 'refused',
+            detail:
+                `The snapshot provisioner cannot read the live state of ${externalUserId} in ` +
+                `${provider}: it reads a stored enumeration, which is not the directory. No ` +
+                `capture means no enable — a write whose prior state is unknown is the one this ` +
+                `journal exists to prevent.`,
+        }),
+        enableAccount: async (
+            externalUserId: string,
+            _prior: Record<string, unknown>,
+        ): Promise<ProvisionStep> => ({
             kind: 'refused',
             detail:
                 `The snapshot provisioner cannot enable ${externalUserId}: no write path to ` +

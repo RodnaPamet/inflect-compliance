@@ -70,6 +70,7 @@ import type {
     CreateAccountStep,
     DirectoryProvisioner,
     IdentifierProbe,
+    ProvisionRead,
     ProvisionStep,
 } from '@/app-layer/integrations/identity-provisioner';
 import { adDirectionWriteRefusal } from './write-direction';
@@ -418,7 +419,86 @@ export function createActiveDirectoryProvisioner(
             }
         },
 
-        async enableAccount(externalUserId: string): Promise<ProvisionStep> {
+        /**
+         * Capture `userAccountControl` before the enable touches it — #2840.
+         *
+         * This exists because the enable below is a READ-MODIFY-WRITE and not a
+         * replace, and a read-modify-write needs somewhere honest to put the
+         * value it read. That somewhere is the journal row, which is why the
+         * capture is its own call: `beginWrite` commits the prior state BEFORE
+         * the write is attempted, and a method that read and wrote together
+         * could never satisfy that ordering.
+         *
+         * `indeterminate` when the search itself fails, `refused` when the
+         * account does not resolve. The difference is not pedantry: a failed
+         * search means we do not know the account's state, and recording "not
+         * found" for an account we simply could not look at would let a later
+         * restore act on a fact nobody established.
+         */
+        async readAccountState(externalUserId: string): Promise<ProvisionRead> {
+            const c = await session();
+            const dn = await dnFor(externalUserId);
+            if (!dn) {
+                return {
+                    kind: 'refused',
+                    detail: `No single account resolved for ${externalUserId} under ${baseDN}.`,
+                };
+            }
+            try {
+                const { searchEntries } = await c.search(baseDN, {
+                    scope: 'sub',
+                    filter: objectGuidFilter(externalUserId),
+                    attributes: ['userAccountControl'],
+                });
+                if (searchEntries.length !== 1) {
+                    return {
+                        kind: 'indeterminate',
+                        detail:
+                            `Reading userAccountControl for ${externalUserId} returned ` +
+                            `${searchEntries.length} entries, so the account's prior state is ` +
+                            'unknown. Refusing to enable from a state nobody read.',
+                    };
+                }
+                const raw = searchEntries[0].userAccountControl;
+                const uac = Number(raw);
+                if (!Number.isFinite(uac)) {
+                    return {
+                        kind: 'indeterminate',
+                        detail:
+                            `userAccountControl for ${externalUserId} did not parse as a number, ` +
+                            'so there is no value to clear a bit from.',
+                    };
+                }
+                return { kind: 'read', priorState: { userAccountControl: uac } };
+            } catch (err) {
+                return classifyProvisionFailure(err, `reading prior state for ${dn}`);
+            }
+        },
+
+        /**
+         * Unblock sign-in by CLEARING THE DISABLE BIT, not by replacing the word.
+         *
+         * Until #2840 this replaced `userAccountControl` with the literal
+         * `UAC_NORMAL_ACCOUNT` (0x200). That destroys every other flag on the
+         * account — `PASSWORD_NEVER_EXPIRES`, `SMARTCARD_REQUIRED`,
+         * `DONT_EXPIRE_PASSWORD`, anything a GPO or an administrator set — and
+         * because nothing captured the prior value first, there was no record
+         * to restore them from. The account came back usable and quietly
+         * differently configured.
+         *
+         * The leaver writer already refuses that shape in this codebase, in as
+         * many words: an unconditional replace "silently reverts every other bit
+         * that changed since the read". This is the same verb one direction
+         * along, and it now behaves the same way.
+         *
+         * The prior value comes from `readAccountState` rather than a read here,
+         * so the number in the journal and the number this arithmetic is applied
+         * to are the same number.
+         */
+        async enableAccount(
+            externalUserId: string,
+            prior: Record<string, unknown>,
+        ): Promise<ProvisionStep> {
             const c = await session();
             if (!c.modify) return { kind: 'refused', detail: 'This LDAP client cannot modify entries.' };
             const dn = await dnFor(externalUserId);
@@ -428,15 +508,44 @@ export function createActiveDirectoryProvisioner(
                     detail: `No single account resolved for ${externalUserId} under ${baseDN}.`,
                 };
             }
+
+            // Fail CLOSED on a capture that is missing or unusable. An enable
+            // that invents a base value is the unconditional replace wearing a
+            // read-modify-write's clothes.
+            const priorUac = Number(prior.userAccountControl);
+            if (!Number.isFinite(priorUac)) {
+                return {
+                    kind: 'refused',
+                    detail:
+                        `Refusing to enable ${dn} without a captured userAccountControl. Without ` +
+                        'it there is no value to clear the disable bit FROM, and the only ' +
+                        'alternative — replacing the whole word — silently discards every other ' +
+                        'flag on the account with nothing journalled to restore them from.',
+                };
+            }
+
+            const next = priorUac & ~UAC_ACCOUNTDISABLE;
+            if (next === priorUac) {
+                // Already enabled. Saying so beats writing the same value and
+                // reporting a change that did not happen.
+                return {
+                    kind: 'applied',
+                    detail: `${dn} was already enabled (userAccountControl ${priorUac}); no write was needed.`,
+                };
+            }
+
             try {
                 await c.modify(dn, [
                     {
                         operation: 'replace',
                         type: 'userAccountControl',
-                        values: [String(UAC_NORMAL_ACCOUNT)],
+                        values: [String(next)],
                     },
                 ]);
-                return { kind: 'applied' };
+                return {
+                    kind: 'applied',
+                    detail: `Cleared ACCOUNTDISABLE on ${dn}: ${priorUac} → ${next}.`,
+                };
             } catch (err) {
                 return classifyProvisionFailure(err, `enabling ${dn}`);
             }
