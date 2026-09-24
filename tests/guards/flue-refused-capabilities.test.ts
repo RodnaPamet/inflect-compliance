@@ -283,6 +283,18 @@ describe('the detector fires — on every shape the real code could take', () =>
         );
     });
 
+    it('catches the sandbox filesystem READ tools, not only the writers', () => {
+        // The list held `createWriteTool` and `createEditTool` on the stated
+        // argument that they "operate on the sandbox filesystem, so they are
+        // inert without a sandbox and a live danger with one" — while the
+        // readers, same package and same `(env: Sandbox)` signature, were
+        // absent. A read tool over a sandbox filesystem is an exfiltration
+        // surface, not a lesser write.
+        for (const name of ['createReadTool', 'createGrepTool', 'createGlobTool']) {
+            expect(detects(`import { ${name} } from '@flue/runtime';`)).toEqual([name]);
+        }
+    });
+
     it('catches a named import from a REFUSED PACKAGE, whatever it is called', () => {
         // `@flue/postgres` is refused whole. Its exports are not in the name
         // list and never should be, so the clause scan matched nothing:
