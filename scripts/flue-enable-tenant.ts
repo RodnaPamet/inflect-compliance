@@ -44,6 +44,7 @@ import { setAgentDriverSetting } from '@/app-layer/usecases/agent-driver-setting
 import { getFlueWiringState } from '@/app-layer/usecases/flue-wiring';
 import { createApiKey, revokeApiKey } from '@/app-layer/usecases/api-keys';
 import { grantAgentTool, listAgentTools } from '@/app-layer/usecases/agent-tool-exposure';
+import { resumeWorkflowRun } from '@/app-layer/usecases/workflow-runs';
 import { runKillSwitchDrillJob } from '@/app-layer/jobs/agent-kill-switch-drill';
 
 const TENANT_ID = 'cmo94mi360000fvnl1fv9ca9t';   // inflect-ltd-mo94mi34
@@ -330,6 +331,50 @@ async function conclusions() {
     console.log(`\n(${rows.length} decision rows, ${rows.filter((r) => r.outputSummary).length} carrying a conclusion)`);
 }
 
+/**
+ * Finish a run a DEPLOY interrupted.
+ *
+ * `pauseInFlightRuns` parks in-flight runs on SIGTERM rather than letting them
+ * die mid-dispatch, so a Watchtower recreate lands them in PAUSED with a
+ * resume affordance. The reaper never touches PAUSED — correct for a run
+ * waiting on a human, and it means a deploy-paused run waits for someone to
+ * notice.
+ *
+ * RESUME, NOT ABORT, and the difference is a fact in the regulator's record:
+ * `abortWorkflowRun` stamps the run's decision rows PENDING -> REJECTED
+ * because "a human stopping a run refuses what it decided". Nobody refused
+ * this one; a deploy landed on it. Aborting would tidy a list by writing
+ * something untrue into an Art 14 trail.
+ *
+ * ── AND A RESUME HAS A SHELF LIFE ───────────────────────────────────────────
+ *
+ * Measured 2026-09-24: resuming a run parked ~3.6 hours earlier settled it
+ * FAILED, not COMPLETED —
+ *
+ *     Run halted at its RUNTIME_MS cap of 3600000 (set by the ENGINE).
+ *     12847343 already spent; 0 more asked for and NONE granted.
+ *
+ * `WALL_CLOCK_MS` is measured from the run's ORIGINAL start and keeps
+ * counting while it sits PAUSED, so past 60 minutes a deploy-paused run can
+ * only be failed. The runs list still offers a resume affordance, and it is
+ * guaranteed to produce FAILED. That is the engine's cap working exactly as
+ * written; whether a PAUSE should stop the clock is a design question nobody
+ * has answered, and this is the note for whoever does.
+ */
+async function resumePaused() {
+    const ctx = await ownerContext();
+    const paused = await prisma.workflowRun.findMany({
+        where: { tenantId: TENANT_ID, status: 'PAUSED' },
+        select: { id: true, workflowKey: true, driver: true, stepCount: true },
+    });
+    if (paused.length === 0) { console.log('resume: no PAUSED runs'); return; }
+    for (const r of paused) {
+        console.log(`  resuming ${r.id} (${r.workflowKey}, ${r.driver}, stepCount=${r.stepCount})`);
+        const out = await resumeWorkflowRun(ctx, r.id);
+        console.log(`    -> ${JSON.stringify(out)}`);
+    }
+}
+
 async function toggle() {
     const ctx = await ownerContext();
     console.log(`toggle: ${JSON.stringify(await setAgentDriverSetting(ctx, 'FLUE'))}`);
@@ -337,6 +382,7 @@ async function toggle() {
 
 const STEPS: Record<string, () => Promise<void>> = {
     status, drill, register, assess, activate, key, grant, toggle, conclusions,
+    'resume-paused': resumePaused,
     'revoke-broad-keys': revokeBroadKeys,
 };
 
