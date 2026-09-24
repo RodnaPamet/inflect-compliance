@@ -1,0 +1,29 @@
+-- The AI Act register kept its VERDICT and discarded its INPUTS.
+--
+-- `AiSystem` records the tier, the clause and a generated rationale. It did
+-- not record the four answers those were derived from — the Art 5 practice,
+-- the Annex I product-safety flag, the Annex III area, the Art 50
+-- transparency case — so the two states an auditor most needs to tell apart
+-- were indistinguishable on the row:
+--
+--     assessed, and no trigger applies
+--     nobody filled the questionnaire in
+--
+-- Both produce MINIMAL / Art.95 with a rationale reading "no prohibited
+-- practice, high-risk use-case, or transparency trigger identified" — wording
+-- that asserts an assessment whose evidence was not kept. Found on
+-- 2026-09-24 while registering the first real agent in production: the entry
+-- was authored with an empty questionnaire and the row said nothing about it.
+--
+-- NULLABLE WITH NO DEFAULT, deliberately. Back-filling `'{}'` would claim
+-- every existing entry answered four negatives; NULL says "this row predates
+-- the column, or was authored with no answers", which is the truth and is
+-- exactly the distinction the column exists to make.
+--
+-- Not added to `encrypted-fields.ts`: the payload is closed-vocabulary enum
+-- ids and a boolean about the SYSTEM, the same class as
+-- `classificationClauseId` which is likewise stored in clear so the register
+-- stays queryable. This model's free text (`purpose`, `useContext`) remains
+-- encrypted, which is where a describer would put personal data.
+
+ALTER TABLE "AiSystem" ADD COLUMN "classificationAnswersJson" JSONB;

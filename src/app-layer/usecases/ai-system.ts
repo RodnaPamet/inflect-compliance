@@ -13,6 +13,7 @@
 import { assertCanRead, assertCanWrite } from '../policies/common';
 import { runInTenantContext } from '@/lib/db-context';
 import type { PrismaTx } from '@/lib/db-context';
+import { Prisma } from '@prisma/client';
 import { notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { logEvent } from '../events/audit';
@@ -100,6 +101,27 @@ export async function authorAiSystemEntry(
         riskTier: classification.tier,
         classificationClauseId: classification.clauseId,
         classificationRationale: classification.rationale,
+        // THE INPUTS, BESIDE THE VERDICT THEY PRODUCED.
+        //
+        // Keyed on whether the questionnaire was ANSWERED, not on what it
+        // answered. `ClassificationAnswersSchema` carries `.default({})`, so
+        // an absent questionnaire arrives here as `{}` and an explicit "no
+        // triggers apply" arrives as four present keys holding nulls — which
+        // means the distinction lives in the KEYS, and flattening it to
+        // "are all the values empty?" would erase exactly the fact the column
+        // exists to record.
+        //
+        // `Prisma.DbNull`, NOT `null` and NOT `Prisma.JsonNull`. For a
+        // nullable Json column Prisma separates the SQL NULL from the JSON
+        // value `null`, and they are two more states that look alike: DbNull
+        // leaves the column empty ("no questionnaire"), JsonNull would store
+        // the literal `null` AS the answers — an entry claiming its
+        // questionnaire was answered with nothing. That is the same
+        // distinction this column exists to make, one layer down.
+        classificationAnswersJson:
+            Object.keys(parsed.classification ?? {}).length > 0
+                ? (parsed.classification as Prisma.InputJsonValue)
+                : Prisma.DbNull,
         ownerUserId: parsed.ownerUserId ?? null,
     });
 

@@ -95,6 +95,14 @@ export class AiSystemRepository {
             riskTier: AiRiskTier;
             classificationClauseId: string;
             classificationRationale: string;
+            /**
+             * The answers the tier was derived from, or NULL when the
+             * questionnaire was not answered at all. See the column's own
+             * comment: the difference between `null` and an object is the
+             * difference between "nobody assessed this" and "assessed, and
+             * these were the answers".
+             */
+            classificationAnswersJson: Prisma.InputJsonValue | typeof Prisma.DbNull;
             ownerUserId: string | null;
         },
     ) {

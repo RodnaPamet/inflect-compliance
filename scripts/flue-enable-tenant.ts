@@ -302,13 +302,41 @@ async function revokeBroadKeys() {
     console.log(`revoke: ${broad.length} broad revoked, ${narrow} narrow key(s) remain live`);
 }
 
+/**
+ * What the runs actually CONCLUDED.
+ *
+ * Read through Prisma rather than psql: `outputSummary` is encrypted at rest
+ * (the `v2:` prefix), so a raw SQL select returns ciphertext and a reader who
+ * does not notice will report the column as empty. The decryption is the
+ * middleware's, and this is the cheapest surface that has it.
+ *
+ * The settled text is on the LAST turn of each run; earlier turns carry NULL
+ * by design, so a run shows one conclusion however many model calls it made.
+ */
+async function conclusions() {
+    const rows = await prisma.aiDecisionLog.findMany({
+        where: { tenantId: TENANT_ID, feature: { startsWith: 'agentic-run' } },
+        orderBy: { createdAt: 'asc' },
+        select: {
+            createdAt: true, model: true, sessionRef: true,
+            tokensIn: true, tokensOut: true, latencyMs: true, outputSummary: true,
+        },
+    });
+    for (const r of rows) {
+        if (!r.outputSummary) continue;   // an intermediate turn, not a conclusion
+        console.log(`\n── run ${r.sessionRef} · ${r.model} · ${r.tokensIn}in/${r.tokensOut}out · ${r.latencyMs}ms`);
+        console.log(r.outputSummary);
+    }
+    console.log(`\n(${rows.length} decision rows, ${rows.filter((r) => r.outputSummary).length} carrying a conclusion)`);
+}
+
 async function toggle() {
     const ctx = await ownerContext();
     console.log(`toggle: ${JSON.stringify(await setAgentDriverSetting(ctx, 'FLUE'))}`);
 }
 
 const STEPS: Record<string, () => Promise<void>> = {
-    status, drill, register, assess, activate, key, grant, toggle,
+    status, drill, register, assess, activate, key, grant, toggle, conclusions,
     'revoke-broad-keys': revokeBroadKeys,
 };
 
