@@ -662,6 +662,30 @@ export async function runGuardedTool(
     // then guards each item again and can quarantine it on its own.
     review.check(injected, name, 'result', toolCallId);
 
+    // ── 3. The RESULT, on its way OUT to the model provider ─────────────────
+    //
+    // A different question from the injection scan above, and the one that was
+    // missing. `guardUntrustedInput` asks "is someone steering the model with
+    // this text"; `guardEgress` asks "is there a secret in it". A tenant Risk
+    // description carrying an API key passes the first and fails the second,
+    // and this text is on its way to a third-party model provider.
+    //
+    // The egress slice earlier in this function scans the ARGS, and the
+    // comment above says it protects the QUEUE. Nothing scanned the text
+    // travelling in the other direction, so the run's own reads were the one
+    // outbound path with no secret scan on it — while `gatherGrounding` in the
+    // questionnaire usecase egress-scans exactly this class of content, and
+    // ships only evidence TITLES for the same reason.
+    //
+    // Recorded under the same 'result' slice: both verdicts are about the same
+    // text, and the ledger already folds every verdict for one `toolCallId`
+    // into the worst seen, so a step whose result was flagged either way reads
+    // as flagged.
+    const leaking = await guardEgress(ctx, text, {
+        source: `flue-tool-result-egress:${name}:${toolCallId}`,
+    });
+    review.check(leaking, name, 'result', toolCallId);
+
     return text;
 }
 

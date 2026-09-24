@@ -122,3 +122,63 @@ describe('only the reasoning engine goes to the worker', () => {
         expect(payload).not.toMatch(/fromSeq/);
     });
 });
+
+describe('the RESUME door goes to the worker too', () => {
+    // `functionBodyOf` CANNOT be used here, and the reason is worth recording:
+    // it mis-bounds on a return type containing braces, and
+    // `resumeWorkflowRun` returns `Promise<{ status: string; stepFailures:
+    // number }>`. It hands back 136 characters — the signature — so every
+    // `toContain` below would have been asserted against a string that holds
+    // none of the function, failing for a reason unrelated to the claim.
+    const src = read(USECASE);
+    const from = src.indexOf('export async function resumeWorkflowRun');
+    const rest = src.slice(from + 1);
+    const nextTop = rest.indexOf('\nexport async function ');
+    const resume = nextTop === -1 ? rest : rest.slice(0, nextTop);
+
+    it('the slice is the function — otherwise every assertion below is vacuous', () => {
+        // The denominator. A slice that missed would make the rest of this
+        // describe pass or fail on nothing, which is exactly the failure the
+        // note above describes.
+        expect(from).toBeGreaterThan(-1);
+        expect(resume).toContain('resumedFrom');
+        expect(resume).toContain('executeFrom(');
+        expect(resume.length).toBeGreaterThan(2000);
+    });
+
+    it('enqueues a flue resume instead of running it in the request', () => {
+        // `startWorkflowRun` moved the reasoning loop to the worker and said
+        // why — "never the web tier", and the worker is where the shutdown
+        // drain lives. This path branched on the driver for the register gate
+        // and then called `executeFrom` inline regardless, so a human approval
+        // ran the whole model loop inside a Next.js POST handler.
+        expect(resume).toMatch(/resumeDriver === 'flue'/);
+        expect(resume).toContain("enqueue('agent-run-execute'");
+    });
+
+    it('persists the resume point before handing off', () => {
+        // The worker resumes from `row.stepCount`; this path computed
+        // `resumedFrom + 1` and passed it as an argument, which does not
+        // survive the hop. Writing it is what makes the two the same number.
+        const handoff = resume.slice(resume.indexOf("resumeDriver === 'flue'"));
+        expect(handoff).toContain('stepCount: resumedFrom + 1');
+        expect(handoff.indexOf('stepCount: resumedFrom + 1')).toBeLessThan(
+            handoff.indexOf("enqueue('agent-run-execute'"),
+        );
+    });
+
+    it('still resumes a static run inline', () => {
+        // Same argument the start path makes: a bounded walk with no model
+        // call in it is finished well inside a request, and moving it would
+        // change the contract of every existing run.
+        expect(resume).toContain('await executeFrom(');
+    });
+
+    it('enqueues the ids only, never a resume index', () => {
+        // A payload-carried `fromSeq` is how a retry re-executes a committed
+        // step. The ledger is the only honest source — which is why the seq is
+        // written to the ROW above rather than put in the message.
+        const payload = resume.slice(resume.indexOf("enqueue('agent-run-execute'"));
+        expect(payload.slice(0, 200)).not.toMatch(/fromSeq/);
+    });
+});

@@ -17,7 +17,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, commentsOf } from '../helpers/source-blocks';
 
 import {
     DIGITAL_SOVEREIGNTY_ASSESSMENT,
@@ -34,10 +34,13 @@ const readRaw = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 // codeOf() masks comments at the READ SEAM (#2246) — masking is the DEFAULT so
 // a new assertion inherits it, rather than each call site having to remember.
 // `.json` is read raw (it has no comments, and a `//` inside a string is a URL).
+const read = (rel: string) => codeOf(readRaw(rel));
 // The ONE assertion that is deliberately about prose — the attribution +
 // not-legal-advice banner in the digital-sovereignty docblock — calls
-// `readRaw` explicitly, which is what makes that intent visible.
-const read = (rel: string) => codeOf(readRaw(rel));
+// `readComments`, the INVERSE mask (#2246). It read RAW until then, which
+// made "the disclaimer is written down" satisfiable by a disclaimer written
+// into any string literal in the file; `codeOf` would delete it outright.
+const readComments = (rel: string) => commentsOf(readRaw(rel));
 
 const DATA = 'src/data/self-assessments/digital-sovereignty.ts';
 const SCORING = 'src/lib/self-assessments/scoring.ts';
@@ -96,10 +99,10 @@ describe('Digital Sovereignty self-assessment bank', () => {
     });
 
     it('positions itself as a self-assessment aid, not legal advice', () => {
-        // DELIBERATELY raw: the attribution + disclaimer live in the file's
-        // docblock, so this is one of the few assertions that is ABOUT a
-        // comment. Masking would (correctly) empty it — see the seam note.
-        const src = readRaw(DATA);
+        // Bound to the COMMENTS: the attribution + disclaimer live in the
+        // file's docblock, so this is one of the few assertions that is ABOUT
+        // a comment. `codeOf` would (correctly) empty it — see the seam note.
+        const src = readComments(DATA);
         expect(src).toMatch(/not legal advice/i);
         // Attribution to the source model is present.
         expect(src).toMatch(/Digital-?Sovereignty-?Assessment-?Tool/i);

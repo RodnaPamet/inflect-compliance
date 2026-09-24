@@ -5,7 +5,7 @@ import type { RequestContext } from '@/app-layer/types';
 import type { WorkflowDefinition } from '@/lib/agentic/workflow-types';
 import type { RunDriverOutcome } from '@/lib/agentic/drivers/types';
 import { recordStep } from '@/lib/agentic/drivers/step-recorder';
-import { updateRun, failRun, haltRunAtCap, haltRunAtGuard } from '@/lib/agentic/drivers/run-settlement';
+import { updateRun, failRun, haltRunAtCap, haltRunAtGuard, haltRunAtKill } from '@/lib/agentic/drivers/run-settlement';
 import { getRunRow, proposedItemsSoFar } from '@/lib/agentic/drivers/run-store';
 import { latchOnGuardBlock } from '@/lib/agentic/circuit-breaker-store';
 import { isProposeTool, proposedItemCount } from '@/lib/mcp/tools/propose-tools';
@@ -24,6 +24,8 @@ import { recordModelDecision } from './model-decision';
 import { flueModelIsRegistered } from './providers';
 import { refusalMessage } from './driver-plan';
 import { bindRun, releaseRun } from './run-binding';
+import { resolveKillState, killRefusalMessage, KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
+import { recordAgentKillRefusal } from '@/lib/observability/integration-metrics';
 import { ensureFlueRuntime } from './runtime-start';
 import {
     flueToolsFor,
@@ -159,6 +161,35 @@ export async function executeFlueRun(
     // as a stream error, mid-run, with the run row already created and an
     // agent already dispatched — where here it is a named refusal naming the
     // configuration gap.
+    // ── THE KILL SWITCH, BEFORE ANYTHING IS SENT ANYWHERE ───────────────────
+    //
+    // `assertNotKilled` gates the TOOL boundary, which is the only place this
+    // was consulted. On this engine that is too late by one model call: with a
+    // switch engaged the run still booted the runtime, assembled the tenant's
+    // content into a prompt, sent it to the model provider and wrote its Art
+    // 12 decision row — and only a TOOL call it then tried to make was
+    // refused. A run that makes no tool call was never stopped at all.
+    //
+    // "No agent is running anywhere in this deployment" is what the platform
+    // refusal message promises an operator. A model call is the agent running.
+    //
+    // First, before `ensureFlueRuntime`, because booting the runtime and
+    // resolving the invocation are both work a killed run should not cause.
+    // Uncached for the reason `kill-switch.ts` gives: a kill state that lags by
+    // one execution cycle is this control failing at the moment it matters.
+    const kill = await resolveKillState(ctx.tenantId, ctx.agentId ?? null);
+    if (kill) {
+        // The drill drives the same gate against a canary id; its refusals must
+        // not be counted with real ones. Derived from the agent id rather than
+        // passed in, so no caller can mark a real refusal as a drill.
+        recordAgentKillRefusal({
+            scope: kill.scope,
+            drill: ctx.agentId === KILL_SWITCH_DRILL_AGENT_ID,
+        });
+        const status = await haltRunAtKill(ctx, runId, kill, killRefusalMessage(kill.scope));
+        return { status, stepFailures: 0 };
+    }
+
     const providers = await ensureFlueRuntime();
     if (!flueModelIsRegistered(modelSpecifier, providers)) {
         const status = await failRun(ctx, runId, refusalMessage('MODEL_NOT_REGISTERED'));
@@ -649,6 +680,26 @@ function wrapForLedger(
                     latch.halt = halt;
                     throw new Error(halt.message);
                 }
+            }
+
+            // AND THE WALL CLOCK, which is what makes the preflight's claim
+            // true. That comment says the per-tool charge "bounds how far
+            // past, since every subsequent tool call re-checks" — and until
+            // now no subsequent call re-checked anything but the counters.
+            // RUNTIME_MS was charged exactly once, before the dispatch, so a
+            // run that entered inside its wall clock could stay in a
+            // tool-calling loop indefinitely: the STEPS cap bounded how MANY
+            // calls it made, never how long they took.
+            //
+            // Zero units, because the clock has already spent whatever it has
+            // spent — `charge` reads `now() - startedAtMs` for this kind
+            // rather than a counter. That is exactly what the static driver
+            // does before every step, and this is this engine's equivalent
+            // moment: the last point before control leaves for a tool.
+            const runtimeHalt = budget.charge('RUNTIME_MS', 0);
+            if (runtimeHalt) {
+                latch.halt = runtimeHalt;
+                throw new Error(runtimeHalt.message);
             }
 
             // PROPOSALS is charged PER ITEM, not per call. `proposeArgs`

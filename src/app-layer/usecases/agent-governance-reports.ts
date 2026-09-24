@@ -62,6 +62,7 @@
  * the same defect the automation-bias module is about, one level up.
  */
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
+import { countTenantGuardBlocksInWindow } from '@/lib/agentic/circuit-breaker-store';
 import { badRequest } from '@/lib/errors/types';
 import { UNATTENDED_AUTONOMY } from '@/lib/agentic/agent-risk-scoring';
 import { KILL_SWITCH_DRILL_AGENT_ID } from '@/lib/agentic/kill-switch';
@@ -643,6 +644,23 @@ export async function buildIncidentHistoryReport(
     const window = resolveWindow(opts.windowDays);
 
     const loaded = await runInTenantContext(ctx, async (db) => {
+        // GUARD BLOCKS, the fourth stop control.
+        //
+        // Plan point 10 asks for "guard-block counts on /agents/reports", and
+        // this section already carries the other three — kills, breaker trips
+        // and spend against budget. Blocks were the one stop that stopped
+        // something and was never reported.
+        //
+        // Counted by the SAME rule the breaker latches on, so the report and
+        // the breaker cannot disagree about how many blocks a tenant took. A
+        // second count over one of the two populations is exactly how they
+        // would: a Flue block writes a step and no proposal, so a
+        // proposal-only census reads zero on a run the guard stopped.
+        const guardBlocks = await countTenantGuardBlocksInWindow(
+            db,
+            ctx.tenantId,
+            window.since,
+        );
         const [killRows, inForceRows, drillRows, breakerRows, agentRows] = await Promise.all([
             db.agentKillSwitch.findMany({
                 where: { tenantId: ctx.tenantId, engagedAt: { gte: window.since } },
@@ -684,7 +702,7 @@ export async function buildIncidentHistoryReport(
                 select: { id: true, name: true },
             }),
         ]);
-        return { killRows, inForceRows, drillRows, breakerRows, agentRows };
+        return { killRows, inForceRows, drillRows, breakerRows, agentRows, guardBlocks };
     });
 
     const nameById = new Map(loaded.agentRows.map((a) => [a.id, a.name]));
@@ -763,6 +781,11 @@ export async function buildIncidentHistoryReport(
         window,
         loaded.killRows.length >= HISTORY_ROW_CAP || loaded.drillRows.length >= HISTORY_ROW_CAP,
         {
+            // The fourth stop control. Counted over BOTH populations a block
+            // can land in — the proposal it quarantined, and the Flue step it
+            // stopped that produced no proposal at all — by the same rule the
+            // circuit breaker latches on.
+            'incidents.guard_blocks': measured(loaded.guardBlocks),
             'incidents.kill_engagements': measured(kills.length),
             'incidents.drill_canary_engagements': measured(drillCanaryKills.length),
             'incidents.kills_in_force_now': measured(inForceReal.length),

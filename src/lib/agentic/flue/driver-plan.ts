@@ -97,6 +97,14 @@ export function refusalMessage(reason: FlueStartRefusal): string {
                 'local AI gateway is configured, so the run cannot reason without leaving ' +
                 'the residency boundary. Set the gateway URL, or move the workspace to EXTERNAL.'
             );
+        case 'LOCAL_GATEWAY_NOT_SERVED':
+            return (
+                'flue_local_gateway_not_served: this workspace names its own local AI ' +
+                'gateway, and this deployment serves only the gateway it was started ' +
+                'with. Running would send the workspace\'s content to an endpoint it did ' +
+                'not nominate, which LOCAL_ONLY exists to prevent. Point the workspace at ' +
+                'the deployment gateway, or start the deployment against this one.'
+            );
         case 'LOCAL_MODEL_NOT_CONFIGURED':
             return (
                 'flue_local_model_not_configured: the local AI gateway is configured but ' +

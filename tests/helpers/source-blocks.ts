@@ -209,6 +209,261 @@ export function codeOf(src: string): string {
 }
 
 /**
+ * Keywords after which a `/` opens a REGEX LITERAL rather than a division.
+ * Used only by `commentsOf` — see `regexCanStartAt`.
+ */
+const REGEX_AFTER_KEYWORD: ReadonlySet<string> = new Set([
+    'return',
+    'typeof',
+    'instanceof',
+    'in',
+    'of',
+    'new',
+    'delete',
+    'void',
+    'case',
+    'do',
+    'else',
+    'yield',
+    'await',
+    'throw',
+]);
+
+/**
+ * Could the `/` at `slash` open a regex literal, rather than being a division
+ * operator or part of JSX?
+ *
+ * The classic JS lexing ambiguity, and the direction of the guess is chosen
+ * rather than inherited. Getting it wrong each way costs something different:
+ *
+ *   · calling a DIVISION a regex over-masks (the scan skips to the next `/`
+ *     on the line), which can swallow a real comment — a LOUD red, because
+ *     the assertion then declines to match;
+ *   · calling a REGEX a division lets its body be lexed as code, so a `//`
+ *     or `/*` inside it can surface as a comment — the SILENT failure this
+ *     whole function exists to prevent.
+ *
+ * So the bias is toward recognising regexes, with two exceptions taken for
+ * JSX, whose `/` is neither operator nor literal:
+ *
+ *   · `/>` — a self-closing tag. Without this, `<Foo bar={x} /> {/* note *\/}`
+ *     consumes `/> {/` as a "regex" and the JSX comment is lost.
+ *   · a `/` directly after `<` — a closing tag, `</div>`. Same failure.
+ *
+ * `}` is treated as DIVISION context, deviating from the usual heuristic
+ * (which allows a regex after a block's closing brace) for the same JSX
+ * reason: `{expr} />` is far commoner in this repo than `function f() {}
+ * /re/`. The residual risk is a regex literal written immediately after `}`
+ * whose body contains `//` or `/*` — named here rather than left implicit.
+ *
+ * THE `/>` TEST IS REDUNDANT TODAY, AND THAT IS SAID HERE BECAUSE IT WAS
+ * MEASURED RATHER THAN ASSUMED. Disabling it alone leaves the JSX case green,
+ * and so does disabling `}`-as-division alone; only disabling BOTH reddens it.
+ * The reason is that a self-closing tag's `/` always follows a tag name, an
+ * attribute value or a `}`, every one of which is already division context —
+ * so `/>` is belt-and-braces, and it is kept only as the rule that survives
+ * somebody relaxing the brace deviation above. Treat it as unproven by the
+ * suite, not as load-bearing.
+ *
+ * The `<` rule DOES stand alone: it is the only thing holding
+ * `</div> {/* … *\/}`, and disabling it reddens that case by itself.
+ */
+function regexCanStartAt(src: string, slash: number): boolean {
+    if (src[slash + 1] === '>') return false;
+    let j = slash - 1;
+    while (j >= 0 && /\s/.test(src[j])) j--;
+    if (j < 0) return true;
+    const ch = src[j];
+    if (ch === '<') return false;
+    if (ch === ')' || ch === ']' || ch === '}') return false;
+    if (ch === "'" || ch === '"' || ch === '`') return false;
+    if (/[A-Za-z0-9_$]/.test(ch)) {
+        let k = j;
+        while (k >= 0 && /[A-Za-z0-9_$]/.test(src[k])) k--;
+        return REGEX_AFTER_KEYWORD.has(src.slice(k + 1, j + 1));
+    }
+    return true;
+}
+
+/**
+ * Exclusive end of the regex literal opening at `slash`, or `-1` if the text
+ * from there is not one.
+ *
+ * A character class is tracked because an unescaped `/` is legal inside one
+ * (`/[/]/`), and that is precisely the shape that makes a regex body look
+ * like a comment opener. A newline ends the attempt with `-1` rather than
+ * running on: a regex literal cannot span a line, so this bounds the damage
+ * of a wrong guess to the line it was made on.
+ */
+function regexEnd(src: string, slash: number): number {
+    let i = slash + 1;
+    let inClass = false;
+
+    while (i < src.length) {
+        const c = src[i];
+        if (c === '\n') return -1;
+        if (c === '\\') {
+            if (src[i + 1] === '\n') return -1;
+            i += 2;
+            continue;
+        }
+        if (inClass) {
+            if (c === ']') inClass = false;
+            i++;
+            continue;
+        }
+        if (c === '[') {
+            inClass = true;
+            i++;
+            continue;
+        }
+        if (c === '/') {
+            i++;
+            while (i < src.length && /[a-z]/i.test(src[i])) i++;
+            return i;
+        }
+        i++;
+    }
+    return -1;
+}
+
+/**
+ * The INVERSE of `codeOf` — keep the COMMENTS, blank everything else.
+ * Offsets, length and line count unchanged, exactly like every other masker
+ * here.
+ *
+ * WHY THIS EXISTS. `codeOf` and the four extractors are comment-free BY
+ * CONSTRUCTION (see the file header), which is right for the assertions they
+ * were built for and leaves one population with no tool at all: the handful
+ * of guards that are DELIBERATELY about comment text — a CC BY 4.0
+ * attribution that the licence requires to live in the file header, a
+ * rationale docblock explaining a divergence, a module-contract header.
+ * `codeOf` deletes their subject, so those assertions had to read the WHOLE
+ * FILE RAW, and a raw read means a CODE occurrence can satisfy an assertion
+ * written to check "the rationale is written down". The needle is right; its
+ * reach was the whole file. This narrows the reach to the comments — which is
+ * what the assertion always meant — without touching the needle.
+ *
+ * FAIL-CLOSED ABOUT STRINGS, WHICH IS THE WHOLE DIFFICULTY. `codeOf` KEEPS
+ * string literals, so it never had to care that `const url = 'https://x'`
+ * contains `//`. The inverse does: a masker that let `//x` surface as comment
+ * text would make every assertion using it READ as bound while being
+ * satisfiable from code — strictly worse than the raw read it replaced,
+ * because the raw read at least looks like what it is. So the scan below
+ * consumes string and template literals whole and blanks them, and the same
+ * goes for regex literals (`regexCanStartAt` / `regexEnd`), whose bodies can
+ * legally contain `//` and `/*`.
+ *
+ * WHAT IS KEPT, precisely:
+ *   · `//` to end of line, delimiter included
+ *   · `/* … *\/`, delimiters included — JSDoc is just a block comment
+ * and nothing else. A `//` INSIDE a block comment is comment text and is
+ * kept; a `/*` inside one is comment text too, because JS block comments do
+ * NOT nest — the first `*\/` closes, which the scan reproduces rather than
+ * counting depth. (That is the opposite of `sqlCodeOf`, where Postgres DOES
+ * nest them.) An unterminated comment runs to EOF: over-keeping prose at the
+ * end of a malformed file, which cannot make an assertion pass that would
+ * otherwise fail on comment TEXT.
+ *
+ * A SECOND SCAN, DELIBERATELY, AND IT IS THE ONE THING HERE THAT DESERVES
+ * SUSPICION. The file header says both existing masks come from ONE
+ * `scanSpans` pass so they cannot disagree; this function does not use it.
+ * The reason is that `scanSpans` is documented as NOT recognising regex
+ * literals, and that limit is harmless for `codeOf` (a regex body mis-read as
+ * a comment is merely blanked — nobody is shown prose as code) while being
+ * exactly the fatal case for the inverse. Teaching `scanSpans` regexes would
+ * change `codeOf`'s output for every existing caller and therefore every
+ * sibling ratchet baseline in the repo. Measured rather than asserted: over
+ * the 5,303 `.ts`/`.tsx` files git lists, a regex-aware `scanSpans` changes
+ * `codeOf`'s output for 384 of them — 7% of the tree. Doing it is a
+ * defensible piece of work; doing it HERE would mean re-measuring every
+ * Class A/C/D baseline for a reason unrelated to this function.
+ *
+ * The two scans may therefore disagree, and the disagreement is bounded to
+ * the safe direction for THIS function: where `scanSpans` mis-reads a regex
+ * body as a comment, `codeOf` blanks those bytes and `commentsOf` blanks them
+ * too (as a regex), so they are visible in neither view — a gap, never a
+ * forgery. The converse — `codeOf` keeping a comment it failed to see (a
+ * stray apostrophe opening a bogus literal that swallows it) — is a
+ * pre-existing `codeOf` limit this function neither creates nor inherits.
+ *
+ * NO `mdProseOf` SIBLING, AND THAT IS A DECISION WITH A MEASUREMENT BEHIND IT.
+ * The obvious inverse of `mdCodeOf` would keep markdown prose and blank fences
+ * and code spans. It is NOT built. The only guard in the #2246 population that
+ * asserts on markdown prose is `ai-aisvs-hardening-coverage`, reading
+ * `docs/security/aisvs-self-assessment.md`, and one of its five sites is
+ * `expect(doc).not.toMatch(/L3[- ]verified/i)` — a NEGATIVE assertion whose
+ * correct reach genuinely is the whole document.
+ *
+ * The ordinary measurement cannot see the problem: that needle counts 0 raw
+ * and 0 through a prose mask, which is a passing measurement wearing a vacuous
+ * pass. So a positive control was planted instead — `L3-verified` written
+ * inside a fenced block at the end of the document. RAW sees it (1 match, the
+ * assertion correctly fails); a prose mask sees 0 and the assertion passes
+ * while the document claims exactly what it forbids. That is the whole
+ * argument, and it is a fact about the document rather than a preference.
+ *
+ * A masker whose first user must not use it is one nobody should write on
+ * spec. When a markdown-prose assertion turns up that is POSITIVE and about
+ * prose, this docblock is the argument for building it then.
+ */
+export function commentsOf(src: string): string {
+    const out: string[] = src.split('').map((c) => (c === '\n' ? '\n' : ' '));
+    const keep = (from: number, to: number) => {
+        for (let k = from; k < to && k < src.length; k++) out[k] = src[k];
+    };
+
+    let i = 0;
+    while (i < src.length) {
+        const ch = src[i];
+        const next = src[i + 1];
+
+        if (ch === '/' && next === '/') {
+            const nl = src.indexOf('\n', i);
+            const end = nl < 0 ? src.length : nl;
+            keep(i, end);
+            i = end;
+            continue;
+        }
+        if (ch === '/' && next === '*') {
+            const close = src.indexOf('*/', i + 2);
+            const end = close < 0 ? src.length : close + 2;
+            keep(i, end);
+            i = end;
+            continue;
+        }
+        // Literals are CONSUMED, not inspected: a `//` or `/* … *\/` inside
+        // one must never reach the comment branches above.
+        if (ch === "'" || ch === '"' || ch === '`') {
+            let j = i + 1;
+            while (j < src.length) {
+                if (src[j] === '\\') {
+                    j += 2;
+                    continue;
+                }
+                if (src[j] === ch) {
+                    j++;
+                    break;
+                }
+                j++;
+            }
+            i = j;
+            continue;
+        }
+        if (ch === '/' && regexCanStartAt(src, i)) {
+            const end = regexEnd(src, i);
+            if (end > 0) {
+                i = end;
+                continue;
+            }
+        }
+        i++;
+    }
+
+    return out.join('');
+}
+
+/**
  * The SQL sibling of `codeOf` — blank `--` line comments and `/* … *\/` block
  * comments in a `.sql` file, offsets and newlines unchanged.
  *

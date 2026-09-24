@@ -20,6 +20,9 @@
  * So the test that earns its place is `leaves another process's run alone`. A
  * drain that paused everything would satisfy every other assertion here.
  */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
@@ -32,6 +35,8 @@ import {
 } from '@/lib/agentic/in-flight-runs';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
+import { REPO_ROOT } from '../helpers/repo-files';
+import { functionBodyOf } from '../helpers/source-blocks';
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: DB_URL }) });
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -190,5 +195,54 @@ describe('the in-flight registry itself', () => {
         trackInFlightRun('a');
         inFlightRunIds().push('ghost');
         expect(inFlightRunIds()).toEqual(['a']);
+    });
+});
+
+describe('BOTH tiers install the drain, not just the one that had it', () => {
+    // The function above is only worth anything where it is CALLED, and it was
+    // called in one of the two processes that execute runs.
+    //
+    // `executeFrom` tracks every run through `trackInFlightRun` on both tiers,
+    // so the worker's register was populated and read by nobody:
+    // `scripts/worker.ts` closed BullMQ, quit Redis and drained OTel on
+    // SIGTERM, and never paused a run it was executing. #2824 made that live
+    // by routing Flue resumes to the worker.
+    //
+    // SLICED TO THE HANDLER, not read whole. A whole-file read is what
+    // `assertion-needle-uniqueness-ratchet` counts as un-analysable, and it is
+    // the weaker assertion anyway: the claim is about what each tier's
+    // SHUTDOWN PATH does, not about a string appearing somewhere in a file.
+    const bodyOf = (rel: string, fn: string) =>
+        functionBodyOf(readFileSync(path.join(REPO_ROOT, rel), 'utf8'), fn);
+
+    const webHandler = bodyOf('src/lib/observability/shutdown.ts', 'installShutdownHandlers');
+    const workerHandler = bodyOf('scripts/worker.ts', 'shutdown');
+
+    it('the slices are the handlers — otherwise the assertions below are vacuous', () => {
+        // `functionBodyOf` mis-bounds on a return type containing braces.
+        // Neither of these has one, and this is the check that says so.
+        expect(webHandler.length).toBeGreaterThan(200);
+        expect(workerHandler.length).toBeGreaterThan(200);
+        expect(workerHandler).toContain('shutdownTelemetry');
+    });
+
+    it('the web tier drains', () => {
+        expect(webHandler).toContain('pauseInFlightRuns(');
+    });
+
+    it('the worker drains too', () => {
+        expect(workerHandler).toContain('pauseInFlightRuns(');
+    });
+
+    it('the worker drains BEFORE it closes the queue', () => {
+        // `worker.close()` waits for the active job. A reasoning run is
+        // bounded by WALL_CLOCK_MS — an hour — and a deploy's grace period is
+        // seconds, so waiting does not save the run; pausing it does, and only
+        // while there is still time to write.
+        const drain = workerHandler.indexOf('pauseInFlightRuns(');
+        const close = workerHandler.indexOf('worker?.close()');
+        expect(drain).toBeGreaterThan(-1);
+        expect(close).toBeGreaterThan(-1);
+        expect(drain).toBeLessThan(close);
     });
 });

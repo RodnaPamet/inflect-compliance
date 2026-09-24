@@ -192,12 +192,17 @@ export async function startWorkflowRun(
     // did this run start under", and both answers stop being recoverable once
     // the configuration moves on.
     //
-    // Today every answer is `static`: `DRIVER_IMPLEMENTED.flue` is false, so
-    // even a tenant with both switches on falls back with a named reason. The
-    // decision is resolved and recorded anyway, and that is deliberate — a seam
-    // whose first exercise is the diff that also makes it load-bearing has
-    // never been observed working. This one is observable from the run's audit
-    // entry before it can change any behaviour.
+    // `DRIVER_IMPLEMENTED.flue` has been TRUE since #2770 flipped it. This
+    // comment said it was false — written when it was, and left behind when it
+    // stopped being — so a reader checking why every run came out `static`
+    // was sent to the wrong term. The answer is `static` because no registered
+    // WorkflowDefinition sets `driver`, and `selectRunDriver` requires the
+    // DEFINITION to request the engine, not merely the deployment to permit it.
+    //
+    // The decision is resolved and recorded regardless, and that is deliberate
+    // — a seam whose first exercise is the diff that also makes it
+    // load-bearing has never been observed working. This one is observable
+    // from the run's audit entry before it can change any behaviour.
     const driverDecision = await resolveDriverForRun(ctx.tenantId, {
         requestId: ctx.requestId,
         workflowKey,
@@ -499,6 +504,45 @@ export async function resumeWorkflowRun(
     // A run that sat at a checkpoint for a day has spent a day, and that is the
     // intended reading: `WALL_CLOCK_MS` is documented as "max wall-clock a run
     // may span (ACROSS RESUMES)".
+    // ── THE SECOND DOOR INTO THE ENGINE, AND IT WENT TO THE WEB TIER ────────
+    //
+    // `startWorkflowRun` enqueues a Flue run and says why: a reasoning loop
+    // "belongs in the worker, 'never the web tier'", and the worker is where
+    // the shutdown drain lives, which is what makes a SIGTERM mid-run
+    // survivable. This path branched on the driver for the register gate above
+    // and then called `executeFrom` inline regardless — so an approval ran the
+    // whole model loop inside a Next.js POST handler, bounded only by
+    // `WALL_CLOCK_MS`, with no drain behind it.
+    //
+    // The resume door is not the lesser one. A guard FLAG parks a Flue run at
+    // AWAITING_APPROVAL precisely so a human decides whether it continues, so
+    // this is the designed way a flagged run resumes reasoning.
+    //
+    // The static engine stays inline, for the reason the start path gives: a
+    // walk over a hand-written step array with no model call in it is bounded,
+    // deterministic and finished well inside a request, and moving it would
+    // change the contract of every existing run for no benefit.
+    if (resumeDriver === 'flue') {
+        // THE RESUME POINT, MADE DURABLE FIRST. The worker resumes from
+        // `row.stepCount`; this path had computed `resumedFrom + 1` and passed
+        // it as an argument, which does not survive the hop. Writing it is what
+        // makes the two the same number — without it a run that paused at a
+        // checkpoint would resume wherever the engine last persisted, which is
+        // not where this transaction just decided it should.
+        await runInTenantContext(ctx, (db) =>
+            db.workflowRun.update({
+                where: { id: runId },
+                data: { stepCount: resumedFrom + 1 },
+            }),
+        );
+        await enqueue('agent-run-execute', { tenantId: ctx.tenantId, runId });
+        // RUNNING, matching what `startWorkflowRun` returns for the same
+        // engine. The transaction above already wrote it; this reports it
+        // rather than synthesising a QUEUED the reaper and the list page would
+        // both have to learn.
+        return { status: 'RUNNING', stepFailures: 0 };
+    }
+
     const { status, stepFailures } = await executeFrom(
         // BOUND, not the bare human context — see the register gate above.
         execCtx,

@@ -16,7 +16,7 @@ import * as path from 'node:path';
 
 import { AgentDataAccessScope } from '@prisma/client';
 
-import { declaredStepFor, resolveStepTool } from '@/lib/agentic/run-step-view';
+import { declaredStepFor, resolveStepTool, stepDataScope, stepDeclaration } from '@/lib/agentic/run-step-view';
 import { baseDataScopeForTool } from '@/lib/mcp/tool-data-scope';
 import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import type { WorkflowStepDef } from '@/lib/agentic/workflow-types';
@@ -173,5 +173,90 @@ describe('which definition entry a recorded step may borrow from', () => {
 
     it('is safe when there is no definition at all', () => {
         expect(declaredStepFor(undefined, 0, 'READ')).toBeUndefined();
+    });
+});
+
+describe('stepDataScope — the rung a step REACHED, not its floor', () => {
+    // The timeline used `baseDataScopeForTool`, whose own docstring defines it
+    // as the MINIMUM. The seam that ENFORCES the rung is argument-aware
+    // (`dataScopeForToolCall` in authorize.ts), so the two disagreed exactly
+    // where an argument raises it — and the surface showed the lower number.
+    //
+    // On a governance surface, under-reporting what an agent reached is the
+    // one error that matters.
+
+    it('reports READ_TENANT_DATA when the raising argument was recorded', () => {
+        // `get_framework_status` is READ_METADATA at base and
+        // READ_TENANT_DATA with `frameworkKey`. framework-onboarding threads
+        // that key into it, so this is the shipped workflow, not an edge case.
+        expect(
+            stepDataScope('get_framework_status', JSON.stringify({ frameworkKey: 'soc2' })),
+        ).toBe('READ_TENANT_DATA');
+    });
+
+    it('reports the base rung when the argument is absent', () => {
+        // The positive control in the other direction: without the key the
+        // same tool really does only read the installable catalogue, and
+        // reporting TENANT_DATA there would over-report.
+        expect(stepDataScope('get_framework_status', JSON.stringify({ limit: 50 }))).toBe(
+            'READ_METADATA',
+        );
+    });
+
+    it('degrades to the base rung on an unparseable payload', () => {
+        // Not to null and not to the maximum: unreadable args are exactly the
+        // old behaviour, which is the safe direction for a display.
+        expect(stepDataScope('get_framework_status', 'not json')).toBe('READ_METADATA');
+        expect(stepDataScope('get_framework_status', null)).toBe('READ_METADATA');
+    });
+
+    it('answers null for a step that named no tool', () => {
+        // A synthesis or a checkpoint reaches no tenant data by construction,
+        // and a chip reading "NONE" would imply a rung was evaluated.
+        expect(stepDataScope(null, JSON.stringify({ frameworkKey: 'soc2' }))).toBeNull();
+    });
+});
+
+describe('stepDeclaration — the JOIN, which is the part #2774 lived in', () => {
+    // Its own fixture: `DEF` above is scoped to the describe that owns it.
+    const JOIN_DEF: WorkflowStepDef[] = [READ, CHECKPOINT, READ];
+    // `declaredStepFor` and `resolveStepTool` were each pinned and their
+    // COMPOSITION was not, so the run-detail page could be reverted to
+    // `def?.steps?.[seq]` with every test still green: the unit tests exercise
+    // the two functions, and the rendered timeline supplies `tool` and `label`
+    // as fixtures — it pins the client's rendering of whatever the server
+    // decided.
+
+    it('a MODEL_CALL claims NO tool and NO label, whatever sits at that index', () => {
+        // THE #2774 CASE. A Flue `seq` counts steps RECORDED and indexes
+        // nothing, so the definition's step 0 is not this step's declaration.
+        // Indexing it made a MODEL_CALL wear another step's tool name and a
+        // data-access claim about content it never touched.
+        expect(stepDeclaration(JOIN_DEF, 0, 'MODEL_CALL', null)).toEqual({
+            tool: null,
+            label: null,
+        });
+    });
+
+    it('a TOOL_CALL names the tool the COLUMN recorded, not the definition’s', () => {
+        expect(stepDeclaration(JOIN_DEF, 0, 'TOOL_CALL', 'list_risks')).toEqual({
+            tool: 'list_risks',
+            label: null,
+        });
+    });
+
+    it('a static step still takes its declaration from the definition', () => {
+        // The positive control. Without it the assertions above would pass
+        // under an implementation that returned nulls for everything, and the
+        // static engine's timeline would silently lose its labels.
+        const out = stepDeclaration(JOIN_DEF, 0, 'READ', null);
+        expect(out.tool).toBe('get_compliance_posture');
+        expect(out.label).toBe('posture');
+    });
+
+    it('a failed static step falls back to the declaration for its tool', () => {
+        // `resolveStepTool`'s rule: the column first, the definition only for
+        // the hole a failed step leaves.
+        expect(stepDeclaration(JOIN_DEF, 0, 'READ', null).tool).toBe('get_compliance_posture');
     });
 });
