@@ -250,13 +250,13 @@ describe('stepDeclaration — the JOIN, which is the part #2774 lived in', () =>
         // under an implementation that returned nulls for everything, and the
         // static engine's timeline would silently lose its labels.
         const out = stepDeclaration(JOIN_DEF, 0, 'READ', null);
-        expect(out.tool).toBe(JOIN_DEF[0].tool);
-        expect(out.label).toBe(JOIN_DEF[0].label);
+        expect(out.tool).toBe('get_compliance_posture');
+        expect(out.label).toBe('posture');
     });
 
     it('a failed static step falls back to the declaration for its tool', () => {
         // `resolveStepTool`'s rule: the column first, the definition only for
         // the hole a failed step leaves.
-        expect(stepDeclaration(JOIN_DEF, 0, 'READ', null).tool).toBe(JOIN_DEF[0].tool);
+        expect(stepDeclaration(JOIN_DEF, 0, 'READ', null).tool).toBe('get_compliance_posture');
     });
 });
