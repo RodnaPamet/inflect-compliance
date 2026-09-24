@@ -48,7 +48,14 @@ export async function runIdentityLeaverPassJob(
     if (!payload.tenantId || !payload.provider) {
         throw new Error('identity-leaver-pass requires tenantId + provider');
     }
-    return runIdentityLeaverPass({ tenantId: payload.tenantId, provider: payload.provider });
+    return runIdentityLeaverPass({
+        tenantId: payload.tenantId,
+        provider: payload.provider,
+        // Threaded rather than defaulted here: the pass decides what an absent
+        // requester MEANS (a genuine schedule), and deciding it in two places
+        // is how the two stop agreeing.
+        requestedByUserId: payload.requestedByUserId,
+    });
 }
 
 /** Fan-out: one leaver pass per (tenant, writable provider) with a live connection. */
