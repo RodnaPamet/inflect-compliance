@@ -124,13 +124,18 @@ export function coerceStoredDriverMode(
  * makes "the joiner is switched off" a different kind of nothing from "the
  * joiner does not exist".
  *
- * `flue` is false until the adapter lands. Until then both switches can be on
- * and the answer is still `static`, with `DRIVER_NOT_IMPLEMENTED` as the
- * reason — which is a far better state than a tenant flipping a toggle and
- * getting a run that half-executes on an engine that is not there.
+ * `flue` was false until the adapter landed, and #2770 moved the one line —
+ * in the diff that made it true, as designed. The paragraph that used to sit
+ * here still said the flag was false and outlived the change it described.
  *
- * ONE LINE MOVES when the adapter ships, and it moves in the diff that makes it
- * true.
+ * The VETO it guards is not dead. With any driver's flag false, both switches
+ * can be on and the answer is still `static`, with `DRIVER_NOT_IMPLEMENTED` as
+ * the reason — a far better state than a tenant flipping a toggle and getting
+ * a run that half-executes on an engine that is not there. That is the answer
+ * waiting for the NEXT engine someone declares ahead of implementing, and it
+ * is now exercised: `agent-driver-gate.test.ts` swaps the flag and asserts the
+ * refusal, which takes this file to 100% line and branch coverage. Before
+ * that, the return below was the one uncovered line in the module.
  */
 export const DRIVER_IMPLEMENTED: Readonly<Record<AgentDriver, boolean>> = {
     static: true,
