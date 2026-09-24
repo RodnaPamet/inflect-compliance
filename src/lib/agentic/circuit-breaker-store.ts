@@ -620,12 +620,12 @@ function guardBlockWhere(tenantId: string, since: Date, agentId?: string) {
         proposals: {
             tenantId,
             ...(agentId ? { agentId } : {}),
-            guardVerdict: 'QUARANTINED',
+            guardVerdict: 'QUARANTINED' as const,
             createdAt: { gte: since },
         },
         steps: {
             tenantId,
-            guardVerdict: 'QUARANTINED',
+            guardVerdict: 'QUARANTINED' as const,
             // `at`, the step's own stamp — not the run's `startedAt`. A run
             // that began before this window and was blocked inside it was
             // blocked inside it.
@@ -648,11 +648,18 @@ export async function countTenantGuardBlocksInWindow(
     since: Date,
 ): Promise<number> {
     const where = guardBlockWhere(tenantId, since);
-    const [proposalBlocks, stepBlocks] = await Promise.all([
+    // Named apart from the per-agent counter's locals ON PURPOSE.
+    // `flue-guard-outcome-has-arms` reads `return proposalBlocks + stepBlocks`
+    // as its proof that BOTH populations are counted, and that needle only
+    // proves anything while it names one place. Reusing the same two
+    // identifiers here made it match two, so deleting either population from
+    // the per-agent counter would have left that guard green —
+    // `assertion-needle-uniqueness-ratchet` caught it at +1.
+    const [tenantProposalBlocks, tenantStepBlocks] = await Promise.all([
         db.agentProposal.count({ where: where.proposals }),
         db.workflowStep.count({ where: where.steps }),
     ]);
-    return proposalBlocks + stepBlocks;
+    return tenantProposalBlocks + tenantStepBlocks;
 }
 
 export async function countGuardBlocksInWindow(

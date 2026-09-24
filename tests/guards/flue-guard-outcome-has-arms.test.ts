@@ -168,7 +168,18 @@ describe('the circuit breaker can see a Flue block', () => {
         // number through its tenant-scoped one — hence `db.` rather than
         // `prisma.` here. The third needle is what keeps the extraction
         // honest: with the helper unused, the two above would still pass.
-        expect(breakerSrc).toContain('db.workflowStep.count(');
+        // SCOPED TO THE PER-AGENT COUNTER, not the whole file. A tenant-wide
+        // counter now lives beside this one and also counts steps, so a
+        // whole-file needle became satisfiable by the neighbour: deleting the
+        // step population from THIS function would have left the assertion
+        // green. `assertion-needle-uniqueness-ratchet` caught it at +1.
+        //
+        // `functionBodyOf` bounds correctly here because the return type is
+        // `Promise<number>` — it mis-bounds on a return type containing
+        // braces, which is why it is not used for every slice in this file.
+        const perAgentCounter = functionBodyOf(breakerSrc, 'countGuardBlocksInWindow');
+        expect(perAgentCounter).toContain('db.workflowStep.count(');
+        expect(perAgentCounter).toContain('db.agentProposal.count(');
         expect(breakerSrc).toContain('const blocksInWindow = proposalBlocks + stepBlocks;');
         expect(breakerSrc).toContain(
             'await countGuardBlocksInWindow(prisma, tenantId, agentId, since)',
