@@ -5210,6 +5210,29 @@
       "recentActivity": "Recent sync activity",
       "activityEmpty": "No SharePoint activity yet."
     },
+    "flue": {
+      "title": "Flue agent engine",
+      "description": "Run agentic workflows on the Flue reasoning engine instead of the static step-walker. Six terms have to agree; until they all do, every run executes on the static engine and succeeds, so nothing else would tell you.",
+      "statusReady": "Ready",
+      "statusBlocked": "Not wired",
+      "optIn": "Opt this workspace in",
+      "optOut": "Opt out",
+      "saveFailed": "Could not change the engine for this workspace.",
+      "runsOnFlue": "Runs in this workspace execute on the Flue engine.",
+      "runsOnStatic": "Runs still execute on the static engine — waiting on: {term}.",
+      "operatorTerm": "Set on the deployment",
+      "fix": "Set up →",
+      "count": "{count} available",
+      "boundKeyNote": "A Flue run must be started by an API key bound to an active agent — a browser session carries no agent identity, so a Flue run cannot be started from the runs page by hand.",
+      "term": {
+        "ENV": "The deployment allows the Flue engine",
+        "TENANT": "This workspace has opted in",
+        "BUILD": "This build ships a Flue implementation",
+        "WORKFLOW": "A workflow asks for the Flue engine",
+        "REGISTERED_AGENT": "An active, risk-assessed agent is registered",
+        "BOUND_KEY": "A live API key is bound to that agent"
+      }
+    },
     "integrations": {
       "title": "Integrations",
       "loadFailed": "Failed to load integrations",

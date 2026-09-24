@@ -15,6 +15,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { getWorkflowDefinition, listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
+import { selectRunDriver } from '@/lib/agentic/drivers';
 import { READ_TOOLS } from '@/lib/mcp/tools/registry';
 import { PROPOSE_TOOLS } from '@/lib/mcp/tools/propose-tools';
 import { codeOf } from '../helpers/source-blocks';
@@ -87,6 +88,62 @@ describe('Canned workflows — human-in-the-loop before any write completes', ()
             const last = def.steps[def.steps.length - 1];
             expect(last.kind).toBe('SYNTHESIS');
             expect(def.steps.some((s) => s.kind === 'HUMAN_CHECKPOINT')).toBe(true);
+        }
+    });
+});
+
+/**
+ * WHICH ENGINE THE SHIPPED WORKFLOWS ASK FOR.
+ *
+ * `selectRunDriver` intersects the definition's request with what the
+ * deployment permits, so a registry in which NO definition asks for flue makes
+ * the Flue engine unreachable — the operator switch, the tenant toggle and
+ * `DRIVER_IMPLEMENTED.flue` can all be on and every run still executes on the
+ * static engine. That was the state of this repo until `posture-review`, and
+ * it is invisible from any of the three switches.
+ *
+ * So the claim is asserted through `selectRunDriver` rather than by reading
+ * `def.driver`: reading the field would pass on a definition the selector
+ * could still never choose.
+ */
+describe('the Flue engine is reachable from the shipped registry', () => {
+    const asksForFlue = listWorkflowDefinitions().filter((d) => d.driver === 'flue');
+
+    it('at least one shipped definition asks for it, and the selector chooses it', () => {
+        expect(asksForFlue.map((d) => d.key)).not.toEqual([]);
+        for (const def of asksForFlue) {
+            expect(selectRunDriver(def, 'flue').driver).toBe('flue');
+        }
+    });
+
+    it('a definition that asks for flue still resolves to static where it is not permitted', () => {
+        // The other direction, and the one that makes the request safe to
+        // ship: a definition is configuration, not an authority. Every
+        // deployment that has not enabled Flue runs these on the static
+        // engine.
+        for (const def of asksForFlue) {
+            expect(selectRunDriver(def, 'static').driver).toBe('static');
+        }
+    });
+
+    it('the workflows that do NOT ask are untouched by the request', () => {
+        // Adding the engine must not have re-pointed a workflow anyone already
+        // depends on. Flue does not walk the declared steps, so flagging an
+        // existing definition would change what it does.
+        const untouched = listWorkflowDefinitions()
+            .filter((d) => d.driver !== 'flue')
+            .map((d) => d.key)
+            .sort();
+        expect(untouched).toEqual(['audit-prep', 'diagnostic', 'framework-onboarding']);
+    });
+
+    it('every flue-requesting workflow is READ-ONLY', () => {
+        // The first engine to execute a production run cannot queue a
+        // proposal. A PROPOSE step here would also need a parking mechanism
+        // the Flue path does not take from the step list — see the header of
+        // `workflows/posture-review.ts`.
+        for (const def of asksForFlue) {
+            expect(def.steps.filter((s) => s.kind === 'PROPOSE')).toEqual([]);
         }
     });
 });

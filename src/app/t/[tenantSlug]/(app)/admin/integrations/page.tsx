@@ -30,6 +30,7 @@ import { buttonVariants } from '@/components/ui/button-variants';
 import { cn } from '@/lib/cn';
 import { useTranslations } from 'next-intl';
 import { SharePointCard } from './SharePointCard';
+import { FlueEngineCard } from './FlueEngineCard';
 import { ConnectionHealthPanel } from './ConnectionHealthPanel';
 
 interface ConnectionDTO {
@@ -418,6 +419,15 @@ export default function AdminIntegrationsPage() {
                 {/* SP-1 — SharePoint connection (delegated consent, separate
                     from the generic config-field connections below). */}
                 <SharePointCard />
+
+                {/* The Flue agent engine's six wiring terms. OWNER-only: the
+                    card reads and writes what `admin/agent-driver` guards, and
+                    that key is tenant-lifecycle class deliberately — switching
+                    to FLUE hands an external runtime the decision of what to
+                    TRY against this tenant's compliance data. */}
+                <RequirePermission resource="admin" action="tenant_lifecycle">
+                    <FlueEngineCard />
+                </RequirePermission>
 
                 {/* Available-integrations catalog — every registered external
                     provider (AWS / GCP / Okta / Azure / HRIS / GitHub, …) shown
