@@ -194,3 +194,46 @@ describe('the run bound the policy reads is the right one', () => {
         expect(ENGINE_RUN_CAPS.TOKENS).toBeGreaterThan(0);
     });
 });
+
+describe('the verdict is a CHECK, not a reservation — and the bound on that', () => {
+    // `spentThisMonth` is an aggregate read outside any transaction and
+    // nothing claims the headroom a verdict grants, so starts that interleave
+    // between the read and their first charge all see the same spend.
+    //
+    // Pinned as arithmetic rather than left as a comment: the exposure is
+    // bounded by CONCURRENT STARTS, not by time, and a reader deciding whether
+    // that matters needs the shape, not the adjective.
+
+    it('grants the same headroom to every start that read the same spend', () => {
+        // Two starts, each individually honest about its own worst case.
+        const terms = { budgetTokens: 1_000, spentThisMonth: 400, runTokenCap: 500 };
+        expect(evaluateMonthlyBudget(terms).allowed).toBe(true);
+        expect(evaluateMonthlyBudget(terms).allowed).toBe(true);
+
+        // 400 + 500 = 900 <= 1000 for either alone; together they can reach
+        // 400 + 1000 = 1400. The overshoot is (N - 1) x runTokenCap.
+        const n = 2;
+        expect(terms.spentThisMonth + n * terms.runTokenCap).toBeGreaterThan(terms.budgetTokens);
+        expect(terms.spentThisMonth + n * terms.runTokenCap - terms.budgetTokens).toBe(
+            (n - 1) * terms.runTokenCap - (terms.budgetTokens - terms.spentThisMonth - terms.runTokenCap),
+        );
+    });
+
+    it('cannot overshoot at all when starts do not overlap', () => {
+        // The serial case, which is what bounds the exposure in practice: the
+        // second start reads the first's charge and is refused.
+        const budgetTokens = 1_000;
+        const runTokenCap = 500;
+        const first = evaluateMonthlyBudget({ budgetTokens, spentThisMonth: 400, runTokenCap });
+        expect(first.allowed).toBe(true);
+
+        // ...the first run then charges its cap, and the next read sees it.
+        const second = evaluateMonthlyBudget({
+            budgetTokens,
+            spentThisMonth: 400 + runTokenCap,
+            runTokenCap,
+        });
+        expect(second.allowed).toBe(false);
+        expect(second.reason).toBe('MONTHLY_TOKEN_BUDGET_EXCEEDED');
+    });
+});
