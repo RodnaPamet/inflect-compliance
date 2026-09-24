@@ -10,6 +10,7 @@
 import type { WorkflowDefinition } from './workflow-types';
 import { frameworkOnboardingWorkflow } from './workflows/framework-onboarding';
 import { auditPrepWorkflow } from './workflows/audit-prep';
+import { postureReviewWorkflow } from './workflows/posture-review';
 
 /**
  * "Diagnostic" — read the tenant's compliance posture, then synthesise a
@@ -46,6 +47,11 @@ const REGISTRY: Record<string, WorkflowDefinition> = {
     // Epic Agentic 1B — the real canned workflows (declarative defs the engine runs).
     [frameworkOnboardingWorkflow.key]: frameworkOnboardingWorkflow,
     [auditPrepWorkflow.key]: auditPrepWorkflow,
+    // The first definition that ASKS for the Flue engine. `selectRunDriver`
+    // intersects that request with the operator switch, the tenant toggle and
+    // `DRIVER_IMPLEMENTED`, so on every deployment that has not enabled Flue
+    // this runs on the static engine like its neighbours.
+    [postureReviewWorkflow.key]: postureReviewWorkflow,
 };
 
 /**
