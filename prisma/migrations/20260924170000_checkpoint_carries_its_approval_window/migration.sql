@@ -1,0 +1,26 @@
+-- A HUMAN_CHECKPOINT now says how long the human has.
+--
+-- A checkpoint parks a run at AWAITING_APPROVAL so a person can look at it,
+-- and nothing said how long they had. What actually bounded the wait was
+-- ENGINE_CAPS.WALL_CLOCK_MS -- sixty minutes, measured from the run's
+-- ORIGINAL start and read off the clock rather than accumulated, because
+-- resumeWorkflowRun hands the engine that same base. An approval that took
+-- longer than an hour therefore made the run unresumable, while the runs list
+-- went on offering a Resume button for exactly those rows.
+--
+-- Measured 2026-09-24: resuming a run parked ~3.6h earlier halted instantly
+-- at "RUNTIME_MS cap of 3600000 ... 12847343 already spent; 0 more asked for
+-- and NONE granted". Both shipped canned workflows carry a checkpoint.
+--
+-- Two questions had been answered by one number: how long the ENGINE may run
+-- unattended (minutes), and how long a run may WAIT FOR A PERSON (days).
+-- `approvalExpiresAt` answers the second, pinned when the run parks from the
+-- step's now-mandatory `approvalWindow`.
+--
+-- NULLABLE WITH NO DEFAULT and no back-fill. NULL means "not parked, or
+-- parked before this column existed"; absence is not expiry. Back-filling a
+-- deadline onto runs parked under no bound would apply a rule retroactively
+-- to decisions already taken -- and on this deployment would have expired
+-- them mid-review.
+
+ALTER TABLE "WorkflowRun" ADD COLUMN "approvalExpiresAt" TIMESTAMP(3);

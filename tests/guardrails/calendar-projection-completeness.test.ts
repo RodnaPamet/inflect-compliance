@@ -70,6 +70,8 @@ const EXCLUSIONS: Record<string, string> = {
         'Session lifetime — Epic C.3 session hardening; expiry is enforced automatically and has no owner to remind.',
     'AgentProposal.expiresAt':
         'Review-window deadline for an agent proposal (ASI09). Deliberately NOT on the calendar: the window exists because an unbounded queue is itself a driver of rubber-stamping, so the remedy for a proposal nobody reached is that it EXPIRES unapproved — not that somebody is reminded to go and approve it before the clock runs out. Putting it on a compliance calendar would turn the anti-automation-bias control into a prompt to clear the queue, which is the behaviour it exists to discourage. The queue itself, and the review-quality report, are where the backlog is meant to be seen.',
+    'WorkflowRun.approvalExpiresAt':
+        'Approval window for a run parked at a HUMAN_CHECKPOINT. Excluded for exactly the reason `AgentProposal.expiresAt` above is, and the argument transfers without modification: the window exists so a run cannot wait on a person for ever, and the remedy for a checkpoint nobody reached is that it CLOSES unapproved — not that somebody is reminded to go and approve it before the clock runs out. A compliance calendar entry would turn a bound on deliberation into a prompt to clear the queue, which is the behaviour the bound exists to discourage. The deadline is shown on the runs list beside the run it belongs to, which is where a reviewer is already deciding.',
     'TenantInvite.expiresAt':
         'Invite-token lifetime — a leaked-token bound, not work to be done; the admin members screen shows pending invites.',
     'AuditPackShare.expiresAt':

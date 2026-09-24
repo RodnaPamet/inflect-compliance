@@ -25,6 +25,7 @@ export interface RunRow {
     driver: 'STATIC' | 'FLUE';
     startedAt: string;
     completedAt: string | null;
+    approvalExpiresAt: string | null;
     summary: string | null;
     /**
      * PENDING proposals this run queued, for the paused-run hint below.
@@ -242,6 +243,18 @@ export function AgentRunsClient({
                                             date: formatDateTime(r.startedAt),
                                         })}
                                     </span>
+                                    {/* The human's own deadline, stated where
+                                        the decision is made. Rendered only
+                                        when the run is actually parked: a date
+                                        on a finished run would be answering a
+                                        question nobody is asking. */}
+                                    {r.status === 'AWAITING_APPROVAL' && r.approvalExpiresAt && (
+                                        <span className="text-xs text-content-muted">
+                                            {t('runs.approvalWindowCloses', {
+                                                date: formatDateTime(r.approvalExpiresAt),
+                                            })}
+                                        </span>
+                                    )}
                                 </div>
                                 <div className="flex items-center gap-tight">
                                     {r.status === 'AWAITING_APPROVAL' && (

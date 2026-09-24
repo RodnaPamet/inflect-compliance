@@ -49,7 +49,15 @@ export const frameworkOnboardingWorkflow: WorkflowDefinition = {
             },
             rationale: (ctx) => `Proposed starting controls for the uncovered requirements of ${frameworkKeyOf(ctx)}.`,
         },
-        { kind: 'HUMAN_CHECKPOINT', label: 'reviewControls' },
+        {
+            kind: 'HUMAN_CHECKPOINT', label: 'reviewControls',
+            // 48 HOURS. Onboarding a framework is a setup action somebody is
+            // actively doing: the run is started BY the person who will review
+            // it, usually in the same sitting. A long window here would not
+            // buy more scrutiny, it would leave half-finished onboardings
+            // parked for a month.
+            approvalWindow: '48h',
+        },
         {
             kind: 'SYNTHESIS', label: 'summary',
             synthesize: (ctx) => {

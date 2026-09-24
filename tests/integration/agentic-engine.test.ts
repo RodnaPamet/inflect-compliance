@@ -63,7 +63,7 @@ describeFn('Agentic workflow engine (real DB)', () => {
             key: CHECKPOINT_ONLY_WF,
             name: 'checkpoint only',
             description: 'one HUMAN_CHECKPOINT, which must spend nothing',
-            steps: [{ kind: 'HUMAN_CHECKPOINT', label: 'review' }],
+            steps: [{ kind: 'HUMAN_CHECKPOINT', label: 'review', approvalWindow: '24h' }],
         });
         registerWorkflow({
             key: PROPOSE_WF,
@@ -75,7 +75,7 @@ describeFn('Agentic workflow engine (real DB)', () => {
                     kind: 'PROPOSE', label: 'proposed', tool: 'propose_risks',
                     buildItems: () => [{ title: 'Agentic proposed risk', description: 'from a workflow' }],
                 },
-                { kind: 'HUMAN_CHECKPOINT', label: 'review' },
+                { kind: 'HUMAN_CHECKPOINT', label: 'review', approvalWindow: '24h' },
                 { kind: 'SYNTHESIS', label: 'summary', synthesize: () => ({ text: 'workflow complete' }) },
             ],
         });
