@@ -92,7 +92,7 @@ services:
 
   # ── App (Next.js) — auto-updated by Watchtower ────────────────
   app:
-    image: ghcr.io/inflect-compliance/inflect-compliance:latest
+    image: ghcr.io/rodnapamet/inflect-compliance:latest
     restart: unless-stopped
     pull_policy: always
     depends_on:
@@ -123,7 +123,7 @@ services:
   # worker. Watchtower-enabled so it updates in lockstep with `app`.
   # See docs/deployment.md "Background worker".
   worker:
-    image: ghcr.io/inflect-compliance/inflect-compliance:latest
+    image: ghcr.io/rodnapamet/inflect-compliance:latest
     restart: unless-stopped
     pull_policy: always
     entrypoint: ["/bin/sh", "-c"]
