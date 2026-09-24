@@ -31,6 +31,7 @@ import {
     STATIC_DRIVER,
     type AgentDriverDecision,
 } from './agent-driver';
+import { listWorkflowDefinitions } from './workflow-registry';
 
 /**
  * Resolve the driver for one tenant's run.
@@ -68,7 +69,38 @@ export async function resolveDriverForTenant(tenantId: string): Promise<AgentDri
         return { driver: STATIC_DRIVER, reason: 'TENANT_NOT_OPTED_IN' };
     }
 
-    return resolveAgentDriver({ envEnabled, tenantSetting: stored });
+    const decision = resolveAgentDriver({ envEnabled, tenantSetting: stored });
+    if (decision.driver !== 'flue') return decision;
+
+    return narrowToWhatAWorkflowAsksFor(decision);
+}
+
+/**
+ * THE FOURTH GATE, applied to a decision the first three already allowed.
+ *
+ * `selectRunDriver` resolves flue only when the DEFINITION asks for it —
+ * `requestedDriver(def) === permitted` — so a deployment whose switches are
+ * both on still runs everything on the static engine while no registered
+ * `WorkflowDefinition` sets `driver`.
+ *
+ * EXPORTED because the two surfaces that report the driver reach it by
+ * different routes, and only one of them goes through `resolveDriverForTenant`:
+ * the Overview chip does (`agent-registry`), and the settings page calls
+ * `resolveAgentDriver` directly (`getAgentDriverSetting`). Both were reporting
+ * `flue` with `reason: null`, which this vocabulary defines as "the configured
+ * driver IS in force" — a false statement on a governance surface, and exactly
+ * what the reason codes exist to prevent. One helper, so a third surface
+ * cannot be added without it.
+ *
+ * NOT folded into `resolveAgentDriver`: that function is pure over
+ * {env, tenant} and has no business reading the workflow registry.
+ */
+export function narrowToWhatAWorkflowAsksFor(
+    decision: AgentDriverDecision,
+): AgentDriverDecision {
+    if (decision.driver !== 'flue') return decision;
+    const asked = listWorkflowDefinitions().some((d) => d.driver === 'flue');
+    return asked ? decision : { driver: STATIC_DRIVER, reason: 'NO_WORKFLOW_REQUESTS_IT' };
 }
 
 /**

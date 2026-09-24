@@ -4644,6 +4644,7 @@
         "driverReason": {
           "ENV_DISABLED": "Flue is off for this deployment",
           "TENANT_NOT_OPTED_IN": "this workspace has not opted in",
+          "NO_WORKFLOW_REQUESTS_IT": "no workflow asks for it yet",
           "UNRECOGNISED_SETTING": "the stored setting was not recognised",
           "DRIVER_NOT_IMPLEMENTED": "this build has no Flue driver"
         }

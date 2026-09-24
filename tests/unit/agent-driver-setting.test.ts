@@ -45,6 +45,7 @@ import {
     setAgentDriverSetting,
 } from '@/app-layer/usecases/agent-driver-setting';
 import { DRIVER_IMPLEMENTED } from '@/lib/agentic/agent-driver';
+import { registerWorkflow } from '@/lib/agentic/workflow-registry';
 
 import { makeRequestContext } from '../helpers/make-context';
 
@@ -105,16 +106,49 @@ describe('what a run would ACTUALLY execute on', () => {
         expect(out.effective.reason).toBe('ENV_DISABLED');
     });
 
-    it('reports flue only when ALL THREE terms say so', async () => {
-        // THREE, not two — and the third is asserted against
+    it('reports STATIC when no workflow asks for the engine, however the switches are set', async () => {
+        // THE FOURTH TERM, and the one that had no name until it was added.
+        // `selectRunDriver` resolves flue only when the DEFINITION asks for
+        // it, and no registered WorkflowDefinition sets `driver` — so with the
+        // env var on, the tenant opted in and the build implemented, every run
+        // still executes on the static engine.
+        //
+        // Reporting `flue` with `reason: null` here told an operator the
+        // configured driver was IN FORCE. It was permitted, which is a
+        // different fact, and the difference is every run they were looking at.
+        envBag.AGENT_DRIVER_FLUE = '1';
+        row = { agentDriver: 'FLUE' };
+
+        const out = await getAgentDriverSetting(ctx);
+
+        expect(out).toMatchObject({ mode: 'FLUE', envEnabled: true, implemented: true });
+        expect(out.effective).toEqual({
+            driver: 'static',
+            reason: 'NO_WORKFLOW_REQUESTS_IT',
+        });
+    });
+
+    it('reports flue only when ALL FOUR terms say so', async () => {
+        // FOUR, not three — and the build flag is asserted against
         // `DRIVER_IMPLEMENTED.flue` rather than against today's value of it.
         // A literal `'flue'` here would be a test of what this build happens
         // to be, green today and red the morning the flag flips (or the other
         // way round); reading the constant makes this a test of the
         // CONJUNCTION, which is the thing that has to stay true either side of
         // that change.
+        //
+        // The FOURTH term is registered first: a definition that asks for the
+        // engine. Without it `selectRunDriver` can never choose flue, and the
+        // test above pins that case.
+        registerWorkflow({
+            key: 'wf-asks-for-flue',
+            label: 'Asks for flue',
+            driver: 'flue',
+            steps: [],
+        } as unknown as Parameters<typeof registerWorkflow>[0]);
         envBag.AGENT_DRIVER_FLUE = '1';
         row = { agentDriver: 'FLUE' };
+
         const out = await getAgentDriverSetting(ctx);
 
         expect(out).toMatchObject({ mode: 'FLUE', envEnabled: true, implemented: DRIVER_IMPLEMENTED.flue });
