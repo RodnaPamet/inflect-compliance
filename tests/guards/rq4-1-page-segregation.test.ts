@@ -37,9 +37,24 @@ describe('rq4-1 page segregation', () => {
         const pages = walk(APP_PAGES).map(routeFromFile);
         const unclassified: string[] = [];
 
+        // AN EXACT ENTRY, not a pattern match.
+        //
+        // `classifyRoute` resolves a RUNTIME pathname, so `[param]` segments
+        // are wildcards — `matchesPattern` skips them. That is right for
+        // classifying `/agents/cm123`, and wrong for asking "is this page on
+        // disk listed": every new `/agents/<name>` matched `/agents/[agentId]`
+        // and came back classified.
+        //
+        // Not hypothetical. Measured when this changed: `/agents/decisions`
+        // and `/agents/reports` — both real, both shipped — had never been
+        // listed, and this scan had reported nothing about either.
+        //
+        // The route derived from disk preserves the directory name, so
+        // `agents/[agentId]/page.tsx` yields the literal `/agents/[agentId]`
+        // and a dynamic route still matches its own entry exactly.
+        const listed = new Set([...MAIN_PAGES, ...SUBPAGES] as readonly string[]);
         for (const route of pages) {
-            const klass = classifyRoute(route);
-            if (klass === 'unknown') unclassified.push(route);
+            if (!listed.has(route)) unclassified.push(route);
         }
 
         expect(unclassified).toEqual([]);

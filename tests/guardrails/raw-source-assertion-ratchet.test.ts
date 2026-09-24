@@ -576,124 +576,6 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     `src/app-layer/usecases/control/test-plans.ts` (the rationale note at 282
  *     and a back-reference at 473) — so in each case the block the test is
  *     named for can be deleted and the other occurrence keeps it green.
- *   • 6 (2026-09-24): the eighteen files that survived the other batches,
- *     closed with the last two tools the campaign needed plus one correction.
- *     Everything below is a MEASUREMENT taken before the edit, needle by
- *     needle, raw against each candidate.
- *
- *     THE NUMBER IS 6, AND IT IS NOT ANY BRANCH'S ARITHMETIC — which is the
- *     second time this list has had to say so. This branch measured 11 alone;
- *     the `29 (2026-09-23)` entry below measured 23 with the `29 (2026-09-24)`
- *     entry beside it. Neither figure survives the union and 11 - (23 - 29) is
- *     not the answer either, because the two batches converted OVERLAPPING
- *     files: six guardrails (`chart-platform-foundation`,
- *     `incident-containment-forensic-coverage`, `org-widget-integrity`,
- *     `sovereignty-self-assessment-coverage`, `trust-center-coverage`,
- *     `audit-s2-control-testing`) left in both, and a removal counted twice is
- *     a file this repo never held. Resolved the way the entry below prescribes
- *     — the JSON is the set UNION of the two branches' removals, the ratchet
- *     was run on the merged tree with an empty baseline, and the six files it
- *     named are what is written down. One file came BACK relative to this
- *     branch alone: `capstone-discipline`, because the merge took main's two
- *     whole-document `.not.toMatch` retired-variant assertions over this
- *     branch's narrowed ones (a negative is satisfied by any restriction of
- *     the text it reads, so narrowing one forbids strictly less).
- *
- *     `mdProseOf` — THE INVERSE OF `mdCodeOf`, which the 29 entry below
- *     declined to build on spec and named the condition for building: a
- *     markdown assertion that is POSITIVE and about prose. Fourteen turned up.
- *     It keeps a document's prose and blanks its fenced blocks and inline code
- *     spans, sharing ONE scan with `mdCodeOf` (`mdCodeRanges`) so the two are
- *     exact complements by construction rather than by review. Proved on
- *     synthetic sources first — a fence holding prose-looking text, an inline
- *     span holding the needle, a `#` heading inside a fence, an unterminated
- *     fence (runs to EOF, the over-blanking direction), a ``` marker inside a
- *     `` `` `` span, a ~~~ fence containing ``` — and then mutation-proved:
- *     moving a sentence INTO a fenced block leaves the raw count at 1 and takes
- *     the masked count to 0. Registered in `SOURCE_BLOCKS_MASKERS` in this same
- *     diff, which is the #2727 lesson the note there records.
- *
- *     WHERE IT ACTUALLY LANDED, which the union changed and is worth naming so
- *     nobody reads "fourteen" as fourteen call sites. Of the fourteen prose
- *     assertions the survey found, thirteen are better served by a NARROWING —
- *     `mdSection` / `headingLines` / `mdPreamble` — because the caller then
- *     states WHICH region is supposed to say it, and the merge took main's
- *     narrowing wherever the two branches disagreed. One seam is masked:
- *     `verification-integrity`'s `readMarkdown`, over `docs/verification-policy.md`.
- *     The two tools compose there rather than compete — the mask removes the
- *     fenced samples inside whatever region is read, the narrowing chooses the
- *     region — and the measurements are at the call sites: 1/3/2/2 raw,
- *     1/3/2/2 through `mdProseOf`, 1 in the preamble and 2/1/1 in the states
- *     section. A masker with no caller is a blind spot with a docblock, so it
- *     is bound at a real seam or it should not be exported.
- *
- *     `mdPreamble(md, level)` — the region above the first heading at `level`,
- *     which neither `mdSection` nor `headingLines` can cut. Fence-aware,
- *     throws when there is no such heading (a narrowing that silently widened
- *     back to the whole file would be the state the caller is leaving).
- *     Deliberately TWO arguments: `tests/helpers/assertion-reach.ts` reads a
- *     one-argument call as a WRAPPER (`content-transformed`, a capped skip) and
- *     two as an EXTRACTION, and `level` is a real parameter rather than padding
- *     — "above the first `##`" and "above the first `#`" are different regions.
- *     Measured after the fact: `UNANALYSABLE_READ_BASELINE` did not move.
- *
- *     THE ONE THAT REDDENED, and it is the reason to measure rather than
- *     convert. `tests/integration/risk-matrix-admin-api` carried a raw seam
- *     whose stated reason was "its subject is the note itself, so masking
- *     comments would blank exactly what it verifies". Both halves were false.
- *     The `note:` is a STRING LITERAL, which `codeOf` KEEPS — `'Read-only
- *     sibling'` counts 1 masked, 0 through `commentsOf`, so it never needed a
- *     raw read. And its sibling needle `'Risk matrix configuration'` does not
- *     occur in the note at all: its ONE occurrence in the file is the
- *     decorative divider `// ── Risk matrix configuration (Epic 44) ──`, so
- *     half of "the registry documents the read-only sibling" was satisfied by a
- *     comment banner. Binding it took it to zero and turned the suite red.
- *     Fixed against the file: both assertions now name text that is in the
- *     note, so hollowing the note is what breaks them.
- *
- *     WHERE A MASK CANNOT GO, MEASURED. `capstone-discipline` reads
- *     `docs/design-system.md`, and three of its needles STRADDLE the boundary
- *     the two markdown maskers separate: `/hover:scale-\*.*banned/` matches
- *     ``- `hover:scale-*`, … are banned.``, whose left half is a code span and
- *     whose right half is prose. It counts 1 raw and ZERO through BOTH maskers.
- *     Two more (`` /`outline` —/ ``, `` /`success` —/ ``) are NEGATIVES of the
- *     same shape, where a mask would have been a silent vacuous pass. The
- *     eleven POSITIVES are narrowed with `mdSection` instead — which is also
- *     what they mean, and tightens the loose ones: `/\bpage\b/` from 14
- *     satisfying positions to 3, `/\bdefault\b/` from 8 to 3.
- *
- *     THE TWO NEGATIVES STAY WHOLE-DOCUMENT, and that is a CORRECTION to what
- *     this branch shipped alone. It narrowed them to the Button-variants
- *     section on the argument that the needle straddles the mask boundary —
- *     true, and beside the point, because the choice there is not
- *     mask-vs-narrow but narrow-vs-nothing. A negative assertion is satisfied
- *     by any RESTRICTION of the text it reads, so bounding
- *     `` expect(doc).not.toMatch(/`outline` —/) `` to one section forbids
- *     strictly LESS: a "`outline` — use for …" line could reappear in the
- *     decision tree with the guard green. Narrowing a negative is the one
- *     conversion in this campaign that weakens the assertion while reading as
- *     converted, and it is why this file is still in the list above. A file's
- *     presence here is a cap, not an accusation — see the note below.
- *
- *     A SECOND MISLABELLED SEAM, same shape as the first.
- *     `p1-optimistic-concurrency` read `version-conflict-toast.ts` through its
- *     `readDoc` while all four of that block's assertions name CODE — a
- *     signature, a `!== 409` gate, a property path, a toast call. Each counts 1
- *     through `codeOf` and ZERO through `commentsOf`. It now reads `read`.
- *
- *     THE REMAINING TWELVE are `commentsOf` at the seam, every needle measured
- *     raw / `commentsOf` / `codeOf` first: each matches the same number raw and
- *     masked and ZERO through `codeOf`. Six of those seams carry a `.not.`
- *     assertion, and each was proved BOTH directions rather than argued from
- *     polarity — plant the forbidden text in a COMMENT and the masked view
- *     still sees it (the guard can still go red); plant it in a code literal
- *     and it does not, which is the false alarm the mask exists to remove. The
- *     rule that generalises is about what a masker REMOVES, not about the
- *     assertion's sign: a BULK-TEXT masker can empty a negative, a masker that
- *     removes the other lexical category cannot.
- *
- *     `ai-aisvs-hardening-coverage` STAYS, permanently, for the reason the
- *     entry below gives. It is the documented floor of this population.
  *   • 29 (2026-09-24): the six the entry above could not close, closed by
  *     BUILDING the missing tool rather than by reclassifying them. `commentsOf`
  *     in `tests/helpers/source-blocks.ts` is the inverse of `codeOf` — comments
@@ -836,7 +718,7 @@ import { codeOf, sqlCodeOf } from '../helpers/source-blocks';
  *     guardrails it watches, where one file has 4 raw and 3 in code, so a
  *     commented-out block was padding its ">= 3" floor.
  */
-const RAW_ASSERTING_FILE_BASELINE = 6;
+const RAW_ASSERTING_FILE_BASELINE = 2;
 
 /**
  * The files themselves, sorted, in a sibling JSON — the same population the

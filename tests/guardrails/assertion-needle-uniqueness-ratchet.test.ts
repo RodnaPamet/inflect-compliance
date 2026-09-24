@@ -332,42 +332,7 @@ const HIGH_MULTIPLICITY = 5;
 //   SHARED STATE, and this branch has a sibling: a parallel #2246 branch is
 //   converting the other eleven `tests/guards` files, so whoever merges
 //   second re-measures on the merged tree rather than keeping this figure.
-// 1215 -> 1214 (2026-09-24, #2246 final batch, merged with the entry above):
-// -1, and the -1 is the whole finding, because this branch measured -5 ALONE
-// and the entry above measured -40 alone.
-//
-// THE DELTAS ARE NOT ADDITIVE AND THE OVERLAP IS MEASURABLE. Both batches ran
-// from a 1255 base and both converted `capstone-discipline` — 8 ambiguous sites
-// at the merge base, 4 under EITHER branch's version, 4 under both. Each branch
-// therefore counted the same -4, and summing invents four sites this repo never
-// held. Per-file measurement over the 22 files that differ from main puts this
-// branch's residual at exactly -1: `tests/unit/filter-foundation.test.ts`, bound
-// to `mdPreamble(guide, 2)`. Everything else the union leaves where main had it.
-//
-// THE INSTRUMENT LIES DURING A CONFLICTED MERGE, and this is the part worth
-// keeping. `repoFiles()` is `git ls-files --cached`, which emits an UNMERGED
-// path once PER STAGE — so while the eight conflicts were open, the seven
-// conflicted `.ts` files were each analysed three times and every count here
-// came out inflated: 2529 files instead of 2515, 1228 instead of 1214, 1451
-// instead of 1445. Class C read 150/349 against its 146/329 ceilings the same
-// way. Those numbers were read as "main is red on the union" and main is NOT
-// red — reverting this branch's 22 files onto origin/main at e1a428ad3 and
-// measuring on the COMMITTED tree gives 1215 / 180 / 1445, exactly the three
-// constants main carries.
-//
-// The tell was there before the cause was: a per-file sweep said -1 while the
-// whole-tree read said +13, with a clean `git status` between them. Two
-// measurements of one quantity disagreeing is evidence about the OBSERVER. So
-// re-seat from a COMMITTED tree, and check `filesExamined` against
-// `git ls-files -- 'tests/*.ts' 'tests/*.tsx' | wc -l` before believing any
-// number in this file.
-//
-// MEASURE, DO NOT ADD. Neither 1250 (this branch alone) nor 1215 (the entry
-// above) survives the union, and neither does any arithmetic over the two. The
-// number below is what the drift sentinel reported on the merged tree — and it
-// reports only the FIRST baseline with slack and then stops, so one pass says
-// "one number moved" whatever the truth is. Re-run until it PASSES.
-const AMBIGUOUS_NEEDLE_BASELINE = 1214;
+const AMBIGUOUS_NEEDLE_BASELINE = 1190;
 // 1303 (2026-09-21, #2246 batch 7 merge): +1, and a RISE here is a finding, so
 // here is the finding. It is the measured COST of fixing a prose-satisfied
 // assertion rather than drift.
@@ -436,21 +401,7 @@ const AMBIGUOUS_NEEDLE_BASELINE = 1214;
 // own vocabulary in every playbook. `--namespace inflect-production` at 20
 // and `Rollback` at 22 are both five-plus sites that the Rollback playbook's
 // own bounds retire outright.
-// 180 (2026-09-24, #2246 final batch, merged with the entry above): UNCHANGED,
-// and the zero is the evidence that the two branches removed the SAME sites.
-// This branch alone measured 191, i.e. -2 from 193, and named both: the
-// `capstone-discipline` `docs/design-system.md` needles above the
-// five-occurrence threshold, `/\bpage\b/` at 14 and `/\bdefault\b/` at 8.
-// The entry above removes them too, inside its own -13. Summing the deltas
-// would have predicted 178; the merged tree measures 180, because the same two
-// sites cannot leave twice. Per-file measurement confirms it —
-// `capstone-discipline` carries 2 five-plus sites at the merge base and 0 under
-// EITHER branch's version and 0 under both.
-//
-// Found only by re-running the drift sentinel after lowering
-// AMBIGUOUS_NEEDLE_BASELINE — it reports the FIRST baseline with slack and
-// stops, so one pass says "one number moved" whatever the truth is.
-const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 180;
+const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 168;
 
 /**
  * RAISED 1444 -> 1449 on 2026-09-06, and the reason is recorded because a rise
@@ -702,39 +653,7 @@ const HIGHLY_AMBIGUOUS_NEEDLE_BASELINE = 180;
 // `src.split('## SLO Summary Table')[1]`, which had no end bound and ran
 // 15842 characters to EOF where the section is 800, and a `.toLowerCase()`
 // over a whole 702-line runbook that is now over one playbook.
-// 1445 (2026-09-24, #2246 final batch, merged with the entry above):
-// UNCHANGED, and an unchanged number is the claim this entry is making. This
-// branch measured 1452 alone, i.e. -3 from a 1455 base; the entry above took
-// the same population to 1445 by narrowing `capstone-discipline`, which is
-// where all three of this branch's skips were leaving from. The union is
-// therefore 1445, not 1442: the same three `needle-not-literal` skips cannot
-// leave twice.
-//
-// It briefly read 1451 here, which was the conflicted-merge measurement error
-// the `AMBIGUOUS_NEEDLE_BASELINE` entry documents — unmerged paths are listed
-// once per stage, so seven files were analysed three times. Measured on the
-// COMMITTED tree, main and the merged tree both sit at 1445 and this branch's
-// net effect on the skip count is ZERO.
-//
-// WHAT THIS BRANCH DID DO, measured, is below, and the direction is the
-// evidence — this time about a NEW helper. `mdPreamble(md, level)` in
-// `tests/helpers/markdown-regions.ts` cuts the region above a document's first
-// heading at `level`, which is the one region `mdSection` and `headingLines`
-// cannot reach. A preamble takes one argument naturally, and spelling it that
-// way is what raised this number by 7 for `headingLines(md)` in #2789: one
-// argument is the shape of a WRAPPER and resolves `content-transformed`, a
-// capped skip. `level` is a real parameter — "above the first `##`" and "above
-// the first `#`" are different regions — so it is two arguments, an EXTRACTION,
-// and out of scope. Measured after the fact rather than predicted: this number
-// did not rise.
-//
-// It FELL because `capstone-discipline`'s three `for (const x of [...]) {
-// expect(doc).toContain(x) }` loops were whole-file reads whose needle is an
-// identifier the analyser cannot fold — `needle-not-literal` skips against
-// `docs/design-system.md`. Narrowing those reads to `mdSection(...)` takes them
-// out of the whole-file population entirely, which is what a narrowing is
-// supposed to look like from here.
-const UNANALYSABLE_READ_BASELINE = 1445;
+const UNANALYSABLE_READ_BASELINE = 1443;
 
 /**
  * Floor on the share of whole-file reads whose needle is recovered.

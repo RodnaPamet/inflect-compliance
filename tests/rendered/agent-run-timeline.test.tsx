@@ -530,6 +530,19 @@ describe('the two Flue step kinds claim only what they did', () => {
         // Both fixtures are the shapes `flue/execute.ts` actually writes: a
         // MODEL_CALL with `tokens` and no `toolCalled`, a TOOL_CALL with
         // `toolCalled`, the args the model chose as its input, and no tokens.
+        //
+        // AND NO OUTPUT ON THE SUCCESSFUL ONE. This fixture used to carry
+        // `outputJson: '[{"id":"r-1"}]'` and assert the result panel rendered,
+        // directly under the sentence above claiming it was the shape the
+        // engine writes. It is not: `wrapForLedger`'s DONE arm passes
+        // `toolCalled/status/label/guardVerdict/guardRuleIds/input` and no
+        // `output` at all (execute.ts), and `step-recorder` writes
+        // `outputJson` only when `output !== undefined` — so a Flue tool call
+        // that SUCCEEDS always stores null there. Only the catch arm passes an
+        // output, and it passes the error.
+        //
+        // A file whose stated job is pinning the two record-only row shapes
+        // was pinning a third one nothing produces.
         renderDetail([
             step({
                 seq: 0,
@@ -550,7 +563,7 @@ describe('the two Flue step kinds claim only what they did', () => {
                 costTokens: null,
                 guardVerdict: 'CLEAN',
                 inputJson: '{"status":"OPEN"}',
-                outputJson: '[{"id":"r-1"}]',
+                outputJson: null,
             }),
         ]);
 
@@ -573,8 +586,10 @@ describe('the two Flue step kinds claim only what they did', () => {
         expect(within(call).getByText(D.scope.READ_TENANT_DATA)).toBeInTheDocument();
         expect(within(call).getByText(D.inputLabel)).toBeInTheDocument();
         expect(within(call).getByText('{"status":"OPEN"}')).toBeInTheDocument();
-        expect(within(call).getByText(D.outputLabel)).toBeInTheDocument();
-        expect(within(call).getByText('[{"id":"r-1"}]')).toBeInTheDocument();
+        // The result panel is ABSENT, because there is no result to show. The
+        // FAILED-tool-call test below pins the panel where one does exist, so
+        // dropping it here loses no coverage of the panel itself.
+        expect(within(call).queryByText(D.outputLabel)).toBeNull();
         expect(within(call).queryByText(D.stepTokens.replace('{count}', '4120'))).toBeNull();
     });
 

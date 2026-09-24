@@ -1,8 +1,4 @@
 [
     "tests/guardrails/ai-aisvs-hardening-coverage.test.ts",
-    "tests/guards/capstone-discipline.test.ts",
-    "tests/unit/epic19-coherence.test.ts",
-    "tests/unit/epic55-hardening.test.ts",
-    "tests/unit/observability-infra.test.ts",
-    "tests/unit/theme-provider.test.ts"
+    "tests/guards/capstone-discipline.test.ts"
 ]

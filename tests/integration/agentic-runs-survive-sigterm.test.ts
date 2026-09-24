@@ -32,6 +32,7 @@ import {
     untrackInFlightRun,
     inFlightRunIds,
     _resetInFlightRunsForTesting,
+    PAUSE_IN_FLIGHT_RUNS_STAGE,
 } from '@/lib/agentic/in-flight-runs';
 
 import { DB_URL, DB_AVAILABLE } from './db-helper';
@@ -226,12 +227,23 @@ describe('BOTH tiers install the drain, not just the one that had it', () => {
         expect(workerHandler).toContain('shutdownTelemetry');
     });
 
+    // THE NEEDLE IS THE MODULE'S OWN CONSTANT, not a string typed here.
+    //
+    // `PAUSE_IN_FLIGHT_RUNS_STAGE` is exported with the docstring "exported
+    // for the guard that asserts the drain is wired into the shutdown handler.
+    // A drain nothing calls is the failure this whole module is about." That
+    // guard did not exist, so the constant had ZERO consumers repo-wide — the
+    // record of an intention nobody finished. These are that guard; using the
+    // constant is what stops the two from drifting when the function is
+    // renamed.
+    const STAGE = `${PAUSE_IN_FLIGHT_RUNS_STAGE}(`;
+
     it('the web tier drains', () => {
-        expect(webHandler).toContain('pauseInFlightRuns(');
+        expect(webHandler).toContain(STAGE);
     });
 
     it('the worker drains too', () => {
-        expect(workerHandler).toContain('pauseInFlightRuns(');
+        expect(workerHandler).toContain(STAGE);
     });
 
     it('the worker drains BEFORE it closes the queue', () => {
@@ -239,7 +251,7 @@ describe('BOTH tiers install the drain, not just the one that had it', () => {
         // bounded by WALL_CLOCK_MS — an hour — and a deploy's grace period is
         // seconds, so waiting does not save the run; pausing it does, and only
         // while there is still time to write.
-        const drain = workerHandler.indexOf('pauseInFlightRuns(');
+        const drain = workerHandler.indexOf(STAGE);
         const close = workerHandler.indexOf('worker?.close()');
         expect(drain).toBeGreaterThan(-1);
         expect(close).toBeGreaterThan(-1);
