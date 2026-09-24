@@ -22,7 +22,7 @@ const mockDb = {
     integrationConnection: { findFirst: jest.fn(), updateMany: jest.fn(async () => ({ count: 0 })) },
     integrationExecution: { create: jest.fn(), update: jest.fn() },
     // H3 — runHrisSync now reconciles departed employees via updateMany.
-    employee: { upsert: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    employee: { count: jest.fn(async (a?: { where?: { syncedAt?: unknown } }) => (a?.where?.syncedAt ? 1 : 1000)), upsert: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
 };
 
 function emp(over: Partial<CheckEmployee>): CheckEmployee {

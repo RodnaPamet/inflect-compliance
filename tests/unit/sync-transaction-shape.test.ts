@@ -75,7 +75,7 @@ interface OpLog {
 const MODEL_OPS: Record<string, string[]> = {
     integrationConnection: ['findFirst', 'update', 'updateMany', 'count'],
     integrationExecution: ['create', 'update'],
-    employee: ['upsert', 'findMany', 'update', 'updateMany'],
+    employee: ['upsert', 'findMany', 'update', 'updateMany', 'count'],
     connectedIdentityAccount: ['upsert', 'count', 'updateMany'],
 };
 
@@ -102,6 +102,7 @@ function defaultBehaviour(key: string): unknown {
         case 'integrationConnection.updateMany':
             return { count: 0 };
         case 'connectedIdentityAccount.count':
+        case 'employee.count':
             return 0;
         default:
             return {};

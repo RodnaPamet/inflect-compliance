@@ -48,6 +48,124 @@ function makeSystemCtx(tenantId: string): RequestContext {
     return buildSystemContext({ tenantId, job: 'hris-sync' });
 }
 
+/**
+ * Refuse the departure reconcile when it would mark more than this share of
+ * the tenant's live HRIS-sourced employees TERMINATED.
+ *
+ * ═══ WHAT `passSawRows` CANNOT SEE ═══
+ *
+ * The guard below it already refuses the catastrophic shape: a complete-but-
+ * EMPTY roster does not wipe the workforce. What it cannot see is a roster
+ * that came back PARTIAL-BUT-PLAUSIBLE — rows arrived, so the pass "saw rows",
+ * but the set is a subset of the real workforce.
+ *
+ * That is the normal shape of a SCOPING change, not an exotic one: a
+ * department-scoped feed, a report filter edited in the HRIS, a BambooHR
+ * custom report whose criteria changed, a Workday RaaS template narrowed. And
+ * it is the shape a TRANSFER produces — a person who moves between business
+ * units leaves one roster and appears in another. At the `updateMany` this
+ * rail guards, absence from the feed and departure from the company are the
+ * same fact, so a transfer is indistinguishable from a leaver.
+ *
+ * ═══ WHY THAT IS NOT A MIRROR-ONLY PROBLEM ═══
+ *
+ * `Employee.status` is not an internal bookkeeping column. `identity-leaver-
+ * pass` selects exactly `status: 'TERMINATED'`, and on a tenant at AUTOMATIC
+ * that drives a real `accountEnabled: false` against Entra or a
+ * `userAccountControl` write against a domain controller, unattended. That
+ * path is not hypothetical — a real AD account was disabled by the scheduled
+ * 05:00 pass (#2749). So a wrong row here becomes a locked-out employee one
+ * hop later, which is why this reconcile needs a rail of its own rather than
+ * relying on the one in front of the directory write.
+ *
+ * ═══ THE NUMBER IS THE SIBLING RECONCILE'S, THE CONSTANT IS NOT ═══
+ *
+ * `MAX_DEPROVISION_SHARE` in `identity-sync.ts` is 0.1, and that rail answers
+ * the structurally identical question one table over: "is this sweep too large
+ * a slice of what the pass still calls live to be a real event?" Inventing a
+ * third threshold for the same question would leave an operator holding three
+ * numbers with nothing to tell them apart, so the VALUE is deliberately the
+ * same. (`identity-sync.ts` makes this argument about the write breaker's
+ * `MAX_DISABLE_SHARE`; this is the same argument, one rail further out.)
+ *
+ * It is a SEPARATE CONSTANT for the reason given there: the cost of firing
+ * differs per rail, so the numbers must be free to move apart without one
+ * being retuned silently by an edit aimed at another.
+ *
+ * ═══ WHY PRODUCTION COULD NOT CHOOSE THE NUMBER ═══
+ *
+ * Measured read-only against `inflect_compliance` on 2026-09-24: the
+ * `Employee` table holds ONE row across ten tenants, `source = 'MANUAL'`, and
+ * `source = 'HRIS'` is ZERO. There is no enabled HRIS connection in
+ * production at all — the two live `IntegrationConnection` rows are
+ * `entra-id` and `active-directory`. (Positive control on the same
+ * connection, so an empty answer is not a broken query: `Control` = 892,
+ * `ConnectedIdentityAccount` = 37, `User` = 24, `Tenant` = 10, and the psql
+ * role is superuser so FORCE RLS is not filtering the reads.)
+ *
+ * So there is no production denominator to tune against, and a number
+ * presented as measured would be invented. What production DOES settle is
+ * which rail binds at today's scale: the nearest real population, the 37
+ * directory accounts across ten tenants, puts a typical tenant in single
+ * digits, where 10% of the population is below `TERMINATE_SHARE_FLOOR` and
+ * the share rule is silent by construction. At the only scale that exists
+ * today the floor governs and this cap costs nothing; it is calibrated for
+ * the first real roster, not for the fixtures.
+ *
+ * ═══ WHY A SHARE CAP AND NOT ALSO AN ABSOLUTE ONE ═══
+ *
+ * `checkDisableBlastRadius` pairs its share rule with `MAX_DISABLES_PER_RUN =
+ * 50`, and that half does NOT transfer — the reason is the shape of this
+ * count, not its size, and `identity-sync.ts` already writes it out for the
+ * same reconcile shape.
+ *
+ * `proposed` in the write breaker counts an ACT and can go DOWN: an account
+ * disabled today is not a candidate tomorrow. The number here counts a
+ * STANDING BACKLOG — every HRIS row untouched since the pass began. Refusing
+ * does not clear it: those rows keep their stale `syncedAt`, so the next pass
+ * proposes the same set plus whatever has left since, and the count only
+ * grows. An absolute cap over a monotonically growing count fires once and
+ * then refuses forever while looking deliberate. That is #2290, which cost a
+ * tenant its whole leaver path.
+ *
+ * The share rule latches the same way once it fires. The difference is that it
+ * only fires on an anomaly — a tenth of a workforce vanishing between two
+ * passes — and it is scale-free, so ordinary churn at any tenant size never
+ * reaches it. A rail that holds after refusing is acceptable; a rail that
+ * refuses ordinary operation and then holds is not.
+ *
+ * ═══ WHICH WAY IT FAILS ═══
+ *
+ * CLOSED, and the asymmetry is the whole argument. On refusal the employees
+ * keep the status the roster last gave them, so the mirror over-reports people
+ * as present: someone who really left stays ACTIVE and their directory account
+ * is not disabled on schedule. That is a visible gap in offboarding, and it is
+ * recoverable — the next pass that sees a correct roster reconciles them.
+ *
+ * The other direction is not recoverable on the same clock. A wrongful
+ * TERMINATED is read by the 05:00 leaver pass before anybody reviews it, and
+ * re-enabling a disabled account is a human action in the customer's
+ * directory, not something a later sync undoes.
+ */
+export const MAX_TERMINATE_SHARE = 0.1;
+
+/**
+ * Below this many proposed terminations the share rule does not apply.
+ *
+ * Same reasoning and same value as `DEPROVISION_SHARE_FLOOR` and the write
+ * breaker's `SHARE_RULE_FLOOR`: in an eight-person tenant one departure is
+ * 12.5% and always will be, so a share rule without a floor refuses every
+ * genuine leaver at the bottom end — and a rail that refuses correct input is
+ * a rail operators switch off.
+ *
+ * WHAT COVERS THE SMALL TENANT INSTEAD is `passSawRows`, not this rule. A
+ * four-person roster that comes back empty is refused there, on evidence the
+ * share rule cannot see. The two rails are deliberately about different
+ * failures: `passSawRows` catches a feed that returned NOTHING, this catches a
+ * feed that returned a SUBSET.
+ */
+export const TERMINATE_SHARE_FLOOR = 5;
+
 /** Employees pulled into the manager map in one statement. */
 const MANAGER_MAP_TAKE = 10000;
 
@@ -60,6 +178,14 @@ export interface HrisSyncResult {
      * so calling it passed would make a multi-run pass indistinguishable from a
      * completed one in exactly the logs someone would check to ask why an
      * employee still shows as active. Mirrors IdentitySyncResult.
+     *
+     * `PARTIAL` NOW HAS A SECOND CAUSE: a COMPLETE roster whose departure
+     * reconcile was REFUSED by the blast-radius rail (`MAX_TERMINATE_SHARE`).
+     * The two are distinguishable on the execution row rather than here —
+     * `resultJson.resuming` for the first, `resultJson.terminateRefused` for
+     * the second — and they share this status for the same reason: the pass
+     * produced usable output but knowingly left the mirror incomplete, which
+     * is exactly what PASSED must not be allowed to say.
      */
     /**
      * `SKIPPED` is set by the JOB, not this usecase: another run already holds
@@ -75,6 +201,15 @@ export interface HrisSyncResult {
     noRetry?: boolean;
     upserted: number;
     managersLinked: number;
+    /**
+     * Employees this pass marked TERMINATED — ZERO when the blast-radius rail
+     * refused, and absent on the arms that never reach the reconcile.
+     *
+     * Reported because `upserted` cannot stand in for it: a refused pass
+     * upserts its whole roster and looks, on that number alone, exactly like a
+     * pass that reconciled. Mirrors `IdentitySyncResult.deprovisioned`.
+     */
+    departed?: number;
     errorMessage?: string;
 }
 
@@ -427,36 +562,173 @@ export async function runHrisSync(input: {
         // undefined as "resumed" — which would make the guard unconditional
         // and reinstate the mass-terminate it exists to prevent.
         const passSawRows = roster.length > 0 || Boolean(conn.syncPassStartedAt);
-        const departed = await writeTx(async (db) => {
-            let count = 0;
+
+        // The predicate the reconcile writes through, LIFTED TO A NAME so the
+        // blast-radius count below and the `updateMany` are handed the same
+        // object rather than two copies that can drift. Measuring one set and
+        // writing another is how a rail ends up authorising a batch it never
+        // looked at (#2498, in the leaver path).
+        //
+        // TENANT-SCOPED, not connection-scoped, and that is forced rather than
+        // chosen: `Employee` carries no `connectionId` column (unlike
+        // `ConnectedIdentityAccount`, whose reconcile IS per-connection). There
+        // is nothing to scope by. What makes that safe is a rail one layer up —
+        // `upsertIntegrationConnection` refuses a second ENABLED HRIS
+        // connection per tenant, so the tenant's HRIS population and this
+        // connection's population are the same set by construction. See
+        // `tests/integration/hris-connection-cardinality.test.ts`, which exists
+        // because two enabled HRIS connections would alternate nightly and each
+        // terminate the other's whole population.
+        const reconcileWhere = {
+            tenantId: ctx.tenantId,
+            source: 'HRIS',
+            status: { not: 'TERMINATED' as const },
+            syncedAt: { lt: passStartedAt },
+        };
+
+        // ═══ THE MEASURE, THE DECISION AND THE SWEEP ARE ONE TRANSACTION ═══
+        //
+        // The rail below judges a COUNT and then acts on it. Split across two
+        // transactions a row could change status in between, and the number an
+        // operator is shown would describe a different set from the one that
+        // was swept. The cursor clear joins them for the reason already given.
+        const outcome = await writeTx(async (db) => {
+            let departed = 0;
+            let proposed = 0;
+            let refusal: string | null = null;
+            let refusalReason: 'share_cap' | null = null;
+
             if (passSawRows) {
-                const res = await db.employee.updateMany({
-                    where: { tenantId: ctx.tenantId, source: 'HRIS', status: { not: 'TERMINATED' }, syncedAt: { lt: passStartedAt } },
-                    data: { status: 'TERMINATED', syncedAt: now },
-                });
-                count = res.count;
+                // Counted with the reconcile's OWN predicate — the same object
+                // the `updateMany` below is given.
+                proposed = await db.employee.count({ where: reconcileWhere });
+
+                // Nothing proposed is always allowed, and must be: a no-op
+                // surfacing as a refusal teaches operators that refusals are
+                // noise, and then the one that matters is ignored too.
+                if (proposed > 0) {
+                    // The denominator is what this tenant still calls live in
+                    // the HRIS mirror AFTER this pass's upserts: rows the pass
+                    // just confirmed, PLUS the stale rows the numerator is
+                    // proposing to remove. Same table, same source, one
+                    // predicate narrower — so the two halves of the fraction
+                    // count the same kind of thing over the same set.
+                    //
+                    // Narrowing either half alone is not a cosmetic edit: a
+                    // smaller numerator can only WITHDRAW a refusal, while a
+                    // smaller denominator can newly CREATE one.
+                    const livePopulation = await db.employee.count({
+                        where: { tenantId: ctx.tenantId, source: 'HRIS', status: { not: 'TERMINATED' } },
+                    });
+                    // Unreachable by construction — the numerator's predicate
+                    // is the denominator's plus `syncedAt`, so the population
+                    // is never below it. Pinned anyway, and pinned to 1 rather
+                    // than 0: an absent denominator must read as "the whole
+                    // workforce" and refuse, never as "a small share" and
+                    // allow.
+                    const share = livePopulation > 0 ? proposed / livePopulation : 1;
+                    if (proposed > TERMINATE_SHARE_FLOOR && share > MAX_TERMINATE_SHARE) {
+                        refusalReason = 'share_cap';
+                        refusal =
+                            `Refusing to mark ${proposed} of ${livePopulation} HRIS employee(s) TERMINATED ` +
+                            `(${(share * 100).toFixed(1)}%): the per-pass share cap is ` +
+                            `${(MAX_TERMINATE_SHARE * 100).toFixed(0)}%. A slice of the workforce this large ` +
+                            `disappearing from the roster between two passes is more likely a feed that ` +
+                            `narrowed — a department-scoped report, an edited filter, a transfer to a ` +
+                            `business unit served by another feed — than a real departure wave, and ` +
+                            `TERMINATED is what makes an employee a candidate for a real directory disable ` +
+                            `on the next leaver pass. The employees keep their current status until a human ` +
+                            `has looked.`;
+                    }
+                }
+
+                if (!refusal) {
+                    const res = await db.employee.updateMany({
+                        where: reconcileWhere,
+                        data: { status: 'TERMINATED', syncedAt: now },
+                    });
+                    departed = res.count;
+                }
             }
             // The pass is done — clear the cursor so the next run starts fresh.
             // Left set, the next run would resume a pass that already reconciled.
+            //
+            // CLEARED ON A REFUSAL TOO, and that is not tidiness. The roster
+            // read finished; it is the reconcile that was held, so there is no
+            // page left to resume. Leaving `syncPassStartedAt` set would also
+            // pin `passStartedAt` to the refused pass's instant on every later
+            // run — it is read from this column — so each subsequent pass would
+            // keep widening the set it proposes while never advancing.
             await db.integrationConnection.updateMany({
                 where: { id: conn.id },
                 data: { syncCursor: null, syncPassStartedAt: null },
             });
-            return count;
+            return { departed, proposed, refusal, refusalReason };
         });
+        const { departed, proposed: terminateProposed, refusal, refusalReason } = outcome;
 
         await shortTx(async (db) => {
             await db.integrationExecution.update({
                 where: { id: executionId },
-                data: { status: 'PASSED', resultJson: { upserted, managersLinked, departed, total: roster.length }, durationMs: Date.now() - start, completedAt: new Date() },
+                data: {
+                    // PARTIAL, NOT PASSED, when the rail refused. The roster
+                    // read succeeded and the upserts landed, so this is not an
+                    // ERROR — but a pass whose reconcile was withheld has left
+                    // the mirror knowingly incomplete, and PASSED is the one
+                    // thing it must not say. A green badge over a held
+                    // reconcile is a refusal nobody sees.
+                    status: refusal ? ('PARTIAL' as const) : ('PASSED' as const),
+                    // Carried ON THE ROW, because `IntegrationExecution` is the
+                    // only durable record an operator reads — the warn log
+                    // below is not one. `null` on the clean path, so a stale
+                    // message never outlives the pass that wrote it.
+                    errorMessage: refusal,
+                    resultJson: {
+                        upserted,
+                        managersLinked,
+                        departed,
+                        total: roster.length,
+                        ...(refusal ? { terminateRefused: refusalReason, terminateProposed } : {}),
+                    },
+                    durationMs: Date.now() - start,
+                    completedAt: new Date(),
+                },
             });
             // Clear unconditionally on success — a stale "credential revoked"
             // banner is worse than none, because it trains people to ignore it.
+            //
+            // Cleared on a refusal as well, deliberately: the roster read
+            // succeeded, so the credential is demonstrably working and a
+            // "credential revoked" banner would be false. The refusal is not a
+            // credential signal and does not travel on that channel — it
+            // travels as PARTIAL, `errorMessage`, and the warn log below.
             await clearAuthFailure(db, conn.id, conn.provider);
         });
-        logger.info('hris-sync complete', { component: 'hris-sync', tenantId: ctx.tenantId, executionId, upserted, managersLinked, departed });
+        if (refusal) {
+            logger.warn('hris-sync departure reconcile REFUSED — employees left as-is, run marked PARTIAL', {
+                component: 'hris-sync',
+                tenantId: ctx.tenantId,
+                provider: conn.provider,
+                executionId,
+                upserted,
+                proposed: terminateProposed,
+                reason: refusalReason,
+            });
+        } else {
+            logger.info('hris-sync complete', { component: 'hris-sync', tenantId: ctx.tenantId, executionId, upserted, managersLinked, departed });
+        }
 
-        return { executionId, status: 'PASSED', upserted, managersLinked };
+        return {
+            executionId,
+            status: refusal ? ('PARTIAL' as const) : ('PASSED' as const),
+            upserted,
+            managersLinked,
+            departed,
+            // Rides the result as well as the row: `jobs/hris-sync` returns
+            // this straight to the queue, and a caller that only reads the
+            // return would otherwise see a refusal as an ordinary pass.
+            ...(refusal ? { errorMessage: refusal } : {}),
+        };
     } catch (e) {
         // A WRITE failed: a chunk that ran out of budget, a pool that would not
         // yield, a constraint. The execution row is already on disk saying
