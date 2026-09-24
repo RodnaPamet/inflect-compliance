@@ -429,6 +429,8 @@ describe('what the durable row may carry', () => {
         // seven days exist to ask.
         expect(d.intendedAddress).toBe('jane.smith@acme.com');
     });
+
+
 });
 
 describe('#2713 — the entitlement map has a home, so the refusal is clearable', () => {

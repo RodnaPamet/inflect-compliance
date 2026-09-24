@@ -327,10 +327,30 @@ async function readObservedAddresses(
  *     the one field that makes the artefact answer the question the seven days
  *     exist to ask: WHICH identity would this person have been given. Dropping
  *     it would leave a report that names decisions and no identities.
+ *   · `rosterAddress` is `Employee.workEmail` itself, carried only by
+ *     `REFUSED_IDENTITY_DIVERGES`, where the two addresses disagreeing IS the
+ *     decision. Same class as `intendedAddress` and admitted for the same
+ *     reason — it is ours, not the directory's.
  *   · `reason` IS scrubbed. It is free text, and one outcome quotes an address
  *     the customer's own ENUMERATION holds (`ACCOUNT_OBSERVED`). A sentence is
  *     exactly the shape that carries an identifier past a field-by-field rule,
  *     which is why the leaver scrubs its reasons too.
+ *
+ * ## The scrub stays; the sentences stopped fighting it (#2843)
+ *
+ * `REFUSED_IDENTITY_DIVERGES` used to INLINE both addresses, so the scrub —
+ * doing exactly its job — rendered the durable sentence as "The derived
+ * address ({account}) is not the address the roster holds for this person
+ * ({account})". {account} is not {account}: the one fact the refusal exists to
+ * report was the one the artefact could not carry, while `intendedAddress` sat
+ * verbatim in the sibling key of the same object, so the redaction bought no
+ * confidentiality either.
+ *
+ * The fix is not a narrower scrub. A per-outcome exemption would have to be
+ * right about every future reason string, and a reason is free text precisely
+ * because nobody can promise what it will contain. Values that belong in the
+ * artefact go in STRUCTURED KEYS, where a text rule cannot reach them and a
+ * field-by-field decision governs them; the sentence points at those keys.
  */
 function persistableDecisions(decisions: readonly JoinerDecision[]) {
     return decisions.slice(0, MAX_REPORTED_JOINER_DECISIONS).map((d) => ({
@@ -338,6 +358,7 @@ function persistableDecisions(decisions: readonly JoinerDecision[]) {
         outcome: d.outcome,
         ...(d.reason ? { reason: redactDirectoryIdentifiers(d.reason, null) } : {}),
         intendedAddress: d.intendedAddress,
+        rosterAddress: d.rosterAddress,
         nameSource: d.nameSource,
         department: d.department,
         groupId: d.groupId,
