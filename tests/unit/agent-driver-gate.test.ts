@@ -98,14 +98,59 @@ describe('the gate now that the flue driver is built', () => {
         expect(DRIVER_IMPLEMENTED).toEqual({ static: true, flue: true });
     });
 
-    it('and DRIVER_NOT_IMPLEMENTED is still reachable, for the driver nobody has built', () => {
-        // The reason code did not become dead when flue was built — it is the
-        // answer for the NEXT engine someone declares ahead of implementing.
-        // Asserted through the flag rather than by adding a fake union member,
-        // so the test cannot drift from what the gate actually reads.
-        const unbuilt = { ...DRIVER_IMPLEMENTED, flue: false };
-        expect(unbuilt.flue).toBe(false);
+    it('DRIVER_IMPLEMENTED is fully built today, which is why the veto needs its own block', () => {
         expect(Object.values(DRIVER_IMPLEMENTED).every(Boolean)).toBe(true);
+    });
+});
+
+describe('the veto for a driver nobody has built', () => {
+    // THE REASON CODE DID NOT DIE WHEN FLUE SHIPPED. It is the answer for the
+    // NEXT engine someone declares ahead of implementing, and the flag is the
+    // one-line revert the driver seam was designed around.
+    //
+    // This used to be asserted on a LOCAL COPY:
+    //
+    //     const unbuilt = { ...DRIVER_IMPLEMENTED, flue: false };
+    //     expect(unbuilt.flue).toBe(false);
+    //
+    // — a tautology over an object the gate never reads. `resolveAgentDriver`
+    // was never called, so `agent-driver.ts`'s `if (!DRIVER_IMPLEMENTED.flue)`
+    // return had NO executing assertion anywhere: coverage over the file
+    // reported that single line uncovered against 95% of the rest.
+    //
+    // The flag is swapped for real here, which is the idiom the affirmative
+    // block below already uses in the other direction — and the only way to
+    // exercise a branch whose condition is a module constant.
+    const realFlag = DRIVER_IMPLEMENTED.flue;
+
+    beforeAll(() => {
+        (DRIVER_IMPLEMENTED as { flue: boolean }).flue = false;
+    });
+
+    afterAll(() => {
+        (DRIVER_IMPLEMENTED as { flue: boolean }).flue = realFlag;
+    });
+
+    it('answers static with DRIVER_NOT_IMPLEMENTED even when both switches are on', () => {
+        // The cell that would otherwise be the one `flue` answer in the whole
+        // grid. With the driver unbuilt it must fall back, and SAY SO — a
+        // silent static would leave an operator reading the env var and the
+        // tenant toggle and finding both correct.
+        expect(resolveAgentDriver({ envEnabled: true, tenantSetting: 'FLUE' })).toEqual({
+            driver: 'static',
+            reason: 'DRIVER_NOT_IMPLEMENTED',
+        });
+    });
+
+    it('the unbuilt veto outranks the tenant and env vetoes', () => {
+        // Order matters for the operator action: told TENANT_NOT_OPTED_IN they
+        // would go and flip a toggle that cannot help.
+        expect(resolveAgentDriver({ envEnabled: false, tenantSetting: 'FLUE' }).reason).not.toBe(
+            'DRIVER_NOT_IMPLEMENTED',
+        );
+        expect(resolveAgentDriver({ envEnabled: true, tenantSetting: 'STATIC' }).reason).not.toBe(
+            'DRIVER_NOT_IMPLEMENTED',
+        );
     });
 });
 
