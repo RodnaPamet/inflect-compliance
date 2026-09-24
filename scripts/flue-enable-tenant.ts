@@ -42,7 +42,7 @@ import {
 } from '@/app-layer/usecases/agent-risk-assessment';
 import { setAgentDriverSetting } from '@/app-layer/usecases/agent-driver-setting';
 import { getFlueWiringState } from '@/app-layer/usecases/flue-wiring';
-import { createApiKey } from '@/app-layer/usecases/api-keys';
+import { createApiKey, revokeApiKey } from '@/app-layer/usecases/api-keys';
 import { grantAgentTool, listAgentTools } from '@/app-layer/usecases/agent-tool-exposure';
 import { runKillSwitchDrillJob } from '@/app-layer/jobs/agent-kill-switch-drill';
 
@@ -187,13 +187,43 @@ async function key() {
     const ctx = await ownerContext();
     const a = await findAgent();
     if (!a) throw new Error('key: register first');
-    const existing = await prisma.tenantApiKey.count({
+    // Idempotent on the NARROW key, not on "any key". Checking for any live
+    // bound credential would make this step refuse to mint the replacement
+    // for an over-broad one, which is exactly the case it was first needed
+    // for — a guard that blocks its own remedy.
+    const live = await prisma.tenantApiKey.findMany({
         where: { tenantId: TENANT_ID, agentId: a.id, revokedAt: null },
+        select: { id: true, scopes: true },
     });
-    if (existing > 0) { console.log(`key: ${existing} live key(s) already bound, not minting another`); return; }
+    const narrow = live.filter((k) => !JSON.stringify(k.scopes).includes('"*"'));
+    if (narrow.length > 0) {
+        console.log(`key: ${narrow.length} live NARROW key(s) already bound, not minting another`);
+        return;
+    }
     const created = await createApiKey(ctx, {
         name: 'Posture review (Flue) runner',
-        scopes: ['*'],
+        // THE NARROWEST SET THAT STARTS THIS RUN AND READS ITS FOUR TOOLS.
+        //
+        // `['*']` was minted first and was the wrong shape. Agent-binding
+        // narrows an agent-bound credential to its principal at context mint
+        // — REST and MCP alike, since #2224 — so a `*` key was not
+        // exploitable here; it was a credential whose written authority bore
+        // no relation to its job, and the binding is the only thing that made
+        // that safe. Defence in depth means not relying on one term.
+        //
+        // `mcp:orchestrate` is what STARTS the run: `startWorkflowRun` gates
+        // an API-key caller on that capability and takes `assertCanWrite`
+        // only on the session branch, so no write scope is needed at all.
+        // `mcp:read` is the "may talk to MCP" gate; the four resource scopes
+        // are exactly the `resourceScope` each granted tool declares.
+        scopes: [
+            'mcp:orchestrate',
+            'mcp:read',
+            'controls:read',   // get_compliance_posture
+            'evidence:read',   // list_evidence_expiring
+            'audits:read',     // list_findings
+            'tasks:read',      // list_tasks
+        ],
         agentId: a.id,
         // min(key, agent) — the key cannot drive the agent past its own rung.
         maxAutonomyLevel: a.autonomyLevel,
@@ -245,6 +275,33 @@ async function grant() {
     console.log(`grant: agent now holds ${JSON.stringify(tools).slice(0, 400)}`);
 }
 
+/**
+ * Retire any live agent-bound key that carries `*`.
+ *
+ * Separate from `key` and run AFTER the narrow one is proven, so the tenant
+ * is never left with no way to start a run. Revocation is by id through the
+ * usecase, so it lands an audit row.
+ */
+async function revokeBroadKeys() {
+    const ctx = await ownerContext();
+    const a = await findAgent();
+    if (!a) throw new Error('revoke: register first');
+    const keys = await prisma.tenantApiKey.findMany({
+        where: { tenantId: TENANT_ID, agentId: a.id, revokedAt: null },
+        select: { id: true, name: true, scopes: true },
+    });
+    const broad = keys.filter((k) => JSON.stringify(k.scopes).includes('"*"'));
+    const narrow = keys.length - broad.length;
+    if (narrow === 0) {
+        throw new Error(`revoke: refusing — ${broad.length} broad key(s) and NO narrow replacement live`);
+    }
+    for (const k of broad) {
+        await revokeApiKey(ctx, k.id);
+        console.log(`  revoked ${k.id} (${k.name})`);
+    }
+    console.log(`revoke: ${broad.length} broad revoked, ${narrow} narrow key(s) remain live`);
+}
+
 async function toggle() {
     const ctx = await ownerContext();
     console.log(`toggle: ${JSON.stringify(await setAgentDriverSetting(ctx, 'FLUE'))}`);
@@ -252,6 +309,7 @@ async function toggle() {
 
 const STEPS: Record<string, () => Promise<void>> = {
     status, drill, register, assess, activate, key, grant, toggle,
+    'revoke-broad-keys': revokeBroadKeys,
 };
 
 const step = process.argv[2] ?? '';

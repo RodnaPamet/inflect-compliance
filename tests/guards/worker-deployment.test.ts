@@ -99,3 +99,56 @@ describe('BullMQ worker is deployed', () => {
         expect(fs.existsSync(path.join(ROOT, 'scripts/build-worker.mjs'))).toBe(true);
     });
 });
+
+/**
+ * EXACTLY ONE COMPOSE FILE IS THE DEPLOYED ONE, AND IT SAYS SO.
+ *
+ * The repo carries two files named `docker-compose.prod.yml` — one at the
+ * root, one under `deploy/` — and for a long time both opened by calling
+ * themselves the production environment. Only the second runs anything: it is
+ * what sits at `/opt/inflect/docker-compose.prod.yml` on the VM. They are not
+ * interchangeable, and the differences are the dangerous kind rather than the
+ * cosmetic kind: different service names, a different DATABASE NAME
+ * (`inflect_production` vs the live `inflect_compliance`), and a different env
+ * file (`.env.production` vs `./.env.prod`).
+ *
+ * The cost was measured, not imagined. An operator reading the ROOT file to
+ * understand the live deployment concluded the deployed env file had drifted
+ * from the repo, reported it as a finding, and was one step from writing
+ * production configuration into a path nothing reads. Nothing in either file
+ * contradicted that reading.
+ *
+ * So the role is declared in the file itself and pinned here. A third prod
+ * compose, or a second one claiming to be the deployed stack, fails.
+ */
+describe('which compose file is the deployed one', () => {
+    const roleOf = (rel: string): string | null => {
+        const m = read(rel).match(/ROLE:\s*([a-z-]+)/);
+        return m ? m[1] : null;
+    };
+
+    it('the root file declares itself LOCAL, not the deployed stack', () => {
+        expect(roleOf('docker-compose.prod.yml')).toBe('local-production');
+    });
+
+    it('deploy/ declares itself the deployed stack', () => {
+        expect(roleOf('deploy/docker-compose.prod.yml')).toBe('deployed-production');
+    });
+
+    it('exactly one file claims to be deployed', () => {
+        // The claim with teeth. Two files claiming it is the state this guard
+        // exists to end, and a THIRD prod compose appearing unlabelled is the
+        // way the ambiguity comes back.
+        const claimants = PROD_COMPOSE_FILES.filter(
+            (f) => roleOf(f) === 'deployed-production',
+        );
+        expect({ deployed: claimants }).toEqual({
+            deployed: ['deploy/docker-compose.prod.yml'],
+        });
+    });
+
+    it('every production-like compose file declares a role at all', () => {
+        const unlabelled = PROD_COMPOSE_FILES.filter((f) => roleOf(f) === null);
+        expect({ unlabelled }).toEqual({ unlabelled: [] });
+    });
+});

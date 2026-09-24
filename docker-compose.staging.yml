@@ -1,4 +1,9 @@
 # ─── Staging Environment ────────────────────────────────────
+#
+# ROLE: staging. Not the deployed production stack — that is
+# `deploy/docker-compose.prod.yml`. See its header, and the root
+# `docker-compose.prod.yml`'s, for why each of these says which it is.
+#
 # Usage: docker compose -f docker-compose.staging.yml up -d --build
 #
 # Requires: .env.staging (copy from .env.staging.example)

@@ -1,6 +1,13 @@
 #
 # Production Docker Compose for inflect-compliance.
 #
+# ROLE: deployed-production. THIS is the file that runs the live
+# stack, at /opt/inflect/docker-compose.prod.yml on the production VM.
+# The repo ALSO carries a root `docker-compose.prod.yml`; that one is
+# a LOCAL production-like stack and is not interchangeable with this
+# (different service names, different database name, different env
+# file). Reason for saying so in both files: see that one's header.
+#
 # Runs on a single VM. Caddy terminates TLS (LE via sslip.io) and
 # proxies to the Next.js app. Postgres + PgBouncer + Redis + ClamAV
 # are internal-only (no host port publishing) so the only public
