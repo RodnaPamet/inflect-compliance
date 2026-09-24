@@ -651,6 +651,26 @@ function wrapForLedger(
                 }
             }
 
+            // AND THE WALL CLOCK, which is what makes the preflight's claim
+            // true. That comment says the per-tool charge "bounds how far
+            // past, since every subsequent tool call re-checks" — and until
+            // now no subsequent call re-checked anything but the counters.
+            // RUNTIME_MS was charged exactly once, before the dispatch, so a
+            // run that entered inside its wall clock could stay in a
+            // tool-calling loop indefinitely: the STEPS cap bounded how MANY
+            // calls it made, never how long they took.
+            //
+            // Zero units, because the clock has already spent whatever it has
+            // spent — `charge` reads `now() - startedAtMs` for this kind
+            // rather than a counter. That is exactly what the static driver
+            // does before every step, and this is this engine's equivalent
+            // moment: the last point before control leaves for a tool.
+            const runtimeHalt = budget.charge('RUNTIME_MS', 0);
+            if (runtimeHalt) {
+                latch.halt = runtimeHalt;
+                throw new Error(runtimeHalt.message);
+            }
+
             // PROPOSALS is charged PER ITEM, not per call. `proposeArgs`
             // accepts up to 20 items in one call and `runProposeTool` queues
             // one PENDING row for each, so charging the call would let a run
