@@ -22,7 +22,7 @@ import { listWorkflowDefinitions } from '@/lib/agentic/workflow-registry';
 import type { WorkflowStepDef } from '@/lib/agentic/workflow-types';
 
 const READ: WorkflowStepDef = { kind: 'READ', label: 'posture', tool: 'get_compliance_posture' };
-const CHECKPOINT: WorkflowStepDef = { kind: 'HUMAN_CHECKPOINT', label: 'review' };
+const CHECKPOINT: WorkflowStepDef = { kind: 'HUMAN_CHECKPOINT', label: 'review', approvalWindow: '24h' };
 
 describe('which tool a recorded step shows', () => {
     it('prefers the RECORDED tool — it is what actually ran', () => {

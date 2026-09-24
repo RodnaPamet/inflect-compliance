@@ -61,7 +61,7 @@ jest.mock('@/lib/tenant-context-provider', () => ({
 import { AgentRunsClient, type RunRow } from '@/app/t/[tenantSlug]/(app)/agents/runs/AgentRunsClient';
 
 const EN = jest.requireActual('../../messages/en.json') as {
-    agents: { runs: { proposalsLink: string; awaitingApprovalNoProposals: string } };
+    agents: { runs: { proposalsLink: string; awaitingApprovalNoProposals: string; approvalWindowCloses: string } };
 };
 
 const PAUSED: RunRow = {
@@ -73,6 +73,7 @@ const PAUSED: RunRow = {
     driver: 'FLUE',
     startedAt: '2026-09-01T10:00:00.000Z',
     completedAt: null,
+    approvalExpiresAt: null,
     summary: null,
     pendingProposals: 0,
 };
@@ -134,6 +135,30 @@ describe('the hint is per row, not per list', () => {
 });
 
 describe('a run that is not paused gets no hint either way', () => {
+    it('states when the approval window closes, on a run that is parked', () => {
+        // The deadline is deliberately NOT on the compliance calendar —
+        // `calendar-projection-completeness` records why: an entry there would
+        // turn a bound on deliberation into a prompt to clear the queue. That
+        // exclusion's reason says the date is shown HERE instead, so this is
+        // the assertion that keeps the reason true.
+        renderRuns([{ ...PAUSED, approvalExpiresAt: '2026-09-06T10:00:00.000Z' }]);
+
+        expect(screen.getByText(/Approval window closes/)).toBeInTheDocument();
+    });
+
+    it('says nothing about a window on a run that is not parked', () => {
+        // A date on a finished run answers a question nobody is asking, and a
+        // deadline rendered next to COMPLETED reads as a deadline that was
+        // missed.
+        renderRuns([{
+            ...PAUSED,
+            status: 'COMPLETED',
+            approvalExpiresAt: '2026-09-06T10:00:00.000Z',
+        }]);
+
+        expect(screen.queryByText(/Approval window closes/)).toBeNull();
+    });
+
     it('says nothing about approval on a COMPLETED run', () => {
         renderRuns([{ ...PAUSED, status: 'COMPLETED', pendingProposals: 5 }]);
         const row = rowOf('run-1');

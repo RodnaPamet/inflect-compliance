@@ -219,7 +219,7 @@ registerWorkflow({
   description: "A run with a human pause in the middle — the tamper window.",
   steps: [
     { kind: "READ", label: "before", tool: "get_compliance_posture" },
-    { kind: "HUMAN_CHECKPOINT", label: "review" },
+    { kind: "HUMAN_CHECKPOINT", label: "review", approvalWindow: "24h" },
     { kind: "READ", label: "after", tool: "get_compliance_posture" },
   ],
 });
@@ -232,9 +232,9 @@ registerWorkflow({
     "which is what a replay needs in order to be observable at all.",
   steps: [
     { kind: "READ", label: "first", tool: "get_compliance_posture" },
-    { kind: "HUMAN_CHECKPOINT", label: "review one" },
+    { kind: "HUMAN_CHECKPOINT", label: "review one", approvalWindow: "24h" },
     { kind: "READ", label: "second", tool: "get_compliance_posture" },
-    { kind: "HUMAN_CHECKPOINT", label: "review two" },
+    { kind: "HUMAN_CHECKPOINT", label: "review two", approvalWindow: "24h" },
     { kind: "READ", label: "third", tool: "get_compliance_posture" },
   ],
 });

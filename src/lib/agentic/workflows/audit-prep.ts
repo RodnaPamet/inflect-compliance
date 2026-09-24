@@ -82,7 +82,16 @@ export const auditPrepWorkflow: WorkflowDefinition = {
             },
             rationale: (ctx) => `Draft policy scaffold for the ${frameworkKeyOf(ctx)} audit.`,
         },
-        { kind: 'HUMAN_CHECKPOINT', label: 'reviewPack' },
+        {
+            kind: 'HUMAN_CHECKPOINT', label: 'reviewPack',
+            // FIVE DAYS. The pack is an auditor-facing artefact assembled from
+            // proposed findings and drafted policies; clearing it means
+            // reading them, which is a working-week task rather than an
+            // afternoon one. Shorter than the 7 days a proposal gets, because
+            // the proposals inside it carry their own deadlines and the pack
+            // must not outlive them.
+            approvalWindow: '5d',
+        },
         {
             kind: 'SYNTHESIS', label: 'report',
             synthesize: (ctx) => {

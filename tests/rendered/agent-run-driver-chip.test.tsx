@@ -68,6 +68,7 @@ const RUN: RunRow = {
     driver: 'STATIC',
     startedAt: '2026-09-01T10:00:00.000Z',
     completedAt: '2026-09-01T10:04:00.000Z',
+    approvalExpiresAt: null,
     summary: null,
     pendingProposals: 0,
 };

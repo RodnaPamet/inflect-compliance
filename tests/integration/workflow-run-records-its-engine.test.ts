@@ -88,7 +88,7 @@ describeFn('a run records which engine walked it (real DB, real engine)', () => 
 
         // A checkpoint in both, so `resumeWorkflowRun` has something to resume.
         const steps = [
-            { kind: 'HUMAN_CHECKPOINT' as const, label: 'review' },
+            { kind: 'HUMAN_CHECKPOINT' as const, label: 'review', approvalWindow: '24h' as const },
             {
                 kind: 'SYNTHESIS' as const,
                 label: 'summary',

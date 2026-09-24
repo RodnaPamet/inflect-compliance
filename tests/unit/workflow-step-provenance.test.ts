@@ -277,7 +277,7 @@ registerWorkflow({
       tool: "propose_risks",
       buildItems: () => [{ title: "a proposed risk" }],
     },
-    { kind: "HUMAN_CHECKPOINT", label: "review" },
+    { kind: "HUMAN_CHECKPOINT", label: "review", approvalWindow: "24h" },
     {
       kind: "SYNTHESIS",
       label: "summary",

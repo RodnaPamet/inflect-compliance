@@ -68,6 +68,8 @@ import {
 } from '@/lib/observability/metrics';
 import { describeFailure, isAgenticFatal } from '@/lib/agentic/failure-isolation';
 
+import { approvalDeadline } from '@/lib/agentic/approval-window';
+
 import { getRunRow, proposedItemsSoFar } from './run-store';
 
 /**
@@ -278,6 +280,13 @@ async function executeSteps(
                 await commitContext(ctx, runId, context, chainSeq + 1, chainHash, {
                     status: 'AWAITING_APPROVAL',
                     stepCount: seq + 1,
+                    // THE HUMAN'S CLOCK STARTS HERE, from this step's own
+                    // mandatory window. Pinned onto the row rather than
+                    // recomputed at read time, so editing the definition
+                    // cannot move a deadline under a decision already taken —
+                    // the choice `AgentProposal.expiresAt` makes, for the
+                    // reason `proposal-expiry.ts` gives.
+                    approvalExpiresAt: approvalDeadline(step.approvalWindow, new Date()),
                 });
                 return { status: 'AWAITING_APPROVAL', stepFailures };
             }
