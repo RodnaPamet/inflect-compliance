@@ -58,6 +58,24 @@ const fakeDb = {
 type GuardFn = 'guardUntrustedInput' | 'guardEgress';
 
 /** Usecase → guard entrypoints it MUST import + call. */
+/**
+ * WHAT THIS MAP DOES NOT SAY.
+ *
+ * The assertion below checks that each file IMPORTS and CALLS each listed
+ * guard at least once. It does not — and structurally cannot — check WHAT the
+ * guard is called on, so a file with two ingestion paths and one guarded path
+ * satisfies it.
+ *
+ * That is not hypothetical. `questionnaire.ts` assembled two halves into its
+ * prompt, the question text and the tenant `grounding`, and ran
+ * `guardUntrustedInput` on the questions only while the grounding got
+ * `guardEgress` alone. Both functions appeared, both were called, this file
+ * was green, and a control objective could carry instructions into a drafted
+ * answer. Fixed separately; recorded here because the next one will look the
+ * same from this vantage point.
+ *
+ * The per-path assertions live with the usecases themselves.
+ */
 const AI_GUARD_COVERAGE: Readonly<Record<string, readonly GuardFn[]>> = {
     'src/app-layer/usecases/risk-suggestions.ts': ['guardUntrustedInput', 'guardEgress'],
     'src/app-layer/usecases/vendor-doc-extraction.ts': ['guardUntrustedInput', 'guardEgress'],
@@ -72,17 +90,38 @@ const AI_GUARD_COVERAGE: Readonly<Record<string, readonly GuardFn[]>> = {
  * be in AI_GUARD_COVERAGE or here.
  */
 const AI_GUARD_EXEMPT: Readonly<Record<string, string>> = {
+    'src/app-layer/usecases/workflow-runs.ts':
+        'Imports `ai/decision-log` to stamp `humanOutcome` on a resume (EU AI ' +
+        'Act Art 14) and assembles no prompt of its own. The run engines do ' +
+        'that: the static driver has no model call at all, and the Flue ' +
+        "driver's ingestion is guarded at the tool boundary in " +
+        '`flue/tools-adapter.ts`, whose own tests assert both slices.',
     'src/app-layer/usecases/compliance-posture.ts':
         'Sends only aggregate counts/percentages to the model — no tenant free ' +
         'text is assembled into the prompt (documented in the posture prompt-' +
         'builder). There is no injection surface to scan.',
 };
 
+// ANY AI SUBSYSTEM, not three named ones.
+//
+// The old pattern was /ai\/(risk-assessment|vendor-doc|compliance-posture)/,
+// and `agent-proposals.ts` matched it ZERO times — it imports only
+// `ai/decision-log` and `ai/guard`. It sat in the coverage map, so its
+// guards were asserted; but the scan that ENFORCES the map could not
+// see it, and deleting its entry would have flagged nothing. Any new
+// usecase reaching a subsystem outside those three was invisible the
+// same way.
+//
+// Widened to the whole `@/app-layer/ai/` surface, so a subsystem
+// nobody has written yet is in the population on the day it appears
+// rather than the day somebody remembers to name it here.
+const aiImportRe = /@\/app-layer\/ai\//;
+
 describe('AI guard — coverage (structural completeness)', () => {
     it('every AI-subsystem-importing usecase is classified (covered or exempt)', () => {
         const usecaseDir = path.join(REPO_ROOT, 'src/app-layer/usecases');
         const files = fs.readdirSync(usecaseDir).filter((f) => f.endsWith('.ts'));
-        const aiImportRe = /ai\/(risk-assessment|vendor-doc|compliance-posture)/;
+
         const classified = new Set([
             ...Object.keys(AI_GUARD_COVERAGE),
             ...Object.keys(AI_GUARD_EXEMPT),
@@ -108,13 +147,27 @@ describe('AI guard — coverage (structural completeness)', () => {
     });
 
     it('detects a new unclassified AI-ingestion site (regression proof)', () => {
+        // THE SCAN'S OWN PREDICATE, exercised — not a copy of it. This used
+        // to assert only that a made-up filename was absent from the
+        // classified set, which is true of every string and silent about
+        // whether the scan recognises an AI import at all. A second copy of
+        // the pattern would be just as silent: narrowing the real one would
+        // leave this green, which is how a detector that mirrors its subject
+        // by name goes stale.
+
+        // A new usecase reaching ANY subsystem is in the population...
+        for (const sub of ['vendor-doc', 'questionnaire', 'decision-log', 'not-written-yet']) {
+            expect(aiImportRe.test(`import { x } from '@/app-layer/ai/${sub}';`)).toBe(true);
+        }
+        // ...and one reaching none of it is not, or every usecase in the repo
+        // would need an entry and the list would stop meaning anything.
+        expect(aiImportRe.test(`import { prisma } from '@/lib/prisma';`)).toBe(false);
+
         const classified = new Set([
             ...Object.keys(AI_GUARD_COVERAGE),
             ...Object.keys(AI_GUARD_EXEMPT),
         ]);
-        // Simulate a new usecase importing @/app-layer/ai/vendor-doc.
-        const candidate = 'src/app-layer/usecases/new-ai-thing.ts';
-        expect(classified.has(candidate)).toBe(false);
+        expect(classified.has('src/app-layer/usecases/new-ai-thing.ts')).toBe(false);
     });
 
     it('AI_GUARD_EXEMPT entries carry a written reason', () => {
