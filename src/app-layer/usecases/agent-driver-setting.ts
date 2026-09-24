@@ -40,6 +40,7 @@ import {
     resolveAgentDriver,
     type AgentDriverMode,
 } from '@/lib/agentic/agent-driver';
+import { narrowToWhatAWorkflowAsksFor } from '@/lib/agentic/agent-driver-policy';
 import { runInTenantContext } from '@/lib/db-context';
 import { env } from '@/env';
 import { badRequest } from '@/lib/errors/types';
@@ -77,7 +78,15 @@ export async function getAgentDriverSetting(ctx: RequestContext): Promise<AgentD
     // the run path about the same stored byte.
     const mode = coerceStoredDriverMode(row?.agentDriver ?? null);
     const envEnabled = flueEnvEnabled(env.AGENT_DRIVER_FLUE);
-    const decision = resolveAgentDriver({ envEnabled, tenantSetting: mode });
+    // FOUR terms, not three. `resolveAgentDriver` ANDs env, tenant and the
+    // build flag; `narrowToWhatAWorkflowAsksFor` applies the fourth — no
+    // registered WorkflowDefinition asks for the engine, so `selectRunDriver`
+    // cannot choose it however the other three are set. Without this the page
+    // reported `flue` with `reason: null` on a deployment that runs every
+    // workflow on the static engine.
+    const decision = narrowToWhatAWorkflowAsksFor(
+        resolveAgentDriver({ envEnabled, tenantSetting: mode }),
+    );
 
     return {
         mode,

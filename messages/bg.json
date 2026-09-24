@@ -4644,6 +4644,7 @@
         "driverReason": {
           "ENV_DISABLED": "Flue е изключен за тази инсталация",
           "TENANT_NOT_OPTED_IN": "това работно пространство не е включено",
+          "NO_WORKFLOW_REQUESTS_IT": "\u043d\u044f\u043c\u0430 \u0440\u0430\u0431\u043e\u0442\u0435\u043d \u043f\u043e\u0442\u043e\u043a, \u043a\u043e\u0439\u0442\u043e \u0433\u043e \u0438\u0437\u0438\u0441\u043a\u0432\u0430",
           "UNRECOGNISED_SETTING": "запазената настройка не беше разпозната",
           "DRIVER_NOT_IMPLEMENTED": "тази версия няма драйвер Flue"
         }

@@ -78,6 +78,7 @@ interface AgentDetail {
         | 'TENANT_NOT_OPTED_IN'
         | 'UNRECOGNISED_SETTING'
         | 'DRIVER_NOT_IMPLEMENTED'
+        | 'NO_WORKFLOW_REQUESTS_IT'
         | null;
     vendorId: string | null;
     /**
