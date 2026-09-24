@@ -34,7 +34,13 @@ import { z } from 'zod';
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { allToolDefinitions, toolDefinitionByName } from '@/lib/mcp/tool-definitions';
-import { hashToolManifest, verifyToolManifest, type ToolManifestStatus } from '@/lib/mcp/tool-manifest';
+import {
+    hashToolManifest,
+    verifyToolManifest,
+    type ApprovedToolManifest,
+    type ToolDefinition,
+    type ToolManifestStatus,
+} from '@/lib/mcp/tool-manifest';
 import { logger } from '@/lib/observability/logger';
 
 import { assertCanAdmin, assertCanRead } from '../policies/common';
@@ -116,27 +122,48 @@ export async function listToolManifests(ctx: RequestContext): Promise<ToolManife
     );
     const byName = new Map(pins.map((p) => [p.toolName, p]));
 
-    return defs.map((def) => {
-        const pin = byName.get(def.name) ?? null;
-        const verdict = verifyToolManifest(def, pin);
-        return {
-            toolName: def.name,
-            status: verdict.status,
-            liveManifestHash: verdict.live.manifestHash,
-            liveDescriptionHash: verdict.live.descriptionHash,
-            liveDescription: def.description,
-            liveSchema: JSON.stringify(def.inputSchema, null, 2),
-            liveSchemaHash: verdict.live.schemaHash,
-            approvedManifestHash: pin?.manifestHash ?? null,
-            approvedDescriptionHash: pin?.descriptionHash ?? null,
-            approvedSchemaHash: pin?.schemaHash ?? null,
-            approvalSource: pin?.approvalSource ?? null,
-            approvedByUserId: pin?.approvedByUserId ?? null,
-            approvedAt: pin?.approvedAt ?? null,
-            revision: pin?.revision ?? null,
-            blocked: verdict.mustRefuse,
-        };
-    });
+    return defs.map((def) => manifestStateOf(def, byName.get(def.name) ?? null));
+}
+
+/**
+ * One tool's pin state, as the shape an operator acts on.
+ *
+ * Extracted so the EXTERNAL catalogue answers with the same verdict this one
+ * does. Two copies of this mapping would drift, and the direction they drift
+ * in is the dangerous one: `blocked` and `status` are what a reviewer reads
+ * before accepting instruction text, so an external tool computing them even
+ * slightly differently would be a second, quieter approval rule.
+ *
+ * `toolName` is a parameter rather than `def.name` because the two differ for
+ * an external tool: the pin is keyed by the QUALIFIED name (the grant's
+ * primary key), while the hash covers the definition the server actually
+ * advertised, under the name IT used. Hashing the qualified name instead would
+ * make the attestation a statement about our naming scheme rather than about
+ * what the far end said.
+ */
+export function manifestStateOf(
+    def: ToolDefinition,
+    pin: ApprovedToolManifest | null,
+    toolName: string = def.name,
+): ToolManifestState {
+    const verdict = verifyToolManifest(def, pin);
+    return {
+        toolName,
+        status: verdict.status,
+        liveManifestHash: verdict.live.manifestHash,
+        liveDescriptionHash: verdict.live.descriptionHash,
+        liveDescription: def.description,
+        liveSchema: JSON.stringify(def.inputSchema, null, 2),
+        liveSchemaHash: verdict.live.schemaHash,
+        approvedManifestHash: pin?.manifestHash ?? null,
+        approvedDescriptionHash: pin?.descriptionHash ?? null,
+        approvedSchemaHash: pin?.schemaHash ?? null,
+        approvalSource: pin?.approvalSource ?? null,
+        approvedByUserId: pin?.approvedByUserId ?? null,
+        approvedAt: (pin as { approvedAt?: Date } | null)?.approvedAt ?? null,
+        revision: pin?.revision ?? null,
+        blocked: verdict.mustRefuse,
+    };
 }
 
 // ── Approve ─────────────────────────────────────────────────────────────────
